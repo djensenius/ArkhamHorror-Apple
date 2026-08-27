@@ -26,6 +26,13 @@ struct FoundationTests {
         #expect(endpoint.url.host == "example.com")
     }
 
+    @Test("Server URLs discard embedded credentials")
+    func discardsUserInfo() throws {
+        let endpoint = try ServerEndpoint("https://investigator:secret@example.com")
+
+        #expect(endpoint.url.absoluteString == "https://example.com")
+    }
+
     @Test(
         "Invalid server URLs report domain errors",
         arguments: [

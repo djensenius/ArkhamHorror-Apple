@@ -40,6 +40,8 @@ struct ServerEndpoint: Equatable, Sendable {
 
         components.scheme = scheme
         components.host = host
+        components.user = nil
+        components.password = nil
 
         while components.path.count > 1, components.path.hasSuffix("/") {
             components.path.removeLast()
