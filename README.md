@@ -27,6 +27,11 @@ simulate a pointer or tabletop physics.
 - macOS with Xcode 26 or newer
 - [mise](https://mise.jdx.dev/)
 
+The 26.0 deployment floor is intentional: the client targets the current
+public Apple OS generation across every platform rather than carrying
+compatibility branches for older SDKs. Required CI therefore runs on
+`macos-26`; the beta Xcode path below is used for next-generation validation.
+
 Install the pinned XcodeGen, SwiftFormat, and SwiftLint versions:
 
 ```sh
