@@ -7,61 +7,68 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		02036398E1801E3CA3CE21CA /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6593F23DA0D4890154800C1A /* AppModel.swift */; };
-		0D31C4881853D8657D2E232C /* ArkhamHorrorvisionOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DB615F7E588043A671627B /* ArkhamHorrorvisionOSApp.swift */; };
-		10D276F6D4815817B874AB6C /* ServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2824DF3F7AF8962D3D377F /* ServerStatus.swift */; };
-		113865C1C873065A36E85814 /* AppCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABEB5BC8F0CC4105E6CD231 /* AppCommand.swift */; };
-		1DA7D14DEB9FD214E85C601A /* AppCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABEB5BC8F0CC4105E6CD231 /* AppCommand.swift */; };
-		2DA3F80BBC85FBB8C2C97958 /* ServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2824DF3F7AF8962D3D377F /* ServerStatus.swift */; };
-		3545F859B7498C016FF18B3F /* AppCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABEB5BC8F0CC4105E6CD231 /* AppCommand.swift */; };
-		41332738A15B82ABF6E57E70 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6593F23DA0D4890154800C1A /* AppModel.swift */; };
-		6645B01BA732DC7EB18C8800 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B10E47959D62FD96CF7F9B /* RootView.swift */; };
-		7A28CADBB7D5E79C85463785 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B10E47959D62FD96CF7F9B /* RootView.swift */; };
-		809257704C17556D5FB88656 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6593F23DA0D4890154800C1A /* AppModel.swift */; };
-		91752E9950EA6D81C0706029 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B10E47959D62FD96CF7F9B /* RootView.swift */; };
-		A2B13831E2C069E218BC4653 /* ServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2824DF3F7AF8962D3D377F /* ServerStatus.swift */; };
-		A4373718902AA9918156151C /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B10E47959D62FD96CF7F9B /* RootView.swift */; };
-		A7EF1D77E1B23B99E18BEEDD /* ServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2824DF3F7AF8962D3D377F /* ServerStatus.swift */; };
-		B36C928CE6FE6389FEA5A703 /* ArkhamHorroriOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A57D33A7B247F6F618FC78 /* ArkhamHorroriOSApp.swift */; };
-		BD3CFF2C8169F0E62BB9D35F /* FoundationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 108B93324E9AEB981DD6F05B /* FoundationTests.swift */; };
-		C0C77B1F813A0C2752F8A195 /* AppCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABEB5BC8F0CC4105E6CD231 /* AppCommand.swift */; };
-		D3C6ED1458E7842B8AC62A4F /* ArkhamHorrortvOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE0C65CAC642A4B1FD84DB8 /* ArkhamHorrortvOSApp.swift */; };
+		02476F3B43B15E3172BACBBB /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = 55E9F638D6D7CF460C768EA8 /* ArkhamHorrorShared */; };
+		243290B4B7B4DB0C0219B90C /* ArkhamHorrorVisionOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ADE1C92BCE7244FC9D57F7E /* ArkhamHorrorVisionOSApp.swift */; };
+		49DA332916558B0717AB1A4C /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = ACB67D2294CED84D1B50989F /* ArkhamHorrorShared */; };
+		764D7C8F6E35A96B49241A2D /* ArkhamHorrorTVOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF0DF1FC44149015B10F4641 /* ArkhamHorrorTVOSApp.swift */; };
+		B6A69FDAB2D52FF7978BB584 /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = D9C156993D9D5A16C3380D57 /* ArkhamHorrorShared */; };
+		C8496FB57D6F565C212C13D2 /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = 719A56CDE682761E780B4057 /* ArkhamHorrorShared */; };
+		D72AD6B2861FE60C8CBA3394 /* ArkhamHorrorIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F963FDB29EDCDF1C867A2E75 /* ArkhamHorrorIOSApp.swift */; };
 		DA1B4E0DF13CC22E8013B88D /* ArkhamHorrorMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DCAF12432D16B8FF5E28FC8 /* ArkhamHorrorMacApp.swift */; };
-		DF581DBD64E673257A4E1CE4 /* AppCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABEB5BC8F0CC4105E6CD231 /* AppCommand.swift */; };
-		F6AD56DC6173513E37C6408B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6593F23DA0D4890154800C1A /* AppModel.swift */; };
-		FD023967DF08665F4CA1A968 /* ServerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2824DF3F7AF8962D3D377F /* ServerStatus.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		08F841039CBD836F4CE41E46 /* ArkhamHorror-FoundationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "ArkhamHorror-FoundationTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		108B93324E9AEB981DD6F05B /* FoundationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationTests.swift; sourceTree = "<group>"; };
-		12A57D33A7B247F6F618FC78 /* ArkhamHorroriOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorroriOSApp.swift; sourceTree = "<group>"; };
+		2ADE1C92BCE7244FC9D57F7E /* ArkhamHorrorVisionOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorVisionOSApp.swift; sourceTree = "<group>"; };
 		2ED0034BC224E195C0889363 /* ArkhamHorror-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ArkhamHorror-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		5BE0C65CAC642A4B1FD84DB8 /* ArkhamHorrortvOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrortvOSApp.swift; sourceTree = "<group>"; };
+		3CEE12E59BB401870876E1F4 /* ArkhamHorrorShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ArkhamHorrorShared; path = Packages/ArkhamHorrorShared; sourceTree = SOURCE_ROOT; };
 		5DCAF12432D16B8FF5E28FC8 /* ArkhamHorrorMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorMacApp.swift; sourceTree = "<group>"; };
-		6593F23DA0D4890154800C1A /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		6AC6C27A2AC109E3D3B9FA4A /* ArkhamHorror-visionOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "ArkhamHorror-visionOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		77B10E47959D62FD96CF7F9B /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		7E3BF3C284F7B45008E783CF /* ArkhamHorror-tvOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "ArkhamHorror-tvOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		87DB615F7E588043A671627B /* ArkhamHorrorvisionOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorvisionOSApp.swift; sourceTree = "<group>"; };
 		A8AF3E01C677104974878F47 /* ArkhamHorror-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "ArkhamHorror-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		AABEB5BC8F0CC4105E6CD231 /* AppCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommand.swift; sourceTree = "<group>"; };
-		FE2824DF3F7AF8962D3D377F /* ServerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerStatus.swift; sourceTree = "<group>"; };
+		DF0DF1FC44149015B10F4641 /* ArkhamHorrorTVOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorTVOSApp.swift; sourceTree = "<group>"; };
+		F963FDB29EDCDF1C867A2E75 /* ArkhamHorrorIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorIOSApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXGroup section */
-		074C0E7883BB328D92F8EBD8 /* App */ = {
-			isa = PBXGroup;
-			children = (
-				6593F23DA0D4890154800C1A /* AppModel.swift */,
+/* Begin PBXFrameworksBuildPhase section */
+		0E50A1BA6449F4CEC74FA9F8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B6A69FDAB2D52FF7978BB584 /* ArkhamHorrorShared in Frameworks */,
 			);
-			path = App;
-			sourceTree = "<group>";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6C8DDF1AFD43D288BFF2FEA9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C8496FB57D6F565C212C13D2 /* ArkhamHorrorShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1D6B56C59A82BBFEF512293 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				02476F3B43B15E3172BACBBB /* ArkhamHorrorShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0D5282A13D9A2A826401B94 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				49DA332916558B0717AB1A4C /* ArkhamHorrorShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
 		07F92727FB4191332AFD8247 /* visionOS */ = {
 			isa = PBXGroup;
 			children = (
-				87DB615F7E588043A671627B /* ArkhamHorrorvisionOSApp.swift */,
+				2ADE1C92BCE7244FC9D57F7E /* ArkhamHorrorVisionOSApp.swift */,
 			);
 			path = visionOS;
 			sourceTree = "<group>";
@@ -69,7 +76,7 @@
 		1FEEF36D863009733ECB6EED /* iOS */ = {
 			isa = PBXGroup;
 			children = (
-				12A57D33A7B247F6F618FC78 /* ArkhamHorroriOSApp.swift */,
+				F963FDB29EDCDF1C867A2E75 /* ArkhamHorrorIOSApp.swift */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -78,7 +85,6 @@
 			isa = PBXGroup;
 			children = (
 				33899CC934C62650A8CAF0B3 /* Platforms */,
-				A048117543B0E1E7979CCB3E /* Shared */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -94,44 +100,12 @@
 			path = Platforms;
 			sourceTree = "<group>";
 		};
-		398F2E96843820BCF7FF0C99 /* Tests */ = {
-			isa = PBXGroup;
-			children = (
-				108B93324E9AEB981DD6F05B /* FoundationTests.swift */,
-			);
-			path = Tests;
-			sourceTree = "<group>";
-		};
-		39E0BEA4C4D270EE0F0A741E /* Input */ = {
-			isa = PBXGroup;
-			children = (
-				AABEB5BC8F0CC4105E6CD231 /* AppCommand.swift */,
-			);
-			path = Input;
-			sourceTree = "<group>";
-		};
 		446AAADA614F5847B0EBD005 /* tvOS */ = {
 			isa = PBXGroup;
 			children = (
-				5BE0C65CAC642A4B1FD84DB8 /* ArkhamHorrortvOSApp.swift */,
+				DF0DF1FC44149015B10F4641 /* ArkhamHorrorTVOSApp.swift */,
 			);
 			path = tvOS;
-			sourceTree = "<group>";
-		};
-		5C13A5D3AD4F113FC58339A0 /* Presentation */ = {
-			isa = PBXGroup;
-			children = (
-				77B10E47959D62FD96CF7F9B /* RootView.swift */,
-			);
-			path = Presentation;
-			sourceTree = "<group>";
-		};
-		885C10939AB8D94D26AD8F33 /* Domain */ = {
-			isa = PBXGroup;
-			children = (
-				FE2824DF3F7AF8962D3D377F /* ServerStatus.swift */,
-			);
-			path = Domain;
 			sourceTree = "<group>";
 		};
 		8CBEC5C1EE120DF4AA1CAE7B /* macOS */ = {
@@ -142,30 +116,26 @@
 			path = macOS;
 			sourceTree = "<group>";
 		};
-		A048117543B0E1E7979CCB3E /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				074C0E7883BB328D92F8EBD8 /* App */,
-				885C10939AB8D94D26AD8F33 /* Domain */,
-				39E0BEA4C4D270EE0F0A741E /* Input */,
-				5C13A5D3AD4F113FC58339A0 /* Presentation */,
-			);
-			path = Shared;
-			sourceTree = "<group>";
-		};
 		C29B564056DE8CE345D039E6 = {
 			isa = PBXGroup;
 			children = (
+				CA71D5994A53EBDD74AE46D0 /* Packages */,
 				23F4E0D9A5A5CD684B8B3A73 /* Sources */,
-				398F2E96843820BCF7FF0C99 /* Tests */,
 				ED52E72A77E1395FBD88A752 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		CA71D5994A53EBDD74AE46D0 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				3CEE12E59BB401870876E1F4 /* ArkhamHorrorShared */,
+			);
+			path = Packages;
 			sourceTree = "<group>";
 		};
 		ED52E72A77E1395FBD88A752 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				08F841039CBD836F4CE41E46 /* ArkhamHorror-FoundationTests.xctest */,
 				A8AF3E01C677104974878F47 /* ArkhamHorror-iOS.app */,
 				2ED0034BC224E195C0889363 /* ArkhamHorror-macOS.app */,
 				7E3BF3C284F7B45008E783CF /* ArkhamHorror-tvOS.app */,
@@ -182,6 +152,7 @@
 			buildConfigurationList = 653AA5B8FC19CF948D96C15C /* Build configuration list for PBXNativeTarget "ArkhamHorror-tvOS" */;
 			buildPhases = (
 				3175E8088FA7248D3B4C9165 /* Sources */,
+				6C8DDF1AFD43D288BFF2FEA9 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -189,6 +160,7 @@
 			);
 			name = "ArkhamHorror-tvOS";
 			packageProductDependencies = (
+				719A56CDE682761E780B4057 /* ArkhamHorrorShared */,
 			);
 			productName = "ArkhamHorror-tvOS";
 			productReference = 7E3BF3C284F7B45008E783CF /* ArkhamHorror-tvOS.app */;
@@ -199,6 +171,7 @@
 			buildConfigurationList = 9080379168A31E17B65896DB /* Build configuration list for PBXNativeTarget "ArkhamHorror-macOS" */;
 			buildPhases = (
 				CFED1A9B65DDDA6FA495F9DF /* Sources */,
+				C0D5282A13D9A2A826401B94 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -206,33 +179,18 @@
 			);
 			name = "ArkhamHorror-macOS";
 			packageProductDependencies = (
+				ACB67D2294CED84D1B50989F /* ArkhamHorrorShared */,
 			);
 			productName = "ArkhamHorror-macOS";
 			productReference = 2ED0034BC224E195C0889363 /* ArkhamHorror-macOS.app */;
 			productType = "com.apple.product-type.application";
-		};
-		AC27B4EEA67A01B23E316457 /* ArkhamHorror-FoundationTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = DA98FF0B05BA425EB540D462 /* Build configuration list for PBXNativeTarget "ArkhamHorror-FoundationTests" */;
-			buildPhases = (
-				67355C6D446D1FE61F0CAB28 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = "ArkhamHorror-FoundationTests";
-			packageProductDependencies = (
-			);
-			productName = "ArkhamHorror-FoundationTests";
-			productReference = 08F841039CBD836F4CE41E46 /* ArkhamHorror-FoundationTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		BFEBDB350BF0052C63E42BC1 /* ArkhamHorror-visionOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 6BCCF690E9A639DCB77D3EFD /* Build configuration list for PBXNativeTarget "ArkhamHorror-visionOS" */;
 			buildPhases = (
 				0F4980BBAD885A0FC18770C9 /* Sources */,
+				A1D6B56C59A82BBFEF512293 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -240,6 +198,7 @@
 			);
 			name = "ArkhamHorror-visionOS";
 			packageProductDependencies = (
+				55E9F638D6D7CF460C768EA8 /* ArkhamHorrorShared */,
 			);
 			productName = "ArkhamHorror-visionOS";
 			productReference = 6AC6C27A2AC109E3D3B9FA4A /* ArkhamHorror-visionOS.app */;
@@ -250,6 +209,7 @@
 			buildConfigurationList = CC28023B3810C92B8735A610 /* Build configuration list for PBXNativeTarget "ArkhamHorror-iOS" */;
 			buildPhases = (
 				A8C0C5677DCD1D2AB0B9B3B2 /* Sources */,
+				0E50A1BA6449F4CEC74FA9F8 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -257,6 +217,7 @@
 			);
 			name = "ArkhamHorror-iOS";
 			packageProductDependencies = (
+				D9C156993D9D5A16C3380D57 /* ArkhamHorrorShared */,
 			);
 			productName = "ArkhamHorror-iOS";
 			productReference = A8AF3E01C677104974878F47 /* ArkhamHorror-iOS.app */;
@@ -282,6 +243,9 @@
 			);
 			mainGroup = C29B564056DE8CE345D039E6;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6BFEC24257EA9DC5EE4DACE6 /* XCLocalSwiftPackageReference "Packages/ArkhamHorrorShared" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = ED52E72A77E1395FBD88A752 /* Products */;
 			projectDirPath = "";
@@ -291,7 +255,6 @@
 				8BF5B1F20A580FF4AF50E65C /* ArkhamHorror-macOS */,
 				11C35F501E0FFF66B976FC56 /* ArkhamHorror-tvOS */,
 				BFEBDB350BF0052C63E42BC1 /* ArkhamHorror-visionOS */,
-				AC27B4EEA67A01B23E316457 /* ArkhamHorror-FoundationTests */,
 			);
 		};
 /* End PBXProject section */
@@ -301,11 +264,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1DA7D14DEB9FD214E85C601A /* AppCommand.swift in Sources */,
-				41332738A15B82ABF6E57E70 /* AppModel.swift in Sources */,
-				0D31C4881853D8657D2E232C /* ArkhamHorrorvisionOSApp.swift in Sources */,
-				91752E9950EA6D81C0706029 /* RootView.swift in Sources */,
-				A2B13831E2C069E218BC4653 /* ServerStatus.swift in Sources */,
+				243290B4B7B4DB0C0219B90C /* ArkhamHorrorVisionOSApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -313,21 +272,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				113865C1C873065A36E85814 /* AppCommand.swift in Sources */,
-				F6AD56DC6173513E37C6408B /* AppModel.swift in Sources */,
-				D3C6ED1458E7842B8AC62A4F /* ArkhamHorrortvOSApp.swift in Sources */,
-				6645B01BA732DC7EB18C8800 /* RootView.swift in Sources */,
-				10D276F6D4815817B874AB6C /* ServerStatus.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		67355C6D446D1FE61F0CAB28 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				C0C77B1F813A0C2752F8A195 /* AppCommand.swift in Sources */,
-				BD3CFF2C8169F0E62BB9D35F /* FoundationTests.swift in Sources */,
-				A7EF1D77E1B23B99E18BEEDD /* ServerStatus.swift in Sources */,
+				764D7C8F6E35A96B49241A2D /* ArkhamHorrorTVOSApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -335,11 +280,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3545F859B7498C016FF18B3F /* AppCommand.swift in Sources */,
-				809257704C17556D5FB88656 /* AppModel.swift in Sources */,
-				B36C928CE6FE6389FEA5A703 /* ArkhamHorroriOSApp.swift in Sources */,
-				A4373718902AA9918156151C /* RootView.swift in Sources */,
-				FD023967DF08665F4CA1A968 /* ServerStatus.swift in Sources */,
+				D72AD6B2861FE60C8CBA3394 /* ArkhamHorrorIOSApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -347,11 +288,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				DF581DBD64E673257A4E1CE4 /* AppCommand.swift in Sources */,
-				02036398E1801E3CA3CE21CA /* AppModel.swift in Sources */,
 				DA1B4E0DF13CC22E8013B88D /* ArkhamHorrorMacApp.swift in Sources */,
-				7A28CADBB7D5E79C85463785 /* RootView.swift in Sources */,
-				2DA3F80BBC85FBB8C2C97958 /* ServerStatus.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -371,7 +308,7 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.visionOS;
-				PRODUCT_MODULE_NAME = ArkhamHorrorvisionOS;
+				PRODUCT_MODULE_NAME = ArkhamHorrorVisionOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = xros;
 				TARGETED_DEVICE_FAMILY = 7;
@@ -395,31 +332,13 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror;
-				PRODUCT_MODULE_NAME = ArkhamHorroriOS;
+				PRODUCT_MODULE_NAME = ArkhamHorrorIOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
-		};
-		7475F7EE7387BB4615B817BA /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				COMBINE_HIDPI_IMAGES = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.FoundationTests;
-				SDKROOT = macosx;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Debug;
 		};
 		8028D999252F3A0066402AC2 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -435,7 +354,7 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.tvOS;
-				PRODUCT_MODULE_NAME = ArkhamHorrortvOS;
+				PRODUCT_MODULE_NAME = ArkhamHorrorTVOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
@@ -516,7 +435,7 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.visionOS;
-				PRODUCT_MODULE_NAME = ArkhamHorrorvisionOS;
+				PRODUCT_MODULE_NAME = ArkhamHorrorVisionOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = xros;
 				TARGETED_DEVICE_FAMILY = 7;
@@ -540,7 +459,7 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror;
-				PRODUCT_MODULE_NAME = ArkhamHorroriOS;
+				PRODUCT_MODULE_NAME = ArkhamHorrorIOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -636,24 +555,6 @@
 			};
 			name = Debug;
 		};
-		CCAD9FE829366CFC6824D9BD /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				COMBINE_HIDPI_IMAGES = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.FoundationTests;
-				SDKROOT = macosx;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
 		D4222EDF16550622B5673488 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -688,7 +589,7 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.tvOS;
-				PRODUCT_MODULE_NAME = ArkhamHorrortvOS;
+				PRODUCT_MODULE_NAME = ArkhamHorrorTVOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = appletvos;
 				TARGETED_DEVICE_FAMILY = 3;
@@ -734,15 +635,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		DA98FF0B05BA425EB540D462 /* Build configuration list for PBXNativeTarget "ArkhamHorror-FoundationTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				7475F7EE7387BB4615B817BA /* Debug */,
-				CCAD9FE829366CFC6824D9BD /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
 		FFA6CD94C80BDB42C8279097 /* Build configuration list for PBXProject "ArkhamHorror" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -753,6 +645,32 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		6BFEC24257EA9DC5EE4DACE6 /* XCLocalSwiftPackageReference "Packages/ArkhamHorrorShared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/ArkhamHorrorShared;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		55E9F638D6D7CF460C768EA8 /* ArkhamHorrorShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ArkhamHorrorShared;
+		};
+		719A56CDE682761E780B4057 /* ArkhamHorrorShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ArkhamHorrorShared;
+		};
+		ACB67D2294CED84D1B50989F /* ArkhamHorrorShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ArkhamHorrorShared;
+		};
+		D9C156993D9D5A16C3380D57 /* ArkhamHorrorShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ArkhamHorrorShared;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D0A178F2E67E8E5F48E681FB /* Project object */;
 }

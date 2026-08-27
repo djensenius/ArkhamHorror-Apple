@@ -1,3 +1,4 @@
+import ArkhamHorrorShared
 import SwiftUI
 
 @main

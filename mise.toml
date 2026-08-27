@@ -13,7 +13,7 @@ run = "xcodegen generate && git diff --exit-code -- ArkhamHorror.xcodeproj"
 
 [tasks.format-check]
 description = "Check Swift formatting"
-run = "swiftformat Sources Tests --lint"
+run = "swiftformat Sources Packages --lint"
 
 [tasks.lint]
 description = "Lint Swift sources"
@@ -21,7 +21,7 @@ run = "swiftlint lint --strict"
 
 [tasks.test]
 description = "Run pure foundation tests"
-run = "xcodebuild -project ArkhamHorror.xcodeproj -scheme FoundationTests -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test"
+run = "swift test --package-path Packages/ArkhamHorrorShared"
 
 [tasks.build]
 description = "Build every application target"

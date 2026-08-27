@@ -1,6 +1,6 @@
 import Foundation
 
-enum ServerEndpointError: Error, Equatable {
+enum ServerEndpointError: Error, Equatable, Sendable {
     case empty
     case invalidURL
     case missingHost

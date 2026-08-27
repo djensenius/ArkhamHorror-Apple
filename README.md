@@ -11,8 +11,8 @@ Official card art, playmat art, and other Arkham Horror assets are not included.
 ## Architecture
 
 XcodeGen creates four thin application targets. Each target has its own entry
-point under `Sources/Platforms` and compiles the shared layers under
-`Sources/Shared`:
+point under `Sources/Platforms` and depends on the local `ArkhamHorrorShared`
+Swift package under `Packages/ArkhamHorrorShared`:
 
 - `App`: observable application state and command dispatch
 - `Domain`: pure server endpoint and status models

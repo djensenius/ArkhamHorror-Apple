@@ -1,10 +1,12 @@
 import SwiftUI
 
-struct RootView: View {
+public struct RootView: View {
     @State private var model = AppModel()
     @FocusState private var focusedTarget: AppCommandTarget?
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         ZStack {
             LinearGradient(
                 colors: [

@@ -1,7 +1,8 @@
+import ArkhamHorrorShared
 import SwiftUI
 
 @main
-struct ArkhamHorrorvisionOSApp: App {
+struct ArkhamHorrorTVOSApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()

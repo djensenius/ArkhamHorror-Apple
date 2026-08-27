@@ -21,11 +21,15 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_VERSION: "6.0"
 
+packages:
+  ArkhamHorrorShared:
+    path: Packages/ArkhamHorrorShared
+
 targetTemplates:
   Application:
     type: application
-    sources:
-      - path: Sources/Shared
+    dependencies:
+      - package: ArkhamHorrorShared
     settings:
       base:
         CURRENT_PROJECT_VERSION: 1
@@ -47,7 +51,7 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror
-        PRODUCT_MODULE_NAME: ArkhamHorroriOS
+        PRODUCT_MODULE_NAME: ArkhamHorrorIOS
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"
 
@@ -73,7 +77,7 @@ targets:
       base:
         INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
         PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror.tvOS
-        PRODUCT_MODULE_NAME: ArkhamHorrortvOS
+        PRODUCT_MODULE_NAME: ArkhamHorrorTVOS
         TARGETED_DEVICE_FAMILY: "3"
 
   ArkhamHorror-visionOS:
@@ -86,22 +90,8 @@ targets:
       base:
         INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
         PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror.visionOS
-        PRODUCT_MODULE_NAME: ArkhamHorrorvisionOS
+        PRODUCT_MODULE_NAME: ArkhamHorrorVisionOS
         TARGETED_DEVICE_FAMILY: "7"
-
-  ArkhamHorror-FoundationTests:
-    type: bundle.unit-test
-    platform: macOS
-    sources:
-      - path: Sources/Shared/Domain
-      - path: Sources/Shared/Input
-      - path: Tests
-    settings:
-      base:
-        GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror.FoundationTests
-        SWIFT_STRICT_CONCURRENCY: complete
-        SWIFT_VERSION: "6.0"
 
 schemes:
   ArkhamHorror-iOS:
@@ -139,12 +129,3 @@ schemes:
       config: Debug
     archive:
       config: Release
-
-  FoundationTests:
-    build:
-      targets:
-        ArkhamHorror-FoundationTests: test
-    test:
-      config: Debug
-      targets:
-        - ArkhamHorror-FoundationTests

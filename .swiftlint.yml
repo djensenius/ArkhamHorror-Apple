@@ -1,6 +1,8 @@
 included:
   - Sources
-  - Tests
+  - Packages/ArkhamHorrorShared/Package.swift
+  - Packages/ArkhamHorrorShared/Sources
+  - Packages/ArkhamHorrorShared/Tests
 
 excluded:
   - ArkhamHorror.xcodeproj

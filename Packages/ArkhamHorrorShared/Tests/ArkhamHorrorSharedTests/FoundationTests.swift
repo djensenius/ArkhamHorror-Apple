@@ -1,3 +1,4 @@
+@testable import ArkhamHorrorShared
 import Foundation
 import Testing
 
