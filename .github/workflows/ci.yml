@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  format-lint:
+    name: Format, lint, and generator drift
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Install tools
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+        with:
+          cache: true
+      - name: Check formatting
+        run: mise run format-check
+      - name: Lint
+        run: mise run lint
+      - name: Check generated project
+        run: mise run project-check
+
+  tests:
+    name: Foundation tests
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Install tools
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+        with:
+          cache: true
+      - name: Run tests
+        run: mise run test
+
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS and iPadOS
+            scheme: ArkhamHorror-iOS
+            destination: generic/platform=iOS
+          - name: macOS
+            scheme: ArkhamHorror-macOS
+            destination: generic/platform=macOS
+          - name: tvOS
+            scheme: ArkhamHorror-tvOS
+            destination: generic/platform=tvOS
+          - name: visionOS
+            scheme: ArkhamHorror-visionOS
+            destination: generic/platform=visionOS
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Install tools
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+        with:
+          cache: true
+      - name: Build
+        run: >-
+          xcodebuild
+          -project ArkhamHorror.xcodeproj
+          -scheme "${{ matrix.scheme }}"
+          -destination "${{ matrix.destination }}"
+          CODE_SIGNING_ALLOWED=NO
+          build
