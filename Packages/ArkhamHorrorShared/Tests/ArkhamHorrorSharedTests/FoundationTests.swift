@@ -18,6 +18,14 @@ struct FoundationTests {
         #expect(endpoint.url.absoluteString == "http://localhost:8080")
     }
 
+    @Test("Scheme-like path content still receives HTTPS")
+    func ignoresSchemeLikePathContent() throws {
+        let endpoint = try ServerEndpoint("example.com/cards/http://reference")
+
+        #expect(endpoint.url.scheme == "https")
+        #expect(endpoint.url.host == "example.com")
+    }
+
     @Test(
         "Invalid server URLs report domain errors",
         arguments: [

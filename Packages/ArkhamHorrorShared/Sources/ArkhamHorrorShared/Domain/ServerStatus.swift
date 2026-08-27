@@ -16,7 +16,11 @@ struct ServerEndpoint: Equatable, Sendable {
             throw ServerEndpointError.empty
         }
 
-        let valueWithScheme = trimmedValue.contains("://")
+        let hasExplicitScheme = trimmedValue.range(
+            of: #"^[A-Za-z][A-Za-z0-9+.-]*://"#,
+            options: .regularExpression
+        ) != nil
+        let valueWithScheme = hasExplicitScheme
             ? trimmedValue
             : "https://\(trimmedValue)"
 
