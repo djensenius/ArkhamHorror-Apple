@@ -84,7 +84,7 @@ public struct RootView: View {
         }
         .buttonStyle(.plain)
         .focused($focusedTarget, equals: .serverStatus)
-        .accessibilityHint("Opens server configuration when that feature is available")
+        .accessibilityHint("Shows when server configuration will be available")
     }
 
     private var placeholder: some View {
@@ -107,7 +107,7 @@ public struct RootView: View {
             .buttonStyle(.borderedProminent)
             .tint(.mint)
             .focused($focusedTarget, equals: .primaryAction)
-            .accessibilityHint("Confirms that game setup is not yet implemented")
+            .accessibilityHint("Shows when game setup will be available")
 
             Text(model.message)
                 .font(.footnote)
