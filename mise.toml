@@ -10,6 +10,7 @@ run = "xcodegen generate"
 [tasks.project-check]
 description = "Verify the generated Xcode project is current"
 run = '''
+set -e
 xcodegen generate
 status="$(git status --short --untracked-files=all -- ArkhamHorror.xcodeproj)"
 if [ -n "$status" ]; then

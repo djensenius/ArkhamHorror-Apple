@@ -14,4 +14,4 @@ archive handling, authentication bypass, or private-data disclosure.
 
 Include the affected platform and build, reproduction conditions, expected
 impact, and any suggested mitigation. Remove server tokens, passwords, private
-game data, and personally identifying information from all attachments.
+game data, and personally identifiable information from all attachments.
