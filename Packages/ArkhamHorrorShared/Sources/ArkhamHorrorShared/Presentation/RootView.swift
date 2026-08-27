@@ -38,7 +38,7 @@ public struct RootView: View {
     private var brand: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("ARKHAM HORROR")
-                .font(.system(.largeTitle, design: .serif, weight: .bold))
+                .font(.system(.largeTitle, design: .serif).weight(.bold))
                 .tracking(2)
 
             Text("A semantic digital card game")
