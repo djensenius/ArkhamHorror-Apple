@@ -26,6 +26,13 @@ struct FoundationTests {
         #expect(endpoint.url.host == "example.com")
     }
 
+    @Test("Scheme-less URLs permit at signs in paths")
+    func permitsAtSignInPath() throws {
+        let endpoint = try ServerEndpoint("example.com/@me/api")
+
+        #expect(endpoint.url.absoluteString == "https://example.com/@me/api")
+    }
+
     @Test("Server URLs discard embedded credentials")
     func discardsUserInfo() throws {
         let userInfo = "investigator:password"

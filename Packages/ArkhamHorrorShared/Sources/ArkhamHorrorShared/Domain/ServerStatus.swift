@@ -21,8 +21,11 @@ struct ServerEndpoint: Equatable, Sendable {
             of: #"^[A-Za-z][A-Za-z0-9+.-]*://"#,
             options: .regularExpression
         ) != nil
-        guard hasExplicitScheme || !trimmedValue.contains("@") else {
-            throw ServerEndpointError.credentialsRequireScheme
+        if !hasExplicitScheme {
+            let authority = trimmedValue.prefix { !"/?#".contains($0) }
+            guard !authority.contains("@") else {
+                throw ServerEndpointError.credentialsRequireScheme
+            }
         }
 
         let valueWithScheme = hasExplicitScheme
