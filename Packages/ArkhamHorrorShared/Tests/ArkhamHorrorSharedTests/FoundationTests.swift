@@ -38,6 +38,7 @@ struct FoundationTests {
         "Invalid server URLs report domain errors",
         arguments: [
             ("", ServerEndpointError.empty),
+            ("example.com@evil.com", ServerEndpointError.credentialsRequireScheme),
             ("ftp://example.com", ServerEndpointError.unsupportedScheme),
             ("https://", ServerEndpointError.missingHost),
         ]

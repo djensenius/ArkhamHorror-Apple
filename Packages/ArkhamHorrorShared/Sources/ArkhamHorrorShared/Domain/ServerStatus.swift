@@ -2,6 +2,7 @@ import Foundation
 
 enum ServerEndpointError: Error, Equatable, Sendable {
     case empty
+    case credentialsRequireScheme
     case invalidURL
     case missingHost
     case unsupportedScheme
@@ -20,6 +21,10 @@ struct ServerEndpoint: Equatable, Sendable {
             of: #"^[A-Za-z][A-Za-z0-9+.-]*://"#,
             options: .regularExpression
         ) != nil
+        guard hasExplicitScheme || !trimmedValue.contains("@") else {
+            throw ServerEndpointError.credentialsRequireScheme
+        }
+
         let valueWithScheme = hasExplicitScheme
             ? trimmedValue
             : "https://\(trimmedValue)"
