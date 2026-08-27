@@ -1,0 +1,60 @@
+name: Feature request
+description: Propose a native Apple client capability or interaction
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Select every platform this proposal affects.
+      multiple: true
+      options:
+        - iPhone
+        - iPad
+        - macOS
+        - Apple TV
+        - Apple Vision Pro
+        - Shared Apple implementation
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user need rather than only the proposed control.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed experience
+      description: Explain the workflow and expected result.
+    validations:
+      required: true
+  - type: textarea
+    id: native-interaction
+    attributes:
+      label: Native interaction
+      description: Describe how touch, focus, keyboard, controller, gaze, or platform conventions should work without a virtual cursor.
+    validations:
+      required: true
+  - type: textarea
+    id: accessibility
+    attributes:
+      label: Accessibility considerations
+      description: Include VoiceOver, text scaling, reduced motion, contrast, or alternate-input implications.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Checklist
+      options:
+        - label: I reviewed the roadmap and searched existing issues.
+          required: true
+        - label: This proposal does not require distributing official card or gaming-mat artwork.
+          required: true

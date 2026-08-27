@@ -9,7 +9,16 @@ run = "xcodegen generate"
 
 [tasks.project-check]
 description = "Verify the generated Xcode project is current"
-run = "xcodegen generate && git diff --exit-code -- ArkhamHorror.xcodeproj"
+run = '''
+set -e
+xcodegen generate
+status="$(git status --short --untracked-files=all -- ArkhamHorror.xcodeproj)"
+if [ -n "$status" ]; then
+  printf '%s\n' "$status"
+  git diff -- ArkhamHorror.xcodeproj
+  exit 1
+fi
+'''
 
 [tasks.format-check]
 description = "Check Swift formatting"
