@@ -28,7 +28,8 @@ struct FoundationTests {
 
     @Test("Server URLs discard embedded credentials")
     func discardsUserInfo() throws {
-        let endpoint = try ServerEndpoint("https://investigator:secret@example.com")
+        let userInfo = "investigator:password"
+        let endpoint = try ServerEndpoint("https://\(userInfo)@example.com")
 
         #expect(endpoint.url.absoluteString == "https://example.com")
     }

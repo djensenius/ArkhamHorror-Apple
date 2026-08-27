@@ -1,14 +1,14 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 
 import PackageDescription
 
 let package = Package(
     name: "ArkhamHorrorShared",
     platforms: [
-        .iOS("26.0"),
-        .macOS("26.0"),
-        .tvOS("26.0"),
-        .visionOS("26.0"),
+        .iOS(.v26),
+        .macOS(.v26),
+        .tvOS(.v26),
+        .visionOS(.v26),
     ],
     products: [
         .library(
