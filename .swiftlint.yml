@@ -1,0 +1,33 @@
+included:
+  - Sources
+  - Packages/ArkhamHorrorShared/Package.swift
+  - Packages/ArkhamHorrorShared/Sources
+  - Packages/ArkhamHorrorShared/Tests
+
+excluded:
+  - ArkhamHorror.xcodeproj
+
+strict: true
+
+disabled_rules:
+  - trailing_comma
+
+opt_in_rules:
+  - array_init
+  - closure_spacing
+  - contains_over_filter_count
+  - empty_count
+  - empty_string
+  - explicit_init
+  - first_where
+  - flatmap_over_map_reduce
+  - last_where
+  - modifier_order
+  - sorted_first_last
+  - toggle_bool
+
+line_length:
+  warning: 100
+  error: 120
+
+reporter: xcode

@@ -1,0 +1,5 @@
+--swiftversion 6
+--indent 4
+--wraparguments before-first
+--wrapcollections before-first
+--self remove

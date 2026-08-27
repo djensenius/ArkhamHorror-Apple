@@ -1,0 +1,131 @@
+name: ArkhamHorror
+
+options:
+  bundleIdPrefix: com.djensenius
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+    tvOS: "26.0"
+    visionOS: "26.0"
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_VERSION: "6.0"
+
+packages:
+  ArkhamHorrorShared:
+    path: Packages/ArkhamHorrorShared
+
+targetTemplates:
+  Application:
+    type: application
+    dependencies:
+      - package: ArkhamHorrorShared
+    settings:
+      base:
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: 0.1.0
+        PRODUCT_NAME: Arkham Horror
+
+targets:
+  ArkhamHorror-iOS:
+    templates:
+      - Application
+    platform: iOS
+    sources:
+      - path: Sources/Platforms/iOS
+    settings:
+      base:
+        INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror
+        PRODUCT_MODULE_NAME: ArkhamHorrorIOS
+        SUPPORTS_MACCATALYST: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  ArkhamHorror-macOS:
+    templates:
+      - Application
+    platform: macOS
+    sources:
+      - path: Sources/Platforms/macOS
+    settings:
+      base:
+        INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
+        PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror.macOS
+        PRODUCT_MODULE_NAME: ArkhamHorrorMac
+
+  ArkhamHorror-tvOS:
+    templates:
+      - Application
+    platform: tvOS
+    sources:
+      - path: Sources/Platforms/tvOS
+    settings:
+      base:
+        INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
+        PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror.tvOS
+        PRODUCT_MODULE_NAME: ArkhamHorrorTVOS
+        TARGETED_DEVICE_FAMILY: "3"
+
+  ArkhamHorror-visionOS:
+    templates:
+      - Application
+    platform: visionOS
+    sources:
+      - path: Sources/Platforms/visionOS
+    settings:
+      base:
+        INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
+        PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror.visionOS
+        PRODUCT_MODULE_NAME: ArkhamHorrorVisionOS
+        TARGETED_DEVICE_FAMILY: "7"
+
+schemes:
+  ArkhamHorror-iOS:
+    build:
+      targets:
+        ArkhamHorror-iOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  ArkhamHorror-macOS:
+    build:
+      targets:
+        ArkhamHorror-macOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  ArkhamHorror-tvOS:
+    build:
+      targets:
+        ArkhamHorror-tvOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  ArkhamHorror-visionOS:
+    build:
+      targets:
+        ArkhamHorror-visionOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
