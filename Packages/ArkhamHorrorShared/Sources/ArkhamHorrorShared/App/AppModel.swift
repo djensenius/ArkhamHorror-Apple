@@ -43,21 +43,21 @@ final class AppModel {
     /// The persisted server profile list, including the canonical hosted profile.
     var profiles: [ServerProfile] = []
 
-    let profileStore: any ServerProfileStore
-    let tokenStore: any TokenStore
-    let capabilityProbe: any CapabilityProbing
-    let authenticationSession: any AppAuthenticating
+    @ObservationIgnored let profileStore: any ServerProfileStore
+    @ObservationIgnored let tokenStore: any TokenStore
+    @ObservationIgnored let capabilityProbe: any CapabilityProbing
+    @ObservationIgnored let authenticationSession: any AppAuthenticating
 
-    var selectedProfile: ServerProfile = .hosted
-    var generation = 0
+    @ObservationIgnored var selectedProfile: ServerProfile = .hosted
+    @ObservationIgnored var generation = 0
     /// The in-flight launch/compatibility/token-restoration task, if any.
-    var flowTask: Task<Void, Never>?
+    @ObservationIgnored var flowTask: Task<Void, Never>?
     /// The in-flight sign-in/registration/sign-out operation task, if any.
-    var operationTask: Task<Void, Never>?
+    @ObservationIgnored var operationTask: Task<Void, Never>?
 
     /// The tail of the per-profile serialized token-store access chain. See
     /// ``serializedTokenAccess(for:_:)``.
-    var tokenAccessQueues: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored var tokenAccessQueues: [UUID: Task<Void, Never>] = [:]
 
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),
