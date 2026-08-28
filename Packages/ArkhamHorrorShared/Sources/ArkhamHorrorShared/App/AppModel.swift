@@ -1,6 +1,11 @@
 import Foundation
 import Observation
 
+struct TokenAccessTail {
+    let id: UUID
+    let task: Task<Void, Never>
+}
+
 /// The shared, `@MainActor` session coordinator for every Arkham Horror platform target.
 ///
 /// On launch, `AppModel` loads persisted server profiles, seeds the canonical hosted
@@ -57,7 +62,7 @@ final class AppModel {
 
     /// The tail of the per-profile serialized token-store access chain. See
     /// ``serializedTokenAccess(for:_:)``.
-    @ObservationIgnored var tokenAccessQueues: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored var tokenAccessQueues: [UUID: TokenAccessTail] = [:]
 
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),
@@ -143,12 +148,19 @@ extension AppModel {
         for profileID: UUID,
         _ operation: @escaping @Sendable () async throws -> Value
     ) async throws -> Value {
-        let previous = tokenAccessQueues[profileID]
+        let previous = tokenAccessQueues[profileID]?.task
         let scheduled = Task<Value, any Error> {
             await previous?.value
             return try await operation()
         }
-        tokenAccessQueues[profileID] = Task { _ = try? await scheduled.value }
+        let tailID = UUID()
+        let tail = Task { _ = try? await scheduled.value }
+        tokenAccessQueues[profileID] = TokenAccessTail(id: tailID, task: tail)
+        defer {
+            if tokenAccessQueues[profileID]?.id == tailID {
+                tokenAccessQueues[profileID] = nil
+            }
+        }
         return try await scheduled.value
     }
 }

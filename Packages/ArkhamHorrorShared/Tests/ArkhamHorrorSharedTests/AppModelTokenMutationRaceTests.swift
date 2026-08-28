@@ -88,6 +88,7 @@ extension AppModelTests {
         await tokenStore.resumeOldest()
         await staleTask.value
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(model.tokenAccessQueues.count == 1)
 
         await tokenStore.waitUntilPending(1)
         #expect(
@@ -104,6 +105,7 @@ extension AppModelTests {
         #expect(model.operationFailure == nil)
         let finalTokens = await tokenStore.snapshotTokens()
         #expect(finalTokens[ServerProfile.hosted.id] == "second-token")
+        #expect(model.tokenAccessQueues.isEmpty)
     }
 
     @Test("A stale sign-out delete after switching back cannot leave signedIn with no token")
@@ -154,6 +156,7 @@ extension AppModelTests {
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
         let finalTokens = await tokenStore.snapshotTokens()
         #expect(finalTokens[ServerProfile.hosted.id] == nil)
+        #expect(model.tokenAccessQueues.isEmpty)
     }
 
     @Test("A superseded sign-out task cannot enqueue a token deletion after switching back")
