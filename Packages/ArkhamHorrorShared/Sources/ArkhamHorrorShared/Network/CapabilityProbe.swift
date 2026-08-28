@@ -77,18 +77,23 @@ struct CapabilityProbe: Sendable {
             throw CapabilityProbeError.nonHTTPResponse
         }
 
+        let outcome: CompatibilityOutcome
         switch httpResponse.statusCode {
         case 200 ... 299:
             do {
                 let capabilities = try JSONDecoder().decode(ServerCapabilities.self, from: data)
-                return evaluator.evaluate(capabilities)
+                outcome = evaluator.evaluate(capabilities)
             } catch {
+                try Task.checkCancellation()
                 throw CapabilityProbeError.malformedPayload(String(describing: error))
             }
         case 404:
-            return evaluator.legacyFallback()
+            outcome = evaluator.legacyFallback()
         default:
             throw CapabilityProbeError.unexpectedStatus(httpResponse.statusCode)
         }
+
+        try Task.checkCancellation()
+        return outcome
     }
 }
