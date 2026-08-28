@@ -51,7 +51,7 @@ extension ServerProfileError {
         case .unsupportedScheme:
             "Use an address that starts with http:// or https://."
         case .insecureScheme:
-            "Use https:// for this address. Plain http:// only works for localhost."
+            "Use https:// here. Plain http:// only works on this device (localhost, 127.0.0.1)."
         case .missingHost:
             "Enter a valid server address."
         case .fragmentNotAllowed:

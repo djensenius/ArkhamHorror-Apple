@@ -71,8 +71,8 @@ struct ArkhamHeader: View {
 }
 
 private extension View {
-    /// `.isHeader` is unavailable on tvOS/visionOS in some toolchains; apply it only
-    /// where supported so every platform still compiles.
+    /// `.isHeader` is unavailable on tvOS in some toolchains; apply it only where
+    /// supported (iOS, macOS, visionOS) so every platform still compiles.
     @ViewBuilder
     func addingHeadingTrait() -> some View {
         #if os(iOS) || os(macOS) || os(visionOS)
