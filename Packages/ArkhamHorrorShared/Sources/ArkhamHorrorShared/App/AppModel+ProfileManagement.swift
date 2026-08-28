@@ -257,15 +257,22 @@ extension AppModel {
             }
         }
 
-        do {
-            try await tokenStore.deleteAllTokens()
-        } catch {
-            guard isCurrentProfileOperation(operationGeneration) else { return }
-            guard !(error is CancellationError) else { return }
-            // Cleanup failed: preserve the old (corrupted) stored state untouched
-            // rather than replacing metadata while tokens may still exist under it.
-            // Every durable cleanup tombstone is likewise preserved, not cleared.
-            profileManagementFailure = .tokenStore(tokenStoreFailure(from: error))
+        guard await deleteAllTokensForReset(operationGeneration: operationGeneration) else {
+            return
+        }
+        guard isCurrentProfileOperation(operationGeneration) else { return }
+        guard isCurrent(generation) else { return }
+
+        // Every durable cleanup tombstone may only be cleared *after*
+        // `deleteAllTokensForReset` above has already succeeded, and clearing itself
+        // must succeed *before* the old metadata below is irreversibly replaced —
+        // exactly like the delete above, this is a required precondition, not a
+        // best-effort hygiene step. A clear failure preserves the old (corrupted)
+        // stored state and every tombstone untouched, surfaces a typed, actionable
+        // failure, and is retryable: a subsequent reset attempt's own delete finds
+        // nothing left to delete (already idempotent) and this clear is itself
+        // idempotent.
+        guard clearAllTombstonesForReset(operationGeneration: operationGeneration) else {
             return
         }
         guard isCurrentProfileOperation(operationGeneration) else { return }
@@ -284,18 +291,37 @@ extension AppModel {
         selectedProfile = .hosted
         operation = .idle
         operationFailure = nil
-        // Every profile this reset wiped tokens for is gone from `profiles` now; any
-        // failure recorded against one of their IDs can never again be consulted by
-        // ``beginAuthOperation(_:issueToken:)`` or
-        // ``restoreToken(profile:compatibility:generation:)``, so it is cleared here
-        // purely for hygiene rather than correctness.
-        cancellationCleanupFailures.removeAll()
-        // Every durable cleanup tombstone may only be cleared *after*
-        // `deleteAllTokens()` above has already succeeded — never before, and never
-        // on its failure (handled by the early return above). A clear failure here is
-        // hygiene-only, since every credential this store could name is already
-        // durably gone.
-        try? cleanupPendingStore.clearAll()
         restartFlow(for: .hosted, generation: generation)
+    }
+
+    /// Deletes every stored token as the first, required step of a storage reset.
+    /// Failure (other than cancellation) preserves the old (corrupted) stored state
+    /// untouched and surfaces a typed, actionable failure rather than replacing
+    /// metadata while tokens may still exist under it.
+    private func deleteAllTokensForReset(operationGeneration: Int) async -> Bool {
+        do {
+            try await tokenStore.deleteAllTokens()
+            return true
+        } catch {
+            guard isCurrentProfileOperation(operationGeneration) else { return false }
+            guard !(error is CancellationError) else { return false }
+            profileManagementFailure = .tokenStore(tokenStoreFailure(from: error))
+            return false
+        }
+    }
+
+    /// Clears every durable cleanup tombstone as the second, required step of a
+    /// storage reset (only reached once `deleteAllTokensForReset` has succeeded).
+    /// Failure preserves the old (corrupted) stored state and every tombstone
+    /// untouched and surfaces a typed, actionable, retryable failure.
+    private func clearAllTombstonesForReset(operationGeneration: Int) -> Bool {
+        do {
+            try cleanupPendingStore.clearAll()
+            return true
+        } catch {
+            guard isCurrentProfileOperation(operationGeneration) else { return false }
+            profileManagementFailure = .tokenStore(tokenStoreFailure(from: error))
+            return false
+        }
     }
 }

@@ -10,16 +10,24 @@ extension AppModel {
     /// cancelled and its completion is guarded by the incremented generation counter.
     func selectProfile(_ profile: ServerProfile) {
         guard profiles.contains(where: { $0.id == profile.id }) else { return }
-        flowTask?.cancel()
         // If a sign-in/registration is in flight for the profile being switched away
         // from, it must be interrupted exactly as an explicit ``cancelAuthOperation()``
         // would be: a save that has already passed its epoch recheck (or already
         // durably applied) must still be cleaned up, or switching back to that profile
         // later could silently observe — and sign in with — a token this switch was
-        // supposed to abandon. This must happen here, before `operationTask` is
-        // cancelled and before `generation`/`selectedProfile` change, while
+        // supposed to abandon. This must happen here, before `flowTask`/`operationTask`
+        // are cancelled and before `generation`/`selectedProfile` change, while
         // `sessionState` still names the profile whose operation is being interrupted.
-        interruptActiveAuthOperationIfNeeded()
+        // If that cleanup cannot be durably reserved, the switch itself must not
+        // proceed — completing it anyway would abandon an unprotected in-flight save.
+        switch interruptActiveAuthOperationIfNeeded() {
+        case .none, .interrupted:
+            break
+        case let .blocked(failure):
+            operationFailure = .tokenStore(failure)
+            return
+        }
+        flowTask?.cancel()
         operationTask?.cancel()
         generation += 1
         let currentGeneration = generation
@@ -44,14 +52,20 @@ extension AppModel {
         default:
             return
         }
-        flowTask?.cancel()
         // Defense in depth, matching ``selectProfile(_:)``: `operation` cannot
         // actually be `.signingIn`/`.registering` while `sessionState` is
         // `.unavailable`/`.incompatible` in the current design (every transition away
         // from `.signedOut` already resets `operation` to `.idle` first), but this
         // guards against that invariant ever being violated by a future change rather
         // than relying on it silently.
-        interruptActiveAuthOperationIfNeeded()
+        switch interruptActiveAuthOperationIfNeeded() {
+        case .none, .interrupted:
+            break
+        case let .blocked(failure):
+            operationFailure = .tokenStore(failure)
+            return
+        }
+        flowTask?.cancel()
         operationTask?.cancel()
         generation += 1
         let currentGeneration = generation

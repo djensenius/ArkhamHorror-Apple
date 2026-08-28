@@ -182,45 +182,82 @@ extension AppModel {
     /// successful navigation) are always safe — a successfully established session
     /// (``SessionState/signedIn(profile:compatibility:user:)``) can never be undone by
     /// this method, since by then ``operation`` is no longer ``signingIn``/``registering``.
+    ///
+    /// If the cleanup this cancellation depends on cannot be durably reserved (see
+    /// ``AuthInterruptionOutcome/blocked(_:)``), this method does **not** present
+    /// cancellation as having succeeded: it leaves ``operation``/``sessionState``
+    /// exactly as they were and surfaces the typed failure via ``operationFailure``
+    /// instead, so the UI shows an actionable, retryable error rather than silently
+    /// returning to signed-out while an in-flight save remains unprotected. The
+    /// underlying task is still cancelled either way (safe regardless of reservation
+    /// outcome, since ``interruptActiveAuthOperationIfNeeded()`` has already advanced
+    /// ``generation`` unconditionally, so that task can never itself mutate state
+    /// again), and its handle is released promptly.
     func cancelAuthOperation() {
         guard case let .signedOut(profile, compatibility) = sessionState else { return }
         guard operation == .signingIn || operation == .registering else { return }
+        let outcome = interruptActiveAuthOperationIfNeeded()
         operationTask?.cancel()
         operationTask = nil
-        interruptActiveAuthOperationIfNeeded()
-        operation = .idle
-        operationFailure = nil
-        sessionState = .signedOut(profile: profile, compatibility: compatibility)
+        switch outcome {
+        case .none:
+            return
+        case .interrupted:
+            operation = .idle
+            operationFailure = nil
+            sessionState = .signedOut(profile: profile, compatibility: compatibility)
+        case let .blocked(failure):
+            operationFailure = .tokenStore(failure)
+        }
     }
 
     /// Interrupts the in-flight sign-in or registration for the profile currently
     /// reflected in ``sessionState``, exactly as an explicit ``cancelAuthOperation()``
-    /// does: invalidates its credential epoch and durably reserves/enqueues a cleanup
-    /// deletion for it (see ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``),
-    /// so a save that has already passed its epoch recheck — or already durably
-    /// applied — cannot survive the interruption. Returns the interrupted profile's
-    /// ID, or `nil` if there was no in-flight sign-in/registration to interrupt (in
-    /// which case the caller must not proceed as though one existed).
+    /// does: invalidates its credential epoch and attempts to durably reserve/enqueue
+    /// a cleanup deletion for it (see
+    /// ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``), so a save that has
+    /// already passed its epoch recheck — or already durably applied — cannot survive
+    /// the interruption.
+    ///
+    /// Returns ``AuthInterruptionOutcome/none`` if there was no in-flight
+    /// sign-in/registration to interrupt (the caller must not proceed as though one
+    /// existed); ``AuthInterruptionOutcome/interrupted(_:)`` with the interrupted
+    /// profile's ID once the cleanup has been durably reserved; or
+    /// ``AuthInterruptionOutcome/blocked(_:)`` when that reservation itself could not
+    /// be made durable — in which case the caller must **not** proceed with whatever
+    /// state transition (switching profile, retrying, returning to signed-out) it was
+    /// about to make, since doing so would let an unprotected in-flight save be
+    /// silently abandoned rather than durably cleaned up. Every caller
+    /// (``cancelAuthOperation()``, ``selectProfile(_:)``, ``retry()``) must switch on
+    /// every case explicitly rather than assuming success.
     ///
     /// Does not itself cancel ``operationTask`` or change
-    /// ``selectedProfile``/``sessionState``: every caller (``cancelAuthOperation()``,
-    /// ``selectProfile(_:)``, ``retry()``) does those on its own immediately
-    /// afterward, while `sessionState` still names the profile whose operation is
-    /// being interrupted — this call must therefore always happen first, before any
-    /// of that. It *does* advance ``generation`` itself (so a stale in-flight step
-    /// cannot mutate state once interrupted); every caller separately advances it
-    /// again afterward for its own unrelated reason (selecting a new profile,
-    /// retrying, or explicit cancellation), which is harmless since
+    /// ``selectedProfile``/``sessionState``: every caller does those on its own
+    /// immediately afterward (only on ``AuthInterruptionOutcome/interrupted(_:)``),
+    /// while `sessionState` still names the profile whose operation is being
+    /// interrupted — this call must therefore always happen first, before any of
+    /// that. It *does* advance ``generation`` itself, unconditionally, regardless of
+    /// reservation outcome (so a stale in-flight step can never mutate state once
+    /// interrupted, even if its cleanup could not be durably reserved); every caller
+    /// that proceeds past ``AuthInterruptionOutcome/interrupted(_:)`` separately
+    /// advances it again afterward for its own unrelated reason (selecting a new
+    /// profile, retrying, or explicit cancellation), which is harmless since
     /// ``isCurrent(_:)`` only ever compares for exact equality against the latest
     /// value, never relies on a specific delta.
     @discardableResult
-    func interruptActiveAuthOperationIfNeeded() -> UUID? {
-        guard case let .signedOut(profile, _) = sessionState else { return nil }
-        guard operation == .signingIn || operation == .registering else { return nil }
+    func interruptActiveAuthOperationIfNeeded() -> AuthInterruptionOutcome {
+        guard case let .signedOut(profile, _) = sessionState else { return .none }
+        guard operation == .signingIn || operation == .registering else { return .none }
         generation += 1
         invalidateCredentialEpoch(for: profile.id)
-        enqueueCancellationCleanup(for: profile.id, globalEpoch: currentGlobalCredentialEpoch())
-        return profile.id
+        switch enqueueCancellationCleanup(
+            for: profile.id, globalEpoch: currentGlobalCredentialEpoch()
+        ) {
+        case .reserved:
+            return .interrupted(profile.id)
+        case let .markFailed(failure):
+            return .blocked(failure)
+        }
     }
 
     /// Maps a thrown authentication step error to an operation failure, or `nil` for
@@ -234,6 +271,20 @@ extension AppModel {
         }
         return .authentication(.transportFailure("Unexpected authentication failure."))
     }
+}
+
+/// The outcome of ``AppModel/interruptActiveAuthOperationIfNeeded()``. See that
+/// method's documentation for the exact obligations each case places on its caller.
+enum AuthInterruptionOutcome {
+    /// There was no in-flight sign-in/registration to interrupt.
+    case none
+    /// The interruption's cleanup was durably reserved; the caller may proceed with
+    /// its own state transition.
+    case interrupted(UUID)
+    /// The cleanup this interruption depends on could not be durably reserved. The
+    /// caller must preserve its prior state and surface this typed failure rather
+    /// than proceeding as though an in-flight save were now safely guarded.
+    case blocked(TokenStoreFailure)
 }
 
 /// Sign-out: deletes the selected profile's token before exposing signed-out.

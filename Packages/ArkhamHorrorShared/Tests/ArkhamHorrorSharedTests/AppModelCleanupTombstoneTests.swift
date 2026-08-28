@@ -1,12 +1,6 @@
 @testable import ArkhamHorrorShared
 import Testing
 
-private func settle() async {
-    for _ in 0 ..< 50 {
-        await Task.yield()
-    }
-}
-
 /// Regression coverage for the durable cancellation-cleanup tombstone: an in-memory-only
 /// record of a still-pending cleanup deletion cannot survive an `AppModel`/process
 /// reconstruction, so a cancelled operation's save that already durably applied — but
@@ -16,13 +10,39 @@ private func settle() async {
 /// (`enqueueCancellationCleanup(for:globalEpoch:)`, `resolvePendingCleanup(for:)`), and
 /// `AppModel+Compatibility.swift` (`restoreToken`).
 extension AppModelTests {
+    /// Cancels an in-flight sign-in whose stale save already durably applies (it
+    /// already passed its epoch recheck), then lets the cleanup delete cancellation
+    /// reserved for it fail, leaving a durable tombstone pending. Shared by the tests
+    /// below to keep each within the function-length lint limit.
+    private func cancelStaleSaveAndFailCleanupDelete(
+        model: AppModel, tokenStore: GatedTokenStore
+    ) async {
+        model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "cancelled-token") }
+        await tokenStore.waitUntilPending(1)
+        // Captured before `cancelAuthOperation()` nils it, so the save's completion
+        // below can be awaited deterministically instead of inferring it via a fixed
+        // number of scheduler yields.
+        let staleOperation = model.operationTask
+        model.cancelAuthOperation()
+        // Synchronously registered by `enqueueCancellationCleanup` before
+        // `cancelAuthOperation()` returns.
+        let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
+
+        await tokenStore.resumeOldest()
+        await staleOperation?.value
+
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest(throwing: KeychainError.unhandledStatus(-1))
+        _ = await cleanupTask?.value
+    }
+
     @Test(
         """
         A cancellation whose cleanup delete fails leaves a durable tombstone that \
-        blocks (and is retried by) a later sign-in for the same profile
+        blocks a later sign-in for the same profile
         """
     )
-    func cancellationCleanupFailureLeavesDurableTombstoneBlockingLaterSignIn() async throws {
+    func cancellationCleanupFailureLeavesDurableTombstone() async throws {
         let tokenStore = GatedTokenStore()
         let cleanupStore = FakeTokenCleanupPendingStore()
         let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
@@ -36,30 +56,36 @@ extension AppModelTests {
         await model.flowTask?.value
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
 
-        // A sign-in's save is already in flight when the user cancels.
-        model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "cancelled-token") }
-        await tokenStore.waitUntilPending(1)
-        model.cancelAuthOperation()
-        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        await cancelStaleSaveAndFailCleanupDelete(model: model, tokenStore: tokenStore)
 
-        // The stale save durably applies (it already passed its epoch recheck).
-        await tokenStore.resumeOldest()
-        await settle()
+        // The stale save durably applied (it already passed its epoch recheck), and
+        // the cleanup delete failed, so the durable tombstone must remain pending
+        // and the (still-cancelled) token remains present.
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "cancelled-token")
-
-        // The cleanup delete cancellation enqueued behind it now reaches the token
-        // store — and fails.
-        await tokenStore.waitUntilPending(1)
-        #expect(
-            await tokenStore.pendingMutations() == [.delete(profileID: ServerProfile.hosted.id)]
-        )
-        await tokenStore.resumeOldest(throwing: KeychainError.unhandledStatus(-1))
-        await settle()
-
-        // The durable tombstone remains pending: the delete failed, so it must not be
-        // cleared, and the (still-cancelled) token remains present.
         #expect(cleanupStore.snapshotPendingIDs() == [ServerProfile.hosted.id])
-        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "cancelled-token")
+    }
+
+    @Test(
+        """
+        A durable cleanup tombstone is retried — never bypassed — by a later, \
+        legitimate sign-in for the same profile, which only saves its own token \
+        once that retried cleanup actually resolves it
+        """
+    )
+    func retriedCleanupResolvesTombstoneBeforeFreshSignInSaves() async throws {
+        let tokenStore = GatedTokenStore()
+        let cleanupStore = FakeTokenCleanupPendingStore()
+        let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: cleanupStore
+        )
+        await model.flowTask?.value
+
+        await cancelStaleSaveAndFailCleanupDelete(model: model, tokenStore: tokenStore)
 
         // A fresh, legitimate sign-in for the same profile must retry — never bypass —
         // that unresolved cleanup before it is allowed to save its own token.

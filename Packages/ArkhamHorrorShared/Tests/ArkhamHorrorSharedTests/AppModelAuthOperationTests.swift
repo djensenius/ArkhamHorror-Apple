@@ -2,14 +2,6 @@
 import Security
 import Testing
 
-/// Yields repeatedly so any unserialized (buggy) concurrent state mutation has ample
-/// opportunity to actually run before a test asserts that it did not.
-private func settle() async {
-    for _ in 0 ..< 50 {
-        await Task.yield()
-    }
-}
-
 /// Sign-in and registration: validate-before-save ordering, save failure, cancellation,
 /// and sign-out (successful deletion transitions to signedOut; a deletion failure
 /// leaves the session signed in and surfaces a distinct operation error).
@@ -186,6 +178,14 @@ extension AppModelTests {
         await auth.waitUntilPending(1)
         #expect(model.operation == .signingIn)
 
+        // Captured before `cancelAuthOperation()` (which unconditionally nils
+        // `operationTask`), so this test can deterministically await the stale
+        // operation's own completion below instead of inferring scheduler progress
+        // with a fixed number of yields. `operationTask`'s body runs
+        // `beginAuthOperationAfterResolvingCleanup`/`performAuthOperation` end to end
+        // with no further unawaited indirection, so awaiting it fully waits for any
+        // save attempt this stale operation could still make.
+        let staleOperation = model.operationTask
         model.cancelAuthOperation()
 
         #expect(model.operation == .idle)
@@ -197,7 +197,7 @@ extension AppModelTests {
         // The slow whoami now resolves successfully, out of order, well after
         // cancellation.
         await auth.resumeOldest(with: .success(.sample))
-        await settle()
+        await staleOperation?.value
 
         // Cancellation must have stopped this from ever signing in or saving a token,
         // even though the underlying dependency ignored the task cancellation.
@@ -222,12 +222,14 @@ extension AppModelTests {
         await auth.waitUntilPending(1)
         #expect(model.operation == .registering)
 
+        // See the identical rationale in `cancelAuthOperationPreventsLateSignIn`.
+        let staleOperation = model.operationTask
         model.cancelAuthOperation()
         #expect(model.operation == .idle)
         #expect(model.operationTask == nil)
 
         await auth.resumeOldest(with: .success(.sample))
-        await settle()
+        await staleOperation?.value
 
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
         #expect(await tokenStore.saveCallCount == 0)

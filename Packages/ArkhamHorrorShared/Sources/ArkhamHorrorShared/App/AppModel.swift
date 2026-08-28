@@ -155,20 +155,22 @@ final class AppModel {
     /// failed.
     @ObservationIgnored var serviceResetBarrier: ServiceResetBarrier?
 
-    /// A cancellation-cleanup delete's most recently observed outcome for a profile,
-    /// keyed by profile ID — an in-memory, non-authoritative cache only. The
-    /// authoritative record of whether a profile has a cleanup deletion pending is
-    /// ``cleanupPendingStore``, which survives an ``AppModel`` reconstruction or
-    /// process restart that this in-memory map does not. See
-    /// ``enqueueCancellationCleanup(for:globalEpoch:)`` and
-    /// ``resolvePendingCleanup(for:)``.
-    @ObservationIgnored var cancellationCleanupFailures: [UUID: TokenStoreFailure] = [:]
-
     /// In-flight cleanup-deletion tasks, keyed by profile ID, so
     /// ``resolvePendingCleanup(for:)`` can await an already-enqueued cleanup for a
     /// profile rather than racing a redundant second delete for it. See
     /// ``CleanupPendingTask``.
     @ObservationIgnored var cleanupPendingTasks: [UUID: CleanupPendingTask] = [:]
+
+    /// Test-only synchronous admission hook: invoked immediately after a token-access
+    /// operation (``serializedTokenAccess(for:epoch:globalEpoch:_:)`` or
+    /// ``enqueueCancellationCleanup(for:globalEpoch:)``) registers itself as the new
+    /// tail for `profileID` in ``tokenAccessQueues`` — synchronously, before either
+    /// function returns. Always `nil` in production. Deterministic tests use this to
+    /// await a specific enqueue actually having been admitted into the per-profile
+    /// queue, instead of inferring scheduler progress via a fixed number of yields
+    /// (which cannot, in general, bound how many asynchronous steps precede a given
+    /// call reaching this point).
+    @ObservationIgnored var tokenAccessAdmissionHook: (@Sendable (UUID) -> Void)?
 
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),

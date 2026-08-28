@@ -6,8 +6,8 @@ import Foundation
 /// Split out of `AppModel.swift` purely by file size; every member here operates on
 /// exactly the same `@MainActor`-isolated state declared there (``AppModel/credentialEpochs``,
 /// ``AppModel/globalCredentialEpoch``, ``AppModel/serviceResetBarrier``,
-/// ``AppModel/tokenAccessQueues``, ``AppModel/cleanupPendingTasks``, and
-/// ``AppModel/cancellationCleanupFailures``) and is documented together with them there.
+/// ``AppModel/tokenAccessQueues``, and ``AppModel/cleanupPendingTasks``) and is
+/// documented together with them there.
 extension AppModel {
     /// Serializes a durable ``TokenStore`` read, save, or delete for `profileID` behind
     /// any earlier one for the same profile that is still in flight, only actually
@@ -71,6 +71,7 @@ extension AppModel {
         let tailID = UUID()
         let tail = Task { _ = try? await scheduled.value }
         tokenAccessQueues[profileID] = TokenAccessTail(id: tailID, task: tail)
+        tokenAccessAdmissionHook?(profileID)
         defer {
             if tokenAccessQueues[profileID]?.id == tailID {
                 tokenAccessQueues[profileID] = nil
@@ -130,32 +131,42 @@ extension AppModel {
     /// it can never race ``TokenStore/deleteAllTokens()``.
     ///
     /// Before enqueueing the delete itself, durably marks `profileID` pending in
-    /// ``cleanupPendingStore`` — synchronously, here, not merely recorded in the
-    /// in-memory ``cancellationCleanupFailures`` map — so even a process crash or
+    /// ``cleanupPendingStore`` — synchronously, here, as a first-class precondition of
+    /// reservation rather than a best-effort side note — so even a process crash or
     /// restart before the delete below actually completes still leaves a durable
     /// record that this profile's token must not be trusted until a deletion is
     /// retried and actually succeeds (see ``resolvePendingCleanup(for:)``,
     /// ``beginAuthOperation(_:issueToken:)``, and
-    /// ``restoreToken(profile:compatibility:generation:)``). The tombstone is cleared
-    /// *only* once the delete below actually succeeds — never merely because an error
-    /// was surfaced, a retry was pressed, a new auth attempt began, or the profile was
-    /// switched away from or removed.
+    /// ``restoreToken(profile:compatibility:generation:)``). If that mark cannot be
+    /// made durable, no deletion is enqueued at all: this returns
+    /// ``CleanupReservation/markFailed(_:)`` and every caller must treat the
+    /// interruption/cancellation/reset it was attempting as *not* having safely
+    /// happened — preserving its prior state and surfacing the typed failure — rather
+    /// than proceeding as though an unprotected in-flight save were safely guarded.
     ///
-    /// Returns a `Task` the caller may await for the resolved outcome (`nil` once
-    /// clean, or the typed failure if the delete could not be completed);
-    /// fire-and-forget callers (``cancelAuthOperation()``,
-    /// ``interruptActiveAuthOperationIfNeeded()``) simply discard it.
+    /// The tombstone is cleared *only* once the delete actually succeeds — never
+    /// merely because an error was surfaced, a retry was pressed, a new auth attempt
+    /// began, or the profile was switched away from or removed — and clearing it is
+    /// itself a required, typed-failing step: a `clearPending` failure after a
+    /// successful delete leaves the tombstone pending and is reported as a failure
+    /// exactly like a delete failure would be, so a caller can never observe this as
+    /// silently resolved while the durable record still names the profile.
+    ///
+    /// Returns a ``CleanupReservation``; fire-and-forget callers
+    /// (``cancelAuthOperation()``, ``interruptActiveAuthOperationIfNeeded()``) that
+    /// only care whether reservation itself succeeded may switch on it without
+    /// awaiting the enclosed task, but must never treat a case they do not recognize
+    /// as success.
     @discardableResult
     func enqueueCancellationCleanup(
         for profileID: UUID, globalEpoch: Int
-    ) -> Task<TokenStoreFailure?, Never> {
+    ) -> CleanupReservation {
         do {
             try cleanupPendingStore.markPending(profileID)
         } catch {
-            // A durable-mark failure does not block the delete attempt itself, but is
-            // folded into the in-memory diagnostic so it is not silently ignored
-            // either.
-            cancellationCleanupFailures[profileID] = tokenStoreFailure(from: error)
+            // Fail closed: no deletion is enqueued, and the caller must not proceed as
+            // though this profile's in-flight save were now safely guarded.
+            return .markFailed(tokenStoreFailure(from: error))
         }
 
         let previous = tokenAccessQueues[profileID]?.task
@@ -196,38 +207,45 @@ extension AppModel {
                 // is deliberately left pending here rather than cleared.
                 return nil
             } catch {
-                guard let self else { return .other }
-                let failure = tokenStoreFailure(from: error)
-                cancellationCleanupFailures[profileID] = failure
-                return failure
+                return self?.tokenStoreFailure(from: error) ?? .other
             }
-            guard let self else { return nil }
-            cancellationCleanupFailures[profileID] = nil
             // The delete succeeded (or found nothing to delete): only now may the
-            // durable tombstone clear. A clear failure here is hygiene-only — the
-            // credential itself is already durably gone — so it is not surfaced as a
-            // save-blocking failure the way a genuine delete failure is.
-            try? cleanupPendingStore.clearPending(profileID)
+            // durable tombstone clear, and that clear itself must succeed before this
+            // is reported as resolved — a clear failure here leaves the tombstone
+            // pending (so a future ``resolvePendingCleanup(for:)`` retries this
+            // already-idempotent delete and this clear) and is surfaced as a typed,
+            // blocking failure exactly like a genuine delete failure, rather than
+            // being silently swallowed while the durable record still names the
+            // profile.
+            guard let self else { return nil }
+            do {
+                try cleanupPendingStore.clearPending(profileID)
+            } catch {
+                return tokenStoreFailure(from: error)
+            }
             return nil
         }
         let tail = Task { _ = await cleanupTask.value }
         tokenAccessQueues[profileID] = TokenAccessTail(id: tailID, task: tail)
         cleanupPendingTasks[profileID] = CleanupPendingTask(id: tailID, task: cleanupTask)
-        return cleanupTask
+        tokenAccessAdmissionHook?(profileID)
+        return .reserved(cleanupTask)
     }
 
     /// Resolves any durable cleanup-pending tombstone for `profileID`, retrying the
     /// token deletion it records if necessary, before a caller trusts/reads an
     /// existing token or saves a new one for it. Returns a typed failure (leaving the
-    /// tombstone in place) when cleanup could not be completed; returns `nil` once no
+    /// tombstone in place) when cleanup could not be completed — including when even
+    /// retrying the reservation's durable mark fails — or returns `nil` once no
     /// cleanup is pending — whether none ever was, or this call just completed one —
     /// and the caller may proceed.
     ///
     /// Never merely consumes/clears the tombstone based on the *caller's* outcome (an
     /// error surfaced, a Retry press, a new auth attempt, a profile switch, or a
     /// process restart): only ``enqueueCancellationCleanup(for:globalEpoch:)``'s own
-    /// successful (or not-found) delete clears it. A durable-store read failure here
-    /// is treated as "cleanup pending" (fail closed), never as "assume clean".
+    /// successful (or not-found) delete, immediately followed by its own successful
+    /// clear, resolves it. A durable-store read failure here is treated as "cleanup
+    /// pending" (fail closed), never as "assume clean".
     func resolvePendingCleanup(for profileID: UUID) async -> TokenStoreFailure? {
         let isPending: Bool
         do {
@@ -240,9 +258,14 @@ extension AppModel {
         if let existing = cleanupPendingTasks[profileID] {
             return await existing.task.value
         }
-        return await enqueueCancellationCleanup(
+        switch enqueueCancellationCleanup(
             for: profileID, globalEpoch: currentGlobalCredentialEpoch()
-        ).value
+        ) {
+        case let .reserved(task):
+            return await task.value
+        case let .markFailed(failure):
+            return failure
+        }
     }
 }
 
@@ -251,3 +274,19 @@ extension AppModel {
 /// epoch. Carries no data and is always treated exactly like ``CancellationError``: it
 /// must never be surfaced as a user-facing failure.
 struct StaleCredentialEpochError: Error {}
+
+/// The outcome of attempting to durably reserve (mark pending) and enqueue a
+/// cancellation-cleanup deletion for a profile. See
+/// ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``.
+enum CleanupReservation {
+    /// The tombstone was durably marked and the deletion was enqueued. Awaiting the
+    /// associated task yields the eventual delete/clear outcome: `nil` once resolved,
+    /// or a typed failure if either step could not complete (in which case the
+    /// tombstone remains pending and is retryable).
+    case reserved(Task<TokenStoreFailure?, Never>)
+    /// The tombstone could not be durably marked; no deletion was enqueued. The
+    /// caller must not proceed as though this profile's cleanup were safely
+    /// underway — it must preserve its prior state, surface this typed failure, and
+    /// allow the triggering action to be retried.
+    case markFailed(TokenStoreFailure)
+}

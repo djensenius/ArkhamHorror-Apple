@@ -145,10 +145,6 @@ extension AppModel {
         }) else { return }
         guard isCurrentProfileOperation(operationGeneration) else { return }
         profiles = updatedProfiles
-        // This profile's token is now durably deleted and its metadata is gone: any
-        // previously recorded cancellation-cleanup failure for it can never again be
-        // consulted, so it is cleared here purely for hygiene rather than correctness.
-        cancellationCleanupFailures[profile.id] = nil
 
         if selectedProfile.id == profile.id {
             // Coherently fall back to hosted and restart the flow, exactly as an

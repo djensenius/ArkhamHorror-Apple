@@ -3,14 +3,6 @@ import Foundation
 import Security
 import Testing
 
-/// Yields repeatedly so any unserialized (buggy) concurrent state mutation has ample
-/// opportunity to actually run before a test asserts that it did not.
-private func settle() async {
-    for _ in 0 ..< 50 {
-        await Task.yield()
-    }
-}
-
 /// Security-critical custom server profile mutations: endpoint-changing edits and
 /// removals, and how each reconciles a profile's Keychain token with its (possibly
 /// changed) endpoint. See `AppModelProfileManagementTests.swift` for the companion
@@ -264,6 +256,15 @@ extension AppModelTests {
         await auth.waitUntilPending(1)
         #expect(model.operation == .signingIn)
 
+        // Captured before the endpoint-changing edit (which resets `operationTask`
+        // to `nil` exactly as `cancelAuthOperation()` does), so this test can
+        // deterministically await the stale operation's own completion below instead
+        // of inferring scheduler progress with a fixed number of yields.
+        // `operationTask`'s body runs end to end with no further unawaited
+        // indirection, so awaiting it fully waits for any save attempt this stale
+        // operation could still make.
+        let staleOperation = model.operationTask
+
         model.updateCustomProfile(
             sampleCustomProfile,
             displayName: sampleCustomProfile.displayName,
@@ -285,7 +286,7 @@ extension AppModelTests {
         // The abandoned whoami now resolves successfully, out of order, well after the
         // edit; it must not resurrect a session or save a token for either endpoint.
         await auth.resumeOldest(with: .success(.sample))
-        await settle()
+        await staleOperation?.value
 
         #expect(model.sessionState == .signedOut(profile: editedProfile, compatibility: .legacy))
         #expect(await tokenStore.saveCallCount == 0)

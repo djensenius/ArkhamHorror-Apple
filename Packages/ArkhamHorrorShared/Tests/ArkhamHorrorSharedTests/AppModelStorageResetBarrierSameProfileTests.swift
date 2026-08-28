@@ -24,6 +24,22 @@ extension AppModelTests {
         return model
     }
 
+    /// Launches a save for `.hosted` using `model`'s current generation/epoch
+    /// context, mirroring how `performAuthOperation` is invoked in production.
+    /// Shared by the tests below to keep each within the function-length lint limit.
+    private func launchHostedSave(model: AppModel, token: String) -> Task<Void, Never> {
+        Task {
+            await model.performAuthOperation(
+                profile: .hosted, compatibility: .legacy,
+                epochContext: CredentialOperationContext(
+                    generation: model.generation,
+                    credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                    globalEpoch: model.currentGlobalCredentialEpoch()
+                )
+            ) { _ in AuthToken(token: token) }
+        }
+    }
+
     @Test(
         """
         A running same-profile save plus a queued same-profile save are both drained \
@@ -37,22 +53,12 @@ extension AppModelTests {
         )
         let tokenStore = GatedTokenStore()
         let model = await makeCorruptedModel(store: store, tokenStore: tokenStore)
-
-        func launchSave(token: String) -> Task<Void, Never> {
-            Task {
-                await model.performAuthOperation(
-                    profile: .hosted, compatibility: .legacy,
-                    epochContext: CredentialOperationContext(
-                        generation: model.generation,
-                        credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
-                        globalEpoch: model.currentGlobalCredentialEpoch()
-                    )
-                ) { _ in AuthToken(token: token) }
-            }
-        }
+        let admissions = TokenAccessAdmissionCounter()
+        model.tokenAccessAdmissionHook = admissions.hook
 
         // Op1: a save for `.hosted`, already suspended inside the token store.
-        let op1 = launchSave(token: "op1-token")
+        let op1 = launchHostedSave(model: model, token: "op1-token")
+        await admissions.waitForAdmissions(1, of: ServerProfile.hosted.id)
         await tokenStore.waitUntilPending(1)
         #expect(
             await tokenStore.pendingMutations() ==
@@ -63,11 +69,12 @@ extension AppModelTests {
         // Its own `serializedTokenAccess` call synchronously registers itself as the
         // new tail (capturing the barrier as absent) purely from this enqueue, well
         // before it ever reaches the token store, which happens only once Op1
-        // resolves.
-        let op2 = launchSave(token: "op2-token")
-        for _ in 0 ..< 20 {
-            await Task.yield()
-        }
+        // resolves. Waiting for this second admission (rather than a fixed number of
+        // yields) is what actually proves Op2's tail is registered in
+        // `tokenAccessQueues` before the reset below is triggered — the exact
+        // precondition this test exists to exercise.
+        let op2 = launchHostedSave(model: model, token: "op2-token")
+        await admissions.waitForAdmissions(2, of: ServerProfile.hosted.id)
         #expect(
             await tokenStore.pendingMutations() ==
                 [.save(token: "op1-token", profileID: ServerProfile.hosted.id)]
@@ -114,17 +121,12 @@ extension AppModelTests {
         )
         let tokenStore = GatedTokenStore()
         let model = await makeCorruptedModel(store: store, tokenStore: tokenStore)
+        let admissions = TokenAccessAdmissionCounter()
+        model.tokenAccessAdmissionHook = admissions.hook
 
         // Op1: a save for `.hosted`, already suspended inside the token store.
-        let op1 = Task {
-            await model.performAuthOperation(
-                profile: .hosted, compatibility: .legacy, epochContext: CredentialOperationContext(
-                    generation: model.generation,
-                    credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
-                    globalEpoch: model.currentGlobalCredentialEpoch()
-                )
-            ) { _ in AuthToken(token: "op1-token") }
-        }
+        let op1 = launchHostedSave(model: model, token: "op1-token")
+        await admissions.waitForAdmissions(1, of: ServerProfile.hosted.id)
         await tokenStore.waitUntilPending(1)
         #expect(
             await tokenStore.pendingMutations() ==
@@ -134,12 +136,20 @@ extension AppModelTests {
         // A cancellation-cleanup delete for the SAME profile is enqueued behind Op1,
         // before any reset exists, exactly as `interruptActiveAuthOperationIfNeeded()`
         // would enqueue one behind an in-flight save it is interrupting.
-        let cleanupTask = model.enqueueCancellationCleanup(
-            for: ServerProfile.hosted.id, globalEpoch: model.currentGlobalCredentialEpoch()
-        )
-        for _ in 0 ..< 20 {
-            await Task.yield()
+        guard
+            case let .reserved(cleanupTask) = model.enqueueCancellationCleanup(
+                for: ServerProfile.hosted.id, globalEpoch: model.currentGlobalCredentialEpoch()
+            )
+        else {
+            Issue.record(
+                "Expected cleanup reservation to succeed against a healthy tombstone store."
+            )
+            return
         }
+        // Waiting for this second admission (rather than a fixed number of yields) is
+        // what actually proves the cleanup's tail is registered in
+        // `tokenAccessQueues` before the reset below is triggered.
+        await admissions.waitForAdmissions(2, of: ServerProfile.hosted.id)
         #expect(
             await tokenStore.pendingMutations() ==
                 [.save(token: "op1-token", profileID: ServerProfile.hosted.id)]

@@ -222,3 +222,90 @@ actor GatedAuthenticating: AppAuthenticating {
         pending.removeLast().resume(with: result)
     }
 }
+
+/// Deterministically observes admissions into `AppModel`'s per-profile
+/// `serializedTokenAccess`/`enqueueCancellationCleanup` queues via
+/// `AppModel.tokenAccessAdmissionHook`, so a test can await an exact admission count
+/// for a profile — the enqueuing call having *synchronously* registered itself as the
+/// new tail in `tokenAccessQueues` — instead of inferring scheduler progress with a
+/// fixed number of `Task.yield()` calls, which cannot in general bound how many
+/// asynchronous steps precede a given enqueue.
+///
+/// `record(_:)` (assigned as `AppModel.tokenAccessAdmissionHook`) is invoked
+/// synchronously on the main actor by production code; `waitForAdmissions(_:of:)` is
+/// awaited from a test's own (arbitrary) task. Both sides only ever touch `counts`/
+/// `waiters` under `lock`, and every continuation is resumed exactly once, outside the
+/// lock, so this is safe to use from either context without itself being an actor.
+final class TokenAccessAdmissionCounter: @unchecked Sendable {
+    private struct Waiter {
+        let profileID: UUID
+        let threshold: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private let lock = NSLock()
+    private var counts: [UUID: Int] = [:]
+    private var waiters: [Waiter] = []
+
+    /// The hook to assign to `AppModel.tokenAccessAdmissionHook`.
+    var hook: @Sendable (UUID) -> Void {
+        { [weak self] profileID in
+            self?.record(profileID)
+        }
+    }
+
+    private func record(_ profileID: UUID) {
+        lock.lock()
+        counts[profileID, default: 0] += 1
+        let newCount = counts[profileID, default: 0]
+        var readyContinuations: [CheckedContinuation<Void, Never>] = []
+        waiters.removeAll { waiter in
+            guard waiter.profileID == profileID, newCount >= waiter.threshold else {
+                return false
+            }
+            readyContinuations.append(waiter.continuation)
+            return true
+        }
+        lock.unlock()
+        for continuation in readyContinuations {
+            continuation.resume()
+        }
+    }
+
+    /// Synchronous check, called only from non-`async` contexts (`waitForAdmissions`
+    /// below never touches `lock` directly from its own `async` function body).
+    private func currentCount(of profileID: UUID) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return counts[profileID, default: 0]
+    }
+
+    /// Registers `continuation` as a waiter for `count` admissions of `profileID`
+    /// unless that count is already satisfied, in which case it resumes `continuation`
+    /// immediately instead. Synchronous, so it may safely be called from the
+    /// synchronous closure `withCheckedContinuation` hands to
+    /// `waitForAdmissions(_:of:)` below without touching `lock` from an `async`
+    /// function body.
+    private func registerWaiterIfNeeded(
+        count: Int, of profileID: UUID, continuation: CheckedContinuation<Void, Never>
+    ) {
+        lock.lock()
+        if counts[profileID, default: 0] >= count {
+            lock.unlock()
+            continuation.resume()
+            return
+        }
+        waiters.append(Waiter(profileID: profileID, threshold: count, continuation: continuation))
+        lock.unlock()
+    }
+
+    /// Suspends until at least `count` admissions have been recorded for `profileID`.
+    func waitForAdmissions(_ count: Int, of profileID: UUID) async {
+        if currentCount(of: profileID) >= count {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            registerWaiterIfNeeded(count: count, of: profileID, continuation: continuation)
+        }
+    }
+}
