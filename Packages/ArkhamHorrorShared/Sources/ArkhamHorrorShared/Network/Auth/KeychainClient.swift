@@ -22,6 +22,36 @@ protocol KeychainClient: Sendable {
     /// Maps to `SecItemCopyMatching` with `kSecReturnData`. On `errSecSuccess` the
     /// associated data is returned; on any other status the data is `nil`.
     func copyData(matching query: [String: Any]) -> (status: OSStatus, data: Data?)
+
+    /// Returns the `kSecAttrAccount` value of every item matching `query`, without
+    /// returning any item's data payload.
+    ///
+    /// Maps to `SecItemCopyMatching` with `kSecReturnAttributes` and
+    /// `kSecMatchLimitAll`, used by ``KeychainTokenCleanupPendingStore`` to enumerate
+    /// which profile IDs currently have a pending-cleanup marker — never to read any
+    /// token's contents. On `errSecSuccess` every matched item's account string is
+    /// returned (an item missing a decodable account attribute is simply omitted,
+    /// which the caller must treat as impossible/corrupt data, not as "absent"); on
+    /// any other status the accounts are `nil`.
+    ///
+    /// A default implementation is provided so existing ``KeychainClient``
+    /// conformances (production and test doubles) that never enumerate accounts are
+    /// not required to implement this; ``SecurityKeychainClient`` and any test double
+    /// that does need real enumeration behavior override it.
+    func copyMatchingAccounts(
+        matching query: [String: Any]
+    ) -> (status: OSStatus, accounts: [String]?)
+}
+
+extension KeychainClient {
+    /// Default: enumeration is unsupported. Only ``SecurityKeychainClient`` and test
+    /// doubles that specifically exercise ``KeychainTokenCleanupPendingStore`` need a
+    /// real implementation.
+    func copyMatchingAccounts(
+        matching _: [String: Any]
+    ) -> (status: OSStatus, accounts: [String]?) {
+        (errSecUnimplemented, nil)
+    }
 }
 
 /// The production ``KeychainClient`` backed directly by the Security framework.
@@ -45,5 +75,21 @@ struct SecurityKeychainClient: KeychainClient {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         return (status, item as? Data)
+    }
+
+    func copyMatchingAccounts(
+        matching query: [String: Any]
+    ) -> (status: OSStatus, accounts: [String]?) {
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess else { return (status, nil) }
+        guard let items = result as? [[String: Any]] else {
+            // A single-item result (rather than an array) would indicate the query
+            // did not actually request `kSecMatchLimitAll`; treat as a caller error
+            // rather than guessing at a shape.
+            return (errSecParam, nil)
+        }
+        let accounts = items.compactMap { $0[kSecAttrAccount as String] as? String }
+        return (errSecSuccess, accounts)
     }
 }

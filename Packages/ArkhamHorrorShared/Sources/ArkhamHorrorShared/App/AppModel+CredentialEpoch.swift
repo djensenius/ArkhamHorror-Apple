@@ -118,8 +118,11 @@ extension AppModel {
     /// it. Used by ``cancelAuthOperation()``, by
     /// ``interruptActiveAuthOperationIfNeeded()`` (a profile switch or retry
     /// interrupting an in-flight sign-in/registration exactly as an explicit
-    /// cancellation would), and by ``resolvePendingCleanup(for:)`` retrying a
-    /// still-pending cleanup.
+    /// cancellation would), by ``resolvePendingCleanup(for:)`` retrying a
+    /// still-pending cleanup, and by
+    /// ``updateCustomProfile(_:displayName:rawURL:)``/``removeCustomProfile(_:)`` (an
+    /// endpoint-changing edit or removal reserving the exact same durable tombstone
+    /// and synchronous-admission guarantees before their own delete proceeds).
     ///
     /// Unlike ``serializedTokenAccess(for:epoch:globalEpoch:_:)``, this delete is not
     /// itself gated on a profile credential epoch: its entire purpose is to remove

@@ -35,20 +35,28 @@ extension AppModelTests {
     /// entry point `updateCustomProfile` schedules — to construct two genuinely
     /// overlapping edits of the same profile, which full per-profile token
     /// serialization otherwise makes unreachable through the public
-    /// `profileManagementOperation == .idle`-gated API.
+    /// `profileManagementOperation == .idle`-gated API. Reserves the same durable
+    /// mark-then-admit cleanup production's `updateCustomProfile` uses (via
+    /// `enqueueCancellationCleanup`), rather than a raw credential-epoch bump, so this
+    /// fixture exercises the exact same admission ordering as production.
     private func launchEndpointEdit(
         on model: AppModel, updated: ServerProfile, generation: Int
     ) -> Task<Void, Never> {
-        let credentialEpoch = model.invalidateCredentialEpoch(for: sampleCustomProfile.id)
-        let globalEpoch = model.currentGlobalCredentialEpoch()
+        guard case let .reserved(cleanupTask) = model.enqueueCancellationCleanup(
+            for: sampleCustomProfile.id, globalEpoch: model.currentGlobalCredentialEpoch()
+        ) else {
+            preconditionFailure(
+                "FakeTokenCleanupPendingStore never fails markPending unless scripted."
+            )
+        }
+        model.invalidateCredentialEpoch(for: sampleCustomProfile.id)
         return Task {
             await model.performProfileUpdate(
                 original: sampleCustomProfile,
                 updated: updated,
                 endpointChanged: true,
                 epochContext: ProfileUpdateEpochContext(
-                    credentialEpoch: credentialEpoch,
-                    globalEpoch: globalEpoch,
+                    cleanupTask: cleanupTask,
                     operationGeneration: generation
                 )
             )
@@ -103,16 +111,22 @@ extension AppModelTests {
         )
         await tokenStore.waitUntilPending(1)
 
+        // Deterministically observes the current edit's own synchronous admission
+        // into the same profile's `serializedTokenAccess` queue, rather than
+        // inferring scheduler progress with a fixed number of yields.
+        let admissions = TokenAccessAdmissionCounter()
+        model.tokenAccessAdmissionHook = admissions.hook
         model.profileManagementGeneration += 1
         let currentTask = launchEndpointEdit(
             on: model, updated: secondEdit, generation: model.profileManagementGeneration
         )
+        await admissions.waitForAdmissions(1, of: sampleCustomProfile.id)
 
         // The current edit's delete cannot even be attempted yet: it is serialized
-        // behind the stale, still-pending delete for the same profile.
-        for _ in 0 ..< 50 {
-            await Task.yield()
-        }
+        // behind the stale, still-pending delete for the same profile. This is a
+        // structural guarantee once admission is proven — the current edit's own
+        // `serializedTokenAccess` call always awaits the previous tail before ever
+        // reaching the token store — not a timing race.
         #expect(await tokenStore.pendingMutations() == [.delete(profileID: sampleCustomProfile.id)])
 
         // Resolve the stale delete. Its generation check must discard its completion

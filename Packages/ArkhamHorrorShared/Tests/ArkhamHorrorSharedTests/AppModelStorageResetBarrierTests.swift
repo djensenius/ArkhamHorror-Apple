@@ -55,11 +55,13 @@ extension AppModelTests {
         store.setLoadProfilesError(nil)
         model.confirmStorageReset()
 
-        // The barrier must await this pre-existing tail before ever calling
-        // `deleteAllTokens()` — it must not yet have been reached.
-        for _ in 0 ..< 20 {
-            await Task.yield()
-        }
+        // The barrier snapshots and awaits every pre-existing per-profile queue tail
+        // — including this still-suspended save, the tail for `.hosted` — before its
+        // own `performStorageReset` ever calls `deleteAllTokens()`. This is not a
+        // race to win with a fixed number of yields: it is a structural guarantee, so
+        // it can be asserted immediately, with no settling delay at all — no matter
+        // how much the scheduler runs `model.profileManagementTask` forward, it
+        // cannot pass its own `await tail.value` for this still-gated save.
         #expect(
             await tokenStore.pendingMutations() ==
                 [.save(token: "in-flight-token", profileID: ServerProfile.hosted.id)]
@@ -129,11 +131,11 @@ extension AppModelTests {
 
         store.setLoadProfilesError(nil)
         model.confirmStorageReset()
-        for _ in 0 ..< 20 {
-            await Task.yield()
-        }
-        // Neither pending save may be skipped or overtaken: both are still exactly
-        // pending, and delete-all has not yet been reached.
+        // See the identical rationale in `saveAlreadyExecutingIsAwaitedBeforeDeleteAllRuns`:
+        // the barrier's own snapshot of pre-existing tails must include both of these
+        // still-suspended saves before it can ever call `deleteAllTokens()`, so
+        // neither being overtaken (nor delete-all being reached) is a structural
+        // guarantee assertable immediately, not a fixed-yield timing assumption.
         #expect(await tokenStore.pendingMutations().count == 2)
         #expect(await tokenStore.deleteAllCallCount == 0)
 
@@ -168,6 +170,8 @@ extension AppModelTests {
         )
         let tokenStore = GatedTokenStore()
         let model = await makeCorruptedModel(store: store, tokenStore: tokenStore)
+        let admissions = TokenAccessAdmissionCounter()
+        model.tokenAccessAdmissionHook = admissions.hook
 
         store.setLoadProfilesError(nil)
         model.confirmStorageReset()
@@ -190,9 +194,14 @@ extension AppModelTests {
                 )
             ) { _ in AuthToken(token: "post-reset-token") }
         }
-        for _ in 0 ..< 20 {
-            await Task.yield()
-        }
+        // Waiting for this admission (rather than a fixed number of yields) proves
+        // the new save's own `serializedTokenAccess` call has synchronously captured
+        // the active barrier and registered itself as the new tail for `.hosted`.
+        // From that exact point on, reaching the token store is not merely
+        // "not yet observed" but structurally impossible until the barrier resolves:
+        // the scheduled continuation's very first `await` is on the barrier itself,
+        // strictly before it can call `operation()` (the save).
+        await admissions.waitForAdmissions(1, of: ServerProfile.hosted.id)
         #expect(await tokenStore.pendingMutations() == [.deleteAll])
 
         // Resolve the reset's delete-all: this releases the barrier.

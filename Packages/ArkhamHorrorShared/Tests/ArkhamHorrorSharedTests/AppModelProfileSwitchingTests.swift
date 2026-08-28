@@ -1,12 +1,6 @@
 @testable import ArkhamHorrorShared
 import Testing
 
-private func settle() async {
-    for _ in 0 ..< 50 {
-        await Task.yield()
-    }
-}
-
 /// Profile switching, stale completions, retry, and credential retention checks.
 extension AppModelTests {
     @Test("Switching profiles persists the selection and restarts the flow")
@@ -147,9 +141,17 @@ extension AppModelTests {
             await tokenStore.pendingMutations() ==
                 [.save(token: "abandoned-token", profileID: ServerProfile.hosted.id)]
         )
+        // Captured before switching: subsequent operations may overwrite
+        // `model.operationTask`, so this stale task's own handle is captured now to
+        // be awaited deterministically instead of inferred via fixed yields.
+        let staleTask = model.operationTask
 
         // The user switches to a different server before the in-flight save resolves.
         model.selectProfile(sampleCustomProfile)
+        // Captured immediately after switching, synchronously — registered by
+        // `enqueueCancellationCleanup` before `selectProfile(_:)` returns, so this can
+        // never race the cleanup task's own eventual pruning.
+        let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
         await model.flowTask?.value
         let expectedSignedOut = SessionState.signedOut(
             profile: sampleCustomProfile, compatibility: .legacy
@@ -158,9 +160,10 @@ extension AppModelTests {
         #expect(model.selectedProfile == sampleCustomProfile)
 
         // The abandoned save durably applies — it already passed its epoch recheck
-        // before the switch invalidated it for anything *afterward*.
+        // before the switch invalidated it for anything *afterward*. Awaiting the
+        // stale task's own handle proves this deterministically.
         await tokenStore.resumeOldest()
-        await settle()
+        await staleTask?.value
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "abandoned-token")
 
         // The switch's own interruption cleanup, synchronously queued behind that
@@ -170,7 +173,7 @@ extension AppModelTests {
             await tokenStore.pendingMutations() == [.delete(profileID: ServerProfile.hosted.id)]
         )
         await tokenStore.resumeOldest()
-        await settle()
+        _ = await cleanupTask?.value
 
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
         // The switch away is entirely unaffected by the cleanup's own timing.
@@ -199,12 +202,15 @@ extension AppModelTests {
         model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "abandoned-token") }
         await tokenStore.waitUntilPending(1)
         model.selectProfile(sampleCustomProfile)
+        // Captured immediately after switching, synchronously — registered by
+        // `enqueueCancellationCleanup` before `selectProfile(_:)` returns.
+        let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
 
         // Let the abandoned save apply, then let its cleanup delete remove it.
         await tokenStore.resumeOldest()
         await tokenStore.waitUntilPending(1)
         await tokenStore.resumeOldest()
-        await settle()
+        _ = await cleanupTask?.value
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
         let callsBeforeSwitchingBack = await auth.callOrder.count
 
@@ -244,12 +250,17 @@ extension AppModelTests {
         model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "abandoned-token") }
         await tokenStore.waitUntilPending(1)
         model.selectProfile(sampleCustomProfile)
+        // Captured immediately after switching, synchronously — registered by
+        // `enqueueCancellationCleanup` before `selectProfile(_:)` returns. Its `.value`
+        // resolves to the typed failure below rather than throwing, since the
+        // cleanup task itself never throws.
+        let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
 
         // Let the abandoned save apply, then let its cleanup delete fail.
         await tokenStore.resumeOldest()
         await tokenStore.waitUntilPending(1)
         await tokenStore.resumeOldest(throwing: KeychainError.unhandledStatus(-1))
-        await settle()
+        _ = await cleanupTask?.value
 
         #expect(cleanupStore.snapshotPendingIDs() == [ServerProfile.hosted.id])
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "abandoned-token")
@@ -335,6 +346,9 @@ extension AppModelTests {
 
         // "Window two" switches the shared coordinator's profile away from under it.
         windowTwoModel.selectProfile(sampleCustomProfile)
+        // Captured immediately after switching, synchronously — registered by
+        // `enqueueCancellationCleanup` before `selectProfile(_:)` returns.
+        let cleanupTask = sharedModel.cleanupPendingTasks[ServerProfile.hosted.id]?.task
         await sharedModel.flowTask?.value
         #expect(
             windowOneModel.sessionState ==
@@ -347,7 +361,7 @@ extension AppModelTests {
             await tokenStore.pendingMutations() == [.delete(profileID: ServerProfile.hosted.id)]
         )
         await tokenStore.resumeOldest()
-        await settle()
+        _ = await cleanupTask?.value
 
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
     }

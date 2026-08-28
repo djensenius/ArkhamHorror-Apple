@@ -35,14 +35,18 @@ struct CredentialOperationContext: Sendable {
     let globalEpoch: Int
 }
 
-/// The global/profile epoch snapshot and operation generation captured at the start
-/// of a profile edit that may need to delete an existing token as the precondition
-/// for an endpoint change, threaded through as a single value for the same reason as
-/// ``CredentialOperationContext``. `credentialEpoch` is `nil` exactly when the edit
-/// does not change the profile's endpoint (so no token deletion is needed).
+/// The operation generation captured at the start of a profile edit that may need to
+/// delete an existing token as the precondition for an endpoint change, threaded
+/// through as a single value for the same reason as ``CredentialOperationContext``.
+/// `cleanupTask` is `nil` exactly when the edit does not change the profile's
+/// endpoint (so no token deletion is needed); when present, it is the durable
+/// cancellation-cleanup reservation's task returned by
+/// ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)`` — the same durable
+/// mark-then-admit primitive an explicit auth cancellation uses — so an
+/// endpoint-changing edit gets the identical crash-durable tombstone and
+/// synchronous-admission guarantees rather than a separate, ad hoc delete path.
 struct ProfileUpdateEpochContext: Sendable {
-    let credentialEpoch: Int?
-    let globalEpoch: Int
+    let cleanupTask: Task<TokenStoreFailure?, Never>?
     let operationGeneration: Int
 }
 
@@ -177,7 +181,7 @@ final class AppModel {
         tokenStore: any TokenStore = KeychainTokenStore(),
         capabilityProbe: any CapabilityProbing = CapabilityProbe(),
         authenticationSession: any AppAuthenticating = AuthenticationSession(),
-        cleanupPendingStore: any TokenCleanupPendingStore = UserDefaultsTokenCleanupPendingStore()
+        cleanupPendingStore: any TokenCleanupPendingStore = KeychainTokenCleanupPendingStore()
     ) {
         self.profileStore = profileStore
         self.tokenStore = tokenStore

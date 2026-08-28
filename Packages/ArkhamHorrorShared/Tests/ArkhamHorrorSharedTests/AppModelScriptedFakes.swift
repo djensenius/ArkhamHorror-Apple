@@ -12,8 +12,8 @@ import Testing
 
 /// An in-memory ``TokenCleanupPendingStore`` whose reads/writes can be scripted to
 /// throw, so durable cleanup-tombstone handling can be exercised deterministically
-/// without ever touching the real, process-wide ``UserDefaults.standard`` suite that
-/// the production ``UserDefaultsTokenCleanupPendingStore`` default uses.
+/// without ever touching the real Keychain that the production
+/// ``KeychainTokenCleanupPendingStore`` default uses.
 final class FakeTokenCleanupPendingStore: TokenCleanupPendingStore, @unchecked Sendable {
     private let lock = NSLock()
     private var ids: Set<UUID>

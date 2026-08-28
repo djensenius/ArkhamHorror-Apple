@@ -14,26 +14,17 @@ extension AppModel {
         epochContext: ProfileUpdateEpochContext
     ) async {
         let operationGeneration = epochContext.operationGeneration
-        let globalEpoch = epochContext.globalEpoch
         defer {
             if isCurrentProfileOperation(operationGeneration) {
                 profileManagementOperation = .idle
             }
         }
 
-        if endpointChanged {
-            guard let credentialEpoch = epochContext.credentialEpoch else {
-                profileManagementFailure = .storage(.unexpected)
-                return
-            }
-            let deleted = await deleteTokenForEndpointChange(
-                original,
-                credentialEpoch: credentialEpoch,
-                globalEpoch: globalEpoch,
-                operationGeneration: operationGeneration
-            )
-            guard deleted else { return }
-        }
+        guard await awaitEndpointChangeCleanup(
+            endpointChanged: endpointChanged,
+            cleanupTask: epochContext.cleanupTask,
+            operationGeneration: operationGeneration
+        ) else { return }
         guard isCurrentProfileOperation(operationGeneration) else { return }
 
         var updatedProfiles = profiles
@@ -69,44 +60,44 @@ extension AppModel {
         }
     }
 
-    /// Deletes `original`'s token as the precondition for activating/persisting an
-    /// endpoint-changing edit. Returns `false` (having already surfaced a typed failure,
-    /// unless the deletion was cancelled or superseded) when the caller must not
-    /// proceed with the edit.
-    private func deleteTokenForEndpointChange(
-        _ original: ServerProfile, credentialEpoch: Int, globalEpoch: Int, operationGeneration: Int
+    /// Awaits the reservation's cleanup task (if any) for an endpoint-changing edit,
+    /// returning `true` once it is safe for
+    /// ``performProfileUpdate(original:updated:endpointChanged:epochContext:)`` to
+    /// proceed to persistence. Returns `false` after already having handled every
+    /// rejected outcome — a missing task for an edit that requires one (a programming
+    /// error), or a typed deletion/tombstone-clear failure, in which case a typed
+    /// ``profileManagementFailure`` is set unless this operation was itself
+    /// superseded in the meantime. A display-name-only edit needs no cleanup at all
+    /// and always returns `true` immediately. Extracted purely to keep the caller
+    /// within the project's cyclomatic-complexity lint limit.
+    private func awaitEndpointChangeCleanup(
+        endpointChanged: Bool,
+        cleanupTask: Task<TokenStoreFailure?, Never>?,
+        operationGeneration: Int
     ) async -> Bool {
-        do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)``)
-            // so this delete is ordered against any other in-flight read/save/delete for
-            // the same profile ID rather than racing them, and so a subsequent read for
-            // this profile (e.g. a restarted flow) always observes the token as gone
-            // before the edited endpoint can be activated. The credential epoch was
-            // already invalidated synchronously before this delete was enqueued, so any
-            // save/read for this profile captured under an earlier epoch — even one
-            // already queued ahead of this delete — is rejected at the instant it would
-            // otherwise touch the Keychain, rather than only being caught here.
-            try await serializedTokenAccess(
-                for: original.id, epoch: credentialEpoch, globalEpoch: globalEpoch
-            ) { [tokenStore] in
-                try await tokenStore.deleteToken(for: original.id)
-            }
-            return true
-        } catch {
-            guard isCurrentProfileOperation(operationGeneration) else { return false }
-            guard !(error is CancellationError || error is StaleCredentialEpochError) else {
-                return false
-            }
-            // Deletion failed: preserve the old profile/configuration untouched and
-            // surface a typed, actionable failure rather than persisting an endpoint
-            // change that could otherwise let the old token reach it.
-            profileManagementFailure = .tokenStore(tokenStoreFailure(from: error))
+        guard endpointChanged else { return true }
+        guard let cleanupTask else {
+            profileManagementFailure = .storage(.unexpected)
             return false
         }
+        // Awaits the exact same durable mark-then-admit reservation an explicit auth
+        // cancellation uses: `nil` means the delete succeeded and its tombstone was
+        // cleared; a non-nil failure means either step could not complete, in which
+        // case the tombstone remains pending and this edit must not proceed.
+        guard let failure = await cleanupTask.value else { return true }
+        guard isCurrentProfileOperation(operationGeneration) else { return false }
+        // Deletion (or its required tombstone clear) failed: preserve the old
+        // profile/configuration untouched and surface a typed, actionable failure
+        // rather than persisting an endpoint change that could otherwise let the old
+        // token reach it.
+        profileManagementFailure = .tokenStore(failure)
+        return false
     }
 
     func performProfileRemoval(
-        _ profile: ServerProfile, credentialEpoch: Int, globalEpoch: Int, operationGeneration: Int
+        _ profile: ServerProfile,
+        cleanupTask: Task<TokenStoreFailure?, Never>,
+        operationGeneration: Int
     ) async {
         defer {
             if isCurrentProfileOperation(operationGeneration) {
@@ -114,25 +105,13 @@ extension AppModel {
             }
         }
 
-        do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)``)
-            // so this delete cannot race an in-flight save/read/delete for the same
-            // profile, and the epoch — already invalidated synchronously before this
-            // delete was enqueued — guarantees any such save/read captured earlier is
-            // rejected rather than resurrecting a token for a profile being removed.
-            try await serializedTokenAccess(
-                for: profile.id, epoch: credentialEpoch, globalEpoch: globalEpoch
-            ) { [tokenStore] in
-                try await tokenStore.deleteToken(for: profile.id)
-            }
-        } catch {
+        // Awaits the exact same durable mark-then-admit reservation an explicit auth
+        // cancellation uses; see the matching comment in `performProfileUpdate`.
+        if let failure = await cleanupTask.value {
             guard isCurrentProfileOperation(operationGeneration) else { return }
-            guard !(error is CancellationError || error is StaleCredentialEpochError) else {
-                return
-            }
-            // Deletion failed: preserve the profile rather than removing metadata for
-            // a token that may still exist.
-            profileManagementFailure = .tokenStore(tokenStoreFailure(from: error))
+            // Deletion (or its required tombstone clear) failed: preserve the profile
+            // rather than removing metadata for a token that may still exist.
+            profileManagementFailure = .tokenStore(failure)
             return
         }
         guard isCurrentProfileOperation(operationGeneration) else { return }

@@ -8,14 +8,20 @@ import Foundation
 /// cross-profile checks (duplicate identifiers/endpoints) and the hosted/custom/token
 /// invariants that a single profile's validator cannot know about on its own.
 ///
-/// Security invariant: an edit that changes a profile's normalized base URL deletes that
-/// profile's existing token *before* the new endpoint is activated or persisted, through
-/// the same serialized token-access seam used by authentication (see
-/// ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)``). If that deletion fails,
-/// the old profile and its token are left exactly as they were and a typed failure is
-/// surfaced — the coordinator never sends a token for one origin to a newly edited
-/// endpoint, and it never invents a plaintext or in-memory fallback for a token store it
-/// cannot durably mutate. A display-name-only edit (no base URL change) never touches
+/// Security invariant: an edit that changes a profile's normalized base URL — and a
+/// removal — deletes that profile's existing token *before* the new endpoint is
+/// activated/persisted (or the profile removed), through the exact same durable
+/// mark-then-admit reservation an explicit auth cancellation uses (see
+/// ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``): a crash-durable
+/// tombstone is written before the delete is even attempted, and both the mark and the
+/// delete/tombstone-clear must succeed before the edit/removal is allowed to proceed.
+/// If the mark itself cannot be made durable, nothing else is mutated at all — the
+/// profile, its token, and every generation/epoch counter are left exactly as they
+/// were. If the deletion (or clearing its tombstone) fails, the old profile and its
+/// token are likewise left exactly as they were and a typed failure is surfaced — the
+/// coordinator never sends a token for one origin to a newly edited endpoint, and it
+/// never invents a plaintext or in-memory fallback for a token store it cannot durably
+/// mutate. A display-name-only edit (no base URL change) never touches
 /// the token.
 extension AppModel {
     /// Persists a profile-management mutation (add/edit/remove), surfacing any
@@ -96,38 +102,37 @@ extension AppModel {
             return
         }
         guard profileManagementOperation == .idle else { return }
-        profileManagementFailure = nil
-
-        let updated: ServerProfile
-        do {
-            updated = try ServerProfile.custom(
-                id: profile.id, displayName: displayName, rawURL: rawURL
-            )
-        } catch let error as ServerProfileError {
-            profileManagementFailure = .invalidProfile(error)
-            return
-        } catch {
-            profileManagementFailure = .invalidProfile(.malformedURL)
-            return
-        }
-
-        guard !profiles.contains(where: { $0.id != profile.id && isSameEndpoint($0, updated) })
-        else {
-            profileManagementFailure = .duplicateEndpoint
-            return
-        }
+        guard let updated = validatedCustomProfileEdit(
+            profile, displayName: displayName, rawURL: rawURL
+        ) else { return }
 
         let endpointChanged = !isSameEndpoint(profile, updated)
-        // Invalidated synchronously, here, *before* the endpoint-changing delete is
-        // even enqueued — not inside the async continuation below — so that every
-        // token-store operation for this profile already in flight (or enqueued but
-        // not yet run), captured under any epoch prior to this call, is guaranteed to
-        // observe a mismatch when its turn in the queue actually arrives. The freshly
-        // bumped value is captured immediately (nothing else can run between the bump
-        // and this capture, since both are synchronous on the main actor), so this
-        // edit's own delete below always matches its own invalidation.
-        let credentialEpoch = endpointChanged ? invalidateCredentialEpoch(for: profile.id) : nil
-        let globalEpoch = currentGlobalCredentialEpoch()
+        // For an endpoint-changing edit, the same durable mark-then-admit
+        // reservation an explicit auth cancellation uses
+        // (``enqueueCancellationCleanup(for:globalEpoch:)``) must succeed *before*
+        // anything else is mutated here: on a mark failure, the profile, its token,
+        // ``profileManagementOperation``/``profileManagementGeneration``, and the
+        // profile's credential epoch are all left exactly as they were, rather than
+        // half-applying the edit or leaving an in-flight save for this profile able
+        // to reach the Keychain under an epoch that was never actually invalidated.
+        // Only on success is the credential epoch invalidated — synchronously,
+        // immediately afterward, so every token-store operation for this profile
+        // already in flight (or enqueued but not yet run), captured under any epoch
+        // prior to this call, is guaranteed to observe a mismatch when its turn in
+        // the queue actually arrives.
+        var cleanupTask: Task<TokenStoreFailure?, Never>?
+        if endpointChanged {
+            switch enqueueCancellationCleanup(
+                for: profile.id, globalEpoch: currentGlobalCredentialEpoch()
+            ) {
+            case let .reserved(task):
+                cleanupTask = task
+                invalidateCredentialEpoch(for: profile.id)
+            case let .markFailed(failure):
+                profileManagementFailure = .tokenStore(failure)
+                return
+            }
+        }
         profileManagementOperation = .saving(profile.id)
         profileManagementGeneration += 1
         let operationGeneration = profileManagementGeneration
@@ -138,12 +143,44 @@ extension AppModel {
                 updated: updated,
                 endpointChanged: endpointChanged,
                 epochContext: ProfileUpdateEpochContext(
-                    credentialEpoch: credentialEpoch,
-                    globalEpoch: globalEpoch,
+                    cleanupTask: cleanupTask,
                     operationGeneration: operationGeneration
                 )
             )
         }
+    }
+
+    /// Validates `profile`'s edit in isolation from
+    /// ``updateCustomProfile(_:displayName:rawURL:)``'s cleanup-reservation/scheduling
+    /// logic, purely to keep that function within the project's function-length lint
+    /// limit. The kind/existence/idle checks already happened in the caller; this
+    /// only parses/validates the new endpoint and checks for a duplicate. Sets a
+    /// typed ``profileManagementFailure`` and returns `nil` for every rejected edit;
+    /// returns the validated replacement profile otherwise.
+    private func validatedCustomProfileEdit(
+        _ profile: ServerProfile, displayName: String, rawURL: String
+    ) -> ServerProfile? {
+        profileManagementFailure = nil
+
+        let updated: ServerProfile
+        do {
+            updated = try ServerProfile.custom(
+                id: profile.id, displayName: displayName, rawURL: rawURL
+            )
+        } catch let error as ServerProfileError {
+            profileManagementFailure = .invalidProfile(error)
+            return nil
+        } catch {
+            profileManagementFailure = .invalidProfile(.malformedURL)
+            return nil
+        }
+
+        guard !profiles.contains(where: { $0.id != profile.id && isSameEndpoint($0, updated) })
+        else {
+            profileManagementFailure = .duplicateEndpoint
+            return nil
+        }
+        return updated
     }
 
     /// Removes a custom profile, deleting its token first.
@@ -167,10 +204,23 @@ extension AppModel {
         guard profileManagementOperation == .idle else { return }
         profileManagementFailure = nil
 
-        // Invalidated synchronously, before the removal delete is even enqueued. See
-        // the matching comment in ``updateCustomProfile(_:displayName:rawURL:)``.
-        let credentialEpoch = invalidateCredentialEpoch(for: profile.id)
-        let globalEpoch = currentGlobalCredentialEpoch()
+        // The same durable mark-then-admit reservation used by an endpoint-changing
+        // edit (and by explicit auth cancellation) must succeed before anything else
+        // is mutated here — see the matching comment in
+        // ``updateCustomProfile(_:displayName:rawURL:)``. On a mark failure, the
+        // profile and its `profileManagementOperation`/`profileManagementGeneration`/
+        // credential epoch are all left exactly as they were.
+        let cleanupTask: Task<TokenStoreFailure?, Never>
+        switch enqueueCancellationCleanup(
+            for: profile.id, globalEpoch: currentGlobalCredentialEpoch()
+        ) {
+        case let .reserved(task):
+            cleanupTask = task
+            invalidateCredentialEpoch(for: profile.id)
+        case let .markFailed(failure):
+            profileManagementFailure = .tokenStore(failure)
+            return
+        }
         profileManagementOperation = .removing(profile.id)
         profileManagementGeneration += 1
         let operationGeneration = profileManagementGeneration
@@ -178,8 +228,7 @@ extension AppModel {
         profileManagementTask = Task { [weak self] in
             await self?.performProfileRemoval(
                 profile,
-                credentialEpoch: credentialEpoch,
-                globalEpoch: globalEpoch,
+                cleanupTask: cleanupTask,
                 operationGeneration: operationGeneration
             )
         }

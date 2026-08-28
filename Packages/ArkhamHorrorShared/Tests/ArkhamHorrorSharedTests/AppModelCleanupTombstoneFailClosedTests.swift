@@ -15,11 +15,12 @@ extension AppModelTests {
     @Test(
         """
         A markPending failure during explicit cancellation fails closed: the \
-        operation is not reported as cancelled, and retrying once the store recovers \
-        succeeds normally
+        operation is not reported as cancelled, its generation/epoch are left \
+        untouched so it is not orphaned, and it completes normally once its whoami \
+        resolves
         """
     )
-    func explicitCancellationMarkPendingFailureFailsClosed() async {
+    func explicitCancellationMarkPendingFailureFailsClosed() async throws {
         let tokenStore = FakeTokenStore()
         let cleanupStore = FakeTokenCleanupPendingStore()
         let auth = GatedAuthenticating()
@@ -36,19 +37,25 @@ extension AppModelTests {
         model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "issued-token") }
         await auth.waitUntilPending(1)
         #expect(model.operation == .signingIn)
-        // Captured before cancellation, exactly as in `AppModelAuthOperationTests`, so
-        // the still-abandoned operation's own eventual completion can be awaited
-        // deterministically below rather than inferring scheduler progress.
-        let staleOperation = model.operationTask
+        // Captured before cancellation so the still-active operation's own eventual
+        // completion can be awaited deterministically below rather than inferring
+        // scheduler progress.
+        let activeOperation = model.operationTask
+        let generationBeforeCancel = model.generation
 
         cleanupStore.setMarkError(TokenCleanupPendingStoreError.corruptData)
         model.cancelAuthOperation()
 
         // Cancellation must not be reported as having succeeded while its cleanup
-        // could not be durably reserved: `operation` stays exactly as it was, and the
-        // failure is surfaced as an actionable, typed error rather than a silent
-        // return to signed-out.
+        // could not be durably reserved: `operation`, `generation`, and
+        // `operationTask` are all left exactly as they were — the reservation is
+        // attempted *before* any mutation, so a mark failure cannot orphan the
+        // genuinely active operation (bumping it past its own ability to ever
+        // complete while never actually cleaning it up) — and the failure is
+        // surfaced as an actionable, typed error rather than a silent cancellation.
         #expect(model.operation == .signingIn)
+        #expect(model.generation == generationBeforeCancel)
+        #expect(model.operationTask != nil)
         guard case .tokenStore = model.operationFailure else {
             Issue.record(
                 "Expected .tokenStore failure, got \(String(describing: model.operationFailure))"
@@ -61,32 +68,40 @@ extension AppModelTests {
         // since no cleanup was ever reserved in the first place.
         #expect(cleanupStore.snapshotPendingIDs().isEmpty)
 
-        // The abandoned whoami now resolves successfully, well after this failed
-        // cancellation attempt. Even though its cleanup could not be reserved, the
-        // credential epoch was still bumped unconditionally (defense in depth), so
-        // this stale operation can never itself mutate state or save a token.
+        // The genuinely active whoami now resolves successfully. Since cancellation's
+        // reservation failed and left generation/epoch untouched, this operation was
+        // never orphaned — it completes exactly as an uninterrupted sign-in would,
+        // actually saving its token and transitioning to signed-in.
         await auth.resumeOldest(with: .success(.sample))
-        await staleOperation?.value
-        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
-        #expect(await tokenStore.saveCallCount == 0)
+        await activeOperation?.value
+        #expect(
+            model.sessionState ==
+                .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        )
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "issued-token")
 
-        // Retrying cancellation once the store recovers succeeds normally.
+        // A further cancellation attempt (e.g. a late Cancel-button tap racing the
+        // completed sign-in) is now a safe no-op, since `operation` is no longer
+        // `.signingIn`/`.registering`.
         cleanupStore.setMarkError(nil)
         model.cancelAuthOperation()
         #expect(model.operation == .idle)
         #expect(model.operationFailure == nil)
-        #expect(model.operationTask == nil)
-        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(
+            model.sessionState ==
+                .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        )
     }
 
     @Test(
         """
         A markPending failure while switching profiles away from an in-flight \
-        sign-in fails closed: the switch does not proceed, and retrying the switch \
-        once the store recovers succeeds normally
+        sign-in fails closed: the switch does not proceed, generation/epoch are left \
+        untouched so the sign-in is not orphaned, and it completes normally once its \
+        whoami resolves
         """
     )
-    func profileSwitchMarkPendingFailureFailsClosed() async {
+    func profileSwitchMarkPendingFailureFailsClosed() async throws {
         let tokenStore = FakeTokenStore()
         let cleanupStore = FakeTokenCleanupPendingStore()
         let auth = GatedAuthenticating()
@@ -106,23 +121,20 @@ extension AppModelTests {
         model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "issued-token") }
         await auth.waitUntilPending(1)
         #expect(model.operation == .signingIn)
-        let staleOperation = model.operationTask
+        let activeOperation = model.operationTask
         let generationBeforeSwitch = model.generation
 
         cleanupStore.setMarkError(TokenCleanupPendingStoreError.corruptData)
         model.selectProfile(sampleCustomProfile)
 
         // The switch's own selection/persistence must not proceed while its
-        // interruption's cleanup could not be durably reserved: the selected profile
-        // and in-flight operation are left exactly as they were, and the failure is
-        // surfaced as typed and actionable. `generation` does advance by exactly one
-        // — unconditionally bumped by `interruptActiveAuthOperationIfNeeded()` itself,
-        // as defense in depth so the abandoned stale operation can never mutate state
-        // again regardless of reservation outcome — but `selectProfile(_:)`'s own
-        // additional bump (which would occur only once the switch actually proceeds)
-        // must not also have happened.
+        // interruption's cleanup could not be durably reserved: the selected profile,
+        // `generation`, and the in-flight operation are all left exactly as they
+        // were — the reservation is attempted *before* any mutation, so a mark
+        // failure cannot orphan the genuinely active sign-in — and the failure is
+        // surfaced as typed and actionable.
         #expect(model.selectedProfile == .hosted)
-        #expect(model.generation == generationBeforeSwitch + 1)
+        #expect(model.generation == generationBeforeSwitch)
         #expect(model.operation == .signingIn)
         guard case .tokenStore = model.operationFailure else {
             Issue.record(
@@ -132,12 +144,22 @@ extension AppModelTests {
         }
         #expect(profileStore.saveSelectionCallCount == 0)
 
+        // The genuinely active whoami now resolves successfully. Since the switch's
+        // reservation failed and left generation/epoch untouched, this operation was
+        // never orphaned — it completes exactly as an uninterrupted sign-in would,
+        // actually saving its token and transitioning to signed-in for the profile
+        // the switch attempted (and failed) to move away from.
         await auth.resumeOldest(with: .success(.sample))
-        await staleOperation?.value
-        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
-        #expect(await tokenStore.saveCallCount == 0)
+        await activeOperation?.value
+        #expect(
+            model.sessionState ==
+                .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        )
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "issued-token")
+        #expect(model.selectedProfile == .hosted)
 
-        // Retrying the switch once the store recovers succeeds normally.
+        // The switch can now be retried normally: there is no in-flight operation
+        // left to interrupt, so this proceeds as an ordinary profile switch.
         cleanupStore.setMarkError(nil)
         model.selectProfile(sampleCustomProfile)
         await model.flowTask?.value

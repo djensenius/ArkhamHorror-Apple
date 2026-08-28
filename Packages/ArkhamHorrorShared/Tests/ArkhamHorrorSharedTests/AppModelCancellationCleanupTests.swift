@@ -1,12 +1,6 @@
 @testable import ArkhamHorrorShared
 import Testing
 
-private func settle() async {
-    for _ in 0 ..< 50 {
-        await Task.yield()
-    }
-}
-
 /// Regression coverage for cancellation-cleanup structural safety: `cancelAuthOperation()`
 /// must not merely hide/clear the auth form while a durable token save that has already
 /// passed its epoch recheck — or already completed inside the token store — is left to
@@ -21,15 +15,15 @@ private func settle() async {
 /// caller. In both cases, cancellation must still result in the canceled token being
 /// durably deleted, never left behind for a later launch to silently trust.
 extension AppModelTests {
-    @Test(
-        """
-        Cancelling while a save is suspended inside the token store, after its epoch \
-        check has already passed, still deletes the token it durably applies
-        """
-    )
-    func cancelDuringInFlightSaveStillDeletesToken() async throws {
-        let tokenStore = GatedTokenStore()
-        let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
+    /// Builds an `AppModel` wired to `tokenStore` and `auth` with a legacy-fallback
+    /// capability probe outcome, awaits its startup flow, and confirms it settles
+    /// into the hosted signed-out state — the common starting point for every
+    /// cancellation-cleanup race in this file. Extracted purely to keep its callers
+    /// within the project's function-length lint limit.
+    private func legacyFallbackModel(
+        tokenStore: GatedTokenStore,
+        auth: ScriptedAuthenticating = ScriptedAuthenticating(currentUserResult: .success(.sample))
+    ) async -> AppModel {
         let model = AppModel(
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
@@ -39,6 +33,18 @@ extension AppModelTests {
         )
         await model.flowTask?.value
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        return model
+    }
+
+    @Test(
+        """
+        Cancelling while a save is suspended inside the token store, after its epoch \
+        check has already passed, still deletes the token it durably applies
+        """
+    )
+    func cancelDuringInFlightSaveStillDeletesToken() async throws {
+        let tokenStore = GatedTokenStore()
+        let model = await legacyFallbackModel(tokenStore: tokenStore)
 
         model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "cancelled-token") }
         // The save has already passed its epoch recheck inside
@@ -51,15 +57,27 @@ extension AppModelTests {
                 [.save(token: "cancelled-token", profileID: ServerProfile.hosted.id)]
         )
 
+        // Captured before cancelling: `cancelAuthOperation()` clears
+        // `model.operationTask` once its interruption is reserved, so this stale
+        // task's own handle must be captured first in order to deterministically
+        // await its completion afterward rather than inferring it via fixed yields.
+        let staleOperationTask = model.operationTask
         model.cancelAuthOperation()
         #expect(model.operation == .idle)
         #expect(model.operationFailure == nil)
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        // Captured immediately after cancellation, synchronously: `enqueueCancellationCleanup`
+        // registers this cleanup task before `cancelAuthOperation()` returns, so reading
+        // it here can never race its own pruning (which only happens once the task itself
+        // completes, strictly after the token-store mutations below are resumed).
+        let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
 
         // Let the in-flight save complete: it durably applies, since it already passed
-        // its epoch check before cancellation invalidated it.
+        // its epoch check before cancellation invalidated it. Awaiting the stale task's
+        // own handle (rather than a fixed number of yields) proves this deterministically:
+        // that task cannot return until its save has actually finished applying.
         await tokenStore.resumeOldest()
-        await settle()
+        await staleOperationTask?.value
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "cancelled-token")
 
         // The cancellation cleanup delete — synchronously enqueued behind this save's
@@ -70,7 +88,7 @@ extension AppModelTests {
             await tokenStore.pendingMutations() == [.delete(profileID: ServerProfile.hosted.id)]
         )
         await tokenStore.resumeOldest()
-        await settle()
+        _ = await cleanupTask?.value
 
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
         // Cancellation must remain silent: no user-facing failure from cleanup succeeding.
@@ -87,15 +105,7 @@ extension AppModelTests {
     func cancelAfterSaveAppliesButBeforeReturnStillDeletesToken() async throws {
         let tokenStore = GatedTokenStore()
         await tokenStore.setSuspendAfterApply(true)
-        let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
-        let model = AppModel(
-            profileStore: FakeServerProfileStore(),
-            tokenStore: tokenStore,
-            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth,
-            cleanupPendingStore: FakeTokenCleanupPendingStore()
-        )
-        await model.flowTask?.value
+        let model = await legacyFallbackModel(tokenStore: tokenStore)
 
         model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "cancelled-token") }
         await tokenStore.waitUntilPending(1)
@@ -136,18 +146,13 @@ extension AppModelTests {
     )
     func cancelImmediatelyFollowedByNewAuthPreservesOrdering() async throws {
         let tokenStore = GatedTokenStore()
-        let auth = ScriptedAuthenticating(
-            authenticateResult: .success(AuthToken(token: "fresh-token")),
-            currentUserResult: .success(.sample)
-        )
-        let model = AppModel(
-            profileStore: FakeServerProfileStore(),
+        let model = await legacyFallbackModel(
             tokenStore: tokenStore,
-            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth,
-            cleanupPendingStore: FakeTokenCleanupPendingStore()
+            auth: ScriptedAuthenticating(
+                authenticateResult: .success(AuthToken(token: "fresh-token")),
+                currentUserResult: .success(.sample)
+            )
         )
-        await model.flowTask?.value
 
         model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "stale-token") }
         await tokenStore.waitUntilPending(1)
@@ -156,7 +161,16 @@ extension AppModelTests {
                 [.save(token: "stale-token", profileID: ServerProfile.hosted.id)]
         )
 
+        // Captured before cancelling, for the same reason as in
+        // `cancelDuringInFlightSaveStillDeletesToken`: `cancelAuthOperation()` (and the
+        // immediately following `signIn`) will overwrite `model.operationTask`, so this
+        // stale task's own handle must be captured now to be awaited deterministically.
+        let staleTask = model.operationTask
         model.cancelAuthOperation()
+        // Captured immediately after cancellation, synchronously, before `signIn` below
+        // runs — registered by `enqueueCancellationCleanup` before `cancelAuthOperation()`
+        // returns, so this can never race the cleanup task's own eventual pruning.
+        let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
         // A fresh, legitimate sign-in for the same profile begins immediately after
         // cancellation — its save must be queued strictly behind both the stale save
         // still in flight and the cleanup delete cancellation enqueues, never able to
@@ -173,9 +187,9 @@ extension AppModelTests {
         )
 
         // Let the stale save durably apply (it already passed its epoch check before
-        // cancellation).
+        // cancellation). Awaiting the stale task's own handle proves this deterministically.
         await tokenStore.resumeOldest()
-        await settle()
+        await staleTask?.value
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "stale-token")
 
         // The cleanup delete can now reach the token store.
@@ -184,7 +198,7 @@ extension AppModelTests {
             await tokenStore.pendingMutations() == [.delete(profileID: ServerProfile.hosted.id)]
         )
         await tokenStore.resumeOldest()
-        await settle()
+        _ = await cleanupTask?.value
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
 
         // Only now can the fresh sign-in's own save reach the token store.

@@ -279,11 +279,13 @@ extension AppModelTests {
 
     @Test(
         """
-        Removing a profile whose cleanup delete already failed preserves its durable \
-        tombstone, and the removal's own token deletion still succeeds independently
+        Removing a profile with a pre-existing pending tombstone reserves the same \
+        durable mark-then-admit cleanup removal always uses, resolving that \
+        tombstone as part of its own delete rather than silently leaving it \
+        unresolved just because profile metadata is now gone
         """
     )
-    func removingProfileWithPendingTombstonePreservesIt() async throws {
+    func removingProfileWithPendingTombstoneResolvesIt() async throws {
         let tokenStore = FakeTokenStore(tokens: [sampleCustomProfile.id: "some-token"])
         let cleanupStore = FakeTokenCleanupPendingStore(ids: [sampleCustomProfile.id])
         let profileStore = FakeServerProfileStore(
@@ -303,12 +305,16 @@ extension AppModelTests {
 
         #expect(model.profiles == [.hosted])
         #expect(model.profileManagementFailure == nil)
-        // The profile's own token is durably gone (removal's own delete succeeded)...
+        // Removal's own reservation (`enqueueCancellationCleanup`) durably deletes the
+        // profile's token before metadata is removed, exactly as an explicit
+        // cancellation would...
         #expect(try await tokenStore.token(for: sampleCustomProfile.id) == nil)
-        // ...but the pre-existing tombstone from the earlier, still-unresolved
-        // cancellation cleanup is left exactly as it was: removal must never assume a
-        // pending cleanup is resolved just because the profile itself is now gone.
-        #expect(cleanupStore.snapshotPendingIDs() == [sampleCustomProfile.id])
+        // ...and since that reservation's mark is idempotent against an
+        // already-pending tombstone for the very same profile/token, its own
+        // successful delete-then-clear resolves the pre-existing tombstone too,
+        // rather than silently leaving an unresolved marker behind for a profile
+        // that no longer exists.
+        #expect(cleanupStore.snapshotPendingIDs().isEmpty)
     }
 
     @Test("A successful storage reset clears every durable cleanup tombstone")

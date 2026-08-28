@@ -1,17 +1,6 @@
 @testable import ArkhamHorrorShared
 import Testing
 
-/// Yields repeatedly so any unserialized (buggy) concurrent token-store access has
-/// ample opportunity to actually run before a test asserts that it did not — a single
-/// `waitUntilPending`/`await` is not enough to rule this out, since it returns as soon
-/// as its own threshold is already satisfied without waiting to see whether a second,
-/// unserialized access also reaches the gate.
-private func settle() async {
-    for _ in 0 ..< 50 {
-        await Task.yield()
-    }
-}
-
 /// Regression coverage for the per-profile credential epoch: an endpoint edit or
 /// removal invalidates a profile's credential epoch *before* enqueueing its token
 /// deletion, and every queued read/save/delete rechecks that epoch inside the
@@ -89,8 +78,11 @@ extension AppModelTests {
         // Only now does the stale sign-in's whoami resolve successfully.
         await auth.resumeOldest(with: .success(.sample))
         await signInTask.value
-        await settle()
 
+        // No further settling is needed: `performAuthOperation`'s save (or, here, its
+        // discarded epoch-mismatch attempt) is always awaited inline before the task
+        // returns — never dispatched as a detached/unawaited follow-up — so
+        // `signInTask.value` completing already fully decides this.
         // The stale save must never have durably applied.
         let finalToken = try await tokenStore.token(for: sampleCustomProfile.id)
         #expect(finalToken == nil)
@@ -118,10 +110,17 @@ extension AppModelTests {
         await model.flowTask?.value
 
         model.generation += 1
+        // Deterministically observes each operation's own synchronous admission into
+        // the same profile's `serializedTokenAccess`/`enqueueCancellationCleanup`
+        // queue, rather than inferring scheduler progress with a fixed number of
+        // yields.
+        let admissions = TokenAccessAdmissionCounter()
+        model.tokenAccessAdmissionHook = admissions.hook
         let signInTask = startAuthOperation(
             on: model, profile: sampleCustomProfile, generation: model.generation,
             token: "new-token"
         )
+        await admissions.waitForAdmissions(1, of: sampleCustomProfile.id)
         await tokenStore.waitUntilPending(1)
         #expect(
             await tokenStore.pendingMutations() ==
@@ -139,10 +138,11 @@ extension AppModelTests {
             sampleCustomProfile, displayName: edited.displayName,
             rawURL: edited.baseURL.absoluteString
         )
+        await admissions.waitForAdmissions(2, of: sampleCustomProfile.id)
         // The edit's delete is chained behind the still-pending save (it awaits the
         // save's own scheduled task before even reaching the token store), so it
-        // cannot register as pending until the save is let through.
-        await settle()
+        // cannot register as pending until the save is let through. This is a
+        // structural guarantee once its own admission is proven, not a timing race.
         #expect(
             await tokenStore.pendingMutations() ==
                 [.save(token: "new-token", profileID: sampleCustomProfile.id)]
@@ -222,10 +222,12 @@ extension AppModelTests {
         await freshTask.value
         #expect(try await tokenStore.token(for: updatedProfile.id) == "fresh-token")
 
-        // Only now does the stale sign-in's whoami resolve, out of order.
+        // Only now does the stale sign-in's whoami resolve, out of order. Awaiting
+        // the stale task's own handle is sufficient here (no further settling
+        // needed): its save (or discarded epoch-mismatch attempt) is always awaited
+        // inline before the task returns, per `performAuthOperation`.
         await auth.resumeOldest(with: .success(.sample))
         await staleTask.value
-        await settle()
 
         #expect(try await tokenStore.token(for: updatedProfile.id) == "fresh-token")
     }

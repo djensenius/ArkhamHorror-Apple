@@ -161,7 +161,9 @@ extension AppModel {
     /// invalidates the profile's credential epoch (so even a save that has *already*
     /// passed those checks and is queued in
     /// ``serializedTokenAccess(for:epoch:globalEpoch:_:)`` is skipped rather than
-    /// durably saving a token after the user has cancelled).
+    /// durably saving a token after the user has cancelled) — but only once the
+    /// durable cleanup reservation this depends on has actually succeeded (see
+    /// ``interruptActiveAuthOperationIfNeeded()``).
     ///
     /// Neither of those alone closes every window: a save can reach the durable
     /// mutation boundary, pass its epoch recheck, and either still be writing to the
@@ -185,39 +187,59 @@ extension AppModel {
     ///
     /// If the cleanup this cancellation depends on cannot be durably reserved (see
     /// ``AuthInterruptionOutcome/blocked(_:)``), this method does **not** present
-    /// cancellation as having succeeded: it leaves ``operation``/``sessionState``
-    /// exactly as they were and surfaces the typed failure via ``operationFailure``
-    /// instead, so the UI shows an actionable, retryable error rather than silently
-    /// returning to signed-out while an in-flight save remains unprotected. The
-    /// underlying task is still cancelled either way (safe regardless of reservation
-    /// outcome, since ``interruptActiveAuthOperationIfNeeded()`` has already advanced
-    /// ``generation`` unconditionally, so that task can never itself mutate state
-    /// again), and its handle is released promptly.
-    func cancelAuthOperation() {
-        guard case let .signedOut(profile, compatibility) = sessionState else { return }
-        guard operation == .signingIn || operation == .registering else { return }
-        let outcome = interruptActiveAuthOperationIfNeeded()
-        operationTask?.cancel()
-        operationTask = nil
-        switch outcome {
+    /// cancellation as having succeeded and does **not** mutate anything: the
+    /// genuinely active operation's ``operationTask``, ``generation``, credential
+    /// epoch, ``operation``, and ``sessionState`` are all left exactly as they were —
+    /// it only surfaces the typed failure via ``operationFailure`` instead, so the UI
+    /// shows an actionable, retryable error rather than either silently returning to
+    /// signed-out while an in-flight save remains unprotected, or discarding the live
+    /// task handle into a taskless, un-completable ``signingIn``/``registering`` state.
+    /// Only once reservation succeeds is the underlying task actually cancelled and
+    /// released, since only then is it safe to do so (a stale in-flight step can no
+    /// longer mutate state once ``generation``/the credential epoch have been
+    /// advanced, and any save it may already have applied is durably queued for
+    /// removal).
+    ///
+    /// Returns `true` once there is no longer an active sign-in/registration for the
+    /// caller to worry about (there was none to begin with, or this call's own
+    /// reservation succeeded and it has been cleanly interrupted) — safe for a caller
+    /// such as ``SignInView``/``RegisterView`` to treat as "cancellation is safe to
+    /// dismiss for." Returns `false` only when a genuinely active operation could not
+    /// be safely interrupted because its cleanup reservation failed
+    /// (``AuthInterruptionOutcome/blocked(_:)``): the operation remains exactly as it
+    /// was and the caller must **not** dismiss/navigate away, since doing so would
+    /// abandon an unprotected in-flight save; ``operationFailure`` is already set for
+    /// the UI to surface.
+    @discardableResult
+    func cancelAuthOperation() -> Bool {
+        guard case let .signedOut(profile, compatibility) = sessionState else { return true }
+        guard operation == .signingIn || operation == .registering else { return true }
+        switch interruptActiveAuthOperationIfNeeded() {
         case .none:
-            return
+            return true
         case .interrupted:
+            operationTask?.cancel()
+            operationTask = nil
             operation = .idle
             operationFailure = nil
             sessionState = .signedOut(profile: profile, compatibility: compatibility)
+            return true
         case let .blocked(failure):
+            // Reservation itself could not be made durable: preserve the genuinely
+            // active operation — task, generation, epoch, and observable state —
+            // exactly as it was, and surface a typed, retryable failure instead.
             operationFailure = .tokenStore(failure)
+            return false
         }
     }
 
     /// Interrupts the in-flight sign-in or registration for the profile currently
     /// reflected in ``sessionState``, exactly as an explicit ``cancelAuthOperation()``
-    /// does: invalidates its credential epoch and attempts to durably reserve/enqueue
-    /// a cleanup deletion for it (see
-    /// ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``), so a save that has
-    /// already passed its epoch recheck — or already durably applied — cannot survive
-    /// the interruption.
+    /// does: attempts to durably reserve/enqueue a cleanup deletion for it (see
+    /// ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``) and, only once that
+    /// reservation actually succeeds, invalidates its credential epoch, so a save that
+    /// has already passed its epoch recheck — or already durably applied — cannot
+    /// survive the interruption.
     ///
     /// Returns ``AuthInterruptionOutcome/none`` if there was no in-flight
     /// sign-in/registration to interrupt (the caller must not proceed as though one
@@ -236,24 +258,32 @@ extension AppModel {
     /// immediately afterward (only on ``AuthInterruptionOutcome/interrupted(_:)``),
     /// while `sessionState` still names the profile whose operation is being
     /// interrupted — this call must therefore always happen first, before any of
-    /// that. It *does* advance ``generation`` itself, unconditionally, regardless of
-    /// reservation outcome (so a stale in-flight step can never mutate state once
-    /// interrupted, even if its cleanup could not be durably reserved); every caller
-    /// that proceeds past ``AuthInterruptionOutcome/interrupted(_:)`` separately
-    /// advances it again afterward for its own unrelated reason (selecting a new
-    /// profile, retrying, or explicit cancellation), which is harmless since
-    /// ``isCurrent(_:)`` only ever compares for exact equality against the latest
-    /// value, never relies on a specific delta.
+    /// that. Reservation (the durable ``markPending`` and its synchronous queue
+    /// admission, both inside ``enqueueCancellationCleanup(for:globalEpoch:)``) is
+    /// attempted *before* ``generation`` or the credential epoch are touched at all:
+    /// on a mark failure (``CleanupReservation/markFailed(_:)``, surfaced to the
+    /// caller as ``AuthInterruptionOutcome/blocked(_:)``), neither is mutated, so the
+    /// genuinely active operation is left entirely intact rather than orphaned —
+    /// bumped past its own ability to ever complete, yet not actually cleaned up
+    /// either. Only on success does this advance ``generation`` and invalidate the
+    /// credential epoch,
+    /// unconditionally at that point (so a stale in-flight step can never mutate state
+    /// once interrupted); every caller that proceeds past
+    /// ``AuthInterruptionOutcome/interrupted(_:)`` separately advances ``generation``
+    /// again afterward for its own unrelated reason (selecting a new profile,
+    /// retrying, or explicit cancellation), which is harmless since ``isCurrent(_:)``
+    /// only ever compares for exact equality against the latest value, never relies on
+    /// a specific delta.
     @discardableResult
     func interruptActiveAuthOperationIfNeeded() -> AuthInterruptionOutcome {
         guard case let .signedOut(profile, _) = sessionState else { return .none }
         guard operation == .signingIn || operation == .registering else { return .none }
-        generation += 1
-        invalidateCredentialEpoch(for: profile.id)
         switch enqueueCancellationCleanup(
             for: profile.id, globalEpoch: currentGlobalCredentialEpoch()
         ) {
         case .reserved:
+            generation += 1
+            invalidateCredentialEpoch(for: profile.id)
             return .interrupted(profile.id)
         case let .markFailed(failure):
             return .blocked(failure)
