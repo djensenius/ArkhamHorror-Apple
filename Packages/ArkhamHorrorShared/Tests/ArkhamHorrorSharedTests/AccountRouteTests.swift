@@ -12,6 +12,16 @@ struct AccountRouteTests {
         try ServerProfile.custom(displayName: "Home Server", rawURL: "https://home.example.com/api")
     }
 
+    /// A test-local fixture, deliberately independent of the `#if DEBUG`-gated
+    /// `CurrentUser.previewSample` in `PreviewSupport.swift`: that fixture exists only
+    /// for `#Preview` bodies and must not become a hidden non-DEBUG build dependency of
+    /// this test target (for example under a release test configuration).
+    private func makeCurrentUser() -> CurrentUser {
+        CurrentUser(
+            username: "roland-banks", email: "roland@example.com", beta: false, admin: false
+        )
+    }
+
     @Test("Launching maps to the launch route with no profile name yet")
     func launchingMapsToLaunchRoute() {
         let route = AccountRoute(sessionState: .launching, profiles: [.hosted])
@@ -60,11 +70,12 @@ struct AccountRouteTests {
 
     @Test("Signed in maps to the account route with the typed current user")
     func signedInMapsToAccountRoute() {
+        let user = makeCurrentUser()
         let route = AccountRoute(
-            sessionState: .signedIn(profile: .hosted, compatibility: .legacy, user: .previewSample),
+            sessionState: .signedIn(profile: .hosted, compatibility: .legacy, user: user),
             profiles: [.hosted]
         )
-        #expect(route == .account(profile: .hosted, compatibility: .legacy, user: .previewSample))
+        #expect(route == .account(profile: .hosted, compatibility: .legacy, user: user))
     }
 
     @Test("Storage corrupted maps to the storage-corrupted route with the exact typed failure")
