@@ -103,10 +103,18 @@ struct AccountRouteTests {
             AccountAccessibilityID.serverDisplayNameField,
             AccountAccessibilityID.serverURLField,
             AccountAccessibilityID.serverEditorSaveButton,
-            AccountAccessibilityID.serverRemoveButton,
+            AccountAccessibilityID.serverRemoveButton(for: UUID()),
             AccountAccessibilityID.storageResetConfirmButton,
         ]
         #expect(identifiers.allSatisfy { !$0.isEmpty })
         #expect(Set(identifiers).count == identifiers.count)
+    }
+
+    @Test("Server-remove identifier is distinct per profile, not shared across rows")
+    func serverRemoveButtonIdentifierIsPerProfile() {
+        let first = AccountAccessibilityID.serverRemoveButton(for: UUID())
+        let second = AccountAccessibilityID.serverRemoveButton(for: UUID())
+        #expect(first != second)
+        #expect(!first.isEmpty && !second.isEmpty)
     }
 }

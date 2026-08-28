@@ -125,7 +125,7 @@ struct ServerManagementView: View {
                 } label: {
                     Label("Remove", systemImage: "trash")
                 }
-                .accessibilityIdentifier(AccountAccessibilityID.serverRemoveButton)
+                .accessibilityIdentifier(AccountAccessibilityID.serverRemoveButton(for: profile.id))
             }
         }
     }
@@ -148,7 +148,9 @@ private struct CustomProfileSwipeActions: ViewModifier {
                     Button(role: .destructive, action: onRemove) {
                         Label("Remove", systemImage: "trash")
                     }
-                    .accessibilityIdentifier(AccountAccessibilityID.serverRemoveButton)
+                    .accessibilityIdentifier(
+                        AccountAccessibilityID.serverRemoveButton(for: profile.id)
+                    )
 
                     Button(action: onEdit) {
                         Label("Edit", systemImage: "pencil")

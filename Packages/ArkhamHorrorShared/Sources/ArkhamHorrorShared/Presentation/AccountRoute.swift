@@ -1,3 +1,5 @@
+import Foundation
+
 /// A typed, `SessionState`-derived presentation route for the account/server UI.
 ///
 /// Pure and `Equatable`: constructing one from a `SessionState` and its `profiles`
@@ -70,6 +72,14 @@ enum AccountAccessibilityID {
     static let serverDisplayNameField = "account.server.displayName"
     static let serverURLField = "account.server.url"
     static let serverEditorSaveButton = "account.server.save"
-    static let serverRemoveButton = "account.server.remove"
     static let storageResetConfirmButton = "account.storageReset.confirm"
+
+    /// A per-profile removal-action identifier, distinct for every custom server row.
+    ///
+    /// A single shared identifier here would make UI automation unable to distinguish
+    /// which row's Remove control it tapped (context menu and swipe action both expose
+    /// this identifier for every custom profile), so this is keyed by `profileID`.
+    static func serverRemoveButton(for profileID: UUID) -> String {
+        "account.server.remove.\(profileID.uuidString)"
+    }
 }
