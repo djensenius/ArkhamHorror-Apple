@@ -114,11 +114,11 @@ extension ServerProfile {
 // MARK: - Capabilities URL
 
 extension ServerProfile {
-    /// Constructs the `GET /api/v1/capabilities` URL for this profile.
+    /// Constructs the capabilities endpoint URL for this profile.
     ///
-    /// The capabilities path is appended to ``baseURL``'s existing path component,
+    /// Appends `<pin.expectedApiBasePath>/capabilities` to ``baseURL``'s existing path
     /// so a profile with a path prefix (e.g. `https://example.com/myapp`) correctly
-    /// produces `https://example.com/myapp/api/v1/capabilities`.
+    /// produces `https://example.com/myapp/api/v1/capabilities` with the default pin.
     func capabilitiesURL(pin: ContractPin = .current) -> URL {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             preconditionFailure(
@@ -222,7 +222,14 @@ extension ServerProfile: Decodable {
 
 private extension ServerProfile {
     /// Validates, normalizes, and returns a base URL from raw user input.
-    static func normalizedBaseURL(_ rawValue: String) throws -> URL {
+    ///
+    /// `apiBasePath` defaults to `ContractPin.current.expectedApiBasePath` so that
+    /// validation stays in sync with the compiled-in contract pin rather than hard-coding
+    /// a specific version string.
+    static func normalizedBaseURL(
+        _ rawValue: String,
+        apiBasePath: String = ContractPin.current.expectedApiBasePath
+    ) throws -> URL {
         let withScheme = try withExplicitScheme(rawValue)
         guard var components = URLComponents(string: withScheme) else {
             throw ServerProfileError.malformedURL
@@ -235,7 +242,7 @@ private extension ServerProfile {
         components.password = nil
         components.fragment = nil
         components.query = nil
-        components.path = try normalizedPath(components.path)
+        components.path = try normalizedPath(components.path, apiBasePath: apiBasePath)
         guard let url = components.url else {
             preconditionFailure(
                 "Components derived from a parseable URL must produce a valid URL"
@@ -291,9 +298,13 @@ private extension ServerProfile {
         return (scheme, host.lowercased())
     }
 
-    /// Strips trailing slashes and rejects paths that contain the `/api/v1` segment
-    /// sequence, including mid-path occurrences such as `/proxy/api/v1/extra`.
-    static func normalizedPath(_ rawPath: String) throws -> String {
+    /// Strips trailing slashes and rejects paths that contain the current API base-path
+    /// segment sequence (derived from ``ContractPin/expectedApiBasePath``), including
+    /// mid-path occurrences such as `/proxy/<basePath>/extra`.
+    ///
+    /// Similar-but-distinct segments such as `/api/v10` (when the base path is `/api/v1`)
+    /// are allowed because the trailing-slash/hasSuffix check enforces segment boundaries.
+    static func normalizedPath(_ rawPath: String, apiBasePath: String) throws -> String {
         var path = rawPath
         while path.count > 1, path.hasSuffix("/") {
             path.removeLast()
@@ -302,7 +313,8 @@ private extension ServerProfile {
             path = ""
         }
         let lower = path.lowercased()
-        if lower.contains("/api/v1/") || lower.hasSuffix("/api/v1") {
+        let lowerPrefix = apiBasePath.lowercased()
+        if lower.contains(lowerPrefix + "/") || lower.hasSuffix(lowerPrefix) {
             throw ServerProfileError.apiPrefixAlreadyPresent
         }
         return path

@@ -183,4 +183,28 @@ struct ServerProfileTests {
             try ServerProfile.custom(displayName: "T", rawURL: "https://example.com/api/v1/")
         }
     }
+
+    @Test("URL containing ContractPin.current.expectedApiBasePath throws apiPrefixAlreadyPresent")
+    func apiPrefixFromCurrentPinThrows() {
+        // Builds the rejected URL from the live pin so the test exercises the validator
+        // when the pin advances to a new API version.
+        let basePath = ContractPin.current.expectedApiBasePath
+        #expect(throws: ServerProfileError.apiPrefixAlreadyPresent) {
+            try ServerProfile.custom(
+                displayName: "T",
+                rawURL: "https://example.com\(basePath)"
+            )
+        }
+    }
+
+    @Test("URL with ContractPin base path mid-path throws apiPrefixAlreadyPresent")
+    func apiPrefixFromCurrentPinMidPathThrows() {
+        let basePath = ContractPin.current.expectedApiBasePath
+        #expect(throws: ServerProfileError.apiPrefixAlreadyPresent) {
+            try ServerProfile.custom(
+                displayName: "T",
+                rawURL: "https://example.com/proxy\(basePath)/extra"
+            )
+        }
+    }
 }

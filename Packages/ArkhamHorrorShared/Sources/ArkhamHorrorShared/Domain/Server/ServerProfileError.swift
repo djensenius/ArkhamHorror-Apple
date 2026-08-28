@@ -22,7 +22,8 @@ enum ServerProfileError: Error, Equatable, Sendable {
     case fragmentNotAllowed
     /// Query strings (`?…`) are not permitted in server base URLs.
     case queryNotAllowed
-    /// The URL contains the API path segment sequence `/api/v1`.
+    /// The URL already contains the API base-path segment sequence from
+    /// ``ContractPin/expectedApiBasePath`` (e.g. `/api/v1`).
     ///
     /// Supply the server root URL without the API path; the client appends
     /// the prefix automatically when constructing endpoint URLs.
