@@ -44,9 +44,9 @@ public struct RootView: View {
     }
 
     /// The underlying coordinator's identity, exposed solely so an `@testable` test
-    /// can verify that multiple production ``RootView()`` windows share one process
-    /// -level ``AppModel`` instance rather than each racing an independent one against
-    /// the same process-global stores.
+    /// can verify that multiple production ``RootView()`` windows share one
+    /// process-level ``AppModel`` instance rather than each racing an independent
+    /// one against the same process-global stores.
     var modelIdentityForArchitectureTest: ObjectIdentifier {
         ObjectIdentifier(model)
     }

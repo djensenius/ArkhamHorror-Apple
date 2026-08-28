@@ -165,10 +165,10 @@ extension AppModel {
     /// captured (operation start), and threaded through unchanged; this function then
     /// rechecks it against the live epoch immediately before `operation` runs — the
     /// last possible moment before the Keychain is actually touched — so an
-    /// already-enqueued stale save can never durably resurrect a token for a since
-    /// -changed or since-removed endpoint. On mismatch, `operation` is skipped and
-    /// ``StaleCredentialEpochError`` is thrown; every call site treats this exactly
-    /// like ``CancellationError`` (never surfaced as a user-facing failure).
+    /// already-enqueued stale save can never durably resurrect a token for a
+    /// since-changed or since-removed endpoint. On mismatch, `operation` is skipped
+    /// and ``StaleCredentialEpochError`` is thrown; every call site treats this
+    /// exactly like ``CancellationError`` (never surfaced as a user-facing failure).
     ///
     /// Beyond credential-epoch safety, this also preserves the existing ordering
     /// guarantee: durable mutations for a profile always apply in the order they were

@@ -37,8 +37,8 @@ extension ServerProfileTests {
             "http://10.0.0.5",
             // A public host.
             "http://example.com",
-            // Loopback-adjacent but not loopback: 127.0.0.0/8's the only exempt
-            // range, and this is a different octet entirely.
+            // Loopback-adjacent but not loopback: only 127.0.0.0/8 is exempt, and
+            // this is a different octet entirely.
             "http://128.0.0.1",
             // `localhost` subdomains/lookalikes must not inherit the exception.
             "http://localhost.evil.com",
