@@ -16,7 +16,7 @@ import Foundation
 /// rather than silently discarded.
 /// - Note: `UserDefaults` does not carry a `Sendable` annotation in this SDK version;
 ///   the `@unchecked Sendable` conformance is safe because `UserDefaults` is
-///   documented as thread-safe for `set`/`data(forKey:)`/`string(forKey:)` operations.
+///   documented as thread-safe for access.
 struct UserDefaultsServerProfileStore: ServerProfileStore, @unchecked Sendable {
     private enum Keys {
         static let profiles = "ArkhamHorror.serverProfiles"
@@ -33,8 +33,11 @@ struct UserDefaultsServerProfileStore: ServerProfileStore, @unchecked Sendable {
     }
 
     func loadProfiles() throws -> [ServerProfile] {
-        guard let data = defaults.data(forKey: Keys.profiles) else {
+        guard let storedValue = defaults.object(forKey: Keys.profiles) else {
             return []
+        }
+        guard let data = storedValue as? Data else {
+            throw ServerProfileStoreError.corruptData(key: Keys.profiles)
         }
         let profiles: [ServerProfile]
         do {
@@ -59,8 +62,11 @@ struct UserDefaultsServerProfileStore: ServerProfileStore, @unchecked Sendable {
     }
 
     func loadSelectedProfileID() throws -> UUID? {
-        guard let string = defaults.string(forKey: Keys.selectedProfileID) else {
+        guard let storedValue = defaults.object(forKey: Keys.selectedProfileID) else {
             return nil
+        }
+        guard let string = storedValue as? String else {
+            throw ServerProfileStoreError.corruptData(key: Keys.selectedProfileID)
         }
         guard let uuid = UUID(uuidString: string) else {
             throw ServerProfileStoreError.corruptData(key: Keys.selectedProfileID)

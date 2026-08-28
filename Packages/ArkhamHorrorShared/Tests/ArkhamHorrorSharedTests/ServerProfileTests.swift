@@ -141,8 +141,13 @@ struct ServerProfileTests {
     }
 
     @Test(
-        "Out-of-range ports throw instead of terminating URL normalization",
-        arguments: ["https://example.com:0", "https://example.com:65536"]
+        "Invalid ports throw instead of terminating URL normalization",
+        arguments: [
+            "https://example.com:",
+            "https://example.com:0",
+            "https://example.com:65536",
+            "https://example.com:999999999999999999999999999",
+        ]
     )
     func outOfRangePortThrows(rawURL: String) {
         #expect(throws: ServerProfileError.malformedURL) {

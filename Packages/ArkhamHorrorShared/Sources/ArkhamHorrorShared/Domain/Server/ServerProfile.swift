@@ -233,8 +233,18 @@ private extension ServerProfile {
         }
         try assertNoForbiddenComponents(components)
         let (scheme, host) = try validatedSchemeAndHost(components)
-        if let port = components.port, !(1 ... 65535).contains(port) {
+        guard let schemeSeparator = withScheme.range(of: "://") else {
             throw ServerProfileError.malformedURL
+        }
+        let authority = withScheme[schemeSeparator.upperBound...].prefix { !"/?#".contains($0) }
+        guard !authority.hasSuffix(":") else {
+            throw ServerProfileError.malformedURL
+        }
+        let portRange = (components as NSURLComponents).rangeOfPort
+        if portRange.location != NSNotFound {
+            guard let port = components.port, (1 ... 65535).contains(port) else {
+                throw ServerProfileError.malformedURL
+            }
         }
         components.scheme = scheme
         components.host = host

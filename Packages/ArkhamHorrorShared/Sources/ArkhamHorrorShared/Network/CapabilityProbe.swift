@@ -71,6 +71,7 @@ struct CapabilityProbe: Sendable {
             try Task.checkCancellation()
             throw CapabilityProbeError.transportFailure(String(describing: error))
         }
+        try Task.checkCancellation()
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CapabilityProbeError.nonHTTPResponse

@@ -144,6 +144,27 @@ struct CapabilityProbeTransportTests {
         }
     }
 
+    @Test("A cancelled task cannot return a successful probe result")
+    func successfulTransportResultStillChecksCancellation() async throws {
+        let capabilitiesData = try canonicalCapabilitiesData()
+        let transport = GatedTransport()
+        let probe = CapabilityProbe(transport: transport)
+        let task = Task<CompatibilityOutcome, any Error> {
+            try await probe.probe(defaultProfile)
+        }
+
+        let gate = await transport.awaitGate()
+        task.cancel()
+        gate.resume(returning: (
+            capabilitiesData,
+            makeHTTPResponse(status: 200)
+        ))
+
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+    }
+
     // MARK: - Request verification
 
     @Test("Probe issues a GET request")

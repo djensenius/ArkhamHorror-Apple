@@ -158,12 +158,42 @@ struct ServerProfileStoreTests {
         }
     }
 
+    @Test("Profiles stored with the wrong property-list type throw corruptData")
+    func wrongTypedProfilesThrow() throws {
+        let suite = "com.tests.ServerProfileStoreTests.wrongProfilesType.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = UserDefaultsServerProfileStore(defaults: defaults)
+        defaults.set("not-data", forKey: "ArkhamHorror.serverProfiles")
+
+        #expect(
+            throws: ServerProfileStoreError.corruptData(key: "ArkhamHorror.serverProfiles")
+        ) {
+            try store.loadProfiles()
+        }
+    }
+
     @Test("A non-UUID selected ID string throws corruptData rather than returning nil")
     func corruptSelectedIDThrows() throws {
         let suite = "com.tests.ServerProfileStoreTests.corruptID.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         let store = UserDefaultsServerProfileStore(defaults: defaults)
         defaults.set("not-a-uuid", forKey: "ArkhamHorror.selectedServerProfileID")
+
+        #expect(
+            throws: ServerProfileStoreError.corruptData(
+                key: "ArkhamHorror.selectedServerProfileID"
+            )
+        ) {
+            try store.loadSelectedProfileID()
+        }
+    }
+
+    @Test("Selected profile ID stored with the wrong type throws corruptData")
+    func wrongTypedSelectedIDThrows() throws {
+        let suite = "com.tests.ServerProfileStoreTests.wrongSelectionType.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = UserDefaultsServerProfileStore(defaults: defaults)
+        defaults.set(Data("not-a-string".utf8), forKey: "ArkhamHorror.selectedServerProfileID")
 
         #expect(
             throws: ServerProfileStoreError.corruptData(
