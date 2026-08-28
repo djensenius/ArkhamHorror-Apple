@@ -1,7 +1,7 @@
 import Foundation
 
-/// Probes a server's `GET /api/v1/capabilities` endpoint and evaluates the response
-/// against the compiled-in contract pin.
+/// Probes the capabilities endpoint derived from the compiled-in contract pin and
+/// evaluates the response against that pin.
 ///
 /// The probe is injectable via ``CapabilityProbeTransport``, which allows deterministic
 /// unit testing without real network calls.
@@ -32,7 +32,8 @@ struct CapabilityProbe: Sendable {
 
     /// Probes the server described by `profile` and returns the compatibility outcome.
     ///
-    /// Sends `GET <baseURL>/api/v1/capabilities` with `Accept: application/json`.
+    /// Sends `GET <baseURL><pin.expectedApiBasePath>/capabilities` with
+    /// `Accept: application/json`.
     ///
     /// | Server response                      | Result                                          |
     /// |--------------------------------------|-------------------------------------------------|

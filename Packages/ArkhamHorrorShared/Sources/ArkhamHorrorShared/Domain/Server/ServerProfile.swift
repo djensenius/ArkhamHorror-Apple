@@ -24,8 +24,8 @@ struct ServerProfile: Identifiable, Equatable, Hashable, Sendable {
     let displayName: String
     /// Validated, normalized server root URL.
     ///
-    /// Never contains the API path prefix (`/api/v1`); use
-    /// ``capabilitiesURL(pin:)`` to build the full endpoint URL.
+    /// Never contains the API path prefix reserved by the current ``ContractPin``;
+    /// use ``capabilitiesURL(pin:)`` to build the full endpoint URL.
     let baseURL: URL
     /// Hosting context for this profile.
     let kind: ServerProfileKind
@@ -74,8 +74,8 @@ extension ServerProfile {
     /// - A non-empty host is required.
     /// - Credentials (`user@host`, `user:pass@host`), fragments, and query strings
     ///   are rejected.
-    /// - The path must not contain the `/api/v1` segment sequence; the client appends
-    ///   that prefix automatically to avoid duplication.
+    /// - The path must not contain the API segment sequence reserved by the current
+    ///   ``ContractPin``; the client appends that prefix automatically.
     /// - Non-default ports and explicit path prefixes are preserved.
     ///
     /// A missing scheme defaults to `https`.
@@ -118,7 +118,7 @@ extension ServerProfile {
     ///
     /// Appends `<pin.expectedApiBasePath>/capabilities` to ``baseURL``'s existing path
     /// so a profile with a path prefix (e.g. `https://example.com/myapp`) correctly
-    /// produces `https://example.com/myapp/api/v1/capabilities` with the default pin.
+    /// preserves that prefix before the pin-derived capabilities path.
     func capabilitiesURL(pin: ContractPin = .current) -> URL {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             preconditionFailure(
