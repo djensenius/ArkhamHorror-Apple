@@ -1,5 +1,6 @@
 @testable import ArkhamHorrorShared
 import Foundation
+import Security
 import Testing
 
 // MARK: - Test doubles

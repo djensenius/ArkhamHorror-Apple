@@ -46,8 +46,8 @@ extension RedirectRejectingURLSessionDelegate: URLSessionTaskDelegate {
 ///   replayed to another destination. The caller receives the original 3xx response.
 ///
 /// TLS validation is never bypassed; the configuration inherits the default trust
-/// evaluation policy. A single instance is safely shared by the public capability probe
-/// and the authenticated session because it carries no shared credential state; the
+/// evaluation policy. Instances are safe to share between the public capability probe
+/// and authenticated sessions because they carry no shared credential state; the
 /// `Authorization` header is set per-request only for authenticated operations.
 struct URLSessionTransport: HTTPTransport {
     private let session: URLSession

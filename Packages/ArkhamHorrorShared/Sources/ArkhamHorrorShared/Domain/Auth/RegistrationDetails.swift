@@ -14,3 +14,13 @@ struct RegistrationDetails: Codable, Equatable, Sendable {
     /// The chosen password. Secret; never logged or persisted.
     let password: String
 }
+
+extension RegistrationDetails: CustomStringConvertible, CustomDebugStringConvertible {
+    var description: String {
+        "RegistrationDetails(<redacted>)"
+    }
+
+    var debugDescription: String {
+        description
+    }
+}

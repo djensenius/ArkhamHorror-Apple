@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// A narrow, injectable wrapper over the Security framework generic-password C API.
 ///

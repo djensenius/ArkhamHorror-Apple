@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// A non-secret error surfaced by ``KeychainTokenStore``.
 ///

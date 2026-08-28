@@ -13,6 +13,16 @@ struct AuthToken: Codable, Equatable, Sendable {
     let token: String
 }
 
+extension AuthToken: CustomStringConvertible, CustomDebugStringConvertible {
+    var description: String {
+        "AuthToken(<redacted>)"
+    }
+
+    var debugDescription: String {
+        description
+    }
+}
+
 extension AuthToken {
     /// Whether the token has usable, non-whitespace content.
     ///

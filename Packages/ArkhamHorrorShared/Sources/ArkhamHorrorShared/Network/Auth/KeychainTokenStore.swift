@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// A ``TokenStore`` backed by Security framework generic-password Keychain items.
 ///

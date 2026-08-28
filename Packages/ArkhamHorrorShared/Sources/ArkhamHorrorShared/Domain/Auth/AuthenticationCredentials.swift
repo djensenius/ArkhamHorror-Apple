@@ -12,3 +12,13 @@ struct AuthenticationCredentials: Codable, Equatable, Sendable {
     /// The account password. Secret; never logged or persisted.
     let password: String
 }
+
+extension AuthenticationCredentials: CustomStringConvertible, CustomDebugStringConvertible {
+    var description: String {
+        "AuthenticationCredentials(<redacted>)"
+    }
+
+    var debugDescription: String {
+        description
+    }
+}

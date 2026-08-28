@@ -77,6 +77,30 @@ struct AuthModelsTests {
         #expect(AuthToken(token: "x").hasUsableContent)
     }
 
+    @Test("Secret-bearing models redact string and debug descriptions")
+    func secretDescriptionsAreRedacted() {
+        let secrets = ["secret-email", "secret-username", "secret-password", "secret-token"]
+        let values: [any CustomStringConvertible & CustomDebugStringConvertible] = [
+            AuthenticationCredentials(email: secrets[0], password: secrets[2]),
+            RegistrationDetails(
+                email: secrets[0],
+                username: secrets[1],
+                password: secrets[2]
+            ),
+            AuthToken(token: secrets[3]),
+        ]
+
+        for value in values {
+            let descriptions = [String(describing: value), String(reflecting: value)]
+            for description in descriptions {
+                #expect(description.contains("<redacted>"))
+                for secret in secrets {
+                    #expect(!description.contains(secret))
+                }
+            }
+        }
+    }
+
     // MARK: - CurrentUser
 
     @Test("CurrentUser decodes all required fields")
