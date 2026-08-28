@@ -156,6 +156,38 @@ extension AppModelTests {
         #expect(finalTokens[ServerProfile.hosted.id] == nil)
     }
 
+    @Test("A superseded sign-out task cannot enqueue a token deletion after switching back")
+    func supersededSignOutBeforeTaskStartCannotDeleteToken() async throws {
+        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "existing-token"])
+        let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile]),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth
+        )
+        await model.flowTask?.value
+        let signedIn = SessionState.signedIn(
+            profile: .hosted, compatibility: .legacy, user: .sample
+        )
+        #expect(model.sessionState == signedIn)
+
+        // Stay on the main actor for all three calls so the sign-out task cannot begin
+        // before both profile selections have advanced the generation.
+        model.signOut()
+        let staleSignOutTask = model.operationTask
+        model.selectProfile(sampleCustomProfile)
+        model.selectProfile(.hosted)
+        let currentFlowTask = model.flowTask
+
+        await staleSignOutTask?.value
+        await currentFlowTask?.value
+
+        #expect(await tokenStore.deleteCallCount == 0)
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "existing-token")
+        #expect(model.sessionState == signedIn)
+    }
+
     @Test("A stale unauthorized whoami cannot delete a newer token for the same profile")
     func staleUnauthorizedWhoamiCannotDeleteNewerToken() async throws {
         let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "shared-token"])

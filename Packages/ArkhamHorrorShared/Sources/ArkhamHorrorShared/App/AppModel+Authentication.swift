@@ -51,7 +51,7 @@ extension AppModel {
         profile: ServerProfile,
         compatibility: ServerCompatibility,
         generation: Int,
-        issueToken: (ServerProfile) async throws -> AuthToken
+        issueToken: @Sendable (ServerProfile) async throws -> AuthToken
     ) async {
         let issuedToken: AuthToken
         do {
@@ -110,7 +110,7 @@ extension AppModel {
         if let authError = error as? AuthenticationError {
             return .authentication(authError)
         }
-        return .authentication(.transportFailure(String(describing: error)))
+        return .authentication(.transportFailure("Unexpected authentication failure."))
     }
 }
 
@@ -143,6 +143,11 @@ extension AppModel {
         compatibility: ServerCompatibility,
         generation: Int
     ) async {
+        // The operation task may not start until after a profile switch has already
+        // cancelled and superseded it. Reject that stale task before it can enqueue a
+        // deletion behind newer same-profile token work.
+        guard isCurrent(generation) else { return }
+
         do {
             // Serialized (see ``AppModel/serializedTokenAccess(for:_:)``) so a stale
             // delete that is already in flight when superseded cannot race with, or be

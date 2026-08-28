@@ -109,6 +109,33 @@ extension AppModelTests {
         #expect(model.operation == .idle)
         #expect(model.operationFailure == nil)
     }
+
+    @Test("An unexpected sign-in error cannot retain its description in operation state")
+    func unexpectedSignInErrorIsSanitized() async {
+        let secret = "private-sign-in-detail"
+        let auth = ScriptedAuthenticating(
+            authenticateResult: .failure(SensitiveTestFailure(description: secret))
+        )
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth
+        )
+        await model.flowTask?.value
+
+        model.signIn(AuthenticationCredentials(email: "a@example.com", password: "secret-pw"))
+        await model.operationTask?.value
+
+        let diagnostic: String? = switch model.operationFailure {
+        case let .authentication(.transportFailure(value)):
+            value
+        default:
+            nil
+        }
+        #expect(diagnostic == "Unexpected authentication failure.")
+        #expect(diagnostic?.contains(secret) == false)
+    }
 }
 
 /// Sign-out: successful deletion transitions to signedOut; a deletion failure leaves

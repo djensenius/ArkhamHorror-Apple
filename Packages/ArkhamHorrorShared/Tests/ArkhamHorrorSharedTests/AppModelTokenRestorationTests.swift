@@ -103,4 +103,32 @@ extension AppModelTests {
         let remainingToken = try await tokenStore.token(for: ServerProfile.hosted.id)
         #expect(remainingToken == "kept-token")
     }
+
+    @Test("An unexpected whoami error cannot retain its description in session state")
+    func unexpectedWhoamiErrorIsSanitized() async {
+        let secret = "private-whoami-detail"
+        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "kept-token"])
+        let auth = ScriptedAuthenticating(
+            currentUserResult: .failure(SensitiveTestFailure(description: secret))
+        )
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth
+        )
+        await model.flowTask?.value
+
+        let diagnostic: String? = switch model.sessionState {
+        case let .unavailable(
+            _,
+            .tokenValidationFailed(.authentication(.transportFailure(value)))
+        ):
+            value
+        default:
+            nil
+        }
+        #expect(diagnostic == "Unexpected authentication failure.")
+        #expect(diagnostic?.contains(secret) == false)
+    }
 }

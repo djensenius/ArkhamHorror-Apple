@@ -6,6 +6,10 @@ import Testing
 
 struct TestFailure: Error, Sendable {}
 
+struct SensitiveTestFailure: Error, CustomStringConvertible, Sendable {
+    let description: String
+}
+
 /// An in-memory ``ServerProfileStore`` whose reads and writes can be scripted to throw,
 /// so startup storage handling can be exercised deterministically.
 final class FakeServerProfileStore: ServerProfileStore, @unchecked Sendable {

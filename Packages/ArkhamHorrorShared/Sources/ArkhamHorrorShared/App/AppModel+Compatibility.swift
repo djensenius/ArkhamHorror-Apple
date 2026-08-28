@@ -38,7 +38,7 @@ extension AppModel {
         if let probeError = error as? CapabilityProbeError {
             return .probeFailed(probeError)
         }
-        return .probeFailed(.transportFailure(String(describing: error)))
+        return .probeFailed(.transportFailure("Unexpected capability probe failure."))
     }
 
     func restoreToken(
@@ -105,7 +105,7 @@ extension AppModel {
             // token and is surfaced as a distinct, retryable unavailable reason.
             guard isCurrent(generation) else { return }
             let authError = (error as? AuthenticationError)
-                ?? .transportFailure(String(describing: error))
+                ?? .transportFailure("Unexpected authentication failure.")
             let reason = TokenValidationFailure.authentication(authError)
             sessionState = .unavailable(profile: profile, reason: .tokenValidationFailed(reason))
         }

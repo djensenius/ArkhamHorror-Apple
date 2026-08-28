@@ -165,6 +165,29 @@ extension AppModelTests {
         #expect(model.sessionState.isRetryable)
     }
 
+    @Test("An unexpected probe error cannot retain its description in session state")
+    func unexpectedProbeErrorIsSanitized() async {
+        let secret = "private-probe-detail"
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(
+                .failure(SensitiveTestFailure(description: secret))
+            ),
+            authenticationSession: ScriptedAuthenticating()
+        )
+        await model.flowTask?.value
+
+        let diagnostic: String? = switch model.sessionState {
+        case let .unavailable(_, .probeFailed(.transportFailure(value))):
+            value
+        default:
+            nil
+        }
+        #expect(diagnostic == "Unexpected capability probe failure.")
+        #expect(diagnostic?.contains(secret) == false)
+    }
+
     @Test("Probe cancellation does not become an error")
     func probeCancellationIsNotAnError() async {
         let model = AppModel(
