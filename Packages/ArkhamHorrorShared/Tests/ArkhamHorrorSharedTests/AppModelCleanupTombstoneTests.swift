@@ -68,11 +68,17 @@ extension AppModelTests {
         #expect(
             await tokenStore.pendingMutations() == [.delete(profileID: ServerProfile.hosted.id)]
         )
+        // Captured now (rather than relying on a fixed number of scheduler yields
+        // afterward) so the assertions below cannot flake under CI scheduling
+        // pressure: by the time `waitUntilPending` above returned, the retried
+        // cleanup's task was already synchronously registered by
+        // `enqueueCancellationCleanup` inside `resolvePendingCleanup`.
+        let retriedCleanup = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
 
         // This retried delete succeeds: the tombstone clears, and only now can the
         // fresh sign-in's own save proceed.
         await tokenStore.resumeOldest()
-        await settle()
+        _ = await retriedCleanup?.value
         #expect(cleanupStore.snapshotPendingIDs().isEmpty)
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
 
