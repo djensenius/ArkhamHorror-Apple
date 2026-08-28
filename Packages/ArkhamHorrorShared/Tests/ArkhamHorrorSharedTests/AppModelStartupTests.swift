@@ -101,7 +101,9 @@ extension AppModelTests {
         // value is corrupt — so this must not be conflated with true profile-list
         // corruption: it should silently fall back to hosted and persist that repaired
         // selection, leaving every existing profile (and its token) untouched.
-        let corruption = ServerProfileStoreError.corruptData(key: "ArkhamHorror.selectedProfileID")
+        let corruption = ServerProfileStoreError.corruptData(
+            key: "ArkhamHorror.selectedServerProfileID"
+        )
         let tokenStore = FakeTokenStore(tokens: [sampleCustomProfile.id: "kept-token"])
         let store = FakeServerProfileStore(
             profiles: [.hosted, sampleCustomProfile],

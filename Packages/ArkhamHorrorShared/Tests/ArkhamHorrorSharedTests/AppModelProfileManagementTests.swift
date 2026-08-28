@@ -87,7 +87,7 @@ extension AppModelTests {
     }
 
     @Test("Adding a profile with plain HTTP to the local loopback interface succeeds")
-    func addCustomProfileLoopbackHTTPSucceeds() async {
+    func addCustomProfileLoopbackPlainHTTPSucceeds() async {
         let model = makeModel()
         await model.flowTask?.value
 
