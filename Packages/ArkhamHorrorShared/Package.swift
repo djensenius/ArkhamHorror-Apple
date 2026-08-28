@@ -20,7 +20,8 @@ let package = Package(
         .target(name: "ArkhamHorrorShared"),
         .testTarget(
             name: "ArkhamHorrorSharedTests",
-            dependencies: ["ArkhamHorrorShared"]
+            dependencies: ["ArkhamHorrorShared"],
+            resources: [.copy("Fixtures")]
         ),
     ],
     swiftLanguageModes: [.v6]
