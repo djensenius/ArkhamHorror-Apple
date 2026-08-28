@@ -274,4 +274,41 @@ struct KeychainTokenCleanupPendingStoreTests {
                 == "test.arkhamhorror.cleanup-pending"
         )
     }
+
+    // MARK: - Production adapter account-parsing (fail-closed)
+
+    @Test(
+        """
+        SecurityKeychainClient.accounts(fromMatchingItems:) returns every account \
+        when all items are well-formed
+        """
+    )
+    func productionAdapterParsesWellFormedAccounts() {
+        let items: [[String: Any]] = [
+            [kSecAttrAccount as String: profileA.uuidString],
+            [kSecAttrAccount as String: profileB.uuidString],
+        ]
+        let accounts = SecurityKeychainClient.accounts(fromMatchingItems: items)
+        #expect(accounts.map(Set.init) == Set([profileA.uuidString, profileB.uuidString]))
+    }
+
+    @Test(
+        """
+        SecurityKeychainClient.accounts(fromMatchingItems:) fails closed (returns nil, \
+        never silently drops) when any item lacks a string kSecAttrAccount, rather than \
+        undercounting pending tombstones the way `compactMap` would
+        """
+    )
+    func productionAdapterFailsClosedOnMissingAccountAttribute() {
+        let missingAccount: [[String: Any]] = [
+            [kSecAttrAccount as String: profileA.uuidString],
+            [kSecAttrService as String: "test.arkhamhorror.cleanup-pending"],
+        ]
+        #expect(SecurityKeychainClient.accounts(fromMatchingItems: missingAccount) == nil)
+
+        let nonStringAccount: [[String: Any]] = [
+            [kSecAttrAccount as String: 42],
+        ]
+        #expect(SecurityKeychainClient.accounts(fromMatchingItems: nonStringAccount) == nil)
+    }
 }

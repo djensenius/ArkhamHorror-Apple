@@ -89,7 +89,31 @@ struct SecurityKeychainClient: KeychainClient {
             // rather than guessing at a shape.
             return (errSecParam, nil)
         }
-        let accounts = items.compactMap { $0[kSecAttrAccount as String] as? String }
+        guard let accounts = Self.accounts(fromMatchingItems: items) else {
+            // An item missing (or with a non-string) account attribute is corrupt:
+            // silently dropping it via `compactMap` would let `pendingProfileIDs()`
+            // undercount pending tombstones, breaking this store's fail-closed
+            // contract. Report the whole query as corrupt instead of returning a
+            // partial, misleadingly-successful result.
+            return (errSecDecode, nil)
+        }
         return (errSecSuccess, accounts)
+    }
+
+    /// Extracts every item's `kSecAttrAccount` string value from a
+    /// `SecItemCopyMatching` attributes-dictionary result, or `nil` if *any* item
+    /// lacks a string account attribute — a pure, directly testable helper isolating
+    /// ``copyMatchingAccounts(matching:)``'s fail-closed parsing from the Security
+    /// framework call itself (which this project's tests never invoke live).
+    static func accounts(fromMatchingItems items: [[String: Any]]) -> [String]? {
+        var accounts: [String] = []
+        accounts.reserveCapacity(items.count)
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String else {
+                return nil
+            }
+            accounts.append(account)
+        }
+        return accounts
     }
 }
