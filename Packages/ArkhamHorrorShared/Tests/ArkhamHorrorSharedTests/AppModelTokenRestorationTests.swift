@@ -17,6 +17,7 @@ extension AppModelTests {
         await model.flowTask?.value
 
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(model.sessionState.detail == "\(ServerProfile.hosted.displayName) is ready.")
         #expect(await auth.callOrder.isEmpty)
     }
 

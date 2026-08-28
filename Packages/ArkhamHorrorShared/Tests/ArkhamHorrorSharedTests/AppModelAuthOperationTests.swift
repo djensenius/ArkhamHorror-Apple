@@ -6,6 +6,18 @@ import Testing
 /// and sign-out (successful deletion transitions to signedOut; a deletion failure
 /// leaves the session signed in and surfaces a distinct operation error).
 extension AppModelTests {
+    @Test("Authentication operation messages do not overstate the failure cause")
+    func authenticationOperationMessagesAreNeutral() {
+        #expect(
+            SessionOperationFailure.authentication(.unauthorized).message ==
+                "Authentication was rejected. Check your details and try again."
+        )
+        #expect(
+            SessionOperationFailure.authentication(.malformedPayload).message ==
+                "Could not complete authentication. Try again."
+        )
+    }
+
     @Test("Sign-in validates the issued token via whoami before saving it")
     func signInValidatesBeforeSaving() async {
         let tokenStore = FakeTokenStore()

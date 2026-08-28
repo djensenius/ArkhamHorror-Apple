@@ -63,9 +63,9 @@ extension SessionOperationFailure {
     var message: String {
         switch self {
         case .authentication(.unauthorized):
-            "Incorrect email or password."
+            "Authentication was rejected. Check your details and try again."
         case .authentication:
-            "Could not reach the server. Try again."
+            "Could not complete authentication. Try again."
         case .tokenStore:
             "Could not securely access your session. Try again."
         }
@@ -150,7 +150,7 @@ extension SessionState {
         case let .checkingCompatibility(profile):
             "Checking \(profile.displayName)."
         case let .signedOut(profile, _):
-            "\(profile.displayName) is ready. Sign in to continue."
+            "\(profile.displayName) is ready."
         case let .incompatible(profile, _):
             "\(profile.displayName) is not compatible with this app version."
         case let .unavailable(profile, reason):
