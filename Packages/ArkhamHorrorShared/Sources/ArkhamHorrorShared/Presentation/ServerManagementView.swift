@@ -74,6 +74,7 @@ struct ServerManagementView: View {
                 model.removeCustomProfile(profile)
                 pendingRemoval = nil
             }
+            .accessibilityIdentifier(AccountAccessibilityID.serverRemoveConfirmButton)
             Button("Cancel", role: .cancel) { pendingRemoval = nil }
         } message: { profile in
             Text("This removes \"\(profile.displayName)\" and its saved sign-in.")

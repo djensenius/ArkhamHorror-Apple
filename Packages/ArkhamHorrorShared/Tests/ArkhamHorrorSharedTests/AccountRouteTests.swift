@@ -105,6 +105,9 @@ struct AccountRouteTests {
             AccountAccessibilityID.serverEditorSaveButton,
             AccountAccessibilityID.serverRemoveButton(for: UUID()),
             AccountAccessibilityID.storageResetConfirmButton,
+            AccountAccessibilityID.storageResetEntryButton,
+            AccountAccessibilityID.chooseServerButton,
+            AccountAccessibilityID.serverRemoveConfirmButton,
         ]
         #expect(identifiers.allSatisfy { !$0.isEmpty })
         #expect(Set(identifiers).count == identifiers.count)

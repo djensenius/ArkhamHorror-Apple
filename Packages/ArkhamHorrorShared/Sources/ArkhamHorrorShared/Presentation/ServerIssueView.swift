@@ -77,6 +77,7 @@ struct ServerIssueView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier(AccountAccessibilityID.chooseServerButton)
         case .unavailable:
             ArkhamPrimaryButton("Retry", systemImage: "arrow.clockwise") {
                 model.retry()
@@ -90,6 +91,7 @@ struct ServerIssueView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier(AccountAccessibilityID.chooseServerButton)
         case .storageCorrupted:
             if model.profileManagementOperation == .resettingStorage {
                 ProgressView("Resetting…")
@@ -103,6 +105,7 @@ struct ServerIssueView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(model.profileManagementOperation != .idle)
+                .accessibilityIdentifier(AccountAccessibilityID.storageResetEntryButton)
             }
             if let failure = model.profileManagementFailure {
                 Text(failure.message)
