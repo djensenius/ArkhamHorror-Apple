@@ -104,6 +104,14 @@ struct ContractRevisionTests {
         #expect(rev == (try? ContractRevision("0.1.11")))
     }
 
+    @Test("Literal factory accepts the full unsigned range without conversion traps")
+    func literalFactoryFullRange() {
+        let rev = ContractRevision.literal(major: .max, minor: .max, patch: .max)
+        #expect(rev.major == .max)
+        #expect(rev.minor == .max)
+        #expect(rev.patch == .max)
+    }
+
     // MARK: - Codable
 
     @Test("JSON decoding from dot-separated string")

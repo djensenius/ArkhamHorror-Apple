@@ -11,9 +11,9 @@ enum ContractRevisionError: Error, Equatable, Sendable {
 ///
 /// Comparison is always numeric, never lexical: `0.1.9 < 0.1.11`.
 struct ContractRevision: Sendable {
-    let major: Int
-    let minor: Int
-    let patch: Int
+    let major: UInt
+    let minor: UInt
+    let patch: UInt
 }
 
 extension ContractRevision: Equatable, Hashable {}
@@ -41,7 +41,7 @@ extension ContractRevision {
     ///
     /// Requires exactly three non-empty components of strictly ASCII decimal digits (`0`–`9`).
     /// Rejects leading `+` or `-`, whitespace, Unicode decimal digits (e.g. Arabic-Indic),
-    /// and values that overflow `Int`. Throws ``ContractRevisionError/malformed`` for all
+    /// and values that overflow `UInt`. Throws ``ContractRevisionError/malformed`` for all
     /// invalid inputs.
     init(_ string: String) throws {
         let parts = string.split(separator: ".", omittingEmptySubsequences: false)
@@ -53,9 +53,9 @@ extension ContractRevision {
         }
         guard parts.count == 3,
               parts.allSatisfy(isStrictDecimal),
-              let major = Int(parts[0]),
-              let minor = Int(parts[1]),
-              let patch = Int(parts[2])
+              let major = UInt(parts[0]),
+              let minor = UInt(parts[1]),
+              let patch = UInt(parts[2])
         else {
             throw ContractRevisionError.malformed
         }
@@ -63,11 +63,8 @@ extension ContractRevision {
     }
 
     /// Constructs a revision from known-valid non-negative literal components.
-    ///
-    /// Uses `UInt` parameters so negative values are rejected at the call site without
-    /// a force-unwrap. Intended for compile-time constants in ``ContractPin`` and tests.
     static func literal(major: UInt, minor: UInt, patch: UInt) -> ContractRevision {
-        ContractRevision(major: Int(major), minor: Int(minor), patch: Int(patch))
+        ContractRevision(major: major, minor: minor, patch: patch)
     }
 }
 
