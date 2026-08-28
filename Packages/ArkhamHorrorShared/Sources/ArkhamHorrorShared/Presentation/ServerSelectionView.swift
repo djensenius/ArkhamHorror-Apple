@@ -110,6 +110,7 @@ struct ServerSelectionView: View {
                     .padding(.vertical, 6)
                 }
                 .buttonStyle(.plain)
+                .disabled(profile.id == selected.id)
                 .accessibilityAddTraits(profile.id == selected.id ? [.isSelected] : [])
             }
 
