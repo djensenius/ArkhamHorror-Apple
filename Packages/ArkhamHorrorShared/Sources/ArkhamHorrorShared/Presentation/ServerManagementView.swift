@@ -125,6 +125,7 @@ struct ServerManagementView: View {
                 } label: {
                     Label("Remove", systemImage: "trash")
                 }
+                .accessibilityIdentifier(AccountAccessibilityID.serverRemoveButton)
             }
         }
     }

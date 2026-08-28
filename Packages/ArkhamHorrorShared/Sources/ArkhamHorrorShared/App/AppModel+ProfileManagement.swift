@@ -17,6 +17,29 @@ import Foundation
 /// never invents a plaintext or in-memory fallback for a token store it cannot durably
 /// mutate. A display-name-only edit (no base URL change) never touches the token.
 extension AppModel {
+    /// Persists a profile-management mutation (add/edit/remove), surfacing any
+    /// failure as a local ``ProfileManagementFailure/storage(_:)`` rather than the
+    /// app-wide ``SessionState/storageCorrupted(_:)`` recovery flow.
+    ///
+    /// A profile add/edit/remove save failing (for example, a transient write
+    /// error) does not mean the *existing* stored profiles/tokens are unreadable or
+    /// corrupted, so it must not force every window into the destructive
+    /// storage-reset presentation the way a genuine load-time corruption does (see
+    /// ``AppModel/runStorageVoid(generation:_:)``, still used by
+    /// ``confirmStorageReset()``'s reseed, where that *is* the right behavior).
+    /// Returns `true` on success; on failure, returns `false` having already set
+    /// `profileManagementFailure` unless `generation` is no longer current.
+    func runProfileStorageVoid(generation: Int, _ operation: () throws -> Void) -> Bool {
+        do {
+            try operation()
+            return true
+        } catch {
+            guard isCurrent(generation) else { return false }
+            profileManagementFailure = .storage(storageFailure(from: error))
+            return false
+        }
+    }
+
     /// Validates and appends a new custom server profile.
     ///
     /// Purely synchronous: a brand-new profile has no existing token to reconcile, so
@@ -48,12 +71,9 @@ extension AppModel {
         let updatedProfiles = profiles + [newProfile]
         profileManagementOperation = .saving(newProfile.id)
         defer { profileManagementOperation = .idle }
-        guard runStorageVoid(generation: generation, {
+        guard runProfileStorageVoid(generation: generation, {
             try profileStore.saveProfiles(updatedProfiles)
-        }) else {
-            profileManagementFailure = .storage(.unexpected)
-            return
-        }
+        }) else { return }
         profiles = updatedProfiles
     }
 

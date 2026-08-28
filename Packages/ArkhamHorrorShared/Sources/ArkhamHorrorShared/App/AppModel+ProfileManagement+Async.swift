@@ -39,13 +39,12 @@ extension AppModel {
         }
         updatedProfiles[index] = updated
 
-        guard runStorageVoid(generation: generation, {
+        guard runProfileStorageVoid(generation: generation, {
             try profileStore.saveProfiles(updatedProfiles)
         }) else {
             // The token (if the endpoint changed) is already durably deleted at this
             // point; persistence itself failing is surfaced distinctly rather than
             // silently activating a half-applied edit.
-            profileManagementFailure = .storage(.unexpected)
             return
         }
         guard isCurrentProfileOperation(operationGeneration) else { return }
@@ -134,12 +133,9 @@ extension AppModel {
         var updatedProfiles = profiles
         updatedProfiles.removeAll { $0.id == profile.id }
 
-        guard runStorageVoid(generation: generation, {
+        guard runProfileStorageVoid(generation: generation, {
             try profileStore.saveProfiles(updatedProfiles)
-        }) else {
-            profileManagementFailure = .storage(.unexpected)
-            return
-        }
+        }) else { return }
         guard isCurrentProfileOperation(operationGeneration) else { return }
         profiles = updatedProfiles
 

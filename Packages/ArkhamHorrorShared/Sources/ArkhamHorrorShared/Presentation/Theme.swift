@@ -84,8 +84,10 @@ private extension View {
 }
 
 /// A full-width, prominent primary action button used across every screen for
-/// consistency, disabled and progress-aware for in-flight operations, and sized well
-/// above the platform minimum touch/click/focus target.
+/// consistency, disabled and progress-aware for in-flight operations, and sized to
+/// meet or exceed the platform's minimum interactive target (44pt on touch/pointer
+/// platforms per Apple's Human Interface Guidelines; taller on tvOS for ten-foot
+/// focus-first readability).
 struct ArkhamPrimaryButton: View {
     let title: String
     let systemImage: String?
@@ -104,6 +106,16 @@ struct ArkhamPrimaryButton: View {
         self.action = action
     }
 
+    /// The minimum height enforced by ``body`` below, satisfying the platform's
+    /// minimum touch/click/focus target size.
+    private var minimumInteractiveHeight: CGFloat {
+        #if os(tvOS)
+            64
+        #else
+            44
+        #endif
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
@@ -115,7 +127,7 @@ struct ArkhamPrimaryButton: View {
                 }
                 Text(title)
             }
-            .frame(maxWidth: .infinity, minHeight: 30)
+            .frame(maxWidth: .infinity, minHeight: minimumInteractiveHeight)
         }
         .buttonStyle(.borderedProminent)
         .tint(ArkhamTheme.accent)

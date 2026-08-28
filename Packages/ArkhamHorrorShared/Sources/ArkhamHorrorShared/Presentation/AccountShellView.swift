@@ -58,10 +58,9 @@ struct AccountShellView: View {
                         model.signOut()
                     } label: {
                         HStack {
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
                             if model.operation == .signingOut {
                                 ProgressView().controlSize(.small)
-                            } else {
-                                Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)

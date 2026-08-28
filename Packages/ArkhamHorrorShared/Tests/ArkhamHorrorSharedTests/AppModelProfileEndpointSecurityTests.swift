@@ -128,9 +128,10 @@ extension AppModelTests {
 
         // The token is gone (deleted before the failed persistence attempt) — this
         // never leaves a token pointed at a changed origin — but the edit itself is
-        // reported as failed rather than silently treated as applied.
+        // reported as failed (using the actual store error, not a generic fallback)
+        // rather than silently treated as applied.
         #expect(await tokenStore.deleteCallCount == 1)
-        #expect(model.profileManagementFailure == .storage(.unexpected))
+        #expect(model.profileManagementFailure == .storage(.profileStore(.duplicateProfileIDs)))
     }
 
     // MARK: - Remove
@@ -196,6 +197,33 @@ extension AppModelTests {
             .keychain(.unhandledStatus(errSecAuthFailed))
         )
         #expect(model.profileManagementFailure == expectedFailure)
+        #expect(model.profiles == [.hosted, sampleCustomProfile])
+    }
+
+    @Test("A persistence failure during removal stays local and never forces storageCorrupted")
+    func removePersistenceFailureStaysLocal() async {
+        let store = FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile])
+        let tokenStore = FakeTokenStore(tokens: [sampleCustomProfile.id: "token"])
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating()
+        )
+        await model.flowTask?.value
+        let stateBeforeRemove = model.sessionState
+
+        store.setSaveProfilesError(ServerProfileStoreError.duplicateProfileIDs)
+        model.removeCustomProfile(sampleCustomProfile)
+        await model.profileManagementTask?.value
+
+        // The token is already durably deleted (removal cannot leave an orphaned
+        // token for a profile it fails to remove from the list), but the failed
+        // persistence itself must stay local to `profileManagementFailure` rather
+        // than forcing the whole session into the storage-corrupted recovery flow.
+        #expect(await tokenStore.deleteCallCount == 1)
+        #expect(model.sessionState == stateBeforeRemove)
+        #expect(model.profileManagementFailure == .storage(.profileStore(.duplicateProfileIDs)))
         #expect(model.profiles == [.hosted, sampleCustomProfile])
     }
 }

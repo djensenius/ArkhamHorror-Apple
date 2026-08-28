@@ -26,7 +26,7 @@ struct SignInView: View {
         Form {
             Section {
                 TextField("Email", text: $email)
-                    .textContentType(.username)
+                    .textContentType(.emailAddress)
                     .emailFieldStyle()
                     .focused($focusedField, equals: .email)
                     .submitLabel(.next)

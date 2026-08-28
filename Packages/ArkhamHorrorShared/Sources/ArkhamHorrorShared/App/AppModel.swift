@@ -134,7 +134,7 @@ extension AppModel {
         }
     }
 
-    private func storageFailure(from error: any Error) -> SessionStorageFailure {
+    func storageFailure(from error: any Error) -> SessionStorageFailure {
         if let profileStoreError = error as? ServerProfileStoreError {
             return .profileStore(profileStoreError)
         }

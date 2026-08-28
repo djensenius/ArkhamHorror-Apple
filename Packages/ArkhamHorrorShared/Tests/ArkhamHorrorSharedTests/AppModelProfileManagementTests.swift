@@ -39,6 +39,31 @@ extension AppModelTests {
         #expect(model.profileManagementOperation == .idle)
     }
 
+    @Test("A save failure while adding a profile stays local and never forces storageCorrupted")
+    func addCustomProfileSaveFailureStaysLocal() async {
+        let store = FakeServerProfileStore(profiles: [.hosted])
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating()
+        )
+        await model.flowTask?.value
+        let stateBeforeAdd = model.sessionState
+
+        store.setSaveProfilesError(ServerProfileStoreError.duplicateProfileIDs)
+        model.addCustomProfile(displayName: "Home Lab", rawURL: "https://lab.example.com")
+
+        // A profile-management save failure (e.g. a transient write error, or the
+        // store's own defensive duplicate-ID check) is not evidence that the
+        // *existing* stored profiles/tokens are corrupted, so it must never force
+        // every window into the destructive storage-reset flow the way genuine
+        // load-time corruption does.
+        #expect(model.sessionState == stateBeforeAdd)
+        #expect(model.profileManagementFailure == .storage(.profileStore(.duplicateProfileIDs)))
+        #expect(model.profiles == [.hosted])
+    }
+
     @Test("Adding a profile with an invalid URL surfaces the exact validation failure")
     func addCustomProfileInvalidURL() async {
         let model = makeModel()
