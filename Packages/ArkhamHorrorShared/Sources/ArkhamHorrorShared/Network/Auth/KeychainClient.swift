@@ -30,9 +30,12 @@ protocol KeychainClient: Sendable {
     /// `kSecMatchLimitAll`, used by ``KeychainTokenCleanupPendingStore`` to enumerate
     /// which profile IDs currently have a pending-cleanup marker — never to read any
     /// token's contents. On `errSecSuccess` every matched item's account string is
-    /// returned (an item missing a decodable account attribute is simply omitted,
-    /// which the caller must treat as impossible/corrupt data, not as "absent"); on
-    /// any other status the accounts are `nil`.
+    /// returned; if any item lacks a decodable account attribute, a conforming
+    /// implementation must fail closed — reporting a non-success status (as
+    /// ``SecurityKeychainClient`` does via `errSecDecode`) rather than silently
+    /// omitting that item, since the caller treats a missing account as
+    /// impossible/corrupt data, not as "absent". On any other status the accounts
+    /// are `nil`.
     ///
     /// A default implementation is provided so existing ``KeychainClient``
     /// conformances (production and test doubles) that never enumerate accounts are
