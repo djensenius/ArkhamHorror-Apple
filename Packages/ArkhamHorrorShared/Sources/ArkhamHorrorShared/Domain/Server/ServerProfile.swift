@@ -111,24 +111,38 @@ extension ServerProfile {
 // MARK: - Capabilities URL
 
 extension ServerProfile {
+    /// Constructs a pin-derived API endpoint URL for this profile.
+    ///
+    /// Appends `<pin.expectedApiBasePath><path>` to ``baseURL``'s existing path so a
+    /// profile with a path prefix (e.g. `https://example.com/myapp`) correctly preserves
+    /// that prefix before the pin-derived API path.
+    ///
+    /// - Parameters:
+    ///   - path: The endpoint path relative to the API base path, including its leading
+    ///     slash (e.g. `"/authenticate"`).
+    ///   - pin: The contract pin whose `expectedApiBasePath` prefixes the endpoint.
+    func endpointURL(path: String, pin: ContractPin = .current) -> URL {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            preconditionFailure(
+                "baseURL \(baseURL) is a pre-validated URL; URLComponents must succeed"
+            )
+        }
+        components.path = baseURL.path + pin.expectedApiBasePath + path
+        guard let url = components.url else {
+            preconditionFailure(
+                "Endpoint URL construction from pre-validated baseURL must succeed"
+            )
+        }
+        return url
+    }
+
     /// Constructs the capabilities endpoint URL for this profile.
     ///
     /// Appends `<pin.expectedApiBasePath>/capabilities` to ``baseURL``'s existing path
     /// so a profile with a path prefix (e.g. `https://example.com/myapp`) correctly
     /// preserves that prefix before the pin-derived capabilities path.
     func capabilitiesURL(pin: ContractPin = .current) -> URL {
-        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
-            preconditionFailure(
-                "baseURL \(baseURL) is a pre-validated URL; URLComponents must succeed"
-            )
-        }
-        components.path = baseURL.path + pin.expectedApiBasePath + "/capabilities"
-        guard let url = components.url else {
-            preconditionFailure(
-                "Capabilities URL construction from pre-validated baseURL must succeed"
-            )
-        }
-        return url
+        endpointURL(path: "/capabilities", pin: pin)
     }
 }
 
