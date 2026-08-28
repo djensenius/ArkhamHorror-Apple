@@ -130,6 +130,16 @@ struct ServerProfileTests {
         }
     }
 
+    @Test(
+        "Malformed HTTP or HTTPS scheme is rejected instead of treated as a host",
+        arguments: ["http:/localhost", "https:example.com"]
+    )
+    func malformedSupportedSchemeThrows(rawURL: String) {
+        #expect(throws: ServerProfileError.malformedURL) {
+            try ServerProfile.custom(displayName: "T", rawURL: rawURL)
+        }
+    }
+
     @Test("URL with only scheme and no host throws missingHost")
     func missingHostThrows() {
         #expect(throws: ServerProfileError.missingHost) {

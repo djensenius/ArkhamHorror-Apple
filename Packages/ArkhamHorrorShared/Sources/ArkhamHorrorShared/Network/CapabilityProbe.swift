@@ -51,7 +51,7 @@ struct CapabilityProbe: Sendable {
     /// cancelled `URLSession` task surfaces as `CancellationError` when the enclosing
     /// Swift task is cancelled.
     func probe(_ profile: ServerProfile) async throws -> CompatibilityOutcome {
-        let url = profile.capabilitiesURL()
+        let url = profile.capabilitiesURL(pin: evaluator.pin)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")

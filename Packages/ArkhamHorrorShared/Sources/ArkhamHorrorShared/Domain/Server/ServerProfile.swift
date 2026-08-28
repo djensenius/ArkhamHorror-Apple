@@ -43,11 +43,8 @@ struct ServerProfile: Identifiable, Equatable, Hashable, Sendable {
 extension ServerProfile {
     /// The canonical hosted Arkham Horror service profile.
     ///
-    /// The production domain `arkhamhorror.app` is derived from the project's
-    /// infrastructure configuration (Terraform prod `domain_name` variable in
-    /// `infra/terraform/environments/prod/variables.tf`). No dedicated hosted-URL
-    /// entry exists in the Apple-client documentation; this construction is
-    /// infrastructure-derived. Update if the hosted domain changes.
+    /// The production domain `arkhamhorror.app` follows the backend deployment
+    /// configuration. Update this canonical profile if the hosted domain changes.
     static let hosted: ServerProfile = {
         guard
             let hostedID = UUID(uuidString: "00000000-0000-0000-0000-000000000001"),
@@ -262,6 +259,13 @@ private extension ServerProfile {
             of: #"^[A-Za-z][A-Za-z0-9+.-]*://"#,
             options: .regularExpression
         ) != nil
+        let lowercased = trimmed.lowercased()
+        let hasMalformedSupportedScheme =
+            !hasExplicitScheme &&
+            (lowercased.hasPrefix("http:") || lowercased.hasPrefix("https:"))
+        if hasMalformedSupportedScheme {
+            throw ServerProfileError.malformedURL
+        }
         if !hasExplicitScheme {
             let authority = trimmed.prefix { !"/?#".contains($0) }
             if authority.contains("@") {

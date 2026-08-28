@@ -229,4 +229,29 @@ struct CapabilityProbeTransportTests {
         let request = await transport.capturedRequest
         #expect(request?.url?.absoluteString == "http://localhost:9000/myapp/api/v1/capabilities")
     }
+
+    @Test("An injected evaluator pin also determines the request path")
+    func requestURLUsesEvaluatorPin() async throws {
+        let pin = ContractPin(
+            backendCommit: "test",
+            supportedSchemaRevision: .literal(major: 0, minor: 1, patch: 11),
+            minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 11),
+            expectedApiBasePath: "/api/v2",
+            sourceNativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 0)
+        )
+        let expectedURL = defaultProfile.capabilitiesURL(pin: pin)
+        let transport = try RecordingTransport(
+            data: canonicalCapabilitiesData(),
+            response: makeHTTPResponse(status: 200, url: expectedURL)
+        )
+        let probe = CapabilityProbe(
+            transport: transport,
+            evaluator: CompatibilityEvaluator(pin: pin)
+        )
+
+        _ = try await probe.probe(defaultProfile)
+
+        let request = await transport.capturedRequest
+        #expect(request?.url == expectedURL)
+    }
 }
