@@ -30,40 +30,58 @@ extension AppModel {
     ) {
         guard case let .signedOut(profile, compatibility) = sessionState else { return }
         guard operation == .idle else { return }
-        // Consumed (not merely read): a recorded cancellation-cleanup failure is
-        // surfaced explicitly, once, as an actionable failure rather than silently
-        // retried past — but is not a permanent lockout, since a following explicit
-        // retry is then allowed to proceed and (if its own save succeeds) durably
-        // resolves the profile's token-store state itself. See
-        // ``enqueueCancellationCleanup(for:globalEpoch:)``.
-        if let failure = cancellationCleanupFailures.removeValue(forKey: profile.id) {
-            operationFailure = .tokenStore(failure)
-            return
-        }
         operationTask?.cancel()
         generation += 1
         let currentGeneration = generation
-        // Captured once, here, alongside `generation` — not re-read right before the
-        // save — so that an endpoint edit/removal which bumps this profile's epoch at
-        // any point after this operation started (even while this operation's save is
-        // already queued behind that edit/removal's delete) is guaranteed to leave this
-        // capture stale. See `AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)`.
-        let currentEpoch = currentCredentialEpoch(for: profile.id)
         let currentGlobalEpoch = currentGlobalCredentialEpoch()
         operation = operationKind
         operationFailure = nil
         operationTask = Task { [weak self] in
-            await self?.performAuthOperation(
+            await self?.beginAuthOperationAfterResolvingCleanup(
                 profile: profile,
                 compatibility: compatibility,
-                epochContext: CredentialOperationContext(
-                    generation: currentGeneration,
-                    credentialEpoch: currentEpoch,
-                    globalEpoch: currentGlobalEpoch
-                ),
+                generation: currentGeneration,
+                globalEpoch: currentGlobalEpoch,
                 issueToken: issueToken
             )
         }
+    }
+
+    /// Resolves any durable cancellation-cleanup tombstone left pending for `profile`
+    /// — even one whose in-memory tracking did not survive a process restart — before
+    /// this operation is allowed to reach
+    /// ``performAuthOperation(profile:compatibility:epochContext:issueToken:)``'s
+    /// durable save. Without this, a token a previously cancelled operation's cleanup
+    /// failed (or never got to attempt) to remove could otherwise be overwritten or
+    /// raced by this operation's own save rather than being reliably deleted first.
+    ///
+    /// The credential epoch is captured only *after* this resolves — not synchronously
+    /// in ``beginAuthOperation(_:issueToken:)`` — so this operation's own epoch
+    /// capture can never itself be the value a cleanup this call just completed (or a
+    /// barrier it awaited) would have seen as stale.
+    private func beginAuthOperationAfterResolvingCleanup(
+        profile: ServerProfile,
+        compatibility: ServerCompatibility,
+        generation: Int,
+        globalEpoch: Int,
+        issueToken: @Sendable (ServerProfile) async throws -> AuthToken
+    ) async {
+        if let failure = await resolvePendingCleanup(for: profile.id) {
+            guard isCurrent(generation) else { return }
+            operation = .idle
+            operationFailure = .tokenStore(failure)
+            return
+        }
+        guard isCurrent(generation) else { return }
+        let credentialEpoch = currentCredentialEpoch(for: profile.id)
+        await performAuthOperation(
+            profile: profile,
+            compatibility: compatibility,
+            epochContext: CredentialOperationContext(
+                generation: generation, credentialEpoch: credentialEpoch, globalEpoch: globalEpoch
+            ),
+            issueToken: issueToken
+        )
     }
 
     /// Authenticates or registers, validates the returned token via `whoami`, and only
@@ -169,12 +187,35 @@ extension AppModel {
         guard operation == .signingIn || operation == .registering else { return }
         operationTask?.cancel()
         operationTask = nil
-        generation += 1
-        invalidateCredentialEpoch(for: profile.id)
-        enqueueCancellationCleanup(for: profile.id, globalEpoch: currentGlobalCredentialEpoch())
+        interruptActiveAuthOperationIfNeeded()
         operation = .idle
         operationFailure = nil
         sessionState = .signedOut(profile: profile, compatibility: compatibility)
+    }
+
+    /// Interrupts the in-flight sign-in or registration for the profile currently
+    /// reflected in ``sessionState``, exactly as an explicit ``cancelAuthOperation()``
+    /// does: invalidates its credential epoch and durably reserves/enqueues a cleanup
+    /// deletion for it (see ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``),
+    /// so a save that has already passed its epoch recheck — or already durably
+    /// applied — cannot survive the interruption. Returns the interrupted profile's
+    /// ID, or `nil` if there was no in-flight sign-in/registration to interrupt (in
+    /// which case the caller must not proceed as though one existed).
+    ///
+    /// Does not itself cancel ``operationTask``, advance ``generation``, or change
+    /// ``selectedProfile``/``sessionState``: every caller (``cancelAuthOperation()``,
+    /// ``selectProfile(_:)``, ``retry()``) does those on its own immediately
+    /// afterward, while `sessionState` still names the profile whose operation is
+    /// being interrupted — this call must therefore always happen first, before any
+    /// of that.
+    @discardableResult
+    func interruptActiveAuthOperationIfNeeded() -> UUID? {
+        guard case let .signedOut(profile, _) = sessionState else { return nil }
+        guard operation == .signingIn || operation == .registering else { return nil }
+        generation += 1
+        invalidateCredentialEpoch(for: profile.id)
+        enqueueCancellationCleanup(for: profile.id, globalEpoch: currentGlobalCredentialEpoch())
+        return profile.id
     }
 
     /// Maps a thrown authentication step error to an operation failure, or `nil` for

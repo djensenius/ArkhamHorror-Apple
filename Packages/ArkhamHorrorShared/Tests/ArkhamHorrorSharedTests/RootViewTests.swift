@@ -27,7 +27,8 @@ struct RootViewSharedModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
     }
 

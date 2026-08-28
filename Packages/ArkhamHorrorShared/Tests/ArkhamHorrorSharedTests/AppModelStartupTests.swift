@@ -12,7 +12,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -31,7 +32,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -51,7 +53,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -71,7 +74,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -88,7 +92,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -113,7 +118,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -138,7 +144,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.compatible(capabilities: ["a"]))),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -154,7 +161,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -171,7 +179,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.incompatible(reason: rejection))),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -187,7 +196,8 @@ extension AppModelTests {
             capabilityProbe: ScriptedCapabilityProbe(
                 .failure(CapabilityProbeError.nonHTTPResponse)
             ),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -207,7 +217,8 @@ extension AppModelTests {
             capabilityProbe: ScriptedCapabilityProbe(
                 .failure(SensitiveTestFailure(description: secret))
             ),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -227,7 +238,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.failure(CancellationError())),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 

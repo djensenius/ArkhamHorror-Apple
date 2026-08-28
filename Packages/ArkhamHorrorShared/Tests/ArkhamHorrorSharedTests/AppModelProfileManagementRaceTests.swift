@@ -16,7 +16,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(profiles: profiles, selectedID: selectedID),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
     }
 
@@ -150,7 +151,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         let expectedFailure = SessionStorageFailure.profileStore(.corruptData(key: corruptKey))
@@ -183,7 +185,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         let expectedFailure = SessionStorageFailure.profileStore(.corruptData(key: corruptKey))

@@ -263,6 +263,7 @@ extension AppModel {
             guard !(error is CancellationError) else { return }
             // Cleanup failed: preserve the old (corrupted) stored state untouched
             // rather than replacing metadata while tokens may still exist under it.
+            // Every durable cleanup tombstone is likewise preserved, not cleared.
             profileManagementFailure = .tokenStore(tokenStoreFailure(from: error))
             return
         }
@@ -288,6 +289,12 @@ extension AppModel {
         // ``restoreToken(profile:compatibility:generation:)``, so it is cleared here
         // purely for hygiene rather than correctness.
         cancellationCleanupFailures.removeAll()
+        // Every durable cleanup tombstone may only be cleared *after*
+        // `deleteAllTokens()` above has already succeeded — never before, and never
+        // on its failure (handled by the early return above). A clear failure here is
+        // hygiene-only, since every credential this store could name is already
+        // durably gone.
+        try? cleanupPendingStore.clearAll()
         restartFlow(for: .hosted, generation: generation)
     }
 }

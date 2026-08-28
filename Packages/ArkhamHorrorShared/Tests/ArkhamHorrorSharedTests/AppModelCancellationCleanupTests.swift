@@ -34,7 +34,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
@@ -91,7 +92,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -142,7 +144,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 

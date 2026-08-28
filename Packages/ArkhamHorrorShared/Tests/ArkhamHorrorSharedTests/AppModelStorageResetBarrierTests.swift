@@ -17,7 +17,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample))
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         return model

@@ -46,6 +46,19 @@ extension AppModel {
         compatibility: ServerCompatibility,
         generation: Int
     ) async {
+        // Any durable cancellation-cleanup tombstone left pending for this profile —
+        // even one whose in-memory tracking did not survive a process restart — must
+        // be retried and resolved *before* any token for it is read below, so a token
+        // a cancelled operation's cleanup failed (or never got to attempt) to remove
+        // can never be silently read and restored into a signed-in session.
+        if let failure = await resolvePendingCleanup(for: profile.id) {
+            guard isCurrent(generation) else { return }
+            let reason = TokenValidationFailure.tokenStore(failure)
+            sessionState = .unavailable(profile: profile, reason: .tokenValidationFailed(reason))
+            return
+        }
+        guard isCurrent(generation) else { return }
+
         // Captured once, here, before any awaited step in this token-restore chain —
         // not re-read right before the read or the possible unauthorized-delete below
         // — so that an endpoint edit/removal which invalidates this profile's epoch at
@@ -77,20 +90,6 @@ extension AppModel {
         guard let token else {
             guard isCurrent(generation) else { return }
             sessionState = .signedOut(profile: profile, compatibility: compatibility)
-            return
-        }
-
-        // Consumed (not merely read): a previously recorded cancellation-cleanup
-        // failure for this profile means the token this read just returned may be a
-        // leftover a cancelled operation's cleanup failed to remove — it must never be
-        // silently trusted and restored into a signed-in session. Surfaced once, as an
-        // actionable failure; a following explicit ``retry()`` is then allowed to
-        // read again normally, since by then either the same failure would recur (and
-        // be surfaced again) or the underlying issue has resolved.
-        if let failure = cancellationCleanupFailures.removeValue(forKey: profile.id) {
-            guard isCurrent(generation) else { return }
-            let reason = TokenValidationFailure.tokenStore(failure)
-            sessionState = .unavailable(profile: profile, reason: .tokenValidationFailed(reason))
             return
         }
 

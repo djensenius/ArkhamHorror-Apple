@@ -52,7 +52,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
@@ -122,7 +123,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile]),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         let signedIn = SessionState.signedIn(
@@ -173,7 +175,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile]),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         let signedIn = SessionState.signedIn(
@@ -205,7 +208,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile]),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
 
         // The launch flow's whoami call is now suspended, mid-flight (stale, gen 1).

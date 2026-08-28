@@ -62,6 +62,18 @@ import Foundation
         )
     }
 
+    /// A no-op ``TokenCleanupPendingStore`` for previews: never reports anything
+    /// pending, so a preview never blocks on (or touches) real durable storage.
+    struct PreviewTokenCleanupPendingStore: TokenCleanupPendingStore {
+        func pendingProfileIDs() throws -> Set<UUID> {
+            []
+        }
+
+        func markPending(_: UUID) throws {}
+        func clearPending(_: UUID) throws {}
+        func clearAll() throws {}
+    }
+
     /// Builds a preview-only ``AppModel`` backed entirely by in-memory fakes.
     @MainActor
     func previewAppModel(
@@ -75,7 +87,8 @@ import Foundation
             ),
             tokenStore: PreviewTokenStore(),
             capabilityProbe: PreviewCapabilityProbe(outcome: outcome),
-            authenticationSession: PreviewAuthenticating()
+            authenticationSession: PreviewAuthenticating(),
+            cleanupPendingStore: PreviewTokenCleanupPendingStore()
         )
     }
 #endif

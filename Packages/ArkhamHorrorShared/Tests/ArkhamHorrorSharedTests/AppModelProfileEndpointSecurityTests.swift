@@ -28,7 +28,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(profiles: profiles, selectedID: selectedID),
             tokenStore: tokenStore,
             capabilityProbe: probe,
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
     }
 
@@ -122,7 +123,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -216,7 +218,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         let stateBeforeRemove = model.sessionState
