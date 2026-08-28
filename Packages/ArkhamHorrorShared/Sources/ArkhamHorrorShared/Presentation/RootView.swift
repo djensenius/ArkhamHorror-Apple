@@ -1,8 +1,13 @@
 import SwiftUI
 
+/// The shared root view for every platform target.
+///
+/// This is intentionally a thin status readout over ``AppModel``: it surfaces the
+/// current ``SessionState`` and offers retry/sign-out actions. Dedicated sign-in,
+/// registration, and server-management forms are tracked separately.
 public struct RootView: View {
     @State private var model = AppModel()
-    @FocusState private var focusedTarget: AppCommandTarget?
+    @FocusState private var isPrimaryActionFocused: Bool
 
     public init() {}
 
@@ -21,8 +26,7 @@ public struct RootView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     brand
-                    serverStatusButton
-                    placeholder
+                    statusCard
                 }
                 .frame(maxWidth: 760, alignment: .leading)
                 .padding(32)
@@ -31,7 +35,7 @@ public struct RootView: View {
         }
         .foregroundStyle(.white)
         .onAppear {
-            focusedTarget = .serverStatus
+            isPrimaryActionFocused = true
         }
     }
 
@@ -48,73 +52,72 @@ public struct RootView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var serverStatusButton: some View {
-        Button {
-            model.send(AppCommandTarget.serverStatus.command)
-        } label: {
+    private var statusCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 16) {
-                Image(systemName: "network")
+                Image(systemName: statusIconName)
                     .font(.title2)
                     .foregroundStyle(.mint)
                     .frame(width: 44, height: 44)
                     .background(.mint.opacity(0.14), in: Circle())
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(model.serverStatus.title)
+                    Text(model.sessionState.title)
                         .font(.headline)
-                    Text(model.serverStatus.detail)
+                    Text(model.sessionState.detail)
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.68))
                 }
 
                 Spacer()
-
-                Image(systemName: "chevron.forward")
-                    .foregroundStyle(.white.opacity(0.5))
             }
-            .padding(20)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(
-                        focusedTarget == .serverStatus ? Color.mint : .white.opacity(0.12),
-                        lineWidth: focusedTarget == .serverStatus ? 3 : 1
-                    )
+
+            primaryAction
+
+            if let operationFailure = model.operationFailure {
+                Text(operationFailure.message)
+                    .font(.footnote)
+                    .foregroundStyle(.red.opacity(0.85))
             }
         }
-        .buttonStyle(.plain)
-        .focused($focusedTarget, equals: .serverStatus)
-        .accessibilityHint("Shows when server configuration will be available")
+        .padding(20)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
     }
 
-    private var placeholder: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Foundation ready")
-                .font(.title2.bold())
-
-            Text(
-                "Shared presentation, semantic commands, and native focus navigation "
-                    + "are connected. Gameplay will be built on this foundation."
-            )
-            .foregroundStyle(.white.opacity(0.72))
-
+    @ViewBuilder
+    private var primaryAction: some View {
+        if model.sessionState.isRetryable {
             Button {
-                model.send(AppCommandTarget.primaryAction.command)
+                model.retry()
             } label: {
-                Label("New campaign", systemImage: "plus.circle.fill")
-                    .frame(minWidth: 180)
+                Label("Retry", systemImage: "arrow.clockwise")
+                    .frame(minWidth: 140)
             }
             .buttonStyle(.borderedProminent)
             .tint(.mint)
-            .focused($focusedTarget, equals: .primaryAction)
-            .accessibilityHint("Shows when game setup will be available")
-
-            Text(model.message)
-                .font(.footnote)
-                .foregroundStyle(.white.opacity(0.58))
+            .focused($isPrimaryActionFocused)
+            .accessibilityHint("Retries checking the selected server")
+        } else if case .signedIn = model.sessionState {
+            Button {
+                model.signOut()
+            } label: {
+                Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                    .frame(minWidth: 140)
+            }
+            .buttonStyle(.bordered)
+            .focused($isPrimaryActionFocused)
+            .accessibilityHint("Signs out of the current server")
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var statusIconName: String {
+        switch model.sessionState {
+        case .signedIn:
+            "checkmark.circle.fill"
+        case .incompatible, .unavailable, .storageCorrupted:
+            "exclamationmark.triangle.fill"
+        case .launching, .checkingCompatibility, .signedOut:
+            "network"
+        }
     }
 }
