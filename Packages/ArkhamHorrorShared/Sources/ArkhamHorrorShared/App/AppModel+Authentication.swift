@@ -62,6 +62,9 @@ extension AppModel {
             operationFailure = authOperationFailure(from: error)
             return
         }
+        // Re-checked after every awaited auth result (not just in each `catch`) so a
+        // superseded operation is abandoned before it can reach the durable save below.
+        guard isCurrent(generation) else { return }
 
         let user: CurrentUser
         do {
@@ -73,9 +76,16 @@ extension AppModel {
             operationFailure = authOperationFailure(from: error)
             return
         }
+        guard isCurrent(generation) else { return }
 
         do {
-            try await tokenStore.save(issuedToken.token, for: profile.id)
+            // `serializedTokenAccess` guarantees this save cannot be reordered by, or
+            // race with, an in-flight save/delete/read for the same profile even if
+            // this operation is superseded (e.g. a profile switch away and back) while
+            // the save is already under way.
+            try await serializedTokenAccess(for: profile.id) { [tokenStore] in
+                try await tokenStore.save(issuedToken.token, for: profile.id)
+            }
         } catch {
             guard isCurrent(generation) else { return }
             operation = .idle
@@ -134,7 +144,12 @@ extension AppModel {
         generation: Int
     ) async {
         do {
-            try await tokenStore.deleteToken(for: profile.id)
+            // Serialized (see ``AppModel/serializedTokenAccess(for:_:)``) so a stale
+            // delete that is already in flight when superseded cannot race with, or be
+            // raced by, a later read/save/delete for the same profile.
+            try await serializedTokenAccess(for: profile.id) { [tokenStore] in
+                try await tokenStore.deleteToken(for: profile.id)
+            }
         } catch {
             guard isCurrent(generation) else { return }
             operation = .idle

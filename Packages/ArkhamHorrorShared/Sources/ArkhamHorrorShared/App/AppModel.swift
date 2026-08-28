@@ -55,6 +55,10 @@ final class AppModel {
     /// The in-flight sign-in/registration/sign-out operation task, if any.
     var operationTask: Task<Void, Never>?
 
+    /// The tail of the per-profile serialized token-store access chain. See
+    /// ``serializedTokenAccess(for:_:)``.
+    var tokenAccessQueues: [UUID: Task<Void, Never>] = [:]
+
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),
         tokenStore: any TokenStore = KeychainTokenStore(),
@@ -116,5 +120,35 @@ extension AppModel {
             return .keychain(keychainError)
         }
         return .other
+    }
+
+    /// Serializes a durable ``TokenStore`` read, save, or delete for `profileID` behind
+    /// any earlier one for the same profile that is still in flight.
+    ///
+    /// A generation check performed only after an awaited call returns is not enough to
+    /// keep the token store itself consistent: an in-flight save or delete may (if the
+    /// injected ``TokenStore`` does not itself observe cancellation) still complete
+    /// after the operation that started it has been superseded, for example by a
+    /// profile switch away from and back to the same profile. Routing every access for
+    /// a profile through this single per-profile queue guarantees two things: durable
+    /// mutations for a profile always apply in the order they were requested (so the
+    /// store converges on whichever was requested last, never an earlier one
+    /// overwriting a later one), and any later read for that profile always observes
+    /// the effect of an earlier, still in-flight mutation rather than a stale value —
+    /// so a superseded operation's eventual completion can never leave the token store
+    /// and the observable session state inconsistent with each other. Reads and writes
+    /// for different profiles remain fully independent.
+    @discardableResult
+    func serializedTokenAccess<Value: Sendable>(
+        for profileID: UUID,
+        _ operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let previous = tokenAccessQueues[profileID]
+        let scheduled = Task<Value, any Error> {
+            await previous?.value
+            return try await operation()
+        }
+        tokenAccessQueues[profileID] = Task { _ = try? await scheduled.value }
+        return try await scheduled.value
     }
 }

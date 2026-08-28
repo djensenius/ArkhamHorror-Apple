@@ -48,7 +48,12 @@ extension AppModel {
     ) async {
         let token: String?
         do {
-            token = try await tokenStore.token(for: profile.id)
+            // Serialized (see ``AppModel/serializedTokenAccess(for:_:)``) so this read
+            // always observes the effect of an earlier, still in-flight save or delete
+            // for the same profile rather than a stale value.
+            token = try await serializedTokenAccess(for: profile.id) { [tokenStore] in
+                try await tokenStore.token(for: profile.id)
+            }
         } catch {
             guard !(error is CancellationError) else { return }
             guard isCurrent(generation) else { return }
@@ -84,6 +89,12 @@ extension AppModel {
         } catch is CancellationError {
             return
         } catch AuthenticationError.unauthorized {
+            // Checked here, immediately before the deletion is even requested, so a
+            // whoami that resolves `.unauthorized` after this operation has been
+            // superseded (e.g. by a profile switch away and back to the same profile,
+            // where a newer operation has since established a current token) cannot
+            // delete that newer token.
+            guard isCurrent(generation) else { return }
             await deleteUnauthorizedToken(
                 profile: profile,
                 compatibility: compatibility,
@@ -109,7 +120,12 @@ extension AppModel {
         generation: Int
     ) async {
         do {
-            try await tokenStore.deleteToken(for: profile.id)
+            // Serialized (see ``AppModel/serializedTokenAccess(for:_:)``) so this
+            // delete is ordered against any other in-flight read/save/delete for the
+            // same profile rather than racing them.
+            try await serializedTokenAccess(for: profile.id) { [tokenStore] in
+                try await tokenStore.deleteToken(for: profile.id)
+            }
         } catch {
             guard !(error is CancellationError) else { return }
             guard isCurrent(generation) else { return }

@@ -7,7 +7,7 @@ extension AppModel {
     ///
     /// `profile` must already be a member of ``profiles``; profile creation and removal
     /// are out of scope for this coordinator. Any superseded flow or operation task is
-    /// cancelled and its completion is guarded by the advanced generation.
+    /// cancelled and its completion is guarded by the incremented generation counter.
     func selectProfile(_ profile: ServerProfile) {
         guard profiles.contains(where: { $0.id == profile.id }) else { return }
         flowTask?.cancel()

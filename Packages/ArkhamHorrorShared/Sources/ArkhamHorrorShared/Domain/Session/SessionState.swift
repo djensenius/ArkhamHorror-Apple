@@ -67,7 +67,7 @@ extension SessionOperationFailure {
         case .authentication:
             "Could not reach the server. Try again."
         case .tokenStore:
-            "Could not securely store your session. Try again."
+            "Could not securely access your session. Try again."
         }
     }
 }
@@ -153,8 +153,15 @@ extension SessionState {
             "\(profile.displayName) is ready. Sign in to continue."
         case let .incompatible(profile, _):
             "\(profile.displayName) is not compatible with this app version."
-        case let .unavailable(profile, _):
-            "Could not reach \(profile.displayName). Try again."
+        case let .unavailable(profile, reason):
+            switch reason {
+            case .probeFailed:
+                "Could not reach \(profile.displayName). Try again."
+            case .tokenValidationFailed(.authentication):
+                "Could not verify your session with \(profile.displayName). Try again."
+            case .tokenValidationFailed(.tokenStore):
+                "Could not securely access your session for \(profile.displayName). Try again."
+            }
         case let .signedIn(profile, _, _):
             "Connected to \(profile.displayName)."
         case .storageCorrupted:
