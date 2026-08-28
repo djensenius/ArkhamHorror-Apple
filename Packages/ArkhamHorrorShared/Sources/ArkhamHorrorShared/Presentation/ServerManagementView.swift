@@ -226,7 +226,7 @@ struct ServerProfileEditorView: View {
                     isLoading: isSaving,
                     action: submit
                 )
-                .disabled(!isValid || isSaving)
+                .disabled(!isValid || model.profileManagementOperation != .idle)
                 .accessibilityIdentifier(AccountAccessibilityID.serverEditorSaveButton)
             }
             .listRowBackground(Color.clear)
@@ -238,8 +238,20 @@ struct ServerProfileEditorView: View {
             }
         }
         .onAppear { focusedField = .displayName }
-        .onChange(of: model.profileManagementOperation) { _, newValue in
-            guard newValue == .idle, model.profileManagementFailure == nil else { return }
+        .onChange(of: model.profileManagementOperation) { oldValue, newValue in
+            // `model` is shared process-wide across every window, so its
+            // `profileManagementOperation` can transition through unrelated states
+            // driven by a completely different window's add/edit/remove. Only treat
+            // this as *this* editor's own save completing — and so only dismiss —
+            // when the transition is specifically from this editor's own profile ID
+            // saving to idle; any other transition (another window's operation, or
+            // this editor's synchronous `.add` path, which already dismisses inline
+            // in ``submit()``) is ignored here.
+            guard let ownProfileID,
+                  oldValue == .saving(ownProfileID),
+                  newValue == .idle,
+                  model.profileManagementFailure == nil
+            else { return }
             dismiss()
         }
     }
@@ -256,17 +268,26 @@ struct ServerProfileEditorView: View {
             && !rawURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var isSaving: Bool {
-        switch (mode, model.profileManagementOperation) {
-        case (.add, .saving), (.edit, .saving):
-            true
-        default:
-            false
+    /// The profile ID this editor's own save/edit is (or would be) tracked under in
+    /// ``AppModel/profileManagementOperation``, so this editor's loading/disabled/
+    /// dismiss state reflects only its own operation rather than any other window's.
+    /// `.add` has no stable ID before ``AppModel/addCustomProfile(displayName:rawURL:)``
+    /// creates one, but that call is fully synchronous — its own operation state
+    /// never outlives the call, so there is no separate in-flight state to track.
+    private var ownProfileID: UUID? {
+        switch mode {
+        case .add: nil
+        case let .edit(profile): profile.id
         }
     }
 
+    private var isSaving: Bool {
+        guard let ownProfileID else { return false }
+        return model.profileManagementOperation == .saving(ownProfileID)
+    }
+
     private func submit() {
-        guard isValid else { return }
+        guard isValid, model.profileManagementOperation == .idle else { return }
         switch mode {
         case .add:
             model.addCustomProfile(displayName: displayName, rawURL: rawURL)
