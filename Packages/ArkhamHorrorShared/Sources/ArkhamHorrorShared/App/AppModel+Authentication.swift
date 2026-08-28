@@ -202,12 +202,17 @@ extension AppModel {
     /// ID, or `nil` if there was no in-flight sign-in/registration to interrupt (in
     /// which case the caller must not proceed as though one existed).
     ///
-    /// Does not itself cancel ``operationTask``, advance ``generation``, or change
+    /// Does not itself cancel ``operationTask`` or change
     /// ``selectedProfile``/``sessionState``: every caller (``cancelAuthOperation()``,
     /// ``selectProfile(_:)``, ``retry()``) does those on its own immediately
     /// afterward, while `sessionState` still names the profile whose operation is
     /// being interrupted — this call must therefore always happen first, before any
-    /// of that.
+    /// of that. It *does* advance ``generation`` itself (so a stale in-flight step
+    /// cannot mutate state once interrupted); every caller separately advances it
+    /// again afterward for its own unrelated reason (selecting a new profile,
+    /// retrying, or explicit cancellation), which is harmless since
+    /// ``isCurrent(_:)`` only ever compares for exact equality against the latest
+    /// value, never relies on a specific delta.
     @discardableResult
     func interruptActiveAuthOperationIfNeeded() -> UUID? {
         guard case let .signedOut(profile, _) = sessionState else { return nil }

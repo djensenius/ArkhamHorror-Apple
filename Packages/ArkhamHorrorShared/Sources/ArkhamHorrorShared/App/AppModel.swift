@@ -116,13 +116,14 @@ final class AppModel {
     @ObservationIgnored var profileManagementGeneration = 0
 
     /// The tail of the per-profile serialized token-store access chain. See
-    /// ``serializedTokenAccess(for:epoch:_:)``.
+    /// ``serializedTokenAccess(for:epoch:globalEpoch:_:)``.
     @ObservationIgnored var tokenAccessQueues: [UUID: TokenAccessTail] = [:]
 
     /// A per-profile counter guarding stale durable token-store mutations at the
     /// instant they would actually touch the Keychain — the last line of defense
     /// against the race a generation check alone cannot close. See
-    /// ``invalidateCredentialEpoch(for:)`` and ``serializedTokenAccess(for:epoch:_:)``.
+    /// ``invalidateCredentialEpoch(for:)`` and
+    /// ``serializedTokenAccess(for:epoch:globalEpoch:_:)``.
     @ObservationIgnored var credentialEpochs: [UUID: Int] = [:]
 
     /// A service-wide counter, parallel to ``credentialEpochs`` but scoped to the

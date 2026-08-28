@@ -11,11 +11,12 @@ import Foundation
 /// Security invariant: an edit that changes a profile's normalized base URL deletes that
 /// profile's existing token *before* the new endpoint is activated or persisted, through
 /// the same serialized token-access seam used by authentication (see
-/// ``AppModel/serializedTokenAccess(for:epoch:_:)``). If that deletion fails, the old profile
-/// and its token are left exactly as they were and a typed failure is surfaced — the
-/// coordinator never sends a token for one origin to a newly edited endpoint, and it
-/// never invents a plaintext or in-memory fallback for a token store it cannot durably
-/// mutate. A display-name-only edit (no base URL change) never touches the token.
+/// ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)``). If that deletion fails,
+/// the old profile and its token are left exactly as they were and a typed failure is
+/// surfaced — the coordinator never sends a token for one origin to a newly edited
+/// endpoint, and it never invents a plaintext or in-memory fallback for a token store it
+/// cannot durably mutate. A display-name-only edit (no base URL change) never touches
+/// the token.
 extension AppModel {
     /// Persists a profile-management mutation (add/edit/remove), surfacing any
     /// failure as a local ``ProfileManagementFailure/storage(_:)`` rather than the
