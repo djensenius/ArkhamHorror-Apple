@@ -15,6 +15,22 @@ protocol HTTPTransport: Sendable {
     func data(for request: URLRequest) async throws -> (Data, URLResponse)
 }
 
+/// Refuses every HTTP redirect so request bodies and authorization headers are never
+/// replayed to a destination that the selected server profile did not identify.
+final class RedirectRejectingURLSessionDelegate: NSObject, @unchecked Sendable {}
+
+extension RedirectRejectingURLSessionDelegate: URLSessionTaskDelegate {
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest _: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
 /// An ``HTTPTransport`` backed by a dedicated credential- and cookie-free ephemeral
 /// `URLSession`.
 ///
@@ -26,6 +42,8 @@ protocol HTTPTransport: Sendable {
 /// - `httpShouldSetCookies` is `false` so `Set-Cookie` response headers are ignored.
 /// - `urlCredentialStorage` is `nil` so no stored credentials are injected automatically.
 /// - `urlCache` is `nil` so no responses are cached.
+/// - HTTP redirects are rejected so a credential body or `Authorization` header is never
+///   replayed to another destination. The caller receives the original 3xx response.
 ///
 /// TLS validation is never bypassed; the configuration inherits the default trust
 /// evaluation policy. A single instance is safely shared by the public capability probe
@@ -41,7 +59,11 @@ struct URLSessionTransport: HTTPTransport {
         config.httpShouldSetCookies = false
         config.urlCredentialStorage = nil
         config.urlCache = nil
-        session = URLSession(configuration: config)
+        session = URLSession(
+            configuration: config,
+            delegate: RedirectRejectingURLSessionDelegate(),
+            delegateQueue: nil
+        )
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
