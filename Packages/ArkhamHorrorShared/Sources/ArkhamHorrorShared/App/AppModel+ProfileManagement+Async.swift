@@ -55,6 +55,9 @@ extension AppModel {
         if endpointChanged {
             flowTask?.cancel()
             operationTask?.cancel()
+            operationTask = nil
+            operation = .idle
+            operationFailure = nil
             generation += 1
             restartFlow(for: updated, generation: generation)
         } else {

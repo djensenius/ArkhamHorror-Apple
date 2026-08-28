@@ -3,6 +3,14 @@ import Foundation
 import Security
 import Testing
 
+/// Yields repeatedly so any unserialized (buggy) concurrent state mutation has ample
+/// opportunity to actually run before a test asserts that it did not.
+private func settle() async {
+    for _ in 0 ..< 50 {
+        await Task.yield()
+    }
+}
+
 /// Security-critical custom server profile mutations: endpoint-changing edits and
 /// removals, and how each reconciles a profile's Keychain token with its (possibly
 /// changed) endpoint. See `AppModelProfileManagementTests.swift` for the companion
@@ -225,5 +233,58 @@ extension AppModelTests {
         #expect(model.sessionState == stateBeforeRemove)
         #expect(model.profileManagementFailure == .storage(.profileStore(.duplicateProfileIDs)))
         #expect(model.profiles == [.hosted, sampleCustomProfile])
+    }
+
+    @Test("An endpoint-changing edit of the selected profile resets a stuck auth operation")
+    func endpointChangeOfSelectedProfileResetsInFlightAuthOperation() async throws {
+        // A slow whoami validation (the same fake and pattern used by
+        // `AppModelAuthOperationTests`'s cancellation coverage) stands in for any
+        // in-flight sign-in/register at the moment the endpoint-changing edit lands.
+        // No token is preloaded for the selected profile: `GatedAuthenticating`'s
+        // `currentUser` never resolves on its own, so a preloaded token would make the
+        // model's own launch-time token restoration hang on the very first `whoami`
+        // call, before this test ever reaches its own `beginAuthOperation`.
+        let auth = GatedAuthenticating()
+        let tokenStore = FakeTokenStore()
+        let model = makeModel(
+            profiles: [.hosted, sampleCustomProfile],
+            selectedID: sampleCustomProfile.id,
+            tokenStore: tokenStore,
+            auth: auth
+        )
+        await model.flowTask?.value
+        #expect(
+            model.sessionState == .signedOut(profile: sampleCustomProfile, compatibility: .legacy)
+        )
+
+        model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "issued-token") }
+        await auth.waitUntilPending(1)
+        #expect(model.operation == .signingIn)
+
+        model.updateCustomProfile(
+            sampleCustomProfile,
+            displayName: sampleCustomProfile.displayName,
+            rawURL: "https://new-host.example.com"
+        )
+        await model.profileManagementTask?.value
+        await model.flowTask?.value
+
+        // The restarted flow for the edited endpoint must not be left stuck behind a
+        // stale in-flight operation: `operation` and its task handle are reset exactly
+        // as `selectProfile(_:)`/`retry()`/`cancelAuthOperation()` already do, so the
+        // new sign-in/register UI is not permanently disabled.
+        #expect(model.operation == .idle)
+        #expect(model.operationFailure == nil)
+        #expect(model.operationTask == nil)
+        let editedProfile = try #require(model.profiles.first { $0.id == sampleCustomProfile.id })
+        #expect(model.sessionState == .signedOut(profile: editedProfile, compatibility: .legacy))
+
+        // The abandoned whoami now resolves successfully, out of order, well after the
+        // edit; it must not resurrect a session or save a token for either endpoint.
+        await auth.resumeOldest(with: .success(.sample))
+        await settle()
+
+        #expect(model.sessionState == .signedOut(profile: editedProfile, compatibility: .legacy))
+        #expect(await tokenStore.saveCallCount == 0)
     }
 }
