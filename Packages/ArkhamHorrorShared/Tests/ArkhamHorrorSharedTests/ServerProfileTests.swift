@@ -140,6 +140,16 @@ struct ServerProfileTests {
         }
     }
 
+    @Test(
+        "Out-of-range ports throw instead of terminating URL normalization",
+        arguments: ["https://example.com:0", "https://example.com:65536"]
+    )
+    func outOfRangePortThrows(rawURL: String) {
+        #expect(throws: ServerProfileError.malformedURL) {
+            try ServerProfile.custom(displayName: "T", rawURL: rawURL)
+        }
+    }
+
     @Test("URL with only scheme and no host throws missingHost")
     func missingHostThrows() {
         #expect(throws: ServerProfileError.missingHost) {

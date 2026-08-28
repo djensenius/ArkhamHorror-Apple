@@ -233,6 +233,9 @@ private extension ServerProfile {
         }
         try assertNoForbiddenComponents(components)
         let (scheme, host) = try validatedSchemeAndHost(components)
+        if let port = components.port, !(1 ... 65535).contains(port) {
+            throw ServerProfileError.malformedURL
+        }
         components.scheme = scheme
         components.host = host
         components.user = nil
@@ -241,9 +244,7 @@ private extension ServerProfile {
         components.query = nil
         components.path = try normalizedPath(components.path, apiBasePath: apiBasePath)
         guard let url = components.url else {
-            preconditionFailure(
-                "Components derived from a parseable URL must produce a valid URL"
-            )
+            throw ServerProfileError.malformedURL
         }
         return url
     }
