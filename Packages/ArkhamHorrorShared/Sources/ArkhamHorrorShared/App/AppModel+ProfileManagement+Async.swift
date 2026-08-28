@@ -11,9 +11,10 @@ extension AppModel {
         original: ServerProfile,
         updated: ServerProfile,
         endpointChanged: Bool,
-        credentialEpoch: Int?,
-        operationGeneration: Int
+        epochContext: ProfileUpdateEpochContext
     ) async {
+        let operationGeneration = epochContext.operationGeneration
+        let globalEpoch = epochContext.globalEpoch
         defer {
             if isCurrentProfileOperation(operationGeneration) {
                 profileManagementOperation = .idle
@@ -21,12 +22,15 @@ extension AppModel {
         }
 
         if endpointChanged {
-            guard let credentialEpoch else {
+            guard let credentialEpoch = epochContext.credentialEpoch else {
                 profileManagementFailure = .storage(.unexpected)
                 return
             }
             let deleted = await deleteTokenForEndpointChange(
-                original, credentialEpoch: credentialEpoch, operationGeneration: operationGeneration
+                original,
+                credentialEpoch: credentialEpoch,
+                globalEpoch: globalEpoch,
+                operationGeneration: operationGeneration
             )
             guard deleted else { return }
         }
@@ -70,12 +74,12 @@ extension AppModel {
     /// unless the deletion was cancelled or superseded) when the caller must not
     /// proceed with the edit.
     private func deleteTokenForEndpointChange(
-        _ original: ServerProfile, credentialEpoch: Int, operationGeneration: Int
+        _ original: ServerProfile, credentialEpoch: Int, globalEpoch: Int, operationGeneration: Int
     ) async -> Bool {
         do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:_:)``) so this
-            // delete is ordered against any other in-flight read/save/delete for the
-            // same profile ID rather than racing them, and so a subsequent read for
+            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)``)
+            // so this delete is ordered against any other in-flight read/save/delete for
+            // the same profile ID rather than racing them, and so a subsequent read for
             // this profile (e.g. a restarted flow) always observes the token as gone
             // before the edited endpoint can be activated. The credential epoch was
             // already invalidated synchronously before this delete was enqueued, so any
@@ -83,7 +87,7 @@ extension AppModel {
             // already queued ahead of this delete — is rejected at the instant it would
             // otherwise touch the Keychain, rather than only being caught here.
             try await serializedTokenAccess(
-                for: original.id, epoch: credentialEpoch
+                for: original.id, epoch: credentialEpoch, globalEpoch: globalEpoch
             ) { [tokenStore] in
                 try await tokenStore.deleteToken(for: original.id)
             }
@@ -102,7 +106,7 @@ extension AppModel {
     }
 
     func performProfileRemoval(
-        _ profile: ServerProfile, credentialEpoch: Int, operationGeneration: Int
+        _ profile: ServerProfile, credentialEpoch: Int, globalEpoch: Int, operationGeneration: Int
     ) async {
         defer {
             if isCurrentProfileOperation(operationGeneration) {
@@ -111,13 +115,13 @@ extension AppModel {
         }
 
         do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:_:)``) so this
-            // delete cannot race an in-flight save/read/delete for the same profile,
-            // and the epoch — already invalidated synchronously before this delete was
-            // enqueued — guarantees any such save/read captured earlier is rejected
-            // rather than resurrecting a token for a profile being removed.
+            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)``)
+            // so this delete cannot race an in-flight save/read/delete for the same
+            // profile, and the epoch — already invalidated synchronously before this
+            // delete was enqueued — guarantees any such save/read captured earlier is
+            // rejected rather than resurrecting a token for a profile being removed.
             try await serializedTokenAccess(
-                for: profile.id, epoch: credentialEpoch
+                for: profile.id, epoch: credentialEpoch, globalEpoch: globalEpoch
             ) { [tokenStore] in
                 try await tokenStore.deleteToken(for: profile.id)
             }
@@ -141,6 +145,10 @@ extension AppModel {
         }) else { return }
         guard isCurrentProfileOperation(operationGeneration) else { return }
         profiles = updatedProfiles
+        // This profile's token is now durably deleted and its metadata is gone: any
+        // previously recorded cancellation-cleanup failure for it can never again be
+        // consulted, so it is cleared here purely for hygiene rather than correctness.
+        cancellationCleanupFailures[profile.id] = nil
 
         if selectedProfile.id == profile.id {
             // Coherently fall back to hosted and restart the flow, exactly as an

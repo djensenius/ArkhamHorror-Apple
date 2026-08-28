@@ -30,10 +30,14 @@ extension AppModelTests {
         on model: AppModel, profile: ServerProfile, generation: Int, token: String
     ) -> Task<Void, Never> {
         let credentialEpoch = model.currentCredentialEpoch(for: profile.id)
+        let globalEpoch = model.currentGlobalCredentialEpoch()
         return Task {
             await model.performAuthOperation(
-                profile: profile, compatibility: .legacy, generation: generation,
-                credentialEpoch: credentialEpoch
+                profile: profile, compatibility: .legacy, epochContext: CredentialOperationContext(
+                    generation: generation,
+                    credentialEpoch: credentialEpoch,
+                    globalEpoch: globalEpoch
+                )
             ) { _ in AuthToken(token: token) }
         }
     }

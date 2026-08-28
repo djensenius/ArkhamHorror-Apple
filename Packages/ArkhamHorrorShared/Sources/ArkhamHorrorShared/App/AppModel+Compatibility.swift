@@ -51,15 +51,16 @@ extension AppModel {
         // — so that an endpoint edit/removal which invalidates this profile's epoch at
         // any point during this chain (including while queued behind that edit's own
         // delete) is guaranteed to leave this capture stale. See
-        // ``AppModel/serializedTokenAccess(for:epoch:_:)``.
+        // ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)``.
         let credentialEpoch = currentCredentialEpoch(for: profile.id)
+        let globalEpoch = currentGlobalCredentialEpoch()
         let token: String?
         do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:_:)``) so this
-            // read always observes the effect of an earlier, still in-flight save or
-            // delete for the same profile rather than a stale value.
+            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)``)
+            // so this read always observes the effect of an earlier, still in-flight
+            // save or delete for the same profile rather than a stale value.
             token = try await serializedTokenAccess(
-                for: profile.id, epoch: credentialEpoch
+                for: profile.id, epoch: credentialEpoch, globalEpoch: globalEpoch
             ) { [tokenStore] in
                 try await tokenStore.token(for: profile.id)
             }
@@ -79,12 +80,29 @@ extension AppModel {
             return
         }
 
+        // Consumed (not merely read): a previously recorded cancellation-cleanup
+        // failure for this profile means the token this read just returned may be a
+        // leftover a cancelled operation's cleanup failed to remove — it must never be
+        // silently trusted and restored into a signed-in session. Surfaced once, as an
+        // actionable failure; a following explicit ``retry()`` is then allowed to
+        // read again normally, since by then either the same failure would recur (and
+        // be surfaced again) or the underlying issue has resolved.
+        if let failure = cancellationCleanupFailures.removeValue(forKey: profile.id) {
+            guard isCurrent(generation) else { return }
+            let reason = TokenValidationFailure.tokenStore(failure)
+            sessionState = .unavailable(profile: profile, reason: .tokenValidationFailed(reason))
+            return
+        }
+
         await validateRestoredToken(
             token,
             profile: profile,
             compatibility: compatibility,
-            generation: generation,
-            credentialEpoch: credentialEpoch
+            epochContext: CredentialOperationContext(
+                generation: generation,
+                credentialEpoch: credentialEpoch,
+                globalEpoch: globalEpoch
+            )
         )
     }
 
@@ -92,9 +110,9 @@ extension AppModel {
         _ token: String,
         profile: ServerProfile,
         compatibility: ServerCompatibility,
-        generation: Int,
-        credentialEpoch: Int
+        epochContext: CredentialOperationContext
     ) async {
+        let generation = epochContext.generation
         do {
             let user = try await authenticationSession.currentUser(on: profile, token: token)
             guard isCurrent(generation) else { return }
@@ -112,7 +130,8 @@ extension AppModel {
                 profile: profile,
                 compatibility: compatibility,
                 generation: generation,
-                credentialEpoch: credentialEpoch
+                credentialEpoch: epochContext.credentialEpoch,
+                globalEpoch: epochContext.globalEpoch
             )
         } catch {
             // Any other failure (transient network/TLS/status/decoding) retains the
@@ -132,14 +151,15 @@ extension AppModel {
         profile: ServerProfile,
         compatibility: ServerCompatibility,
         generation: Int,
-        credentialEpoch: Int
+        credentialEpoch: Int,
+        globalEpoch: Int
     ) async {
         do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:_:)``) so this
-            // delete is ordered against any other in-flight read/save/delete for the
-            // same profile rather than racing them.
+            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)``)
+            // so this delete is ordered against any other in-flight read/save/delete
+            // for the same profile rather than racing them.
             try await serializedTokenAccess(
-                for: profile.id, epoch: credentialEpoch
+                for: profile.id, epoch: credentialEpoch, globalEpoch: globalEpoch
             ) { [tokenStore] in
                 try await tokenStore.deleteToken(for: profile.id)
             }

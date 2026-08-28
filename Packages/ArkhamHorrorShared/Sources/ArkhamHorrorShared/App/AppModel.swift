@@ -6,6 +6,36 @@ struct TokenAccessTail {
     let task: Task<Void, Never>
 }
 
+/// A service-wide credential-reset barrier: while active, every per-profile token
+/// operation awaits `task` before proceeding. See ``AppModel/serviceResetBarrier``.
+struct ServiceResetBarrier {
+    let id: UUID
+    let task: Task<Void, Never>
+}
+
+/// The generation and credential/global epoch snapshot captured at the start of an
+/// operation that may reach a durable token mutation, threaded through as a single
+/// value so the functions that recheck it immediately before touching the token
+/// store do not need a separate parameter for each field. See
+/// ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)`` and
+/// ``AppModel/isCurrent(_:)``.
+struct CredentialOperationContext: Sendable {
+    let generation: Int
+    let credentialEpoch: Int
+    let globalEpoch: Int
+}
+
+/// The global/profile epoch snapshot and operation generation captured at the start
+/// of a profile edit that may need to delete an existing token as the precondition
+/// for an endpoint change, threaded through as a single value for the same reason as
+/// ``CredentialOperationContext``. `credentialEpoch` is `nil` exactly when the edit
+/// does not change the profile's endpoint (so no token deletion is needed).
+struct ProfileUpdateEpochContext: Sendable {
+    let credentialEpoch: Int?
+    let globalEpoch: Int
+    let operationGeneration: Int
+}
+
 /// The shared, `@MainActor` session coordinator for every Arkham Horror platform target.
 ///
 /// On launch, `AppModel` loads persisted server profiles, seeds the canonical hosted
@@ -81,6 +111,34 @@ final class AppModel {
     /// ``invalidateCredentialEpoch(for:)`` and ``serializedTokenAccess(for:epoch:_:)``.
     @ObservationIgnored var credentialEpochs: [UUID: Int] = [:]
 
+    /// A service-wide counter, parallel to ``credentialEpochs`` but scoped to the
+    /// entire token store rather than one profile, guarding every durable token-store
+    /// mutation against a concurrent full storage reset (``confirmStorageReset()``).
+    /// Bumped synchronously, before ``deleteAllTokens()`` is even enqueued, so every
+    /// per-profile operation captured under an earlier value — in flight, merely
+    /// queued, or not yet started — is guaranteed to observe a mismatch once its own
+    /// recheck actually runs. See ``serviceResetBarrier`` and
+    /// ``serializedTokenAccess(for:epoch:globalEpoch:_:)``.
+    @ObservationIgnored var globalCredentialEpoch = 0
+
+    /// While non-`nil`, a service-wide reset is draining every pre-existing per-profile
+    /// operation before running ``TokenStore/deleteAllTokens()``. Every
+    /// ``serializedTokenAccess(for:epoch:globalEpoch:_:)`` call awaits this barrier's
+    /// `task` (if still present at the moment its own turn arrives) before rechecking
+    /// epochs, so a token operation that begins while a reset is in flight can never
+    /// run ahead of, or race, the reset's own drain-then-wipe sequence. Cleared (via an
+    /// identity check against `id`) once the reset itself has fully resolved, whether it
+    /// succeeded or failed.
+    @ObservationIgnored var serviceResetBarrier: ServiceResetBarrier?
+
+    /// A cancellation-cleanup delete's most recently observed outcome for a profile,
+    /// keyed by profile ID, consulted (and consumed) by
+    /// ``beginAuthOperation(_:issueToken:)`` and
+    /// ``restoreToken(profile:compatibility:generation:)`` so neither can silently
+    /// trust a token that a cancelled operation's cleanup failed to remove. See
+    /// ``enqueueCancellationCleanup(for:globalEpoch:)``.
+    @ObservationIgnored var cancellationCleanupFailures: [UUID: TokenStoreFailure] = [:]
+
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),
         tokenStore: any TokenStore = KeychainTokenStore(),
@@ -153,7 +211,9 @@ extension AppModel {
     /// Serializes a durable ``TokenStore`` read, save, or delete for `profileID` behind
     /// any earlier one for the same profile that is still in flight, only actually
     /// running `operation` if `epoch` still matches ``credentialEpochs`` for
-    /// `profileID` at the instant it is about to run.
+    /// `profileID`, and `globalEpoch` still matches ``globalCredentialEpoch``, at the
+    /// instant it is about to run — also awaiting an active ``serviceResetBarrier``, if
+    /// any is present at that instant, first.
     ///
     /// A generation check performed only before enqueueing, or only after an awaited
     /// call returns, is not enough to keep the token store itself consistent with the
@@ -166,9 +226,15 @@ extension AppModel {
     /// rechecks it against the live epoch immediately before `operation` runs — the
     /// last possible moment before the Keychain is actually touched — so an
     /// already-enqueued stale save can never durably resurrect a token for a
-    /// since-changed or since-removed endpoint. On mismatch, `operation` is skipped
-    /// and ``StaleCredentialEpochError`` is thrown; every call site treats this
-    /// exactly like ``CancellationError`` (never surfaced as a user-facing failure).
+    /// since-changed or since-removed endpoint. The same reasoning applies to
+    /// `globalEpoch` against a service-wide storage reset (``confirmStorageReset()``):
+    /// capturing it once, at the same moment as `epoch`, and rechecking it here
+    /// guarantees a reset that begins after this operation started — even one whose
+    /// own drain-then-wipe sequence this operation ends up queued behind — is never
+    /// raced by a save this operation was already committed to making. On either
+    /// mismatch, `operation` is skipped and ``StaleCredentialEpochError`` is thrown;
+    /// every call site treats this exactly like ``CancellationError`` (never surfaced
+    /// as a user-facing failure).
     ///
     /// Beyond credential-epoch safety, this also preserves the existing ordering
     /// guarantee: durable mutations for a profile always apply in the order they were
@@ -179,12 +245,18 @@ extension AppModel {
     func serializedTokenAccess<Value: Sendable>(
         for profileID: UUID,
         epoch: Int,
+        globalEpoch: Int,
         _ operation: @escaping @Sendable () async throws -> Value
     ) async throws -> Value {
         let previous = tokenAccessQueues[profileID]?.task
         let scheduled = Task<Value, any Error> {
             await previous?.value
-            guard self.credentialEpochs[profileID, default: 0] == epoch else {
+            if let barrier = self.serviceResetBarrier {
+                await barrier.task.value
+            }
+            guard self.credentialEpochs[profileID, default: 0] == epoch,
+                  self.globalCredentialEpoch == globalEpoch
+            else {
                 throw StaleCredentialEpochError()
             }
             return try await operation()
@@ -206,6 +278,13 @@ extension AppModel {
         credentialEpochs[profileID, default: 0]
     }
 
+    /// The current service-wide credential epoch, for a caller to capture once at the
+    /// start of an operation alongside ``currentCredentialEpoch(for:)`` and
+    /// ``generation``.
+    func currentGlobalCredentialEpoch() -> Int {
+        globalCredentialEpoch
+    }
+
     /// Advances the credential epoch for `profileID` and returns the new value.
     ///
     /// Must be called synchronously, before enqueueing the delete that follows from
@@ -219,6 +298,59 @@ extension AppModel {
         let next = credentialEpochs[profileID, default: 0] + 1
         credentialEpochs[profileID] = next
         return next
+    }
+
+    /// Synchronously, unconditionally enqueues a token deletion for `profileID` behind
+    /// whatever token-store operation is currently at the tail of its serialized
+    /// queue — registering the new tail *before this function returns*, not merely
+    /// inside a separately-scheduled ``Task``, so any operation that begins after
+    /// ``cancelAuthOperation()`` returns (even one whose own async steps have not yet
+    /// reached ``serializedTokenAccess(for:epoch:globalEpoch:_:)``) is guaranteed to be
+    /// queued strictly behind this cleanup rather than racing ahead of, and being
+    /// wiped by, it.
+    ///
+    /// Unlike ``serializedTokenAccess(for:epoch:globalEpoch:_:)``, this delete is not
+    /// itself gated on a profile credential epoch: its entire purpose is to remove
+    /// whatever a just-cancelled operation's save may already have written under the
+    /// very epoch this call's own caller just bumped, so gating it on that epoch would
+    /// make it a guaranteed no-op. It still respects an active service-wide reset
+    /// barrier and `globalEpoch`, so it can never race ``TokenStore/deleteAllTokens()``.
+    ///
+    /// On failure (and only then), records `profileID`'s failure in
+    /// ``cancellationCleanupFailures`` — consulted (and consumed) by
+    /// ``beginAuthOperation(_:issueToken:)`` and
+    /// ``restoreToken(profile:compatibility:generation:)`` so a stale, undeleted token
+    /// is never silently trusted by a later operation for the same profile. On
+    /// success, clears any previously recorded failure for `profileID`, since the
+    /// store is now known to be reachable and clean again.
+    func enqueueCancellationCleanup(for profileID: UUID, globalEpoch: Int) {
+        let previous = tokenAccessQueues[profileID]?.task
+        let scheduled = Task<Void, any Error> {
+            await previous?.value
+            if let barrier = self.serviceResetBarrier {
+                await barrier.task.value
+            }
+            guard self.globalCredentialEpoch == globalEpoch else {
+                throw StaleCredentialEpochError()
+            }
+            try await self.tokenStore.deleteToken(for: profileID)
+        }
+        let tailID = UUID()
+        let tail = Task { [weak self] in
+            do {
+                try await scheduled.value
+                self?.cancellationCleanupFailures[profileID] = nil
+            } catch is CancellationError {
+            } catch is StaleCredentialEpochError {
+            } catch {
+                guard let self else { return }
+                cancellationCleanupFailures[profileID] = tokenStoreFailure(from: error)
+            }
+            if self?.tokenAccessQueues[profileID]?.id == tailID {
+                self?.tokenAccessQueues[profileID] = nil
+            }
+        }
+        tokenAccessQueues[profileID] = TokenAccessTail(id: tailID, task: tail)
     }
 }
 

@@ -39,13 +39,17 @@ extension AppModelTests {
         on model: AppModel, updated: ServerProfile, generation: Int
     ) -> Task<Void, Never> {
         let credentialEpoch = model.invalidateCredentialEpoch(for: sampleCustomProfile.id)
+        let globalEpoch = model.currentGlobalCredentialEpoch()
         return Task {
             await model.performProfileUpdate(
                 original: sampleCustomProfile,
                 updated: updated,
                 endpointChanged: true,
-                credentialEpoch: credentialEpoch,
-                operationGeneration: generation
+                epochContext: ProfileUpdateEpochContext(
+                    credentialEpoch: credentialEpoch,
+                    globalEpoch: globalEpoch,
+                    operationGeneration: generation
+                )
             )
         }
     }

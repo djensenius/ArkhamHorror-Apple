@@ -126,6 +126,7 @@ extension AppModel {
         // and this capture, since both are synchronous on the main actor), so this
         // edit's own delete below always matches its own invalidation.
         let credentialEpoch = endpointChanged ? invalidateCredentialEpoch(for: profile.id) : nil
+        let globalEpoch = currentGlobalCredentialEpoch()
         profileManagementOperation = .saving(profile.id)
         profileManagementGeneration += 1
         let operationGeneration = profileManagementGeneration
@@ -135,8 +136,11 @@ extension AppModel {
                 original: profile,
                 updated: updated,
                 endpointChanged: endpointChanged,
-                credentialEpoch: credentialEpoch,
-                operationGeneration: operationGeneration
+                epochContext: ProfileUpdateEpochContext(
+                    credentialEpoch: credentialEpoch,
+                    globalEpoch: globalEpoch,
+                    operationGeneration: operationGeneration
+                )
             )
         }
     }
@@ -165,13 +169,17 @@ extension AppModel {
         // Invalidated synchronously, before the removal delete is even enqueued. See
         // the matching comment in ``updateCustomProfile(_:displayName:rawURL:)``.
         let credentialEpoch = invalidateCredentialEpoch(for: profile.id)
+        let globalEpoch = currentGlobalCredentialEpoch()
         profileManagementOperation = .removing(profile.id)
         profileManagementGeneration += 1
         let operationGeneration = profileManagementGeneration
         profileManagementTask?.cancel()
         profileManagementTask = Task { [weak self] in
             await self?.performProfileRemoval(
-                profile, credentialEpoch: credentialEpoch, operationGeneration: operationGeneration
+                profile,
+                credentialEpoch: credentialEpoch,
+                globalEpoch: globalEpoch,
+                operationGeneration: operationGeneration
             )
         }
     }
@@ -208,23 +216,37 @@ extension AppModel {
         profileManagementGeneration += 1
         let operationGeneration = profileManagementGeneration
 
-        // Best-effort: invalidate every currently in-memory profile's credential
-        // epoch before the wipe, so a save/read concurrently queued (captured under
-        // an earlier epoch) for one of those profiles cannot resurrect a token after
-        // deleteAllTokens() runs. This cannot be exhaustive or fully atomic with the
-        // wipe below — true profile-list corruption is realistically only ever
-        // observed at initial launch, before any per-profile operation could be
-        // mid-flight, so this residual window is treated as acceptable rather than
-        // claimed to be eliminated.
-        for existingProfile in profiles {
-            invalidateCredentialEpoch(for: existingProfile.id)
-        }
+        // The service-wide credential epoch is bumped, and every per-profile queue
+        // tail currently in flight is snapshotted, synchronously here — *before* the
+        // barrier below is installed — so that:
+        //   - every token operation already enqueued anywhere, captured under any
+        //     earlier global epoch, is guaranteed to observe a mismatch at its
+        //     recheck (which can only run after the snapshotted tails it is chained
+        //     behind complete, and after the barrier this method installs resolves);
+        //   - every new token operation that starts after this method returns
+        //     observes the freshly installed barrier (`serviceResetBarrier`) and
+        //     waits behind it, rather than racing `deleteAllTokens()` below.
+        // The barrier task itself awaits exactly the snapshotted tails (never a new
+        // operation's own tail, which instead awaits the barrier) before running the
+        // wipe, so no self-wait/deadlock is possible.
+        globalCredentialEpoch += 1
+        let pendingTails = tokenAccessQueues.values.map(\.task)
 
-        profileManagementTask = Task { [weak self] in
-            await self?.performStorageReset(
+        let barrierID = UUID()
+        let barrierTask = Task<Void, Never> { [weak self] in
+            for tail in pendingTails {
+                await tail.value
+            }
+            guard let self else { return }
+            await performStorageReset(
                 generation: currentGeneration, operationGeneration: operationGeneration
             )
+            if serviceResetBarrier?.id == barrierID {
+                serviceResetBarrier = nil
+            }
         }
+        serviceResetBarrier = ServiceResetBarrier(id: barrierID, task: barrierTask)
+        profileManagementTask = barrierTask
     }
 
     private func performStorageReset(generation: Int, operationGeneration: Int) async {
@@ -260,6 +282,12 @@ extension AppModel {
         selectedProfile = .hosted
         operation = .idle
         operationFailure = nil
+        // Every profile this reset wiped tokens for is gone from `profiles` now; any
+        // failure recorded against one of their IDs can never again be consulted by
+        // ``beginAuthOperation(_:issueToken:)`` or
+        // ``restoreToken(profile:compatibility:generation:)``, so it is cleared here
+        // purely for hygiene rather than correctness.
+        cancellationCleanupFailures.removeAll()
         restartFlow(for: .hosted, generation: generation)
     }
 }

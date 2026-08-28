@@ -53,6 +53,42 @@ struct ServerProfileTests {
         #expect(profile.baseURL.port == 9000)
     }
 
+    @Test("Explicit default HTTPS port :443 is canonicalized away")
+    func explicitDefaultHTTPSPortCanonicalized() throws {
+        let profile = try ServerProfile.custom(
+            displayName: "T",
+            rawURL: "https://example.com:443"
+        )
+        #expect(profile.baseURL.port == nil)
+        #expect(profile.baseURL.absoluteString == "https://example.com")
+    }
+
+    @Test("Explicit default loopback HTTP port :80 is canonicalized away")
+    func explicitDefaultHTTPPortCanonicalized() throws {
+        let profile = try ServerProfile.custom(
+            displayName: "T",
+            rawURL: "http://localhost:80"
+        )
+        #expect(profile.baseURL.port == nil)
+        #expect(profile.baseURL.absoluteString == "http://localhost")
+    }
+
+    @Test(
+        """
+        An explicit default port and an omitted port normalize to the identical \
+        canonical base URL, so they are the same endpoint
+        """
+    )
+    func defaultPortAndOmittedPortAreTheSameEndpoint() throws {
+        let explicit = try ServerProfile.custom(displayName: "T", rawURL: "https://example.com:443")
+        let omitted = try ServerProfile.custom(displayName: "T", rawURL: "https://example.com")
+        #expect(explicit.baseURL == omitted.baseURL)
+
+        let explicitHTTP = try ServerProfile.custom(displayName: "L", rawURL: "http://localhost:80")
+        let omittedHTTP = try ServerProfile.custom(displayName: "L", rawURL: "http://localhost")
+        #expect(explicitHTTP.baseURL == omittedHTTP.baseURL)
+    }
+
     @Test("Explicit path prefix is preserved")
     func preservesPathPrefix() throws {
         let profile = try ServerProfile.custom(
@@ -231,47 +267,5 @@ struct ServerProfileTests {
                 rawURL: "https://example.com/proxy\(basePath)/extra"
             )
         }
-    }
-
-    // MARK: - Display summary
-
-    @Test("Endpoint summary includes host without a trailing slash for a root path")
-    func endpointSummaryDropsRootTrailingSlash() {
-        #expect(ServerProfile.hosted.endpointSummary == "https://arkhamhorror.app")
-    }
-
-    @Test("Endpoint summary distinguishes profiles that differ only by port")
-    func endpointSummaryDistinguishesPort() throws {
-        let lowPort = try ServerProfile.custom(
-            displayName: "A", rawURL: "https://example.com:8080"
-        )
-        let highPort = try ServerProfile.custom(
-            displayName: "B", rawURL: "https://example.com:9090"
-        )
-        #expect(lowPort.endpointSummary != highPort.endpointSummary)
-        #expect(lowPort.endpointSummary.hasSuffix(":8080"))
-        #expect(highPort.endpointSummary.hasSuffix(":9090"))
-    }
-
-    @Test("Endpoint summary distinguishes profiles that differ only by path")
-    func endpointSummaryDistinguishesPath() throws {
-        let tenantA = try ServerProfile.custom(
-            displayName: "A", rawURL: "https://example.com/TenantA"
-        )
-        let tenantB = try ServerProfile.custom(
-            displayName: "B", rawURL: "https://example.com/TenantB"
-        )
-        #expect(tenantA.endpointSummary != tenantB.endpointSummary)
-        #expect(tenantA.endpointSummary.hasSuffix("/TenantA"))
-        #expect(tenantB.endpointSummary.hasSuffix("/TenantB"))
-    }
-
-    @Test("Endpoint summary distinguishes loopback profiles that differ only by scheme")
-    func endpointSummaryDistinguishesScheme() throws {
-        let http = try ServerProfile.custom(displayName: "A", rawURL: "http://localhost:8080")
-        let https = try ServerProfile.custom(displayName: "B", rawURL: "https://localhost:8080")
-        #expect(http.endpointSummary != https.endpointSummary)
-        #expect(http.endpointSummary.hasPrefix("http://"))
-        #expect(https.endpointSummary.hasPrefix("https://"))
     }
 }

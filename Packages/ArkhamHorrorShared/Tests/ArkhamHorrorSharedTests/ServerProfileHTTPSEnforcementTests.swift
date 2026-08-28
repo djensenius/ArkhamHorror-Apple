@@ -77,6 +77,45 @@ extension ServerProfileTests {
         #expect(loopbackProfile.baseURL.scheme == "https")
     }
 
+    // MARK: - Raw pre-`URLComponents` authority validation
+
+    @Test(
+        """
+        Smuggled/lookalike loopback authorities are rejected against the raw literal \
+        text, before Foundation's own percent-decoding or normalization can turn \
+        them into something that only resolves to an accepted loopback form
+        """,
+        arguments: [
+            // Percent-escaped `localhost` and `127.0.0.1`: must not decode-then-match.
+            "http://local%68ost",
+            "http://127%2e0%2e0%2e1",
+            // Full-width (non-ASCII) dots: must not IDNA/Unicode-normalize to dots.
+            "http://127。0。0。1",
+            // Circled-letter Unicode lookalike of `localhost`.
+            "http://ⓁⓞⓒⓐⓁⓗⓞⓢⓣ",
+            // A raw userinfo component ahead of a loopback host is still rejected.
+            "http://user@localhost",
+            "http://user:pass@127.0.0.1",
+            // A trailing dot must not be treated as the same host as `localhost`.
+            "http://localhost.",
+            // Non-ASCII bytes anywhere in the authority are rejected outright.
+            "http://löcalhost",
+            // An unbracketed multi-colon authority can never be a strict loopback
+            // match; only the bracketed `[::1]` literal is accepted.
+            "http://::1",
+            // A non-numeric or out-of-range raw port must not reach URL construction.
+            "http://localhost:abc",
+            "http://localhost:0",
+            "http://localhost:99999",
+            "http://[::1]:notaport",
+        ]
+    )
+    func rawAuthoritySmugglingRejected(rawURL: String) {
+        #expect(throws: (any Error).self) {
+            try ServerProfile.custom(displayName: "T", rawURL: rawURL)
+        }
+    }
+
     @Test("Persisted JSON with an insecure non-loopback HTTP base URL fails to decode")
     func decodingInsecureHTTPBaseURLThrows() throws {
         // Build valid JSON by encoding a real profile, then downgrade only the

@@ -262,4 +262,55 @@ extension AppModelTests {
         #expect(remaining == nil)
         #expect(model.profiles.first { $0.id == original.id }?.baseURL.path == "/tenanta")
     }
+
+    @Test(
+        """
+        An edit that only adds/removes the scheme's explicit default port is not an \
+        endpoint change and retains the token
+        """
+    )
+    func defaultPortOnlyEditRetainsToken() async throws {
+        let original = try ServerProfile.custom(
+            id: sampleCustomProfile.id,
+            displayName: sampleCustomProfile.displayName,
+            rawURL: "https://self-hosted.example.com:443"
+        )
+        let tokenStore = FakeTokenStore(tokens: [original.id: "kept-token"])
+        let model = makeModel(
+            profiles: [.hosted, original],
+            selectedID: original.id,
+            tokenStore: tokenStore,
+            auth: ScriptedAuthenticating(currentUserResult: .success(.sample))
+        )
+        await model.flowTask?.value
+
+        // Omit the explicit :443 entirely; the canonical baseURL must be identical.
+        model.updateCustomProfile(
+            original,
+            displayName: original.displayName,
+            rawURL: "https://self-hosted.example.com"
+        )
+        await model.profileManagementTask?.value
+
+        #expect(model.profileManagementFailure == nil)
+        #expect(await tokenStore.deleteCallCount == 0)
+        #expect(try await tokenStore.token(for: original.id) == "kept-token")
+    }
+
+    @Test("Adding a profile whose only difference is an explicit default port is a duplicate")
+    func defaultPortOnlyDifferenceIsDuplicate() async throws {
+        let existing = try ServerProfile.custom(
+            displayName: "Existing", rawURL: "https://shared-host.example.com"
+        )
+        let model = makeModel(profiles: [.hosted, existing], selectedID: ServerProfile.hosted.id)
+        await model.flowTask?.value
+
+        model.addCustomProfile(
+            displayName: "Duplicate", rawURL: "https://shared-host.example.com:443"
+        )
+        await model.profileManagementTask?.value
+
+        #expect(model.profileManagementFailure == .duplicateEndpoint)
+        #expect(model.profiles.count == 2)
+    }
 }
