@@ -47,6 +47,10 @@ final class AppModel {
     var operationFailure: SessionOperationFailure?
     /// The persisted server profile list, including the canonical hosted profile.
     var profiles: [ServerProfile] = []
+    /// The in-flight custom-profile add, edit, or remove operation, if any.
+    var profileManagementOperation: ProfileManagementOperation = .idle
+    /// The most recent profile-management failure, cleared at the start of the next one.
+    var profileManagementFailure: ProfileManagementFailure?
 
     @ObservationIgnored let profileStore: any ServerProfileStore
     @ObservationIgnored let tokenStore: any TokenStore
@@ -59,6 +63,13 @@ final class AppModel {
     @ObservationIgnored var flowTask: Task<Void, Never>?
     /// The in-flight sign-in/registration/sign-out operation task, if any.
     @ObservationIgnored var operationTask: Task<Void, Never>?
+    /// The in-flight profile add/edit/remove task, if any.
+    @ObservationIgnored var profileManagementTask: Task<Void, Never>?
+    /// A monotonically increasing counter guarding stale profile-management
+    /// completions, independent of ``generation`` since a profile edit/removal does
+    /// not itself need to cancel or be cancelled by the launch/auth flow. See
+    /// ``AppModel/isCurrentProfileOperation(_:)``.
+    @ObservationIgnored var profileManagementGeneration = 0
 
     /// The tail of the per-profile serialized token-store access chain. See
     /// ``serializedTokenAccess(for:_:)``.
@@ -82,6 +93,12 @@ final class AppModel {
 extension AppModel {
     func isCurrent(_ generation: Int) -> Bool {
         generation == self.generation
+    }
+
+    /// Whether `operationGeneration` (captured when a profile-management task started)
+    /// still matches the current ``profileManagementGeneration``.
+    func isCurrentProfileOperation(_ operationGeneration: Int) -> Bool {
+        operationGeneration == profileManagementGeneration
     }
 
     /// Runs a synchronous storage read/write, transitioning to

@@ -44,7 +44,13 @@ extension AppModel {
         restartFlow(for: profile, generation: currentGeneration)
     }
 
-    private func restartFlow(for profile: ServerProfile, generation: Int) {
+    /// Transitions to ``SessionState/checkingCompatibility(profile:)`` and starts a
+    /// fresh compatibility/token-restoration flow task for `profile` at `generation`.
+    ///
+    /// Not `private` so ``AppModel``'s profile-management extension can reuse it after
+    /// an in-place edit or removal of the currently selected profile forces the same
+    /// restart, without duplicating the probe/restore wiring.
+    func restartFlow(for profile: ServerProfile, generation: Int) {
         sessionState = .checkingCompatibility(profile: profile)
         flowTask = Task { [weak self] in
             await self?.probeAndRestore(profile: profile, generation: generation)

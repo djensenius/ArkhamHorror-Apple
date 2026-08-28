@@ -179,3 +179,51 @@ extension SessionState {
         }
     }
 }
+
+// MARK: - Detailed, reason-specific summaries
+
+/// A precise, non-secret, user-facing explanation of why an incompatible server was
+/// rejected. Reuses the exact typed ``CompatibilityRejection`` payload rather than any
+/// raw diagnostic, and is shared by every presentation surface (and its tests) so the
+/// reason category is never duplicated ad hoc.
+extension CompatibilityRejection {
+    var message: String {
+        switch self {
+        case let .clientTooOld(clientSupports, serverRequires):
+            "This app needs to be updated. The server requires app version " +
+                "\(serverRequires.description) or newer; this app supports up to " +
+                "\(clientSupports.description)."
+        case let .serverTooOld(serverRevision, clientRequires):
+            "This server needs to be updated. It reports version " +
+                "\(serverRevision.description), but this app requires at least " +
+                "\(clientRequires.description)."
+        case .apiBasePathMismatch:
+            "This server's configuration doesn't match what this app expects."
+        }
+    }
+}
+
+/// A precise, non-secret, user-facing explanation of why the selected server is
+/// currently unavailable, distinguishing an unreachable server from a session that
+/// could not be verified.
+extension SessionUnavailableReason {
+    var message: String {
+        switch self {
+        case .probeFailed:
+            "This server could not be reached. Check your connection and try again."
+        case .tokenValidationFailed(.authentication):
+            "Your saved session with this server could not be verified. Try again."
+        case .tokenValidationFailed(.tokenStore):
+            "Your saved session for this server could not be securely accessed. Try again."
+        }
+    }
+}
+
+extension SessionStorageFailure {
+    /// A non-secret, user-facing explanation shown alongside an explicit,
+    /// user-confirmed reset action; never surfaced as a reason to erase data silently.
+    var message: String {
+        "Your saved server data could not be read. You can reset it and start over " +
+            "with the default server, or try again later without losing it."
+    }
+}
