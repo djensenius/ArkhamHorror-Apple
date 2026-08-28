@@ -12,6 +12,9 @@ enum ProfileManagementOperation: Equatable, Sendable {
     case saving(UUID)
     /// A profile (and, first, its token) is being removed.
     case removing(UUID)
+    /// Corrupted profile/selection storage is being explicitly, user-confirmed reset:
+    /// every stored token is being securely deleted before metadata is replaced.
+    case resettingStorage
 }
 
 /// Why an add, edit, or remove of a custom server profile failed.
@@ -47,6 +50,8 @@ extension ServerProfileError {
             "Remove the username and password from the address."
         case .unsupportedScheme:
             "Use an address that starts with http:// or https://."
+        case .insecureScheme:
+            "Use https:// for this address. Plain http:// only works for localhost."
         case .missingHost:
             "Enter a valid server address."
         case .fragmentNotAllowed:

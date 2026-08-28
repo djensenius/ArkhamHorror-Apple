@@ -46,16 +46,27 @@ extension AppModel {
         compatibility: ServerCompatibility,
         generation: Int
     ) async {
+        // Captured once, here, before any awaited step in this token-restore chain —
+        // not re-read right before the read or the possible unauthorized-delete below
+        // — so that an endpoint edit/removal which invalidates this profile's epoch at
+        // any point during this chain (including while queued behind that edit's own
+        // delete) is guaranteed to leave this capture stale. See
+        // ``AppModel/serializedTokenAccess(for:epoch:_:)``.
+        let credentialEpoch = currentCredentialEpoch(for: profile.id)
         let token: String?
         do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:_:)``) so this read
-            // always observes the effect of an earlier, still in-flight save or delete
-            // for the same profile rather than a stale value.
-            token = try await serializedTokenAccess(for: profile.id) { [tokenStore] in
+            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:_:)``) so this
+            // read always observes the effect of an earlier, still in-flight save or
+            // delete for the same profile rather than a stale value.
+            token = try await serializedTokenAccess(
+                for: profile.id, epoch: credentialEpoch
+            ) { [tokenStore] in
                 try await tokenStore.token(for: profile.id)
             }
         } catch {
-            guard !(error is CancellationError) else { return }
+            guard !(error is CancellationError || error is StaleCredentialEpochError) else {
+                return
+            }
             guard isCurrent(generation) else { return }
             let reason = TokenValidationFailure.tokenStore(tokenStoreFailure(from: error))
             sessionState = .unavailable(profile: profile, reason: .tokenValidationFailed(reason))
@@ -72,7 +83,8 @@ extension AppModel {
             token,
             profile: profile,
             compatibility: compatibility,
-            generation: generation
+            generation: generation,
+            credentialEpoch: credentialEpoch
         )
     }
 
@@ -80,7 +92,8 @@ extension AppModel {
         _ token: String,
         profile: ServerProfile,
         compatibility: ServerCompatibility,
-        generation: Int
+        generation: Int,
+        credentialEpoch: Int
     ) async {
         do {
             let user = try await authenticationSession.currentUser(on: profile, token: token)
@@ -98,7 +111,8 @@ extension AppModel {
             await deleteUnauthorizedToken(
                 profile: profile,
                 compatibility: compatibility,
-                generation: generation
+                generation: generation,
+                credentialEpoch: credentialEpoch
             )
         } catch {
             // Any other failure (transient network/TLS/status/decoding) retains the
@@ -117,17 +131,22 @@ extension AppModel {
     func deleteUnauthorizedToken(
         profile: ServerProfile,
         compatibility: ServerCompatibility,
-        generation: Int
+        generation: Int,
+        credentialEpoch: Int
     ) async {
         do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:_:)``) so this
+            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:_:)``) so this
             // delete is ordered against any other in-flight read/save/delete for the
             // same profile rather than racing them.
-            try await serializedTokenAccess(for: profile.id) { [tokenStore] in
+            try await serializedTokenAccess(
+                for: profile.id, epoch: credentialEpoch
+            ) { [tokenStore] in
                 try await tokenStore.deleteToken(for: profile.id)
             }
         } catch {
-            guard !(error is CancellationError) else { return }
+            guard !(error is CancellationError || error is StaleCredentialEpochError) else {
+                return
+            }
             guard isCurrent(generation) else { return }
             let reason = TokenValidationFailure.tokenStore(tokenStoreFailure(from: error))
             sessionState = .unavailable(profile: profile, reason: .tokenValidationFailed(reason))

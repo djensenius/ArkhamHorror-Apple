@@ -94,6 +94,7 @@ struct ServerSelectionView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(profile.displayName)
                                 .font(.body)
+                                .foregroundStyle(ArkhamTheme.bone)
                             Text(profile.baseURL.host ?? profile.baseURL.absoluteString)
                                 .font(.caption)
                                 .foregroundStyle(ArkhamTheme.bone.opacity(0.6))

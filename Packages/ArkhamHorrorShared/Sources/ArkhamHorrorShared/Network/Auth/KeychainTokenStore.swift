@@ -88,6 +88,26 @@ struct KeychainTokenStore: TokenStore {
         }
     }
 
+    func deleteAllTokens() async throws {
+        // Deliberately omits `kSecAttrAccount`: a `SecItemDelete` query naming only the
+        // item class and service (no account) matches and removes every token this
+        // store's service holds, regardless of which profile UUID it belongs to. It
+        // still cannot touch any other service/namespace, so this can never delete
+        // credentials belonging to anything outside this store.
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecUseDataProtectionKeychain as String: true,
+        ]
+        let status = client.delete(query)
+        switch status {
+        case errSecSuccess, errSecItemNotFound:
+            return
+        default:
+            throw KeychainError.unhandledStatus(status)
+        }
+    }
+
     /// Adds a new item, resolving a duplicate-item race by falling back to an update.
     ///
     /// A concurrent writer may insert the item between our `update` (which returned

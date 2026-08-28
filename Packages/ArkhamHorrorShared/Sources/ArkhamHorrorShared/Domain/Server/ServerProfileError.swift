@@ -16,6 +16,13 @@ enum ServerProfileError: Error, Equatable, Sendable {
     case credentialsNotAllowed
     /// Only `http` and `https` schemes are supported.
     case unsupportedScheme
+    /// Plain `http` is only permitted for the local loopback interface (the exact
+    /// hostname `localhost`, a dotted-decimal IPv4 address in `127.0.0.0/8`, or `::1`).
+    ///
+    /// Any other host — a LAN address, a public host, or a `localhost` lookalike or
+    /// subdomain — must use `https`, since credentials and tokens are never sent over
+    /// plain HTTP to anything but the local device itself.
+    case insecureScheme
     /// A non-empty host is required.
     case missingHost
     /// Fragment components (`#…`) are not permitted in server base URLs.

@@ -33,6 +33,12 @@ extension AppModel {
         operationTask?.cancel()
         generation += 1
         let currentGeneration = generation
+        // Captured once, here, alongside `generation` — not re-read right before the
+        // save — so that an endpoint edit/removal which bumps this profile's epoch at
+        // any point after this operation started (even while this operation's save is
+        // already queued behind that edit/removal's delete) is guaranteed to leave this
+        // capture stale. See `AppModel/serializedTokenAccess(for:epoch:_:)`.
+        let currentEpoch = currentCredentialEpoch(for: profile.id)
         operation = operationKind
         operationFailure = nil
         operationTask = Task { [weak self] in
@@ -40,6 +46,7 @@ extension AppModel {
                 profile: profile,
                 compatibility: compatibility,
                 generation: currentGeneration,
+                credentialEpoch: currentEpoch,
                 issueToken: issueToken
             )
         }
@@ -51,6 +58,7 @@ extension AppModel {
         profile: ServerProfile,
         compatibility: ServerCompatibility,
         generation: Int,
+        credentialEpoch: Int,
         issueToken: @Sendable (ServerProfile) async throws -> AuthToken
     ) async {
         let issuedToken: AuthToken
@@ -82,14 +90,21 @@ extension AppModel {
             // `serializedTokenAccess` guarantees this save cannot be reordered by, or
             // race with, an in-flight save/delete/read for the same profile even if
             // this operation is superseded (e.g. a profile switch away and back) while
-            // the save is already under way.
-            try await serializedTokenAccess(for: profile.id) { [tokenStore] in
+            // the save is already under way. Passing `credentialEpoch` additionally
+            // guarantees that if an endpoint edit, removal, or explicit cancellation
+            // has invalidated this profile's credential epoch since this operation
+            // started — even one that is enqueued *after* this save but completes its
+            // own invalidation before this save's closure actually runs — this save is
+            // skipped rather than durably resurrecting a token for a stale origin.
+            try await serializedTokenAccess(
+                for: profile.id, epoch: credentialEpoch
+            ) { [tokenStore] in
                 try await tokenStore.save(issuedToken.token, for: profile.id)
             }
         } catch {
             guard isCurrent(generation) else { return }
             operation = .idle
-            operationFailure = error is CancellationError
+            operationFailure = (error is CancellationError || error is StaleCredentialEpochError)
                 ? nil
                 : .tokenStore(tokenStoreFailure(from: error))
             return
@@ -101,10 +116,39 @@ extension AppModel {
         sessionState = .signedIn(profile: profile, compatibility: compatibility, user: user)
     }
 
+    /// Cancels the in-flight sign-in or registration operation, if any, and returns to
+    /// signed-out.
+    ///
+    /// Cancelling the underlying task alone is not sufficient: an injected
+    /// authentication session that does not itself observe cancellation could still
+    /// complete and reach the durable token save after this method returns. This
+    /// method therefore also advances ``generation`` (so any subsequent completion of
+    /// the cancelled task's steps is rejected by its `isCurrent` checks) and
+    /// invalidates the profile's credential epoch (so even a save that has *already*
+    /// passed those checks and is queued in ``serializedTokenAccess(for:epoch:_:)`` is
+    /// skipped rather than durably saving a token after the user has cancelled).
+    ///
+    /// Valid only while ``operation`` is ``SessionOperation/signingIn`` or
+    /// ``SessionOperation/registering`` from ``SessionState/signedOut(profile:compatibility:)``;
+    /// otherwise a no-op, so redundant calls (e.g. a Cancel button tap racing a
+    /// just-completed sign-in, or an idempotent view-disappearance callback after
+    /// successful navigation) are always safe.
+    func cancelAuthOperation() {
+        guard case let .signedOut(profile, compatibility) = sessionState else { return }
+        guard operation == .signingIn || operation == .registering else { return }
+        operationTask?.cancel()
+        operationTask = nil
+        generation += 1
+        invalidateCredentialEpoch(for: profile.id)
+        operation = .idle
+        operationFailure = nil
+        sessionState = .signedOut(profile: profile, compatibility: compatibility)
+    }
+
     /// Maps a thrown authentication step error to an operation failure, or `nil` for
     /// cancellation (which must not become an error).
     private func authOperationFailure(from error: any Error) -> SessionOperationFailure? {
-        if error is CancellationError {
+        if error is CancellationError || error is StaleCredentialEpochError {
             return nil
         }
         if let authError = error as? AuthenticationError {
@@ -127,13 +171,15 @@ extension AppModel {
         operationTask?.cancel()
         generation += 1
         let currentGeneration = generation
+        let currentEpoch = currentCredentialEpoch(for: profile.id)
         operation = .signingOut
         operationFailure = nil
         operationTask = Task { [weak self] in
             await self?.performSignOut(
                 profile: profile,
                 compatibility: compatibility,
-                generation: currentGeneration
+                generation: currentGeneration,
+                credentialEpoch: currentEpoch
             )
         }
     }
@@ -141,7 +187,8 @@ extension AppModel {
     func performSignOut(
         profile: ServerProfile,
         compatibility: ServerCompatibility,
-        generation: Int
+        generation: Int,
+        credentialEpoch: Int
     ) async {
         // The operation task may not start until after a profile switch has already
         // cancelled and superseded it. Reject that stale task before it can enqueue a
@@ -149,16 +196,18 @@ extension AppModel {
         guard isCurrent(generation) else { return }
 
         do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:_:)``) so a stale
-            // delete that is already in flight when superseded cannot race with, or be
-            // raced by, a later read/save/delete for the same profile.
-            try await serializedTokenAccess(for: profile.id) { [tokenStore] in
+            // Serialized (see ``AppModel/serializedTokenAccess(for:epoch:_:)``) so a
+            // stale delete that is already in flight when superseded cannot race with,
+            // or be raced by, a later read/save/delete for the same profile.
+            try await serializedTokenAccess(
+                for: profile.id, epoch: credentialEpoch
+            ) { [tokenStore] in
                 try await tokenStore.deleteToken(for: profile.id)
             }
         } catch {
             guard isCurrent(generation) else { return }
             operation = .idle
-            operationFailure = error is CancellationError
+            operationFailure = (error is CancellationError || error is StaleCredentialEpochError)
                 ? nil
                 : .tokenStore(tokenStoreFailure(from: error))
             return

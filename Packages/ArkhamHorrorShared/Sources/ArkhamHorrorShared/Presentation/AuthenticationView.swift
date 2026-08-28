@@ -3,7 +3,13 @@ import SwiftUI
 /// The sign-in form: email and password only, matching the backend's `Authentication`
 /// contract exactly. The password is local view state, cleared immediately after a
 /// successful sign-in and whenever the form disappears; it never enters an alert,
-/// identifier, diagnostic, preview, or log.
+/// identifier, diagnostic, preview, or log. Tapping Cancel or dismissing the form (by
+/// any means, including an interactive swipe) calls
+/// ``AppModel/cancelAuthOperation()``, which cancels the in-flight task, advances the
+/// generation/credential epoch, and returns to signed-out — so a slow sign-in or
+/// registration the user has already cancelled can never complete and sign them in
+/// later. That call is a safe no-op once a sign-in has already succeeded, so it can
+/// never undo a just-completed, already-navigated-away-from success.
 struct SignInView: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -54,7 +60,10 @@ struct SignInView: View {
         .navigationTitle("Sign In")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
+                Button("Cancel") {
+                    model.cancelAuthOperation()
+                    dismiss()
+                }
             }
         }
         .onAppear { focusedField = .email }
@@ -63,7 +72,10 @@ struct SignInView: View {
             password = ""
             dismiss()
         }
-        .onDisappear { password = "" }
+        .onDisappear {
+            password = ""
+            model.cancelAuthOperation()
+        }
     }
 
     private var isValid: Bool {
@@ -140,7 +152,10 @@ struct RegisterView: View {
         .navigationTitle("Create Account")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
+                Button("Cancel") {
+                    model.cancelAuthOperation()
+                    dismiss()
+                }
             }
         }
         .onAppear { focusedField = .email }
@@ -149,7 +164,10 @@ struct RegisterView: View {
             password = ""
             dismiss()
         }
-        .onDisappear { password = "" }
+        .onDisappear {
+            password = ""
+            model.cancelAuthOperation()
+        }
     }
 
     private var isValid: Bool {

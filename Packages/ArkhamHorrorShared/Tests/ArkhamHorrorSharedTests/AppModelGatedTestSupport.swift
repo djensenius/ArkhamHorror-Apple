@@ -8,6 +8,7 @@ import Foundation
 enum GatedTokenMutation: Equatable, Sendable {
     case save(token: String, profileID: UUID)
     case delete(profileID: UUID)
+    case deleteAll
 }
 
 /// A ``TokenStore`` fake whose `save`/`deleteToken` calls each suspend on a FIFO queue
@@ -26,6 +27,7 @@ actor GatedTokenStore: TokenStore {
     )] = []
     private(set) var saveCallCount = 0
     private(set) var deleteCallCount = 0
+    private(set) var deleteAllCallCount = 0
 
     init(tokens: [UUID: String] = [:]) {
         self.tokens = tokens
@@ -45,6 +47,12 @@ actor GatedTokenStore: TokenStore {
         deleteCallCount += 1
         try await suspend(.delete(profileID: profileID))
         tokens[profileID] = nil
+    }
+
+    func deleteAllTokens() async throws {
+        deleteAllCallCount += 1
+        try await suspend(.deleteAll)
+        tokens.removeAll()
     }
 
     /// The current storage snapshot, independent of any pending mutation.

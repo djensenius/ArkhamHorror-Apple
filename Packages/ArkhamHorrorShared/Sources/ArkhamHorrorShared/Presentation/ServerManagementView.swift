@@ -91,7 +91,7 @@ struct ServerManagementView: View {
                         .font(.body)
                     Text(profile.baseURL.host ?? profile.baseURL.absoluteString)
                         .font(.caption)
-                        .foregroundStyle(ArkhamTheme.bone.opacity(0.6))
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if profile.id == model.selectedProfile.id {
@@ -101,7 +101,7 @@ struct ServerManagementView: View {
                 }
                 if profile.kind == .hosted {
                     Image(systemName: "lock.fill")
-                        .foregroundStyle(ArkhamTheme.bone.opacity(0.4))
+                        .foregroundStyle(.secondary)
                         .accessibilityLabel("Built-in server; can't be edited or removed")
                 }
             }

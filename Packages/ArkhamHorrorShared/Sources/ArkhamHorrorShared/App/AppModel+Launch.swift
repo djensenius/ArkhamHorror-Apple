@@ -40,14 +40,30 @@ extension AppModel {
     }
 
     /// Restores the persisted selected profile ID, falling back to (and persisting)
-    /// hosted when it is absent or does not match a known profile.
+    /// hosted when it is absent, does not match a known profile, or its storage is
+    /// corrupted.
+    ///
+    /// A ``ServerProfileStore/loadSelectedProfileID()`` failure is *selection-only*
+    /// corruption: ``resolvedProfiles`` (and every profile's token) already decoded
+    /// successfully, so there is nothing to discard here. This repairs by silently
+    /// falling back to hosted and persisting that repair, exactly as an unknown/absent
+    /// selection ID already does — it does *not* route to
+    /// ``SessionState/storageCorrupted(_:)``, which conflating this with true
+    /// profile-*list* corruption would otherwise do, needlessly offering to erase every
+    /// saved profile and token over a corrupt selection pointer alone.
     private func resolveSelection(
         among resolvedProfiles: [ServerProfile],
         generation: Int
     ) -> ServerProfile? {
-        guard let selectedID = runStorage(generation: generation, {
-            try profileStore.loadSelectedProfileID()
-        }) else { return nil }
+        let selectedID: UUID?
+        do {
+            selectedID = try profileStore.loadSelectedProfileID()
+        } catch {
+            guard runStorageVoid(generation: generation, {
+                try profileStore.saveSelectedProfileID(ServerProfile.hosted.id)
+            }) else { return nil }
+            return .hosted
+        }
 
         if let selectedID, let match = resolvedProfiles.first(where: { $0.id == selectedID }) {
             return match

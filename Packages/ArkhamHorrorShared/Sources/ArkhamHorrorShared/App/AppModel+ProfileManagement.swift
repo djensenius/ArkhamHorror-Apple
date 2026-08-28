@@ -11,7 +11,7 @@ import Foundation
 /// Security invariant: an edit that changes a profile's normalized base URL deletes that
 /// profile's existing token *before* the new endpoint is activated or persisted, through
 /// the same serialized token-access seam used by authentication (see
-/// ``AppModel/serializedTokenAccess(for:_:)``). If that deletion fails, the old profile
+/// ``AppModel/serializedTokenAccess(for:epoch:_:)``). If that deletion fails, the old profile
 /// and its token are left exactly as they were and a typed failure is surfaced — the
 /// coordinator never sends a token for one origin to a newly edited endpoint, and it
 /// never invents a plaintext or in-memory fallback for a token store it cannot durably
@@ -97,6 +97,15 @@ extension AppModel {
         }
 
         let endpointChanged = !isSameEndpoint(profile, updated)
+        // Invalidated synchronously, here, *before* the endpoint-changing delete is
+        // even enqueued — not inside the async continuation below — so that every
+        // token-store operation for this profile already in flight (or enqueued but
+        // not yet run), captured under any epoch prior to this call, is guaranteed to
+        // observe a mismatch when its turn in the queue actually arrives. The freshly
+        // bumped value is captured immediately (nothing else can run between the bump
+        // and this capture, since both are synchronous on the main actor), so this
+        // edit's own delete below always matches its own invalidation.
+        let credentialEpoch = endpointChanged ? invalidateCredentialEpoch(for: profile.id) : nil
         profileManagementOperation = .saving(profile.id)
         profileManagementGeneration += 1
         let operationGeneration = profileManagementGeneration
@@ -106,6 +115,7 @@ extension AppModel {
                 original: profile,
                 updated: updated,
                 endpointChanged: endpointChanged,
+                credentialEpoch: credentialEpoch,
                 operationGeneration: operationGeneration
             )
         }
@@ -132,197 +142,104 @@ extension AppModel {
         guard profileManagementOperation == .idle else { return }
         profileManagementFailure = nil
 
+        // Invalidated synchronously, before the removal delete is even enqueued. See
+        // the matching comment in ``updateCustomProfile(_:displayName:rawURL:)``.
+        let credentialEpoch = invalidateCredentialEpoch(for: profile.id)
         profileManagementOperation = .removing(profile.id)
         profileManagementGeneration += 1
         let operationGeneration = profileManagementGeneration
         profileManagementTask?.cancel()
         profileManagementTask = Task { [weak self] in
-            await self?.performProfileRemoval(profile, operationGeneration: operationGeneration)
+            await self?.performProfileRemoval(
+                profile, credentialEpoch: credentialEpoch, operationGeneration: operationGeneration
+            )
         }
     }
 
-    /// Explicitly, and only from ``SessionState/storageCorrupted(_:)``, discards the
-    /// unreadable profile/selection storage, reseeds only the canonical hosted profile,
-    /// persists that reset, and restarts the launch flow.
+    /// Explicitly, and only from ``SessionState/storageCorrupted(_:)``, securely
+    /// deletes every stored token before discarding the unreadable profile/selection
+    /// storage, reseeds only the canonical hosted profile, persists that reset, and
+    /// restarts the launch flow.
     ///
     /// Never called implicitly: presentation code must obtain explicit user
     /// confirmation (e.g. a destructive confirmation alert) before invoking this, since
     /// corrupted storage is otherwise surfaced rather than silently erased.
+    ///
+    /// By the time storage is genuinely corrupted (as opposed to selection-only
+    /// corruption, which ``AppModel/loadProfilesAndSelect(generation:)`` already
+    /// repairs without ever reaching this state), the previously known profile IDs can
+    /// no longer be trusted enough to delete their tokens individually, so this uses
+    /// ``TokenStore/deleteAllTokens()`` — scoped only to this store's own
+    /// service/namespace — instead. Credential cleanup must succeed before the old
+    /// metadata is irreversibly replaced: `errSecItemNotFound` (nothing to delete) is
+    /// success, but any other failure preserves the old stored state untouched and
+    /// surfaces a typed, actionable failure rather than orphaning tokens whose owning
+    /// profile metadata has just been erased.
     func confirmStorageReset() {
         guard case .storageCorrupted = sessionState else { return }
+        guard profileManagementOperation == .idle else { return }
         flowTask?.cancel()
         operationTask?.cancel()
         profileManagementTask?.cancel()
         generation += 1
         let currentGeneration = generation
+        profileManagementFailure = nil
+        profileManagementOperation = .resettingStorage
+        profileManagementGeneration += 1
+        let operationGeneration = profileManagementGeneration
+
+        // Best-effort: invalidate every currently in-memory profile's credential
+        // epoch before the wipe, so a save/read concurrently queued (captured under
+        // an earlier epoch) for one of those profiles cannot resurrect a token after
+        // deleteAllTokens() runs. This cannot be exhaustive or fully atomic with the
+        // wipe below — true profile-list corruption is realistically only ever
+        // observed at initial launch, before any per-profile operation could be
+        // mid-flight, so this residual window is treated as acceptable rather than
+        // claimed to be eliminated.
+        for existingProfile in profiles {
+            invalidateCredentialEpoch(for: existingProfile.id)
+        }
+
+        profileManagementTask = Task { [weak self] in
+            await self?.performStorageReset(
+                generation: currentGeneration, operationGeneration: operationGeneration
+            )
+        }
+    }
+
+    private func performStorageReset(generation: Int, operationGeneration: Int) async {
+        defer {
+            if isCurrentProfileOperation(operationGeneration) {
+                profileManagementOperation = .idle
+            }
+        }
+
+        do {
+            try await tokenStore.deleteAllTokens()
+        } catch {
+            guard isCurrentProfileOperation(operationGeneration) else { return }
+            guard !(error is CancellationError) else { return }
+            // Cleanup failed: preserve the old (corrupted) stored state untouched
+            // rather than replacing metadata while tokens may still exist under it.
+            profileManagementFailure = .tokenStore(tokenStoreFailure(from: error))
+            return
+        }
+        guard isCurrentProfileOperation(operationGeneration) else { return }
+        guard isCurrent(generation) else { return }
 
         let resetProfiles = [ServerProfile.hosted]
-        guard runStorageVoid(generation: currentGeneration, {
+        guard runStorageVoid(generation: generation, {
             try profileStore.saveProfiles(resetProfiles)
         }) else { return }
-        guard runStorageVoid(generation: currentGeneration, {
+        guard runStorageVoid(generation: generation, {
             try profileStore.saveSelectedProfileID(ServerProfile.hosted.id)
         }) else { return }
-        guard isCurrent(currentGeneration) else { return }
+        guard isCurrent(generation) else { return }
 
         profiles = resetProfiles
         selectedProfile = .hosted
         operation = .idle
         operationFailure = nil
-        restartFlow(for: .hosted, generation: currentGeneration)
-    }
-
-    // MARK: - Async continuations
-
-    func performProfileUpdate(
-        original: ServerProfile,
-        updated: ServerProfile,
-        endpointChanged: Bool,
-        operationGeneration: Int
-    ) async {
-        defer {
-            if isCurrentProfileOperation(operationGeneration) {
-                profileManagementOperation = .idle
-            }
-        }
-
-        if endpointChanged {
-            let deleted = await deleteTokenForEndpointChange(
-                original, operationGeneration: operationGeneration
-            )
-            guard deleted else { return }
-        }
-        guard isCurrentProfileOperation(operationGeneration) else { return }
-
-        var updatedProfiles = profiles
-        guard let index = updatedProfiles.firstIndex(where: { $0.id == original.id }) else {
-            profileManagementFailure = .profileNotFound
-            return
-        }
-        updatedProfiles[index] = updated
-
-        guard runStorageVoid(generation: generation, {
-            try profileStore.saveProfiles(updatedProfiles)
-        }) else {
-            // The token (if the endpoint changed) is already durably deleted at this
-            // point; persistence itself failing is surfaced distinctly rather than
-            // silently activating a half-applied edit.
-            profileManagementFailure = .storage(.unexpected)
-            return
-        }
-        guard isCurrentProfileOperation(operationGeneration) else { return }
-        profiles = updatedProfiles
-
-        guard selectedProfile.id == original.id else { return }
-        selectedProfile = updated
-        if endpointChanged {
-            flowTask?.cancel()
-            operationTask?.cancel()
-            generation += 1
-            restartFlow(for: updated, generation: generation)
-        } else {
-            sessionState = replacingProfile(in: sessionState, with: updated)
-        }
-    }
-
-    /// Deletes `original`'s token as the precondition for activating/persisting an
-    /// endpoint-changing edit. Returns `false` (having already surfaced a typed failure,
-    /// unless the deletion was cancelled or superseded) when the caller must not
-    /// proceed with the edit.
-    private func deleteTokenForEndpointChange(
-        _ original: ServerProfile, operationGeneration: Int
-    ) async -> Bool {
-        do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:_:)``) so this
-            // delete is ordered against any other in-flight read/save/delete for the
-            // same profile ID rather than racing them, and so a subsequent read for
-            // this profile (e.g. a restarted flow) always observes the token as gone
-            // before the edited endpoint can be activated.
-            try await serializedTokenAccess(for: original.id) { [tokenStore] in
-                try await tokenStore.deleteToken(for: original.id)
-            }
-            return true
-        } catch {
-            guard isCurrentProfileOperation(operationGeneration) else { return false }
-            guard !(error is CancellationError) else { return false }
-            // Deletion failed: preserve the old profile/configuration untouched and
-            // surface a typed, actionable failure rather than persisting an endpoint
-            // change that could otherwise let the old token reach it.
-            profileManagementFailure = .tokenStore(tokenStoreFailure(from: error))
-            return false
-        }
-    }
-
-    func performProfileRemoval(_ profile: ServerProfile, operationGeneration: Int) async {
-        defer {
-            if isCurrentProfileOperation(operationGeneration) {
-                profileManagementOperation = .idle
-            }
-        }
-
-        do {
-            // Serialized (see ``AppModel/serializedTokenAccess(for:_:)``) so this
-            // delete cannot race an in-flight save/read/delete for the same profile.
-            try await serializedTokenAccess(for: profile.id) { [tokenStore] in
-                try await tokenStore.deleteToken(for: profile.id)
-            }
-        } catch {
-            guard isCurrentProfileOperation(operationGeneration) else { return }
-            guard !(error is CancellationError) else { return }
-            // Deletion failed: preserve the profile rather than removing metadata for
-            // a token that may still exist.
-            profileManagementFailure = .tokenStore(tokenStoreFailure(from: error))
-            return
-        }
-        guard isCurrentProfileOperation(operationGeneration) else { return }
-
-        var updatedProfiles = profiles
-        updatedProfiles.removeAll { $0.id == profile.id }
-
-        guard runStorageVoid(generation: generation, {
-            try profileStore.saveProfiles(updatedProfiles)
-        }) else {
-            profileManagementFailure = .storage(.unexpected)
-            return
-        }
-        guard isCurrentProfileOperation(operationGeneration) else { return }
-        profiles = updatedProfiles
-
-        if selectedProfile.id == profile.id {
-            // Coherently fall back to hosted and restart the flow, exactly as an
-            // explicit user-initiated profile switch would.
-            selectProfile(.hosted)
-        }
-    }
-
-    // MARK: - Helpers
-
-    /// Whether `lhs` and `rhs` resolve to the same normalized server endpoint
-    /// (identical base URL), regardless of display name or identifier.
-    private func isSameEndpoint(_ lhs: ServerProfile, _ rhs: ServerProfile) -> Bool {
-        lhs.baseURL.absoluteString.lowercased() == rhs.baseURL.absoluteString.lowercased()
-    }
-
-    /// Returns `state` with its embedded ``ServerProfile`` replaced by `updated` when
-    /// `state` carries a profile matching `updated.id`; otherwise returns `state`
-    /// unchanged. Used to reflect a display-name-only edit of the currently active
-    /// profile without re-probing or disturbing any other associated state.
-    private func replacingProfile(
-        in state: SessionState, with updated: ServerProfile
-    ) -> SessionState {
-        switch state {
-        case let .checkingCompatibility(profile) where profile.id == updated.id:
-            .checkingCompatibility(profile: updated)
-        case let .signedOut(profile, compatibility) where profile.id == updated.id:
-            .signedOut(profile: updated, compatibility: compatibility)
-        case let .incompatible(profile, reason) where profile.id == updated.id:
-            .incompatible(profile: updated, reason: reason)
-        case let .unavailable(profile, reason) where profile.id == updated.id:
-            .unavailable(profile: updated, reason: reason)
-        case let .signedIn(profile, compatibility, user) where profile.id == updated.id:
-            .signedIn(profile: updated, compatibility: compatibility, user: user)
-        default:
-            state
-        }
+        restartFlow(for: .hosted, generation: generation)
     }
 }

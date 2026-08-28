@@ -113,8 +113,10 @@ actor FakeTokenStore: TokenStore {
     private var readError: (any Error)?
     private var saveError: (any Error)?
     private var deleteError: (any Error)?
+    private var deleteAllError: (any Error)?
     private(set) var saveCallCount = 0
     private(set) var deleteCallCount = 0
+    private(set) var deleteAllCallCount = 0
     private(set) var lastSavedToken: String?
 
     init(tokens: [UUID: String] = [:]) {
@@ -131,6 +133,14 @@ actor FakeTokenStore: TokenStore {
 
     func setDeleteError(_ error: (any Error)?) {
         deleteError = error
+    }
+
+    func setDeleteAllError(_ error: (any Error)?) {
+        deleteAllError = error
+    }
+
+    func snapshotTokens() -> [UUID: String] {
+        tokens
     }
 
     func token(for profileID: UUID) async throws -> String? {
@@ -155,6 +165,14 @@ actor FakeTokenStore: TokenStore {
         }
         deleteCallCount += 1
         tokens[profileID] = nil
+    }
+
+    func deleteAllTokens() async throws {
+        if let deleteAllError {
+            throw deleteAllError
+        }
+        deleteAllCallCount += 1
+        tokens.removeAll()
     }
 }
 

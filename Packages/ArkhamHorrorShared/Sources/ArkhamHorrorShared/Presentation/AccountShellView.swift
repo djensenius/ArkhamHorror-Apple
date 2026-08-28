@@ -27,6 +27,7 @@ struct AccountShellView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(profile.displayName)
                                 .font(.headline)
+                                .foregroundStyle(ArkhamTheme.bone)
                             Text(
                                 compatibility == .legacy ? "Legacy compatibility mode" : "Connected"
                             )

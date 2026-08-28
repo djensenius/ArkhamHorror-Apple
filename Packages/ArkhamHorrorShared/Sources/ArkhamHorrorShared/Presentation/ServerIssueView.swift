@@ -55,8 +55,8 @@ struct ServerIssueView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                "This restores only the default hosted server. "
-                    + "Custom servers you saved will be removed."
+                "This restores only the default hosted server and removes saved sign-in "
+                    + "credentials. Custom servers you saved will be removed."
             )
         }
         .sheet(isPresented: $isPresentingServerManagement) {
@@ -91,13 +91,24 @@ struct ServerIssueView: View {
             }
             .buttonStyle(.bordered)
         case .storageCorrupted:
-            Button(role: .destructive) {
-                isPresentingResetConfirmation = true
-            } label: {
-                Label("Reset Saved Servers…", systemImage: "arrow.counterclockwise")
+            if model.profileManagementOperation == .resettingStorage {
+                ProgressView("Resetting…")
                     .frame(maxWidth: .infinity)
+            } else {
+                Button(role: .destructive) {
+                    isPresentingResetConfirmation = true
+                } label: {
+                    Label("Reset Saved Servers…", systemImage: "arrow.counterclockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.profileManagementOperation != .idle)
             }
-            .buttonStyle(.bordered)
+            if let failure = model.profileManagementFailure {
+                Text(failure.message)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
         }
     }
 

@@ -38,11 +38,13 @@ extension AppModelTests {
     private func launchEndpointEdit(
         on model: AppModel, updated: ServerProfile, generation: Int
     ) -> Task<Void, Never> {
-        Task {
+        let credentialEpoch = model.invalidateCredentialEpoch(for: sampleCustomProfile.id)
+        return Task {
             await model.performProfileUpdate(
                 original: sampleCustomProfile,
                 updated: updated,
                 endpointChanged: true,
+                credentialEpoch: credentialEpoch,
                 operationGeneration: generation
             )
         }
@@ -139,9 +141,10 @@ extension AppModelTests {
         let store = FakeServerProfileStore(
             loadProfilesError: ServerProfileStoreError.corruptData(key: corruptKey)
         )
+        let tokenStore = FakeTokenStore()
         let model = AppModel(
             profileStore: store,
-            tokenStore: FakeTokenStore(),
+            tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
             authenticationSession: ScriptedAuthenticating()
         )
@@ -151,6 +154,7 @@ extension AppModelTests {
 
         store.setLoadProfilesError(nil)
         model.confirmStorageReset()
+        await model.profileManagementTask?.value
         await model.flowTask?.value
 
         #expect(model.profiles == [.hosted])
@@ -158,5 +162,45 @@ extension AppModelTests {
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
         #expect(store.snapshotProfiles() == [.hosted])
         #expect(store.snapshotSelectedID() == ServerProfile.hosted.id)
+        // A full profile-list-corruption reset must securely clean up every stored
+        // token before ever replacing the corrupted metadata.
+        #expect(await tokenStore.deleteAllCallCount == 1)
+    }
+
+    @Test("A cleanup failure during storage reset preserves corrupted metadata, typed failure")
+    func storageResetCleanupFailurePreservesCorruptedMetadata() async {
+        let corruptKey = "ArkhamHorror.serverProfiles"
+        let store = FakeServerProfileStore(
+            loadProfilesError: ServerProfileStoreError.corruptData(key: corruptKey)
+        )
+        let tokenStore = FakeTokenStore()
+        await tokenStore.setDeleteAllError(KeychainError.unhandledStatus(-1))
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating()
+        )
+        await model.flowTask?.value
+        let expectedFailure = SessionStorageFailure.profileStore(.corruptData(key: corruptKey))
+        #expect(model.sessionState == .storageCorrupted(expectedFailure))
+
+        // The stored profiles remain corrupt/unreadable, but a genuinely fresh
+        // read attempt would still fail — this reset must never even get that far,
+        // since token cleanup itself fails first.
+        model.confirmStorageReset()
+        await model.profileManagementTask?.value
+
+        // The corrupted state must be preserved rather than replaced.
+        #expect(model.sessionState == .storageCorrupted(expectedFailure))
+        #expect(store.saveProfilesCallCount == 0)
+        #expect(store.saveSelectionCallCount == 0)
+        guard case .tokenStore = model.profileManagementFailure else {
+            Issue.record(
+                "Expected .tokenStore, got \(String(describing: model.profileManagementFailure))"
+            )
+            return
+        }
+        #expect(model.profileManagementOperation == .idle)
     }
 }

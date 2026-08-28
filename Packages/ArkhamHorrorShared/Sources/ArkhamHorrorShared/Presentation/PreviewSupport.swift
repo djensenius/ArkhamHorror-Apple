@@ -30,6 +30,7 @@ import Foundation
 
         func save(_: String, for _: UUID) async throws {}
         func deleteToken(for _: UUID) async throws {}
+        func deleteAllTokens() async throws {}
     }
 
     struct PreviewCapabilityProbe: CapabilityProbing {

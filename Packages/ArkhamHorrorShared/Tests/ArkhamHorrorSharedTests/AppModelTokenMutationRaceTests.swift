@@ -31,9 +31,11 @@ extension AppModelTests {
     private func startAuthOperation(
         on model: AppModel, generation: Int, token: String
     ) -> Task<Void, Never> {
-        Task {
+        let credentialEpoch = model.currentCredentialEpoch(for: ServerProfile.hosted.id)
+        return Task {
             await model.performAuthOperation(
-                profile: .hosted, compatibility: .legacy, generation: generation
+                profile: .hosted, compatibility: .legacy, generation: generation,
+                credentialEpoch: credentialEpoch
             ) { _ in AuthToken(token: token) }
         }
     }

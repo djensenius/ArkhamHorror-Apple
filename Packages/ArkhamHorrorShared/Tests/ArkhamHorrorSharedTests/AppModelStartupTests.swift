@@ -94,6 +94,37 @@ extension AppModelTests {
 
         #expect(model.sessionState == .storageCorrupted(.profileStore(corruption)))
     }
+
+    @Test("Corrupt selection alone repairs to hosted without discarding profiles/tokens")
+    func selectionOnlyCorruptionSilentlyRepairs() async throws {
+        // The profiles list itself decodes fine — only the separately-keyed selection
+        // value is corrupt — so this must not be conflated with true profile-list
+        // corruption: it should silently fall back to hosted and persist that repaired
+        // selection, leaving every existing profile (and its token) untouched.
+        let corruption = ServerProfileStoreError.corruptData(key: "ArkhamHorror.selectedProfileID")
+        let tokenStore = FakeTokenStore(tokens: [sampleCustomProfile.id: "kept-token"])
+        let store = FakeServerProfileStore(
+            profiles: [.hosted, sampleCustomProfile],
+            loadSelectionError: corruption
+        )
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating()
+        )
+        await model.flowTask?.value
+
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(store.snapshotSelectedID() == ServerProfile.hosted.id)
+        #expect(store.saveSelectionCallCount == 1)
+        // The profile list itself was never rewritten, and the custom profile's token
+        // was never touched.
+        #expect(store.saveProfilesCallCount == 0)
+        #expect(model.profiles == [.hosted, sampleCustomProfile])
+        #expect(await tokenStore.deleteAllCallCount == 0)
+        #expect(try await tokenStore.token(for: sampleCustomProfile.id) == "kept-token")
+    }
 }
 
 /// Compatibility outcomes: compatible, legacy fallback, incompatible rejection, probe
