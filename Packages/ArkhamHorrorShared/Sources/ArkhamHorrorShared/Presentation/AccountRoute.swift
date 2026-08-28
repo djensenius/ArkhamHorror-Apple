@@ -1,9 +1,9 @@
 /// A typed, `SessionState`-derived presentation route for the account/server UI.
 ///
-/// Pure and `Equatable`: constructing one from a `SessionState` (and, for the launch
-/// route, an in-flight ``SessionOperation``) requires no SwiftUI, networking, or
-/// persistence, so the state-to-route mapping itself is deterministically testable
-/// without any view-inspection dependency. Every view in `Presentation/` is a direct,
+/// Pure and `Equatable`: constructing one from a `SessionState` and its `profiles`
+/// requires no SwiftUI, networking, or persistence, so the state-to-route mapping
+/// itself is deterministically testable without any view-inspection dependency.
+/// Every view in `Presentation/` is a direct,
 /// side-effect-free rendering of one `AccountRoute` case.
 enum AccountRoute: Equatable, Sendable {
     /// Persisted profiles are loading, or the selected profile's capabilities are being

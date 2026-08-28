@@ -19,8 +19,9 @@ enum ArkhamTheme {
         endPoint: .bottomTrailing
     )
 
-    /// The aged-gold accent used for primary actions and emphasis, expressed relative
-    /// to the system accent so it still shifts appropriately under increased contrast.
+    /// The aged-gold accent used for primary actions and emphasis. A fixed, deliberate
+    /// brand tone rather than the system accent, so it renders consistently regardless
+    /// of the user's chosen system accent color.
     static let accent = Color(red: 0.78, green: 0.66, blue: 0.36)
 
     /// The warm "bone" foreground tone used for de-emphasized supporting text.
