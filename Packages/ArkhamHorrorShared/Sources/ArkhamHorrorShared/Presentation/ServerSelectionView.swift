@@ -95,7 +95,7 @@ struct ServerSelectionView: View {
                             Text(profile.displayName)
                                 .font(.body)
                                 .foregroundStyle(ArkhamTheme.bone)
-                            Text(profile.baseURL.host ?? profile.baseURL.absoluteString)
+                            Text(profile.endpointSummary)
                                 .font(.caption)
                                 .foregroundStyle(ArkhamTheme.bone.opacity(0.6))
                         }

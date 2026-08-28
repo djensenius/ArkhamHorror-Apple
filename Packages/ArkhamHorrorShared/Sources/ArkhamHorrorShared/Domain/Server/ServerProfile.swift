@@ -110,6 +110,21 @@ extension ServerProfile {
         }
         return ServerProfile(id: id, displayName: trimmed, baseURL: baseURL, kind: kind)
     }
+
+    /// A full, user-facing summary of ``baseURL`` (scheme, host, non-default port, and
+    /// any path prefix) suitable for server-list rows.
+    ///
+    /// Deliberately more than just the host: profiles that differ only by port, path,
+    /// or scheme (for example two loopback profiles on different ports, or the same
+    /// host with and without a path prefix) must remain visually distinguishable so a
+    /// user can confirm exactly which endpoint they are selecting or removing.
+    var endpointSummary: String {
+        let summary = baseURL.absoluteString
+        guard summary.hasSuffix("/"), baseURL.path.isEmpty || baseURL.path == "/" else {
+            return summary
+        }
+        return String(summary.dropLast())
+    }
 }
 
 // MARK: - Capabilities URL

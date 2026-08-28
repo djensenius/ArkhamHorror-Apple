@@ -89,7 +89,7 @@ struct ServerManagementView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(profile.displayName)
                         .font(.body)
-                    Text(profile.baseURL.host ?? profile.baseURL.absoluteString)
+                    Text(profile.endpointSummary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
