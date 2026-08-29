@@ -86,9 +86,14 @@ final class AssetImageLoader {
                 // for the duration of the decode, while — unlike
                 // `Task.detached`, which does not inherit cancellation —
                 // still participating in cooperative cancellation: if
-                // this outer task is cancelled or superseded, the child
-                // task is cancelled along with it rather than continuing
-                // to run to completion unobserved. Only the final state
+                // this outer task is cancelled or superseded, cancellation
+                // propagates to the child task. `AssetImageDecoder.decode`
+                // itself is synchronous and checks for cancellation
+                // nowhere, so a cancellation that arrives mid-decode does
+                // not interrupt the decode itself; it is only observed
+                // below, once the decode has actually finished, when
+                // `group.next()` throws `CancellationError` instead of
+                // returning the decoded image. Only the final state
                 // publish below hops back onto the MainActor.
                 let payload = cached.payload
                 let image = try await withThrowingTaskGroup(of: CGImage.self) { group in

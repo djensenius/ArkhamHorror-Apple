@@ -343,4 +343,48 @@ extension AssetCacheServiceTests {
             #expect(asset.payload == AssetImageFixtureBuilder.validPNG(width: 4, height: 4))
         }
     }
+
+    @Test(
+        """
+        A caller whose task is already cancelled before revalidating a valid disk hit \
+        observes CancellationError -- rather than a fresh (and pointless) network fetch -- \
+        and the cached entry is never quarantined merely because the caller stopped caring
+        """
+    )
+    func cancelledCallerDuringDiskHitRevalidationLeavesEntryIntact() async throws {
+        try await withScratchDirectory { directory in
+            let limits = standardLimits()
+            let key = try setIconKey()
+            let diskCache = try AssetDiskCache(directory: directory, limits: limits)
+            let payload = AssetImageFixtureBuilder.validPNG(width: 4, height: 4)
+            let (cacheKey, _) = try await seedDiskEntry(
+                diskCache,
+                key: key,
+                payload: payload,
+                contentType: "image/png",
+                metadataDimensions: (width: 4, height: 4)
+            )
+            let layers = makeService(diskCache: diskCache, limits: limits)
+
+            let task = Task<CachedAsset, Error> {
+                try await layers.service.asset(for: key)
+            }
+            task.cancel()
+
+            await #expect(throws: CancellationError.self) {
+                try await task.value
+            }
+
+            let stillCached = await diskCache.get(cacheKey)
+            #expect(
+                stillCached?.payload == payload,
+                "Cancelling the caller must never quarantine an otherwise-valid disk entry"
+            )
+            let callCount = await layers.transport.callCount(for: candidateURLs(for: key)[0])
+            #expect(
+                callCount == 0,
+                "A cancelled caller must never fall through to a fresh network fetch"
+            )
+        }
+    }
 }

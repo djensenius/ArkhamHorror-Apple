@@ -80,7 +80,7 @@ actor AssetCacheService {
             return cached
         }
         if let cached = await diskCache.get(cacheKey) {
-            if let revalidated = await revalidateDiskHit(
+            if let revalidated = try await revalidateDiskHit(
                 cached,
                 key: key,
                 cacheKey: cacheKey,
@@ -95,7 +95,9 @@ actor AssetCacheService {
             // (removed from disk), so fall through to a fresh network
             // fetch exactly as if nothing had been cached at all, rather
             // than surfacing the stale/invalid bytes or poisoning this
-            // call permanently.
+            // call permanently. `CancellationError` is not caught here:
+            // ``revalidateDiskHit`` rethrows it rather than returning
+            // `nil`, propagating straight out instead of falling through.
         }
         return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
     }
@@ -374,20 +376,23 @@ actor AssetCacheService {
     /// decode takes.
     ///
     /// `async let` starts a real child task that inherits this call's
-    /// cancellation (unlike a detached task). However,
-    /// ``AssetImageDecoder/decode(_:)`` itself is synchronous and performs
-    /// no cooperative cancellation check while it runs, so a cancellation
-    /// that arrives mid-decode does not interrupt the decode itself — it
-    /// is only observed here, at the `await` below, once the child task's
-    /// decode has actually finished (successfully or not) and the awaited
-    /// result throws `CancellationError` instead of returning it. The
-    /// benefit this method provides is solely that the decode's CPU cost
-    /// runs off the actor's own executor, so it never blocks unrelated
-    /// cache requests/coalescing/cancellation handling in the meantime.
-    /// Not `private`: shared by every call site across
-    /// `AssetCacheService+Revalidation.swift` too.
+    /// cancellation (unlike a detached task), and the child task itself
+    /// checks cancellation before ever calling
+    /// ``AssetImageDecoder/decode(_:)``: if the caller was already
+    /// cancelled at that point, this throws `CancellationError` without
+    /// spending any CPU on a decode nobody wants. `decode(_:)` itself is
+    /// synchronous with no cooperative cancellation check while it runs,
+    /// so a cancellation strictly *during* an already-started decode does
+    /// not interrupt it — decoding still runs to completion. Beyond that
+    /// single up-front check, this method's benefit is that the decode's
+    /// CPU cost runs off the actor's own executor. Not `private`: shared
+    /// by every call site across `AssetCacheService+Revalidation.swift`
+    /// too.
     func decodeImageOffActor(_ payload: Data) async throws -> CGImage {
-        async let decodedImage = AssetImageDecoder.decode(payload)
+        async let decodedImage: CGImage = {
+            try Task.checkCancellation()
+            return try AssetImageDecoder.decode(payload)
+        }()
         return try await decodedImage
     }
 }

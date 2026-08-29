@@ -4,10 +4,9 @@ import Foundation
 /// an on-disk hit against the current validation contract, and the
 /// generation-gated ETag/Last-Modified revalidation path used when a
 /// caller explicitly asks to revalidate an already-cached entry. Split
-/// into its own file (from the core fetch/coalescing logic in
-/// `AssetCacheService.swift`) purely to keep each file within this
-/// package's file/type-length conventions; these members are still part
-/// of the single `AssetCacheService` actor's isolated state.
+/// out of `AssetCacheService.swift` purely to keep each file within this
+/// package's file/type-length conventions; still part of the single
+/// `AssetCacheService` actor's isolated state.
 extension AssetCacheService {
     /// Re-validates an on-disk cache hit against the *current* validation
     /// contract before ever trusting it as an already-resolved asset.
@@ -24,22 +23,21 @@ extension AssetCacheService {
     /// platform decode — never trusting metadata's `width`/`height` alone
     /// to stand in for a real decode.
     ///
-    /// The persisted `resolvedURLString` is untrusted (as in
-    /// ``revalidate(for:)``): a disk hit is only accepted when that URL
-    /// still exactly matches one of `key`'s own current candidates, which
-    /// also recovers the exact ``AssetFormat`` the candidate walk resolved
-    /// (candidates for the same key are not all guaranteed to share one
-    /// format, so `key.expectedFormat` alone is not a safe stand-in here).
-    ///
     /// Returns `nil` (having already quarantined the disk entry) on any
-    /// mismatch or failure, so the caller can treat this exactly like a
-    /// cache miss.
+    /// genuine mismatch or validation/decode failure. A `CancellationError`
+    /// is rethrown instead of quarantining: it means the caller stopped
+    /// caring, not that the entry is invalid.
+    ///
+    /// The persisted `resolvedURLString` is untrusted: a disk hit is only
+    /// accepted when it exactly matches one of `key`'s own current
+    /// candidates (never whatever URL happens to be recorded), which also
+    /// recovers the exact ``AssetFormat`` that candidate resolved to.
     func revalidateDiskHit(
         _ cached: CachedAsset,
         key: AssetKey,
         cacheKey: AssetCacheKey,
         candidates: [AssetCandidate]
-    ) async -> CachedAsset? {
+    ) async throws -> CachedAsset? {
         guard let candidate = candidates.first(where: {
             $0.url(base: key.source).absoluteString == cached.metadata.resolvedURLString
         }) else {
@@ -64,6 +62,8 @@ extension AssetCacheService {
                 throw AssetError.malformedImageData
             }
             return cached
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             await diskCache.remove(cacheKey)
             return nil
