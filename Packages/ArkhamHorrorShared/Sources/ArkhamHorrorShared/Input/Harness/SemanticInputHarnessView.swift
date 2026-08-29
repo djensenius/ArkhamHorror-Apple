@@ -31,25 +31,22 @@ public struct SemanticInputHarnessView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 24) {
-            boardGrid
-            Button("Menu") { model.handle(.command(.toggleMenuSurface)) }
-                .accessibilityLabel(Text("Toggle menu"))
-            if let lastCommand = model.lastCommand {
-                Text("Last command: \(String(describing: lastCommand))")
-                    .font(.caption)
-                    .accessibilityLabel(Text("Last command \(String(describing: lastCommand))"))
-            }
-        }
-        .padding()
-        // While the modal is presented, the content behind it must be
-        // neither interactive nor visible to assistive technologies: without
-        // this, a pointer/touch could still reach through to the board grid
-        // underneath, and VoiceOver's swipe navigation could still land on
-        // it, even though it is visually covered.
-        .disabled(model.coordinator.isModalPresented)
-        .accessibilityHidden(model.coordinator.isModalPresented)
-        .overlay {
+        ZStack {
+            // `.disabled`/`.accessibilityHidden` are environment values:
+            // applying them here, scoped to only `contentBody`, is what lets
+            // `modalOverlay` below sit as a true *sibling* in this ZStack —
+            // never a descendant of that environment — so the modal itself
+            // stays interactive and accessible. Chaining those modifiers
+            // onto the composed content *before* attaching an `.overlay`
+            // (an earlier version of this fix did exactly that) would
+            // instead make the overlay inherit them too, since `.overlay`'s
+            // content is a descendant of wherever it's attached in the
+            // view tree, disabling/hiding the very modal meant to remain
+            // interactive.
+            contentBody
+                .disabled(model.coordinator.isModalPresented)
+                .accessibilityHidden(model.coordinator.isModalPresented)
+
             if model.coordinator.isModalPresented {
                 modalOverlay
             }
@@ -83,6 +80,20 @@ public struct SemanticInputHarnessView: View {
                 model.coordinator.syncExternalFocus(newValue)
             }
             .animation(reduceMotion ? nil : .default, value: model.coordinator.isModalPresented)
+    }
+
+    private var contentBody: some View {
+        VStack(spacing: 24) {
+            boardGrid
+            Button("Menu") { model.handle(.command(.toggleMenuSurface)) }
+                .accessibilityLabel(Text("Toggle menu"))
+            if let lastCommand = model.lastCommand {
+                Text("Last command: \(String(describing: lastCommand))")
+                    .font(.caption)
+                    .accessibilityLabel(Text("Last command \(String(describing: lastCommand))"))
+            }
+        }
+        .padding()
     }
 
     private var boardGrid: some View {
