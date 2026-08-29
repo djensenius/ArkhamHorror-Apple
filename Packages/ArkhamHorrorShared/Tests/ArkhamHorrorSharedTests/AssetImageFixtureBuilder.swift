@@ -147,4 +147,49 @@ enum AssetImageFixtureBuilder {
 
         return ftyp + meta
     }
+
+    /// An AVIF whose `ipco` contains one child box using the 64-bit
+    /// extended-size form (`size32 == 1`), but whose own declared box size
+    /// leaves no room at all for the required 8-byte extended-size field
+    /// after the base 8-byte size/type header — only the header itself
+    /// fits inside `ipco`'s declared range. Immediately following it,
+    /// still inside `iprp`'s own payload (not as a legitimate part of the
+    /// truncated child box), are 8 bytes that look like a small, plausible
+    /// extended size. A parser that bounds-checks the extended-size read
+    /// only against the whole buffer (rather than against the enclosing
+    /// range it is walking) would read those trailing bytes as if they
+    /// belonged to the truncated box instead of rejecting it as malformed.
+    static func syntheticAVIFExtendedSizeBoxTruncated(brand: String = "avif") -> Data {
+        func box(_ type: String, _ payload: Data) -> Data {
+            var result = Data()
+            let size = UInt32(8 + payload.count)
+            result.append(contentsOf: withUnsafeBytes(of: size.bigEndian, Array.init))
+            result.append(contentsOf: Array(type.utf8))
+            result.append(payload)
+            return result
+        }
+
+        var ftypPayload = Data(Array(brand.utf8))
+        ftypPayload.append(contentsOf: [0, 0, 0, 0])
+        ftypPayload.append(contentsOf: Array(brand.utf8))
+        ftypPayload.append(contentsOf: Array("mif1".utf8))
+        let ftyp = box("ftyp", ftypPayload)
+
+        // A child box's base header only: size32 == 1 (4 bytes) + type
+        // "ispe" (4 bytes) = 8 bytes total, with no extended-size field.
+        var truncatedExtendedSizeBox = Data(
+            withUnsafeBytes(of: UInt32(1).bigEndian, Array.init)
+        )
+        truncatedExtendedSizeBox.append(contentsOf: Array("ispe".utf8))
+        let ipco = box("ipco", truncatedExtendedSizeBox)
+        let bogusTrailingSize64Bytes = Data(
+            withUnsafeBytes(of: UInt64(16).bigEndian, Array.init)
+        )
+        let iprp = box("iprp", ipco + bogusTrailingSize64Bytes)
+        var metaPayload = Data([0, 0, 0, 0])
+        metaPayload.append(iprp)
+        let meta = box("meta", metaPayload)
+
+        return ftyp + meta
+    }
 }
