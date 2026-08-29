@@ -111,12 +111,12 @@ actor AssetDiskCache {
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
-    /// Total accounted bytes (payload + metadata overhead) across every
-    /// currently valid entry. Used only by tests to assert exact quota
-    /// accounting; production eviction re-derives this from disk directly
-    /// so it never drifts from what is actually persisted.
+    /// Total accounted bytes (payload + exact on-disk metadata size) across
+    /// every currently valid entry. Used only by tests to assert exact
+    /// quota accounting; production eviction re-derives this from disk
+    /// directly so it never drifts from what is actually persisted.
     func totalAccountedBytes() -> Int {
-        entries().reduce(0) { $0 + $1.metadata.accountedByteCount }
+        entries().reduce(0) { $0 + Self.accountedBytes(for: $1) }
     }
 
     // MARK: - Paths
@@ -191,13 +191,23 @@ actor AssetDiskCache {
 
     // MARK: - Eviction
 
-    private func entries() -> [(hash: String, metadata: AssetCacheMetadata)] {
+    /// One valid entry's identity, decoded metadata, and its metadata
+    /// sidecar's exact serialized byte count (the same `Data` this decodes
+    /// `metadata` from), so accounting never relies on an estimate for
+    /// bytes that are actually persisted to disk.
+    private struct Entry {
+        let hash: String
+        let metadata: AssetCacheMetadata
+        let metadataBytes: Int
+    }
+
+    private func entries() -> [Entry] {
         guard let contents = try? fileManager.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil
         )
         else { return [] }
-        var result: [(hash: String, metadata: AssetCacheMetadata)] = []
+        var result: [Entry] = []
         for url in contents where url.lastPathComponent.hasSuffix(".meta.json") {
             let hash = String(url.lastPathComponent.dropLast(".meta.json".count))
             guard let data = try? Data(contentsOf: url),
@@ -206,14 +216,22 @@ actor AssetDiskCache {
                       from: data
                   )
             else { continue }
-            result.append((hash, metadata))
+            result.append(Entry(hash: hash, metadata: metadata, metadataBytes: data.count))
         }
         return result
     }
 
+    /// The exact bytes an entry counts against the disk quota: its payload
+    /// plus the real serialized size of its metadata sidecar file, never a
+    /// fixed estimate (a long `resolvedURLString`, for instance, could
+    /// otherwise be under-billed against the configured disk budget).
+    private static func accountedBytes(for entry: Entry) -> Int {
+        entry.metadata.encodedByteCount + entry.metadataBytes
+    }
+
     private func evictIfNeeded() {
         var current = entries()
-        var total = current.reduce(0) { $0 + $1.metadata.accountedByteCount }
+        var total = current.reduce(0) { $0 + Self.accountedBytes(for: $1) }
         guard total > limits.highWaterMarkDiskBytes else { return }
         current.sort { $0.metadata.lastAccessedAt < $1.metadata.lastAccessedAt }
         for entry in current {
@@ -221,7 +239,7 @@ actor AssetDiskCache {
             try? fileManager.removeItem(at: directory.appendingPathComponent("\(entry.hash).bin"))
             try? fileManager
                 .removeItem(at: directory.appendingPathComponent("\(entry.hash).meta.json"))
-            total -= entry.metadata.accountedByteCount
+            total -= Self.accountedBytes(for: entry)
         }
     }
 }

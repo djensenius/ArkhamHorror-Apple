@@ -88,8 +88,13 @@ enum AssetImageValidator {
     /// the big-endian width and height.
     private static func parsePNGDimensions(_ data: Data) throws -> (width: Int, height: Int) {
         let signature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
-        guard data.count >= 33, data.prefix(8).elementsEqual(signature) else {
+        guard data.count >= 8, data.prefix(8).elementsEqual(signature) else {
             throw AssetError.signatureMismatch
+        }
+        // The signature itself matched, so any further shortfall is a
+        // truncated/malformed PNG, not a wrong-format file.
+        guard data.count >= 33 else {
+            throw AssetError.malformedImageData
         }
         // Bytes 8-11: IHDR chunk length (must be 13). Bytes 12-15: "IHDR".
         guard readUInt32BE(data, at: 8) == 13 else {
@@ -167,6 +172,13 @@ enum AssetImageValidator {
 
     /// Returns the parsed dimensions if `marker` is a start-of-frame marker,
     /// or `nil` if it is some other segment (its length is still validated).
+    ///
+    /// Validates the segment's own declared length (not just that reading
+    /// stays within the whole buffer): a segment whose declared length is
+    /// too short to actually contain the precision/height/width fields is
+    /// rejected rather than silently reading past its boundary into
+    /// whatever bytes happen to follow (which could belong to an entirely
+    /// different segment) and returning bogus-but-plausible dimensions.
     private static func jpegSOFDimensions(
         _ data: Data,
         marker: UInt8,
@@ -174,9 +186,21 @@ enum AssetImageValidator {
         end: Int
     ) throws -> (width: Int, height: Int)? {
         guard jpegSOFMarkers.contains(marker) else { return nil }
+        let segmentLengthOffset = markerOffset + 1
+        guard segmentLengthOffset + 1 < end,
+              let segmentLength = readUInt16BE(data, at: segmentLengthOffset)
+        else {
+            throw AssetError.malformedImageData
+        }
+        // The segment length field includes its own 2 bytes, so the SOF
+        // payload (1-byte precision, 2-byte height, 2-byte width, plus at
+        // least one component descriptor) must be at least 7 to be valid,
+        // and the whole declared segment must itself fit within `data`.
+        guard segmentLength >= 7, segmentLengthOffset + Int(segmentLength) <= end else {
+            throw AssetError.malformedImageData
+        }
         let payloadOffset = markerOffset + 3
-        guard payloadOffset + 4 < end,
-              let height = readUInt16BE(data, at: payloadOffset + 1),
+        guard let height = readUInt16BE(data, at: payloadOffset + 1),
               let width = readUInt16BE(data, at: payloadOffset + 3)
         else {
             throw AssetError.malformedImageData

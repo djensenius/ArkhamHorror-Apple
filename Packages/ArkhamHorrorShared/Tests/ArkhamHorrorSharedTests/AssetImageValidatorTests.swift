@@ -135,12 +135,32 @@ struct AssetImageValidatorTests {
     @Test("A truncated PNG (valid signature, no IHDR) is rejected as malformed, not a crash")
     func truncatedPNGRejected() throws {
         let signature = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
-        #expect(throws: AssetError.signatureMismatch) {
+        // The 8-byte signature matches exactly, so this is a truncated PNG
+        // (malformed), not a wrong-format file (signature mismatch).
+        #expect(throws: AssetError.malformedImageData) {
             _ = try AssetImageValidator.validate(
                 data: signature,
                 declaredContentType: nil,
                 expectedFormat: .png,
                 limits: self.limits
+            )
+        }
+    }
+
+    @Test("A PNG signature with a single wrong byte is rejected as a signature mismatch")
+    func pngWrongSignatureByteRejected() throws {
+        // Differs from the real signature only in its final byte, and is
+        // otherwise long enough to pass the length check alone — this must
+        // still be a signature mismatch, not "malformed", since the bytes
+        // never matched the PNG magic in the first place.
+        var bytes: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x00]
+        bytes += [UInt8](repeating: 0, count: 25)
+        #expect(throws: AssetError.signatureMismatch) {
+            _ = try AssetImageValidator.validate(
+                data: Data(bytes),
+                declaredContentType: nil,
+                expectedFormat: .png,
+                limits: limits
             )
         }
     }
@@ -189,6 +209,36 @@ struct AssetImageValidatorTests {
                 declaredContentType: nil,
                 expectedFormat: .jpeg,
                 limits: self.limits
+            )
+        }
+    }
+
+    @Test(
+        """
+        A JPEG SOF segment whose declared length is too short for its own \
+        precision/height/width fields is rejected, even though plausible \
+        extra bytes happen to follow it in the buffer
+        """
+    )
+    func jpegSOFSegmentDeclaredLengthTooShortRejected() throws {
+        var bytes: [UInt8] = [0xFF, 0xD8] // SOI
+        bytes += [0xFF, 0xC0] // SOF0 marker
+        // A declared segment length of 4: after its own 2 length bytes,
+        // only 2 payload bytes remain — nowhere near the 5 bytes needed
+        // for precision (1) + height (2) + width (2).
+        bytes += [0x00, 0x04]
+        bytes += [0x08, 0x00]
+        // Bytes that a naive "does this stay within the whole buffer"
+        // check (ignoring the segment's own declared length) could
+        // mistake for the rest of a plausible height/width, if the
+        // segment-length guard were absent.
+        bytes += [0x00, 0x10, 0x00, 0x20, 0x00, 0x30]
+        #expect(throws: AssetError.malformedImageData) {
+            _ = try AssetImageValidator.validate(
+                data: Data(bytes),
+                declaredContentType: nil,
+                expectedFormat: .jpeg,
+                limits: limits
             )
         }
     }

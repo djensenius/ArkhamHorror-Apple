@@ -56,8 +56,18 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         self.lastAccessedAt = lastAccessedAt
     }
 
-    /// Total bytes this entry counts against the disk quota: payload plus a
-    /// conservative estimate of this metadata's own serialized size.
+    /// Total bytes this entry counts against the *in-memory* cache's quota:
+    /// payload plus a conservative fixed estimate of this metadata value's
+    /// in-memory footprint. Used by ``AssetMemoryCache``, which holds no
+    /// serialized representation to measure exactly.
+    ///
+    /// ``AssetDiskCache`` does **not** use this property for its own quota
+    /// accounting: since its metadata actually is serialized to a JSON
+    /// sidecar file on disk, it measures that file's real encoded byte
+    /// count instead, which is exact rather than an estimate (a `512`-byte
+    /// estimate could genuinely be exceeded by a long `resolvedURLString`,
+    /// under-billing the true bytes counted against the configured disk
+    /// budget).
     var accountedByteCount: Int {
         encodedByteCount + Self.estimatedMetadataOverheadBytes
     }

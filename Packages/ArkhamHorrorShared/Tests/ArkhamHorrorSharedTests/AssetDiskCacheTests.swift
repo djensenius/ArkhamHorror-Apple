@@ -267,9 +267,13 @@ extension AssetDiskCacheTests {
     )
     func evictsLeastRecentlyAccessedEntryAtQuota() async throws {
         try await withScratchDirectory { directory in
-            // Each entry accounts for 1000 (payload) + 512 (metadata
-            // overhead) = 1512 bytes. Budget/ratios mirror
-            // `AssetMemoryCacheTests`' exact-watermark scenario.
+            // Each entry accounts for its 1000-byte payload plus the real
+            // on-disk size of its metadata sidecar (a few hundred bytes,
+            // for this schema and these short URLs), which the assertions
+            // below only depend on being large enough to be non-negligible
+            // relative to the payload — the exact eviction/survival
+            // outcome does not depend on its precise value. Budget/ratios
+            // mirror `AssetMemoryCacheTests`' exact-watermark scenario.
             let limits = AssetCacheLimits(
                 maxEncodedBytes: 1_000_000,
                 maxDimension: 8192,
@@ -315,7 +319,7 @@ extension AssetDiskCacheTests {
     }
 
     @Test(
-        "totalAccountedBytes reflects exactly payload plus metadata overhead for valid entries"
+        "totalAccountedBytes reflects exactly payload plus the metadata sidecar's real disk size"
     )
     func totalAccountedBytesIsExact() async throws {
         try await withScratchDirectory { directory in
@@ -327,8 +331,17 @@ extension AssetDiskCacheTests {
                 payload: payload,
                 metadata: metadata(for: cacheKey, payload: payload)
             )
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+            let metadataBytes = try #require(
+                try FileManager.default.attributesOfItem(atPath: metadataURL.path)[.size] as? Int
+            )
             let total = await cache.totalAccountedBytes()
-            #expect(total == 250 + AssetCacheMetadata.estimatedMetadataOverheadBytes)
+            #expect(total == 250 + metadataBytes)
+            // A guard against this test becoming vacuous if some future
+            // change made the metadata sidecar implausibly tiny: the fixed
+            // estimate this used to compare against remains a reasonable
+            // lower bound on real serialized metadata size.
+            #expect(metadataBytes > 100)
         }
     }
 
