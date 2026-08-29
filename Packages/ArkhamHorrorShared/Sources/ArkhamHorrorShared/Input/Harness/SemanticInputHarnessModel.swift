@@ -38,15 +38,24 @@ final class SemanticInputHarnessModel {
     }
 
     /// The single dispatch entry point every input adapter feeds through.
-    func handle(_ outcome: SemanticDispatchOutcome) {
+    /// Returns whether this outcome was actually consumed: always `true` for
+    /// a ``SemanticCommand`` (this closed vocabulary has no "let it fall
+    /// through" concept), but `false` for ``SemanticDispatchOutcome/reservedBack``
+    /// when there is no modal to dismiss — so a caller (for example the
+    /// keyboard adapter) can let Escape/Menu-style system behavior fall
+    /// through to whatever other responder would otherwise handle it,
+    /// instead of always swallowing it.
+    @discardableResult
+    func handle(_ outcome: SemanticDispatchOutcome) -> Bool {
         switch outcome {
         case .reservedBack:
-            if coordinator.isModalPresented {
-                coordinator.dismissModal()
-            }
+            guard coordinator.isModalPresented else { return false }
+            coordinator.dismissModal()
+            return true
         case let .command(command):
             lastCommand = command
             apply(command)
+            return true
         }
     }
 

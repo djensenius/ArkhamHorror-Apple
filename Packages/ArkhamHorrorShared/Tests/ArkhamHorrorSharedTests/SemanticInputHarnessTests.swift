@@ -89,15 +89,22 @@ struct SemanticInputHarnessTests {
         model.handle(.command(.toggleMenuSurface))
         #expect(model.coordinator.currentFocus == SemanticInputHarnessFixture.menuClose)
         #expect(model.coordinator.isModalPresented)
-        model.handle(.reservedBack)
+        // Returns `true`: a modal was actually dismissed, so a caller like the
+        // keyboard adapter should report the key as consumed.
+        #expect(model.handle(.reservedBack))
         #expect(model.coordinator.currentFocus == SemanticInputHarnessFixture.boardSeatTwo)
         #expect(!model.coordinator.isModalPresented)
     }
 
-    @Test("reservedBack with no modal presented is a safe no-op")
+    @Test(
+        "reservedBack with no modal presented is a safe no-op, and reports itself as unconsumed"
+    )
     func reservedBackWithNoModalIsNoOp() {
         let model = SemanticInputHarnessModel()
-        model.handle(.reservedBack)
+        // Returns `false`: nothing was dismissed, so a caller like the keyboard
+        // adapter can let Escape fall through to another responder instead of
+        // always swallowing it.
+        #expect(!model.handle(.reservedBack))
         #expect(model.coordinator.currentFocus == SemanticInputHarnessFixture.boardSeatOne)
     }
 

@@ -7,7 +7,7 @@ import SwiftUI
 /// visionOS — and a harmless no-op wherever no hardware keyboard is attached.
 struct SemanticKeyboardInput: ViewModifier {
     var table: InputMappingTable = .defaultKeyboard
-    let onOutcome: (SemanticDispatchOutcome) -> Void
+    let onOutcome: (SemanticDispatchOutcome) -> Bool
 
     func body(content: Content) -> some View {
         content
@@ -21,8 +21,7 @@ struct SemanticKeyboardInput: ViewModifier {
                 else {
                     return .ignored
                 }
-                onOutcome(outcome)
-                return .handled
+                return onOutcome(outcome) ? .handled : .ignored
             }
     }
 }
@@ -67,11 +66,17 @@ extension KeyboardControl {
 }
 
 public extension View {
-    /// Applies ``SemanticKeyboardInput`` to this view. See
-    /// `SemanticInputHarnessView` for a usage example.
+    /// Applies ``SemanticKeyboardInput`` to this view. `onOutcome` returns
+    /// whether it actually consumed the outcome: returning `false` (for
+    /// example for ``SemanticDispatchOutcome/reservedBack`` when nothing is
+    /// currently presented to dismiss) reports the key press itself as
+    /// `.ignored`, letting it fall through to whatever other responder
+    /// would otherwise handle Escape/Menu-style system behavior, rather
+    /// than always swallowing it. See `SemanticInputHarnessView` for a
+    /// usage example.
     func semanticKeyboardInput(
         table: InputMappingTable = .defaultKeyboard,
-        onOutcome: @escaping (SemanticDispatchOutcome) -> Void
+        onOutcome: @escaping (SemanticDispatchOutcome) -> Bool
     ) -> some View {
         modifier(SemanticKeyboardInput(table: table, onOutcome: onOutcome))
     }
