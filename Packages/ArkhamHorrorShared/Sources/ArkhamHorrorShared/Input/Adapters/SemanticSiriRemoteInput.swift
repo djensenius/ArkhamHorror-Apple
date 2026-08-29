@@ -53,7 +53,7 @@
         }
     }
 
-    extension View {
+    public extension View {
         /// Applies ``SemanticSiriRemoteInput`` to this view (tvOS only).
         func semanticSiriRemoteInput(
             table: InputMappingTable = .defaultSiriRemote,

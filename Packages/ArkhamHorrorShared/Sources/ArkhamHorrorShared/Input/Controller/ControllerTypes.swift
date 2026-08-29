@@ -9,10 +9,10 @@ import Foundation
 /// physical device: callers observe that as an ordinary new connect event,
 /// with a new ``ControllerID`` to match, requiring no special-casing beyond
 /// what any other connect event already needs.
-struct ControllerID: Hashable, Sendable {
+public struct ControllerID: Hashable, Sendable {
     private let objectID: ObjectIdentifier
 
-    init(objectID: ObjectIdentifier) {
+    public init(objectID: ObjectIdentifier) {
         self.objectID = objectID
     }
 }
@@ -22,7 +22,7 @@ struct ControllerID: Hashable, Sendable {
 /// brand-independent): this exists purely so presentation code can choose the
 /// right glyph set, never to change which semantic command a control
 /// produces.
-enum ControllerGlyphFamily: Hashable, Sendable {
+public enum ControllerGlyphFamily: Hashable, Sendable {
     case xbox
     case playStation
     case mfi
@@ -30,7 +30,7 @@ enum ControllerGlyphFamily: Hashable, Sendable {
 }
 
 /// Which input profile a connected controller exposes.
-enum ControllerProfileKind: Hashable, Sendable {
+public enum ControllerProfileKind: Hashable, Sendable {
     /// The controller exposes `GCExtendedGamepad` (or equivalent): every
     /// ``ControllerControl`` case is meaningful.
     case extendedGamepad
@@ -42,11 +42,21 @@ enum ControllerProfileKind: Hashable, Sendable {
 /// An immutable, `Equatable` description of one connected controller, safe to
 /// store in `@Observable` state and to compare in tests without touching the
 /// live controller.
-struct ControllerSnapshot: Sendable, Equatable {
-    let id: ControllerID
-    let profile: ControllerProfileKind
-    let glyphFamily: ControllerGlyphFamily
-    let vendorName: String?
+public struct ControllerSnapshot: Sendable, Equatable {
+    public let id: ControllerID
+    public let profile: ControllerProfileKind
+    public let glyphFamily: ControllerGlyphFamily
+    public let vendorName: String?
+
+    public init(
+        id: ControllerID, profile: ControllerProfileKind, glyphFamily: ControllerGlyphFamily,
+        vendorName: String?
+    ) {
+        self.id = id
+        self.profile = profile
+        self.glyphFamily = glyphFamily
+        self.vendorName = vendorName
+    }
 }
 
 /// The injected seam over one connected controller's button-level input, so
@@ -56,7 +66,7 @@ struct ControllerSnapshot: Sendable, Equatable {
 /// physical controller, and ``onButtonEvent`` is only ever installed,
 /// invoked, or torn down on the main actor.
 @MainActor
-protocol ControllerInputSource: AnyObject {
+public protocol ControllerInputSource: AnyObject {
     var id: ControllerID { get }
     var snapshot: ControllerSnapshot { get }
     /// Installed by ``ControllerInputCenter``. A conformance must stop
@@ -70,7 +80,7 @@ protocol ControllerInputSource: AnyObject {
 /// into ``ControllerInputCenter`` so tests can simulate hardware
 /// deterministically without touching the real GameController framework.
 @MainActor
-protocol ControllerDiscovering: AnyObject {
+public protocol ControllerDiscovering: AnyObject {
     /// Begins observing connect/disconnect, reporting every controller
     /// already connected at call time as an immediate `onConnect`. Calling
     /// `start` again before `stop` replaces the previous callbacks.

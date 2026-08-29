@@ -66,7 +66,7 @@ extension KeyboardControl {
     }
 }
 
-extension View {
+public extension View {
     /// Applies ``SemanticKeyboardInput`` to this view. See
     /// `SemanticInputHarnessView` for a usage example.
     func semanticKeyboardInput(

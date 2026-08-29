@@ -11,23 +11,23 @@ import Foundation
 /// to at most one command at a time by construction; several different
 /// physical inputs may still be bound to the same command (for example both
 /// a keyboard key and a controller button bound to `.inspect`).
-struct InputMappingTable: Sendable, Equatable {
-    private(set) var bindings: [PhysicalInput: SemanticCommand]
+public struct InputMappingTable: Sendable, Equatable {
+    public private(set) var bindings: [PhysicalInput: SemanticCommand]
 
-    init(bindings: [PhysicalInput: SemanticCommand] = [:]) {
+    public init(bindings: [PhysicalInput: SemanticCommand] = [:]) {
         self.bindings = bindings.filter { !$0.key.isReserved }
     }
 
     /// The command bound to `input`, or `nil` if `input` is reserved or
     /// unbound. Unbound (unknown-to-this-table) input is always safe: it
     /// simply produces no command, never a fallback guess.
-    func command(for input: PhysicalInput) -> SemanticCommand? {
+    public func command(for input: PhysicalInput) -> SemanticCommand? {
         guard !input.isReserved else { return nil }
         return bindings[input]
     }
 
     /// The outcome of a ``rebind(_:to:)`` attempt.
-    enum RebindResult: Equatable {
+    public enum RebindResult: Equatable {
         /// The binding was applied. `previousCommand` is whatever `input` was
         /// previously bound to, if anything, so a settings UI can surface
         /// what was displaced.
@@ -39,7 +39,9 @@ struct InputMappingTable: Sendable, Equatable {
     /// Binds `input` to `command`, replacing any prior binding for that exact
     /// physical input. Rejected outright for a reserved input.
     @discardableResult
-    mutating func rebind(_ input: PhysicalInput, to command: SemanticCommand) -> RebindResult {
+    public mutating func rebind(
+        _ input: PhysicalInput, to command: SemanticCommand
+    ) -> RebindResult {
         guard !input.isReserved else { return .rejectedReserved }
         let previous = bindings[input]
         bindings[input] = command
@@ -48,12 +50,12 @@ struct InputMappingTable: Sendable, Equatable {
 
     /// Removes any binding for `input`. A no-op for a reserved or already
     /// unbound input.
-    mutating func unbind(_ input: PhysicalInput) {
+    public mutating func unbind(_ input: PhysicalInput) {
         bindings[input] = nil
     }
 }
 
-extension InputMappingTable {
+public extension InputMappingTable {
     /// The default keyboard bindings. Arrow keys move focus; Return/Space are
     /// primary/secondary action; Escape is reserved (see
     /// ``PhysicalInput/isReserved``) and is not listed here.

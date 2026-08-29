@@ -3,7 +3,7 @@ import Foundation
 /// The closed set of keyboard controls the input layer recognizes. Any other
 /// physical key is inspectable at the OS level but never reaches
 /// ``PhysicalInput``, so it can never accidentally dispatch a command.
-enum KeyboardControl: Hashable, Sendable, CaseIterable {
+public enum KeyboardControl: Hashable, Sendable, CaseIterable {
     case arrowUp, arrowDown, arrowLeft, arrowRight
     case space, enter, tab
     /// Reserved: always resolves to ``SemanticDispatchOutcome/reservedBack``.
@@ -16,7 +16,7 @@ enum KeyboardControl: Hashable, Sendable, CaseIterable {
 /// The closed set of extended-gamepad controls (Xbox/PlayStation/MFi all
 /// expose the same abstract shape via `GCExtendedGamepad`; only glyphs
 /// differ). See ``ControllerGlyphFamily``.
-enum ControllerControl: Hashable, Sendable, CaseIterable {
+public enum ControllerControl: Hashable, Sendable, CaseIterable {
     case dpadUp, dpadDown, dpadLeft, dpadRight
     case buttonA, buttonB, buttonX, buttonY
     case leftShoulder, rightShoulder, leftTrigger, rightTrigger
@@ -32,7 +32,7 @@ enum ControllerControl: Hashable, Sendable, CaseIterable {
 /// commands rather than raw `GCMicroGamepad` input (see
 /// `SemanticSiriRemoteInput`), since the tvOS focus engine already delivers
 /// swipe/click/menu as these discrete commands natively.
-enum SiriRemoteControl: Hashable, Sendable, CaseIterable {
+public enum SiriRemoteControl: Hashable, Sendable, CaseIterable {
     case swipeUp, swipeDown, swipeLeft, swipeRight
     case select, playPause
     /// Reserved: always resolves to ``SemanticDispatchOutcome/reservedBack``.
@@ -43,7 +43,7 @@ enum SiriRemoteControl: Hashable, Sendable, CaseIterable {
 /// closed, family-tagged enum (never a raw key code or button index) so
 /// ``InputMappingTable`` can only ever be asked about controls this layer
 /// actually understands.
-enum PhysicalInput: Hashable, Sendable {
+public enum PhysicalInput: Hashable, Sendable {
     case keyboard(KeyboardControl)
     case controller(ControllerControl)
     case siriRemote(SiriRemoteControl)
@@ -52,7 +52,7 @@ enum PhysicalInput: Hashable, Sendable {
     /// Reserved controls are never stored in an ``InputMappingTable`` and
     /// always resolve to ``SemanticDispatchOutcome/reservedBack`` regardless
     /// of any table, so no remap can ever repurpose or swallow them.
-    var isReserved: Bool {
+    public var isReserved: Bool {
         switch self {
         case .keyboard(.escape), .controller(.buttonMenu), .controller(.buttonHome),
              .siriRemote(.menu):

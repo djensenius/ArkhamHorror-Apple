@@ -22,14 +22,24 @@ import SwiftUI
 /// gesture recognizer) as the primary-action trigger, so VoiceOver, Switch
 /// Control, and keyboard Full Keyboard Access activation (space/return) all
 /// keep working exactly as they do for any other native button.
-struct SemanticActionControl<Label: View>: View {
-    let accessibilityLabel: Text
-    let onOutcome: (SemanticDispatchOutcome) -> Void
-    @ViewBuilder let label: () -> Label
+public struct SemanticActionControl<Label: View>: View {
+    public let accessibilityLabel: Text
+    public let onOutcome: (SemanticDispatchOutcome) -> Void
+    @ViewBuilder public let label: () -> Label
 
     @State private var suppressNextPrimaryAction = false
 
-    var body: some View {
+    public init(
+        accessibilityLabel: Text,
+        onOutcome: @escaping (SemanticDispatchOutcome) -> Void,
+        @ViewBuilder label: @escaping () -> Label
+    ) {
+        self.accessibilityLabel = accessibilityLabel
+        self.onOutcome = onOutcome
+        self.label = label
+    }
+
+    public var body: some View {
         Button {
             if suppressNextPrimaryAction {
                 suppressNextPrimaryAction = false

@@ -5,20 +5,20 @@ import Foundation
 /// analog-stick-angle cases exist, since every platform focus adapter
 /// (keyboard arrows, Siri Remote swipes, controller d-pad) already collapses
 /// its own input to one of these four values before it reaches this layer.
-enum FocusDirection: Hashable, Sendable, CaseIterable {
+public enum FocusDirection: Hashable, Sendable, CaseIterable {
     // swiftlint:disable:next identifier_name
     case up, down, left, right
 }
 
 /// The direction of a relative cycling command (``SemanticCommand/cyclePlayer(_:)``,
 /// ``SemanticCommand/cycleZone(_:)``).
-enum CycleDirection: Hashable, Sendable, CaseIterable {
+public enum CycleDirection: Hashable, Sendable, CaseIterable {
     case next, previous
 }
 
 /// The direction of a relative camera rotation command
 /// (``SemanticCommand/rotateCamera(_:)``).
-enum RotationDirection: Hashable, Sendable, CaseIterable {
+public enum RotationDirection: Hashable, Sendable, CaseIterable {
     case clockwise, counterclockwise
 }
 
@@ -41,7 +41,7 @@ enum RotationDirection: Hashable, Sendable, CaseIterable {
 /// Reserved controls never produce a `SemanticCommand`, so no case in this
 /// vocabulary can ever collide with, or be remapped to replace, the system
 /// back gesture.
-enum SemanticCommand: Hashable, Sendable {
+public enum SemanticCommand: Hashable, Sendable {
     /// Moves focus one step in the semantic focus graph. See ``FocusGraph``.
     case focusMove(FocusDirection)
     /// The primary action for whatever is currently focused (for example,
@@ -91,7 +91,7 @@ enum SemanticCommand: Hashable, Sendable {
     /// over their own `CaseIterable` payload. Used by tests to assert
     /// mapping-table and router coverage against the full vocabulary rather
     /// than an incomplete hand-picked subset.
-    static var allCases: [SemanticCommand] {
+    public static var allCases: [SemanticCommand] {
         FocusDirection.allCases.map(SemanticCommand.focusMove)
             + [
                 .primaryAction, .secondaryAction, .inspect,
@@ -114,7 +114,7 @@ enum SemanticCommand: Hashable, Sendable {
     /// actions and toggles are not, so holding a key or button down cannot,
     /// for example, silently fire `.primaryAction` or `.toggleArrangeMode`
     /// more than once.
-    var isRepeatable: Bool {
+    public var isRepeatable: Bool {
         switch self {
         case .focusMove, .zoomIn, .zoomOut, .rotateCamera, .cyclePlayer, .cycleZone:
             true

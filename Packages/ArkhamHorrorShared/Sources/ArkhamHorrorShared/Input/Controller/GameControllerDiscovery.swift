@@ -19,18 +19,27 @@
     /// `Task { @MainActor in ... }`, which is safe regardless of the calling
     /// context and keeps actor isolation sound under Swift 6.
     @MainActor
-    final class GameControllerDiscovery: ControllerDiscovering {
+    public final class GameControllerDiscovery: ControllerDiscovering {
         private var onConnect: ((any ControllerInputSource) -> Void)?
         private var onDisconnect: ((ControllerID) -> Void)?
         private var connectToken: NSObjectProtocol?
         private var disconnectToken: NSObjectProtocol?
         private var sources: [ControllerID: GCControllerSource] = [:]
+        /// Guards against a connect/disconnect notification whose handler
+        /// already started (and hopped to the main actor via `Task`) before
+        /// ``stop()`` ran: without this check, that in-flight `Task` could
+        /// still call ``wrap(_:)``/``unwrap(_:)`` after teardown, silently
+        /// re-registering a source this discovery no longer owns.
+        private var isActive = false
 
-        func start(
+        public init() {}
+
+        public func start(
             onConnect: @escaping (any ControllerInputSource) -> Void,
             onDisconnect: @escaping (ControllerID) -> Void
         ) {
             stop()
+            isActive = true
             self.onConnect = onConnect
             self.onDisconnect = onDisconnect
             connectToken = NotificationCenter.default.addObserver(
@@ -38,7 +47,8 @@
             ) { [weak self] notification in
                 guard let controller = notification.object as? GCController else { return }
                 Task { @MainActor in
-                    self?.wrap(controller)
+                    guard let self, self.isActive else { return }
+                    self.wrap(controller)
                 }
             }
             disconnectToken = NotificationCenter.default.addObserver(
@@ -46,7 +56,8 @@
             ) { [weak self] notification in
                 guard let controller = notification.object as? GCController else { return }
                 Task { @MainActor in
-                    self?.unwrap(controller)
+                    guard let self, self.isActive else { return }
+                    self.unwrap(controller)
                 }
             }
             for controller in GCController.controllers() {
@@ -54,7 +65,8 @@
             }
         }
 
-        func stop() {
+        public func stop() {
+            isActive = false
             if let connectToken {
                 NotificationCenter.default.removeObserver(connectToken)
             }

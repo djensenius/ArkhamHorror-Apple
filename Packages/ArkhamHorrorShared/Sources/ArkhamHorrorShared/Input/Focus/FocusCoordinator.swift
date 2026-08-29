@@ -11,9 +11,9 @@ import Observation
 /// ``currentFocus``; they never reach into ``graph`` directly.
 @MainActor
 @Observable
-final class FocusCoordinator {
-    private(set) var graph: FocusGraph
-    private(set) var currentFocus: SemanticFocusID?
+public final class FocusCoordinator {
+    public private(set) var graph: FocusGraph
+    public private(set) var currentFocus: SemanticFocusID?
 
     /// Modal presentations in LIFO order; each entry is the focus to restore
     /// when that modal is dismissed (``dismissModal()``). Supports nested
@@ -38,7 +38,7 @@ final class FocusCoordinator {
         let declaredFallback: SemanticFocusID?
     }
 
-    init(graph: FocusGraph, initialFocus: SemanticFocusID? = nil) {
+    public init(graph: FocusGraph, initialFocus: SemanticFocusID? = nil) {
         self.graph = graph
         currentFocus = initialFocus.flatMap { graph.contains($0) ? $0 : nil } ?? graph.order.first
     }
@@ -46,7 +46,7 @@ final class FocusCoordinator {
     /// Moves focus one step, if an explicit (or wrap-resolved) neighbor
     /// exists. A direction with no resolvable neighbor leaves focus unchanged
     /// — this never falls back to any geometry-based guess.
-    func move(_ direction: FocusDirection) {
+    public func move(_ direction: FocusDirection) {
         guard let currentFocus, let next = graph.neighbor(from: currentFocus, direction: direction)
         else {
             return
@@ -57,7 +57,7 @@ final class FocusCoordinator {
     /// Presents a modal, remembering the current focus as this modal's
     /// return target and moving focus to `entry` (falling back to the
     /// graph's first node if `entry` does not exist).
-    func presentModal(entry: SemanticFocusID) {
+    public func presentModal(entry: SemanticFocusID) {
         modalReturnStack.append(
             currentFocus.map { id in
                 let node = graph.node(for: id)
@@ -72,7 +72,7 @@ final class FocusCoordinator {
     /// Dismisses the innermost modal, restoring its remembered return target
     /// (or the deterministic fallback, if that target no longer exists). A
     /// call with no modal presented is a safe no-op.
-    func dismissModal() {
+    public func dismissModal() {
         guard let returnTarget = modalReturnStack.popLast() else { return }
         currentFocus = graph.restoreFocus(
             preferred: returnTarget?.id,
@@ -83,12 +83,12 @@ final class FocusCoordinator {
 
     /// Whether a modal is currently presented (at least one entry remains on
     /// the return stack).
-    var isModalPresented: Bool {
+    public var isModalPresented: Bool {
         !modalReturnStack.isEmpty
     }
 
     /// Inserts `node`. If nothing was focused yet, focus moves to it.
-    func insert(_ node: FocusNode) {
+    public func insert(_ node: FocusNode) {
         graph.insert(node)
         if currentFocus == nil {
             currentFocus = node.id
@@ -101,7 +101,7 @@ final class FocusCoordinator {
     /// same zone/fallback information when its modal was presented (see
     /// ``ModalReturnTarget``), so a later ``dismissModal()`` still resolves
     /// deterministically even though `id` itself is now gone.
-    func remove(_ id: SemanticFocusID) {
+    public func remove(_ id: SemanticFocusID) {
         let removedNode = graph.node(for: id)
         graph.remove(id)
         guard currentFocus == id else { return }
@@ -115,7 +115,7 @@ final class FocusCoordinator {
     /// still present in the new graph, else the fallback derived from the
     /// *previous* graph's zone/removal-fallback for the previously focused
     /// node. Applying the same snapshot twice in a row is idempotent.
-    func applySnapshot(_ newGraph: FocusGraph) {
+    public func applySnapshot(_ newGraph: FocusGraph) {
         let previousFocus = currentFocus
         let previousNode = previousFocus.flatMap { graph.node(for: $0) }
         graph = newGraph

@@ -14,14 +14,14 @@ import Observation
 /// Stale-event suppression: a button event is only ever dispatched while its
 /// source's ``ControllerID`` is still present as a key in the internal
 /// `sources` dictionary — checked at dispatch time (in
-/// ``handleButtonEvent(from:control:phase:table:)``), not merely at
+/// ``handleButtonEvent(from:control:phase:glyphFamily:)``), not merely at
 /// handler-install time — so an event that was already in flight the
 /// instant a disconnect is processed can never reach ``dispatch``.
 @MainActor
 @Observable
-final class ControllerInputCenter {
-    private(set) var connectedControllers: [ControllerSnapshot] = []
-    private(set) var activeGlyphFamily: ControllerGlyphFamily = .unknown
+public final class ControllerInputCenter {
+    public private(set) var connectedControllers: [ControllerSnapshot] = []
+    public private(set) var activeGlyphFamily: ControllerGlyphFamily = .unknown
 
     @ObservationIgnored private var sources: [ControllerID: any ControllerInputSource] = [:]
     @ObservationIgnored private let discovery: any ControllerDiscovering
@@ -29,7 +29,7 @@ final class ControllerInputCenter {
     @ObservationIgnored private let dispatch: (SemanticDispatchOutcome) -> Void
     @ObservationIgnored private var isStarted = false
 
-    init(
+    public init(
         discovery: any ControllerDiscovering,
         mappingTable: @escaping (ControllerGlyphFamily) -> InputMappingTable = InputMappingTable
             .defaultTable(for:),
@@ -53,7 +53,7 @@ final class ControllerInputCenter {
 
     /// Begins observing controller connect/disconnect. Safe to call more than
     /// once; only the first call (until ``stop()``) has any effect.
-    func start() {
+    public func start() {
         guard !isStarted else { return }
         isStarted = true
         discovery.start(
@@ -66,7 +66,7 @@ final class ControllerInputCenter {
     /// and clears all connected-controller state. Safe to call more than
     /// once, and safe to call from `deinit`-adjacent teardown code paths
     /// (this method itself performs no asynchronous work).
-    func stop() {
+    public func stop() {
         guard isStarted else { return }
         isStarted = false
         discovery.stop()
@@ -80,17 +80,23 @@ final class ControllerInputCenter {
 
     private func handleConnect(_ source: any ControllerInputSource) {
         let id = source.id
+        let glyphFamily = source.snapshot.glyphFamily
         sources[id] = source
         connectedControllers.removeAll { $0.id == id }
         connectedControllers.append(source.snapshot)
-        activeGlyphFamily = source.snapshot.glyphFamily
-        let table = mappingTable(activeGlyphFamily)
-        // Captures `id` (a value type), never `source` itself, so this
-        // closure cannot form a retain cycle with the source it is installed
-        // on: only `sources[id]` keeps the source alive, and only `self`'s
-        // own lifetime (captured weakly) keeps this center reachable.
+        activeGlyphFamily = glyphFamily
+        // Captures `id`/`glyphFamily` (value types), never `source` itself,
+        // so this closure cannot form a retain cycle with the source it is
+        // installed on: only `sources[id]` keeps the source alive, and only
+        // `self`'s own lifetime (captured weakly) keeps this center
+        // reachable. The mapping table is looked up fresh at dispatch time
+        // (not captured here) so a caller whose `mappingTable` closure
+        // reflects live remap state sees those remaps take effect
+        // immediately, without requiring a disconnect/reconnect.
         source.onButtonEvent = { [weak self] control, phase in
-            self?.handleButtonEvent(from: id, control: control, phase: phase, table: table)
+            self?.handleButtonEvent(
+                from: id, control: control, phase: phase, glyphFamily: glyphFamily
+            )
         }
     }
 
@@ -103,12 +109,17 @@ final class ControllerInputCenter {
 
     private func handleButtonEvent(
         from id: ControllerID, control: ControllerControl, phase: InputPhase,
-        table: InputMappingTable
+        glyphFamily: ControllerGlyphFamily
     ) {
         // Suppresses any event from a source this center no longer tracks —
         // including one captured by a closure from before a disconnect was
         // processed. See the type-level documentation above.
         guard sources[id] != nil else { return }
+        // Looked up fresh on every event (never captured once at connect
+        // time) so a `mappingTable` closure backed by live, mutable remap
+        // state reflects a remap immediately, without requiring the
+        // controller to disconnect and reconnect.
+        let table = mappingTable(glyphFamily)
         guard
             let outcome = SemanticInputRouter.route(
                 PhysicalInputEvent(input: .controller(control), phase: phase), using: table

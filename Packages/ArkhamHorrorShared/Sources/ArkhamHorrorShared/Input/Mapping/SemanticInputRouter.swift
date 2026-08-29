@@ -5,7 +5,7 @@ import Foundation
 /// events without inventing a parallel vocabulary; controller/Siri Remote
 /// adapters use ``press``/``release`` only, since neither GameController nor
 /// the tvOS focus engine produces a native "repeat" for a held button.
-enum InputPhase: Hashable, Sendable {
+public enum InputPhase: Hashable, Sendable {
     case press
     case repeatPress
     case release
@@ -13,16 +13,21 @@ enum InputPhase: Hashable, Sendable {
 
 /// One physical control's event at a point in time, the sole input to
 /// ``SemanticInputRouter/route(_:using:)``.
-struct PhysicalInputEvent: Hashable, Sendable {
-    let input: PhysicalInput
-    let phase: InputPhase
+public struct PhysicalInputEvent: Hashable, Sendable {
+    public let input: PhysicalInput
+    public let phase: InputPhase
+
+    public init(input: PhysicalInput, phase: InputPhase) {
+        self.input = input
+        self.phase = phase
+    }
 }
 
 /// What a routed input event should cause: either a semantic command, or
 /// (for a reserved control) the system back/menu/escape action, which is
 /// deliberately not itself a ``SemanticCommand`` — see
 /// ``PhysicalInput/isReserved``.
-enum SemanticDispatchOutcome: Hashable, Sendable {
+public enum SemanticDispatchOutcome: Hashable, Sendable {
     case command(SemanticCommand)
     case reservedBack
 }
@@ -40,8 +45,8 @@ enum SemanticDispatchOutcome: Hashable, Sendable {
 ///   fire a discrete action or toggle more than once.
 /// - An input with no binding in `table` (including one this layer has never
 ///   heard of) safely produces `nil` — never a guessed or default command.
-enum SemanticInputRouter {
-    static func route(
+public enum SemanticInputRouter {
+    public static func route(
         _ event: PhysicalInputEvent, using table: InputMappingTable
     ) -> SemanticDispatchOutcome? {
         guard event.phase != .release else { return nil }

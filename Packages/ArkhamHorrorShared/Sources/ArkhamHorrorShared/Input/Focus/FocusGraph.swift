@@ -9,18 +9,18 @@ private typealias StableStringIdentifier = CustomStringConvertible & Expressible
 /// A stable, author-declared identifier for one focusable element in the
 /// semantic focus graph — never a screen coordinate or view index, so focus
 /// state survives layout changes and remains meaningful across snapshots.
-struct SemanticFocusID: StableStringIdentifier {
-    let rawValue: String
+public struct SemanticFocusID: StableStringIdentifier {
+    public let rawValue: String
 
-    init(rawValue: String) {
+    public init(rawValue: String) {
         self.rawValue = rawValue
     }
 
-    init(stringLiteral value: String) {
+    public init(stringLiteral value: String) {
         rawValue = value
     }
 
-    var description: String {
+    public var description: String {
         rawValue
     }
 }
@@ -28,25 +28,25 @@ struct SemanticFocusID: StableStringIdentifier {
 /// A stable, author-declared grouping of ``SemanticFocusID``s (for example a
 /// hand, a play area, or a prompt surface) used for wrap-within-zone
 /// navigation and zone entry-point fallback.
-struct SemanticFocusZone: StableStringIdentifier {
-    let rawValue: String
+public struct SemanticFocusZone: StableStringIdentifier {
+    public let rawValue: String
 
-    init(rawValue: String) {
+    public init(rawValue: String) {
         self.rawValue = rawValue
     }
 
-    init(stringLiteral value: String) {
+    public init(stringLiteral value: String) {
         rawValue = value
     }
 
-    var description: String {
+    public var description: String {
         rawValue
     }
 }
 
 /// How ``FocusGraph/neighbor(from:direction:)`` resolves a direction with no
 /// explicit ``FocusNode/neighbors`` entry.
-enum FocusWrapPolicy: Hashable, Sendable {
+public enum FocusWrapPolicy: Hashable, Sendable {
     /// Missing edges never move focus.
     case noWrap
     /// Missing edges wrap to the first/last member of the current node's own
@@ -57,18 +57,18 @@ enum FocusWrapPolicy: Hashable, Sendable {
 /// One node's explicit, author-declared adjacency. Only listed directions are
 /// navigable; a direction with no entry is resolved by ``FocusWrapPolicy``,
 /// never guessed from on-screen geometry.
-struct FocusNode: Sendable {
-    let id: SemanticFocusID
-    let zone: SemanticFocusZone
-    var neighbors: [FocusDirection: SemanticFocusID]
+public struct FocusNode: Sendable {
+    public let id: SemanticFocusID
+    public let zone: SemanticFocusZone
+    public var neighbors: [FocusDirection: SemanticFocusID]
     /// The deterministic fallback target used when this node is the current
     /// focus and is removed. `nil` defers to the zone's declared entry point
     /// (see ``FocusGraph/zoneEntryPoints``), and then to the graph's first
     /// remaining node in declared insertion order — never an arbitrary or
     /// unspecified choice.
-    var removalFallback: SemanticFocusID?
+    public var removalFallback: SemanticFocusID?
 
-    init(
+    public init(
         id: SemanticFocusID,
         zone: SemanticFocusZone,
         neighbors: [FocusDirection: SemanticFocusID] = [:],
@@ -88,18 +88,18 @@ struct FocusNode: Sendable {
 /// explicit edge. Nodes are retained in insertion order (``order``) so any
 /// fallback that must choose among several equally valid candidates resolves
 /// the same way every time, independent of `Dictionary` iteration order.
-struct FocusGraph: Sendable {
-    private(set) var nodes: [SemanticFocusID: FocusNode] = [:]
+public struct FocusGraph: Sendable {
+    public private(set) var nodes: [SemanticFocusID: FocusNode] = [:]
     /// Insertion order, preserved for deterministic wrap and fallback
     /// resolution. Not necessarily related to on-screen layout order.
-    private(set) var order: [SemanticFocusID] = []
+    public private(set) var order: [SemanticFocusID] = []
     /// Each zone's declared entry point: the target used as a removal
     /// fallback when a node has none of its own, and as the default focus
     /// when a modal presentation names a zone rather than one specific node.
-    var zoneEntryPoints: [SemanticFocusZone: SemanticFocusID]
-    var wrapPolicy: FocusWrapPolicy
+    public var zoneEntryPoints: [SemanticFocusZone: SemanticFocusID]
+    public var wrapPolicy: FocusWrapPolicy
 
-    init(
+    public init(
         nodes: [FocusNode] = [],
         zoneEntryPoints: [SemanticFocusZone: SemanticFocusID] = [:],
         wrapPolicy: FocusWrapPolicy = .noWrap
@@ -112,11 +112,11 @@ struct FocusGraph: Sendable {
     }
 
     /// Whether `id` currently exists in the graph.
-    func contains(_ id: SemanticFocusID) -> Bool {
+    public func contains(_ id: SemanticFocusID) -> Bool {
         nodes[id] != nil
     }
 
-    func node(for id: SemanticFocusID) -> FocusNode? {
+    public func node(for id: SemanticFocusID) -> FocusNode? {
         nodes[id]
     }
 
@@ -124,7 +124,7 @@ struct FocusGraph: Sendable {
     /// in ``order`` so an unrelated re-declaration of an existing node (for
     /// example, refreshed neighbor edges after a state update) never disturbs
     /// tie-break/fallback determinism for other nodes.
-    mutating func insert(_ node: FocusNode) {
+    public mutating func insert(_ node: FocusNode) {
         if nodes[node.id] == nil {
             order.append(node.id)
         }
@@ -134,7 +134,7 @@ struct FocusGraph: Sendable {
     /// Removes `id`. Any other node whose edge pointed at `id` has that edge
     /// cleared, and any zone entry point naming `id` is cleared, so no
     /// remaining node or zone can ever resolve to a removed target.
-    mutating func remove(_ id: SemanticFocusID) {
+    public mutating func remove(_ id: SemanticFocusID) {
         guard nodes[id] != nil else { return }
         nodes[id] = nil
         order.removeAll { $0 == id }
@@ -149,7 +149,7 @@ struct FocusGraph: Sendable {
     /// Resolves the neighbor for `direction` from `id`: the explicit declared
     /// edge if its target still exists, else the ``wrapPolicy`` result, else
     /// `nil` (focus does not move).
-    func neighbor(from id: SemanticFocusID, direction: FocusDirection) -> SemanticFocusID? {
+    public func neighbor(from id: SemanticFocusID, direction: FocusDirection) -> SemanticFocusID? {
         guard let node = nodes[id] else { return nil }
         if let explicit = node.neighbors[direction], nodes[explicit] != nil {
             return explicit
@@ -173,7 +173,7 @@ struct FocusGraph: Sendable {
     /// `declaredFallback` if it still exists, else `previousZone`'s declared
     /// entry point if it still exists, else the first remaining node in
     /// ``order`` — never an unspecified or dictionary-order-dependent choice.
-    func fallbackTarget(
+    public func fallbackTarget(
         previousZone: SemanticFocusZone? = nil,
         declaredFallback: SemanticFocusID? = nil
     ) -> SemanticFocusID? {
@@ -190,7 +190,7 @@ struct FocusGraph: Sendable {
     /// exists (making repeated calls with an unchanged graph and the same
     /// `preferred` idempotent), else the ``fallbackTarget(previousZone:declaredFallback:)``
     /// resolution.
-    func restoreFocus(
+    public func restoreFocus(
         preferred: SemanticFocusID?,
         previousZone: SemanticFocusZone? = nil,
         declaredFallback: SemanticFocusID? = nil
