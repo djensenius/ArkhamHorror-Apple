@@ -62,11 +62,23 @@ struct ActAgendaFixtureTests {
         }
     }
 
-    @Test("An unrecognized-but-well-formed act side string still decodes losslessly")
-    func unrecognizedActSideStillDecodes() throws {
+    @Test("An invented act side fails to decode: ActSide is a closed union, not open")
+    func inventedActSideFailsToDecode() throws {
+        // The backend's own governed manifest.json enumBoundaryChecks explicitly require
+        // "Z" to be an invalid ActSide value: unlike this contract slice's other additive
+        // string enums, ActSide must fail closed here rather than decode losslessly.
         let bytes = Data(#"[1, "Z"]"#.utf8)
-        let sequence = try ContractJSON.decode(ActSequence.self, from: bytes)
-        #expect(sequence.side.rawValue == "Z")
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(ActSequence.self, from: bytes)
+        }
+    }
+
+    @Test("The governed ActSide boundary members A and H decode successfully")
+    func actSideBoundaryMembersDecode() throws {
+        let lower = try ContractJSON.decode(ActSequence.self, from: Data(#"[1, "A"]"#.utf8))
+        #expect(lower.side == .sideA)
+        let upper = try ContractJSON.decode(ActSequence.self, from: Data(#"[1, "H"]"#.utf8))
+        #expect(upper.side == .sideH)
     }
 
     @Test("AgendaSequence requires both agendaSequenceSide and agendaSequenceStep keys")
@@ -75,6 +87,30 @@ struct ActAgendaFixtureTests {
         #expect(throws: DecodingError.self) {
             _ = try ContractJSON.decode(AgendaSequence.self, from: bytes)
         }
+    }
+
+    @Test("An invented agenda side fails to decode: AgendaSide is a closed union, not open")
+    func inventedAgendaSideFailsToDecode() throws {
+        // The backend's own governed manifest.json enumBoundaryChecks explicitly require
+        // "Z" to be an invalid AgendaSide value.
+        let bytes = Data(#"{"agendaSequenceSide": "Z", "agendaSequenceStep": 1}"#.utf8)
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(AgendaSequence.self, from: bytes)
+        }
+    }
+
+    @Test("The governed AgendaSide boundary members A and D decode successfully")
+    func agendaSideBoundaryMembersDecode() throws {
+        let lower = try ContractJSON.decode(
+            AgendaSequence.self,
+            from: Data(#"{"agendaSequenceSide": "A", "agendaSequenceStep": 1}"#.utf8)
+        )
+        #expect(lower.side == .sideA)
+        let upper = try ContractJSON.decode(
+            AgendaSequence.self,
+            from: Data(#"{"agendaSequenceSide": "D", "agendaSequenceStep": 1}"#.utf8)
+        )
+        #expect(upper.side == .sideD)
     }
 
     @Test("An agenda's doomThreshold decodes as a GameValue")

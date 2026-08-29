@@ -1,18 +1,18 @@
-/// Phantom tag distinguishing ``ActSide``.
-enum ActSideTag: Sendable {}
 /// `Arkham.Act.Sequence.ActSide` (`Act/Sequence.hs`), nullary-only so Aeson's
-/// `allNullaryToStringTag` applies and it encodes as a bare string tag.
-typealias ActSide = OpenStringEnum<ActSideTag>
-
-extension ActSide {
-    static let sideA = ActSide("A")
-    static let sideB = ActSide("B")
-    static let sideC = ActSide("C")
-    static let sideD = ActSide("D")
-    static let sideE = ActSide("E")
-    static let sideF = ActSide("F")
-    static let sideG = ActSide("G")
-    static let sideH = ActSide("H")
+/// `allNullaryToStringTag` applies and it encodes as a bare string tag. Closed, unlike
+/// this contract slice's other additive string enums: the backend's own governed
+/// `manifest.json` `enumBoundaryChecks` explicitly require an invented member such as
+/// `"Z"` to fail validation (boundary members `"A"`/`"H"` must still decode), so this is
+/// deliberately a validated Swift `enum`, not an ``OpenStringEnum``.
+enum ActSide: String, Sendable, Equatable, Hashable, Codable {
+    case sideA = "A"
+    case sideB = "B"
+    case sideC = "C"
+    case sideD = "D"
+    case sideE = "E"
+    case sideF = "F"
+    case sideG = "G"
+    case sideH = "H"
 }
 
 /// `ActAttrs.actSequence`'s `[step, side]` pair, for example `[1, "A"]`.

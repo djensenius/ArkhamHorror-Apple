@@ -1,14 +1,14 @@
-/// Phantom tag distinguishing ``AgendaSide``.
-enum AgendaSideTag: Sendable {}
 /// `Arkham.Agenda.Sequence.AgendaSide` (`Agenda/Sequence.hs`), nullary-only so Aeson's
-/// `allNullaryToStringTag` applies and it encodes as a bare string tag.
-typealias AgendaSide = OpenStringEnum<AgendaSideTag>
-
-extension AgendaSide {
-    static let sideA = AgendaSide("A")
-    static let sideB = AgendaSide("B")
-    static let sideC = AgendaSide("C")
-    static let sideD = AgendaSide("D")
+/// `allNullaryToStringTag` applies and it encodes as a bare string tag. Closed, unlike
+/// this contract slice's other additive string enums: the backend's own governed
+/// `manifest.json` `enumBoundaryChecks` explicitly require an invented member such as
+/// `"Z"` to fail validation (boundary members `"A"`/`"D"` must still decode), so this is
+/// deliberately a validated Swift `enum`, not an ``OpenStringEnum``.
+enum AgendaSide: String, Sendable, Equatable, Hashable, Codable {
+    case sideA = "A"
+    case sideB = "B"
+    case sideC = "C"
+    case sideD = "D"
 }
 
 /// `AgendaAttrs.agendaSequence`, an object pair of side and step (unlike ``ActSequence``'s
