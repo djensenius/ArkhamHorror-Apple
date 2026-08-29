@@ -163,6 +163,20 @@ public struct SemanticActionControl<Label: View>: View {
         0.5
     }
 
+    /// The production long-press recognizer `body` attaches its
+    /// `secondaryAction`-dispatching `.onEnded` handler to. `internal`, not
+    /// `private`, and constructed identically on every platform (unlike
+    /// `lifecyclePressPhase`/`lifecycleHoldPhase` below, this recognizer is
+    /// intentionally *not* widened — its whole purpose is requiring a
+    /// mostly-stationary press) so tests can assert directly on the exact
+    /// instance `body` uses, rather than on an independently-constructed
+    /// local `LongPressGesture` that cannot fail if `body`'s own wiring
+    /// were changed (for example if this tolerance were mistakenly widened
+    /// alongside the lifecycle phases below).
+    static var secondaryActionRecognizer: LongPressGesture {
+        LongPressGesture(minimumDuration: secondaryActionThreshold)
+    }
+
     #if os(tvOS)
         /// tvOS's `LongPressGesture` has no `maximumDistance` initializer or
         /// property at all, so its plain `init(minimumDuration:)` is already
@@ -215,7 +229,7 @@ public struct SemanticActionControl<Label: View>: View {
         // exists purely to track the *real* touch lifecycle for suppression
         // timing, not to gate this dispatch.
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: Self.secondaryActionThreshold)
+            Self.secondaryActionRecognizer
                 .onEnded { _ in
                     suppression.longPressSucceeded()
                     onOutcome(semanticFocusID, .command(.secondaryAction))

@@ -80,15 +80,20 @@ struct SemanticActionControlGestureTests {
 
         @Test(
             """
-            The independent secondary-action recognizer (a plain, non-sequenced \
-            LongPressGesture separate from the lifecycle phases above) intentionally \
-            keeps its own default 10pt tolerance — only the lifecycle-tracking gesture's \
-            tolerance was widened, not this one
+            The production secondary-action recognizer (SemanticActionControl.\
+            secondaryActionRecognizer, the exact instance body attaches its \
+            secondaryAction-dispatching .onEnded handler to) intentionally keeps its \
+            own default 10pt tolerance — only the lifecycle-tracking gesture's \
+            tolerance was widened, not this one. Inspecting the production property \
+            itself (rather than an independently-constructed local LongPressGesture) \
+            means this fails if body's own wiring is ever changed, e.g. if this \
+            tolerance were mistakenly widened alongside the lifecycle phases above
             """
         )
         func secondaryActionRecognizerRetainsDefaultTolerance() {
-            let secondaryRecognizer = LongPressGesture(minimumDuration: 0.5)
-            #expect(secondaryRecognizer.maximumDistance == 10)
+            let maximumDistance = SemanticActionControl<Text>.secondaryActionRecognizer
+                .maximumDistance
+            #expect(maximumDistance == 10)
         }
     #endif
 }
