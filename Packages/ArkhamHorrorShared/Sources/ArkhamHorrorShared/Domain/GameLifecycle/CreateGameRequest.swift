@@ -20,11 +20,16 @@ enum RequestMultiplayerVariant: String, Sendable, Equatable, Hashable, Codable, 
     case withFriends = "WithFriends"
 }
 
-/// The error thrown when encoding a ``CreateGameRequest`` whose `campaignId` and
-/// `scenarioId` are both absent or empty, violating the contract's invariant that at least
-/// one of the two must be present as a non-empty string.
+/// The error thrown when encoding a ``CreateGameRequest`` whose `campaignId`/`scenarioId`
+/// violate the contract's invariant that each must be either absent or a non-empty string,
+/// and that at least one of the two must be present.
 enum CreateGameRequestError: Error, Equatable, Sendable {
+    /// Both `campaignId` and `scenarioId` are absent or empty; at least one must be a
+    /// non-empty string.
     case missingCampaignOrScenario
+    /// `campaignId` or `scenarioId` was provided as an empty string. Per the contract, a
+    /// present identifier must be non-empty — use `nil` to mean "absent" instead.
+    case emptyIdentifierProvided
 }
 
 /// A request to create a new game.
@@ -99,6 +104,9 @@ extension CreateGameRequest: Codable {
         guard Self.isNonEmpty(campaignId) || Self.isNonEmpty(scenarioId) else {
             throw CreateGameRequestError.missingCampaignOrScenario
         }
+        guard Self.isAbsentOrNonEmpty(campaignId), Self.isAbsentOrNonEmpty(scenarioId) else {
+            throw CreateGameRequestError.emptyIdentifierProvided
+        }
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(deckIds, forKey: .deckIds)
         try container.encode(playerCount, forKey: .playerCount)
@@ -117,6 +125,13 @@ extension CreateGameRequest: Codable {
 
     private static func isNonEmpty(_ value: String?) -> Bool {
         guard let value else { return false }
+        return !value.isEmpty
+    }
+
+    /// `true` for `nil` (the field is legitimately absent) or a non-empty string; `false`
+    /// only for a present-but-empty string, which is never a valid wire value.
+    private static func isAbsentOrNonEmpty(_ value: String?) -> Bool {
+        guard let value else { return true }
         return !value.isEmpty
     }
 

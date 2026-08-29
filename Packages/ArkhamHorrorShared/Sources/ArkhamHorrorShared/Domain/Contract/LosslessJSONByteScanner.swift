@@ -80,8 +80,11 @@ struct LosslessJSONByteScanner {
         }
         while true {
             skipWhitespace()
-            guard peek() == 0x22 else {
-                throw LosslessJSONParserError.unexpectedByte(peek() ?? 0, atPosition: position)
+            guard let keyStartByte = peek() else {
+                throw LosslessJSONParserError.unexpectedEndOfInput
+            }
+            guard keyStartByte == 0x22 else {
+                throw LosslessJSONParserError.unexpectedByte(keyStartByte, atPosition: position)
             }
             let key = try parseString()
             guard seenKeys.insert(key).inserted else {

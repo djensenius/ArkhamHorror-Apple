@@ -123,6 +123,36 @@ struct LosslessJSONParserTests {
         }
     }
 
+    @Test("An object cut off before its first key reports end-of-input, not byte 0")
+    func objectTruncatedBeforeFirstKeyReportsEndOfInput() {
+        #expect(throws: LosslessJSONParserError.unexpectedEndOfInput) {
+            try LosslessJSONParser.parse(Data("{".utf8))
+        }
+    }
+
+    @Test("An object cut off after a comma, before the next key, reports end-of-input")
+    func objectTruncatedAfterCommaReportsEndOfInput() {
+        #expect(throws: LosslessJSONParserError.unexpectedEndOfInput) {
+            try LosslessJSONParser.parse(Data(#"{"a": 1,"#.utf8))
+        }
+    }
+
+    @Test("An object with a non-quote, non-EOF byte where a key is expected reports that byte")
+    func objectWithWrongKeyByteReportsUnexpectedByte() {
+        #expect(throws: LosslessJSONParserError.self) {
+            try LosslessJSONParser.parse(Data("{1: 2}".utf8))
+        }
+        // Specifically must NOT be misreported as end-of-input.
+        do {
+            _ = try LosslessJSONParser.parse(Data("{1: 2}".utf8))
+            Issue.record("Expected parse to throw")
+        } catch let LosslessJSONParserError.unexpectedByte(byte, _) {
+            #expect(byte == UInt8(ascii: "1"))
+        } catch {
+            Issue.record("Expected .unexpectedByte, got \(error)")
+        }
+    }
+
     @Test("Empty object and empty array both parse")
     func emptyContainersParse() throws {
         #expect(try LosslessJSONParser.parse(Data("{}".utf8)) == .object([:]))

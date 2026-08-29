@@ -156,6 +156,22 @@ struct GameLifecycleTests {
         }
     }
 
+    @Test("Encoding throws when campaignId is non-empty but scenarioId is an empty string")
+    func nonEmptyCampaignWithEmptyScenarioThrows() throws {
+        let request = try makeMinimalRequest(campaignId: "01", scenarioId: "")
+        #expect(throws: CreateGameRequestError.emptyIdentifierProvided) {
+            try JSONEncoder().encode(request)
+        }
+    }
+
+    @Test("Encoding throws when scenarioId is non-empty but campaignId is an empty string")
+    func nonEmptyScenarioWithEmptyCampaignThrows() throws {
+        let request = try makeMinimalRequest(campaignId: "", scenarioId: "01104")
+        #expect(throws: CreateGameRequestError.emptyIdentifierProvided) {
+            try JSONEncoder().encode(request)
+        }
+    }
+
     @Test("Encoding succeeds when only scenarioId is present")
     func onlyScenarioSucceeds() throws {
         let request = try makeMinimalRequest(campaignId: nil, scenarioId: "01104")
