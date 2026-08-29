@@ -1,13 +1,15 @@
 /// One SHA-256 digest binding a vendored contract artifact to ``ContractPin/current``.
 struct VendoredFixtureDigest: Sendable {
-    /// The artifact's file name, without extension, as bundled under `Fixtures/`.
+    /// The artifact's file name, without extension, as bundled under
+    /// `Tests/ArkhamHorrorSharedTests/Fixtures/Contract/`.
     let fileName: String
     /// The lowercase hex-encoded SHA-256 digest of the artifact's exact vendored bytes.
     let sha256Hex: String
 }
 
 /// SHA-256 digests of the contract artifacts vendored from
-/// `ContractPin.current.backendCommit`, under `Tests/ArkhamHorrorSharedTests/Fixtures`.
+/// `ContractPin.current.backendCommit`, under
+/// `Tests/ArkhamHorrorSharedTests/Fixtures/Contract`.
 ///
 /// A drift test recomputes each digest from the bundled artifact's bytes and compares it
 /// here. Changing a vendored artifact's bytes, or bumping the pin without re-vendoring and
