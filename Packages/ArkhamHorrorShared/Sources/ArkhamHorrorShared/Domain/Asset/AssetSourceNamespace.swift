@@ -153,13 +153,21 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
         return explicitPort
     }
 
-    /// Trims any trailing slashes, folding a bare `"/"` down to `""`.
+    /// Collapses repeated `/` and trims any trailing slash, folding a bare
+    /// `"/"` (or any all-slash path) down to `""`.
+    ///
+    /// This must exactly match how ``AssetCandidate/url(base:)`` builds the
+    /// actual request URL: it splits `basePath` on `/` using the default
+    /// `omittingEmptySubsequences: true`, which already collapses any
+    /// repeated slash. If this identity did not collapse the same way, two
+    /// spellings of the same effective base path (e.g. `/cdn/assets` and
+    /// `/cdn//assets`) would build the identical request URL but fold into
+    /// two different ``canonicalIdentity`` strings, silently duplicating
+    /// disk cache entries for what is really the same namespace.
     private static func normalizedPath(_ path: String) -> String {
-        var result = path
-        while result.count > 1, result.hasSuffix("/") {
-            result.removeLast()
-        }
-        return result == "/" ? "" : result
+        let segments = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard !segments.isEmpty else { return "" }
+        return "/" + segments.joined(separator: "/")
     }
 
     /// A stable string identity for this namespace, folded into the disk

@@ -153,6 +153,40 @@ struct AssetSourceNamespaceTests {
         #expect(namespace.basePath == "/CDN/Mixed-Case")
     }
 
+    @Test("Repeated slashes within the base path are collapsed")
+    func repeatedInternalSlashesCollapsed() throws {
+        let url = try #require(URL(string: "https://assets.example.com/cdn//assets///more"))
+        let namespace = try AssetSourceNamespace(assetBase: url)
+        #expect(namespace.basePath == "/cdn/assets/more")
+    }
+
+    @Test("Two base-path spellings sharing one request URL share one canonicalIdentity")
+    func repeatedSlashSpellingsShareOneIdentity() throws {
+        let doubled = try AssetSourceNamespace(
+            assetBase: #require(URL(string: "https://assets.example.com/cdn//assets/"))
+        )
+        let single = try AssetSourceNamespace(
+            assetBase: #require(URL(string: "https://assets.example.com/cdn/assets"))
+        )
+        #expect(doubled.canonicalIdentity == single.canonicalIdentity)
+
+        // Prove this actually matches how `AssetCandidate.url(base:)` builds
+        // the request URL (it splits `basePath` on `/`, which already
+        // collapses repeated slashes) — not just that the two namespaces
+        // happen to agree with each other.
+        let candidate = AssetCandidateFactory.make(
+            segments: ["01001.avif"], localeRoot: nil, format: .avif
+        )
+        #expect(candidate.url(base: doubled) == candidate.url(base: single))
+    }
+
+    @Test("An all-slash base path normalizes to the empty string")
+    func allSlashPathNormalizesToEmpty() throws {
+        let url = try #require(URL(string: "https://assets.example.com//"))
+        let namespace = try AssetSourceNamespace(assetBase: url)
+        #expect(namespace.basePath.isEmpty)
+    }
+
     @Test("An explicit non-default port is preserved")
     func explicitPortPreserved() throws {
         let url = try #require(URL(string: "https://assets.example.com:9443/cdn"))
