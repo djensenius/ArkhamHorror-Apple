@@ -39,6 +39,17 @@ final class ControllerInputCenter {
         self.dispatch = dispatch
     }
 
+    isolated deinit {
+        // A safety net for callers that never explicitly invoke `stop()`:
+        // without it, a started center deallocated mid-session would leave
+        // its `discovery`'s observers/handlers (e.g. `GameControllerDiscovery`'s
+        // `NotificationCenter` tokens and button handlers) registered
+        // indefinitely. `isolated deinit` (SE-0371) runs this synchronously
+        // on the main actor, so it can call the same `@MainActor`-isolated
+        // `stop()` used everywhere else, with no isolation assumption.
+        stop()
+    }
+
     /// Begins observing controller connect/disconnect. Safe to call more than
     /// once; only the first call (until ``stop()``) has any effect.
     func start() {

@@ -138,7 +138,15 @@ struct FocusGraphTests {
         coordinator.remove("b")
         #expect(coordinator.currentFocus == "a")
     }
+}
 
+/// Coverage for ``FocusCoordinator``'s modal-return/removal-fallback/snapshot-
+/// restoration behavior. Split from ``FocusGraphTests`` purely to keep each
+/// suite's body within the project's `type_body_length` lint budget; both
+/// suites share the same "small, explicit graphs, no geometry" testing style.
+@MainActor
+@Suite("FocusCoordinator — modal return, restoration, and harness fixture")
+struct FocusCoordinatorTests {
     // MARK: - Modal return target
 
     @Test("dismissModal restores the exact focus that was current before presentModal")
@@ -201,10 +209,35 @@ struct FocusGraphTests {
         coordinator.remove("a")
         #expect(coordinator.currentFocus == "menu")
         coordinator.dismissModal()
-        // "a" (the remembered return target) is gone; its stack entry was cleared to
-        // `nil` by `remove(_:)`, so dismissal resolves through the graph's generic,
-        // deterministic fallback (the first remaining node in declared order) rather
-        // than restoring the stale, removed identifier.
+        // "a" (the remembered return target) is gone and zone "z" has no declared
+        // entry point, so dismissal resolves through the graph's generic,
+        // deterministic fallback (the first remaining node in declared order).
+        #expect(coordinator.currentFocus == "b")
+    }
+
+    @Test(
+        "A removed modal-return target's own zone entry point wins over order.first on dismiss"
+    )
+    func modalReturnTargetRemovalUsesItsOwnZoneEntryPoint() {
+        // Distinguishes the fix from the simpler "falls back to order.first"
+        // case above: "a" belongs to zone "z", which declares "b" as its entry
+        // point. The modal-return target's own zone/fallback context (captured
+        // when the modal was presented, before "a" was removed) must still be
+        // honored on dismiss — not merely order.first, which here would
+        // incorrectly resolve to "menu" (an unrelated zone's node) instead of
+        // "b" (the target's own zone's declared entry point).
+        let graph = FocusGraph(
+            nodes: [
+                FocusNode(id: "menu", zone: "m"),
+                FocusNode(id: "a", zone: "z"),
+                FocusNode(id: "b", zone: "z"),
+            ], zoneEntryPoints: ["z": "b"]
+        )
+        let coordinator = FocusCoordinator(graph: graph, initialFocus: "a")
+        coordinator.presentModal(entry: "menu")
+        coordinator.remove("a")
+        #expect(coordinator.currentFocus == "menu")
+        coordinator.dismissModal()
         #expect(coordinator.currentFocus == "b")
     }
 

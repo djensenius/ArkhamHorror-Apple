@@ -206,4 +206,18 @@ struct ControllerInputCenterTests {
         handler?(.dpadUp, .press)
         #expect(dispatched.isEmpty)
     }
+
+    @Test("Deallocating a started center without an explicit stop() still tears down discovery")
+    func deinitTearsDownDiscoveryWithoutExplicitStop() {
+        let discovery = FakeControllerDiscovery()
+        var center: ControllerInputCenter? = makeCenter(discovery: discovery) { _ in }
+        center?.start()
+        #expect(discovery.stopCallCount == 0)
+        center = nil
+        // `isolated deinit` runs `stop()` synchronously on the main actor even
+        // though no caller ever invoked it explicitly, so discovery's
+        // observers/handlers are never left registered past the center's
+        // own lifetime.
+        #expect(discovery.stopCallCount == 1)
+    }
 }
