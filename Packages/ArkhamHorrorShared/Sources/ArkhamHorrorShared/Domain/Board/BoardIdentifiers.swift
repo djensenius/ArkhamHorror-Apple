@@ -46,8 +46,14 @@ extension CardCodeIdentifier: CustomStringConvertible {
 // shape at all.
 
 extension Identifier: CodingKeyRepresentable {
+    // Lowercased: Foundation's `UUID.uuidString` always renders the canonical uppercase
+    // form, but the backend's own UUID rendering (and every UUID-keyed map key in the
+    // vendored fixtures, e.g. `game-update.json`'s `contents.locations`) is lowercase.
+    // Re-encoding with the uppercase form would silently fail to round-trip byte-for-byte
+    // for any UUID containing a hex letter, defeating the losslessness this map-key
+    // support exists for.
     var codingKey: CodingKey {
-        AnyCodingKey(stringValue: rawValue.uuidString)
+        AnyCodingKey(stringValue: rawValue.uuidString.lowercased())
     }
 
     init?(codingKey: some CodingKey) {

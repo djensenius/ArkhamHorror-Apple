@@ -41,13 +41,20 @@ struct BoardIdentifiersTests {
         #expect(decoded == original)
     }
 
-    @Test("[LocationID: Int] round-trips through ContractJSON as a JSON object")
+    @Test("[LocationID: Int] round-trips through ContractJSON as a JSON object, case-preserved")
     func uuidKeyedDictionaryRoundTrips() throws {
-        let uuid = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000032"))
+        // A real hex-letter UUID (not only decimal digits) so an accidental
+        // uppercase/lowercase mismatch in the map-key encoding is actually observable:
+        // `Identifier`/`UUID` equality is case-insensitive, so a purely-decimal UUID like
+        // `...-000000000032` cannot distinguish "encodes as uppercase" from "encodes as
+        // lowercase" the way a fixture-realistic UUID such as this one can.
+        let uuidString = "d5a66e84-c729-4066-8475-d8a155609025"
+        let uuid = try #require(UUID(uuidString: uuidString))
         let original: [LocationID: Int] = [LocationID(uuid): 7]
         let encoded = try ContractJSON.encode(original)
         let json = try #require(String(data: encoded, encoding: .utf8))
-        #expect(json.contains("00000000-0000-0000-0000-000000000032"))
+        #expect(json.contains(uuidString), "Expected the lowercase wire form in: \(json)")
+        #expect(!json.contains(uuidString.uppercased()))
         let decoded = try ContractJSON.decode([LocationID: Int].self, from: encoded)
         #expect(decoded == original)
     }
