@@ -10,11 +10,11 @@ enum LosslessJSONSerializer {
     private static func write(_ value: JSONValue, into output: inout [UInt8]) {
         switch value {
         case .null:
-            output.append(contentsOf: Array("null".utf8))
+            output.append(contentsOf: "null".utf8)
         case let .bool(bool):
-            output.append(contentsOf: Array((bool ? "true" : "false").utf8))
+            output.append(contentsOf: (bool ? "true" : "false").utf8)
         case let .number(number):
-            output.append(contentsOf: Array(number.description.utf8))
+            output.append(contentsOf: number.description.utf8)
         case let .string(string):
             writeString(string, into: &output)
         case let .array(elements):
@@ -44,16 +44,16 @@ enum LosslessJSONSerializer {
         output.append(0x22)
         for scalar in string.unicodeScalars {
             switch scalar {
-            case "\"": output.append(contentsOf: Array("\\\"".utf8))
-            case "\\": output.append(contentsOf: Array("\\\\".utf8))
-            case "\n": output.append(contentsOf: Array("\\n".utf8))
-            case "\r": output.append(contentsOf: Array("\\r".utf8))
-            case "\t": output.append(contentsOf: Array("\\t".utf8))
+            case "\"": output.append(contentsOf: "\\\"".utf8)
+            case "\\": output.append(contentsOf: "\\\\".utf8)
+            case "\n": output.append(contentsOf: "\\n".utf8)
+            case "\r": output.append(contentsOf: "\\r".utf8)
+            case "\t": output.append(contentsOf: "\\t".utf8)
             default:
                 if scalar.value < 0x20 {
-                    output.append(contentsOf: Array(String(format: "\\u%04x", scalar.value).utf8))
+                    output.append(contentsOf: String(format: "\\u%04x", scalar.value).utf8)
                 } else {
-                    output.append(contentsOf: Array(String(scalar).utf8))
+                    output.append(contentsOf: String(scalar).utf8)
                 }
             }
         }

@@ -28,16 +28,19 @@ enum LosslessJSONParser {
     /// UTF-8, does not parse as exactly one JSON value, or contains anything the explicit
     /// rejection policy above disallows.
     static func parse(_ data: Data) throws -> JSONValue {
-        // Validate the whole document is well-formed UTF-8 up front. Foundation's
-        // `String(data:encoding:)` performs strict validation (unlike
+        // Copy the document into a byte array exactly once, then validate UTF-8 from that
+        // same array (not the original `Data`) so the parser never holds two independent
+        // full copies of a potentially large document at once.
+        let bytes = [UInt8](data)
+        // `String(bytes:encoding:)` performs strict validation (unlike
         // `String(decoding:as:)`, which silently substitutes invalid sequences), so this is
         // sufficient to make later byte-level scanning of ASCII structural characters safe:
         // continuation/lead bytes of any multi-byte scalar are always >= 0x80, so they can
         // never be mistaken for a structural byte (all of which are ASCII).
-        guard String(data: data, encoding: .utf8) != nil else {
+        guard String(bytes: bytes, encoding: .utf8) != nil else {
             throw LosslessJSONParserError.invalidUTF8
         }
-        var scanner = LosslessJSONByteScanner(bytes: Array(data))
+        var scanner = LosslessJSONByteScanner(bytes: bytes)
         scanner.skipWhitespace()
         let value = try scanner.parseValue()
         scanner.skipWhitespace()
