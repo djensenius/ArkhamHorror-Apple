@@ -13,11 +13,19 @@ import SwiftUI
 /// not be (``AppModel/operationFailure`` surfaces why), the form stays open and
 /// interactive (swipe) dismissal is disabled — `onDisappear` is only a defensive,
 /// idempotent follow-up rather than the sole path that can ever release the operation.
+///
+/// ``AppModel`` may be shared by more than one window (for example on macOS/visionOS),
+/// so its ``AppModel/operation`` reflects whichever sign-in is active anywhere, not
+/// necessarily one this particular form instance started. `onDisappear`'s defensive
+/// cancellation must therefore only ever act on an operation *this* form itself began
+/// (tracked in `didBeginOwnOperation`) — never unconditionally, which could otherwise
+/// cancel an entirely unrelated window's legitimate, still-wanted sign-in.
 struct SignInView: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var email = ""
     @State private var password = ""
+    @State private var didBeginOwnOperation = false
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -81,6 +89,15 @@ struct SignInView: View {
         // swipe that cannot observe or react to a failed reservation.
         .interactiveDismissDisabled(model.operation == .signingIn)
         .onAppear { focusedField = .email }
+        .onChange(of: model.operation) { _, newValue in
+            // Once this form's own sign-in is no longer active — whether it
+            // succeeded, failed, or was cancelled — there is nothing further for
+            // `onDisappear` to defensively cancel, so this must not linger `true` and
+            // later be mistaken for a *different*, subsequently-started operation
+            // (this form's own or another window's) that this form never began.
+            guard newValue != .signingIn else { return }
+            didBeginOwnOperation = false
+        }
         .onChange(of: model.sessionState) { _, newValue in
             guard case .signedIn = newValue else { return }
             password = ""
@@ -91,9 +108,15 @@ struct SignInView: View {
             // Cancel button or the sign-in success path above, both of which already
             // reserve cleanup (or need none). This exists solely to catch dismissal
             // paths this view does not otherwise control (e.g. a parent navigating
-            // away); it must never be the only place cleanup is attempted.
+            // away); it must never be the only place cleanup is attempted, and must
+            // never act unless this exact form instance is the one that began the
+            // operation still active — otherwise, on a shared `AppModel`, dismissing
+            // this window's form could cancel a different window's legitimate,
+            // still-wanted sign-in.
             password = ""
-            model.cancelAuthOperation()
+            if didBeginOwnOperation {
+                model.cancelAuthOperation()
+            }
         }
     }
 
@@ -103,6 +126,7 @@ struct SignInView: View {
 
     private func submit() {
         guard isValid, model.operation == .idle else { return }
+        didBeginOwnOperation = true
         model.signIn(AuthenticationCredentials(email: email, password: password))
     }
 }
@@ -110,13 +134,16 @@ struct SignInView: View {
 /// The registration form: email, username, and password, matching the backend's
 /// `Registration` contract exactly with no additional client-invented fields (such as a
 /// password-confirmation field the backend does not require). The password is local
-/// view state with the same clearing behavior as ``SignInView``.
+/// view state with the same clearing behavior as ``SignInView``, and `onDisappear`'s
+/// defensive cancellation is likewise gated on this form having begun the operation
+/// still active — see the matching comment in ``SignInView``.
 struct RegisterView: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var email = ""
     @State private var username = ""
     @State private var password = ""
+    @State private var didBeginOwnOperation = false
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -183,6 +210,11 @@ struct RegisterView: View {
         // See the matching comment in `SignInView`.
         .interactiveDismissDisabled(model.operation == .registering)
         .onAppear { focusedField = .email }
+        .onChange(of: model.operation) { _, newValue in
+            // See the matching comment in `SignInView`.
+            guard newValue != .registering else { return }
+            didBeginOwnOperation = false
+        }
         .onChange(of: model.sessionState) { _, newValue in
             guard case .signedIn = newValue else { return }
             password = ""
@@ -191,7 +223,9 @@ struct RegisterView: View {
         .onDisappear {
             // Defensive and idempotent only; see the matching comment in `SignInView`.
             password = ""
-            model.cancelAuthOperation()
+            if didBeginOwnOperation {
+                model.cancelAuthOperation()
+            }
         }
     }
 
@@ -203,6 +237,7 @@ struct RegisterView: View {
 
     private func submit() {
         guard isValid, model.operation == .idle else { return }
+        didBeginOwnOperation = true
         model.register(
             RegistrationDetails(email: email, username: username, password: password)
         )
