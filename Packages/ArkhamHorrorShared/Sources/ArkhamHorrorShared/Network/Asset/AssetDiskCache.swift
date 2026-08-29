@@ -147,10 +147,28 @@ actor AssetDiskCache {
     /// not assume that; validating its shape here is what keeps a future
     /// caller (or a value that started life as untrusted input) from
     /// steering a path outside `directory`.
+    ///
+    /// Also independently recomputes the hash from `payload` and rejects a
+    /// mismatch against `metadata.payloadSHA256Hex` before writing
+    /// anything. Content-addressed filenames are only a valid substitute
+    /// for a full integrity check as long as the name always matches the
+    /// bytes stored under it: without this, a caller that ever passed
+    /// mismatched metadata (a future refactor, a bug, or tampered input)
+    /// could publish the wrong bytes under a hash that some other,
+    /// currently-valid generation for this key already legitimately owns —
+    /// overwriting it — and if the metadata commit that follows then
+    /// failed, that overwrite could not be rolled back, breaking the "a
+    /// commit failure never destroys the prior good generation" guarantee
+    /// this type otherwise upholds.
     func set(_ key: AssetCacheKey, payload: Data, metadata: AssetCacheMetadata) throws {
         recoverOrphansIfNeeded()
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
+        }
+        guard AssetPayloadHasher.sha256Hex(payload) == metadata.payloadSHA256Hex else {
+            throw AssetError.cachePersistenceFailed(
+                "payloadSHA256Hex does not match the actual payload bytes"
+            )
         }
         let newPayloadURL = payloadURL(for: key, contentHash: metadata.payloadSHA256Hex)
         // Content-addressed payloads are immutable *by contract*, but a
