@@ -10,9 +10,12 @@
     /// GameController delivers connect/disconnect notifications and button
     /// handlers on `GCController.current`'s `handlerQueue`, which defaults to
     /// the main queue; this type never reassigns it, so every callback below
-    /// is already effectively main-actor-isolated in practice.
-    /// ``MainActor.assumeIsolated`` documents and enforces that assumption at
-    /// the one point (``GCControllerSource``) it is actually relied upon.
+    /// is expected to already be main-actor-isolated in practice. Rather than
+    /// asserting that with ``MainActor.assumeIsolated`` (which would trap if
+    /// that assumption is ever violated, e.g. by a future refactor changing
+    /// `handlerQueue`), every callback explicitly hops to the main actor via
+    /// `Task { @MainActor in ... }`, which is safe regardless of the calling
+    /// context and keeps actor isolation sound under Swift 6.
     @MainActor
     final class GameControllerDiscovery: ControllerDiscovering {
         private var onConnect: ((any ControllerInputSource) -> Void)?
@@ -31,10 +34,8 @@
             connectToken = NotificationCenter.default.addObserver(
                 forName: .GCControllerDidConnect, object: nil, queue: .main
             ) { [weak self] notification in
-                // `queue: .main` guarantees this runs on the main thread; this
-                // adapter never reassigns that, so the assumption is safe.
                 guard let controller = notification.object as? GCController else { return }
-                MainActor.assumeIsolated {
+                Task { @MainActor in
                     self?.wrap(controller)
                 }
             }
@@ -42,7 +43,7 @@
                 forName: .GCControllerDidDisconnect, object: nil, queue: .main
             ) { [weak self] notification in
                 guard let controller = notification.object as? GCController else { return }
-                MainActor.assumeIsolated {
+                Task { @MainActor in
                     self?.unwrap(controller)
                 }
             }
@@ -134,7 +135,7 @@
 
         private func bind(_ button: GCControllerButtonInput?, to control: ControllerControl) {
             button?.pressedChangedHandler = { [weak self] _, _, pressed in
-                MainActor.assumeIsolated {
+                Task { @MainActor in
                     self?.onButtonEvent?(control, pressed ? .press : .release)
                 }
             }

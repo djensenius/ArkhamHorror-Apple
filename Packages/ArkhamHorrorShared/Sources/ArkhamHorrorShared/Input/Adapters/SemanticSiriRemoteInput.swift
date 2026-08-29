@@ -17,7 +17,8 @@
         func body(content: Content) -> some View {
             content
                 .onMoveCommand { direction in
-                    route(.siriRemote(SiriRemoteControl(direction)))
+                    guard let control = SiriRemoteControl(direction) else { return }
+                    route(.siriRemote(control))
                 }
                 .onExitCommand {
                     // The Menu button is reserved regardless of `table`; see
@@ -37,13 +38,17 @@
     }
 
     extension SiriRemoteControl {
-        init(_ direction: MoveCommandDirection) {
+        /// Fails for any `MoveCommandDirection` this vocabulary does not
+        /// recognize, so an unrecognized direction is safely ignored rather
+        /// than guessing a focus move — preserving the "unknown input is
+        /// safely ignored" invariant.
+        init?(_ direction: MoveCommandDirection) {
             switch direction {
             case .up: self = .swipeUp
             case .down: self = .swipeDown
             case .left: self = .swipeLeft
             case .right: self = .swipeRight
-            @unknown default: self = .swipeUp
+            @unknown default: return nil
             }
         }
     }
