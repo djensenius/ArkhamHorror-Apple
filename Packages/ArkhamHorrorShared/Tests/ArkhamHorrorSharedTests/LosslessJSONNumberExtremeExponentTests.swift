@@ -160,9 +160,7 @@ struct LosslessJSONNumberExtremeExponentTests {
         // grapheme clusters on every call, making the whole trim O(n^2) in the exponent's
         // own digit count. The reviewer measured 160,000 leading zeros at ~28.85s pre-fix;
         // this single decode of a comparably sized exponent is a structural correctness
-        // assertion (exact decoded value), not a timing one -- a regression back to
-        // quadratic behavior would make this one decode (and the whole suite) unusably
-        // slow rather than silently pass.
+        // assertion (exact decoded value), not a timing one.
         let manyZeros = String(repeating: "0", count: 200_000)
         let literal = "1e\(manyZeros)1"
         let decoded = try ContractJSON.decode(JSONNumber.self, from: Data(literal.utf8))
@@ -171,6 +169,20 @@ struct LosslessJSONNumberExtremeExponentTests {
         let equivalent = try ContractJSON.decode(JSONNumber.self, from: Data("1e1".utf8))
         #expect(decoded == equivalent)
         #expect(decoded.hashValue == equivalent.hashValue)
+
+        // The assertions above only *report* slowness; a reintroduced quadratic loop would
+        // still eventually finish and pass them (the reviewer measured ~45-54s at this same
+        // size, not a crash). To give this test actual mutation-detection power, also run
+        // the identical parse in a genuinely separate, killable subprocess under a hard,
+        // very generous deadline: the fixed (linear) implementation finishes in well under
+        // a second even accounting for process-launch overhead, while the old quadratic
+        // loop at this size needs ~45-54s -- more than double the deadline below, with a
+        // wide non-flaky margin on both sides.
+        try SubprocessDeadlineGuard.runFiltered(
+            victimFilter: "quadraticGuardVictimExponentParse",
+            additionalEnvironment: ["QUADRATIC_GUARD_EXPONENT_ZERO_COUNT": "200000"],
+            deadlineSeconds: 20
+        )
     }
 
     @Test("An all-zero exponent of many digits still normalizes to a plain zero exponent")
@@ -201,6 +213,20 @@ struct LosslessJSONNumberExtremeExponentTests {
         #expect(decoded == equivalent)
         #expect(decoded.hashValue == equivalent.hashValue)
         #expect(!decoded.isZero)
+
+        // As above: the old `Array.removeFirst()` trim is only ~O(n) *slower*, not
+        // divergent, at this modest size (the reviewer measured ~0.36s at 200,000 zeros --
+        // fast enough to still pass an in-process timing check silently). Use a much larger
+        // input, still safely under the 16 MiB document cap (~2.9 MB here), in a killable
+        // subprocess: the fixed (linear) implementation stays well under a second, while the
+        // quadratic `removeFirst()` loop scales with the *square* of the digit count and
+        // would need well over a minute -- comfortably exceeding the deadline below by a
+        // wide, non-flaky margin.
+        try SubprocessDeadlineGuard.runFiltered(
+            victimFilter: "quadraticGuardVictimCoefficientParse",
+            additionalEnvironment: ["QUADRATIC_GUARD_COEFFICIENT_ZERO_COUNT": "3000000"],
+            deadlineSeconds: 20
+        )
     }
 
     @Test("Zero and negative zero still normalize correctly after the coefficient-trim fix")
@@ -218,5 +244,50 @@ struct LosslessJSONNumberExtremeExponentTests {
         #expect(negativeZero.isZero)
         #expect(plainZero == .integer(0))
         #expect(negativeZero == .integer(0))
+    }
+
+    // MARK: - Round 7: subprocess victims backing the deadline guards above
+
+    // These two are never invoked directly by the full-suite run itself: swift-testing
+    // discovers and would otherwise execute them too, so each is a no-op (instant pass)
+    // unless its corresponding environment variable is present, which only
+    // `SubprocessDeadlineGuard.runFiltered` sets, and only in the dedicated child process it
+    // launches. Their function names double as the `--filter` argument that isolates them
+    // from the rest of the suite in that child process, so each name must stay unique.
+
+    @Test("Quadratic-guard victim: exponent leading-zero parse (subprocess-only)")
+    func quadraticGuardVictimExponentParse() throws {
+        guard
+            let raw = ProcessInfo.processInfo.environment["QUADRATIC_GUARD_EXPONENT_ZERO_COUNT"],
+            let zeroCount = Int(raw)
+        else {
+            return
+        }
+        let manyZeros = String(repeating: "0", count: zeroCount)
+        let literal = "1e\(manyZeros)1"
+        let decoded = try ContractJSON.decode(JSONNumber.self, from: Data(literal.utf8))
+        #expect(decoded.exponent.asInt == 1)
+        let equivalent = try ContractJSON.decode(JSONNumber.self, from: Data("1e1".utf8))
+        #expect(decoded == equivalent)
+    }
+
+    @Test("Quadratic-guard victim: coefficient leading-zero parse (subprocess-only)")
+    func quadraticGuardVictimCoefficientParse() throws {
+        guard
+            let raw = ProcessInfo.processInfo
+            .environment["QUADRATIC_GUARD_COEFFICIENT_ZERO_COUNT"],
+            let zeroCount = Int(raw)
+        else {
+            return
+        }
+        let manyZeros = String(repeating: "0", count: zeroCount)
+        let literal = "0.\(manyZeros)1"
+        let decoded = try ContractJSON.decode(JSONNumber.self, from: Data(literal.utf8))
+        let equivalent = try ContractJSON.decode(
+            JSONNumber.self,
+            from: Data("1e-\(zeroCount + 1)".utf8)
+        )
+        #expect(decoded == equivalent)
+        #expect(!decoded.isZero)
     }
 }
