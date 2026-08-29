@@ -30,7 +30,12 @@ struct BoardScenarioHeaderView: View {
                         systemImage: "theatermask.and.paintbrush",
                         value: BoardDisplayFormatting.humanizeTag(counters.phase.rawValue)
                     )
-                    BoardStatBadge(systemImage: "drop.fill", value: "\(counters.totalClues) clues")
+                    BoardStatBadge(
+                        systemImage: "drop.fill",
+                        value: BoardDisplayFormatting.pluralized(
+                            counters.totalClues, singular: "clue", plural: "clues"
+                        )
+                    )
                     BoardStatBadge(systemImage: "flame.fill", value: "\(counters.totalDoom) doom")
                     if counters.pendingPromptCount > 0 {
                         BoardStatBadge(

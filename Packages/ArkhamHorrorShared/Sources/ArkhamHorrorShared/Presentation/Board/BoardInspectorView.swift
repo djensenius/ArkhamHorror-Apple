@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The resolved entity content for whichever ``SemanticFocusID`` is currently inspected,
-/// looked up from the live ``BoardProjection`` by a single linear scan (never repeated
-/// decoding or an unstable view-generated identity).
+/// looked up from the live ``BoardProjection`` by a small, bounded sequence of linear
+/// `first(where:)` scans across its entity arrays — never repeated decoding, and never an
+/// unstable view-generated identity.
 enum BoardInspectorContent {
     case scenario
     case chaosBag(BoardChaosBagSummary)

@@ -40,8 +40,14 @@ enum BoardAccessibility {
             parts.append(step)
         }
         parts.append("Game \(counters.gameStateSummary)")
-        parts.append("\(counters.totalClues) total clues, \(counters.totalDoom) total doom")
-        parts.append("Encounter deck \(counters.encounterDeckSize) cards")
+        let cluesPhrase = BoardDisplayFormatting.pluralized(
+            counters.totalClues, singular: "total clue", plural: "total clues"
+        )
+        parts.append("\(cluesPhrase), \(counters.totalDoom) total doom")
+        let encounterDeckPhrase = BoardDisplayFormatting.pluralized(
+            counters.encounterDeckSize, singular: "card", plural: "cards"
+        )
+        parts.append("Encounter deck \(encounterDeckPhrase)")
         if counters.pendingPromptCount > 0 {
             let promptPhrase = BoardDisplayFormatting.pluralized(
                 counters.pendingPromptCount, singular: "pending prompt", plural: "pending prompts"
