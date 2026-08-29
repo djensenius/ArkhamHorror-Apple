@@ -67,7 +67,11 @@ extension ServerProfile {
     /// - `displayName` must not be empty or whitespace-only; surrounding whitespace
     ///   is trimmed.
     /// - `rawURL` must not be empty. Only `https` and `http` schemes are accepted.
-    ///   Both are permitted for self-hosted and local servers.
+    ///   `http` is accepted only for the local loopback interface (`localhost`, a
+    ///   dotted-decimal `127.0.0.0/8` address, or `::1`); every other host — including
+    ///   a LAN address, a public host, or a `localhost` lookalike/subdomain — must use
+    ///   `https`, since credentials and tokens are never sent over plain HTTP to
+    ///   anything but the local device.
     /// - A non-empty host is required.
     /// - Credentials (`user@host`, `user:pass@host`), fragments, and query strings
     ///   are rejected.
@@ -105,6 +109,21 @@ extension ServerProfile {
             throw ServerProfileError.emptyDisplayName
         }
         return ServerProfile(id: id, displayName: trimmed, baseURL: baseURL, kind: kind)
+    }
+
+    /// A full, user-facing summary of ``baseURL`` (scheme, host, non-default port, and
+    /// any path prefix) suitable for server-list rows.
+    ///
+    /// Deliberately more than just the host: profiles that differ only by port, path,
+    /// or scheme (for example two loopback profiles on different ports, or the same
+    /// host with and without a path prefix) must remain visually distinguishable so a
+    /// user can confirm exactly which endpoint they are selecting or removing.
+    var endpointSummary: String {
+        let summary = baseURL.absoluteString
+        guard summary.hasSuffix("/"), baseURL.path.isEmpty || baseURL.path == "/" else {
+            return summary
+        }
+        return String(summary.dropLast())
     }
 }
 
@@ -226,126 +245,5 @@ extension ServerProfile: Decodable {
             }
             self.init(id: decodedID, displayName: trimmedName, baseURL: url, kind: .custom)
         }
-    }
-}
-
-// MARK: - URL normalisation helpers
-
-private extension ServerProfile {
-    /// Validates, normalizes, and returns a base URL from raw user input.
-    ///
-    /// `apiBasePath` defaults to `ContractPin.current.expectedApiBasePath` so that
-    /// validation stays in sync with the compiled-in contract pin rather than hard-coding
-    /// a specific version string.
-    static func normalizedBaseURL(
-        _ rawValue: String,
-        apiBasePath: String = ContractPin.current.expectedApiBasePath
-    ) throws -> URL {
-        let withScheme = try withExplicitScheme(rawValue)
-        guard var components = URLComponents(string: withScheme) else {
-            throw ServerProfileError.malformedURL
-        }
-        try assertNoForbiddenComponents(components)
-        let (scheme, host) = try validatedSchemeAndHost(components)
-        guard let schemeSeparator = withScheme.range(of: "://") else {
-            throw ServerProfileError.malformedURL
-        }
-        let authority = withScheme[schemeSeparator.upperBound...].prefix { !"/?#".contains($0) }
-        guard !authority.hasSuffix(":") else {
-            throw ServerProfileError.malformedURL
-        }
-        let portRange = (components as NSURLComponents).rangeOfPort
-        if portRange.location != NSNotFound {
-            guard let port = components.port, (1 ... 65535).contains(port) else {
-                throw ServerProfileError.malformedURL
-            }
-        }
-        components.scheme = scheme
-        components.host = host
-        components.user = nil
-        components.password = nil
-        components.fragment = nil
-        components.query = nil
-        components.path = try normalizedPath(components.path, apiBasePath: apiBasePath)
-        guard let url = components.url else {
-            throw ServerProfileError.malformedURL
-        }
-        return url
-    }
-
-    /// Trims whitespace, rejects credentials in scheme-less authority, and prepends
-    /// `https://` when no explicit scheme is present.
-    static func withExplicitScheme(_ rawValue: String) throws -> String {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            throw ServerProfileError.emptyURL
-        }
-        let hasExplicitScheme = trimmed.range(
-            of: #"^[A-Za-z][A-Za-z0-9+.-]*://"#,
-            options: .regularExpression
-        ) != nil
-        let lowercased = trimmed.lowercased()
-        let hasMalformedSupportedScheme =
-            !hasExplicitScheme &&
-            (lowercased.hasPrefix("http:") || lowercased.hasPrefix("https:"))
-        if hasMalformedSupportedScheme {
-            throw ServerProfileError.malformedURL
-        }
-        if !hasExplicitScheme {
-            let authority = trimmed.prefix { !"/?#".contains($0) }
-            if authority.contains("@") {
-                throw ServerProfileError.credentialsNotAllowed
-            }
-        }
-        return hasExplicitScheme ? trimmed : "https://\(trimmed)"
-    }
-
-    /// Throws if `components` contains any fragment, query, or credential fields.
-    static func assertNoForbiddenComponents(_ components: URLComponents) throws {
-        guard components.fragment == nil else {
-            throw ServerProfileError.fragmentNotAllowed
-        }
-        guard components.query == nil else {
-            throw ServerProfileError.queryNotAllowed
-        }
-        guard components.user == nil, components.password == nil else {
-            throw ServerProfileError.credentialsNotAllowed
-        }
-    }
-
-    /// Returns the lowercased scheme and host, throwing for unsupported or absent values.
-    static func validatedSchemeAndHost(
-        _ components: URLComponents
-    ) throws -> (scheme: String, host: String) {
-        let scheme = components.scheme?.lowercased() ?? ""
-        guard scheme == "https" || scheme == "http" else {
-            throw ServerProfileError.unsupportedScheme
-        }
-        guard let host = components.host, !host.isEmpty else {
-            throw ServerProfileError.missingHost
-        }
-        return (scheme, host.lowercased())
-    }
-
-    /// Strips trailing slashes and rejects paths that contain the current API base-path
-    /// segment sequence (derived from ``ContractPin/expectedApiBasePath``), including
-    /// mid-path occurrences such as `/proxy/<basePath>/extra`.
-    ///
-    /// Similar-but-distinct segments such as `/api/v10` (when the base path is `/api/v1`)
-    /// are allowed because the trailing-slash/hasSuffix check enforces segment boundaries.
-    static func normalizedPath(_ rawPath: String, apiBasePath: String) throws -> String {
-        var path = rawPath
-        while path.count > 1, path.hasSuffix("/") {
-            path.removeLast()
-        }
-        if path == "/" {
-            path = ""
-        }
-        let lower = path.lowercased()
-        let lowerPrefix = apiBasePath.lowercased()
-        if lower.contains(lowerPrefix + "/") || lower.hasSuffix(lowerPrefix) {
-            throw ServerProfileError.apiPrefixAlreadyPresent
-        }
-        return path
     }
 }

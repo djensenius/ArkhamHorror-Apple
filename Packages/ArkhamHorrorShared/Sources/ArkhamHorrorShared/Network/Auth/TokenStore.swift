@@ -18,4 +18,12 @@ protocol TokenStore: Sendable {
     func save(_ token: String, for profileID: UUID) async throws
     /// Removes any stored token for `profileID`. Removing an absent token is not an error.
     func deleteToken(for profileID: UUID) async throws
+    /// Removes every token this store holds, across all profile IDs, scoped only to
+    /// this store's own backing service/namespace.
+    ///
+    /// Used solely for explicit, user-confirmed recovery from profile-*list*
+    /// corruption (as opposed to selection-only corruption), where the set of
+    /// previously known profile IDs can no longer be trusted enough to delete them
+    /// individually. An empty store (nothing to remove) is not an error.
+    func deleteAllTokens() async throws
 }
