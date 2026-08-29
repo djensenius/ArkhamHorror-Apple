@@ -17,7 +17,10 @@ let package = Package(
         ),
     ],
     targets: [
-        .target(name: "ArkhamHorrorShared"),
+        .target(
+            name: "ArkhamHorrorShared",
+            resources: [.copy("Resources")]
+        ),
         .testTarget(
             name: "ArkhamHorrorSharedTests",
             dependencies: ["ArkhamHorrorShared"],
