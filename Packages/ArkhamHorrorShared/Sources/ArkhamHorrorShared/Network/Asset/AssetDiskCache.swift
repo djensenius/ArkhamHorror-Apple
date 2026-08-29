@@ -179,10 +179,22 @@ actor AssetDiskCache {
         let tempURL = finalURL.appendingPathExtension("tmp")
         try? fileManager.removeItem(at: tempURL)
         try data.write(to: tempURL, options: [])
-        if fileManager.fileExists(atPath: finalURL.path) {
-            _ = try fileManager.replaceItemAt(finalURL, withItemAt: tempURL)
-        } else {
-            try fileManager.moveItem(at: tempURL, to: finalURL)
+        do {
+            if fileManager.fileExists(atPath: finalURL.path) {
+                _ = try fileManager.replaceItemAt(finalURL, withItemAt: tempURL)
+            } else {
+                try fileManager.moveItem(at: tempURL, to: finalURL)
+            }
+        } catch {
+            // The rename/replace step is the only one that can fail after
+            // the temp file already exists on disk. Without this cleanup,
+            // a failure here would leave `tempURL` behind for the rest of
+            // this cache instance's lifetime: `recoverOrphansIfNeeded()`
+            // only sweeps `.tmp` files once, on its very first call, so a
+            // temp file created by a *later* failed write would otherwise
+            // never be removed until the process restarts.
+            try? fileManager.removeItem(at: tempURL)
+            throw error
         }
     }
 

@@ -42,6 +42,43 @@ extension AssetDiskCacheTests {
     }
 
     @Test(
+        """
+        A failed rename during atomicWrite removes the leftover .tmp file immediately, \
+        rather than leaving it for a future process restart's one-time orphan sweep
+        """
+    )
+    func failedRenameCleansUpTempFileImmediately() async throws {
+        try await withScratchDirectory { directory in
+            let failingFileManager = FailingFileManager()
+            failingFileManager.failPathSuffixes = [".bin"]
+            let cache = try AssetDiskCache(
+                directory: directory,
+                limits: smallLimits(),
+                fileManager: failingFileManager
+            )
+            let cacheKey = try key("01001")
+            let payload = Data([1, 2, 3])
+
+            await #expect(throws: AssetError.self) {
+                try await cache.set(
+                    cacheKey,
+                    payload: payload,
+                    metadata: self.metadata(for: cacheKey, payload: payload)
+                )
+            }
+
+            let tempURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin.tmp")
+            #expect(
+                !FileManager.default.fileExists(atPath: tempURL.path),
+                """
+                The temp file must be removed as soon as the rename fails, not left for a \
+                future restart's orphan sweep (which only runs once per cache instance)
+                """
+            )
+        }
+    }
+
+    @Test(
         "A restart (fresh actor over the same directory) still serves a previously stored entry"
     )
     func restartPersistsEntries() async throws {
