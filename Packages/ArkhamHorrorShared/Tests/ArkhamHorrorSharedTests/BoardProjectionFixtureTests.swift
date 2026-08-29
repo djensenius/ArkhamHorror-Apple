@@ -26,21 +26,20 @@ struct BoardProjectionFixtureTests {
         return BoardProjectionBuilder.makeProjection(from: envelope.game)
     }
 
+    /// Thrown by `webSocketProjection()` when the fixture unexpectedly does not decode to
+    /// a `.snapshot` `GameUpdate` — fails the calling test at the actual mismatch point
+    /// (via `try`/`#require`) rather than cascading into a less-informative assertion
+    /// failure against an unrelated fallback projection.
+    private struct UnexpectedGameUpdateShape: Error {}
+
     private func webSocketProjection() throws -> BoardProjection {
         let update = try ContractJSON.decode(
             BoardSnapshotUpdate.self, from: fixtureData(named: "game-update")
         )
         guard case let .snapshot(snapshot) = update else {
-            Issue.record("Expected a .snapshot GameUpdate")
-            return BoardProjectionBuilder.makeProjection(from: envelopeFallback())
+            throw UnexpectedGameUpdateShape()
         }
         return BoardProjectionBuilder.makeProjection(from: snapshot)
-    }
-
-    /// Only reached if `webSocketProjection()`'s own `Issue.record` above already failed
-    /// the test; provides a same-typed fallback value so that helper can still return.
-    private func envelopeFallback() -> PublicGameSnapshot {
-        BoardTestFixtures.snapshot()
     }
 
     @Test("The REST and WebSocket fixtures build an equal BoardProjection")

@@ -100,12 +100,23 @@ enum BoardDisplayFormatting {
     /// A display-only summary of `PublicGame.gameState`.
     static func gameStateSummary(_ state: GameState) -> String {
         switch state {
-        case let .pending(players): "Waiting for \(players.count) player(s) to join"
-        case let .chooseDecks(players): "Waiting for \(players.count) player(s) to choose a deck"
+        case let .pending(players):
+            "Waiting for \(pluralized(players.count, singular: "player", plural: "players")) " +
+                "to join"
+        case let .chooseDecks(players):
+            "Waiting for \(pluralized(players.count, singular: "player", plural: "players")) " +
+                "to choose a deck"
         case .active: "Active"
         case .over: "Over"
         case .unknown: unsupportedContentNotice
         }
+    }
+
+    /// A natural-language count-plus-noun phrase (for example "1 player"/"2 players"),
+    /// never a "(s)" placeholder — both for on-screen text and for VoiceOver, which reads
+    /// a literal "(s)" suffix awkwardly aloud.
+    static func pluralized(_ count: Int, singular: String, plural: String) -> String {
+        "\(count) \(count == 1 ? singular : plural)"
     }
 
     /// A display-only summary of a `Placement`, showing only its closed wire tag

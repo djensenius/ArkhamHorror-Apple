@@ -43,7 +43,10 @@ enum BoardAccessibility {
         parts.append("\(counters.totalClues) total clues, \(counters.totalDoom) total doom")
         parts.append("Encounter deck \(counters.encounterDeckSize) cards")
         if counters.pendingPromptCount > 0 {
-            parts.append("\(counters.pendingPromptCount) pending prompt(s)")
+            let promptPhrase = BoardDisplayFormatting.pluralized(
+                counters.pendingPromptCount, singular: "pending prompt", plural: "pending prompts"
+            )
+            parts.append(promptPhrase)
         }
         let entities = counters.entityCounters
         parts.append(

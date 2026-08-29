@@ -35,7 +35,9 @@ struct BoardScenarioHeaderView: View {
                     if counters.pendingPromptCount > 0 {
                         BoardStatBadge(
                             systemImage: "exclamationmark.bubble.fill",
-                            value: "\(counters.pendingPromptCount) prompt(s)"
+                            value: BoardDisplayFormatting.pluralized(
+                                counters.pendingPromptCount, singular: "prompt", plural: "prompts"
+                            )
                         )
                     }
                 }
