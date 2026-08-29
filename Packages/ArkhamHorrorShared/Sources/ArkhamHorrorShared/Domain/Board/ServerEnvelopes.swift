@@ -6,7 +6,7 @@ struct GetGameEnvelope: Sendable {
     let playerID: PlayerID?
     let multiplayerMode: MultiplayerVariant
     let game: PublicGameSnapshot
-    let eventID: UUID?
+    let eventID: EventCorrelationID?
 }
 
 extension GetGameEnvelope: Equatable, Hashable {}
@@ -30,7 +30,7 @@ extension GetGameEnvelope: Codable {
         multiplayerMode = try container.decode(MultiplayerVariant.self, forKey: .multiplayerMode)
         game = try container.decode(PublicGameSnapshot.self, forKey: .game)
         eventID = try decodeRequiredNullable(
-            UUID.self,
+            EventCorrelationID.self,
             from: container,
             forKey: .eventID,
             codingPath: decoder.codingPath + [CodingKeys.eventID]

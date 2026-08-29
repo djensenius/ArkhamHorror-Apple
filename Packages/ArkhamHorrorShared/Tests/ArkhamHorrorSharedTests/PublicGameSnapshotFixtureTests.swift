@@ -48,6 +48,28 @@ struct PublicGameSnapshotFixtureTests {
         #expect(getGame.game.id.rawValue.uuidString == "00000000-0000-0000-0000-000000000003")
     }
 
+    @Test("GetGameEnvelope's eventId re-encodes lowercase, matching every other UUID position")
+    func getGameEnvelopeEventIDEncodesLowercase() throws {
+        // The real production fixture's eventId happens to be null; a null value can
+        // never carry a case-sensitivity bug (there is no string to be the wrong case),
+        // so this synthesizes a present, hex-letter-bearing eventId to actually exercise
+        // GetGameEnvelope.encode(to:)'s eventID position specifically.
+        let eventIDString = "419015cc-abb7-41d0-9795-7ec1d981955f"
+        var fixture = try #require(
+            String(data: fixtureData(named: "get-game"), encoding: .utf8)
+        )
+        #expect(fixture.contains("\"eventId\": null"))
+        fixture = fixture.replacingOccurrences(
+            of: "\"eventId\": null", with: "\"eventId\": \"\(eventIDString)\""
+        )
+        let envelope = try ContractJSON.decode(GetGameEnvelope.self, from: Data(fixture.utf8))
+        #expect(envelope.eventID?.rawValue.uuidString.lowercased() == eventIDString)
+        let reencoded = try ContractJSON.encode(envelope)
+        let json = try #require(String(data: reencoded, encoding: .utf8))
+        #expect(json.contains(eventIDString))
+        #expect(!json.contains(eventIDString.uppercased()))
+    }
+
     @Test("The snapshot's nonempty locations/investigators/acts/agendas maps decode")
     func nonemptyEntityMapsDecode() throws {
         let game = try loadGetGame().game

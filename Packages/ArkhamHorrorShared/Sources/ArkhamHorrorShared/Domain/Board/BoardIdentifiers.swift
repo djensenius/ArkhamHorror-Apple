@@ -167,6 +167,12 @@ enum ChaosTokenIDTag: Sendable {}
 /// A physical chaos token instance's id (UUID), `Arkham.ChaosToken.Types.ChaosToken`.
 typealias ChaosTokenID = Identifier<ChaosTokenIDTag>
 
+/// Phantom tag distinguishing ``EventCorrelationID``.
+enum EventCorrelationIDTag: Sendable {}
+/// `GetGame.eventId`: a REST-response correlation id, distinct from ``EventID`` (an
+/// in-game `Event` entity's own id).
+typealias EventCorrelationID = Identifier<EventCorrelationIDTag>
+
 /// Phantom tag distinguishing ``InvestigatorID``.
 enum InvestigatorIDTag: Sendable {}
 /// An investigator's `InvestigatorId` (`CardCode`-backed), `Arkham/Id.hs`.
