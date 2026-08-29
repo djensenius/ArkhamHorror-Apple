@@ -1,7 +1,7 @@
 /// Compiled-in contract metadata pinning this client build to a specific backend revision.
 ///
-/// - Backend PR: djensenius/ArkhamHorror#23
-/// - Backend commit: `2bf2935cde121498435744a06fcf63502a80ae43`
+/// - Backend PRs: djensenius/ArkhamHorror#20, #22, #24
+/// - Backend commit: `6a1befbd7b01b4a0f763e41260ae4dd1a5d14c27`
 struct ContractPin: Sendable {
     /// The backend git commit this client was built against.
     let backendCommit: String
@@ -24,12 +24,12 @@ struct ContractPin: Sendable {
 extension ContractPin {
     /// The canonical pin compiled into this client build.
     ///
-    /// Pinned to backend commit `2bf2935` (PR #23), which established schema `0.1.11`
-    /// and the `GET /api/v1/capabilities` contract.
+    /// Pinned to backend commit `6a1befbd7` (PRs #20, #22, #24), which documented the
+    /// card catalog, deck, and game-lifecycle contracts and advanced schema to `0.1.12`.
     static let current = ContractPin(
-        backendCommit: "2bf2935cde121498435744a06fcf63502a80ae43",
-        supportedSchemaRevision: .literal(major: 0, minor: 1, patch: 11),
-        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 11),
+        backendCommit: "6a1befbd7b01b4a0f763e41260ae4dd1a5d14c27",
+        supportedSchemaRevision: .literal(major: 0, minor: 1, patch: 12),
+        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 12),
         expectedApiBasePath: "/api/v1",
         sourceNativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 0)
     )

@@ -35,7 +35,7 @@ struct CapabilityProbeTests {
             Bundle.module.url(
                 forResource: "capabilities",
                 withExtension: "json",
-                subdirectory: "Fixtures"
+                subdirectory: "Fixtures/Contract"
             )
         )
         return try Data(contentsOf: url)
@@ -62,7 +62,7 @@ struct CapabilityProbeTests {
     func compatibleCapabilitiesForwarded() async throws {
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
