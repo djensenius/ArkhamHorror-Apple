@@ -16,7 +16,7 @@ extension AssetDiskCache {
     /// ``AssetDiskCache/Recovery``, and eviction that need a typed
     /// deletion failure, since those are the paths where the caller must
     /// track a tombstone.
-    func get(_ key: AssetCacheKey) -> CachedAsset? {
+    func get(_ key: AssetCacheKey) async -> CachedAsset? {
         recoverOrphansIfNeeded()
         // Fail-closed checks first, before any other work: a whole-cache
         // "disk reads disabled" marker (an unenumerable `removeAll()`
@@ -38,6 +38,17 @@ extension AssetDiskCache {
 
         metadata.accessSequence = accessSequenceAllocator.allocate()
         try? persistMetadata(metadata, name: metadataName)
+        // Test-only: lets a test deterministically interleave another
+        // operation (e.g. `AssetCacheService.evictAll()`) between this
+        // read having already validated a hit in-memory and this call
+        // actually returning it to the caller — reproducing the exact
+        // race `AssetCacheService.unchanged(since:for:)` exists to reject,
+        // without depending on incidental actor-scheduling order. `nil` in
+        // every production path and every test that does not explicitly
+        // install it.
+        if let pause = testOnlyPauseBeforeReturningHit {
+            await pause()
+        }
         return CachedAsset(payload: payload, metadata: metadata)
     }
 

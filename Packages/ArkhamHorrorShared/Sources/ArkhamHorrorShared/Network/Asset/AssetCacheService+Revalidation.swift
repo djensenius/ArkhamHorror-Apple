@@ -109,9 +109,23 @@ extension AssetCacheService {
                 candidates: candidates
             )
         }
-        guard let onDisk = await diskCache.get(cacheKey) else {
+        // Snapshotted *before* the disk read itself (not issued as a
+        // token yet) -- see ``snapshotAuthority(for:)``'s doc comment on
+        // `asset(for:)`'s identical disk-hit branch for why this must not
+        // itself consume an issuance number: a disk miss, or a hit that
+        // loses the race checked by ``unchanged(since:for:)``, must never
+        // supersede whatever fetch/revalidation is legitimately already in
+        // flight for this key. A disk miss and a disk hit whose read lost
+        // that race are treated identically: there is no reliable,
+        // currently-authoritative cached entry left to revalidate against,
+        // so both report the same typed error rather than a stale hit
+        // being silently promoted into a conditional request.
+        let snapshot = snapshotAuthority(for: cacheKey)
+        guard let onDisk = await diskCache.get(cacheKey), unchanged(since: snapshot, for: cacheKey)
+        else {
             throw AssetError.staleConditionalResponse
         }
+        let token = issueToken(for: cacheKey)
         // A disk-loaded body is never trusted as the basis for a
         // conditional request until it has passed the exact same current
         // format/magic-byte/dimension/limits/decode validation as a disk
@@ -121,15 +135,7 @@ extension AssetCacheService {
         // or stale-limits body could be silently "touched" (its
         // `accessSequence` refreshed) or re-cached in memory the moment
         // the server happens to answer with 304, never re-validated
-        // against this process's current contract at all. Issues a fresh
-        // token for this exact disk-hit-revalidation attempt, exactly
-        // like ``asset(for:)``'s own disk-hit branch, so the suspension
-        // inside `revalidateDiskHit` (a full platform decode) is itself
-        // gated: a concurrent `evictAll()` or a more-recently-issued
-        // operation for this key that already concluded while that
-        // decode was running can never be resurrected by caching this now-
-        // stale read into memory.
-        let token = issueToken(for: cacheKey)
+        // against this process's current contract at all.
         guard let validated = try await revalidateDiskHit(
             onDisk,
             key: key,

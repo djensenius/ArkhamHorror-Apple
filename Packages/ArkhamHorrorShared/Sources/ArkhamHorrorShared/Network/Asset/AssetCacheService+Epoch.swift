@@ -105,4 +105,39 @@ extension AssetCacheService {
         keyLatestToken.removeAll()
         keyIssuance.removeAll()
     }
+
+    /// A read-only snapshot of `key`'s current authority state, taken
+    /// immediately *before* a disk read whose result must not be trusted
+    /// if that authority changes while the read is suspended -- see
+    /// ``unchanged(since:for:)``. Deliberately does **not** call
+    /// ``issueToken(for:)``: a disk-hit lookup that turns out to be a
+    /// miss, or whose read loses the race checked by
+    /// ``unchanged(since:for:)``, must never have consumed an issuance
+    /// number or clobbered whatever fetch is (or is about to be) legitimately
+    /// in flight for this key -- unlike a snapshot, issuing a token is
+    /// never a no-op: it unconditionally supersedes the current
+    /// authoritative token for `key`, which would wrongly invalidate an
+    /// already-in-flight coalesced fetch's own token merely because a
+    /// second, ultimately-coalescing caller also happened to pass through
+    /// this same disk-hit code path.
+    func snapshotAuthority(for key: AssetCacheKey) -> (token: CacheToken?, generation: Int) {
+        (keyLatestToken[key], globalGeneration)
+    }
+
+    /// `true` only if `key`'s authority state is *exactly* what
+    /// ``snapshotAuthority(for:)`` observed it to be, immediately before a
+    /// disk read this call now wants to trust the result of. A mismatch
+    /// means some other operation -- a more-recently-issued fetch or
+    /// revalidation for this exact key, or a cache-wide ``evictAll()`` --
+    /// became authoritative for this key while the read was suspended, so
+    /// the read's result (even if it returned a value) must not be
+    /// promoted into memory or used as the basis for a conditional
+    /// request: see ``asset(for:)``'s and ``revalidate(for:)``'s own
+    /// disk-hit branches.
+    func unchanged(
+        since snapshot: (token: CacheToken?, generation: Int),
+        for key: AssetCacheKey
+    ) -> Bool {
+        keyLatestToken[key] == snapshot.token && globalGeneration == snapshot.generation
+    }
 }
