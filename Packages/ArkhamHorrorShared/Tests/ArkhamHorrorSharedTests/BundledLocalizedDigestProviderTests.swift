@@ -83,11 +83,19 @@ struct BundledLocalizedDigestProviderTests {
         #expect(shared.configurationError == nil)
     }
 
-    /// Builds a loose, scratch-directory `Bundle` (removed unconditionally
-    /// after the test) supplying every non-English locale's digest
-    /// resource, so a single locale's content can be deliberately
-    /// malformed to prove `init(bundle:)` actually validates it rather
-    /// than only checking that it decodes as `[String]`.
+    /// Builds a genuine, minimal `.bundle` directory (with an `Info.plist`,
+    /// removed unconditionally after the test) supplying every non-English
+    /// locale's digest resource, so a single locale's content can be
+    /// deliberately malformed to prove `init(bundle:)` actually validates
+    /// it rather than only checking that it decodes as `[String]`.
+    ///
+    /// `Bundle(url:)` resolving `url(forResource:withExtension:subdirectory:)`
+    /// lookups against a *bare* directory (no `.bundle` suffix, no
+    /// `Info.plist`) is undocumented behavior that could vary across
+    /// platforms/OS versions; a real `.bundle`-suffixed directory with a
+    /// minimal `Info.plist` is what `Bundle` is actually documented to
+    /// resolve, so these tests build one rather than relying on the
+    /// looser, unsupported shape.
     private func withScratchBundle(
         overriding overrideName: String,
         content: [String],
@@ -96,7 +104,7 @@ struct BundledLocalizedDigestProviderTests {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("DigestProviderScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("\(UUID().uuidString).bundle", isDirectory: true)
         let resourcesDirectory = root.appendingPathComponent(
             "Resources/AssetDigests", isDirectory: true
         )
@@ -104,6 +112,16 @@ struct BundledLocalizedDigestProviderTests {
             at: resourcesDirectory, withIntermediateDirectories: true
         )
         defer { try? FileManager.default.removeItem(at: root) }
+        let infoPlist: [String: Any] = [
+            "CFBundleIdentifier": "org.arkhamhorror.scratch-digest-provider-tests",
+            "CFBundlePackageType": "BNDL",
+        ]
+        let plistData = try PropertyListSerialization.data(
+            fromPropertyList: infoPlist,
+            format: .xml,
+            options: 0
+        )
+        try plistData.write(to: root.appendingPathComponent("Info.plist"))
         for locale in AssetLocale.allCases {
             guard let name = locale.digestResourceName else { continue }
             let content = name == overrideName ? content : []
