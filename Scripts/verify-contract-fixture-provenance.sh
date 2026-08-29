@@ -38,6 +38,20 @@ if [ -z "$backend_commit" ]; then
   echo "error: could not extract a 40-character backendCommit SHA from $contract_pin_file" >&2
   exit 1
 fi
+
+# The schema revision compiled into this client, likewise extracted from the Swift source
+# rather than duplicated as a second literal, so a pin bump can't update the commit without
+# updating the revision it claims (or vice versa) without this script noticing.
+pin_schema_line=$(grep 'supportedSchemaRevision: \.literal' "$contract_pin_file" | head -n1)
+pin_major=$(echo "$pin_schema_line" | sed -n 's/.*major: \([0-9]*\).*/\1/p')
+pin_minor=$(echo "$pin_schema_line" | sed -n 's/.*minor: \([0-9]*\).*/\1/p')
+pin_patch=$(echo "$pin_schema_line" | sed -n 's/.*patch: \([0-9]*\).*/\1/p')
+if [ -z "$pin_major" ] || [ -z "$pin_minor" ] || [ -z "$pin_patch" ]; then
+  echo "error: could not extract supportedSchemaRevision major/minor/patch from $contract_pin_file" >&2
+  exit 1
+fi
+pin_schema_revision="$pin_major.$pin_minor.$pin_patch"
+
 echo "Verifying vendored contract fixtures against backend commit $backend_commit"
 
 # local fixture basename : path at that commit in djensenius/ArkhamHorror
@@ -79,6 +93,30 @@ done
 )
 
 failures=0
+
+# Confirm the compiled-in schema revision actually matches the schemaRevision recorded in
+# the pinned backend commit's own manifest, not just whatever the offline unit tests happen
+# to assert against the locally vendored copy. This is what makes a stale/incorrect pin
+# (backend commit exists, but its manifest disagrees with `ContractPin.current`) fail here
+# rather than only in a separate, purely local test.
+backend_manifest="$scratch_dir/contracts/manifest.json"
+if [ ! -f "$backend_manifest" ]; then
+  echo "MISSING (backend): contracts/manifest.json does not exist at $backend_commit" >&2
+  failures=$((failures + 1))
+else
+  backend_schema_revision=$(grep -o '"schemaRevision" *: *"[^"]*"' "$backend_manifest" | head -n1 | sed 's/.*"\([^"]*\)"$/\1/')
+  if [ -z "$backend_schema_revision" ]; then
+    echo "error: could not extract schemaRevision from $backend_manifest" >&2
+    failures=$((failures + 1))
+  elif [ "$backend_schema_revision" != "$pin_schema_revision" ]; then
+    echo "DRIFT: ContractPin.supportedSchemaRevision ($pin_schema_revision) does not match" \
+      "backend manifest schemaRevision ($backend_schema_revision) at $backend_commit" >&2
+    failures=$((failures + 1))
+  else
+    echo "OK: ContractPin.supportedSchemaRevision matches backend manifest schemaRevision ($pin_schema_revision)"
+  fi
+fi
+
 for entry in $fixture_paths; do
   [ -z "$entry" ] && continue
   local_name="${entry%%:*}"
