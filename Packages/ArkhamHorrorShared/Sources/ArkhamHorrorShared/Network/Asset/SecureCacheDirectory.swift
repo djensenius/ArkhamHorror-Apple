@@ -132,6 +132,19 @@ final class SecureCacheDirectory: @unchecked Sendable {
                 guard let base = rawBuffer.baseAddress else { return -1 }
                 return Darwin.read(descriptor, base + totalRead, expected - totalRead)
             }
+            if readCount < 0 {
+                // A `read()` interrupted by a signal (`EINTR`) is not a
+                // genuine failure and must be retried rather than
+                // surfaced as a spurious cache-read error; any other
+                // negative result is a real failure, reported with its
+                // errno for diagnosability.
+                if errno == EINTR {
+                    continue
+                }
+                throw AssetError.cachePersistenceFailed(
+                    "read failed for '\(name)' (errno \(errno))"
+                )
+            }
             guard readCount > 0 else {
                 throw AssetError.cachePersistenceFailed("Short read for '\(name)'")
             }
@@ -194,6 +207,19 @@ final class SecureCacheDirectory: @unchecked Sendable {
                 let writeCount = Darwin.write(
                     descriptor, base + totalWritten, byteCount - totalWritten
                 )
+                if writeCount < 0 {
+                    // A `write()` interrupted by a signal (`EINTR`) is
+                    // not a genuine failure and must be retried rather
+                    // than surfaced as a spurious persistence failure;
+                    // any other negative result is a real failure,
+                    // reported with its errno for diagnosability.
+                    if errno == EINTR {
+                        continue
+                    }
+                    throw AssetError.cachePersistenceFailed(
+                        "write failed for '\(tempName)' (errno \(errno))"
+                    )
+                }
                 guard writeCount > 0 else {
                     throw AssetError.cachePersistenceFailed("Short write for '\(tempName)'")
                 }
@@ -310,91 +336,6 @@ final class SecureCacheDirectory: @unchecked Sendable {
         }
         guard info.st_uid == rootOwnerUID else {
             throw AssetError.cachePersistenceFailed("'\(name)' has an unexpected owner")
-        }
-    }
-}
-
-/// Test-only fault-injection state for ``SecureCacheDirectory``, isolated
-/// into its own lock-backed type (rather than plain stored properties on
-/// `SecureCacheDirectory` itself) so a test can install it and read its
-/// call counter from outside the actor that owns the surrounding
-/// ``AssetDiskCache`` without any additional synchronization of its own —
-/// mirroring `AssetDiskCacheTests.swift`'s pre-existing `AtomicCallCounter`
-/// pattern for the same reason (reading a plain property on a value just
-/// handed to an actor-isolated initializer trips the compiler's
-/// region-isolation "sending" analysis even when every real call site
-/// awaits the actor first and so never actually races).
-private final class FaultInjectionState: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _failSuffixes: Set<String> = []
-    private var _failPrefixes: Set<String> = []
-    private var _failRemoveSuffixes: Set<String> = []
-    private var _failRemovePrefixes: Set<String> = []
-    private var _listNamesFailuresRemaining = 0
-    private var _listNamesCallCount = 0
-
-    var failSuffixes: Set<String> {
-        get { lock.withLock { _failSuffixes } }
-        set { lock.withLock { _failSuffixes = newValue } }
-    }
-
-    var failPrefixes: Set<String> {
-        get { lock.withLock { _failPrefixes } }
-        set { lock.withLock { _failPrefixes = newValue } }
-    }
-
-    var failRemoveSuffixes: Set<String> {
-        get { lock.withLock { _failRemoveSuffixes } }
-        set { lock.withLock { _failRemoveSuffixes = newValue } }
-    }
-
-    var failRemovePrefixes: Set<String> {
-        get { lock.withLock { _failRemovePrefixes } }
-        set { lock.withLock { _failRemovePrefixes = newValue } }
-    }
-
-    var listNamesFailuresRemaining: Int {
-        get { lock.withLock { _listNamesFailuresRemaining } }
-        set { lock.withLock { _listNamesFailuresRemaining = newValue } }
-    }
-
-    var listNamesCallCount: Int {
-        lock.withLock { _listNamesCallCount }
-    }
-
-    /// `tempName` is always `.tmp`-suffixed (see
-    /// ``SecureCacheDirectory/writeTempAndFsync(tempName:data:)``), so
-    /// suffixes/prefixes are matched against the *stripped* final name
-    /// (without the trailing `.tmp`) to line up with the target filename a
-    /// test actually cares about, exactly as `FailingFileManager` matched
-    /// against `moveItem`'s destination URL.
-    func shouldFailTempWrite(tempName: String) -> Bool {
-        let strippedName = tempName.hasSuffix(".tmp") ? String(tempName.dropLast(4)) : tempName
-        return lock.withLock {
-            _failSuffixes.contains { strippedName.hasSuffix($0) }
-                || _failPrefixes.contains { strippedName.hasPrefix($0) }
-        }
-    }
-
-    /// Independent of `shouldFailTempWrite`: `name` here is already the
-    /// exact, final entry name `remove(name:)` was called with (never a
-    /// `.tmp` name), so no suffix-stripping is needed.
-    func shouldFailRemove(name: String) -> Bool {
-        lock.withLock {
-            _failRemoveSuffixes.contains { name.hasSuffix($0) }
-                || _failRemovePrefixes.contains { name.hasPrefix($0) }
-        }
-    }
-
-    func recordListNamesCallAndCheckFault() throws {
-        let shouldFail: Bool = lock.withLock {
-            _listNamesCallCount += 1
-            guard _listNamesFailuresRemaining > 0 else { return false }
-            _listNamesFailuresRemaining -= 1
-            return true
-        }
-        guard !shouldFail else {
-            throw AssetError.cachePersistenceFailed("injected fault: listNames")
         }
     }
 }
