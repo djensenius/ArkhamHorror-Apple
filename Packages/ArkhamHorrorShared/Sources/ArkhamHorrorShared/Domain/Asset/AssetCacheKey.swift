@@ -27,6 +27,19 @@ struct AssetCacheKey: Sendable, Equatable, Hashable {
     /// stable serialization format and could silently change across Swift
     /// versions.
     ///
+    /// `key.locale` is folded in only when ``AssetCategory/isLocalizable``
+    /// is `true`; otherwise it is normalized to ``AssetLocale/english``
+    /// before hashing. ``AssetLocator`` never lets the requested locale
+    /// influence the resolved candidates for a non-localizable category
+    /// (see its `candidates(for:digest:)` — every branch besides
+    /// `.card(.art, _)` either ignores `key.locale` entirely or, for
+    /// `.homebrewCard`, always resolves as `.english` regardless of what
+    /// was requested). Hashing the raw, unnormalized locale anyway would
+    /// make the same identical candidate sequence — and so the same bytes
+    /// — fold into a different cache key per caller-requested locale,
+    /// needlessly duplicating disk entries and network fetches for
+    /// assets that are not actually localized.
+    ///
     /// Folding in the full candidate sequence (not just the abstract key)
     /// means that if a locale digest update changes which candidates would
     /// be tried — or in what order — for the same logical request, that is
@@ -34,9 +47,10 @@ struct AssetCacheKey: Sendable, Equatable, Hashable {
     /// candidate's bytes being served under a key that now means something
     /// else.
     init(for key: AssetKey, candidates: [AssetCandidate]) {
+        let localeForKey = key.category.isLocalizable ? key.locale : .english
         var canonical = Self.version
         canonical += "\u{1}" + key.source.canonicalIdentity
-        canonical += "\u{1}" + key.locale.rawValue
+        canonical += "\u{1}" + localeForKey.rawValue
         for candidate in candidates {
             canonical += "\u{1}" + candidate.canonicalPathComponent
             canonical += "\u{1}" + candidate.format.rawValue

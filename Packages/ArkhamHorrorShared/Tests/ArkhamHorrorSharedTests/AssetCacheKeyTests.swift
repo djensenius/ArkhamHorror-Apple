@@ -63,6 +63,22 @@ struct AssetCacheKeyTests {
         #expect(englishCacheKey != italianCacheKey)
     }
 
+    @Test("A non-localizable category's cache key is identical across distinct requested locales")
+    func nonLocalizableCategorySharesKeyAcrossLocales() throws {
+        let identifier = try AssetIdentifier.cardCode("01001")
+        let englishKey = AssetKey(category: .portrait(identifier), locale: .english)
+        let italianKey = AssetKey(category: .portrait(identifier), locale: .italian)
+        #expect(!englishKey.category.isLocalizable)
+        // AssetLocator ignores locale entirely for non-localizable
+        // categories, so both keys resolve to the identical candidate list.
+        let candidateList = candidates(for: englishKey)
+        #expect(candidateList == candidates(for: italianKey))
+
+        let englishCacheKey = AssetCacheKey(for: englishKey, candidates: candidateList)
+        let italianCacheKey = AssetCacheKey(for: italianKey, candidates: candidateList)
+        #expect(englishCacheKey == italianCacheKey)
+    }
+
     @Test("The digest hex is safe to use as a filename: lowercase hex only")
     func digestHexIsLowercaseHexOnly() throws {
         let identifier = try AssetIdentifier.cardCode("01001")

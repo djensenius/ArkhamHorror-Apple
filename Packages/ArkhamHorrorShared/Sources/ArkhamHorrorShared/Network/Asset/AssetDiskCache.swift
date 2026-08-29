@@ -244,10 +244,20 @@ actor AssetDiskCache {
     /// sidecar's exact serialized byte count (the same `Data` this decodes
     /// `metadata` from), so accounting never relies on an estimate for
     /// bytes that are actually persisted to disk.
+    ///
+    /// `payloadBytes` is likewise the actual on-disk payload file size (via
+    /// filesystem attributes), not `metadata.encodedByteCount`: metadata is
+    /// untrusted input, and if the payload file were ever larger than
+    /// metadata claims — corruption, a partial write, or external
+    /// modification — trusting the claimed size would let eviction
+    /// undercount real disk usage until that exact key was next read via
+    /// `get(_:)` and quarantined there. See ``get(_:)`` for the same
+    /// actual-file-size check applied on the read path.
     private struct Entry {
         let hash: String
         let metadata: AssetCacheMetadata
         let metadataBytes: Int
+        let payloadBytes: Int
     }
 
     private func entries() -> [Entry] {
@@ -281,17 +291,38 @@ actor AssetDiskCache {
                 quarantine(payloadURL: payloadURL, metadataURL: url)
                 continue
             }
-            result.append(Entry(hash: hash, metadata: metadata, metadataBytes: data.count))
+            // Measure the payload the same untrusting way `get(_:)` does:
+            // via filesystem attributes, never `metadata.encodedByteCount`.
+            // A missing payload file, or one whose actual size is negative
+            // or exceeds the configured cap, means this entry cannot be
+            // trusted for accounting purposes either — quarantine it
+            // rather than let it silently under- or over-count.
+            guard
+                let attributes = try? fileManager.attributesOfItem(atPath: payloadURL.path),
+                let actualPayloadSize = attributes[.size] as? Int,
+                actualPayloadSize >= 0, actualPayloadSize <= limits.maxEncodedBytes
+            else {
+                quarantine(payloadURL: payloadURL, metadataURL: url)
+                continue
+            }
+            result.append(
+                Entry(
+                    hash: hash,
+                    metadata: metadata,
+                    metadataBytes: data.count,
+                    payloadBytes: actualPayloadSize
+                )
+            )
         }
         return result
     }
 
-    /// The exact bytes an entry counts against the disk quota: its payload
-    /// plus the real serialized size of its metadata sidecar file, never a
-    /// fixed estimate (a long `resolvedURLString`, for instance, could
-    /// otherwise be under-billed against the configured disk budget).
+    /// The exact bytes an entry counts against the disk quota: the real
+    /// on-disk payload file size plus the real serialized size of its
+    /// metadata sidecar file — never a fixed estimate, and never a value
+    /// merely claimed by (untrusted) metadata.
     private static func accountedBytes(for entry: Entry) -> Int {
-        entry.metadata.encodedByteCount + entry.metadataBytes
+        entry.payloadBytes + entry.metadataBytes
     }
 
     private func evictIfNeeded() {
