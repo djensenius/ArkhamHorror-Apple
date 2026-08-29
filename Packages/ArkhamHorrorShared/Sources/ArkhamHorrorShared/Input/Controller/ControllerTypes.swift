@@ -1,8 +1,14 @@
 import Foundation
 
-/// A stable identity for one connected controller, independent of connection
-/// order, so a reconnect of the same physical device does not need special
-/// casing beyond an ordinary connect event.
+/// A stable identity for one connected controller instance, independent of
+/// connection order — but only for the lifetime of that single connection.
+/// The production adapter derives this from `ObjectIdentifier(GCController)`,
+/// and GameController vends a *new* `GCController` instance each time a
+/// physical device reconnects, so this identity intentionally does not (and
+/// is not meant to) persist across a disconnect/reconnect of the same
+/// physical device: callers observe that as an ordinary new connect event,
+/// with a new ``ControllerID`` to match, requiring no special-casing beyond
+/// what any other connect event already needs.
 struct ControllerID: Hashable, Sendable {
     private let objectID: ObjectIdentifier
 
