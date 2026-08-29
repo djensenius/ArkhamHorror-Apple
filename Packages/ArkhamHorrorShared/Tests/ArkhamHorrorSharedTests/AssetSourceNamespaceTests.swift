@@ -118,6 +118,22 @@ struct AssetSourceNamespaceTests {
         }
     }
 
+    @Test(
+        """
+        An explicit but unparseable port is rejected outright rather than silently \
+        falling back to the scheme's default port: URLComponents.port parses to nil \
+        for an integer-overflowing port exactly as if no port were present at all, so \
+        effectivePort must consult NSURLComponents.rangeOfPort (mirroring \
+        ServerProfile.normalizedBaseURL's identical check) to distinguish "absent" \
+        from "present but malformed"
+        """
+    )
+    func explicitButUnparseablePortRejectedRatherThanDefaulted() throws {
+        #expect(throws: AssetError.invalidAssetBase) {
+            try AssetSourceNamespace(rawAssetBase: "https://example.com:99999999999999999999/x")
+        }
+    }
+
     // MARK: - URL-only construction can never authorize cleartext
 
     @Test(

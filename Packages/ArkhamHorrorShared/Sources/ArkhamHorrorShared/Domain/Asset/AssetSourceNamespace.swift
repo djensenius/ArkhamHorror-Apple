@@ -155,11 +155,21 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
 
     /// The explicit port if present and in range, otherwise the scheme's
     /// conventional default (443 for `https`, 80 for `http`).
+    ///
+    /// Checks `NSURLComponents.rangeOfPort` — mirroring
+    /// `ServerProfile.normalizedBaseURL`'s identical check — rather than
+    /// `components.port == nil` alone: if the raw literal authority
+    /// contained an explicit but malformed port (e.g. `https://host:abc` or
+    /// `https://host:99999999999999999999`), `URLComponents.port` parses to
+    /// `nil` exactly as if no port were present at all, which would
+    /// otherwise silently authorize the URL on the scheme's default port
+    /// instead of rejecting the malformed input outright.
     private static func effectivePort(scheme: String, components: URLComponents) throws -> Int {
-        guard let explicitPort = components.port else {
+        let portRange = (components as NSURLComponents).rangeOfPort
+        guard portRange.location != NSNotFound else {
             return scheme == "https" ? 443 : 80
         }
-        guard (1 ... 65535).contains(explicitPort) else {
+        guard let explicitPort = components.port, (1 ... 65535).contains(explicitPort) else {
             throw AssetError.invalidAssetBase
         }
         return explicitPort
