@@ -122,14 +122,15 @@ struct ChaosBagPhaseStepPlacementTests {
         #expect(cost.contents == nil)
     }
 
-    @Test("RuntimeCost with an unexpected extra key still fails closed")
-    func runtimeCostRejectsAdditionalProperties() throws {
+    @Test("An unexpected extra key on RuntimeCost is ignored, not fatal or mis-attributed")
+    func runtimeCostIgnoresAdditionalProperties() throws {
         // RuntimeCost's CodingKeys enumerates only tag/contents; an unknown extra key is
         // simply never read here (this type's Codable implementation, like every other
         // response type in this contract slice, does not itself enforce closed keys —
-        // matching this codebase's established forward-compatible convention). This test
-        // documents that decoding still succeeds rather than silently mis-attributing an
-        // extra key to `contents`.
+        // matching this codebase's established forward-compatible convention, even though
+        // the backend's own cost.schema.json declares this envelope closed at the schema
+        // level). This test documents that decoding still succeeds rather than silently
+        // mis-attributing an extra key to `contents`.
         let cost = try ContractJSON.decode(
             RuntimeCost.self,
             from: Data(#"{"tag": "Free", "unexpectedExtraKey": 1}"#.utf8)
