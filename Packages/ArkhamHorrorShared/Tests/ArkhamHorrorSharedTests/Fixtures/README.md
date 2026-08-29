@@ -1,14 +1,25 @@
 # Test Fixtures
 
-## capabilities.json
+## manifest.json, capabilities.json, catalog.json, decks.json, game-lifecycle.json, game-list.json
 
-Vendored from:
-`djensenius/ArkhamHorror@2bf2935cde121498435744a06fcf63502a80ae43` (PR #23)
+Vendored byte-for-byte from:
+`djensenius/ArkhamHorror@6a1befbd7b01b4a0f763e41260ae4dd1a5d14c27` (PRs #20, #22, #24),
+schema revision `0.1.12`.
 
-This is the **only** backend contract artifact vendored here. The full backend
+These are the **only** backend contract artifacts vendored here. The full backend
 contract manifest references many additional schema documents (OpenAPI, AsyncAPI,
 JSON Schemas) that are **not** reproduced. See the backend repository for the
 authoritative contract documents and the complete manifest.
+
+`ContractFixtureDigests.all` binds each file's SHA-256 digest to
+`ContractPin.current.backendCommit`; `ContractFixtureDigestTests` recomputes and compares
+them so that changing a vendored file's bytes, or bumping the pin without re-vendoring,
+fails a test. `catalog.json`, `decks.json`, and `game-lifecycle.json` are hand-assembled
+fixture *containers* combining several independent endpoints' shapes for test convenience;
+production models decode their individual sub-shapes directly (`CardDef`,
+`DeckListInput`/`DeckList`/`Deck`, `CreateGameRequest`, etc.), not the container itself.
+`game-list.json` and `capabilities.json` each match a single production response shape
+directly.
 
 ## token.json / whoami.json
 
