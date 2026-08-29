@@ -45,6 +45,8 @@ jobs:
           cache: true
       - name: Run tests
         run: mise run test
+      - name: Self-test contract fixture provenance script (offline)
+        run: mise run contract-provenance-selftest
 
   contract-provenance:
     name: Contract fixture provenance

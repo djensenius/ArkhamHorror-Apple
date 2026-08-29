@@ -38,7 +38,10 @@ struct GameLifecycleTests {
         #expect(request.deckIds[0]?.rawValue.uuidString == "00000000-0000-0000-0000-000000000017")
         #expect(request.deckIds[1] == nil)
         #expect(request.playerCount == 2)
-        #expect(request.campaignOrScenario == .campaignOnly(campaignId: "01"))
+        #expect(
+            try request.campaignOrScenario
+                == CampaignOrScenario(campaignId: "01", scenarioId: nil)
+        )
         #expect(request.campaignOrScenario.campaignId == "01")
         #expect(request.campaignOrScenario.scenarioId == nil)
         #expect(request.difficulty == .standard)
@@ -67,7 +70,10 @@ struct GameLifecycleTests {
         let fixture = try loadFixture()
         let request = fixture.createGameDefaults
         #expect(request.deckIds.isEmpty)
-        #expect(request.campaignOrScenario == .scenarioOnly(scenarioId: "01104"))
+        #expect(
+            try request.campaignOrScenario
+                == CampaignOrScenario(campaignId: nil, scenarioId: "01104")
+        )
         #expect(request.strictAsIfAt == .absent)
         #expect(request.asIfRuling == .absent)
         #expect(request.ultimatumsAndBoons == .absent)
@@ -181,6 +187,61 @@ struct GameLifecycleTests {
         let request = try makeMinimalRequest(campaignId: "01", scenarioId: "01104")
         let data = try ContractJSON.encode(request)
         #expect(!data.isEmpty)
+    }
+
+    @Test(
+        "Every valid case remains directly constructible and inspectable with a nonempty ID"
+    )
+    func validCasesRemainConstructible() throws {
+        let campaignOnly = try CampaignOrScenario(campaignId: "01", scenarioId: nil)
+        guard case .campaignOnly = campaignOnly else {
+            Issue.record("Expected .campaignOnly, got \(campaignOnly)")
+            return
+        }
+        #expect(campaignOnly.campaignId == "01")
+        #expect(campaignOnly.scenarioId == nil)
+
+        let scenarioOnly = try CampaignOrScenario(campaignId: nil, scenarioId: "01104")
+        guard case .scenarioOnly = scenarioOnly else {
+            Issue.record("Expected .scenarioOnly, got \(scenarioOnly)")
+            return
+        }
+        #expect(scenarioOnly.campaignId == nil)
+        #expect(scenarioOnly.scenarioId == "01104")
+
+        let both = try CampaignOrScenario(campaignId: "01", scenarioId: "01104")
+        guard case .campaignWithStartingScenario = both else {
+            Issue.record("Expected .campaignWithStartingScenario, got \(both)")
+            return
+        }
+        #expect(both.campaignId == "01")
+        #expect(both.scenarioId == "01104")
+    }
+
+    @Test(
+        "CampaignOrScenario's validated ID types cannot hold empty strings, so no case can"
+    )
+    func directEnumCaseConstructionCannotProduceEmpties() {
+        // `CampaignOrScenario.campaignOnly`/`.campaignWithStartingScenario`/`.scenarioOnly`
+        // store `CampaignOrScenario.CampaignID`/`.ScenarioID` (both `NonEmptyString`
+        // instantiations), not raw `String`, so `.campaignOnly(campaignId: "")` is not
+        // merely "checked and rejected" — it is a compile-time type error, because there
+        // is no way to obtain a `CampaignID`/`ScenarioID` holding `""` anywhere in the
+        // module: `NonEmptyString`'s only initializer throws for an empty string, and
+        // Swift synthesizes no memberwise/bypassing initializer once a custom one exists.
+        // This test exercises that guarantee at the one seam that *is* reachable at
+        // runtime: attempting to construct the underlying ID type directly.
+        #expect(throws: (any Error).self) {
+            _ = try CampaignOrScenario.CampaignID("")
+        }
+        #expect(throws: (any Error).self) {
+            _ = try CampaignOrScenario.ScenarioID("")
+        }
+        // The following would each be a *compile-time* error if uncommented, which is the
+        // actual property under test — left here as documentation, not executable code:
+        //   CampaignOrScenario.campaignOnly(campaignId: "")
+        //   CampaignOrScenario.scenarioOnly(scenarioId: "")
+        //   CampaignOrScenario.campaignWithStartingScenario(campaignId: "", scenarioId: "01104")
     }
 
     private func makeMinimalRequest(

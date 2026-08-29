@@ -16,6 +16,11 @@ enum LosslessJSONParserError: Error, Equatable, Sendable {
     case invalidNumber
     case invalidLiteral
     case nestingTooDeep
+    /// The document exceeds ``LosslessJSONParser/defaultMaxDocumentByteCount`` (or a
+    /// caller-supplied override). Reported before any per-byte scanning, decoding, or
+    /// UTF-8 validation is attempted, so an oversized document's cost to this parser is
+    /// always O(1) — never proportional to its own (rejected) size.
+    case documentTooLarge(byteCount: Int, limit: Int)
 }
 
 /// A hand-written, RFC 8259 JSON parser producing a ``JSONValue`` tree directly from raw
@@ -25,10 +30,42 @@ enum LosslessJSONParserError: Error, Equatable, Sendable {
 /// ``LosslessJSONByteScanner``, kept in its own file to stay under SwiftLint's type-length
 /// limit.
 enum LosslessJSONParser {
-    /// Parses `data` as a single complete JSON document. Throws if `data` is not valid
-    /// UTF-8, does not parse as exactly one JSON value, or contains anything the explicit
-    /// rejection policy above disallows.
-    static func parse(_ data: Data) throws -> JSONValue {
+    /// A conservative ceiling on total document size, enforced before any byte-array copy,
+    /// UTF-8 validation, or scanning is attempted. This is this module's designated
+    /// canonical boundary for remote/network-sourced JSON (see ``ContractJSON``): unlike
+    /// nesting depth (bounded by ``LosslessJSONByteScanner/maxNestingDepth`` to protect the
+    /// call stack), nothing else in this parser bounds the *flat* cost of scanning a huge
+    /// number literal, string, or top-level array/object — a pathologically large document
+    /// could otherwise force multiple full-size O(n) copies (the `[UInt8]` copy, the UTF-8
+    /// validation `String`, the resulting `JSONValue` tree) purely from its own size, with
+    /// no nesting required at all.
+    ///
+    /// 16 MiB was chosen for generous headroom, not tightness: it is over 1000x the largest
+    /// real governed contract fixture this client vendors (`manifest.json`, ~5.7 KB; see
+    /// `Fixtures/Contract`), comfortably covers a full card catalog or game list many times
+    /// larger than anything the backend currently returns, and yet still keeps the total
+    /// memory a single oversized/adversarial document could force this parser to allocate
+    /// (across its few full-document-sized copies) at a modest, bounded multiple of 16 MiB
+    /// — never proportional to an attacker-chosen, unbounded size.
+    static let defaultMaxDocumentByteCount = 16 * 1024 * 1024
+
+    /// Parses `data` as a single complete JSON document. Throws if `data` exceeds
+    /// `maxByteCount`, is not valid UTF-8, does not parse as exactly one JSON value, or
+    /// contains anything the explicit rejection policy above disallows.
+    ///
+    /// - Parameter maxByteCount: The total document size ceiling, defaulting to
+    ///   ``defaultMaxDocumentByteCount``. Exposed only so tests can exercise the exact
+    ///   boundary (and one byte beyond it) without allocating a 16 MiB document; production
+    ///   call sites should not override this.
+    static func parse(
+        _ data: Data,
+        maxByteCount: Int = defaultMaxDocumentByteCount
+    ) throws -> JSONValue {
+        guard data.count <= maxByteCount else {
+            throw LosslessJSONParserError.documentTooLarge(
+                byteCount: data.count, limit: maxByteCount
+            )
+        }
         // Copy the document into a byte array exactly once, then validate UTF-8 from that
         // same array (not the original `Data`) so the parser never holds two independent
         // full copies of a potentially large document at once.

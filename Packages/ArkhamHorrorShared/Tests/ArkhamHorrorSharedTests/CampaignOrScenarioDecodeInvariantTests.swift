@@ -39,10 +39,12 @@ struct CampaignOrScenarioDecodeInvariantTests {
                 scenarioField: #""scenarioId":"01104","#
             )
         )
-        #expect(request.campaignOrScenario == .campaignWithStartingScenario(
-            campaignId: "01",
-            scenarioId: "01104"
-        ))
+        #expect(
+            try request.campaignOrScenario == CampaignOrScenario(
+                campaignId: "01",
+                scenarioId: "01104"
+            )
+        )
     }
 
     @Test("Decoding succeeds with campaignId present and scenarioId explicit null")
@@ -54,7 +56,10 @@ struct CampaignOrScenarioDecodeInvariantTests {
                 scenarioField: #""scenarioId":null,"#
             )
         )
-        #expect(request.campaignOrScenario == .campaignOnly(campaignId: "01"))
+        #expect(
+            try request.campaignOrScenario
+                == CampaignOrScenario(campaignId: "01", scenarioId: nil)
+        )
     }
 
     @Test("Decoding succeeds with scenarioId present and campaignId key entirely absent")
@@ -66,7 +71,10 @@ struct CampaignOrScenarioDecodeInvariantTests {
                 scenarioField: #""scenarioId":"01104","#
             )
         )
-        #expect(request.campaignOrScenario == .scenarioOnly(scenarioId: "01104"))
+        #expect(
+            try request.campaignOrScenario
+                == CampaignOrScenario(campaignId: nil, scenarioId: "01104")
+        )
     }
 
     @Test("Decoding throws when both campaignId and scenarioId are explicit null")

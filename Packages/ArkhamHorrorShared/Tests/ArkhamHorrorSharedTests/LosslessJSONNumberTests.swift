@@ -22,16 +22,86 @@ struct LosslessJSONNumberTests {
         #expect(String(data: reencoded, encoding: .utf8) == literal)
     }
 
-    @Test("The same 39-fractional-digit literal rounds to 1 through a stock JSONDecoder")
+    @Test(
+        "The same 39-fractional-digit (40-sig-digit) literal still rounds to 1 via a stock decoder"
+    )
     func longFractionalLiteralIsLossyThroughStockDecoder() throws {
-        // This is the control test: it proves the fallback path in `JSONNumber`'s
-        // standard `Decodable` conformance (reached only when *not* decoding through
-        // `ContractJSON`) really is lossy, so nothing has silently reintroduced the
-        // rounding `ContractJSON.decode` exists to avoid.
+        // This is the control test: it proves that even after hardening the fallback
+        // path in `JSONNumber`'s standard `Decodable` conformance (see
+        // `decimalRecognizesFractionsWithinItsPrecisionBudget` below for the realistic
+        // fractions that hardening *does* now correctly reject), this one, specific,
+        // deliberately-adversarial literal remains an irreducible edge case: it has 40
+        // total significant digits (1 leading digit + 39 fractional digits), one more
+        // than `Decimal`'s own ~38-39 digit budget can hold (see
+        // `decimalItselfCollapsesBeyondItsPrecisionBudget` below for direct, `Decoder`-
+        // independent proof), so `Decimal(string:)` -- used as the fallback's own
+        // fractionality sniff test -- already reports this value as the whole number `1`
+        // before this initializer ever gets to decide anything. No stock Foundation
+        // numeric API can recover the discarded digits at that point. This is exactly
+        // why `ContractJSON.decode` (see `longFractionalLiteralIsLossless` above) is the
+        // canonical, mandatory path for anything that needs a real guarantee.
         let literal = "1.000000000000000000000000000000000000001"
         let decoded = try JSONDecoder().decode(JSONNumber.self, from: Data(literal.utf8))
         #expect(decoded == .integer(1))
         #expect(decoded.rawToken == nil)
+    }
+
+    @Test(
+        "Fractions within Decimal's precision budget are rejected, not rounded, by the fallback",
+        arguments: [2, 10, 20, 30, 38, 39]
+    )
+    func decimalRecognizesFractionsWithinItsPrecisionBudget(totalSignificantDigits: Int) throws {
+        // Each of these total-significant-digit counts sits *within* `Decimal`'s own
+        // ~38-39 significant digit budget (contrast with the 40-significant-digit
+        // `longFractionalLiteralIsLossyThroughStockDecoder` case immediately above,
+        // which sits one digit *beyond* it), so `Decimal(string:)` -- used purely as a
+        // fractionality sniff test in the fallback path, never as the stored value --
+        // still reports a nonzero, negative exponent for each: it can still see that
+        // the literal is genuinely fractional, not a whole number in disguise. This
+        // proves the new gate in `JSONNumber.init(from:)` does real, verifiable work
+        // rejecting realistic-precision fractions that a blind `Int64` decode attempt
+        // alone would silently round (Foundation's `Int64` decode itself, independent of
+        // any `Decimal` involvement, happily returns `1` for every one of these before
+        // this fix -- the gate, not the removal of the `Decimal` value fallback, is what
+        // closes this gap).
+        let fractionalDigits = totalSignificantDigits - 1
+        let literal = "1." + String(repeating: "0", count: fractionalDigits - 1) + "1"
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(JSONNumber.self, from: Data(literal.utf8))
+        }
+    }
+
+    @Test(
+        "Decimal(string:) alone collapses a 40-sig-digit fraction to an integer"
+    )
+    func decimalItselfCollapsesBeyondItsPrecisionBudget() throws {
+        // Direct proof (bypassing `Decoder`/`Codable` entirely) that the residual
+        // limitation documented on `JSONNumber.init(from:)` -- and exercised by
+        // `longFractionalLiteralIsLossyThroughStockDecoder` above -- is a genuine,
+        // irreducible property of Foundation's `Decimal` type, not an artifact of this
+        // codebase's fallback design: `Decimal` cannot hold more than ~38-39 significant
+        // decimal digits, so a fraction with *one more* significant digit than that
+        // budget rounds away entirely, indistinguishably from the plain integer it
+        // collapses to. No stock Foundation numeric API can recover the discarded digit
+        // from this point forward; only `ContractJSON`'s own parser (see
+        // `longFractionalLiteralIsLossless` above) retains it.
+        let literal = "1." + String(repeating: "0", count: 38) + "1"
+        let decimalValue = try #require(Decimal(string: literal))
+        #expect(decimalValue == 1)
+        #expect(decimalValue.exponent == 0)
+    }
+
+    @Test("An ordinary, non-adversarial fraction still fails the stock-decoder fallback, as before")
+    func ordinaryFractionFailsThroughStockDecoder() throws {
+        // A plain fraction with a handful of digits was always correctly rejected by the
+        // fallback (both before and after this fix): `Int64`/`UInt64` decode itself fails
+        // for a value like 42.5 (Foundation's own type checking already distinguishes it
+        // from a whole number, with no help needed from the `Decimal` fractionality
+        // gate). This test guards against ever accidentally *loosening* that existing,
+        // always-correct behavior while hardening the extreme-precision cases above.
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(JSONNumber.self, from: Data("42.5".utf8))
+        }
     }
 
     @Test("1e128 round-trips exactly through ContractJSON")

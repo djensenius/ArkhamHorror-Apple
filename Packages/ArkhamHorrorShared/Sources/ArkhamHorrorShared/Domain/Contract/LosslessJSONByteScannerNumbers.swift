@@ -67,41 +67,9 @@ extension LosslessJSONByteScanner {
         return DecimalExponent(sign: expSign, digits: digits)
     }
 
-    mutating func parseNumber() throws -> JSONNumber {
-        let start = position
-        var sign: JSONNumber.Sign = .plus
-        if peek() == 0x2D {
-            sign = .minus
-            position += 1
-        }
-        let intDigits = try parseIntegerPart()
-        let fracDigits = try parseFractionalPart()
-        let explicitExponent = try parseExponentPart()
-
-        guard let rawToken = String(safelyDecoding: bytes[start ..< position]) else {
-            throw LosslessJSONParserError.invalidNumber
-        }
-        var digits = Array(intDigits) + Array(fracDigits)
-        while digits.count > 1, digits.first == 0x30 {
-            digits.removeFirst()
-        }
-        guard let coefficient = String(safelyDecoding: digits) else {
-            throw LosslessJSONParserError.invalidNumber
-        }
-        // `fracDigits.count` is always small (bounded by the literal's own length in the
-        // input), so this subtraction can never overflow `DecimalExponent`'s arithmetic
-        // regardless of how astronomically large `explicitExponent` itself already is.
-        let exponent = explicitExponent.adding(-fracDigits.count)
-        // `coefficient` was built above purely from ASCII digit bytes (`0x30...0x39`), so
-        // it already satisfies every invariant the validating initializer would check;
-        // constructing directly here avoids both redundant re-validation and, more
-        // importantly, ever routing a `rawToken` through any path that would accept one
-        // paired with caller-supplied (as opposed to scanner-derived) components.
-        return JSONNumber.parsed(
-            sign: sign,
-            coefficient: coefficient,
-            exponent: exponent,
-            rawToken: rawToken
-        )
-    }
+    // `parseNumber()` itself — the one caller of the `rawToken`-pairing
+    // `JSONNumber.parsed(sign:coefficient:exponent:rawToken:)` — deliberately lives in
+    // `JSONNumber.swift`, not here, colocated with that `fileprivate` factory so the
+    // language itself (not just a comment) confines the unsafe pairing to a single file.
+    // Everything above stays here: plain grammar helpers with no access to that factory.
 }

@@ -69,15 +69,21 @@ struct JSONNumber: Sendable {
     /// `LosslessJSONByteScanner` consumed as this one numeral, with `coefficient`/`exponent`
     /// already derived from parsing those same bytes.
     ///
-    /// **Do not call this directly outside `parseNumber()`.** This is the one seam in the
+    /// `fileprivate`, not merely documented-as-internal: this is the one seam in the
     /// entire type that pairs a `rawToken` string with separately-supplied components
-    /// without re-validating them against each other — exactly the seam a public API must
-    /// never expose, since ``LosslessJSONSerializer`` writes `rawToken` back out completely
-    /// unescaped, and a caller-supplied (rather than scanner-derived) `rawToken` could
-    /// smuggle arbitrary trailing JSON structure (`1,"injected":true`) straight into a
-    /// parent object or array. `parseNumber()` is safe because it builds `coefficient` from
-    /// the exact same digit bytes as `rawToken`'s span, so the two can never disagree.
-    static func parsed(
+    /// without re-validating them against each other — exactly the seam that must never
+    /// be reachable outside this exact file, since ``LosslessJSONSerializer`` writes
+    /// `rawToken` back out completely unescaped, and a caller-supplied (rather than
+    /// scanner-derived) `rawToken` could smuggle arbitrary trailing JSON structure
+    /// (`1,"injected":true`) straight into a parent object or array. Its only caller,
+    /// `LosslessJSONByteScanner.parseNumber()` below, is deliberately colocated in this
+    /// same file so the language itself — not a comment — makes that the case: `fileprivate`
+    /// is inaccessible from every other file in this module, including via `@testable
+    /// import` from test targets, so no amount of module-internal (or test) code anywhere
+    /// else can construct this pairing. `parseNumber()` is safe because it builds
+    /// `coefficient` from the exact same digit bytes as `rawToken`'s span, so the two can
+    /// never disagree.
+    fileprivate static func parsed(
         sign: Sign,
         coefficient: String,
         exponent: DecimalExponent,
@@ -168,132 +174,28 @@ struct JSONNumber: Sendable {
         return try JSONNumber(exactDecimalLiteral: "\(value)")
     }
 
-    /// This value rendered as plain decimal digits (no exponent letter), expanding the
-    /// exponent into literal trailing zeros or a decimal point. `nil` when that expansion
-    /// would require producing more than ``maxExpansionDigitCount`` digits (an
-    /// astronomically large parsed exponent) — callers needing *some* safely-bounded
-    /// rendering regardless should use ``description`` instead, which falls back to compact
-    /// scientific notation in that case.
-    var plainDecimalString: String? {
-        guard let exponentValue = exponent.asInt,
-              exponentValue >= -Self.maxExpansionDigitCount,
-              exponentValue <= Self.maxExpansionDigitCount
-        else {
-            return nil
-        }
-        let signPrefix = sign == .minus ? "-" : ""
-        if exponentValue >= 0 {
-            return signPrefix + coefficient + String(repeating: "0", count: exponentValue)
-        }
-        let fractionDigits = -exponentValue
-        if fractionDigits >= coefficient.count {
-            let padding = String(repeating: "0", count: fractionDigits - coefficient.count)
-            return signPrefix + "0." + padding + coefficient
-        }
-        let splitIndex = coefficient.index(coefficient.endIndex, offsetBy: -fractionDigits)
-        return signPrefix + coefficient[..<splitIndex] + "." + coefficient[splitIndex...]
-    }
-
     /// An exact unsigned whole-number value (used for `UInt64` values that may exceed
     /// `Int64.max`).
     static func unsignedInteger(_ value: UInt64) -> JSONNumber {
         JSONNumber(uncheckedSign: .plus, coefficient: String(value), exponent: .zero, rawToken: nil)
     }
-
-    /// Whether this value's exact numeric value is zero, regardless of sign, exponent, or
-    /// how many (possibly redundant) digits ``coefficient`` spells it with (`"0"`, `"00"`,
-    /// and `"0"` at any exponent are all zero).
-    var isZero: Bool {
-        coefficient.allSatisfy { $0 == "0" }
-    }
-
-    /// This value's exact digits as an unsigned whole number (for example `100`, `1e2`, and
-    /// `1.00` all yield `"100"`/`"1"`/`"100"` respectively), if it represents an integer
-    /// with no nonzero fractional remainder. `nil` for values like `1.5` that are not whole
-    /// numbers, and for a whole number whose expansion would exceed
-    /// ``maxExpansionDigitCount`` digits.
-    var wholeNumberMagnitude: String? {
-        guard let exponentValue = exponent.asInt else { return nil }
-        if exponentValue >= 0 {
-            guard exponentValue <= Self.maxExpansionDigitCount else { return nil }
-            return coefficient + String(repeating: "0", count: exponentValue)
-        }
-        let fractionDigits = -exponentValue
-        guard fractionDigits < coefficient.count else {
-            return isZero ? "0" : nil
-        }
-        let splitIndex = coefficient.index(coefficient.endIndex, offsetBy: -fractionDigits)
-        guard coefficient[splitIndex...].allSatisfy({ $0 == "0" }) else { return nil }
-        let whole = String(coefficient[..<splitIndex])
-        return whole.isEmpty ? "0" : whole
-    }
-
-    /// A `(sign, coefficient, exponent)` triple with every common trailing zero folded out
-    /// of the coefficient and into the exponent, and zero normalized to a single canonical
-    /// form regardless of sign or spelling. Two numbers spelled differently but equal in
-    /// value (`150`, `1.50e2`, `15e1`) always share this triple.
-    struct CanonicalTriple: Equatable {
-        let sign: Sign
-        let coefficient: String
-        let exponent: DecimalExponent
-    }
-
-    private var canonicalTriple: CanonicalTriple {
-        if isZero {
-            return CanonicalTriple(sign: .plus, coefficient: "0", exponent: .zero)
-        }
-        var digits = Array(coefficient)
-        var exp = exponent
-        while digits.count > 1, digits.last == "0" {
-            digits.removeLast()
-            // `adding(1)` is exact digit-string arithmetic (see `DecimalExponent`), so this
-            // can never trap even when `exp` is already at an `Int`-defying magnitude.
-            exp = exp.adding(1)
-        }
-        return CanonicalTriple(sign: sign, coefficient: String(digits), exponent: exp)
-    }
-
-    /// Attempts an exact (never rounded) `Decimal` reconstruction, verified by re-parsing
-    /// the resulting `Decimal`'s own description and confirming it is canonically equal to
-    /// `self`. `nil` when `Decimal` cannot represent this value exactly (including when
-    /// `self`'s own plain-decimal expansion is too large to even attempt).
-    private var asExactDecimal: Decimal? {
-        guard let expanded = plainDecimalString else { return nil }
-        let locale = Locale(identifier: "en_US")
-        guard let value = Decimal(string: expanded, locale: locale) else {
-            return nil
-        }
-        guard let roundTripped = try? JSONNumber(exactDecimalLiteral: "\(value)") else {
-            return nil
-        }
-        return roundTripped.canonicalTriple == canonicalTriple ? value : nil
-    }
 }
 
-extension JSONNumber: Equatable {
-    static func == (lhs: JSONNumber, rhs: JSONNumber) -> Bool {
-        let left = lhs.canonicalTriple
-        let right = rhs.canonicalTriple
-        return left.sign == right.sign && left.coefficient == right.coefficient
-            && left.exponent == right.exponent
-    }
-}
-
-extension JSONNumber: Hashable {
-    func hash(into hasher: inout Hasher) {
-        let triple = canonicalTriple
-        hasher.combine(triple.sign)
-        hasher.combine(triple.coefficient)
-        hasher.combine(triple.exponent)
-    }
-}
+// `plainDecimalString`, `isZero`, `wholeNumberMagnitude`, `CanonicalTriple`/`canonicalTriple`,
+// `asExactDecimal`, `Equatable`, `Hashable`, and `CustomStringConvertible` all live in
+// `JSONNumberRepresentation.swift` — none of them need this file's private `uncheckedSign`
+// initializer or `fileprivate` `parsed(...)` factory, so keeping them in a separate file
+// keeps this one under SwiftLint's file-length limit without weakening any access control.
 
 /// Implemented by a `Decoder` that can expose the exact original numeral it is currently
 /// positioned at, bypassing fixed-precision conversion entirely. Only
 /// ``LosslessJSONDecoder`` (used via ``ContractJSON/decode(_:from:)``) conforms; a stock
 /// `Decoder` (for example Foundation's `JSONDecoder`) does not, so ``JSONNumber``'s
-/// `Decodable` conformance below falls back to a best-effort (and, for extreme values,
-/// lossy or failing) reconstruction in that case.
+/// `Decodable` conformance below falls back to a narrow, provably-exact-or-throw
+/// reconstruction in that case — never a silent best-effort rounding — succeeding only for
+/// values a fixed-precision Foundation type can decode without loss, and throwing
+/// otherwise (see that conformance's own documentation for the exact gate and its one
+/// documented residual limitation).
 protocol LosslessJSONNumberSource {
     func losslessJSONNumber() throws -> JSONNumber?
 }
@@ -319,16 +221,72 @@ extension JSONNumber: Codable {
             return
         }
         // Fallback for a stock `Decoder`, which cannot expose the original numeral's raw
-        // digit sequence. Best-effort only: see `JSONNumberTests` for concrete values this
-        // path rounds or rejects that the canonical, parser-bound path
-        // (`ContractJSON.decode`) does not.
+        // digit sequence and therefore can never be a *canonical* decode path for this
+        // type — only `ContractJSON.decode` (backed by `LosslessJSONNumberSource`) is.
+        // This never routes through `Decimal` as the *stored* value (no `Decimal`
+        // best-effort fallback survives here at all): the only conversions permitted are
+        // ones a fixed-precision Foundation type decode can succeed at, gated by an
+        // independent `Decimal`-based fractionality check so that a "successful" `Int64`/
+        // `UInt64` decode is never blindly trusted on its own.
+        //
+        // That gate matters because `Int64`/`UInt64` decode success is *not*, by itself,
+        // reliable proof of exactness: Foundation's fixed-width integer decoding silently
+        // rounds some extreme-precision fractional literals that happen to be numerically
+        // indistinguishable, at `Double` precision, from a nearby whole number (for
+        // example a "1" followed by dozens of zeros and a trailing "1" decodes as
+        // `Int64(1)`, even though the JSON text plainly has a decimal point). `Decimal`
+        // preserves roughly 38 significant decimal digits — several times `Double`'s ~17
+        // — so decoding as `Decimal` first and requiring a non-negative `exponent` (i.e.
+        // no remaining fractional digits after Decimal's own, more precise, rounding)
+        // correctly rejects every such fraction *within* that budget, which blind `Int64`
+        // trust does not.
+        //
+        // The one residual case no stock Foundation API can distinguish from a whole
+        // number is a literal whose true precision exceeds even `Decimal`'s own ~38-39
+        // digit budget *and* which happens to collapse to a whole number under Decimal's
+        // own rounding: `Decimal(string:)` itself already collapses that value before
+        // `JSONDecoder` or this initializer ever sees it, independent of any choice made
+        // here. There is no stock API that exposes the original digit sequence to prove
+        // otherwise — only `ContractJSON`'s parser retains it. See
+        // `JSONNumberStockDecoderFallbackTests` for the exact boundary (proven directly
+        // against `Decimal(string:)`, not just this initializer) and for concrete
+        // realistic-precision fractions this gate does correctly reject.
         let container = try decoder.singleValueContainer()
+        guard let decimalValue = try? container.decode(Decimal.self), decimalValue.exponent >= 0
+        else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: """
+                    A standard JSONDecoder cannot prove this JSON number decodes without \
+                    loss (it is fractional, exceeds Decimal's representable range, or is \
+                    otherwise not exactly representable). Decode through ContractJSON \
+                    instead.
+                    """
+                )
+            )
+        }
         if let intValue = try? container.decode(Int64.self) {
             self = .integer(intValue)
             return
         }
-        let decimalValue = try container.decode(Decimal.self)
-        self = try JSONNumber.decimal(decimalValue)
+        if let uintValue = try? container.decode(UInt64.self) {
+            self = JSONNumber(
+                uncheckedSign: .plus, coefficient: String(uintValue), exponent: .zero,
+                rawToken: nil
+            )
+            return
+        }
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: """
+                This JSON number's magnitude exceeds what a standard JSONDecoder can \
+                represent exactly (beyond UInt64's range). Decode through ContractJSON \
+                instead.
+                """
+            )
+        )
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -357,23 +315,51 @@ extension JSONNumber: Codable {
     }
 }
 
-extension JSONNumber: CustomStringConvertible {
-    /// The exact original numeral when available (``rawToken``); otherwise a canonical
-    /// rendering that is *always* safely bounded regardless of how large ``exponent`` is —
-    /// a full plain-decimal expansion when that is boundedly small, or compact scientific
-    /// notation (`coefficient` + `"e"` + exponent, with no padding) otherwise. Unlike
-    /// unconditionally expanding, this can never attempt an astronomical allocation:
-    /// `coefficient`'s own digit count plus `exponent`'s own digit count is always the true
-    /// output size here, never the (potentially far larger) *value* `exponent` encodes.
-    var description: String {
-        if let rawToken {
-            return rawToken
+extension LosslessJSONByteScanner {
+    /// Parses a single, complete JSON numeral (RFC 8259 integer/fractional/exponent parts,
+    /// delegated to `LosslessJSONByteScannerNumbers`) starting at the current position.
+    ///
+    /// Deliberately defined *here*, in the same file as
+    /// ``JSONNumber/parsed(sign:coefficient:exponent:rawToken:)``, rather than alongside
+    /// this scanner's other grammar helpers: that factory is
+    /// `fileprivate`, so its one legitimate caller must live in this same file for the
+    /// language itself to make the unsafe `rawToken`-pairing seam unreachable from
+    /// anywhere else in the module (see that factory's documentation).
+    mutating func parseNumber() throws -> JSONNumber {
+        let start = position
+        var sign: JSONNumber.Sign = .plus
+        if peek() == 0x2D {
+            sign = .minus
+            position += 1
         }
-        if let expanded = plainDecimalString {
-            return expanded
+        let intDigits = try parseIntegerPart()
+        let fracDigits = try parseFractionalPart()
+        let explicitExponent = try parseExponentPart()
+
+        guard let rawToken = String(safelyDecoding: bytes[start ..< position]) else {
+            throw LosslessJSONParserError.invalidNumber
         }
-        let signPrefix = sign == .minus ? "-" : ""
-        guard !exponent.isZero else { return signPrefix + coefficient }
-        return signPrefix + coefficient + "e" + exponent.description
+        var digits = Array(intDigits) + Array(fracDigits)
+        while digits.count > 1, digits.first == 0x30 {
+            digits.removeFirst()
+        }
+        guard let coefficient = String(safelyDecoding: digits) else {
+            throw LosslessJSONParserError.invalidNumber
+        }
+        // `fracDigits.count` is always small (bounded by the literal's own length in the
+        // input), so this subtraction can never overflow `DecimalExponent`'s arithmetic
+        // regardless of how astronomically large `explicitExponent` itself already is.
+        let exponent = explicitExponent.adding(-fracDigits.count)
+        // `coefficient` was built above purely from ASCII digit bytes (`0x30...0x39`), so
+        // it already satisfies every invariant the validating initializer would check;
+        // constructing directly here avoids both redundant re-validation and, more
+        // importantly, ever routing a `rawToken` through any path that would accept one
+        // paired with caller-supplied (as opposed to scanner-derived) components.
+        return JSONNumber.parsed(
+            sign: sign,
+            coefficient: coefficient,
+            exponent: exponent,
+            rawToken: rawToken
+        )
     }
 }

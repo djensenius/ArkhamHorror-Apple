@@ -132,23 +132,23 @@ struct DeckTests {
         #expect(reencodedText.contains(literal))
     }
 
-    @Test("The same 45-nines ExternalID is silently rounded by a stock JSONDecoder")
-    func externalIDLargeIntegerIsLossyThroughStockDecoder() throws {
+    @Test(
+        "The same 45-nines ExternalID fails, rather than silently rounds, through a stock decoder"
+    )
+    func externalIDLargeIntegerFailsThroughStockDecoder() throws {
         let literal = String(repeating: "9", count: 45)
         let json = #"{"slots": {"x": 1}, "investigator_code": "01001", "id": \#(literal)}"#
         // Deliberately the stock `JSONDecoder`, not `ContractJSON.decode`: this test exists
-        // specifically to prove that bypassing the lossless codec really does reintroduce
-        // numeric loss, contrasting with `externalIDLargeIntegerIsLosslessThroughContractJSON`
-        // immediately above. Every other test in this file uses `ContractJSON` deliberately.
-        let input = try JSONDecoder().decode(DeckListInput.self, from: Data(json.utf8))
-        guard case let .number(number) = input.id else {
-            Issue.record("Expected a .number ExternalID, got \(String(describing: input.id))")
-            return
+        // specifically to prove that bypassing the lossless codec never silently
+        // reintroduces numeric loss -- it fails loudly instead -- contrasting with
+        // `externalIDLargeIntegerIsLosslessThroughContractJSON` immediately above. Every
+        // other test in this file uses `ContractJSON` deliberately. 45 nines exceeds both
+        // `Int64` and `UInt64`'s range, so `JSONNumber`'s stock-`Decoder` fallback (see
+        // `JSONNumber.init(from:)`) has no exact fixed-precision conversion left to try
+        // and throws, rather than rounding through `Decimal` as it once did.
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(DeckListInput.self, from: Data(json.utf8))
         }
-        // Decimal's ~38 significant digits cannot hold all 45 nines exactly: this proves
-        // the stock-`Decoder` fallback path really is lossy here, unlike ContractJSON,
-        // which is the entire point of routing contract decoding through it.
-        #expect(number.coefficient != literal)
     }
 
     @Test("DeckListInput.id distinguishes absent, explicit null, and a present value")

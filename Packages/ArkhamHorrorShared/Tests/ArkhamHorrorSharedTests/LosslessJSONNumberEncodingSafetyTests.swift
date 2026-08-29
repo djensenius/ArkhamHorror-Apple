@@ -43,9 +43,11 @@ struct LosslessJSONNumberEncodingSafetyTests {
     /// Every public, non-parser construction path — not just the validating
     /// `init(sign:coefficient:exponent:)` — must leave `rawToken` `nil`. This is the
     /// complete enumeration of every public factory `JSONNumber` exposes besides
-    /// ``JSONNumber/parsed(sign:coefficient:exponent:rawToken:)`` (which is documented as
-    /// parser-exclusive and is never called from production request/response construction
-    /// code, only from `LosslessJSONByteScannerNumbers.parseNumber()`).
+    /// ``JSONNumber/parsed(sign:coefficient:exponent:rawToken:)``, which is not merely
+    /// documented as parser-exclusive but is actually `fileprivate` to `JSONNumber.swift`:
+    /// no code in this file (or anywhere else in the module, including via `@testable
+    /// import`) can call it, so this test — like every other test in this file — can only
+    /// ever observe `rawToken` values the parser itself produced.
     @Test("Any rawToken a public constructor produces is self-consistent and injection-free")
     func anyPublicRawTokenIsSelfConsistentAndInjectionFree() throws {
         // `.integer`/`.unsignedInteger`/the raw validating initializer bypass numeral

@@ -110,6 +110,26 @@ struct DecimalExponent: Sendable, Hashable {
         }
     }
 
+    /// This exponent's magnitude (absolute value, ignoring ``sign``) as a plain `Int`, if
+    /// and only if it is at most `bound` (which must be non-negative). `nil` when the
+    /// magnitude exceeds `bound`.
+    ///
+    /// Unlike ``asInt``, this never has to special-case `Int.min`: a `bound` here is
+    /// always some small, non-negative, caller-supplied digit-count ceiling (for example
+    /// `JSONNumber.maxExpansionDigitCount`), so a non-`nil` result is always in
+    /// `0...bound` — nowhere near where negating it could ever overflow. Every
+    /// fixed-width expansion/conversion that only needs *how many digits* an
+    /// arbitrarily-signed exponent represents (never its sign, and never the exponent's
+    /// own possibly-unrepresentable full value) should use this instead of `asInt`, so its
+    /// correctness never depends on `Int`'s asymmetric two's-complement range.
+    func magnitudeIfAtMost(_ bound: Int) -> Int? {
+        precondition(bound >= 0, "bound must be non-negative")
+        guard Self.compareMagnitudes(magnitude, String(bound)) != .orderedDescending else {
+            return nil
+        }
+        return Int(magnitude)
+    }
+
     private static let int64MaxMagnitude = String(Int64.max)
     private static let int64MinMagnitude = String(Int64.min.magnitude)
 

@@ -98,9 +98,24 @@ enum LosslessJSONSerializer {
 /// numbers re-encode byte-for-byte. A network client consuming these contract endpoints
 /// should decode/encode exclusively through this type, not through
 /// `JSONDecoder`/`JSONEncoder` directly.
+///
+/// `decode` is this module's designated boundary for untrusted/remote bytes: it enforces
+/// ``LosslessJSONParser/defaultMaxDocumentByteCount`` before any scanning begins (see that
+/// property's documentation). `encode`, by contrast, only ever serializes a `JSONValue`
+/// tree already built from validated, in-process Swift values (an already-decoded/
+/// programmatically-constructed `Encodable`, whose own nesting is already bounded by
+/// ``LosslessJSONSerializer``'s depth check) — it has no separate raw-byte input to bound,
+/// so no additional output-size cap is imposed here. A future network layer sending
+/// `encode`'s output over the wire remains responsible for whatever transport-level size
+/// policy it needs; this type's contract is only ever "faithfully serialize a value that
+/// already exists in memory", not "bound the size of arbitrary attacker-supplied bytes".
 enum ContractJSON {
-    static func decode<T: Decodable>(_: T.Type, from data: Data) throws -> T {
-        let value = try LosslessJSONParser.parse(data)
+    static func decode<T: Decodable>(
+        _: T.Type,
+        from data: Data,
+        maxByteCount: Int = LosslessJSONParser.defaultMaxDocumentByteCount
+    ) throws -> T {
+        let value = try LosslessJSONParser.parse(data, maxByteCount: maxByteCount)
         let decoder = LosslessJSONValueDecoder(value: value, codingPath: [])
         return try T(from: decoder)
     }
