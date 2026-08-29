@@ -16,9 +16,16 @@ struct AssetCacheKey: Sendable, Equatable, Hashable {
     /// simply orphaned and reclaimed by normal quota eviction.
     private static let version = "1"
 
-    /// Derives the key from `key`'s source namespace, category, and locale,
-    /// plus the exact ordered candidate sequence ``AssetLocator`` resolved
-    /// for it.
+    /// Derives the key from `key`'s source namespace and locale, plus the
+    /// exact ordered candidate sequence ``AssetLocator`` resolved for it.
+    ///
+    /// `key.category` is deliberately not folded in directly: every
+    /// category maps to its own literal path segment prefix (e.g.
+    /// `"cards"`, `"chaos-tokens"`), so it is already fully represented by
+    /// each candidate's ``AssetCandidate/canonicalPathComponent``. This
+    /// avoids hashing `String(describing:)` of an enum, which is not a
+    /// stable serialization format and could silently change across Swift
+    /// versions.
     ///
     /// Folding in the full candidate sequence (not just the abstract key)
     /// means that if a locale digest update changes which candidates would
@@ -30,7 +37,6 @@ struct AssetCacheKey: Sendable, Equatable, Hashable {
         var canonical = Self.version
         canonical += "\u{1}" + key.source.canonicalIdentity
         canonical += "\u{1}" + key.locale.rawValue
-        canonical += "\u{1}" + String(describing: key.category)
         for candidate in candidates {
             canonical += "\u{1}" + candidate.canonicalPathComponent
             canonical += "\u{1}" + candidate.format.rawValue

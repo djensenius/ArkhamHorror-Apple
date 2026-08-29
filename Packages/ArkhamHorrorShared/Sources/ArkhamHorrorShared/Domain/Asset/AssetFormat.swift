@@ -1,9 +1,11 @@
 /// The encoded image format a candidate path resolves to.
 ///
-/// This drives both the declared `Accept` header sent by the transport and
-/// the magic-byte signature ``AssetImageValidator`` requires on the response
-/// body; a mismatch between the two is always a typed failure, never a
-/// silent fallback.
+/// This drives the magic-byte signature ``AssetImageValidator`` requires on
+/// the response body and the MIME type it is checked against; a mismatch
+/// between the two is always a typed failure, never a silent fallback. The
+/// asset transport does not send a request `Accept` header (candidates are
+/// already resolved to an exact, format-specific path by ``AssetLocator``,
+/// so there is nothing for content negotiation to select between).
 enum AssetFormat: String, Sendable, Equatable, Hashable {
     case avif
     case jpeg

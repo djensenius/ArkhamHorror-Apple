@@ -41,8 +41,8 @@ struct AssetCandidate: Sendable, Equatable, Hashable {
     /// concatenation.
     func url(base: AssetSourceNamespace) -> URL {
         var url = base.canonicalOrigin
-        if !base.basePath.isEmpty {
-            url = url.appendingPathComponent(base.basePath)
+        for pathSegment in base.basePath.split(separator: "/") {
+            url = url.appendingPathComponent(String(pathSegment))
         }
         url = url.appendingPathComponent("img").appendingPathComponent("arkham")
         if let localeRoot {
