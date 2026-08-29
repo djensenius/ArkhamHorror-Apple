@@ -89,6 +89,7 @@ actor FakeAssetTransport: AssetTransport {
         startedCounts[request.url, default: 0] += 1
 
         while heldURLs.contains(request.url) {
+            try Task.checkCancellation()
             try await Task.sleep(nanoseconds: 2_000_000)
         }
         try Task.checkCancellation()
