@@ -14,7 +14,7 @@ extension AssetCacheService {
     /// cached entry has since changed, e.g. after another revalidation's
     /// own completion, must never be silently folded into a fetch
     /// conditioned on a validator it no longer holds — see
-    /// ``coalescedRevalidation(key:cacheKey:url:existing:)``). Keying only
+    /// ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:)``). Keying only
     /// by `cacheKey` would let a second, independent fetch's registration
     /// overwrite the first's dictionary entry, orphaning the first
     /// fetch's own waiters (their completion/cancellation lookups by
@@ -41,9 +41,9 @@ extension AssetCacheService {
     /// `function_parameter_count` limit; purely a parameter-passing
     /// convenience with no independent identity or lifecycle of its own.
     struct RevalidationRequest {
-        let key: AssetKey
         let cacheKey: AssetCacheKey
         let url: URL
+        let expectedFormat: AssetFormat
         let existing: CachedAsset
         let etag: String?
         let lastModified: String?

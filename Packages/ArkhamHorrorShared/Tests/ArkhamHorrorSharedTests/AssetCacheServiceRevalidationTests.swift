@@ -247,4 +247,103 @@ extension AssetCacheServiceTests {
             }
         }
     }
+
+    /// Shared fixture for the pair of tests below: a `cardArtKey` (whose
+    /// own category default format is AVIF) paired with a genuinely valid
+    /// PNG revalidation response, so `expectedFormat: .png` passed
+    /// explicitly must succeed while `expectedFormat: key.expectedFormat`
+    /// (AVIF) must fail against the identical bytes.
+    private struct MismatchedFormatFixture {
+        let key: AssetKey
+        let cacheKey: AssetCacheKey
+        let url: URL
+        let existing: CachedAsset
+        let response: AssetHTTPResponse
+    }
+
+    private func mismatchedFormatFixture() throws -> MismatchedFormatFixture {
+        let key = try cardArtKey()
+        let candidates = AssetLocator.candidates(for: key, digest: FakeDigestLookup())
+        let cacheKey = AssetCacheKey(for: key, candidates: candidates)
+        let url = try #require(URL(string: "https://example.com/cards/01001.png"))
+        let existing = CachedAsset(
+            payload: AssetImageFixtureBuilder.validAVIF(width: 4, height: 4),
+            metadata: AssetCacheMetadata(
+                cacheKeyHex: cacheKey.digestHex,
+                contentType: "image/avif",
+                encodedByteCount: 10,
+                width: 4,
+                height: 4,
+                payloadSHA256Hex: AssetPayloadHasher.sha256Hex(Data([0])),
+                etag: "\"old\"",
+                lastModified: nil,
+                resolvedURLString: url.absoluteString,
+                insertedAt: Date(timeIntervalSince1970: 0),
+                lastAccessedAt: Date(timeIntervalSince1970: 0)
+            )
+        )
+        let response = AssetHTTPResponse(
+            body: AssetImageFixtureBuilder.validPNG(width: 4, height: 4),
+            contentType: "image/png",
+            etag: "\"new\"",
+            lastModified: nil
+        )
+        return MismatchedFormatFixture(
+            key: key,
+            cacheKey: cacheKey,
+            url: url,
+            existing: existing,
+            response: response
+        )
+    }
+
+    @Test(
+        """
+        assembleRevalidatedAsset validates a fresh revalidation response against \
+        the passed-in expectedFormat (the resolved candidate's own format \
+        recovered by revalidate(for:)): a PNG response validates and publishes \
+        successfully when expectedFormat: .png is passed explicitly, even though \
+        this key's own category default format is AVIF
+        """
+    )
+    func assembleRevalidatedAssetValidatesAgainstThePassedFormat() async throws {
+        let fixture = try mismatchedFormatFixture()
+        try await withService { service, _ in
+            let asset = try await service.assembleRevalidatedAsset(
+                cacheKey: fixture.cacheKey,
+                url: fixture.url,
+                expectedFormat: .png,
+                existing: fixture.existing,
+                response: fixture.response
+            )
+            #expect(asset.metadata.contentType == "image/png")
+            #expect(asset.metadata.width == 4)
+            #expect(asset.metadata.height == 4)
+            #expect(asset.metadata.insertedAt == fixture.existing.metadata.insertedAt)
+        }
+    }
+
+    @Test(
+        """
+        assembleRevalidatedAsset never falls back to key.expectedFormat: \
+        validating the identical PNG response bytes against this AVIF-art \
+        key's own default format fails, proving the resolved candidate's \
+        format -- not the key's -- must drive validation
+        """
+    )
+    func assembleRevalidatedAssetNeverFallsBackToKeyExpectedFormat() async throws {
+        let fixture = try mismatchedFormatFixture()
+        #expect(fixture.key.expectedFormat == .avif)
+        try await withService { service, _ in
+            await #expect(throws: (any Error).self) {
+                _ = try await service.assembleRevalidatedAsset(
+                    cacheKey: fixture.cacheKey,
+                    url: fixture.url,
+                    expectedFormat: fixture.key.expectedFormat,
+                    existing: fixture.existing,
+                    response: fixture.response
+                )
+            }
+        }
+    }
 }

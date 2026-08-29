@@ -91,7 +91,7 @@ extension AssetCacheService {
     /// Concurrent revalidations for the same cache key, URL, and validator
     /// snapshot (`ETag`/`Last-Modified`) are coalesced onto a single
     /// network round trip exactly like ``asset(for:)``'s candidate-walk
-    /// fetch (see ``coalescedRevalidation(key:cacheKey:url:existing:)``).
+    /// fetch (see ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:)``).
     /// A per-key generation counter additionally guards every terminal
     /// outcome so that a delayed completion can never resurrect or
     /// overwrite state a more authoritative (logically newer) revalidation
@@ -117,9 +117,20 @@ extension AssetCacheService {
         // issue a revalidation request against a URL that exactly matches
         // one of this key's own current candidates, never whatever URL
         // happens to be recorded, so tampered metadata cannot redirect a
-        // request to an unexpected host or path.
-        let candidateURLStrings = Set(candidates.map { $0.url(base: key.source).absoluteString })
-        guard candidateURLStrings.contains(existing.metadata.resolvedURLString) else {
+        // request to an unexpected host or path. Looking up the matching
+        // candidate itself (rather than only checking membership in a set
+        // of URL strings) is also what recovers the exact ``AssetFormat``
+        // that candidate resolved to: candidates for the same key are not
+        // all guaranteed to share one format, so `key.expectedFormat`
+        // alone is not a safe stand-in for validating a fresh revalidation
+        // response — see ``revalidateDiskHit(_:key:cacheKey:candidates:)``,
+        // which recovers it identically for the disk-hit re-validation
+        // path.
+        guard
+            let matchedCandidate = candidates.first(where: {
+                $0.url(base: key.source).absoluteString == existing.metadata.resolvedURLString
+            })
+        else {
             throw AssetError.staleConditionalResponse
         }
         guard existing.metadata.etag != nil || existing.metadata.lastModified != nil else {
@@ -127,9 +138,9 @@ extension AssetCacheService {
         }
 
         return try await coalescedRevalidation(
-            key: key,
             cacheKey: cacheKey,
             url: url,
+            expectedFormat: matchedCandidate.format,
             existing: existing
         )
     }
@@ -137,13 +148,13 @@ extension AssetCacheService {
     /// Returns the ID of the in-flight revalidation `slot` should join:
     /// either an already-registered fetch, or a freshly-started one this
     /// call registers itself. Split out of
-    /// ``coalescedRevalidation(key:cacheKey:url:existing:)`` purely to
+    /// ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:)`` purely to
     /// keep that function's body within this package's
     /// `function_body_length` limit.
     private func resolveRevalidationFetchID(
-        key: AssetKey,
         cacheKey: AssetCacheKey,
         url: URL,
+        expectedFormat: AssetFormat,
         existing: CachedAsset,
         slot: RevalidationSlot
     ) -> UUID {
@@ -152,9 +163,9 @@ extension AssetCacheService {
         }
         let startGeneration = revalidationGeneration[cacheKey, default: 0]
         let revalidationRequest = RevalidationRequest(
-            key: key,
             cacheKey: cacheKey,
             url: url,
+            expectedFormat: expectedFormat,
             existing: existing,
             etag: slot.etag,
             lastModified: slot.lastModified,
@@ -175,9 +186,9 @@ extension AssetCacheService {
     }
 
     func coalescedRevalidation(
-        key: AssetKey,
         cacheKey: AssetCacheKey,
         url: URL,
+        expectedFormat: AssetFormat,
         existing: CachedAsset
     ) async throws -> CachedAsset {
         let etag = existing.metadata.etag
@@ -190,9 +201,9 @@ extension AssetCacheService {
         )
         let waiterID = UUID()
         let fetchID = resolveRevalidationFetchID(
-            key: key,
             cacheKey: cacheKey,
             url: url,
+            expectedFormat: expectedFormat,
             existing: existing,
             slot: slot
         )
@@ -298,9 +309,9 @@ extension AssetCacheService {
             throw AssetError.candidatesExhausted
         case let .success(response):
             let asset = try await assembleRevalidatedAsset(
-                key: request.key,
                 cacheKey: cacheKey,
                 url: request.url,
+                expectedFormat: request.expectedFormat,
                 existing: request.existing,
                 response: response
             )
@@ -330,17 +341,26 @@ extension AssetCacheService {
     /// without publishing it — the caller (``performRevalidation``) alone
     /// decides whether this result is still eligible to publish, after
     /// re-checking the generation it was started under.
+    ///
+    /// Validates against `expectedFormat` — the exact resolved candidate's
+    /// format recovered by ``revalidate(for:)`` — rather than
+    /// `key.expectedFormat`: candidates for the same key are not all
+    /// guaranteed to share one format, so using the key's own default
+    /// alone could validate against the wrong magic bytes/MIME
+    /// expectations if the candidate chain ever includes mixed formats
+    /// (see ``revalidateDiskHit(_:key:cacheKey:candidates:)``, which
+    /// recovers it identically for the disk-hit re-validation path).
     func assembleRevalidatedAsset(
-        key: AssetKey,
         cacheKey: AssetCacheKey,
         url: URL,
+        expectedFormat: AssetFormat,
         existing: CachedAsset,
         response: AssetHTTPResponse
     ) async throws -> CachedAsset {
         let validated = try AssetImageValidator.validate(
             data: response.body,
             declaredContentType: response.contentType,
-            expectedFormat: key.expectedFormat,
+            expectedFormat: expectedFormat,
             limits: limits
         )
         try Task.checkCancellation()
