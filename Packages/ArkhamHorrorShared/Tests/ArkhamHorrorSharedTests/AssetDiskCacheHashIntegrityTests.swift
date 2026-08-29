@@ -27,7 +27,12 @@ extension AssetDiskCacheTests {
                 try await cache.set(cacheKey, payload: payload, metadata: wrongHashMetadata)
             }
 
+            // Excludes the cache's own reserved cross-process lock file
+            // (`SecureCacheDirectory.lockFileName`), which is expected to
+            // persist for the cache's entire lifetime regardless of what
+            // entries it holds — it is not itself a cache entry.
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+                .filter { $0 != SecureCacheDirectory.lockFileName }
             #expect(contents.isEmpty, "A rejected mismatched hash must write nothing at all")
             let fetched = await cache.get(cacheKey)
             #expect(fetched == nil)

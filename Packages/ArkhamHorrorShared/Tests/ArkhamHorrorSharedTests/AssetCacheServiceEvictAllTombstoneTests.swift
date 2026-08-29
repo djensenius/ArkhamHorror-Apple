@@ -165,4 +165,141 @@ extension AssetCacheServiceTests {
             )
         }
     }
+
+    /// Builds a minimal, self-consistent `AssetCacheMetadata` for
+    /// `cacheKey`/`body`/`width`/`height`, purely to keep the tombstone
+    /// -durability tests below (which each need several such values)
+    /// short enough to stay under SwiftLint's `function_body_length`.
+    func avifMetadata(
+        for cacheKey: AssetCacheKey,
+        body: Data,
+        width: Int,
+        height: Int
+    ) -> AssetCacheMetadata {
+        AssetCacheMetadata(
+            cacheKeyHex: cacheKey.digestHex,
+            contentType: "image/avif",
+            encodedByteCount: body.count,
+            width: width,
+            height: height,
+            payloadSHA256Hex: AssetPayloadHasher.sha256Hex(body),
+            etag: nil,
+            lastModified: nil,
+            resolvedURLString: "https://example.com/\(cacheKey.digestHex)",
+            insertedAt: Date(),
+            accessSequence: AssetAccessSequence(0)
+        )
+    }
+
+    @Test(
+        """
+        When evictAll() cannot even enumerate what survives a failed removeAll() (both its \
+        own listing and the subsequent survivor enumeration fail), it fails closed for the \
+        entire disk cache via a durable marker -- a key that was never individually \
+        tombstoned (because no enumeration ever succeeded to name it) still cannot be served \
+        from disk, and a fresh instance opened over the same directory inherits the same \
+        fail-closed state until a fully successful removeAll() clears it
+        """
+    )
+    func evictAllFailsClosedForTheWholeDiskCacheWhenSurvivorsAreUnenumerable() async throws {
+        try await withScratchDirectory { directory in
+            let limits = standardLimits()
+            let diskCache = try AssetDiskCache(directory: directory, limits: limits)
+            let layers = makeService(diskCache: diskCache, limits: limits)
+
+            let key = try cardArtKey("01001")
+            let originalBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+            try await publishAsset(key, body: originalBody, via: layers)
+
+            // Both `removeAll()`'s own listing *and* the catch block's
+            // follow-up `entryKeyHashes()` listing fail, so this call
+            // truly cannot name any specific surviving key to tombstone
+            // individually -- the exact scenario that requires the
+            // whole-cache fail-closed marker rather than a per-key
+            // tombstone.
+            await diskCache.directoryAccess.installFaultInjection(listNamesFailuresRemaining: 2)
+            await layers.service.evictAll()
+
+            let failure = await layers.service.lastDiskPersistenceFailure
+            #expect(failure != nil, "An unenumerable removeAll() failure must be audited")
+
+            // The entry was never actually deleted (both listing attempts
+            // failed before any removal), yet a *fresh* `AssetDiskCache`
+            // instance over this exact directory -- simulating a process
+            // restart, with none of this process's in-memory
+            // `tombstonedKeys` state -- must still refuse to serve it,
+            // because the durable marker lives on disk, not in memory.
+            let restarted = try AssetDiskCache(directory: directory, limits: limits)
+            let candidates = AssetLocator.candidates(for: key, digest: FakeDigestLookup())
+            let cacheKey = AssetCacheKey(for: key, candidates: candidates)
+            let servedAfterRestart = await restarted.get(cacheKey)
+            #expect(
+                servedAfterRestart == nil,
+                "A fresh instance must inherit the durable fail-closed marker from disk"
+            )
+
+            // A fully successful removeAll() (no fault injection this
+            // time) is the one event that durably clears the marker,
+            // after which a fresh publish is servable again.
+            try await restarted.removeAll()
+            let freshBody = AssetImageFixtureBuilder.validAVIF(width: 5, height: 5)
+            let freshMetadata = avifMetadata(for: cacheKey, body: freshBody, width: 5, height: 5)
+            try await restarted.set(cacheKey, payload: freshBody, metadata: freshMetadata)
+            let servedAfterClear = await restarted.get(cacheKey)
+            #expect(servedAfterClear?.payload == freshBody)
+        }
+    }
+
+    @Test(
+        """
+        A key whose metadata-pointer deletion fails is durably tombstoned on disk (not merely \
+        in this process's memory): a fresh AssetDiskCache instance opened over the same \
+        directory -- simulating a restart -- still refuses to serve the structurally-intact \
+        entry that failed deletion left behind, and a later successful publish for that exact \
+        key clears the durable tombstone so the fresh generation becomes servable again
+        """
+    )
+    func failedRemovalTombstoneSurvivesRestartAndIsClearedByAFreshPublish() async throws {
+        try await withScratchDirectory { directory in
+            let limits = standardLimits()
+            let firstInstance = try AssetDiskCache(directory: directory, limits: limits)
+            let key = try cardArtKey("01001")
+            let candidates = AssetLocator.candidates(for: key, digest: FakeDigestLookup())
+            let cacheKey = AssetCacheKey(for: key, candidates: candidates)
+            let originalBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+            let originalMetadata = avifMetadata(
+                for: cacheKey, body: originalBody, width: 4, height: 4
+            )
+            try await firstInstance.set(cacheKey, payload: originalBody, metadata: originalMetadata)
+
+            // The metadata sidecar's own removal fails, so the entry
+            // (metadata + payload) survives `remove(_:)` completely
+            // intact on disk -- the only path that must fall back to a
+            // durable tombstone.
+            await firstInstance.directoryAccess.installFaultInjection(
+                failRemoveSuffixes: [".meta.json"]
+            )
+            await #expect(throws: AssetError.self) {
+                try await firstInstance.remove(cacheKey)
+            }
+            let stillReadableInSameInstance = await firstInstance.get(cacheKey)
+            #expect(
+                stillReadableInSameInstance == nil,
+                "The durable tombstone must block reads immediately, in the same instance"
+            )
+
+            // A brand-new instance over the same directory (no shared
+            // in-memory state at all) must still refuse to serve it.
+            let restarted = try AssetDiskCache(directory: directory, limits: limits)
+            #expect(await restarted.get(cacheKey) == nil)
+
+            // A later, definitively fresh publish for this exact key
+            // clears the durable tombstone and becomes servable again.
+            let freshBody = AssetImageFixtureBuilder.validAVIF(width: 6, height: 6)
+            let freshMetadata = avifMetadata(for: cacheKey, body: freshBody, width: 6, height: 6)
+            try await restarted.set(cacheKey, payload: freshBody, metadata: freshMetadata)
+            let servedAfterFreshPublish = await restarted.get(cacheKey)
+            #expect(servedAfterFreshPublish?.payload == freshBody)
+        }
+    }
 }

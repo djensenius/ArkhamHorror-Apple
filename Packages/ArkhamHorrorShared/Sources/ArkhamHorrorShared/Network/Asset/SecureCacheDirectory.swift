@@ -32,7 +32,7 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// by the caller-supplied, much larger ``AssetCacheLimits/maxEncodedBytes``.
     static let maxMetadataBytes = 16384
 
-    private let rootFD: Int32
+    let rootFD: Int32
     private let rootOwnerUID: uid_t
     private let faultState = FaultInjectionState()
 

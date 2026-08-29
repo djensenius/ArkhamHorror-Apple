@@ -109,6 +109,28 @@ actor AssetDiskCache {
         metadata: AssetCacheMetadata,
         token: AssetCacheService.CacheToken? = nil
     ) throws {
+        // The entire write (orphan recovery, payload publish, metadata
+        // pointer commit, superseded-generation cleanup, and eviction) runs
+        // inside one cross-process/cross-instance exclusive lock (see
+        // ``SecureCacheDirectory/withExclusiveLock(_:)``): every step here
+        // is synchronous Darwin I/O with no `await`, so the whole critical
+        // section can be held for the single call without ever blocking
+        // this actor mid-suspension. This is the sole caller of
+        // `withExclusiveLock` for a write; nothing this closure calls
+        // (including `recoverOrphansIfNeeded`/`evictIfNeeded`) acquires it
+        // again, since `flock` is not reentrant across separate opens of
+        // the same lock file even within one process.
+        try secureDirectory.withExclusiveLock {
+            try setLocked(key, payload: payload, metadata: metadata, token: token)
+        }
+    }
+
+    private func setLocked(
+        _ key: AssetCacheKey,
+        payload: Data,
+        metadata: AssetCacheMetadata,
+        token: AssetCacheService.CacheToken?
+    ) throws {
         recoverOrphansIfNeeded()
         if let token, !acceptToken(token, for: key) {
             return
@@ -137,15 +159,28 @@ actor AssetDiskCache {
         let payloadAlreadyExisted =
             (try? secureDirectory.attributes(name: payloadName))?.isRegularFile == true
 
-        // Step 1: write the payload generation's bounded temp file, fsync
-        // it, then rename+fsync-directory to publish it under its
-        // permanent, content-addressed name. A crash before this
-        // completes leaves only an orphan temp file, cleaned up by the
-        // next `recoverOrphansIfNeeded()` — the previous generation (if
-        // any) is entirely untouched. A failure caught *within this
-        // process* (rather than an actual crash) instead removes that
-        // leftover temp file immediately, rather than deferring its
-        // cleanup to a future restart's one-time orphan sweep.
+        try writePayloadGenerationLocked(payloadName: payloadName, payload: payload)
+        try commitMetadataPointerLocked(
+            key,
+            metadata: metadata,
+            payloadName: payloadName,
+            payloadAlreadyExisted: payloadAlreadyExisted
+        )
+        evictIfNeeded()
+    }
+
+    /// Step 1 of ``setLocked(_:payload:metadata:token:)``: writes the
+    /// payload generation's bounded temp file, fsyncs it, then
+    /// renames+fsyncs-directory to publish it under its permanent,
+    /// content-addressed name. A crash before this completes leaves only
+    /// an orphan temp file, cleaned up by the next
+    /// ``recoverOrphansIfNeeded()`` — the previous generation (if any) is
+    /// entirely untouched. A failure caught *within this process* (rather
+    /// than an actual crash) instead removes that leftover temp file
+    /// immediately, rather than deferring its cleanup to a future
+    /// restart's one-time orphan sweep. Factored out of `setLocked` purely
+    /// to stay under this package's `function_body_length` convention.
+    private func writePayloadGenerationLocked(payloadName: String, payload: Data) throws {
         do {
             try secureDirectory.writeTempAndFsync(tempName: payloadName + ".tmp", data: payload)
             try secureDirectory.renameAndFsyncDirectory(from: payloadName + ".tmp", to: payloadName)
@@ -153,30 +188,41 @@ actor AssetDiskCache {
             _ = try? secureDirectory.remove(name: payloadName + ".tmp")
             throw AssetError.cachePersistenceFailed(String(describing: error))
         }
+    }
 
-        // Step 2: commit the metadata pointer. The rename and the
-        // subsequent directory `fsync` are deliberately two separately
-        // -throwing calls (not the composite ``renameAndFsyncDirectory``
-        // helper other call sites use), because this call site's failure
-        // handling *must* distinguish them: if the rename itself never
-        // took effect (or the write/encode before it failed), the
-        // previous metadata sidecar (still pointing at its own, untouched,
-        // differently-named payload file) remains fully valid, and the
-        // payload just written above -- not yet referenced by anything --
-        // is safe to roll back. But if the rename *succeeded* and only the
-        // following directory `fsync` failed, the metadata pointer has
-        // already, currently, actually been switched to reference the new
-        // payload -- in this running process, independent of any future
-        // crash -- so deleting that payload here (as an unconditional
-        // "the commit failed, undo it" rollback would) would immediately
-        // break a reference that is already live, not merely leave a
-        // future crash free to resurrect stale state. In that case this
-        // still throws (the caller must know durability was not
-        // confirmed), but never deletes the payload; at worst, a real
-        // crash before a later `fsync` reverts the rename at the
-        // filesystem level, which the next startup's orphan sweep already
-        // tolerates by design (the payload simply becomes an unreferenced
-        // orphan, never a dangling reference).
+    /// Steps 2 and 3 of ``setLocked(_:payload:metadata:token:)``: commits
+    /// the metadata pointer, then — only once that commit is durably
+    /// confirmed — removes any now-superseded prior payload generation and
+    /// clears this key's durable tombstone (if any). The pointer rename
+    /// and the subsequent directory `fsync` are deliberately two
+    /// separately-throwing calls (not the composite
+    /// ``SecureCacheDirectory/renameAndFsyncDirectory(from:to:)`` helper
+    /// other call sites use), because this call site's failure handling
+    /// *must* distinguish them: if the rename itself never took effect (or
+    /// the write/encode before it failed), the previous metadata sidecar
+    /// (still pointing at its own, untouched, differently-named payload
+    /// file) remains fully valid, and the payload just written above --
+    /// not yet referenced by anything -- is safe to roll back. But if the
+    /// rename *succeeded* and only the following directory `fsync` failed,
+    /// the metadata pointer has already, currently, actually been switched
+    /// to reference the new payload -- in this running process,
+    /// independent of any future crash -- so deleting that payload here
+    /// (as an unconditional "the commit failed, undo it" rollback would)
+    /// would immediately break a reference that is already live, not
+    /// merely leave a future crash free to resurrect stale state. In that
+    /// case this still throws (the caller must know durability was not
+    /// confirmed), but never deletes the payload; at worst, a real crash
+    /// before a later `fsync` reverts the rename at the filesystem level,
+    /// which the next startup's orphan sweep already tolerates by design
+    /// (the payload simply becomes an unreferenced orphan, never a
+    /// dangling reference). Factored out of `setLocked` purely to stay
+    /// under this package's `function_body_length` convention.
+    private func commitMetadataPointerLocked(
+        _ key: AssetCacheKey,
+        metadata: AssetCacheMetadata,
+        payloadName: String,
+        payloadAlreadyExisted: Bool
+    ) throws {
         var stamped = metadata
         stamped.accessSequence = accessSequenceAllocator.allocate()
         let metadataName = metadataFilename(for: key)
@@ -200,14 +246,18 @@ actor AssetDiskCache {
             )
         }
 
-        // Step 3: only now that the new generation is durably referenced,
-        // remove any other, now-superseded payload generation for this
-        // key — including one left behind by an earlier crash between a
-        // prior payload write and its own metadata pointer commit — then
-        // fsync once more so that cleanup itself is durable.
+        // Only now that the new generation is durably referenced, remove
+        // any other, now-superseded payload generation for this key —
+        // including one left behind by an earlier crash between a prior
+        // payload write and its own metadata pointer commit — then fsync
+        // once more so that cleanup itself is durable. Also clears any
+        // earlier durable tombstone for this exact key (see
+        // ``persistTombstoneLocked(keyHash:)``): a fresh, verified
+        // generation that just durably committed is itself the "durable
+        // clear" a prior failed deletion was protecting against.
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: metadata.payloadSHA256Hex)
+        clearTombstoneLocked(keyHash: key.digestHex)
         try? secureDirectory.fsyncRootDirectory()
-        evictIfNeeded()
     }
 
     /// Updates only the metadata sidecar for an already-cached `key` (for
@@ -221,6 +271,17 @@ actor AssetDiskCache {
         _ key: AssetCacheKey,
         metadata: AssetCacheMetadata,
         token: AssetCacheService.CacheToken? = nil
+    ) throws {
+        // Same single-top-level-lock convention as ``set(_:payload:metadata:token:)``.
+        try secureDirectory.withExclusiveLock {
+            try touchLocked(key, metadata: metadata, token: token)
+        }
+    }
+
+    private func touchLocked(
+        _ key: AssetCacheKey,
+        metadata: AssetCacheMetadata,
+        token: AssetCacheService.CacheToken?
     ) throws {
         recoverOrphansIfNeeded()
         if let token, !acceptToken(token, for: key) {
@@ -270,7 +331,8 @@ actor AssetDiskCache {
         "\(key.digestHex).meta.json"
     }
 
-    /// The compare half of this actor's own token CAS: accepts `token`
+    // MARK: - Token CAS
+
     /// only if its generation is not older than the generation this actor
     /// currently accepts writes under, and it is strictly newer than
     /// whatever token this actor last recorded as applied for `key` (a
@@ -293,17 +355,6 @@ actor AssetDiskCache {
         return true
     }
 
-    /// Removes an entry that has failed integrity validation on read: its
-    /// metadata sidecar, and — via
-    /// ``cleanupSupersededPayloads(forKeyHash:keeping:)`` — every `.bin`
-    /// payload generation on disk for `keyHash`. Best-effort: a read-time
-    /// quarantine failure is not distinguished from an ordinary miss (see
-    /// ``get(_:)``'s doc comment).
-    func quarantine(keyHash: String, metadataName: String) {
-        _ = try? secureDirectory.remove(name: metadataName)
-        cleanupSupersededPayloads(forKeyHash: keyHash, keeping: nil)
-    }
-
     /// `true` only for a string that is exactly 64 lowercase ASCII hex
     /// characters — the shape of a real SHA-256 hex digest, and the only
     /// shape ever safe to interpolate into a filesystem path derived from
@@ -316,30 +367,6 @@ actor AssetDiskCache {
         return value.utf8.allSatisfy { byte in
             (0x30 ... 0x39).contains(byte) || (0x61 ... 0x66).contains(byte)
         }
-    }
-
-    // MARK: - Atomic persistence
-
-    func persistMetadata(_ metadata: AssetCacheMetadata, name: String) throws {
-        let data = try JSONEncoder.assetCache().encode(metadata)
-        try secureDirectory.writeTempAndFsync(tempName: name + ".tmp", data: data)
-        try secureDirectory.renameAndFsyncDirectory(from: name + ".tmp", to: name)
-    }
-
-    /// Exposed so `AssetDiskCache+Recovery.swift` (in the same file-length
-    /// budget as this type) can perform its own descriptor-relative
-    /// listing/reads/removals through the same verified directory.
-    var directoryAccess: SecureCacheDirectory {
-        secureDirectory
-    }
-
-    /// Exposed so `AssetDiskCache+Recovery.swift` can seed
-    /// ``accessSequenceAllocator`` with the highest sequence value found
-    /// among currently valid persisted entries during startup recovery, so
-    /// every freshly allocated value afterward is guaranteed greater than
-    /// every value that already exists on disk.
-    func seedAccessSequenceAllocator(resumingAfter highestKnownValue: Int?) {
-        accessSequenceAllocator = AssetAccessSequenceAllocator(resumingAfter: highestKnownValue)
     }
 }
 

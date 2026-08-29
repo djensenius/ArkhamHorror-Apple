@@ -18,6 +18,16 @@ extension AssetDiskCache {
     /// track a tombstone.
     func get(_ key: AssetCacheKey) -> CachedAsset? {
         recoverOrphansIfNeeded()
+        // Fail-closed checks first, before any other work: a whole-cache
+        // "disk reads disabled" marker (an unenumerable `removeAll()`
+        // survivor listing previously left this cache unable to durably
+        // tombstone specific keys) or this exact key's own durable
+        // tombstone (a previously failed metadata-pointer deletion) both
+        // mean "never serve this" regardless of what a purely structural
+        // read of the metadata+payload pair would otherwise accept.
+        guard !areDiskReadsDisabled(), !isTombstoned(keyHash: key.digestHex) else {
+            return nil
+        }
         let metadataName = metadataFilename(for: key)
         guard var metadata = readValidatedMetadata(for: key, metadataName: metadataName) else {
             return nil

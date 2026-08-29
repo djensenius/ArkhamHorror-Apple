@@ -17,13 +17,37 @@ extension AssetDiskCache {
     /// ``set(_:payload:metadata:token:)``: a stale removal request can
     /// never delete bytes a more-recently-issued operation just published.
     func remove(_ key: AssetCacheKey, token: AssetCacheService.CacheToken? = nil) throws {
-        recoverOrphansIfNeeded()
-        if let token, !acceptToken(token, for: key) {
-            return
+        // Single top-level lock acquisition, same convention as
+        // ``set(_:payload:metadata:token:)``.
+        try secureDirectory.withExclusiveLock {
+            recoverOrphansIfNeeded()
+            if let token, !acceptToken(token, for: key) {
+                return
+            }
+            do {
+                _ = try secureDirectory.remove(name: metadataFilename(for: key))
+                try secureDirectory.fsyncRootDirectory()
+            } catch {
+                // The metadata pointer's deletion could not be confirmed:
+                // without a durable marker, ``get(_:)`` could still serve
+                // this structurally-valid-looking, but supposedly
+                // invalidated, entry — including across a restart, since
+                // an in-memory-only tombstone does not survive one. Best-
+                // effort persist the marker (itself inside this same held
+                // lock) before rethrowing; a failure to even persist that
+                // marker is surfaced identically (this call still throws
+                // either way), letting the caller's own fail-closed
+                // fallback (``AssetCacheService``'s whole-cache disabled
+                // state) cover the residual gap.
+                try? persistTombstoneLocked(keyHash: key.digestHex)
+                throw error
+            }
+            cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
+            // The metadata pointer is now durably confirmed gone: this is
+            // itself the "durable clear" that supersedes any earlier
+            // tombstone for this exact key.
+            clearTombstoneLocked(keyHash: key.digestHex)
         }
-        _ = try secureDirectory.remove(name: metadataFilename(for: key))
-        try secureDirectory.fsyncRootDirectory()
-        cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
     }
 
     /// Removes every entry currently in the cache directory. Never deletes
@@ -43,29 +67,42 @@ extension AssetDiskCache {
     /// while every actual entry remains fully present and servable on
     /// disk, breaking the "clear the cache" contract silently.
     func removeAll() throws {
-        recoverOrphansIfNeeded()
-        // Bumped before any removal work, exactly like
-        // ``AssetMemoryCache/removeAll()``: any `set`/`touch`/`remove`
-        // call bearing a token issued under an older generation is
-        // rejected by ``acceptToken(_:for:)`` from this point on, even if
-        // this actor happens to service it before the corresponding
-        // `AssetCacheService`-level check would have caught it.
-        acceptedGeneration += 1
-        appliedToken.removeAll()
-        let names = try secureDirectory.listNames()
-        var failureCount = 0
-        for name in names {
-            do {
-                _ = try secureDirectory.remove(name: name)
-            } catch {
-                failureCount += 1
+        // Wraps the *entire* clear inside the exclusive lock, exactly like
+        // every other top-level mutation, so a concurrent `set`/`touch`/
+        // `remove` (in this or another process/instance) can never
+        // interleave with a clear in a way that resurrects an entry this
+        // call intended to remove, or removes bytes a concurrent `set`
+        // just published. `listNames()`/`remove(name:)` explicitly skip
+        // ``SecureCacheDirectory/lockFileName`` itself — unlinking the
+        // lock file while this very call still holds it open would detach
+        // every subsequent `openat` of that name onto a fresh inode,
+        // silently breaking cross-process mutual exclusion for everyone
+        // afterward.
+        try secureDirectory.withExclusiveLock {
+            recoverOrphansIfNeeded()
+            // Bumped before any removal work, exactly like
+            // ``AssetMemoryCache/removeAll()``: any `set`/`touch`/`remove`
+            // call bearing a token issued under an older generation is
+            // rejected by ``acceptToken(_:for:)`` from this point on, even
+            // if this actor happens to service it before the corresponding
+            // `AssetCacheService`-level check would have caught it.
+            acceptedGeneration += 1
+            appliedToken.removeAll()
+            let names = try secureDirectory.listNames()
+            var failureCount = 0
+            for name in names where name != SecureCacheDirectory.lockFileName {
+                do {
+                    _ = try secureDirectory.remove(name: name)
+                } catch {
+                    failureCount += 1
+                }
             }
-        }
-        try? secureDirectory.fsyncRootDirectory()
-        guard failureCount == 0 else {
-            throw AssetError.cachePersistenceFailed(
-                "\(failureCount) cache entries could not be removed"
-            )
+            try? secureDirectory.fsyncRootDirectory()
+            guard failureCount == 0 else {
+                throw AssetError.cachePersistenceFailed(
+                    "\(failureCount) cache entries could not be removed"
+                )
+            }
         }
     }
 

@@ -241,7 +241,10 @@ extension AssetDiskCacheTests {
             try await cache.remove(cacheKey)
             let fetched = await cache.get(cacheKey)
             #expect(fetched == nil)
+            // Excludes the cache's own reserved cross-process lock file
+            // (see the sibling fixup in `AssetDiskCacheHashIntegrityTests`).
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+                .filter { $0 != SecureCacheDirectory.lockFileName }
             #expect(contents.isEmpty)
         }
     }

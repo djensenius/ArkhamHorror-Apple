@@ -73,9 +73,13 @@ extension AssetCacheService {
                 tombstonedKeys.formUnion(survivingKeys)
             } catch {
                 // Cannot even enumerate what remains: there is no specific
-                // key identity left to tombstone. `lastDiskPersistenceFailure`
-                // below is the only remaining signal that this eviction did
-                // not durably confirm a fully cleared disk cache.
+                // key identity left to tombstone individually. Fail
+                // closed for the *entire* disk cache instead — every
+                // subsequent `get(_:)` refuses every entry until a fully
+                // successful `removeAll()` later durably clears this
+                // marker — rather than silently risking a stale entry
+                // this call could not identify still being served.
+                await diskCache.markDiskReadsDisabled()
             }
             lastDiskPersistenceFailure = error as? AssetError
                 ?? .cachePersistenceFailed(String(describing: error))
