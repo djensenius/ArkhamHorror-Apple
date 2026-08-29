@@ -238,7 +238,7 @@ extension AssetDiskCacheTests {
                 metadata: metadata(for: cacheKey, payload: payload)
             )
 
-            await cache.remove(cacheKey)
+            try await cache.remove(cacheKey)
             let fetched = await cache.get(cacheKey)
             #expect(fetched == nil)
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)

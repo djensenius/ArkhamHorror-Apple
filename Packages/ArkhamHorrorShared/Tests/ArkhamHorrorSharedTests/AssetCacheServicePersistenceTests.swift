@@ -6,19 +6,16 @@ import Testing
 /// and restart-time re-validation of persisted disk hits (finding #8).
 /// Split out from `AssetCacheServiceTests.swift` (reusing its
 /// `withScratchDirectory`/`cardArtKey`/`candidateURLs`/`successResult`
-/// helpers, and `AssetDiskCacheTests.swift`'s `FailingFileManager`) purely
-/// to stay under SwiftLint's `type_body_length`.
+/// helpers) purely to stay under SwiftLint's `type_body_length`.
 ///
-/// The two `FailingFileManager`-based tests below construct
-/// ``AssetDiskCache`` directly inline (rather than through the
-/// `makeService` helpers further down) so the injected
-/// `FailingFileManager` — a `@unchecked Sendable`-conforming subclass of
-/// the otherwise non-`Sendable` `FileManager` — is passed to
-/// `AssetDiskCache.init` at its own concrete type in a direct, same-region
-/// call. Routing it through any intervening function or closure parameter
-/// defeats the compiler's region-based "sending to an actor-isolated
-/// initializer" analysis, even though the direct call site itself is
-/// provably safe (the value has no other live references).
+/// The two fault-injection-based tests below construct ``AssetDiskCache``
+/// directly inline (rather than through the `makeService` helpers further
+/// down) so ``SecureCacheDirectory``'s `installFaultInjection` can be
+/// installed on the disk cache's own verified directory before any
+/// write is attempted — replacing a `FailingFileManager` subclass, which
+/// can no longer intercept anything now that ``AssetDiskCache`` performs
+/// its own descriptor-relative POSIX I/O rather than routing through
+/// `FileManager`.
 extension AssetCacheServiceTests {
     /// Every layer of a single ``AssetCacheService`` wiring: grouped into
     /// one value (rather than a bare tuple) purely so `makeService`'s
@@ -101,7 +98,7 @@ extension AssetCacheServiceTests {
                 lastModified: nil,
                 resolvedURLString: candidates[0].url(base: key.source).absoluteString,
                 insertedAt: Date(),
-                lastAccessedAt: Date()
+                accessSequence: AssetAccessSequence(0)
             )
         )
         return (cacheKey, candidates)
@@ -136,13 +133,8 @@ extension AssetCacheServiceTests {
     func diskPersistenceFailureIsAuditedNotFatal() async throws {
         try await withScratchDirectory { directory in
             let limits = standardLimits()
-            let failingFileManager = FailingFileManager()
-            failingFileManager.failPathSuffixes = [".bin"]
-            let diskCache = try AssetDiskCache(
-                directory: directory,
-                limits: limits,
-                fileManager: failingFileManager
-            )
+            let diskCache = try AssetDiskCache(directory: directory, limits: limits)
+            await diskCache.directoryAccess.installFaultInjection(failSuffixes: [".bin"])
             let layers = makeService(diskCache: diskCache, limits: limits)
 
             let key = try cardArtKey()
@@ -174,12 +166,9 @@ extension AssetCacheServiceTests {
             )
             let firstCacheKey = AssetCacheKey(for: firstKey, candidates: firstCandidates)
 
-            let failingFileManager = FailingFileManager()
-            failingFileManager.failPathPrefixes = ["\(firstCacheKey.digestHex)."]
-            let diskCache = try AssetDiskCache(
-                directory: directory,
-                limits: limits,
-                fileManager: failingFileManager
+            let diskCache = try AssetDiskCache(directory: directory, limits: limits)
+            await diskCache.directoryAccess.installFaultInjection(
+                failPrefixes: ["\(firstCacheKey.digestHex)."]
             )
             let layers = makeService(diskCache: diskCache, limits: limits)
 

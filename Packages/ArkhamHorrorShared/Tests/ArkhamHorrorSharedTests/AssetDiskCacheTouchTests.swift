@@ -35,7 +35,7 @@ extension AssetDiskCacheTests {
             )
 
             var refreshedMetadata = try #require(await cache.get(cacheKey)).metadata
-            refreshedMetadata.lastAccessedAt = Date(timeIntervalSince1970: 123_456)
+            let sequenceBeforeTouch = refreshedMetadata.accessSequence
             try await cache.touch(cacheKey, metadata: refreshedMetadata)
 
             let afterAttributes = try FileManager.default.attributesOfItem(atPath: payloadURL.path)
@@ -45,21 +45,24 @@ extension AssetDiskCacheTests {
 
             // Read the persisted sidecar directly rather than through
             // `get(_:)`, since `get(_:)` itself always bumps
-            // `lastAccessedAt` to the current time on every read — using
-            // it here would overwrite the very value this test is
-            // verifying `touch(_:metadata:)` persisted. `JSONDecoder
-            // .assetCache` is not file-private (only `AssetDiskCache`'s
-            // own recovery code and this test file are outside its
-            // declaring file), so decode with that exact decoder rather
-            // than a separately constructed `ISO8601DateFormatter`, which
-            // is not guaranteed to match `JSONEncoder`'s `.iso8601`
-            // strategy's exact formatting across Foundation
-            // versions/platforms.
+            // `accessSequence` again on every read — using it here would
+            // advance the very value this test is verifying
+            // `touch(_:metadata:)` persisted. `JSONDecoder.assetCache` is
+            // not file-private (only `AssetDiskCache`'s own recovery code
+            // and this test file are outside its declaring file), so
+            // decode with that exact decoder rather than a separately
+            // constructed one.
             let persistedMetadata = try JSONDecoder.assetCache().decode(
                 AssetCacheMetadata.self,
                 from: Data(contentsOf: metadataURL)
             )
-            #expect(persistedMetadata.lastAccessedAt == refreshedMetadata.lastAccessedAt)
+            // `touch(_:metadata:)` always stamps its own freshly allocated
+            // sequence value — never whatever value the caller happened
+            // to pass in `refreshedMetadata` — so this can only assert
+            // that it advanced strictly past what `get(_:)` had already
+            // stamped moments earlier, not that any particular caller-set
+            // value round-tripped unchanged.
+            #expect(persistedMetadata.accessSequence.value > sequenceBeforeTouch.value)
         }
     }
 

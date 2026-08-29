@@ -15,19 +15,7 @@ extension AssetDiskCacheTests {
     )
     func cleanMissNeverListsDirectoryButCorruptSidecarDoes() async throws {
         try await withScratchDirectory { directory in
-            let failingFileManager = FailingFileManager()
-            // Captured before `failingFileManager` itself is handed to
-            // the actor-isolated initializer below — see
-            // ``AtomicCallCounter``'s documentation for why reading the
-            // count must go through this separately-held, genuinely
-            // `Sendable` object rather than back through
-            // `failingFileManager` directly.
-            let callCounter = failingFileManager.contentsOfDirectoryCallCounter
-            let cache = try AssetDiskCache(
-                directory: directory,
-                limits: smallLimits(),
-                fileManager: failingFileManager
-            )
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
             let missingKey = try key("01001")
 
             // The very first call on a fresh instance also runs the
@@ -36,14 +24,15 @@ extension AssetDiskCacheTests {
             // one call is not what this test is asserting against.
             let firstMiss = await cache.get(missingKey)
             #expect(firstMiss == nil)
-            let callsAfterStartupSweep = callCounter.value
+            let callsAfterStartupSweep = await cache.directoryAccess.listNamesCallCount
             #expect(callsAfterStartupSweep >= 1)
 
             // A second clean miss, now that the one-time sweep has
             // already run: must not list the directory again at all.
             let secondMiss = await cache.get(missingKey)
             #expect(secondMiss == nil)
-            #expect(callCounter.value == callsAfterStartupSweep)
+            let callsAfterSecondMiss = await cache.directoryAccess.listNamesCallCount
+            #expect(callsAfterSecondMiss == callsAfterStartupSweep)
 
             // By contrast, a key whose sidecar exists but is undecodable
             // must fall through to the quarantine path, which does list
@@ -55,7 +44,8 @@ extension AssetDiskCacheTests {
             try Data("not json".utf8).write(to: metadataURL)
             let corruptMiss = await cache.get(corruptKey)
             #expect(corruptMiss == nil)
-            #expect(callCounter.value > callsAfterStartupSweep)
+            let callsAfterCorruptMiss = await cache.directoryAccess.listNamesCallCount
+            #expect(callsAfterCorruptMiss > callsAfterStartupSweep)
         }
     }
 

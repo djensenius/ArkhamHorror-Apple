@@ -20,7 +20,7 @@ struct AssetMemoryCacheTests {
             lastModified: nil,
             resolvedURLString: "https://example.com/\(cacheKeyHex)",
             insertedAt: date,
-            lastAccessedAt: date
+            accessSequence: AssetAccessSequence(0)
         )
     }
 

@@ -33,17 +33,31 @@ actor AssetCacheService {
     let limits: AssetCacheLimits
     private var inFlight: [AssetCacheKey: InFlightFetch] = [:]
 
-    /// Monotonically increases every time a revalidation for a given
-    /// ``AssetCacheKey`` reaches ANY terminal, cache-mutating outcome (a
-    /// definitive 404 eviction, a 304 metadata touch, or a fresh publish).
-    /// A revalidation captures the generation current at its own start and
-    /// re-checks it immediately before every mutation; a mismatch means a
-    /// more authoritative (and logically newer) revalidation already
-    /// concluded while this one's network round trip was in flight, so
-    /// this one must not touch or reinsert its own (now stale) captured
-    /// bytes/metadata — see ``performRevalidation(_:)``.
-    var revalidationGeneration: [AssetCacheKey: Int] = [:]
+    /// Per-key mutation epoch and the shared global epoch, together
+    /// forming the single authority every cache-mutating operation (a
+    /// normal fetch's publish, a revalidation's 404/304/200 outcome, or
+    /// ``evictAll()``) must check itself against immediately before ever
+    /// touching memory/disk state — see `AssetCacheService+Epoch.swift`
+    /// for the full ``CacheEpoch`` capture/CAS contract this replaces the
+    /// old, revalidation-only generation counter with.
+    var keyEpoch: [AssetCacheKey: Int] = [:]
+    var globalEpoch = 0
     var inFlightRevalidation: [RevalidationSlot: RevalidationFetch] = [:]
+
+    /// Keys whose disk entry this actor knows it *intended* to invalidate
+    /// (a definitive 404, a failed re-validation quarantine, or
+    /// ``evictAll()``) but where the underlying physical deletion could
+    /// not be confirmed to have fully succeeded. ``AssetDiskCache``
+    /// surfaces a deletion failure as a typed error rather than silently
+    /// swallowing it (see its doc comment); this set is what keeps that
+    /// typed failure from being a no-op here: a tombstoned key is treated
+    /// as absent from disk regardless of what a subsequent
+    /// ``AssetDiskCache/get(_:)`` might still be able to read back, so a
+    /// deletion the filesystem could not physically complete can never
+    /// let a stale/invalidated body be served again. Cleared only when a
+    /// fresh, successful publish for that exact key later supersedes
+    /// whatever the tombstone was protecting against.
+    var tombstonedKeys: Set<AssetCacheKey> = []
 
     /// The most recent disk-cache persistence failure from ``publish``, if
     /// any, retained so a best-effort (non-fatal) disk write failure is
@@ -72,21 +86,34 @@ actor AssetCacheService {
     /// disk when a valid entry already exists and otherwise performing (or
     /// joining an already in-flight) network fetch.
     func asset(for key: AssetKey) async throws -> CachedAsset {
-        let candidates = AssetLocator.candidates(for: key, digest: digest)
-        guard !candidates.isEmpty else { throw AssetError.candidatesExhausted }
+        let candidates = try resolvedCandidates(for: key)
         let cacheKey = AssetCacheKey(for: key, candidates: candidates)
 
         if let cached = await memoryCache.get(cacheKey) {
             return cached
         }
-        if let cached = await diskCache.get(cacheKey) {
+        // A tombstoned key means this actor already intended to invalidate
+        // its disk entry (a 404, a failed re-validation quarantine, or
+        // `evictAll()`) but could not confirm the physical deletion fully
+        // succeeded — never trust a disk read for it, regardless of what
+        // bytes might still physically be present, until a fresh publish
+        // clears the tombstone.
+        if !tombstonedKeys.contains(cacheKey), let cached = await diskCache.get(cacheKey) {
+            let epoch = currentEpoch(for: cacheKey)
             if let revalidated = try await revalidateDiskHit(
                 cached,
                 key: key,
                 cacheKey: cacheKey,
                 candidates: candidates
             ) {
-                await memoryCache.set(cacheKey, asset: revalidated)
+                // `revalidateDiskHit` suspends (a full platform decode);
+                // re-check this key's epoch immediately before caching its
+                // result back into memory, so a concurrent `evictAll()` or
+                // definitive invalidation that ran during that suspension
+                // can never be resurrected by this now-stale read.
+                if isCurrentEpoch(epoch, for: cacheKey) {
+                    await memoryCache.set(cacheKey, asset: revalidated)
+                }
                 return revalidated
             }
             // The persisted entry failed re-validation against the
@@ -105,9 +132,44 @@ actor AssetCacheService {
     /// Evicts every entry from both cache layers. Exposed for tests and for
     /// an explicit user-initiated "clear cache" action; never called
     /// automatically.
+    ///
+    /// Bumps the shared global epoch *before* awaiting either cache
+    /// layer's removal, so every operation already in flight (a normal
+    /// fetch's eventual publish, or a revalidation's eventual 404/304/200
+    /// outcome) that captured its epoch before this call can no longer
+    /// pass its own CAS check once this returns — none of them can
+    /// resurrect anything this call is in the middle of clearing. Also
+    /// cancels every currently in-flight fetch/revalidation task itself
+    /// (not merely invalidating their eventual epoch check), so a caller
+    /// that asked to clear the cache does not keep paying for network
+    /// work whose result is now guaranteed to be discarded.
     func evictAll() async {
+        globalEpoch += 1
+        for (_, fetch) in inFlight {
+            fetch.task.cancel()
+        }
+        for (_, fetch) in inFlightRevalidation {
+            fetch.task.cancel()
+        }
+        inFlight.removeAll()
+        inFlightRevalidation.removeAll()
         await memoryCache.removeAll()
-        await diskCache.removeAll()
+        do {
+            try await diskCache.removeAll()
+            tombstonedKeys.removeAll()
+        } catch {
+            // A partial disk removal failure does not invalidate the
+            // epoch bump above (every in-flight/future operation is
+            // already correctly gated by it), but this actor cannot prove
+            // every entry was physically removed — keep every
+            // currently-tracked key tombstoned (never narrower than
+            // before) so a read cannot resurrect whatever could not be
+            // deleted. Newly published keys after this point are not
+            // affected: `publish`/`touch` always clear a key's own
+            // tombstone on a fresh, successful write.
+            lastDiskPersistenceFailure = error as? AssetError
+                ?? .cachePersistenceFailed(String(describing: error))
+        }
     }
 
     // MARK: - Coalesced network fetch
@@ -141,7 +203,12 @@ actor AssetCacheService {
         var waiters: [UUID: AssetContinuation] = [:]
     }
 
-    private func coalescedFetch(
+    /// Not `private`: also called from
+    /// `AssetCacheService+Revalidation.swift`'s ``revalidate(for:)``, which
+    /// falls through to an ordinary unconditional fetch when a disk-loaded
+    /// entry fails current-contract re-validation and so has no valid
+    /// basis left for a conditional request.
+    func coalescedFetch(
         key: AssetKey,
         cacheKey: AssetCacheKey,
         candidates: [AssetCandidate]
@@ -151,12 +218,19 @@ actor AssetCacheService {
         if let existing = inFlight[cacheKey] {
             fetchID = existing.id
         } else {
+            // Captured synchronously here — before the `Task` below is
+            // even created, let alone runs — so it exactly reflects this
+            // key's mutation epoch "at issuance" of this fresh (never
+            // coalesced-into) fetch, per the epoch contract in
+            // `AssetCacheService+Epoch.swift`.
+            let epoch = currentEpoch(for: cacheKey)
             let newTask = Task { [weak self] in
                 guard let self else { throw CancellationError() }
                 return try await fetchAndValidate(
                     key: key,
                     cacheKey: cacheKey,
-                    candidates: candidates
+                    candidates: candidates,
+                    epoch: epoch
                 )
             }
             let newFetch = InFlightFetch(task: newTask)
@@ -262,94 +336,50 @@ actor AssetCacheService {
         }
     }
 
-    /// Walks `candidates` in order against the network, advancing only on
-    /// an exact 404, validating and persisting the first successful
-    /// response. Re-checks cancellation immediately before publishing so a
-    /// last-waiter cancellation racing with a just-completed network read
-    /// never results in a published entry.
-    private func fetchAndValidate(
-        key: AssetKey,
-        cacheKey: AssetCacheKey,
-        candidates: [AssetCandidate]
-    ) async throws -> CachedAsset {
-        for candidate in candidates {
-            try Task.checkCancellation()
-            let url = candidate.url(base: key.source)
-            let result = try await transport.fetch(AssetHTTPRequest(url: url), limits: limits)
-            switch result {
-            case .notFound:
-                continue
-            case .notModified:
-                // An unconditional request never carries `If-None-Match` or
-                // `If-Modified-Since`, so a 304 here indicates a
-                // non-conforming server; there is no cached payload to pair
-                // it with.
-                throw AssetError.staleConditionalResponse
-            case let .success(response):
-                let validated = try AssetImageValidator.validate(
-                    data: response.body,
-                    declaredContentType: response.contentType,
-                    expectedFormat: candidate.format,
-                    limits: limits
-                )
-                try Task.checkCancellation()
-                // See the identical decode gate in
-                // ``assembleRevalidatedAsset`` for why a full platform
-                // decode — not just the pure metadata/dimension parse
-                // above — is required before publication. Offloaded via
-                // ``decodeImageOffActor`` so this CPU-bound decode never
-                // blocks unrelated cache requests on this actor.
-                let decoded = try await decodeImageOffActor(response.body)
-                guard decoded.width == validated.width, decoded.height == validated.height else {
-                    throw AssetError.malformedImageData
-                }
-                try Task.checkCancellation()
-                let asset = CachedAsset(
-                    payload: response.body,
-                    metadata: AssetCacheMetadata(
-                        cacheKeyHex: cacheKey.digestHex,
-                        contentType: response.contentType ?? validated.format.mimeType,
-                        encodedByteCount: response.body.count,
-                        width: validated.width,
-                        height: validated.height,
-                        payloadSHA256Hex: Self.sha256Hex(response.body),
-                        etag: response.etag,
-                        lastModified: response.lastModified,
-                        resolvedURLString: url.absoluteString,
-                        insertedAt: Date(),
-                        lastAccessedAt: Date()
-                    )
-                )
-                try Task.checkCancellation()
-                await publish(cacheKey, asset: asset)
-                return asset
-            }
-        }
-        throw AssetError.candidatesExhausted
-    }
-
     /// Publishes a resolved asset into both cache layers. The disk write
     /// is deliberately best-effort (an in-memory-only asset is still
     /// usable for the remainder of the process), but that decision is
     /// centralized here in an explicit `do`/`catch` — rather than a bare
     /// `try?` — so a persistence failure is captured in
     /// ``lastDiskPersistenceFailure`` for auditing/instrumentation instead
-    /// of vanishing silently.
+    /// of vanishing silently. A successful disk write always clears
+    /// `cacheKey`'s tombstone (see ``tombstonedKeys``): a fresh, verified
+    /// generation on disk supersedes whatever an earlier failed deletion
+    /// was protecting against.
     func publish(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
         await memoryCache.set(cacheKey, asset: asset)
         await recordDiskPersistenceResult {
             try await diskCache.set(cacheKey, payload: asset.payload, metadata: asset.metadata)
         }
+        if lastDiskPersistenceFailure == nil {
+            tombstonedKeys.remove(cacheKey)
+        }
     }
 
     /// Refreshes an already-cached asset's metadata only (for example
-    /// bumping `lastAccessedAt` after a 304 revalidation), without
-    /// re-writing the unchanged payload bytes to disk. Falls back to the
-    /// same best-effort, audited failure handling as ``publish(_:asset:)``.
+    /// bumping ``AssetCacheMetadata/accessSequence`` after a 304
+    /// revalidation), without re-writing the unchanged payload bytes to
+    /// disk. Falls back to the same best-effort, audited failure handling
+    /// as ``publish(_:asset:)``.
     func touch(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
         await memoryCache.set(cacheKey, asset: asset)
         await recordDiskPersistenceResult {
             try await diskCache.touch(cacheKey, metadata: asset.metadata)
+        }
+    }
+
+    /// Removes `cacheKey` from both cache layers, tombstoning it if the
+    /// disk deletion could not be confirmed to fully succeed (see
+    /// ``tombstonedKeys``). Centralizes every disk-invalidating call site
+    /// (a definitive 404, a failed re-validation quarantine) so none of
+    /// them can accidentally swallow a deletion failure the way a bare
+    /// `try?`/best-effort `remove` used to.
+    func invalidate(_ cacheKey: AssetCacheKey) async {
+        await memoryCache.remove(cacheKey)
+        do {
+            try await diskCache.remove(cacheKey)
+        } catch {
+            tombstonedKeys.insert(cacheKey)
         }
     }
 
@@ -362,37 +392,5 @@ actor AssetCacheService {
         } catch {
             lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
         }
-    }
-
-    static func sha256Hex(_ data: Data) -> String {
-        AssetPayloadHasher.sha256Hex(data)
-    }
-
-    /// Decodes `payload` on a genuine structured child task rather than
-    /// synchronously on this actor's own executor, so a full platform
-    /// image decode — whose CPU cost is not accounted for or bounded by
-    /// ``AssetCacheLimits`` — never blocks unrelated cache
-    /// requests/coalescing/cancellation handling for however long that
-    /// decode takes.
-    ///
-    /// `async let` starts a real child task that inherits this call's
-    /// cancellation (unlike a detached task), and the child task itself
-    /// checks cancellation before ever calling
-    /// ``AssetImageDecoder/decode(_:)``: if the caller was already
-    /// cancelled at that point, this throws `CancellationError` without
-    /// spending any CPU on a decode nobody wants. `decode(_:)` itself is
-    /// synchronous with no cooperative cancellation check while it runs,
-    /// so a cancellation strictly *during* an already-started decode does
-    /// not interrupt it — decoding still runs to completion. Beyond that
-    /// single up-front check, this method's benefit is that the decode's
-    /// CPU cost runs off the actor's own executor. Not `private`: shared
-    /// by every call site across `AssetCacheService+Revalidation.swift`
-    /// too.
-    func decodeImageOffActor(_ payload: Data) async throws -> CGImage {
-        async let decodedImage: CGImage = {
-            try Task.checkCancellation()
-            return try AssetImageDecoder.decode(payload)
-        }()
-        return try await decodedImage
     }
 }

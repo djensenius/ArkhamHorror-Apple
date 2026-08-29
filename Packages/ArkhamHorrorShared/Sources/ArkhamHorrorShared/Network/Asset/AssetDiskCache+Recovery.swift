@@ -3,30 +3,34 @@ import Foundation
 /// Startup orphan/generation recovery and disk-quota eviction for
 /// ``AssetDiskCache``, split out of `AssetDiskCache.swift` (which retains
 /// `get`/`set`/`touch`/`remove` and the atomic-write primitives) purely to
-/// stay under SwiftLint's `file_length`.
+/// stay under SwiftLint's `file_length`. Every filesystem operation here
+/// goes through ``AssetDiskCache/directoryAccess``, the same verified,
+/// descriptor-relative ``SecureCacheDirectory`` used by the rest of this
+/// cache — never a `FileManager` path-string API, so recovery can never be
+/// tricked into following a symlink planted at any entry name (including
+/// the root directory being externally replaced between two recovery
+/// passes: the held descriptor from `init` is reused unconditionally).
 extension AssetDiskCache {
-    // MARK: - Corruption / orphan recovery
-
     /// Removes every payload file for `keyHash` except the one named for
     /// `keepingContentHash` (or every payload file for `keyHash` if `nil`),
     /// covering both a normal replacement's now-superseded prior generation
     /// and any extra stale generation(s) a previous crash left behind
-    /// between a payload write and its metadata pointer commit.
+    /// between a payload write and its metadata pointer commit. Best
+    /// effort: an individual removal failure here does not change whether
+    /// `keyHash` is servable again (`get` cannot serve any payload without
+    /// a metadata pointer already having been confirmed removed by the
+    /// caller) — it only risks a temporarily leaked file that a later
+    /// recovery pass reclaims.
     func cleanupSupersededPayloads(
         forKeyHash keyHash: String,
         keeping keepingContentHash: String?
     ) {
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
-        )
-        else { return }
+        guard let names = try? directoryAccess.listNames() else { return }
         let prefix = "\(keyHash)."
-        let keepName = keepingContentHash.map { "\(keyHash).\($0).bin" }
-        for url in contents {
-            let name = url.lastPathComponent
+        let keepName = keepingContentHash.map { payloadFilename(keyHash: keyHash, contentHash: $0) }
+        for name in names {
             guard name.hasPrefix(prefix), name.hasSuffix(".bin"), name != keepName else { continue }
-            try? fileManager.removeItem(at: url)
+            _ = try? directoryAccess.remove(name: name)
         }
     }
 
@@ -36,44 +40,47 @@ extension AssetDiskCache {
     /// leftover `.tmp` file from an interrupted write, any metadata sidecar
     /// that fails to decode or validate, and any payload file not named
     /// for the exact content hash a currently valid metadata sidecar
-    /// references (covering both fully orphaned payloads and superseded
-    /// generations from an earlier crash between a payload write and its
-    /// metadata pointer commit).
+    /// references. Also seeds ``AssetDiskCache``'s access-sequence
+    /// allocator to resume strictly after the highest
+    /// ``AssetCacheMetadata/accessSequence`` found among every currently
+    /// valid persisted entry, so every value this process allocates
+    /// afterward is guaranteed greater than every value already on disk —
+    /// required for LRU order to survive a restart correctly.
     func recoverOrphansIfNeeded() {
         guard !didRecoverOrphans else { return }
         // Only mark recovery as done once the directory listing actually
-        // succeeds. If `contentsOfDirectory` fails (e.g. a transient I/O
-        // error), `didRecoverOrphans` must stay `false` so the very next
-        // `set` retries orphan/tmp cleanup instead of it being silently,
+        // succeeds. If listing fails (e.g. a transient I/O error),
+        // `didRecoverOrphans` must stay `false` so the very next `set`
+        // retries orphan/tmp cleanup instead of it being silently,
         // permanently disabled for the lifetime of this cache instance.
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
-        )
-        else { return }
+        guard let names = try? directoryAccess.listNames() else { return }
         didRecoverOrphans = true
 
-        for url in contents where url.lastPathComponent.hasSuffix(".tmp") {
-            try? fileManager.removeItem(at: url)
+        for name in names where name.hasSuffix(".tmp") {
+            _ = try? directoryAccess.remove(name: name)
         }
 
         var referencedPayloadFilenames: Set<String> = []
-        for url in contents where url.lastPathComponent.hasSuffix(".meta.json") {
-            let keyHash = String(url.lastPathComponent.dropLast(".meta.json".count))
-            guard let data = try? Data(contentsOf: url),
-                  let metadata = try? JSONDecoder.assetCache().decode(
-                      AssetCacheMetadata.self,
-                      from: data
-                  ),
-                  metadata.schemaVersion == AssetCacheMetadata.currentSchemaVersion,
-                  metadata.cacheKeyHex == keyHash,
-                  Self.isValidContentHash(metadata.payloadSHA256Hex)
+        var highestAccessSequence: Int?
+        for name in names where name.hasSuffix(".meta.json") {
+            let keyHash = String(name.dropLast(".meta.json".count))
+            guard
+                let data = try? directoryAccess.read(
+                    name: name,
+                    maxBytes: SecureCacheDirectory.maxMetadataBytes
+                ),
+                let metadata = try? JSONDecoder.assetCache().decode(
+                    AssetCacheMetadata.self,
+                    from: data
+                ),
+                metadata.schemaVersion == AssetCacheMetadata.currentSchemaVersion,
+                metadata.cacheKeyHex == keyHash,
+                Self.isValidContentHash(metadata.payloadSHA256Hex)
             else {
-                try? fileManager.removeItem(at: url)
+                _ = try? directoryAccess.remove(name: name)
                 continue
             }
-            let referencedPayloadURL = Self.payloadURL(
-                in: directory,
+            let referencedPayloadName = payloadFilename(
                 keyHash: keyHash,
                 contentHash: metadata.payloadSHA256Hex
             )
@@ -83,16 +90,21 @@ extension AssetDiskCache {
             // previous, separately-crashed payload write, or by external
             // tampering) — quarantine it too, rather than leaving it to
             // be discovered only the next time this exact key is read.
-            guard fileManager.fileExists(atPath: referencedPayloadURL.path) else {
-                try? fileManager.removeItem(at: url)
+            guard (try? directoryAccess.attributes(name: referencedPayloadName)) != nil else {
+                _ = try? directoryAccess.remove(name: name)
                 continue
             }
-            referencedPayloadFilenames.insert(referencedPayloadURL.lastPathComponent)
+            referencedPayloadFilenames.insert(referencedPayloadName)
+            highestAccessSequence = max(
+                highestAccessSequence ?? metadata.accessSequence.value,
+                metadata.accessSequence.value
+            )
         }
-        for url in contents where url.lastPathComponent.hasSuffix(".bin") {
-            guard !referencedPayloadFilenames.contains(url.lastPathComponent) else { continue }
-            try? fileManager.removeItem(at: url)
+        for name in names where name.hasSuffix(".bin") {
+            guard !referencedPayloadFilenames.contains(name) else { continue }
+            _ = try? directoryAccess.remove(name: name)
         }
+        seedAccessSequenceAllocator(resumingAfter: highestAccessSequence)
     }
 
     // MARK: - Eviction
@@ -103,8 +115,8 @@ extension AssetDiskCache {
     /// bytes that are actually persisted to disk.
     ///
     /// `payloadBytes` is likewise the actual on-disk payload file size (via
-    /// filesystem attributes), not `metadata.encodedByteCount`: metadata is
-    /// untrusted input, and if the payload file were ever larger than
+    /// a symlink-safe `fstatat`, never `metadata.encodedByteCount`): metadata
+    /// is untrusted input, and if the payload file were ever larger than
     /// metadata claims — corruption, a partial write, or external
     /// modification — trusting the claimed size would let eviction
     /// undercount real disk usage until that exact key was next read via
@@ -118,31 +130,27 @@ extension AssetDiskCache {
     }
 
     func entries() -> [Entry] {
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
-        )
-        else { return [] }
+        guard let names = try? directoryAccess.listNames() else { return [] }
         var result: [Entry] = []
-        for url in contents where url.lastPathComponent.hasSuffix(".meta.json") {
-            let hash = String(url.lastPathComponent.dropLast(".meta.json".count))
-            guard let data = try? Data(contentsOf: url),
-                  let metadata = try? JSONDecoder.assetCache().decode(
-                      AssetCacheMetadata.self,
-                      from: data
-                  )
+        for name in names where name.hasSuffix(".meta.json") {
+            let hash = String(name.dropLast(".meta.json".count))
+            guard
+                let data = try? directoryAccess.read(
+                    name: name,
+                    maxBytes: SecureCacheDirectory.maxMetadataBytes
+                ),
+                let metadata = try? JSONDecoder.assetCache().decode(
+                    AssetCacheMetadata.self,
+                    from: data
+                )
             else {
                 // An unreadable or undecodable sidecar can never be
                 // corrected by itself; quarantining it here (rather than
                 // merely skipping it) prevents it from silently occupying
                 // disk space forever, uncounted against `diskBudgetBytes`
                 // and unevictable, until its exact key happens to be
-                // looked up again via `get(_:)`. Garbage metadata means no
-                // generation for this key hash is currently referenced by
-                // anything, so every payload file for it — not just the
-                // sidecar — is safe to reclaim immediately rather than
-                // waiting for a future restart's orphan sweep.
-                try? fileManager.removeItem(at: url)
+                // looked up again via `get(_:)`.
+                _ = try? directoryAccess.remove(name: name)
                 cleanupSupersededPayloads(forKeyHash: hash, keeping: nil)
                 continue
             }
@@ -150,35 +158,17 @@ extension AssetDiskCache {
                   metadata.cacheKeyHex == hash,
                   Self.isValidContentHash(metadata.payloadSHA256Hex)
             else {
-                try? fileManager.removeItem(at: url)
+                _ = try? directoryAccess.remove(name: name)
                 cleanupSupersededPayloads(forKeyHash: hash, keeping: nil)
                 continue
             }
-            let payloadURL = Self.payloadURL(
-                in: directory,
-                keyHash: hash,
-                contentHash: metadata.payloadSHA256Hex
-            )
-            // Measure the payload the same untrusting way `get(_:)` does:
-            // via filesystem attributes, never `metadata.encodedByteCount`.
-            // A missing payload file, or one whose actual size is negative
-            // or exceeds the configured cap, means this entry cannot be
-            // trusted for accounting purposes either — quarantine it
-            // rather than let it silently under- or over-count. This key
-            // hash's metadata is being removed here, so — exactly like the
-            // undecodable/schema-mismatch branches above — no generation
-            // for it is left referenced by anything: sweep every other
-            // `.bin` generation for this key hash too (e.g. a stale
-            // pre-crash payload from between an earlier write and its own
-            // metadata commit), not just the one this metadata happened to
-            // reference, so it cannot be left orphaned, uncounted against
-            // `diskBudgetBytes`, and unevictable indefinitely.
+            let payloadName = payloadFilename(keyHash: hash, contentHash: metadata.payloadSHA256Hex)
             guard
-                let attributes = try? fileManager.attributesOfItem(atPath: payloadURL.path),
-                let actualPayloadSize = attributes[.size] as? Int,
-                actualPayloadSize >= 0, actualPayloadSize <= limits.maxEncodedBytes
+                let attributes = try? directoryAccess.attributes(name: payloadName),
+                attributes.isRegularFile,
+                attributes.size <= limits.maxEncodedBytes
             else {
-                try? fileManager.removeItem(at: url)
+                _ = try? directoryAccess.remove(name: name)
                 cleanupSupersededPayloads(forKeyHash: hash, keeping: nil)
                 continue
             }
@@ -187,7 +177,7 @@ extension AssetDiskCache {
                     hash: hash,
                     metadata: metadata,
                     metadataBytes: data.count,
-                    payloadBytes: actualPayloadSize
+                    payloadBytes: attributes.size
                 )
             )
         }
@@ -202,21 +192,39 @@ extension AssetDiskCache {
         entry.payloadBytes + entry.metadataBytes
     }
 
+    /// Evicts the least-recently-used entries (by
+    /// ``AssetCacheMetadata/accessSequence``, tie-broken deterministically
+    /// by the entry's own key hash — never filesystem `atime`, and never a
+    /// wall-clock `Date`) until total accounted bytes falls to or below
+    /// ``AssetCacheLimits/lowWaterMarkDiskBytes``. Quota accounting only
+    /// ever subtracts an entry's bytes once *both* its payload and its
+    /// metadata sidecar have been successfully removed: a failed removal
+    /// leaves that entry's bytes fully counted (so quota accounting can
+    /// never under-report real disk usage), and this method does not
+    /// throw or stop early on an individual removal failure — it keeps
+    /// evicting other entries so one unremovable entry can never mask
+    /// eviction of everything else.
     func evictIfNeeded() {
         var current = entries()
         var total = current.reduce(0) { $0 + Self.accountedBytes(for: $1) }
         guard total > limits.highWaterMarkDiskBytes else { return }
-        current.sort { $0.metadata.lastAccessedAt < $1.metadata.lastAccessedAt }
+        current.sort {
+            $0.metadata.accessSequence != $1.metadata.accessSequence
+                ? $0.metadata.accessSequence < $1.metadata.accessSequence
+                : $0.hash < $1.hash
+        }
         for entry in current {
             guard total > limits.lowWaterMarkDiskBytes else { break }
-            try? fileManager.removeItem(at: Self.payloadURL(
-                in: directory,
+            let payloadName = payloadFilename(
                 keyHash: entry.hash,
                 contentHash: entry.metadata.payloadSHA256Hex
-            ))
-            try? fileManager
-                .removeItem(at: directory.appendingPathComponent("\(entry.hash).meta.json"))
+            )
+            let metadataName = "\(entry.hash).meta.json"
+            let payloadRemoved = (try? directoryAccess.remove(name: payloadName)) ?? false
+            let metadataRemoved = (try? directoryAccess.remove(name: metadataName)) ?? false
+            guard payloadRemoved, metadataRemoved else { continue }
             total -= Self.accountedBytes(for: entry)
         }
+        try? directoryAccess.fsyncRootDirectory()
     }
 }

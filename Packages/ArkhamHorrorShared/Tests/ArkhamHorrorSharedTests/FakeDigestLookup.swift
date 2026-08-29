@@ -21,3 +21,25 @@ struct FakeDigestLookup: LocalizedDigestLookup {
         locale != .english && localized.contains(identifier)
     }
 }
+
+/// A digest lookup standing in for a genuinely broken production
+/// ``BundledLocalizedDigestProvider.shared`` (its backing resource
+/// missing, unreadable, or malformed): every non-English identifier would
+/// otherwise resolve `hasLocalizedArt` to `false`, indistinguishable from
+/// a legitimately non-localized identifier, and silently fall back to the
+/// English candidate as if nothing were wrong. Setting
+/// ``configurationError`` here reproduces exactly that broken shape so
+/// tests can prove ``AssetCacheService/resolvedCandidates(for:)`` throws
+/// the typed error immediately instead of ever reaching that silent
+/// substitution.
+struct FailingDigestLookup: LocalizedDigestLookup {
+    let configurationError: AssetError?
+
+    init(configurationError: AssetError = .configurationFailure("test-injected failure")) {
+        self.configurationError = configurationError
+    }
+
+    func hasLocalizedArt(_: AssetIdentifier, locale _: AssetLocale) -> Bool {
+        false
+    }
+}

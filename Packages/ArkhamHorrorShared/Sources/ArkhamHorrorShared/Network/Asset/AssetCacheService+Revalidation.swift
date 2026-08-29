@@ -41,7 +41,7 @@ extension AssetCacheService {
         guard let candidate = candidates.first(where: {
             $0.url(base: key.source).absoluteString == cached.metadata.resolvedURLString
         }) else {
-            await diskCache.remove(cacheKey)
+            await invalidate(cacheKey)
             return nil
         }
         do {
@@ -65,7 +65,7 @@ extension AssetCacheService {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            await diskCache.remove(cacheKey)
+            await invalidate(cacheKey)
             return nil
         }
     }
@@ -97,17 +97,63 @@ extension AssetCacheService {
     /// overwrite state a more authoritative (logically newer) revalidation
     /// already concluded while this one was still in flight.
     func revalidate(for key: AssetKey) async throws -> CachedAsset {
-        let candidates = AssetLocator.candidates(for: key, digest: digest)
-        guard !candidates.isEmpty else { throw AssetError.candidatesExhausted }
+        let candidates = try resolvedCandidates(for: key)
         let cacheKey = AssetCacheKey(for: key, candidates: candidates)
 
-        var existing = await memoryCache.get(cacheKey)
-        if existing == nil {
-            existing = await diskCache.get(cacheKey)
+        if let existing = await memoryCache.get(cacheKey) {
+            return try await revalidateExisting(
+                existing,
+                key: key,
+                cacheKey: cacheKey,
+                candidates: candidates
+            )
         }
-        guard let existing else {
+        guard let onDisk = await diskCache.get(cacheKey) else {
             throw AssetError.staleConditionalResponse
         }
+        // A disk-loaded body is never trusted as the basis for a
+        // conditional request until it has passed the exact same current
+        // format/magic-byte/dimension/limits/decode validation as a disk
+        // *hit* in ``asset(for:)`` (see
+        // ``revalidateDiskHit(_:key:cacheKey:candidates:)``): without
+        // this, a persisted wrong-format, oversized, undecodable, or
+        // stale-limits body could be silently "touched" (its
+        // `lastAccessedAt` refreshed) or re-cached in memory the moment
+        // the server happens to answer with 304, never re-validated
+        // against this process's current contract at all.
+        guard let validated = try await revalidateDiskHit(
+            onDisk,
+            key: key,
+            cacheKey: cacheKey,
+            candidates: candidates
+        ) else {
+            // Already quarantined by `revalidateDiskHit`: there is no
+            // longer any valid basis for a *conditional* request, so fall
+            // through to an ordinary unconditional fetch exactly as if
+            // this had been a clean cache miss, rather than throwing or
+            // risking a 304 paired with content nobody has validated.
+            return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
+        }
+        await memoryCache.set(cacheKey, asset: validated)
+        return try await revalidateExisting(
+            validated,
+            key: key,
+            cacheKey: cacheKey,
+            candidates: candidates
+        )
+    }
+
+    /// Validates `existing` (already confirmed current/valid by the
+    /// caller) against `key`'s own resolved candidates and issues the
+    /// actual conditional revalidation. Split out of ``revalidate(for:)``
+    /// purely so that function can share this exact tail between its
+    /// memory-hit and validated-disk-hit branches.
+    private func revalidateExisting(
+        _ existing: CachedAsset,
+        key: AssetKey,
+        cacheKey: AssetCacheKey,
+        candidates: [AssetCandidate]
+    ) async throws -> CachedAsset {
         guard let url = URL(string: existing.metadata.resolvedURLString) else {
             throw AssetError.staleConditionalResponse
         }
@@ -151,7 +197,7 @@ extension AssetCacheService {
     /// ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:)`` purely to
     /// keep that function's body within this package's
     /// `function_body_length` limit.
-    private func resolveRevalidationFetchID(
+    func resolveRevalidationFetchID(
         cacheKey: AssetCacheKey,
         url: URL,
         expectedFormat: AssetFormat,
@@ -161,7 +207,7 @@ extension AssetCacheService {
         if let current = inFlightRevalidation[slot] {
             return current.id
         }
-        let startGeneration = revalidationGeneration[cacheKey, default: 0]
+        let startEpoch = currentEpoch(for: cacheKey)
         let revalidationRequest = RevalidationRequest(
             cacheKey: cacheKey,
             url: url,
@@ -169,7 +215,7 @@ extension AssetCacheService {
             existing: existing,
             etag: slot.etag,
             lastModified: slot.lastModified,
-            startGeneration: startGeneration
+            startEpoch: startEpoch
         )
         let newTask = Task { [weak self] in
             guard let self else { throw CancellationError() }
@@ -183,218 +229,5 @@ extension AssetCacheService {
             await self?.completeRevalidation(slot, fetchID: fetchID, result: result)
         }
         return fetchID
-    }
-
-    func coalescedRevalidation(
-        cacheKey: AssetCacheKey,
-        url: URL,
-        expectedFormat: AssetFormat,
-        existing: CachedAsset
-    ) async throws -> CachedAsset {
-        let etag = existing.metadata.etag
-        let lastModified = existing.metadata.etag == nil ? existing.metadata.lastModified : nil
-        let slot = RevalidationSlot(
-            cacheKey: cacheKey,
-            url: url,
-            etag: etag,
-            lastModified: lastModified
-        )
-        let waiterID = UUID()
-        let fetchID = resolveRevalidationFetchID(
-            cacheKey: cacheKey,
-            url: url,
-            expectedFormat: expectedFormat,
-            existing: existing,
-            slot: slot
-        )
-
-        return try await withTaskCancellationHandler {
-            let result = await withCheckedContinuation { (continuation: AssetContinuation) in
-                // See ``coalescedFetch(key:cacheKey:candidates:)`` for why
-                // this synchronous registration, performed directly from
-                // actor-isolated code, is race-free without extra locking.
-                if inFlightRevalidation[slot]?.id == fetchID {
-                    var fetch = inFlightRevalidation[slot]
-                    fetch?.waiters[waiterID] = continuation
-                    inFlightRevalidation[slot] = fetch
-                } else {
-                    continuation.resume(returning: .failure(CancellationError()))
-                }
-            }
-            // See the identical `Task.isCancelled` override in
-            // `coalescedFetch` for why this check is race-free even though
-            // the resumed `result` value alone would not be.
-            if Task.isCancelled {
-                throw CancellationError()
-            }
-            return try result.get()
-        } onCancel: {
-            Task {
-                await self.cancelRevalidationWaiter(slot, fetchID: fetchID, waiterID: waiterID)
-            }
-        }
-    }
-
-    func cancelRevalidationWaiter(
-        _ slot: RevalidationSlot,
-        fetchID: UUID,
-        waiterID: UUID
-    ) {
-        guard var fetch = inFlightRevalidation[slot], fetch.id == fetchID else { return }
-        if let continuation = fetch.waiters.removeValue(forKey: waiterID) {
-            continuation.resume(returning: .failure(CancellationError()))
-        }
-        if fetch.waiters.isEmpty {
-            inFlightRevalidation[slot] = nil
-            fetch.task.cancel()
-        } else {
-            inFlightRevalidation[slot] = fetch
-        }
-    }
-
-    func completeRevalidation(
-        _ slot: RevalidationSlot,
-        fetchID: UUID,
-        result: Result<CachedAsset, Error>
-    ) {
-        guard let fetch = inFlightRevalidation[slot], fetch.id == fetchID else { return }
-        inFlightRevalidation[slot] = nil
-        for (_, continuation) in fetch.waiters {
-            continuation.resume(returning: result)
-        }
-    }
-
-    /// Performs the actual conditional network round trip and every
-    /// cache-mutating outcome, gated by `request.startGeneration`: a 404
-    /// evicts and unconditionally bumps the generation (it is
-    /// unambiguously authoritative — the resource is definitively gone); a
-    /// 304 or fresh 200 first re-checks that `request.startGeneration` is
-    /// still current immediately before mutating anything, throwing
-    /// ``AssetError/staleConditionalResponse`` instead of touching or
-    /// reinserting its own captured bytes/metadata if a more authoritative
-    /// completion (this same check, from a different overlapping
-    /// revalidation) already moved the generation forward while this
-    /// round trip — including the network wait *and* the validate/decode
-    /// work for a 200 — was in progress.
-    func performRevalidation(_ request: RevalidationRequest) async throws -> CachedAsset {
-        let cacheKey = request.cacheKey
-        let httpRequest = AssetHTTPRequest(
-            url: request.url,
-            ifNoneMatch: request.etag,
-            ifModifiedSince: request.lastModified
-        )
-        let result = try await transport.fetch(httpRequest, limits: limits)
-        switch result {
-        case .notModified:
-            guard isCurrentRevalidationGeneration(cacheKey, request.startGeneration) else {
-                throw AssetError.staleConditionalResponse
-            }
-            var refreshed = request.existing
-            refreshed.metadata.lastAccessedAt = Date()
-            bumpRevalidationGeneration(cacheKey)
-            await touch(cacheKey, asset: refreshed)
-            return refreshed
-        case .notFound:
-            // The previously cached resource no longer exists at its exact
-            // resolved URL. This is not "no change": the stale entry must
-            // be evicted from both cache layers so subsequent `asset(for:)`
-            // calls do not keep serving content the server has definitively
-            // removed. Unconditionally authoritative, so this bumps the
-            // generation regardless of `startGeneration`'s current value —
-            // any older, still-in-flight sibling revalidation must be
-            // unable to resurrect what this just evicted.
-            bumpRevalidationGeneration(cacheKey)
-            await memoryCache.remove(cacheKey)
-            await diskCache.remove(cacheKey)
-            throw AssetError.candidatesExhausted
-        case let .success(response):
-            let asset = try await assembleRevalidatedAsset(
-                cacheKey: cacheKey,
-                url: request.url,
-                expectedFormat: request.expectedFormat,
-                existing: request.existing,
-                response: response
-            )
-            guard isCurrentRevalidationGeneration(cacheKey, request.startGeneration) else {
-                // A more authoritative completion (typically a definitive
-                // 404) concluded while this response was being
-                // received/validated/decoded; publishing this now-stale
-                // result would resurrect content that was just evicted.
-                throw AssetError.staleConditionalResponse
-            }
-            bumpRevalidationGeneration(cacheKey)
-            await publish(cacheKey, asset: asset)
-            return asset
-        }
-    }
-
-    func isCurrentRevalidationGeneration(_ key: AssetCacheKey, _ generation: Int) -> Bool {
-        revalidationGeneration[key, default: 0] == generation
-    }
-
-    func bumpRevalidationGeneration(_ key: AssetCacheKey) {
-        revalidationGeneration[key, default: 0] += 1
-    }
-
-    /// Validates a fresh (non-304) revalidation response and assembles the
-    /// replacement cache entry (preserving the original `insertedAt`),
-    /// without publishing it — the caller (``performRevalidation``) alone
-    /// decides whether this result is still eligible to publish, after
-    /// re-checking the generation it was started under.
-    ///
-    /// Validates against `expectedFormat` — the exact resolved candidate's
-    /// format recovered by ``revalidate(for:)`` — rather than
-    /// `key.expectedFormat`: candidates for the same key are not all
-    /// guaranteed to share one format, so using the key's own default
-    /// alone could validate against the wrong magic bytes/MIME
-    /// expectations if the candidate chain ever includes mixed formats
-    /// (see ``revalidateDiskHit(_:key:cacheKey:candidates:)``, which
-    /// recovers it identically for the disk-hit re-validation path).
-    func assembleRevalidatedAsset(
-        cacheKey: AssetCacheKey,
-        url: URL,
-        expectedFormat: AssetFormat,
-        existing: CachedAsset,
-        response: AssetHTTPResponse
-    ) async throws -> CachedAsset {
-        let validated = try AssetImageValidator.validate(
-            data: response.body,
-            declaredContentType: response.contentType,
-            expectedFormat: expectedFormat,
-            limits: limits
-        )
-        try Task.checkCancellation()
-        // A full platform decode, not just the pure metadata/dimension
-        // parse above, is required before this payload is ever eligible
-        // for cache publication: `validate` deliberately only parses
-        // enough of a format's structure to safely read declared
-        // dimensions without a full decode, so it alone cannot detect an
-        // otherwise well-formed header describing a coded image that is
-        // truncated, missing, or corrupt (for example a PNG with only an
-        // `IHDR` chunk, a JPEG `SOF` with no scan data/EOI, or an AVIF
-        // `meta` shell with no backing `mdat`). Cross-checking the
-        // decoded image's own dimensions against the validator's parsed
-        // dimensions also catches a mismatched/ambiguous primary item.
-        let decoded = try await decodeImageOffActor(response.body)
-        guard decoded.width == validated.width, decoded.height == validated.height else {
-            throw AssetError.malformedImageData
-        }
-        try Task.checkCancellation()
-        return CachedAsset(
-            payload: response.body,
-            metadata: AssetCacheMetadata(
-                cacheKeyHex: cacheKey.digestHex,
-                contentType: response.contentType ?? validated.format.mimeType,
-                encodedByteCount: response.body.count,
-                width: validated.width,
-                height: validated.height,
-                payloadSHA256Hex: Self.sha256Hex(response.body),
-                etag: response.etag,
-                lastModified: response.lastModified,
-                resolvedURLString: url.absoluteString,
-                insertedAt: existing.metadata.insertedAt,
-                lastAccessedAt: Date()
-            )
-        )
     }
 }

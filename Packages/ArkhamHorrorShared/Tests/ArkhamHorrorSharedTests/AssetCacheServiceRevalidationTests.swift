@@ -58,7 +58,7 @@ extension AssetCacheServiceTests {
     }
 
     @Test(
-        "A 304 with a currently valid cached payload succeeds and refreshes lastAccessedAt"
+        "A 304 with a currently valid cached payload succeeds and refreshes accessSequence"
     )
     func notModifiedWithValidCacheSucceeds() async throws {
         try await withService { service, transport in
@@ -184,7 +184,10 @@ extension AssetCacheServiceTests {
     @Test(
         """
         Revalidation refuses to trust a persisted resolvedURLString that does not match any of \
-        the key's current candidates, surfacing a typed error without a network call
+        the key's current candidates: it quarantines the tampered entry and falls through to a \
+        fresh, unconditional fetch of a legitimate candidate, exactly as a validation failure \
+        on any other disk hit does — never a conditional request to (or trusting a 304 from) \
+        the recorded, untrusted URL
         """
     )
     func revalidateRejectsResolvedURLNotMatchingAnyCandidate() async throws {
@@ -232,15 +235,26 @@ extension AssetCacheServiceTests {
             let tampered = try JSONSerialization.data(withJSONObject: json)
             try tampered.write(to: metadataURL)
 
-            await #expect(throws: AssetError.staleConditionalResponse) {
-                _ = try await service.revalidate(for: key)
-            }
-            // No revalidation request was ever sent: exactly the one
-            // initial fetch call to urls[0], and no further call to any
-            // legitimate candidate (and certainly never to the tampered
-            // host, which isn't even a candidate URL at all).
-            let firstCallCount = await transport.callCount(for: urls[0])
-            #expect(firstCallCount == 1)
+            // The tampered entry is invalidated without ever contacting
+            // the recorded (untrusted) host, and `revalidate(for:)` falls
+            // through to an ordinary, unconditional fetch of a legitimate
+            // candidate — the same recovery a validation/decode failure
+            // on a disk hit already takes, rather than surfacing a typed
+            // conditional-request error for what is really a fresh miss.
+            await transport.enqueue(.success(successResult(etag: "\"def\"")), for: urls[0])
+            let revalidated = try await service.revalidate(for: key)
+            #expect(revalidated.metadata.etag == "\"def\"")
+
+            // Exactly two calls to the one legitimate candidate (the
+            // original populate, then this fresh re-fetch), the second of
+            // which is unconditional (no `If-None-Match`) since there was
+            // no longer any validated cached body to condition against —
+            // and no call whatsoever to the tampered host, which isn't
+            // even a candidate URL at all.
+            let calls = await transport.calls
+            let callsToFirstCandidate = calls.filter { $0.url == urls[0] }
+            #expect(callsToFirstCandidate.count == 2)
+            #expect(callsToFirstCandidate.last?.ifNoneMatch == nil)
             for url in urls.dropFirst() {
                 let callCount = await transport.callCount(for: url)
                 #expect(callCount == 0)
@@ -279,7 +293,7 @@ extension AssetCacheServiceTests {
                 lastModified: nil,
                 resolvedURLString: url.absoluteString,
                 insertedAt: Date(timeIntervalSince1970: 0),
-                lastAccessedAt: Date(timeIntervalSince1970: 0)
+                accessSequence: AssetAccessSequence(0)
             )
         )
         let response = AssetHTTPResponse(

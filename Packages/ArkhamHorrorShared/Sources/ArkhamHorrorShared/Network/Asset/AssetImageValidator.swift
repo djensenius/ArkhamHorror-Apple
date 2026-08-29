@@ -56,6 +56,25 @@ enum AssetImageValidator {
         }
 
         try validateDimensions(width: dimensions.width, height: dimensions.height, limits: limits)
+
+        // Beyond a bare dimension parse (which only inspects a fixed-size
+        // header/frame segment), require the *entire* body to be a
+        // complete, well-formed codec structure — a file truncated or
+        // corrupted anywhere after that header can still declare valid
+        // dimensions, and ImageIO's own lazy decoder does not reliably
+        // reject such a file either. AVIF's structural completeness is
+        // instead enforced by the eager pixel decode this metadata feeds
+        // into (`AssetImageDecoder`), since AVIF's box structure is
+        // already resolved via ImageIO in `parseAVIFDimensions`.
+        switch expectedFormat {
+        case .png:
+            try validatePNGStructure(data)
+        case .jpeg:
+            try validateJPEGStructure(data)
+        case .avif:
+            break
+        }
+
         return ValidatedImageMetadata(
             format: expectedFormat,
             width: dimensions.width,
@@ -181,7 +200,11 @@ enum AssetImageValidator {
 
     /// The start-of-frame markers (`C0`–`CF`, excluding the DHT/JPG/DAC
     /// extension markers `C4`, `C8`, `CC`) whose payload carries dimensions.
-    private static let jpegSOFMarkers: Set<UInt8> = [
+    ///
+    /// Not `private`: also used by `validateJPEGStructure` in
+    /// `AssetImageValidator+JPEGStructure.swift`, a separate file purely to
+    /// stay under SwiftLint's `file_length`.
+    static let jpegSOFMarkers: Set<UInt8> = [
         0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF,
     ]
 

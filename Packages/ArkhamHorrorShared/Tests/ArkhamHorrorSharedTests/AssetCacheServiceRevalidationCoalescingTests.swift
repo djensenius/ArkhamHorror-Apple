@@ -43,7 +43,7 @@ extension AssetCacheServiceTests {
                 lastModified: metadata.lastModified,
                 resolvedURLString: metadata.resolvedURLString,
                 insertedAt: metadata.insertedAt,
-                lastAccessedAt: metadata.lastAccessedAt
+                accessSequence: metadata.accessSequence
             )
         )
     }

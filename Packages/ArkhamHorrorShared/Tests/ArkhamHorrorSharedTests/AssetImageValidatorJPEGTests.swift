@@ -111,6 +111,12 @@ extension AssetImageValidatorTests {
         bytes += [0x00, 0x06] // width = 6
         bytes += [0x01] // component count = 1
         bytes += [0x01, 0x11, 0x00] // one component descriptor
+        bytes += [0xFF, 0xDA] // SOS marker
+        bytes += [0x00, 0x08] // SOS header length = 8
+        bytes += [0x01] // Ns = 1 component in this scan
+        bytes += [0x01, 0x00] // component selector, DC/AC table selector
+        bytes += [0x00, 0x3F, 0x00] // Ss, Se, AhAl
+        bytes += [0x00] // one byte of entropy-coded scan data
         bytes += [0xFF, 0xD9] // EOI
         let metadata = try AssetImageValidator.validate(
             data: Data(bytes),

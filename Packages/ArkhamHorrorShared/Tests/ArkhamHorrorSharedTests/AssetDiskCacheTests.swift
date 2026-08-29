@@ -40,7 +40,7 @@ struct AssetDiskCacheTests {
             lastModified: nil,
             resolvedURLString: "https://example.com/\(cacheKey.digestHex)",
             insertedAt: date,
-            lastAccessedAt: date
+            accessSequence: AssetAccessSequence(0)
         )
     }
 

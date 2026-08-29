@@ -42,6 +42,14 @@ enum AssetError: Error, Sendable {
     /// A 304 response arrived but no currently valid cached payload exists to
     /// pair it with.
     case staleConditionalResponse
+    /// This operation's result is no longer eligible to mutate the cache:
+    /// a more authoritative, logically newer operation for the same key
+    /// (another completed fetch/revalidation, or an `evictAll()`) already
+    /// concluded while this one was suspended (a network round trip, a
+    /// validate/decode pass, or a disk-cache await). Never surfaces stale
+    /// or half-published state; the caller's in-flight coalescing layer
+    /// treats this identically to cancellation for its own waiters.
+    case staleOperation
 
     // MARK: Content validation
 
@@ -87,6 +95,7 @@ extension AssetError: Equatable {
              (.nonHTTPResponse, .nonHTTPResponse),
              (.responseTooLarge, .responseTooLarge),
              (.staleConditionalResponse, .staleConditionalResponse),
+             (.staleOperation, .staleOperation),
              (.contentTypeMismatch, .contentTypeMismatch),
              (.signatureMismatch, .signatureMismatch),
              (.malformedImageData, .malformedImageData),

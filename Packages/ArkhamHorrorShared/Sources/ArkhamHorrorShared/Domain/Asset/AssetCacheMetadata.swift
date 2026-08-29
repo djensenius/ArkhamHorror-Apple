@@ -25,9 +25,27 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// different candidate's resource.
     let resolvedURLString: String
     let insertedAt: Date
-    var lastAccessedAt: Date
+    /// An actor-issued, monotonically increasing LRU ordering value —
+    /// never a wall-clock `Date`. Each cache layer that holds its own copy
+    /// of this metadata (``AssetMemoryCache``, ``AssetDiskCache``) stamps
+    /// *its own* fresh value here whenever it touches an entry
+    /// (`get`/`set`/`touch`), overwriting whatever value the caller
+    /// supplied; the value is therefore authoritative only within
+    /// whichever single cache layer most recently stamped it, never
+    /// compared across layers. This sidesteps the two real defects a
+    /// wall-clock `Date` has for this purpose: `Date()`'s resolution can
+    /// tie under real concurrent/rapid access (an `ISO8601` string
+    /// encoding, in particular, drops sub-second precision entirely,
+    /// making same-second ties routine rather than rare), and a wall-clock
+    /// step backward (e.g. an NTP correction) can misorder LRU eviction
+    /// relative to the true access order. A plain actor-issued integer
+    /// sequence cannot regress and, encoded as an exact JSON integer
+    /// (never a `Double`), round-trips exactly for the entire `Int` range
+    /// this platform supports — including values far beyond 2^53, unlike
+    /// a numeric encoding that lost precision at that boundary.
+    var accessSequence: AssetAccessSequence
 
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
     init(
         cacheKeyHex: String,
@@ -40,7 +58,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         lastModified: String?,
         resolvedURLString: String,
         insertedAt: Date,
-        lastAccessedAt: Date
+        accessSequence: AssetAccessSequence
     ) {
         schemaVersion = Self.currentSchemaVersion
         self.cacheKeyHex = cacheKeyHex
@@ -53,7 +71,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         self.lastModified = lastModified
         self.resolvedURLString = resolvedURLString
         self.insertedAt = insertedAt
-        self.lastAccessedAt = lastAccessedAt
+        self.accessSequence = accessSequence
     }
 
     /// This metadata value's own real serialized-JSON byte count — the

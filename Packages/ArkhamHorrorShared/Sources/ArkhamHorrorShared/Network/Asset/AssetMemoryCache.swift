@@ -60,6 +60,12 @@ actor AssetMemoryCache {
     private var entries: [AssetCacheKey: CachedAsset] = [:]
     private let limits: AssetCacheLimits
 
+    /// This actor's own private LRU sequence, independent of whatever
+    /// value ``AssetDiskCache`` may have stamped into the same metadata
+    /// field: the memory cache never persists across a restart, so it has
+    /// no recovery concern and always starts from `0` for a fresh process.
+    private var accessSequence = AssetAccessSequenceAllocator()
+
     /// Current total accounted bytes across every entry, maintained
     /// incrementally on every ``set(_:asset:)``/``remove(_:)``/
     /// ``removeAll()`` rather than re-summed from every entry on each
@@ -78,16 +84,18 @@ actor AssetMemoryCache {
 
     func get(_ key: AssetCacheKey) -> CachedAsset? {
         guard var entry = entries[key] else { return nil }
-        entry.metadata.lastAccessedAt = Date()
+        entry.metadata.accessSequence = accessSequence.allocate()
         entries[key] = entry
         return entry
     }
 
     func set(_ key: AssetCacheKey, asset: CachedAsset) {
-        if let previous = entries.updateValue(asset, forKey: key) {
+        var stamped = asset
+        stamped.metadata.accessSequence = accessSequence.allocate()
+        if let previous = entries.updateValue(stamped, forKey: key) {
             totalAccountedBytes -= previous.accountedByteCount
         }
-        totalAccountedBytes += asset.accountedByteCount
+        totalAccountedBytes += stamped.accountedByteCount
         evictIfNeeded()
     }
 
@@ -104,8 +112,10 @@ actor AssetMemoryCache {
 
     private func evictIfNeeded() {
         guard totalAccountedBytes > limits.highWaterMarkMemoryBytes else { return }
-        let oldestFirst = entries.sorted {
-            $0.value.metadata.lastAccessedAt < $1.value.metadata.lastAccessedAt
+        let oldestFirst = entries.sorted { lhs, rhs in
+            lhs.value.metadata.accessSequence != rhs.value.metadata.accessSequence
+                ? lhs.value.metadata.accessSequence < rhs.value.metadata.accessSequence
+                : lhs.key.digestHex < rhs.key.digestHex
         }
         for (key, asset) in oldestFirst {
             guard totalAccountedBytes > limits.lowWaterMarkMemoryBytes else { break }

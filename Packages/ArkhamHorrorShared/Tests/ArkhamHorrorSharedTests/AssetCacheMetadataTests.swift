@@ -21,7 +21,7 @@ struct AssetCacheMetadataTests {
             lastModified: nil,
             resolvedURLString: resolvedURLString,
             insertedAt: Date(timeIntervalSince1970: 0),
-            lastAccessedAt: Date(timeIntervalSince1970: 0)
+            accessSequence: AssetAccessSequence(0)
         )
     }
 
@@ -55,5 +55,32 @@ struct AssetCacheMetadataTests {
         // the old, now-removed `accountedByteCount` did), it would be at
         // least 1000.
         #expect(small.metadataOverheadBytes < small.encodedByteCount)
+    }
+
+    @Test("accessSequence always serializes to the same fixed width regardless of its value")
+    func accessSequenceSerializesToAFixedWidth() {
+        // `AssetMemoryCache`'s per-entry accounted-byte-count is computed
+        // once at construction and never re-measured on every subsequent
+        // touch (see `CachedAsset.accountedByteCount`'s doc comment); that
+        // optimization is only correct if `accessSequence`'s serialized
+        // footprint truly never changes as the underlying integer grows,
+        // from `0` all the way to `Int.max`.
+        let zero = metadata(resolvedURLString: "https://example.com/a.avif")
+        var large = zero
+        large.accessSequence = AssetAccessSequence(Int.max)
+        #expect(zero.metadataOverheadBytes == large.metadataOverheadBytes)
+    }
+
+    @Test("AssetAccessSequence round-trips through JSON for boundary values including > 2^53")
+    func accessSequenceRoundTripsBoundaryValues() throws {
+        for value in [0, 1, 1 << 53, (1 << 53) + 1, Int.max - 1, Int.max] {
+            let sequence = AssetAccessSequence(value)
+            let data = try JSONEncoder.assetCache().encode(["sequence": sequence])
+            let decoded = try JSONDecoder.assetCache().decode(
+                [String: AssetAccessSequence].self,
+                from: data
+            )
+            #expect(decoded["sequence"] == sequence)
+        }
     }
 }

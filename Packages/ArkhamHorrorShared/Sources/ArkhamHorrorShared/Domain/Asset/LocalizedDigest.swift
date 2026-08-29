@@ -9,6 +9,23 @@ protocol LocalizedDigestLookup: Sendable {
     /// Whether `identifier`'s art has a published localized image for
     /// `locale`. Always `false` for ``AssetLocale/english``.
     func hasLocalizedArt(_ identifier: AssetIdentifier, locale: AssetLocale) -> Bool
+
+    /// Non-`nil` only when this lookup's own backing configuration/data
+    /// (e.g. a bundled resource) failed to load. Callers that resolve
+    /// candidates from this lookup must check this *before* trusting a
+    /// `false` answer from ``hasLocalizedArt(_:locale:)`` as "genuinely no
+    /// localized art" rather than "this lookup is broken and cannot
+    /// answer honestly" — see ``AssetCacheService/asset(for:)``, which
+    /// throws it immediately instead of silently falling back to
+    /// English. Defaults to `nil` (see the protocol extension below) so
+    /// a lookup with no such failure mode need not implement this at all.
+    var configurationError: AssetError? { get }
+}
+
+extension LocalizedDigestLookup {
+    var configurationError: AssetError? {
+        nil
+    }
 }
 
 /// Pure transformation from a raw upstream web-client digest (an array of

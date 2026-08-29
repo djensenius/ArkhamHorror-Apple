@@ -15,13 +15,8 @@ extension AssetDiskCacheTests {
     )
     func metadataWriteFailureLeavesNoOrphanPayload() async throws {
         try await withScratchDirectory { directory in
-            let failingFileManager = FailingFileManager()
-            failingFileManager.failPathSuffixes = [".meta.json"]
-            let cache = try AssetDiskCache(
-                directory: directory,
-                limits: smallLimits(),
-                fileManager: failingFileManager
-            )
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            await cache.directoryAccess.installFaultInjection(failSuffixes: [".meta.json"])
             let cacheKey = try key("01001")
             let payload = Data([1, 2, 3])
 
@@ -53,13 +48,8 @@ extension AssetDiskCacheTests {
     )
     func failedTempFileWriteCleansUpTempFileImmediately() async throws {
         try await withScratchDirectory { directory in
-            let failingFileManager = FailingFileManager()
-            failingFileManager.failPathSuffixes = [".bin"]
-            let cache = try AssetDiskCache(
-                directory: directory,
-                limits: smallLimits(),
-                fileManager: failingFileManager
-            )
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            await cache.directoryAccess.installFaultInjection(failSuffixes: [".bin"])
             let cacheKey = try key("01001")
             let payload = Data([1, 2, 3])
 
@@ -91,13 +81,8 @@ extension AssetDiskCacheTests {
     )
     func failedRenameCleansUpTempFileImmediately() async throws {
         try await withScratchDirectory { directory in
-            let failingFileManager = FailingFileManager()
-            failingFileManager.failPathSuffixes = [".bin"]
-            let cache = try AssetDiskCache(
-                directory: directory,
-                limits: smallLimits(),
-                fileManager: failingFileManager
-            )
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            await cache.directoryAccess.installFaultInjection(failSuffixes: [".bin"])
             let cacheKey = try key("01001")
             let payload = Data([1, 2, 3])
 
@@ -289,7 +274,7 @@ extension AssetDiskCacheTests {
                 lastModified: tampered.lastModified,
                 resolvedURLString: tampered.resolvedURLString,
                 insertedAt: tampered.insertedAt,
-                lastAccessedAt: tampered.lastAccessedAt
+                accessSequence: tampered.accessSequence
             )
 
             await #expect(throws: AssetError.self) {
@@ -329,16 +314,11 @@ extension AssetDiskCacheTests {
     )
     func transientListingFailureRetriesOrphanRecoveryLater() async throws {
         try await withScratchDirectory { directory in
-            let failingFileManager = FailingFileManager()
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
             // The very first `set` call's `recoverOrphansIfNeeded()` will
             // fail to list the directory exactly once, simulating a
             // transient I/O error rather than a permanent one.
-            failingFileManager.contentsOfDirectoryFailuresRemaining = 1
-            let cache = try AssetDiskCache(
-                directory: directory,
-                limits: smallLimits(),
-                fileManager: failingFileManager
-            )
+            await cache.directoryAccess.installFaultInjection(listNamesFailuresRemaining: 1)
 
             let tempURL = directory.appendingPathComponent("deadbeef.bin.tmp")
             try Data([1, 2, 3]).write(to: tempURL)
