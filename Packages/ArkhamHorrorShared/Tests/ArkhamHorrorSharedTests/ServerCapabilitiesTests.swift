@@ -57,7 +57,7 @@ struct ServerCapabilitiesTests {
     func unknownCapabilitiesPreserved() throws {
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
@@ -73,7 +73,7 @@ struct ServerCapabilitiesTests {
     func unknownStatusPreserved() throws {
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "future-status-v3-not-yet-defined",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
@@ -90,7 +90,7 @@ struct ServerCapabilitiesTests {
     func unknownExtraFieldsAccepted() throws {
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
@@ -101,7 +101,7 @@ struct ServerCapabilitiesTests {
         """
         // Decoding must not fail when unknown top-level keys are present.
         let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
-        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 11))
+        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 12))
     }
 
     // MARK: - Known status values
@@ -133,7 +133,7 @@ struct ServerCapabilitiesTests {
     func emptyCapabilities() throws {
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "stable",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
@@ -182,7 +182,7 @@ struct ServerCapabilitiesTests {
         // capabilities must be [String]; an integer element must fail
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
