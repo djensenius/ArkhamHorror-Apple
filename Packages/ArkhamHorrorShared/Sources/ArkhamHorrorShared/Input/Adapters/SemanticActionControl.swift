@@ -120,6 +120,34 @@ struct ActionSuppressionState: Equatable {
 /// already recognized a long press while the finger was still down.
 /// `LongPressGesture` (rather than `DragGesture`) is used for both phases of
 /// this sequence because `DragGesture` is unavailable on tvOS.
+///
+/// A second, distinct failure mode of the same shape exists on every
+/// non-tvOS platform: `LongPressGesture`'s `maximumDistance` parameter
+/// defaults to 10 points, and — unlike `minimumDuration` — this default
+/// applies to *both* phases of the sequence above, including the
+/// `.infinity`-duration second phase meant to track the real touch
+/// lifecycle. Ordinary finger/cursor drift while a press is still held,
+/// well within the target's own bounds (for example after the semantic
+/// long press below has already succeeded), exceeds that 10pt tolerance
+/// and fails the *lifecycle* gesture on distance alone — resetting
+/// `isPressActive` to `false`, and thus running the deferred clear, while
+/// the touch is still physically down, long before the real lift. That
+/// reproduces the exact same double-dispatch this type exists to prevent,
+/// just via drift instead of via early gesture recognition. `tvOS` is
+/// unaffected only because its `LongPressGesture` has no `maximumDistance`
+/// initializer or property at all (there is no drift to speak of on the
+/// Siri Remote's directional/trackpad input in the sense a touchscreen or
+/// pointer has); every other platform must explicitly pass
+/// `maximumDistance: .greatestFiniteMagnitude` (not `.infinity`, which SwiftUI's
+/// internal distance arithmetic is not documented to handle safely; a huge
+/// but finite sentinel is never actually approached by any real on-screen
+/// coordinate delta) to both phases so this lifecycle gesture, like
+/// `minimumDuration` before it, can only ever end at the real touch/pointer
+/// up or cancel — never on distance. The separate, independent
+/// `LongPressGesture` below that decides whether a press counts as
+/// ``SemanticCommand/secondaryAction`` intentionally keeps its own default
+/// 10pt tolerance; only the lifecycle-tracking gesture's tolerance is
+/// widened.
 public struct SemanticActionControl<Label: View>: View {
     public let accessibilityLabel: Text
     public let semanticFocusID: SemanticFocusID
@@ -134,6 +162,33 @@ public struct SemanticActionControl<Label: View>: View {
     private static var secondaryActionThreshold: Double {
         0.5
     }
+
+    #if os(tvOS)
+        /// tvOS's `LongPressGesture` has no `maximumDistance` initializer or
+        /// property at all, so its plain `init(minimumDuration:)` is already
+        /// "distance-free" and needs no adjustment — see this type's
+        /// top-level doc comment.
+        static var lifecyclePressPhase: LongPressGesture {
+            LongPressGesture(minimumDuration: 0)
+        }
+
+        static var lifecycleHoldPhase: LongPressGesture {
+            LongPressGesture(minimumDuration: .infinity)
+        }
+    #else
+        /// `internal`, not `private`: exposed so tests can assert directly on
+        /// the actual `maximumDistance` this type constructs its lifecycle
+        /// gesture with, rather than only on derived state-machine behavior —
+        /// a wiring regression that silently reverts to the 10pt default
+        /// would otherwise pass every ``ActionSuppressionState``-level test.
+        static var lifecyclePressPhase: LongPressGesture {
+            LongPressGesture(minimumDuration: 0, maximumDistance: .greatestFiniteMagnitude)
+        }
+
+        static var lifecycleHoldPhase: LongPressGesture {
+            LongPressGesture(minimumDuration: .infinity, maximumDistance: .greatestFiniteMagnitude)
+        }
+    #endif
 
     public init(
         accessibilityLabel: Text,
@@ -167,8 +222,8 @@ public struct SemanticActionControl<Label: View>: View {
                 }
         )
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0)
-                .sequenced(before: LongPressGesture(minimumDuration: .infinity))
+            Self.lifecyclePressPhase
+                .sequenced(before: Self.lifecycleHoldPhase)
                 .updating($isPressActive) { _, state, _ in
                     state = true
                 }

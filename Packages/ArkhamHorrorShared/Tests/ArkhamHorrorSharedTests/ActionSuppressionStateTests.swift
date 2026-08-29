@@ -207,4 +207,72 @@ struct ActionSuppressionStateTests {
         let dispatched = state.attemptPrimaryAction()
         #expect(dispatched)
     }
+
+    // MARK: - Drift-related scenarios (see SemanticActionControlGestureTests
+
+    // for the actual SwiftUI gesture-configuration fix this state sequence depends on)
+
+    @Test(
+        """
+        Pre-success drift: the finger/cursor moves before the semantic 0.5s long press \
+        recognizes at all, so longPressSucceeded() is never called; lifting inside the \
+        control still dispatches a normal, unsuppressed primary action, exactly like an \
+        ordinary short tap
+        """
+    )
+    func preSuccessDriftNeverSuppressesTheEventualLift() {
+        var state = ActionSuppressionState()
+        state.pressBegan()
+        // Drift happens here, before the 0.5s threshold — the semantic
+        // long-press recognizer fails on distance and never calls
+        // longPressSucceeded(); no suppression is ever armed.
+        let dispatchedAtLift = state.attemptPrimaryAction()
+        #expect(dispatchedAtLift)
+    }
+
+    @Test(
+        """
+        Drag out and back in, then lift inside: with the lifecycle gesture's distance \
+        tolerance fixed (see SemanticActionControlGestureTests), \
+        isPressActive only falls at the real lift regardless of intermediate drift, so \
+        a long press that already succeeded is still suppressed exactly once at that \
+        real, later lift — never early, from the drift itself
+        """
+    )
+    func dragOutAndBackThenLiftInsideStillSuppressesExactlyOnceAtRealLift() {
+        var state = ActionSuppressionState()
+        state.pressBegan()
+        state.longPressSucceeded()
+        // Drift (out of and back into the control's bounds) does not, by
+        // itself, produce any falling edge now that the lifecycle gesture
+        // tolerates it — so nothing is observed here at all until the real
+        // lift below.
+        let dispatchedAtRealLift = state.attemptPrimaryAction()
+        #expect(!dispatchedAtRealLift)
+        let scheduledClear = state.pressActiveDidChange(from: true, to: false)
+        #expect(scheduledClear)
+        state.clearStaleSuppression()
+        let laterActivation = state.attemptPrimaryAction()
+        #expect(laterActivation)
+    }
+
+    @Test(
+        """
+        Cancellation after a successful long press (e.g. an incoming system alert, not a \
+        drag-away lift) never fires Button's own action either — the deferred clear from \
+        the falling edge is still the only thing that resets suppression, and a later, \
+        unrelated activation (including one driven by a subsequent accessibility action) \
+        is never swallowed
+        """
+    )
+    func cancellationAfterSuccessNeverLeavesSuppressionStuck() {
+        var state = ActionSuppressionState()
+        state.pressBegan()
+        state.longPressSucceeded()
+        let scheduledClear = state.pressActiveDidChange(from: true, to: false)
+        #expect(scheduledClear)
+        state.clearStaleSuppression()
+        let accessibilityActivation = state.attemptPrimaryAction()
+        #expect(accessibilityActivation)
+    }
 }
