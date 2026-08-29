@@ -75,26 +75,40 @@ extension AppModel {
 
     // MARK: - Session-expiry / reset
 
-    /// Reacts to a ``GameLifecycleError/sessionExpired`` (HTTP 401) observed by any
-    /// game-lifecycle request for `profile`. Deletes the now-rejected token and
+    /// Reacts to a ``GameLifecycleError/sessionExpired`` (HTTP 401) observed by a
+    /// game-lifecycle request that began at `generation`/`credentialEpoch`/
+    /// `globalEpoch` -- the exact values its own attempt captured at the moment it
+    /// started, never re-read fresh here. Deletes the now-rejected token and
     /// transitions to `.signedOut`, routing through the exact same single token
     /// authority a rejected `whoami` token restoration already uses
     /// (``deleteUnauthorizedToken(profile:compatibility:generation:credentialEpoch:globalEpoch:)``)
     /// rather than a second, parallel "am I still signed in" path.
     ///
+    /// Threading the caller's own captured values through (rather than reading
+    /// ``generation``/``currentCredentialEpoch(for:)``/``currentGlobalCredentialEpoch()``
+    /// fresh here) is what makes this safe even when a stale request's 401 races a
+    /// concurrent sign-out followed by a *newer*, successful sign-in to the very
+    /// same profile: `deleteUnauthorizedToken`'s own generation/epoch recheck,
+    /// performed at the last possible moment before the Keychain is touched,
+    /// compares against these stale captured values -- never whatever happens to be
+    /// current by the time this actually runs -- so a 401 that outlived its own
+    /// request's relevance can never delete a newer, unrelated session's token.
+    /// Every call site must capture its own generation/credentialEpoch/globalEpoch
+    /// at the same moment it captures everything else its own staleness guard
+    /// needs, and must confirm its own attempt is still current before calling this.
+    ///
     /// A no-op if the session has already moved on: signed out, switched to a
-    /// different profile, or a newer operation has already superseded ``generation``.
-    func handleGameLifecycleSessionExpired(profile: ServerProfile) async {
+    /// different profile, or a newer operation has already superseded `generation`.
+    func handleGameLifecycleSessionExpired(
+        profile: ServerProfile, generation: Int, credentialEpoch: Int, globalEpoch: Int
+    ) async {
         guard case let .signedIn(currentProfile, compatibility, _) = sessionState,
               currentProfile == profile
         else { return }
-        let sessionGeneration = generation
-        let credentialEpoch = currentCredentialEpoch(for: profile.id)
-        let globalEpoch = currentGlobalCredentialEpoch()
         await deleteUnauthorizedToken(
             profile: profile,
             compatibility: compatibility,
-            generation: sessionGeneration,
+            generation: generation,
             credentialEpoch: credentialEpoch,
             globalEpoch: globalEpoch
         )
@@ -125,14 +139,16 @@ extension AppModel {
 
     // MARK: - Games list
 
-    /// The profile and generation snapshot captured when a games-list load/refresh
-    /// starts, threaded through its async body. A small named type (rather than a
-    /// multi-parameter/tuple signature) keeps every function below within this
-    /// project's line-length and tuple-arity conventions.
+    /// The profile, generation, and credential/global-epoch snapshot captured when a
+    /// games-list load/refresh starts, threaded through its async body. A small named
+    /// type (rather than a multi-parameter/tuple signature) keeps every function
+    /// below within this project's line-length and tuple-arity conventions.
     private struct GameListLoadAttempt: Sendable {
         let profile: ServerProfile
         let listGeneration: Int
         let sessionGeneration: Int
+        let credentialEpoch: Int
+        let globalEpoch: Int
     }
 
     private func isCurrentGameList(_ attempt: GameListLoadAttempt) -> Bool {
@@ -146,7 +162,11 @@ extension AppModel {
         gameListTask?.cancel()
         gameListGeneration += 1
         let attempt = GameListLoadAttempt(
-            profile: profile, listGeneration: gameListGeneration, sessionGeneration: generation
+            profile: profile,
+            listGeneration: gameListGeneration,
+            sessionGeneration: generation,
+            credentialEpoch: currentCredentialEpoch(for: profile.id),
+            globalEpoch: currentGlobalCredentialEpoch()
         )
         gameListState = .loading(previous: gameListState.games)
         gameListTask = Task { [weak self] in
@@ -167,7 +187,12 @@ extension AppModel {
             guard isCurrentGameList(attempt) else { return }
             gameListState = .failed(error, previous: gameListState.games)
             if case .sessionExpired = error {
-                await handleGameLifecycleSessionExpired(profile: attempt.profile)
+                await handleGameLifecycleSessionExpired(
+                    profile: attempt.profile,
+                    generation: attempt.sessionGeneration,
+                    credentialEpoch: attempt.credentialEpoch,
+                    globalEpoch: attempt.globalEpoch
+                )
             }
         } catch {
             guard isCurrentGameList(attempt) else { return }
@@ -215,6 +240,14 @@ extension AppModel {
         guard case let .signedIn(profile, _, _) = sessionState else {
             throw GameLifecycleError.sessionExpired
         }
+        // Captured once, here, alongside `profile` -- not re-read fresh at the
+        // catch site below -- so a 401 that arrives after this exact call has
+        // already been superseded (sign-out, profile switch, or a concurrent
+        // sign-in to this same profile) can never be mistaken for *that* newer
+        // session's own expiry. See `handleGameLifecycleSessionExpired`.
+        let capturedGeneration = generation
+        let capturedCredentialEpoch = currentCredentialEpoch(for: profile.id)
+        let capturedGlobalEpoch = currentGlobalCredentialEpoch()
         let token: String
         do {
             token = try await currentGameLifecycleToken(for: profile)
@@ -239,8 +272,13 @@ extension AppModel {
                 throw GameLifecycleError.malformedPayload
             }
         } catch let error as GameLifecycleError {
-            if case .sessionExpired = error {
-                await handleGameLifecycleSessionExpired(profile: profile)
+            if case .sessionExpired = error, isCurrent(capturedGeneration) {
+                await handleGameLifecycleSessionExpired(
+                    profile: profile,
+                    generation: capturedGeneration,
+                    credentialEpoch: capturedCredentialEpoch,
+                    globalEpoch: capturedGlobalEpoch
+                )
             }
             throw error
         }

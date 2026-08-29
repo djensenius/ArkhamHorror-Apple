@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 /// Pure, non-networked coverage for the game-lifecycle domain/presentation-support
-/// types: ``GameLifecycleEnvelope``, ``ContractUnit``, ``GameListLoadState``,
+/// types: ``GameLifecycleEnvelope``, ``GameListLoadState``,
 /// ``GameLifecycleError/message``, and the ``GameSummary``/``GameState`` display
 /// helpers `GamesListView`/`GameRowView`/`GameLobbyView` render.
 @Suite("GameLifecycle domain support")
@@ -48,34 +48,6 @@ struct GameLifecycleDomainTests {
         let json = #"{"id":"00000000-0000-0000-0000-000000000001"}"#
         #expect(throws: (any Error).self) {
             try ContractJSON.decode(GameLifecycleEnvelope.self, from: Data(json.utf8))
-        }
-    }
-
-    // MARK: - ContractUnit
-
-    @Test("ContractUnit decodes the exact [] Yesod's ToJSON () instance sends")
-    func contractUnitDecodesEmptyArray() throws {
-        _ = try ContractJSON.decode(ContractUnit.self, from: Data("[]".utf8))
-    }
-
-    @Test("ContractUnit rejects a non-empty array")
-    func contractUnitRejectsNonEmptyArray() {
-        #expect(throws: (any Error).self) {
-            try ContractJSON.decode(ContractUnit.self, from: Data("[1]".utf8))
-        }
-    }
-
-    @Test("ContractUnit rejects an object")
-    func contractUnitRejectsObject() {
-        #expect(throws: (any Error).self) {
-            try ContractJSON.decode(ContractUnit.self, from: Data("{}".utf8))
-        }
-    }
-
-    @Test("ContractUnit rejects null")
-    func contractUnitRejectsNull() {
-        #expect(throws: (any Error).self) {
-            try ContractJSON.decode(ContractUnit.self, from: Data("null".utf8))
         }
     }
 

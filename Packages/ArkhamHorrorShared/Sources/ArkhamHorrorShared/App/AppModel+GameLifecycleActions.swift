@@ -8,6 +8,8 @@ private struct GameActionAttempt: Sendable {
     let profile: ServerProfile
     let attemptID: UUID
     let sessionGeneration: Int
+    let credentialEpoch: Int
+    let globalEpoch: Int
 }
 
 /// Per-game lifecycle actions (delete/join/open-seats/claim-seat/choose-deck),
@@ -38,7 +40,11 @@ extension AppModel {
         gameLifecycleActions[id] = kind
         gameLifecycleActionFailures[id] = nil
         return GameActionAttempt(
-            profile: profile, attemptID: attemptID, sessionGeneration: generation
+            profile: profile,
+            attemptID: attemptID,
+            sessionGeneration: generation,
+            credentialEpoch: currentCredentialEpoch(for: profile.id),
+            globalEpoch: currentGlobalCredentialEpoch()
         )
     }
 
@@ -81,12 +87,16 @@ extension AppModel {
     /// Runs `body` for `id`'s already-resolved token, mapping every thrown failure
     /// to a typed, attempt-guarded ``GameLifecycleActionFailure`` (and routing a
     /// ``GameLifecycleError/sessionExpired`` through
-    /// ``handleGameLifecycleSessionExpired(profile:)``) so every action function
-    /// below only needs to supply its own service call and success handling. The
-    /// diagnostic message for a non-``GameLifecycleError`` failure is derived from
-    /// `kind` (see ``GameLifecycleAction/diagnosticFailureMessage``) rather than
-    /// taken as a separate parameter, keeping this within this project's
-    /// function-parameter-count convention.
+    /// ``handleGameLifecycleSessionExpired(profile:generation:credentialEpoch:globalEpoch:)``,
+    /// but only when `attempt` is still this game's current action -- checked
+    /// immediately before that call, not left to that function's own,
+    /// independently-fresh session check -- so a superseded action's stale 401 can
+    /// never delete a newer action's, or a newer sign-in's, token) so every action
+    /// function below only needs to supply its own service call and success
+    /// handling. The diagnostic message for a non-``GameLifecycleError`` failure is
+    /// derived from `kind` (see ``GameLifecycleAction/diagnosticFailureMessage``)
+    /// rather than taken as a separate parameter, keeping this within this
+    /// project's function-parameter-count convention.
     private func performGameAction(
         _ id: GameID,
         kind: GameLifecycleAction,
@@ -100,8 +110,13 @@ extension AppModel {
             return
         } catch let error as GameLifecycleError {
             recordGameActionFailure(id, attempt: attempt, kind: kind, error: error)
-            if case .sessionExpired = error {
-                await handleGameLifecycleSessionExpired(profile: attempt.profile)
+            if case .sessionExpired = error, isCurrentGameAction(id, attempt) {
+                await handleGameLifecycleSessionExpired(
+                    profile: attempt.profile,
+                    generation: attempt.sessionGeneration,
+                    credentialEpoch: attempt.credentialEpoch,
+                    globalEpoch: attempt.globalEpoch
+                )
             }
             return
         } catch {

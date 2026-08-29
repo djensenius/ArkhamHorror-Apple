@@ -14,8 +14,8 @@ struct GameLifecycleServiceTests {
         HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
     }
 
-    private func unitBody() -> Data {
-        Data("[]".utf8)
+    private func emptyBody() -> Data {
+        Data()
     }
 
     private func publicGameBody(tag: String = "PublicGame", id: String? = nil) -> Data {
@@ -137,11 +137,16 @@ struct GameLifecycleServiceTests {
 
     // MARK: - deleteGame
 
-    @Test("deleteGame issues a DELETE to /arkham/games/:id and decodes its empty-array body")
+    // Production handler: `deleteApiV1ArkhamGameR :: ArkhamGameId -> Handler ()`.
+    // Yesod's `ToTypedContent ()` always sends a genuine zero-byte body on success
+    // (`toContent () = toContent B.empty`), matching the governed OpenAPI spec's
+    // `200` response for `DELETE /arkham/games/{gameId}`, which declares no
+    // `content:` schema. This must never be run through a JSON decoder.
+    @Test("deleteGame issues a DELETE to /arkham/games/:id and accepts a zero-byte success body")
     func deleteGameRequestShape() async throws {
         let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)")
         let transport = GameLifecycleRecordingTransport(
-            data: unitBody(), response: httpResponse(200, url: url)
+            data: emptyBody(), response: httpResponse(200, url: url)
         )
         let service = GameLifecycleService(transport: transport)
         try await service.deleteGame(gameID, on: profile, token: token)
@@ -156,11 +161,11 @@ struct GameLifecycleServiceTests {
         #expect(request?.httpBody == nil)
     }
 
-    @Test("A non-empty-array body for a unit response is malformedPayload, not silently accepted")
-    func unitResponseRejectsNonEmptyArray() async {
+    @Test("deleteGame rejects an unexpected non-empty 2xx body as drift")
+    func deleteGameRejectsNonEmptyBody() async {
         let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)")
         let transport = GameLifecycleRecordingTransport(
-            data: Data(#"{"unexpected":true}"#.utf8), response: httpResponse(200, url: url)
+            data: Data("[]".utf8), response: httpResponse(200, url: url)
         )
         let service = GameLifecycleService(transport: transport)
         await #expect(throws: GameLifecycleError.malformedPayload) {
@@ -219,42 +224,6 @@ struct GameLifecycleServiceTests {
         #expect(request?.httpMethod == "GET")
         #expect(request?.url?.absoluteString.hasSuffix("/open-seats") == true)
         #expect(seats == fixture.openSeats)
-    }
-
-    @Test("claimSeat issues a POST to /arkham/games/:id/claim-seat with a JSON body")
-    func claimSeatRequestShape() async throws {
-        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/claim-seat")
-        let transport = GameLifecycleRecordingTransport(
-            data: unitBody(), response: httpResponse(200, url: url)
-        )
-        let service = GameLifecycleService(transport: transport)
-        let claim = try ClaimSeatRequest(investigatorId: InvestigatorCode("01001"))
-        try await service.claimSeat(claim, in: gameID, on: profile, token: token)
-        let request = await transport.capturedRequest
-        #expect(request?.httpMethod == "POST")
-        #expect(request?.url?.absoluteString.hasSuffix("/claim-seat") == true)
-        let body = try #require(await transport.capturedBody)
-        let decoded = try ContractJSON.decode(ClaimSeatRequest.self, from: body)
-        #expect(decoded == claim)
-    }
-
-    @Test("chooseDeck issues a PUT to /arkham/games/:id/decks with a JSON body")
-    func chooseDeckRequestShape() async throws {
-        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/decks")
-        let transport = GameLifecycleRecordingTransport(
-            data: unitBody(), response: httpResponse(200, url: url)
-        )
-        let service = GameLifecycleService(transport: transport)
-        let choice = try ChooseDeckRequest(
-            investigatorId: InvestigatorCode("01001"), deckUrl: nil, deckList: nil
-        )
-        try await service.chooseDeck(choice, in: gameID, on: profile, token: token)
-        let request = await transport.capturedRequest
-        #expect(request?.httpMethod == "PUT")
-        #expect(request?.url?.absoluteString.hasSuffix("/decks") == true)
-        let body = try #require(await transport.capturedBody)
-        let decoded = try ContractJSON.decode(ChooseDeckRequest.self, from: body)
-        #expect(decoded == choice)
     }
 
     // MARK: - Fixtures

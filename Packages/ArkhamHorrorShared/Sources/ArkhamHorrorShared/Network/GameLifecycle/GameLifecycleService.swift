@@ -11,11 +11,17 @@ import Foundation
 /// public game-lifecycle endpoint).
 ///
 /// Every request/response body is encoded/decoded exclusively through ``ContractJSON``,
-/// never a stock `JSONEncoder`/`JSONDecoder` -- including the empty-array
-/// (``ContractUnit``) bodies `DELETE`/`claim-seat`/`decks` return, and the
-/// deliberately shallow ``GameLifecycleEnvelope`` decode of the full `PublicGame` body
-/// `create`/`join` return (this client never decodes board state; see that type's
-/// documentation).
+/// never a stock `JSONEncoder`/`JSONDecoder`, including the deliberately shallow
+/// ``GameLifecycleEnvelope`` decode of the full `PublicGame` body `create`/`join`
+/// return (this client never decodes board state; see that type's documentation).
+/// `DELETE`/`claim-seat`/`decks` never touch a JSON decoder at all: every one of
+/// those handlers has a Yesod `Handler ()` return type, whose `ToTypedContent ()`
+/// instance (`toTypedContent () = TypedContent typePlain (toContent ())`,
+/// `toContent () = toContent B.empty`) always sends a genuine zero-byte body with
+/// `Content-Type: text/plain` on success -- never a JSON `"[]"` array or any other
+/// shape -- exactly matching the governed OpenAPI spec's `200` responses for these
+/// three operations, each of which declares no `content:` schema at all. See
+/// ``performNoContent(_:)``.
 ///
 /// A `GameID` path segment is independently percent-encoded (unreserved ASCII
 /// characters only) before being embedded into the URL via `percentEncodedPath`,
@@ -80,7 +86,7 @@ struct GameLifecycleService: Sendable {
     func deleteGame(_ id: GameID, on profile: ServerProfile, token: String) async throws {
         let url = try gameURL(id, on: profile)
         let request = makeRequest(url: url, method: "DELETE", token: token)
-        _ = try await perform(request, decoding: ContractUnit.self)
+        try await performNoContent(request)
     }
 
     // MARK: - Lobby
@@ -115,7 +121,7 @@ struct GameLifecycleService: Sendable {
         let url = try gameURL(id, suffix: "/claim-seat", on: profile)
         var urlRequest = makeRequest(url: url, method: "POST", token: token)
         try attachJSONBody(request, to: &urlRequest)
-        _ = try await perform(urlRequest, decoding: ContractUnit.self)
+        try await performNoContent(urlRequest)
     }
 
     func chooseDeck(
@@ -124,7 +130,7 @@ struct GameLifecycleService: Sendable {
         let url = try gameURL(id, suffix: "/decks", on: profile)
         var urlRequest = makeRequest(url: url, method: "PUT", token: token)
         try attachJSONBody(request, to: &urlRequest)
-        _ = try await perform(urlRequest, decoding: ContractUnit.self)
+        try await performNoContent(urlRequest)
     }
 
     // MARK: - URL construction
@@ -189,13 +195,13 @@ struct GameLifecycleService: Sendable {
 
     // MARK: - Request execution
 
-    /// Executes `request` and decodes a 2xx body into `Response` through
-    /// ``ContractJSON``, mapping every failure mode to a typed ``GameLifecycleError``
-    /// while preserving cancellation.
-    private func perform<Response: Decodable>(
-        _ request: URLRequest,
-        decoding _: Response.Type
-    ) async throws -> Response {
+    /// Executes `request`, mapping every failure mode to a typed ``GameLifecycleError``
+    /// while preserving cancellation, and returns the raw 2xx response body
+    /// undecoded. Shared by ``perform(_:decoding:)`` (which decodes the returned bytes
+    /// through ``ContractJSON``) and ``performNoContent(_:)`` (which asserts the bytes
+    /// are empty and never invokes any JSON decoder on them at all) so both share
+    /// identical transport/cancellation/status-mapping behavior.
+    private func performRaw(_ request: URLRequest) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -218,19 +224,45 @@ struct GameLifecycleService: Sendable {
 
         switch http.statusCode {
         case 200 ... 299:
-            let decoded: Response
-            do {
-                decoded = try ContractJSON.decode(Response.self, from: data)
-            } catch {
-                try Task.checkCancellation()
-                throw GameLifecycleError.malformedPayload
-            }
-            try Task.checkCancellation()
-            return decoded
+            return data
         case 401:
             throw GameLifecycleError.sessionExpired
         default:
             throw GameLifecycleError.unexpectedStatus(http.statusCode)
         }
+    }
+
+    /// Executes `request` and decodes a 2xx body into `Response` through
+    /// ``ContractJSON``.
+    private func perform<Response: Decodable>(
+        _ request: URLRequest,
+        decoding _: Response.Type
+    ) async throws -> Response {
+        let data = try await performRaw(request)
+        let decoded: Response
+        do {
+            decoded = try ContractJSON.decode(Response.self, from: data)
+        } catch {
+            try Task.checkCancellation()
+            throw GameLifecycleError.malformedPayload
+        }
+        try Task.checkCancellation()
+        return decoded
+    }
+
+    /// Executes `request` for an endpoint documented (both in the governed OpenAPI
+    /// spec and in the production Yesod `Handler ()` source backing it) to return no
+    /// response body on success, asserting the 2xx body is exactly empty rather than
+    /// running it through any JSON decoder. A non-empty 2xx body is reported as
+    /// ``GameLifecycleError/malformedPayload`` so contract drift (the server
+    /// unexpectedly starting to send a body) remains visible instead of being
+    /// silently ignored.
+    private func performNoContent(_ request: URLRequest) async throws {
+        let data = try await performRaw(request)
+        guard data.isEmpty else {
+            try Task.checkCancellation()
+            throw GameLifecycleError.malformedPayload
+        }
+        try Task.checkCancellation()
     }
 }
