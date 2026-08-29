@@ -94,11 +94,26 @@ struct URLSessionAssetTransport: AssetTransport {
     private let session: URLSession
 
     init() {
+        self.init(protocolClasses: nil)
+    }
+
+    /// Test-only seam: installs `protocolClasses` on this transport's own
+    /// ephemeral configuration. Globally registering a `URLProtocol` stub
+    /// (`URLProtocol.registerClass(_:)`) has no effect on a session created
+    /// from a custom, non-default configuration, so a production-seam test
+    /// exercising the real `URLSession` request/response path needs a way
+    /// to install its stub on this exact session. Every other setting
+    /// (cookie, credential, and cache disablement) is identical to the
+    /// public, parameterless initializer.
+    init(protocolClasses: [AnyClass]?) {
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
         config.urlCredentialStorage = nil
         config.urlCache = nil
+        if let protocolClasses {
+            config.protocolClasses = protocolClasses
+        }
         session = URLSession(configuration: config)
     }
 
@@ -145,7 +160,12 @@ struct URLSessionAssetTransport: AssetTransport {
     }
 
     /// Turns a validated HTTP response into an ``AssetHTTPResult``, reading
-    /// and validating the body only for a 2xx status.
+    /// and validating the body only for a 2xx status. Every non-2xx status
+    /// explicitly cancels the still-open `URLSessionTask` backing `bytes`
+    /// once its headers have been inspected: `AsyncBytes` does not drain or
+    /// cap its underlying body on its own, so leaving that task running
+    /// would let a large 304/404/3xx/5xx error body keep arriving,
+    /// unbounded by `maxEncodedBytes`, purely to be discarded.
     private static func result(
         for httpResponse: HTTPURLResponse,
         bytes: URLSession.AsyncBytes,
@@ -161,12 +181,16 @@ struct URLSessionAssetTransport: AssetTransport {
                 lastModified: httpResponse.value(forHTTPHeaderField: "Last-Modified")
             ))
         case 304:
+            bytes.task.cancel()
             return .notModified
         case 404:
+            bytes.task.cancel()
             return .notFound
         case 300 ... 399:
+            bytes.task.cancel()
             throw AssetError.redirectRejected(status: httpResponse.statusCode)
         default:
+            bytes.task.cancel()
             throw AssetError.unexpectedStatus(httpResponse.statusCode)
         }
     }
