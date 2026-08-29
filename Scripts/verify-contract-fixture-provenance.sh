@@ -13,8 +13,11 @@
 # actually vendored here, catching substitution (bytes differ), removal/rename (path no
 # longer exists at that commit, or an unregistered file appears locally), a stale/incorrect
 # pin (the commit doesn't exist, or the checked-out schema revision disagrees), a local
-# symlink or non-regular file standing in for real vendored bytes, and a backend path that
-# is not a regular blob (for example a symlink or submodule gitlink) at the pinned commit.
+# symlink or non-regular file standing in for real vendored bytes, a backend path that is
+# not a regular blob (for example a symlink or submodule gitlink) at the pinned commit, and
+# a Git repository/commit identity mismatch (the scratch remote no longer points at the
+# expected backend repository URL, or the fetched `FETCH_HEAD` does not resolve to exactly
+# the pinned 40-character commit SHA).
 #
 # This script never builds or executes any backend code: it only fetches one immutable git
 # commit and reads specific file paths out of it.
@@ -88,6 +91,17 @@ catalog.json:contracts/fixtures/catalog.json
 decks.json:contracts/fixtures/decks.json
 game-lifecycle.json:contracts/fixtures/game-lifecycle.json
 game-list.json:contracts/fixtures/game-list.json
+get-game.json:contracts/fixtures/get-game.json
+game-update.json:contracts/fixtures/game-update.json
+mode-turn-zero.json:contracts/fixtures/mode-turn-zero.json
+mode-campaign-only.json:contracts/fixtures/mode-campaign-only.json
+mode-campaign-scenario.json:contracts/fixtures/mode-campaign-scenario.json
+location-enemy-view.json:contracts/fixtures/location-enemy-view.json
+movement.json:contracts/fixtures/movement.json
+act-no-advance-cost.json:contracts/fixtures/act-no-advance-cost.json
+investigator-unhealed-horror-negative.json:contracts/fixtures/investigator-unhealed-horror-negative.json
+uuid-entity-map.json:contracts/fixtures/uuid-entity-map.json
+card-code-entity-map.json:contracts/fixtures/card-code-entity-map.json
 "
 
 # Rejects an absolute path or any `..` path-traversal component in a (script-controlled,
@@ -161,6 +175,27 @@ done
   # never a full clone, so nothing here depends on (or executes) anything else in the
   # backend repository's history or build tooling.
   git fetch --depth 1 origin "$backend_commit"
+  # Confirms this scratch repository's own remote is still configured to the exact
+  # expected backend repository URL (defense against a future edit silently pointing
+  # this script's actual runtime configuration somewhere else) and that what was just
+  # fetched as `FETCH_HEAD` resolves to precisely the pinned 40-character commit SHA --
+  # never a same-prefix collision, a mistakenly-abbreviated SHA, or a tag/branch that
+  # happens to currently point at a different commit. This is the "Git repo identity"
+  # half of provenance: byte/mode/manifest checks below are meaningless if the object
+  # they're compared against didn't actually come from the exact expected repository at
+  # the exact expected commit.
+  actual_remote_url=$(git remote get-url origin)
+  if [ "$actual_remote_url" != "$backend_repo_url" ]; then
+    echo "error: scratch repository remote '$actual_remote_url' does not match the" \
+      "expected backend repository URL '$backend_repo_url'" >&2
+    exit 1
+  fi
+  actual_fetch_head=$(git rev-parse FETCH_HEAD)
+  if [ "$actual_fetch_head" != "$backend_commit" ]; then
+    echo "error: fetched FETCH_HEAD '$actual_fetch_head' does not match the pinned" \
+      "backend commit '$backend_commit'" >&2
+    exit 1
+  fi
   # Check out only the governed fixture paths (never `-- .`), so this step's own I/O and
   # working-tree footprint stay proportional to the handful of files actually compared.
   # $backend_paths is a space-separated list of literal, script-controlled path fragments

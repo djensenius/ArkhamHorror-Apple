@@ -20,9 +20,16 @@ extension Identifier: Codable {
         rawValue = try decoder.singleValueContainer().decode(UUID.self)
     }
 
+    /// Encodes as an explicit lowercase-hyphenated string, matching the backend's own
+    /// canonical UUID rendering (and this type's ``CodingKeyRepresentable`` map-key
+    /// encoding in `BoardIdentifiers.swift`) exactly. Delegating to `UUID`'s own
+    /// `Encodable` conformance (`container.encode(rawValue)`) would instead emit
+    /// Foundation's uppercase `uuidString` — silently diverging from the wire's actual
+    /// casing for any UUID containing a hex letter, and from this same type's own
+    /// map-key form, even though both positions represent the identical value.
     func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
-        try container.encode(rawValue)
+        try container.encode(rawValue.uuidString.lowercased())
     }
 }
 
