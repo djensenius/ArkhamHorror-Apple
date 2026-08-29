@@ -49,11 +49,31 @@ public struct SemanticInputHarnessView: View {
         }
         .semanticKeyboardInput { model.handle($0) }
         #if os(tvOS)
-            .semanticSiriRemoteInput { model.handle($0) }
+            .semanticSiriRemoteInput(
+                canHandleBack: { model.coordinator.isModalPresented },
+                onOutcome: { model.handle($0) }
+            )
         #endif
             .onAppear { focusedID = model.coordinator.currentFocus }
+            .task { model.start() }
+            .onDisappear { model.stop() }
             .onChange(of: model.coordinator.currentFocus) { _, newValue in
                 focusedID = newValue
+            }
+            .onChange(of: focusedID) { _, newValue in
+                // The reverse direction of the sync immediately above:
+                // whenever the platform's own native focus (Full Keyboard
+                // Access Tab-traversal, direct touch/pointer/VoiceOver/
+                // Switch Control activation, or the tvOS focus engine's own
+                // geometry-driven movement) lands on a target other than
+                // this coordinator's current notion of focus, push that
+                // change back in. Both directions are equality-guarded
+                // (here implicitly, since `syncExternalFocus` itself is a
+                // no-op when `newValue` already equals `currentFocus`, and
+                // the sibling direction above only assigns `focusedID` when
+                // `currentFocus` actually changes), so this cannot become a
+                // ping-pong feedback loop.
+                model.coordinator.syncExternalFocus(newValue)
             }
             .animation(reduceMotion ? nil : .default, value: model.coordinator.isModalPresented)
     }
@@ -74,7 +94,8 @@ public struct SemanticInputHarnessView: View {
     private func boardSeat(_ id: SemanticFocusID, label: String) -> some View {
         SemanticActionControl(
             accessibilityLabel: Text(label),
-            onOutcome: { model.handle($0) },
+            semanticFocusID: id,
+            onOutcome: { focusID, outcome in model.handle(focusID: focusID, outcome) },
             label: {
                 Text(label)
                     .frame(width: 96, height: 64)
@@ -92,7 +113,8 @@ public struct SemanticInputHarnessView: View {
             Text("Menu")
             SemanticActionControl(
                 accessibilityLabel: Text("Close menu"),
-                onOutcome: { model.handle($0) },
+                semanticFocusID: SemanticInputHarnessFixture.menuClose,
+                onOutcome: { focusID, outcome in model.handle(focusID: focusID, outcome) },
                 label: { Text("Close") }
             )
             .focused($focusedID, equals: SemanticInputHarnessFixture.menuClose)

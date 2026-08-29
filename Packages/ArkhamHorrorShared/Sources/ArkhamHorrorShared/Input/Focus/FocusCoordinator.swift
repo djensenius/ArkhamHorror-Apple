@@ -27,7 +27,15 @@ public final class FocusCoordinator {
     /// declared-fallback → zone-entry-point → `order.first` policy that
     /// ``remove(_:)`` itself uses — rather than losing that context and
     /// falling straight to `order.first`.
-    @ObservationIgnored private var modalReturnStack: [ModalReturnTarget?] = []
+    ///
+    /// Deliberately *not* `@ObservationIgnored`: ``isModalPresented`` derives
+    /// from this array's `isEmpty`, and a view that reads only
+    /// `isModalPresented` (never `currentFocus`) must still be invalidated
+    /// when a modal is presented/dismissed — including the edge case where
+    /// `presentModal(entry:)`'s `entry` already equals the current focus, so
+    /// `currentFocus` itself does not change and cannot carry that
+    /// invalidation on `isModalPresented`'s behalf.
+    private var modalReturnStack: [ModalReturnTarget?] = []
 
     /// One modal's remembered return target, along with the fallback
     /// information needed to resolve it deterministically if it no longer
@@ -93,6 +101,27 @@ public final class FocusCoordinator {
         if currentFocus == nil {
             currentFocus = node.id
         }
+    }
+
+    /// Syncs ``currentFocus`` to `id` without any of ``move(_:)``/``presentModal(entry:)``'s
+    /// side effects — for a platform's own native/system-driven focus change
+    /// (for example Full Keyboard Access Tab-traversal, a direct
+    /// touch/pointer/VoiceOver/Switch Control activation of a target other
+    /// than the current one, or the tvOS focus engine's own geometry-driven
+    /// movement) reported back so this coordinator's notion of "current
+    /// focus" never goes stale relative to what the user is actually looking
+    /// at. The *next* ``move(_:)`` or action resolved against
+    /// ``currentFocus`` then starts from the correct node.
+    ///
+    /// A safe no-op for `nil` (a transient defocus should not erase a
+    /// meaningful last-known position) or for an `id` no longer present in
+    /// ``graph``, and idempotent when `id` already equals ``currentFocus`` —
+    /// so a caller wiring this to a two-way `@FocusState` binding cannot
+    /// create an observation feedback loop with the ``currentFocus``-to-`@FocusState``
+    /// direction of that same sync.
+    public func syncExternalFocus(_ id: SemanticFocusID?) {
+        guard let id, id != currentFocus, graph.contains(id) else { return }
+        currentFocus = id
     }
 
     /// Removes `id`. If `id` was the current focus, focus moves to the

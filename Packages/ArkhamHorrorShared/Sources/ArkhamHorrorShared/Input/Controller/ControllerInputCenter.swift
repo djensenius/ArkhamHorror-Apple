@@ -71,11 +71,22 @@ public final class ControllerInputCenter {
         isStarted = false
         discovery.stop()
         for (_, source) in sources {
-            source.onButtonEvent = nil
+            clearOwnedHandler(for: source)
         }
         sources.removeAll()
         connectedControllers.removeAll()
         activeGlyphFamily = .unknown
+    }
+
+    /// Nils `source.onButtonEvent`/`handlerOwner` only if `self` is still the
+    /// recorded ``ControllerInputSource/handlerOwner`` — see that property's
+    /// documentation. A no-op when some other (necessarily newer, since a
+    /// source can only ever be re-owned by installing a fresh handler)
+    /// center has since taken ownership of `source`.
+    private func clearOwnedHandler(for source: any ControllerInputSource) {
+        guard source.handlerOwner == ObjectIdentifier(self) else { return }
+        source.onButtonEvent = nil
+        source.handlerOwner = nil
     }
 
     private func handleConnect(_ source: any ControllerInputSource) {
@@ -85,6 +96,7 @@ public final class ControllerInputCenter {
         connectedControllers.removeAll { $0.id == id }
         connectedControllers.append(source.snapshot)
         activeGlyphFamily = glyphFamily
+        source.handlerOwner = ObjectIdentifier(self)
         // Captures `id`/`glyphFamily` (value types), never `source` itself,
         // so this closure cannot form a retain cycle with the source it is
         // installed on: only `sources[id]` keeps the source alive, and only
@@ -101,7 +113,9 @@ public final class ControllerInputCenter {
     }
 
     private func handleDisconnect(_ id: ControllerID) {
-        sources[id]?.onButtonEvent = nil
+        if let source = sources[id] {
+            clearOwnedHandler(for: source)
+        }
         sources[id] = nil
         connectedControllers.removeAll { $0.id == id }
         activeGlyphFamily = connectedControllers.last?.glyphFamily ?? .unknown

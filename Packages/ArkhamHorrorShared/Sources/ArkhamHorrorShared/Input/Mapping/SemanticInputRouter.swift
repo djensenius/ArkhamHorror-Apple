@@ -35,9 +35,11 @@ public enum SemanticDispatchOutcome: Hashable, Sendable {
 /// Pure translation from one physical input event to, at most, one dispatch
 /// outcome.
 ///
-/// - A reserved control (``PhysicalInput/isReserved``) always resolves to
-///   ``SemanticDispatchOutcome/reservedBack`` on press/repeat, regardless of
-///   any mapping table, so system back/menu/escape can never be remapped away.
+/// - A reserved control (``PhysicalInput/isReserved``) resolves to
+///   ``SemanticDispatchOutcome/reservedBack`` **only** on `.press`, exactly
+///   like every non-repeatable bound command below — never on `.repeatPress`
+///   — so holding Escape/Menu down cannot repeatedly dismiss/pop more than
+///   the one modal a single press should, regardless of any mapping table.
 /// - `.release` never dispatches anything: a button/key up carries no
 ///   semantic meaning in this vocabulary.
 /// - `.repeatPress` only dispatches when the bound command is
@@ -51,6 +53,7 @@ public enum SemanticInputRouter {
     ) -> SemanticDispatchOutcome? {
         guard event.phase != .release else { return nil }
         if event.input.isReserved {
+            guard event.phase == .press else { return nil }
             return .reservedBack
         }
         guard let command = table.command(for: event.input) else { return nil }

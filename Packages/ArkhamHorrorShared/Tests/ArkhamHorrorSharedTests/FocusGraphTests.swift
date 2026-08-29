@@ -47,6 +47,61 @@ struct FocusGraphTests {
         #expect(graph.neighbor(from: "third", direction: .left) == "second")
     }
 
+    @Test("Reinserting a removed node restores other nodes' declared edges to it, unprompted")
+    func reinsertingRemovedNodeRestoresOtherNodesEdges() {
+        var graph = FocusGraph(
+            nodes: [
+                FocusNode(id: "a", zone: "z", neighbors: [.right: "b"]),
+                FocusNode(id: "b", zone: "z", neighbors: [.left: "a"]),
+            ], wrapPolicy: .noWrap
+        )
+        graph.remove("b")
+        #expect(graph.neighbor(from: "a", direction: .right) == nil)
+        // Reinsert with the exact same declared shape as before removal (as a
+        // caller restoring a temporarily-hidden board seat would do): "a"'s
+        // *own* edge to "b" was never pruned, so it resolves again with no
+        // extra work needed.
+        graph.insert(FocusNode(id: "b", zone: "z", neighbors: [.left: "a"]))
+        #expect(graph.neighbor(from: "a", direction: .right) == "b")
+        #expect(graph.neighbor(from: "b", direction: .left) == "a")
+    }
+
+    @Test("Reinserting a removed node restores its zone's entry point, unprompted")
+    func reinsertingRemovedNodeRestoresZoneEntryPoint() {
+        var graph = FocusGraph(
+            nodes: [
+                FocusNode(id: "a", zone: "z"),
+                FocusNode(id: "menuEntry", zone: "menu"),
+            ], zoneEntryPoints: ["menu": "menuEntry"]
+        )
+        #expect(graph.fallbackTarget(previousZone: "menu") == "menuEntry")
+        graph.remove("menuEntry")
+        // The declared entry point mapping itself is preserved (not pruned),
+        // but "menuEntry" no longer exists, so resolution correctly falls
+        // through to the graph's next-level fallback (`order.first`, the
+        // only node left) rather than to a dangling reference.
+        #expect(graph.fallbackTarget(previousZone: "menu") == "a")
+        graph.insert(FocusNode(id: "menuEntry", zone: "menu"))
+        #expect(graph.fallbackTarget(previousZone: "menu") == "menuEntry")
+    }
+
+    @Test("Removing and reinserting a target repeatedly, with and without wrap, is stable")
+    func repeatedRemovalAndReinsertionIsStable() {
+        var graph = FocusGraph(
+            nodes: [
+                FocusNode(id: "a", zone: "z"),
+                FocusNode(id: "b", zone: "z"),
+                FocusNode(id: "c", zone: "z"),
+            ], wrapPolicy: .wrapWithinZone
+        )
+        for _ in 0 ..< 3 {
+            graph.remove("b")
+            #expect(graph.neighbor(from: "a", direction: .right) == "c")
+            graph.insert(FocusNode(id: "b", zone: "z"))
+            #expect(graph.order == ["a", "c", "b"])
+        }
+    }
+
     @Test("A single-member zone never wraps to itself")
     func singleMemberZoneDoesNotWrap() {
         let graph = FocusGraph(

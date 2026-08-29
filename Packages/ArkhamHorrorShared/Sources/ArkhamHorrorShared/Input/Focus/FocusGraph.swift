@@ -131,19 +131,25 @@ public struct FocusGraph: Sendable {
         nodes[node.id] = node
     }
 
-    /// Removes `id`. Any other node whose edge pointed at `id` has that edge
-    /// cleared, and any zone entry point naming `id` is cleared, so no
-    /// remaining node or zone can ever resolve to a removed target.
+    /// Removes `id` from the graph. Deliberately non-destructive to every
+    /// *other* node's declared topology: no other node's ``FocusNode/neighbors``
+    /// edges and no ``zoneEntryPoints`` entry naming `id` are touched, even
+    /// though they now dangle. ``neighbor(from:direction:)``,
+    /// ``fallbackTarget(previousZone:declaredFallback:)``, and
+    /// ``restoreFocus(preferred:previousZone:declaredFallback:)`` already
+    /// perform their own lazy `nodes[target] != nil` existence checks before
+    /// ever resolving to a target, so a dangling reference to a removed `id`
+    /// is always safely skipped at resolution time — it never needs to be
+    /// pre-emptively pruned here. Preserving the author-declared edges/entry
+    /// points this way means a later ``insert(_:)`` of the same `id` (for
+    /// example restoring a temporarily-removed board seat) automatically
+    /// restores the *original* topology other nodes and zones declared for
+    /// it, rather than requiring every caller to redeclare those edges from
+    /// scratch.
     public mutating func remove(_ id: SemanticFocusID) {
         guard nodes[id] != nil else { return }
         nodes[id] = nil
         order.removeAll { $0 == id }
-        for existingID in order {
-            guard var existing = nodes[existingID] else { continue }
-            existing.neighbors = existing.neighbors.filter { $0.value != id }
-            nodes[existingID] = existing
-        }
-        zoneEntryPoints = zoneEntryPoints.filter { $0.value != id }
     }
 
     /// Resolves the neighbor for `direction` from `id`: the explicit declared

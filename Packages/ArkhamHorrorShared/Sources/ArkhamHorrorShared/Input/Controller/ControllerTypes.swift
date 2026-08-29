@@ -74,6 +74,18 @@ public protocol ControllerInputSource: AnyObject {
     /// invoke it again afterward even if the underlying hardware briefly
     /// re-delivers a queued event.
     var onButtonEvent: ((ControllerControl, InputPhase) -> Void)? { get set }
+    /// Identifies whichever ``ControllerInputCenter`` most recently installed
+    /// ``onButtonEvent`` on this source. Exists purely so a stale/superseded
+    /// center's teardown (``ControllerInputCenter/stop()``, its own
+    /// disconnect handling) can check "is this still mine to clear?" before
+    /// nilling ``onButtonEvent`` — protecting the scenario where two centers
+    /// end up wired to the very same underlying source (for example a
+    /// SwiftUI view whose `@State` initial value was evaluated more than
+    /// once): only the *current* owner's teardown may clear the handler, so
+    /// a stale owner's teardown can never silently wipe out a newer owner's
+    /// live registration. A conformance need only store this verbatim; it
+    /// carries no other meaning to the conformance itself.
+    var handlerOwner: ObjectIdentifier? { get set }
 }
 
 /// Test/production seam for controller connect/disconnect discovery, injected

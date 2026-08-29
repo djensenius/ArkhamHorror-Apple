@@ -78,7 +78,7 @@
             onConnect = nil
             onDisconnect = nil
             for (_, source) in sources {
-                source.onButtonEvent = nil
+                source.teardown()
             }
             sources.removeAll()
         }
@@ -93,7 +93,7 @@
 
         private func unwrap(_ controller: GCController) {
             let id = ControllerID(objectID: ObjectIdentifier(controller))
-            sources[id]?.onButtonEvent = nil
+            sources[id]?.teardown()
             sources[id] = nil
             onDisconnect?(id)
         }
@@ -104,11 +104,34 @@
     /// pairs. A controller with no extended gamepad profile reports
     /// ``ControllerProfileKind/unsupported`` and never calls
     /// ``onButtonEvent``.
+    ///
+    /// Idempotent, ownership-aware teardown: each `GCControllerButtonInput`
+    /// this source binds is a real, OS-owned object shared by every wrapper
+    /// that has ever bound it (`pressedChangedHandler` is a single-slot
+    /// property on the button itself, not on this source) — a stale, since-
+    /// superseded source that still calls ``teardown()`` (from
+    /// ``GameControllerDiscovery/stop()``, ``GameControllerDiscovery/unwrap(_:)``,
+    /// or its own `deinit`) must never clear a *newer* source's live
+    /// registration on the same button. ``buttonOwners`` records, per button,
+    /// which source instance most recently bound it, so ``teardown()`` only
+    /// clears a button's handler while this source is still its recorded
+    /// owner. This mirrors ``ControllerInputCenter``'s own
+    /// `handlerOwner`-based protection at the button level, where the shared
+    /// object is a real `GCControllerButtonInput` rather than a
+    /// ``ControllerInputSource``.
     @MainActor
     final class GCControllerSource: ControllerInputSource {
+        /// Keyed by `ObjectIdentifier` of the real, OS-owned button object,
+        /// not by anything belonging to this type — so it correctly tracks
+        /// ownership even across multiple `GCControllerSource` instances
+        /// that end up (transiently) wrapping the same physical controller.
+        private static var buttonOwners: [ObjectIdentifier: ObjectIdentifier] = [:]
+
         let id: ControllerID
         let snapshot: ControllerSnapshot
         var onButtonEvent: ((ControllerControl, InputPhase) -> Void)?
+        var handlerOwner: ObjectIdentifier?
+        private var boundButtons: [GCControllerButtonInput] = []
 
         init(controller: GCController, id: ControllerID) {
             self.id = id
@@ -124,6 +147,36 @@
                     id: id, profile: .unsupported, glyphFamily: glyph,
                     vendorName: controller.vendorName
                 )
+            }
+        }
+
+        isolated deinit {
+            // Mirrors `ControllerInputCenter`'s own `isolated deinit`
+            // safety net (SE-0371): a caller that drops this source without
+            // ever calling `teardown()` explicitly (for example a discarded
+            // duplicate from a re-evaluated `@State` initial value) must
+            // still never leave a live, owned button handler pointing at a
+            // dead `[weak self]` closure.
+            teardown()
+        }
+
+        /// Clears every button handler this source still owns (per
+        /// ``buttonOwners``) and its own ``onButtonEvent``. Safe to call more
+        /// than once, and safe from more than one call site (`deinit`,
+        /// ``GameControllerDiscovery/unwrap(_:)``,
+        /// ``GameControllerDiscovery/stop()``); each clears only what it
+        /// still owns, so calling it twice — or calling it on a source that
+        /// has already been superseded by a newer one on the same button —
+        /// is always a harmless no-op for anything it no longer owns.
+        func teardown() {
+            onButtonEvent = nil
+            let ownedButtons = boundButtons
+            boundButtons.removeAll()
+            for button in ownedButtons {
+                let key = ObjectIdentifier(button)
+                guard Self.buttonOwners[key] == ObjectIdentifier(self) else { continue }
+                button.pressedChangedHandler = nil
+                Self.buttonOwners[key] = nil
             }
         }
 
@@ -148,7 +201,10 @@
         }
 
         private func bind(_ button: GCControllerButtonInput?, to control: ControllerControl) {
-            button?.pressedChangedHandler = { [weak self] _, _, pressed in
+            guard let button else { return }
+            Self.buttonOwners[ObjectIdentifier(button)] = ObjectIdentifier(self)
+            boundButtons.append(button)
+            button.pressedChangedHandler = { [weak self] _, _, pressed in
                 Task { @MainActor in
                     self?.onButtonEvent?(control, pressed ? .press : .release)
                 }

@@ -50,6 +50,7 @@ private final class FakeControllerInputSource: ControllerInputSource {
     let id: ControllerID
     let snapshot: ControllerSnapshot
     var onButtonEvent: ((ControllerControl, InputPhase) -> Void)?
+    var handlerOwner: ObjectIdentifier?
 
     init(glyphFamily: ControllerGlyphFamily = .xbox, vendorName: String? = "Fake Controller") {
         let id = ControllerID(objectID: ObjectIdentifier(identityToken))
@@ -219,5 +220,53 @@ struct ControllerInputCenterTests {
         // observers/handlers are never left registered past the center's
         // own lifetime.
         #expect(discovery.stopCallCount == 1)
+    }
+
+    // MARK: - Ownership token (HIGH: stale center vs. newer owner on a shared source)
+
+    @Test(
+        """
+        A stale, superseded center's teardown cannot clear a newer owner's live handler \
+        on a shared source
+        """
+    )
+    func staleCenterTeardownCannotClearNewerOwnersHandler() {
+        // Mirrors the real-world double-construction bug this ownership
+        // token protects against: two `ControllerInputCenter`s end up
+        // connected to the very same underlying `ControllerInputSource`
+        // (for example a SwiftUI view whose `@State` initial value was
+        // evaluated more than once, each briefly wiring up its own center
+        // against the same real, shared controller before the older one is
+        // discarded).
+        let sharedSource = FakeControllerInputSource()
+
+        let staleDiscovery = FakeControllerDiscovery()
+        var staleDispatched: [SemanticDispatchOutcome] = []
+        let staleCenter = makeCenter(discovery: staleDiscovery) { staleDispatched.append($0) }
+        staleCenter.start()
+        staleDiscovery.simulateConnect(sharedSource)
+
+        let currentDiscovery = FakeControllerDiscovery()
+        var currentDispatched: [SemanticDispatchOutcome] = []
+        let currentCenter = makeCenter(discovery: currentDiscovery) {
+            currentDispatched.append($0)
+        }
+        currentCenter.start()
+        // The newer center connects to the exact same shared source,
+        // taking over ownership of its `onButtonEvent`/`handlerOwner`.
+        currentDiscovery.simulateConnect(sharedSource)
+
+        // The stale center's own teardown must not clear the newer owner's
+        // live registration: the active owner survives.
+        staleCenter.stop()
+        sharedSource.fire(.buttonA, .press)
+        #expect(currentDispatched == [.command(.primaryAction)])
+        #expect(staleDispatched.isEmpty)
+
+        // The *current* owner's own teardown still correctly clears its own,
+        // still-owned handler: no stale dispatch after its own stop().
+        currentCenter.stop()
+        sharedSource.fire(.buttonA, .press)
+        #expect(currentDispatched == [.command(.primaryAction)])
     }
 }

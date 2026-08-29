@@ -220,15 +220,24 @@ struct InputMappingTests {
         )
     }
 
-    @Test(
-        "A reserved input always yields reservedBack on press/repeat regardless of the table",
-        arguments: [InputPhase.press, .repeatPress]
-    )
-    func reservedInputAlwaysYieldsReservedBack(phase: InputPhase) {
-        let outcome = SemanticInputRouter.route(
-            PhysicalInputEvent(input: .keyboard(.escape), phase: phase), using: .defaultKeyboard
+    @Test("A reserved input yields reservedBack on press, but never on repeat (a held key)")
+    func reservedInputYieldsReservedBackOnlyOnPress() {
+        #expect(
+            SemanticInputRouter.route(
+                PhysicalInputEvent(input: .keyboard(.escape), phase: .press),
+                using: .defaultKeyboard
+            ) == .reservedBack
         )
-        #expect(outcome == .reservedBack)
+        // A held reserved key repeats like any other input, but must never
+        // repeatedly dismiss/pop more than the single modal a single press
+        // should — unlike a repeatable bound command, there is no notion of
+        // "reservedBack is repeatable" at all.
+        #expect(
+            SemanticInputRouter.route(
+                PhysicalInputEvent(input: .keyboard(.escape), phase: .repeatPress),
+                using: .defaultKeyboard
+            ) == nil
+        )
     }
 
     @Test("An unmapped input safely yields no outcome")

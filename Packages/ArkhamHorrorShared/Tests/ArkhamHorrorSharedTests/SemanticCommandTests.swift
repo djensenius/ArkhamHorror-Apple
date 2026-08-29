@@ -34,14 +34,19 @@ struct SemanticCommandTests {
         arguments: SemanticCommand.allCases
     )
     func isRepeatableMatchesContinuousCommands(command: SemanticCommand) {
-        let expected =
-            switch command {
-            case .focusMove, .zoomIn, .zoomOut, .rotateCamera, .cyclePlayer, .cycleZone:
-                true
-            default:
-                false
-            }
-        #expect(command.isRepeatable == expected)
+        // Deliberately an explicit, independently-enumerated literal set —
+        // not a copy of `isRepeatable`'s own switch statement — so a future
+        // regression in that switch (for example a case moved to the wrong
+        // branch) cannot share the same latent bug as this test's own
+        // "expected" derivation.
+        let repeatableCommands: Set<SemanticCommand> = [
+            .focusMove(.up), .focusMove(.down), .focusMove(.left), .focusMove(.right),
+            .zoomIn, .zoomOut,
+            .rotateCamera(.clockwise), .rotateCamera(.counterclockwise),
+            .cyclePlayer(.next), .cyclePlayer(.previous),
+            .cycleZone(.next), .cycleZone(.previous),
+        ]
+        #expect(command.isRepeatable == repeatableCommands.contains(command))
     }
 
     @Test("isReserved is true for exactly keyboard escape, controller menu/home, and Siri menu")
