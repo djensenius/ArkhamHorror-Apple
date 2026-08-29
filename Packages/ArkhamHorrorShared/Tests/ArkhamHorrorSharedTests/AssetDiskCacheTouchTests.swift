@@ -48,20 +48,18 @@ extension AssetDiskCacheTests {
             // `lastAccessedAt` to the current time on every read — using
             // it here would overwrite the very value this test is
             // verifying `touch(_:metadata:)` persisted. `JSONDecoder
-            // .assetCache` is a file-private implementation detail of
-            // `AssetDiskCache`, so decode via `JSONSerialization` plus an
-            // ISO 8601 formatter instead, matching the pattern already
-            // used elsewhere in these test files for reading on-disk
-            // metadata directly.
-            let json = try #require(
-                try JSONSerialization
-                    .jsonObject(with: Data(contentsOf: metadataURL)) as? [String: Any]
+            // .assetCache` is not file-private (only `AssetDiskCache`'s
+            // own recovery code and this test file are outside its
+            // declaring file), so decode with that exact decoder rather
+            // than a separately constructed `ISO8601DateFormatter`, which
+            // is not guaranteed to match `JSONEncoder`'s `.iso8601`
+            // strategy's exact formatting across Foundation
+            // versions/platforms.
+            let persistedMetadata = try JSONDecoder.assetCache.decode(
+                AssetCacheMetadata.self,
+                from: Data(contentsOf: metadataURL)
             )
-            let lastAccessedAtString = try #require(json["lastAccessedAt"] as? String)
-            let persistedLastAccessedAt = try #require(
-                ISO8601DateFormatter().date(from: lastAccessedAtString)
-            )
-            #expect(persistedLastAccessedAt == refreshedMetadata.lastAccessedAt)
+            #expect(persistedMetadata.lastAccessedAt == refreshedMetadata.lastAccessedAt)
         }
     }
 
