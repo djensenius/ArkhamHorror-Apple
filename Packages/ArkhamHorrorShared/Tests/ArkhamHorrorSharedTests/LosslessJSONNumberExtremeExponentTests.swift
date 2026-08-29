@@ -149,4 +149,74 @@ struct LosslessJSONNumberExtremeExponentTests {
         let reencoded = try ContractJSON.encode(decoded)
         #expect(String(data: reencoded, encoding: .utf8) == literal)
     }
+
+    // MARK: - Round 6: leading-zero normalization must be O(n), not O(n^2)
+
+    @Test("A many-leading-zero exponent normalizes without quadratic blowup")
+    func manyLeadingZeroExponentNormalizesLinearly() throws {
+        // Round 6 HIGH #1: `DecimalExponent.init(sign:digits:)` previously trimmed leading
+        // zeros by converting to a `Substring` and looping `trimmed.count > 1 { trimmed.
+        // removeFirst() }`. `Substring.count` walks the *entire* remaining substring's
+        // grapheme clusters on every call, making the whole trim O(n^2) in the exponent's
+        // own digit count. The reviewer measured 160,000 leading zeros at ~28.85s pre-fix;
+        // this single decode of a comparably sized exponent is a structural correctness
+        // assertion (exact decoded value), not a timing one -- a regression back to
+        // quadratic behavior would make this one decode (and the whole suite) unusably
+        // slow rather than silently pass.
+        let manyZeros = String(repeating: "0", count: 200_000)
+        let literal = "1e\(manyZeros)1"
+        let decoded = try ContractJSON.decode(JSONNumber.self, from: Data(literal.utf8))
+        // 200,000 leading zeros followed by a trailing "1" normalizes to exponent 1, exactly.
+        #expect(decoded.exponent.asInt == 1)
+        let equivalent = try ContractJSON.decode(JSONNumber.self, from: Data("1e1".utf8))
+        #expect(decoded == equivalent)
+        #expect(decoded.hashValue == equivalent.hashValue)
+    }
+
+    @Test("An all-zero exponent of many digits still normalizes to a plain zero exponent")
+    func allZeroExponentNormalizesToZero() throws {
+        // Regression guard for the trim loop's "stop before consuming the last digit"
+        // invariant: an exponent that is *entirely* zeros (no trailing nonzero digit) must
+        // still normalize correctly rather than trimming away every digit.
+        let manyZeros = String(repeating: "0", count: 200_000)
+        let decoded = try ContractJSON.decode(
+            JSONNumber.self,
+            from: Data("5e\(manyZeros)".utf8)
+        )
+        #expect(decoded.exponent.asInt == 0)
+        #expect(decoded == .integer(5))
+    }
+
+    @Test("A many-leading-zero coefficient normalizes without quadratic blowup")
+    func manyLeadingZeroCoefficientNormalizesLinearly() throws {
+        // Round 6 MEDIUM #2: `parseNumber()` previously combined the integer+fraction digit
+        // runs into an `[UInt8]` `Array` and trimmed leading zeros via `digits.
+        // removeFirst()`. `Array.removeFirst()` shifts every remaining element on each
+        // call, making the trim O(n^2) in the coefficient's own digit count -- triggered by
+        // inputs like "0.000...0001" with many leading fractional zeros.
+        let manyZeros = String(repeating: "0", count: 200_000)
+        let literal = "0.\(manyZeros)1"
+        let decoded = try ContractJSON.decode(JSONNumber.self, from: Data(literal.utf8))
+        let equivalent = try ContractJSON.decode(JSONNumber.self, from: Data("1e-200001".utf8))
+        #expect(decoded == equivalent)
+        #expect(decoded.hashValue == equivalent.hashValue)
+        #expect(!decoded.isZero)
+    }
+
+    @Test("Zero and negative zero still normalize correctly after the coefficient-trim fix")
+    func zeroAndNegativeZeroStillNormalizeAfterCoefficientTrimFix() throws {
+        let manyZeros = String(repeating: "0", count: 50000)
+        let plainZero = try ContractJSON.decode(
+            JSONNumber.self,
+            from: Data("0.\(manyZeros)".utf8)
+        )
+        let negativeZero = try ContractJSON.decode(
+            JSONNumber.self,
+            from: Data("-0.\(manyZeros)".utf8)
+        )
+        #expect(plainZero.isZero)
+        #expect(negativeZero.isZero)
+        #expect(plainZero == .integer(0))
+        #expect(negativeZero == .integer(0))
+    }
 }

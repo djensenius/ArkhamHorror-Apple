@@ -45,11 +45,29 @@ struct DecimalExponent: Sendable, Hashable {
     /// digits are present — unlike parsing into a fixed-width `Int`, there is no ceiling on
     /// how many digits this can hold.
     init(sign: Sign, digits: some Collection<UInt8>) {
-        var trimmed = Substring(decoding: digits, as: UTF8.self)
-        while trimmed.count > 1, trimmed.first == "0" {
-            trimmed.removeFirst()
+        let zeroByte: UInt8 = 0x30
+        // Trim leading zeros with a single pass of `Collection.index(after:)` (documented
+        // O(1) per step), never `Substring.count`/`removeFirst()`: `Substring.count` counts
+        // grapheme clusters by walking the whole substring on *every* call, so recomputing
+        // it inside a `while` loop made this O(n^2) in the exponent's own digit count (an
+        // exponent like `1e000...0001` with many leading zeros).
+        var start = digits.startIndex
+        let end = digits.endIndex
+        while start != end {
+            let next = digits.index(after: start)
+            guard next != end, digits[start] == zeroByte else { break }
+            start = next
         }
-        self.init(sign: sign, magnitude: String(trimmed))
+        let trimmed = digits[start...]
+        // `String(safelyDecoding:)` (never `String(decoding:as:)`, which silently
+        // substitutes invalid sequences) — these are ASCII digit bytes sliced from an
+        // already UTF-8-validated document, so this can only fail if the scanner's own
+        // invariants are violated.
+        guard let magnitudeString = String(safelyDecoding: trimmed), !magnitudeString.isEmpty else {
+            self.init(sign: sign, magnitude: "0")
+            return
+        }
+        self.init(sign: sign, magnitude: magnitudeString)
     }
 
     var isZero: Bool {

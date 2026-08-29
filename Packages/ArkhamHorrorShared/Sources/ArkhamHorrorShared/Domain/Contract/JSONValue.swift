@@ -17,6 +17,31 @@ indirect enum JSONValue: Sendable {
 
 extension JSONValue: Equatable, Hashable {}
 
+extension JSONValue {
+    /// A shallow, `O(1)` description of this node's kind (and immediate size for the two
+    /// container cases) — deliberately never recurses into `array`/`object` children.
+    ///
+    /// `JSONValue` intentionally has no `CustomStringConvertible` conformance, so
+    /// interpolating a value directly (`"\(value)"`) falls through to Swift's default
+    /// enum-mirror description, which — for this `indirect` recursive type — walks and
+    /// stringifies the *entire* subtree. Error paths that probe a value's type and fail
+    /// (for example every `LosslessJSONPrimitive.typeMismatch` case, and the multiple
+    /// failed probes `JSONValue.init(from:)` itself performs while trying each case in
+    /// turn) must describe only the node actually inspected, never its descendants:
+    /// otherwise each failed probe at each nesting level costs time proportional to the
+    /// size of everything still nested beneath it, compounding across a deep/wide tree.
+    var kindDescription: String {
+        switch self {
+        case .null: "null"
+        case .bool: "bool"
+        case .number: "number"
+        case .string: "string"
+        case let .array(elements): "array(\(elements.count) elements)"
+        case let .object(members): "object(\(members.count) keys)"
+        }
+    }
+}
+
 extension JSONValue: Codable {
     /// The same conservative ceiling ``LosslessJSONByteScanner``/``LosslessJSONSerializer``
     /// enforce while parsing/serializing raw bytes, applied here via `codingPath.count` (a

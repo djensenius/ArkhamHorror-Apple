@@ -345,9 +345,14 @@ extension LosslessJSONByteScanner {
         guard let rawToken = String(safelyDecoding: bytes[start ..< position]) else {
             throw LosslessJSONParserError.invalidNumber
         }
-        var digits = Array(intDigits) + Array(fracDigits)
+        let combinedDigits = Array(intDigits) + Array(fracDigits)
+        // Trim leading zeros via `ArraySlice.dropFirst()` (an O(1) start-index adjustment),
+        // never `Array.removeFirst()` (an O(n) element shift): a coefficient with many
+        // leading zeros (e.g. `0.000...0001`) would otherwise make this loop O(n^2) in the
+        // digit count.
+        var digits = combinedDigits[...]
         while digits.count > 1, digits.first == 0x30 {
-            digits.removeFirst()
+            digits = digits.dropFirst()
         }
         guard let coefficient = String(safelyDecoding: digits) else {
             throw LosslessJSONParserError.invalidNumber

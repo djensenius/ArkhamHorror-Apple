@@ -11,10 +11,12 @@ typealias UnkeyedContainer = LosslessJSONUnkeyedDecodingContainer
 
 /// Coverage for `LosslessJSONValueDecoder`/its containers' error-reporting fidelity: a
 /// genuine type mismatch under the lossless decode path must surface as an actual
-/// `DecodingError.typeMismatch` naming the real offending value and the exact coding path
-/// (including array indices/keys) — never a misleading "decode through ContractJSON
-/// instead" message (which is only ever appropriate for a *stock* `Decoder`), and never a
-/// hardcoded `.null` placeholder or a path missing the failing element's position.
+/// `DecodingError.typeMismatch` naming the real offending value's *kind* (never a
+/// hardcoded `.null` placeholder) and the exact coding path (including array indices/keys)
+/// — never a misleading "decode through ContractJSON instead" message (which is only ever
+/// appropriate for a *stock* `Decoder`). Descriptions deliberately name only the mismatched
+/// node's kind, not its full (possibly huge, recursive) content/subtree — see
+/// `JSONValue.kindDescription`.
 @Suite("LosslessJSONValueDecoder container error fidelity")
 struct LosslessJSONDecoderContainerTests {
     // MARK: - JSONNumber decode through ContractJSON on a non-numeric value
@@ -77,13 +79,16 @@ struct LosslessJSONDecoderContainerTests {
         } throws: { error in
             guard let decodingError = error as? DecodingError else { return false }
             guard case let .typeMismatch(_, context) = decodingError else { return false }
-            // The real mismatched value ("not-an-object") must appear in the description,
-            // never a hardcoded "null" placeholder that misreports what was actually there.
-            let mentionsRealValue = context.debugDescription.contains("not-an-object")
-            let mentionsNull = context.debugDescription.contains("JSONValue.null")
+            // The real mismatched value's *kind* ("string") must appear in the
+            // description — never a hardcoded "null" placeholder that misreports what was
+            // actually there. (The description deliberately never includes the value's own
+            // content/subtree, so a genuine type mismatch and a `.null` placeholder bug are
+            // distinguished by kind name, not literal text — see `JSONValue.kindDescription`.)
+            let mentionsRealKind = context.debugDescription.contains("string")
+            let mentionsNull = context.debugDescription.contains("null")
             // The failing array index (1) must be present in the reported coding path.
             let pathHasIndex = context.codingPath.contains { $0.intValue == 1 }
-            return mentionsRealValue && !mentionsNull && pathHasIndex
+            return mentionsRealKind && !mentionsNull && pathHasIndex
         }
     }
 
@@ -104,10 +109,10 @@ struct LosslessJSONDecoderContainerTests {
         } throws: { error in
             guard let decodingError = error as? DecodingError else { return false }
             guard case let .typeMismatch(_, context) = decodingError else { return false }
-            let mentionsRealValue = context.debugDescription.contains("42")
-            let mentionsNull = context.debugDescription.contains("JSONValue.null")
+            let mentionsRealKind = context.debugDescription.contains("number")
+            let mentionsNull = context.debugDescription.contains("null")
             let pathHasIndex = context.codingPath.contains { $0.intValue == 2 }
-            return mentionsRealValue && !mentionsNull && pathHasIndex
+            return mentionsRealKind && !mentionsNull && pathHasIndex
         }
     }
 
@@ -131,9 +136,9 @@ struct LosslessJSONDecoderContainerTests {
         } throws: { error in
             guard let decodingError = error as? DecodingError else { return false }
             guard case let .typeMismatch(_, context) = decodingError else { return false }
-            let mentionsRealValue = context.debugDescription.contains("not-an-object")
+            let mentionsRealKind = context.debugDescription.contains("string")
             let pathHasKey = context.codingPath.contains { $0.stringValue == "nested" }
-            return mentionsRealValue && pathHasKey
+            return mentionsRealKind && pathHasKey
         }
     }
 
@@ -151,9 +156,9 @@ struct LosslessJSONDecoderContainerTests {
         } throws: { error in
             guard let decodingError = error as? DecodingError else { return false }
             guard case let .typeMismatch(_, context) = decodingError else { return false }
-            let mentionsRealValue = context.debugDescription.contains("not-an-array")
+            let mentionsRealKind = context.debugDescription.contains("string")
             let pathHasKey = context.codingPath.contains { $0.stringValue == "nested" }
-            return mentionsRealValue && pathHasKey
+            return mentionsRealKind && pathHasKey
         }
     }
 

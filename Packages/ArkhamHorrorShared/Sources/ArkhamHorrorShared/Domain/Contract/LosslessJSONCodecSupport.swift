@@ -28,7 +28,7 @@ enum LosslessJSONPrimitive {
         _ value: JSONValue,
         _ codingPath: [CodingKey]
     ) -> DecodingError {
-        let description = "Expected \(expected), got \(value)"
+        let description = "Expected \(expected), got \(value.kindDescription)"
         return DecodingError.typeMismatch(
             expected,
             DecodingError.Context(codingPath: codingPath, debugDescription: description)
