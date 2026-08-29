@@ -59,16 +59,25 @@ extension AppModel {
         do {
             selectedID = try profileStore.loadSelectedProfileID()
         } catch {
-            guard runStorageVoid(generation: generation, {
-                try profileStore.saveSelectedProfileID(ServerProfile.hosted.id)
-            }) else { return nil }
-            return .hosted
+            return repairSelectionToHosted(generation: generation)
         }
 
         if let selectedID, let match = resolvedProfiles.first(where: { $0.id == selectedID }) {
             return match
         }
 
+        return repairSelectionToHosted(generation: generation)
+    }
+
+    /// Persists `.hosted` as the repaired selection for
+    /// ``resolveSelection(among:generation:)`` — but only if `generation` is still
+    /// current: a launch task already superseded (e.g. by a profile switch that raced
+    /// this task's disk read/decode failure) must never persist this repair over a
+    /// selection a newer, still-current flow already made. Returns `nil` on a stale
+    /// generation exactly like every other guard in this file, so the caller's
+    /// `guard let ... else { return }` treats it identically.
+    private func repairSelectionToHosted(generation: Int) -> ServerProfile? {
+        guard isCurrent(generation) else { return nil }
         guard runStorageVoid(generation: generation, {
             try profileStore.saveSelectedProfileID(ServerProfile.hosted.id)
         }) else { return nil }

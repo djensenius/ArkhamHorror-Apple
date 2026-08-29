@@ -133,6 +133,50 @@ extension AppModelTests {
         #expect(await tokenStore.deleteAllCallCount == 0)
         #expect(try await tokenStore.token(for: sampleCustomProfile.id) == "kept-token")
     }
+
+    @Test(
+        """
+        A launch task already superseded before it starts running does not persist a \
+        repaired hosted selection over whatever a newer, still-current operation may \
+        already have selected
+        """
+    )
+    func staleLaunchTaskDoesNotPersistSelectionRepair() async {
+        // A corrupt selection value would normally repair by falling back to hosted
+        // and persisting that fallback (see `selectionOnlyCorruptionSilentlyRepairs`
+        // above) — but only if the launch task is still current. `AppModel.init`
+        // returns before `flowTask`'s body has actually started running (it is only
+        // scheduled at this point), so bumping `generation` here, synchronously and
+        // before any `await`, simulates a newer operation (a profile switch, or a
+        // second launch) having already superseded this launch task before it ever
+        // began — exactly the race `repairSelectionToHosted(generation:)` guards
+        // against.
+        let corruption = ServerProfileStoreError.corruptData(
+            key: "ArkhamHorror.selectedServerProfileID"
+        )
+        let store = FakeServerProfileStore(
+            profiles: [.hosted, sampleCustomProfile],
+            loadSelectionError: corruption
+        )
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        model.generation += 1
+        await model.flowTask?.value
+
+        // The stale task must never persist its repair, nor advance `sessionState`/
+        // `profiles` at all — it must behave exactly like every other stale-generation
+        // guard in this file: as though it had never run.
+        #expect(store.saveSelectionCallCount == 0)
+        #expect(store.snapshotSelectedID() == nil)
+        #expect(store.saveProfilesCallCount == 0)
+        #expect(model.sessionState == .launching)
+        #expect(model.profiles == [])
+    }
 }
 
 /// Compatibility outcomes: compatible, legacy fallback, incompatible rejection, probe
