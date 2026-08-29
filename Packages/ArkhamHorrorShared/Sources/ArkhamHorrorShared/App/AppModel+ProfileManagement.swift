@@ -56,6 +56,11 @@ extension AppModel {
     /// ``ProfileManagementFailure/duplicateEndpoint`` when another saved profile already
     /// resolves to the same normalized endpoint.
     func addCustomProfile(displayName: String, rawURL: String) {
+        // See the matching comment in ``AppModel/selectProfile(_:)``: this function
+        // does not otherwise check `sessionState`, so it must reject explicitly while
+        // the credential-cleanup registry is corrupted rather than mutating profile
+        // metadata the explicit, user-confirmed recovery has not yet run for.
+        guard !isCredentialCleanupRegistryCorrupted else { return }
         guard profileManagementOperation == .idle else { return }
         profileManagementFailure = nil
 
@@ -117,6 +122,9 @@ extension AppModel {
     func updateCustomProfile(
         _ profile: ServerProfile, displayName: String, rawURL: String
     ) -> UUID? {
+        // See the matching comment in ``AppModel/selectProfile(_:)`` and
+        // ``AppModel/addCustomProfile(displayName:rawURL:)``.
+        guard !isCredentialCleanupRegistryCorrupted else { return nil }
         guard profile.kind == .custom else {
             profileManagementFailure = .cannotModifyHosted
             return nil
@@ -223,6 +231,9 @@ extension AppModel {
     /// selection falls back to hosted and the launch flow restarts for it, exactly as
     /// ``AppModel/selectProfile(_:)`` already does.
     func removeCustomProfile(_ profile: ServerProfile) {
+        // See the matching comment in ``AppModel/selectProfile(_:)`` and
+        // ``AppModel/addCustomProfile(displayName:rawURL:)``.
+        guard !isCredentialCleanupRegistryCorrupted else { return }
         guard profile.kind == .custom else {
             profileManagementFailure = .cannotModifyHosted
             return

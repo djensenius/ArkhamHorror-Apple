@@ -278,6 +278,23 @@ extension AppModel {
         case let .reserved(task):
             return await task.value
         case let .markFailed(failure):
+            // No task was ever reserved (there is nothing to await), so — unlike the
+            // `.reserved` branch above, whose own eventual completion records this
+            // through `recordCleanupFailure` regardless of which caller triggered
+            // it — this is the *only* place a mark failure can ever become visible.
+            // Recorded centrally, here, so every caller (including a fire-and-forget
+            // launch-time reconciliation `Task` that only ever discards this
+            // function's return value) leaves the profile's obligation visible and
+            // retryable rather than silently dropping it. Never gated on a
+            // previously superseded attempt (there is no earlier reservation for
+            // this profile in flight to protect): a durable tombstone still names
+            // `profileID` in ``cleanupPendingStore`` regardless, so recording this
+            // unconditionally can never resurrect an already-resolved obligation —
+            // at worst it is immediately superseded by a later attempt's own
+            // outcome, exactly like any other entry in ``pendingCleanupFailures``.
+            pendingCleanupFailures[profileID] = PendingCleanupFailure(
+                attemptID: UUID(), failure: failure
+            )
             return failure
         }
     }
@@ -298,58 +315,6 @@ extension AppModel {
     @discardableResult
     func retryPendingCleanup(for profileID: UUID) async -> TokenStoreFailure? {
         await resolvePendingCleanup(for: profileID)
-    }
-
-    /// Whether `sessionState` is currently
-    /// ``SessionState/credentialCleanupRegistryCorrupted(_:)`` — checked immediately
-    /// after ``resolvePendingCleanup(for:)`` (or ``pendingCleanupRegistryIDs()``
-    /// directly) reports a failure, so a caller can tell a systemic
-    /// registry-enumeration failure (which has already transitioned `sessionState`
-    /// itself, session-wide) apart from an ordinary per-profile cleanup failure that
-    /// the caller must still surface through its own, narrower state transition —
-    /// and, critically, so that narrower transition is skipped when this is `true`,
-    /// rather than clobbering the session-wide corruption state with (for example)
-    /// a merely-`.unavailable` presentation that a plain ``AppModel/retry()`` could
-    /// never actually repair.
-    var isCredentialCleanupRegistryCorrupted: Bool {
-        if case .credentialCleanupRegistryCorrupted = sessionState {
-            return true
-        }
-        return false
-    }
-
-    /// The current durable cleanup-tombstone registry contents, or `nil` after
-    /// transitioning `sessionState` into
-    /// ``SessionState/credentialCleanupRegistryCorrupted(_:)`` if the registry
-    /// itself could not be safely enumerated.
-    ///
-    /// A registry-enumeration failure (a malformed/non-canonical marker, or an
-    /// unhandled Keychain status) is a systemic failure of the *shared* tombstone
-    /// service, not any one profile's own token operation, so it is surfaced
-    /// session-wide here rather than as a per-profile, retryable failure that plain
-    /// ``AppModel/retry()`` could never actually fix by re-probing whichever one
-    /// profile happened to trigger this check first. Idempotent: repeated calls
-    /// while already corrupted simply return `nil` again without re-mutating
-    /// `sessionState` to an equivalent value.
-    func pendingCleanupRegistryIDs() -> Set<UUID>? {
-        if isCredentialCleanupRegistryCorrupted {
-            return nil
-        }
-        do {
-            return try cleanupPendingStore.pendingProfileIDs()
-        } catch {
-            sessionState = .credentialCleanupRegistryCorrupted(cleanupRegistryFailure(from: error))
-            return nil
-        }
-    }
-
-    /// Maps a thrown ``TokenCleanupPendingStore/pendingProfileIDs()`` error to a
-    /// typed, non-secret ``TokenCleanupPendingStoreError``, preserving the exact
-    /// case from the production conformance and falling back to `.corruptData` for
-    /// any non-conforming injected error type (a defensive-only path: this registry
-    /// cannot be trusted either way).
-    private func cleanupRegistryFailure(from error: any Error) -> TokenCleanupPendingStoreError {
-        error as? TokenCleanupPendingStoreError ?? .corruptData
     }
 }
 

@@ -36,6 +36,17 @@ extension AppModel {
         profiles = resolvedProfiles
         selectedProfile = resolvedSelection
         reconcileUnselectedPendingCleanupTombstones(selectedProfileID: resolvedSelection.id)
+        // Re-checked here, immediately before the write below — not merely once at
+        // the top of this function — because the synchronous call just above can
+        // itself transition `sessionState` to
+        // `SessionState/credentialCleanupRegistryCorrupted(_:)`
+        // (`enterCredentialCleanupRegistryCorrupted(_:)`, which also bumps this same
+        // `generation`) if the durable cleanup-tombstone registry cannot be safely
+        // enumerated. Without this recheck, this line would have unconditionally
+        // overwritten that just-published corruption state with `.checkingCompatibility`
+        // and gone on to probe/restore a token as though nothing were wrong — exactly
+        // the launch-time overwrite this guard exists to prevent.
+        guard isCurrent(generation) else { return }
         sessionState = .checkingCompatibility(profile: resolvedSelection)
         await probeAndRestore(profile: resolvedSelection, generation: generation)
     }

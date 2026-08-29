@@ -150,4 +150,67 @@ extension AppModelTests {
         #expect(model.selectedProfile == .hosted)
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
     }
+
+    /// A `markPending` failure encountered while resolving an unselected profile's
+    /// durable cleanup tombstone — exactly the call launch-time reconciliation
+    /// (`reconcileUnselectedPendingCleanupTombstones(selectedProfileID:)`) makes for
+    /// every marker it discovers — is centrally recorded by
+    /// `resolvePendingCleanup(for:)` itself and remains visible/retryable regardless
+    /// of which caller (here, invoked directly rather than via reconciliation's own
+    /// unawaited, untracked `Task`, for deterministic coverage of the exact fix
+    /// without depending on that `Task`'s own scheduling) discovers it — never merely
+    /// returned and silently dropped by a caller that does not itself inspect the
+    /// return value.
+    @Test(
+        """
+        A markPending failure resolving an unselected profile's durable tombstone is \
+        centrally recorded and retryable, and never affects the selected profile
+        """
+    )
+    func unselectedMarkPendingFailureDuringResolutionIsCentrallyRecorded() async {
+        let profileStore = FakeServerProfileStore(
+            profiles: [.hosted, sampleCustomProfile], selectedID: sampleCustomProfile.id
+        )
+        // Deliberately empty at construction — an initial pending marker here would
+        // race this test's own `setMarkError` against launch's own automatic
+        // reconciliation of every unselected marker
+        // (`reconcileUnselectedPendingCleanupTombstones(selectedProfileID:)`), which
+        // would otherwise resolve hosted's marker before this test ever sets its
+        // error. The marker is instead injected below, synchronously, only once
+        // launch has already fully settled with nothing left to reconcile.
+        let cleanupStore = FakeTokenCleanupPendingStore()
+        let model = AppModel(
+            profileStore: profileStore,
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: cleanupStore
+        )
+        await model.flowTask?.value
+        #expect(model.selectedProfile == sampleCustomProfile)
+
+        // Simulates a prior process leaving hosted's marker durably pending,
+        // discovered only now (e.g. by a later relaunch's own reconciliation).
+        try? cleanupStore.markPending(ServerProfile.hosted.id)
+        cleanupStore.setMarkError(TokenCleanupPendingStoreError.corruptData)
+
+        let failure = await model.resolvePendingCleanup(for: ServerProfile.hosted.id)
+        #expect(failure == .other)
+        #expect(model.pendingCleanupFailures[ServerProfile.hosted.id] != nil)
+        // Not surfaced as registry-wide corruption: only enumeration failures are.
+        #expect(!model.isCredentialCleanupRegistryCorrupted)
+        // The unrelated, currently selected profile's own flow is entirely unaffected.
+        #expect(model.selectedProfile == sampleCustomProfile)
+        #expect(
+            model.sessionState ==
+                .signedOut(profile: sampleCustomProfile, compatibility: .legacy)
+        )
+
+        // Retrying resolves it once the underlying store recovers.
+        cleanupStore.setMarkError(nil)
+        let retried = await model.retryPendingCleanup(for: ServerProfile.hosted.id)
+        #expect(retried == nil)
+        #expect(model.pendingCleanupFailures[ServerProfile.hosted.id] == nil)
+        #expect(cleanupStore.snapshotPendingIDs().isEmpty)
+    }
 }

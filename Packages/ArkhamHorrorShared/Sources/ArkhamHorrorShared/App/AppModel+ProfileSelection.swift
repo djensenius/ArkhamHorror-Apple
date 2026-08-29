@@ -9,6 +9,18 @@ extension AppModel {
     /// are out of scope for this coordinator. Any superseded flow or operation task is
     /// cancelled and its completion is guarded by the incremented generation counter.
     func selectProfile(_ profile: ServerProfile) {
+        // Unlike ``beginAuthOperation(_:issueToken:)``/``retry()`` (both structurally
+        // blocked already, since neither's required `sessionState` case can be
+        // current while corrupted), nothing else here checks `sessionState` at all —
+        // so without this explicit guard, a stale UI element that somehow still
+        // called this while
+        // ``SessionState/credentialCleanupRegistryCorrupted(_:)`` is current (for
+        // example, a sheet whose dismissal has not yet caught up with a route change
+        // driven by that same transition) could silently overwrite the corrupted
+        // state with a fresh `.checkingCompatibility` flow, hiding a credential
+        // subsystem that explicit user-confirmed recovery has not yet repaired. See
+        // ``AppModel/enterCredentialCleanupRegistryCorrupted(_:)``.
+        guard !isCredentialCleanupRegistryCorrupted else { return }
         guard profiles.contains(where: { $0.id == profile.id }) else { return }
         // If a sign-in/registration is in flight for the profile being switched away
         // from, it must be interrupted exactly as an explicit ``cancelAuthOperation(ownedBy:)``
