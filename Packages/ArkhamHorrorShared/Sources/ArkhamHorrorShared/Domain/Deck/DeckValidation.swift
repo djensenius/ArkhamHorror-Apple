@@ -49,11 +49,11 @@ struct DeckValidationSuccess: Sendable, Equatable, Hashable {}
 extension DeckValidationSuccess: Codable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.unkeyedContainer()
-        if let count = container.count, count != 0 {
+        if !container.isAtEnd {
             let context = DecodingError.Context(
                 codingPath: decoder.codingPath,
-                debugDescription: "Expected an empty array for deckValidationSuccess, got "
-                    + "\(count) elements"
+                debugDescription: "Expected an empty array for deckValidationSuccess, got a "
+                    + "non-empty array"
             )
             throw DecodingError.dataCorrupted(context)
         }

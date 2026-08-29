@@ -122,6 +122,13 @@ extension GameValue: Codable {
             var contents = try container.nestedUnkeyedContainer(forKey: .contents)
             let base = try contents.decode(Int.self)
             let perPlayer = try contents.decode(Int.self)
+            guard contents.isAtEnd else {
+                let context = DecodingError.Context(
+                    codingPath: contents.codingPath,
+                    debugDescription: "Expected exactly 2 elements for StaticWithPerPlayer"
+                )
+                throw DecodingError.dataCorrupted(context)
+            }
             self = .staticWithPerPlayer(base, perPlayer)
         case "ByPlayerCount":
             var contents = try container.nestedUnkeyedContainer(forKey: .contents)
@@ -129,6 +136,13 @@ extension GameValue: Codable {
             let two = try contents.decode(Int.self)
             let three = try contents.decode(Int.self)
             let four = try contents.decode(Int.self)
+            guard contents.isAtEnd else {
+                let context = DecodingError.Context(
+                    codingPath: contents.codingPath,
+                    debugDescription: "Expected exactly 4 elements for ByPlayerCount"
+                )
+                throw DecodingError.dataCorrupted(context)
+            }
             self = .byPlayerCount(one, two, three, four)
         case "ValueX":
             self = .valueX
@@ -243,6 +257,13 @@ extension BondedCardEntry: Codable {
         var container = try decoder.unkeyedContainer()
         count = try container.decode(Int.self)
         cardCode = try container.decode(CardCode.self)
+        guard container.isAtEnd else {
+            let context = DecodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: "Expected exactly 2 elements for BondedCardEntry"
+            )
+            throw DecodingError.dataCorrupted(context)
+        }
     }
 
     func encode(to encoder: any Encoder) throws {

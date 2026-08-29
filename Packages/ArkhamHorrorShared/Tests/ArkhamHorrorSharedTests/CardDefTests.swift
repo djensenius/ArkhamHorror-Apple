@@ -176,6 +176,23 @@ struct CardDefTests {
         #expect(card.fight == .byPlayerCount(1, 2, 3, 4))
     }
 
+    @Test(
+        "GameValue's fixed-size array variants reject extra trailing elements",
+        arguments: [
+            #"{"tag": "StaticWithPerPlayer", "contents": [1, 2, 999]}"#,
+            #"{"tag": "ByPlayerCount", "contents": [1, 2, 3, 4, 999]}"#,
+        ]
+    )
+    func gameValueArrayVariantsRejectTrailingElements(rawGameValue: String) throws {
+        let json = """
+        {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
+         "cardType": "AssetType", "art": "01020", "health": \(rawGameValue)}
+        """
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        }
+    }
+
     @Test("bondedWith decodes its 2-element [count, cardCode] tuples")
     func bondedWithTuples() throws {
         let json = """
@@ -188,6 +205,18 @@ struct CardDefTests {
         let reencoded = try JSONEncoder().encode(card.bondedWith)
         let redecoded = try JSONDecoder().decode([BondedCardEntry].self, from: reencoded)
         #expect(redecoded == card.bondedWith)
+    }
+
+    @Test("bondedWith rejects an entry with an extra trailing element")
+    func bondedWithRejectsTrailingElement() {
+        let json = """
+        {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
+         "cardType": "AssetType", "art": "01020",
+         "bondedWith": [[2, "c01021", "unexpected"]]}
+        """
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        }
     }
 
     @Test("Encoding a decoded CardDef round-trips through decoding")
