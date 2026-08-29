@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-/// Regression coverage for ``AssetCacheMetadata/accountedByteCount``:
+/// Regression coverage for ``AssetCacheMetadata/metadataOverheadBytes``:
 /// in-memory quota accounting must measure this value's actual serialized
 /// size rather than a fixed estimate, since ``AssetCacheMetadata/resolvedURLString``
 /// has no fixed upper bound and a long one could otherwise be silently
@@ -25,8 +25,8 @@ struct AssetCacheMetadataTests {
         )
     }
 
-    @Test("A metadata value with a very long resolved URL is billed proportionally more")
-    func longResolvedURLIncreasesAccountedByteCount() {
+    @Test("A metadata value with a very long resolved URL has proportionally more overhead")
+    func longResolvedURLIncreasesMetadataOverheadBytes() {
         let short = metadata(resolvedURLString: "https://example.com/a.avif")
         let long = metadata(
             resolvedURLString: "https://example.com/" + String(repeating: "a", count: 4096) +
@@ -35,7 +35,7 @@ struct AssetCacheMetadataTests {
         // A fixed-size estimate would bill these identically (both are
         // still well under any single fixed constant); a real measurement
         // must reflect the actual difference in serialized size.
-        #expect(long.accountedByteCount - short.accountedByteCount >= 4090)
+        #expect(long.metadataOverheadBytes - short.metadataOverheadBytes >= 4090)
     }
 
     @Test("The metadata overhead exceeding the old fixed 512-byte estimate is still fully billed")
@@ -43,13 +43,17 @@ struct AssetCacheMetadataTests {
         let veryLong = metadata(
             resolvedURLString: "https://example.com/" + String(repeating: "a", count: 2000)
         )
-        let overhead = veryLong.accountedByteCount - veryLong.encodedByteCount
-        #expect(overhead > AssetCacheMetadata.estimatedMetadataOverheadBytes)
+        #expect(veryLong.metadataOverheadBytes > AssetCacheMetadata.estimatedMetadataOverheadBytes)
     }
 
-    @Test("accountedByteCount always includes the full encoded payload byte count")
-    func accountedByteCountIncludesPayloadBytes() {
-        let value = metadata(resolvedURLString: "https://example.com/a.avif")
-        #expect(value.accountedByteCount >= value.encodedByteCount)
+    @Test("metadataOverheadBytes measures only the metadata JSON, never the declared payload size")
+    func metadataOverheadBytesExcludesEncodedByteCount() {
+        let small = metadata(resolvedURLString: "https://example.com/a.avif")
+        // The metadata JSON overhead is orders of magnitude smaller than
+        // the (unrelated) declared payload size configured in the helper
+        // above: if this property still folded in `encodedByteCount` (as
+        // the old, now-removed `accountedByteCount` did), it would be at
+        // least 1000.
+        #expect(small.metadataOverheadBytes < small.encodedByteCount)
     }
 }

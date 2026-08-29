@@ -56,11 +56,18 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         self.lastAccessedAt = lastAccessedAt
     }
 
-    /// Total bytes this entry counts against the *in-memory* cache's quota:
-    /// payload plus this metadata value's own real serialized-JSON byte
-    /// count. Measuring the actual encoded size — rather than a fixed
-    /// constant — matters because ``resolvedURLString`` (and, to a lesser
-    /// extent, ``etag``/``lastModified``) has no fixed upper bound: a fixed
+    /// This metadata value's own real serialized-JSON byte count — the
+    /// per-entry *overhead* a ``CachedAsset`` bills against the
+    /// *in-memory* cache's quota in addition to its actual payload bytes
+    /// (see ``CachedAsset/accountedByteCount``, which is the authoritative
+    /// total and intentionally measures `payload.count` directly rather
+    /// than trusting this value's own ``encodedByteCount`` field, since
+    /// that field is merely what this metadata *declares* the payload size
+    /// to be, not a guarantee).
+    ///
+    /// Measuring the actual encoded size — rather than a fixed constant —
+    /// matters because ``resolvedURLString`` (and, to a lesser extent,
+    /// ``etag``/``lastModified``) has no fixed upper bound: a fixed
     /// estimate could be exceeded by a long URL, silently under-billing the
     /// true bytes counted against the configured memory budget and
     /// undermining the "bounded memory" guarantee.
@@ -72,9 +79,9 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// genuinely distinct things — an in-memory estimate here vs. an
     /// actual written file there — and this type must not depend on
     /// ``AssetDiskCache``'s internals).
-    var accountedByteCount: Int {
+    var metadataOverheadBytes: Int {
         let measuredMetadataBytes = (try? Self.encoderForAccounting.encode(self))?.count
-        return encodedByteCount + (measuredMetadataBytes ?? Self.estimatedMetadataOverheadBytes)
+        return measuredMetadataBytes ?? Self.estimatedMetadataOverheadBytes
     }
 
     /// A fallback only: used if encoding this `Codable` value ever somehow

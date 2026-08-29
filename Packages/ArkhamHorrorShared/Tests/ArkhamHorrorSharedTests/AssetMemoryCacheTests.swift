@@ -186,4 +186,25 @@ struct AssetMemoryCacheTests {
         let total = await cache.totalAccountedBytes
         #expect(total == 0)
     }
+
+    @Test(
+        """
+        CachedAsset.accountedByteCount bills the actual payload it holds, \
+        never metadata.encodedByteCount alone: a metadata value whose \
+        declared encodedByteCount diverges from the real payload size -- \
+        corrupt/tampered metadata reused in-memory, or a call site \
+        accidentally passing mismatched values -- cannot under- or \
+        over-bill this entry against the memory budget
+        """
+    )
+    func accountedByteCountUsesTheActualPayloadNotDeclaredEncodedByteCount() {
+        let payload = Data(count: 5)
+        // Deliberately mismatched: this metadata declares a payload size
+        // wildly different from the 5 bytes actually held above.
+        let mismatchedMetadata = metadata(cacheKeyHex: "a", encodedByteCount: 999_999)
+        let asset = CachedAsset(payload: payload, metadata: mismatchedMetadata)
+        let expected = payload.count + mismatchedMetadata.metadataOverheadBytes
+        #expect(asset.accountedByteCount == expected)
+        #expect(asset.accountedByteCount != mismatchedMetadata.encodedByteCount)
+    }
 }

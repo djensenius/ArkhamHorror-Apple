@@ -6,18 +6,30 @@ struct CachedAsset: Sendable, Equatable {
     let payload: Data
     var metadata: AssetCacheMetadata
 
-    /// ``AssetCacheMetadata/accountedByteCount``, computed once here at
+    /// This entry's actual payload byte count plus
+    /// ``AssetCacheMetadata/metadataOverheadBytes``, computed once here at
     /// construction rather than re-derived on every accounting pass.
     ///
-    /// ``AssetCacheMetadata/accountedByteCount`` measures a real serialized
-    /// JSON byte count (see that property's doc comment), so re-deriving it
-    /// on every ``AssetMemoryCache`` accounting pass — which runs on
-    /// *every* `set(_:asset:)` call via `evictIfNeeded()`, not only when a
-    /// quota breach is actually near — would make every insert O(n) in the
-    /// number of already-cached entries, with one JSON encode per entry.
-    /// Caching it here avoids re-encoding `metadata` to JSON on every
-    /// ``AssetMemoryCache`` accounting pass — i.e. it keeps that one JSON
-    /// encode a one-time cost per entry rather than paying it again on
+    /// Deliberately measures `payload.count` directly — the one value this
+    /// struct can independently verify — rather than trusting
+    /// ``AssetCacheMetadata/encodedByteCount``, which is merely what the
+    /// metadata *declares* the payload size to be. If that declared value
+    /// ever diverged from the real payload (a future bug, tampered/corrupt
+    /// metadata reused in-memory, or a call site accidentally passing
+    /// mismatched values), billing off the declared count alone could
+    /// under- or over-bill this entry and undermine the configured memory
+    /// budget; billing off the payload actually held here cannot diverge
+    /// from what is actually resident in memory.
+    ///
+    /// ``AssetCacheMetadata/metadataOverheadBytes`` measures a real
+    /// serialized JSON byte count (see that property's doc comment), so
+    /// re-deriving it on every ``AssetMemoryCache`` accounting pass — which
+    /// runs on *every* `set(_:asset:)` call via `evictIfNeeded()`, not only
+    /// when a quota breach is actually near — would make every insert
+    /// O(n) in the number of already-cached entries, with one JSON encode
+    /// per entry. Caching it here avoids re-encoding `metadata` to JSON on
+    /// every ``AssetMemoryCache`` accounting pass — i.e. it keeps that one
+    /// JSON encode a one-time cost per entry rather than paying it again on
     /// every subsequent `set`/`get`/eviction accounting walk over every
     /// already-cached entry. `metadata`'s
     /// `lastAccessedAt` still mutates on every read (see `get(_:)` below),
@@ -30,7 +42,7 @@ struct CachedAsset: Sendable, Equatable {
     init(payload: Data, metadata: AssetCacheMetadata) {
         self.payload = payload
         self.metadata = metadata
-        accountedByteCount = metadata.accountedByteCount
+        accountedByteCount = payload.count + metadata.metadataOverheadBytes
     }
 }
 
