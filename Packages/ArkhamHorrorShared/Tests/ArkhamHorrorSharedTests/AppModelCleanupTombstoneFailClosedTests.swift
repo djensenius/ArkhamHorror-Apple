@@ -56,9 +56,9 @@ extension AppModelTests {
         #expect(model.operation == .signingIn)
         #expect(model.generation == generationBeforeCancel)
         #expect(model.operationTask != nil)
-        guard case .tokenStore = model.operationFailure else {
+        guard case .tokenStore = model.authFailure?.failure else {
             Issue.record(
-                "Expected .tokenStore failure, got \(String(describing: model.operationFailure))"
+                "Expected .tokenStore failure, got \(String(describing: model.authFailure))"
             )
             return
         }
@@ -86,7 +86,7 @@ extension AppModelTests {
         cleanupStore.setMarkError(nil)
         model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
         #expect(model.operation == .idle)
-        #expect(model.operationFailure == nil)
+        #expect(model.authFailure == nil)
         #expect(
             model.sessionState ==
                 .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
@@ -235,11 +235,11 @@ extension AppModelTests {
         // silently saving a new token behind an unresolved tombstone.
         model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "should-not-save") }
         await model.operationTask?.value
-        guard case .tokenStore = model.operationFailure else {
+        guard case .tokenStore = model.authFailure?.failure else {
             Issue.record(
                 """
                 Expected sign-in to remain blocked by the still-pending tombstone, got \
-                \(String(describing: model.operationFailure))
+                \(String(describing: model.authFailure))
                 """
             )
             return

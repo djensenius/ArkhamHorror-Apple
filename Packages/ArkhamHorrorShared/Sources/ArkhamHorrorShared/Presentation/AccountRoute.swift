@@ -23,6 +23,9 @@ enum AccountRoute: Equatable, Sendable {
     /// Persisted profile or selection storage is corrupt; recovery requires explicit
     /// user confirmation.
     case storageCorrupted(SessionStorageFailure)
+    /// The durable credential-cleanup tombstone registry is corrupt; recovery
+    /// requires explicit user confirmation and never touches saved server profiles.
+    case credentialCleanupRegistryCorrupted(TokenCleanupPendingStoreError)
     /// A validated session is active for the typed current user.
     case account(profile: ServerProfile, compatibility: ServerCompatibility, user: CurrentUser)
 }
@@ -49,6 +52,8 @@ extension AccountRoute {
             self = .account(profile: profile, compatibility: compatibility, user: user)
         case let .storageCorrupted(failure):
             self = .storageCorrupted(failure)
+        case let .credentialCleanupRegistryCorrupted(failure):
+            self = .credentialCleanupRegistryCorrupted(failure)
         }
     }
 }
@@ -74,6 +79,8 @@ enum AccountAccessibilityID {
     static let serverEditorSaveButton = "account.server.save"
     static let storageResetConfirmButton = "account.storageReset.confirm"
     static let storageResetEntryButton = "account.storageReset.entry"
+    static let credentialCleanupResetConfirmButton = "account.credentialCleanupReset.confirm"
+    static let credentialCleanupResetEntryButton = "account.credentialCleanupReset.entry"
     static let chooseServerButton = "account.chooseServer"
     static let serverRemoveConfirmButton = "account.server.removeConfirm"
     static let operationFailureText = "account.operationFailure"

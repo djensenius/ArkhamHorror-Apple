@@ -32,6 +32,14 @@ struct PendingCleanupFailure: Equatable, Sendable {
     let failure: TokenStoreFailure
 }
 
+/// A ``SessionOperationFailure`` tagged with the exact sign-in/registration attempt
+/// (see ``AppModel/currentAuthAttemptID``) that produced it. See
+/// ``AppModel/authFailure``.
+struct AttemptScopedAuthFailure: Equatable, Sendable {
+    let attemptID: UUID
+    let failure: SessionOperationFailure
+}
+
 /// The generation and credential/global epoch snapshot captured at the start of an
 /// operation that may reach a durable token mutation, threaded through as a single
 /// value so the functions that recheck it immediately before touching the token
@@ -97,7 +105,35 @@ final class AppModel {
     /// The in-flight sign-in, registration, or sign-out operation, if any.
     var operation: SessionOperation = .idle
     /// The most recent operation failure, cleared at the start of the next operation.
+    ///
+    /// Reserved for failures that are *not* attributable to one exact sign-in or
+    /// registration attempt — profile-selection interruption/cleanup-reservation
+    /// failures (``AppModel+ProfileSelection.swift``) and explicit,
+    /// user-confirmed-reset failures — so they remain visible on the route/global
+    /// presentation they actually belong to (for example ``ServerSelectionView``)
+    /// regardless of which sign-in/registration form, if any, happens to be open.
+    /// Sign-in/registration's own failures use ``authFailure`` instead; see its
+    /// documentation for why a single shared, unattributed property would let a
+    /// stale or non-owning form display another attempt's failure.
     var operationFailure: SessionOperationFailure?
+    /// The most recent sign-in/registration attempt failure, attributed to the exact
+    /// attempt (see ``currentAuthAttemptID``) that produced it.
+    ///
+    /// `AppModel` is shared process-wide across every window, so more than one
+    /// ``SignInView``/``RegisterView`` can be open at once, and a later attempt can
+    /// reuse the very same profile and operation kind (sign-in or registration) an
+    /// earlier, now-failed one used. A single unattributed failure property — as
+    /// ``operationFailure`` used to also serve for this — would let a pre-opened,
+    /// non-owning form display a failure it never caused, or let a stale attempt's
+    /// late-arriving failure overwrite what a newer attempt using the same
+    /// profile/kind should show. Every write here is tagged with the attempt ID
+    /// captured at that failure's own guarded completion (which, by construction,
+    /// can only run while that exact attempt is still the active one — a new
+    /// attempt cannot start, and so cannot overwrite ``currentAuthAttemptID``, until
+    /// the prior one has already reached ``SessionOperation/idle``), so a
+    /// presentation only ever renders this when its own remembered attempt ID
+    /// matches exactly.
+    var authFailure: AttemptScopedAuthFailure?
     /// Whether a sign-in, registration, or sign-out is active anywhere in the process
     /// right now.
     ///

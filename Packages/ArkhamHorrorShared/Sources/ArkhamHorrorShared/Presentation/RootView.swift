@@ -81,6 +81,8 @@ public struct RootView: View {
             ServerIssueView(model: model, kind: .unavailable(profile: profile, reason: reason))
         case let .storageCorrupted(failure):
             ServerIssueView(model: model, kind: .storageCorrupted(failure))
+        case let .credentialCleanupRegistryCorrupted(failure):
+            ServerIssueView(model: model, kind: .credentialCleanupRegistryCorrupted(failure))
         case let .account(profile, compatibility, user):
             AccountShellView(
                 model: model, profile: profile, compatibility: compatibility, user: user

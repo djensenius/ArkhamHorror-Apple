@@ -127,6 +127,15 @@ enum SessionState: Equatable, Sendable {
     /// Exposed rather than silently erased; recovery is intentionally out of scope for
     /// this coordinator.
     case storageCorrupted(SessionStorageFailure)
+    /// The durable credential-cleanup tombstone registry — a Keychain service
+    /// distinct from both the profile-metadata store and the token store itself —
+    /// could not be safely enumerated (a malformed or non-canonical marker, or an
+    /// unhandled Keychain status). Every saved server profile remains intact and
+    /// usable; only credential-cleanup bookkeeping is corrupt, so recovery here never
+    /// erases profile metadata the way ``storageCorrupted(_:)``'s reset does — only an
+    /// explicit, user-confirmed credential reset (every stored token and every
+    /// cleanup marker) can safely restore it.
+    case credentialCleanupRegistryCorrupted(TokenCleanupPendingStoreError)
 }
 
 // MARK: - User-facing summaries
@@ -153,6 +162,8 @@ extension SessionState {
             "Signed in as \(user.username)"
         case .storageCorrupted:
             "Storage error"
+        case .credentialCleanupRegistryCorrupted:
+            "Credential cleanup error"
         }
     }
 
@@ -180,6 +191,8 @@ extension SessionState {
             "Connected to \(profile.displayName)."
         case .storageCorrupted:
             "Saved server data could not be read."
+        case .credentialCleanupRegistryCorrupted:
+            "Saved sign-in cleanup data could not be read."
         }
     }
 
@@ -263,5 +276,19 @@ extension SessionStorageFailure {
     var message: String {
         "Your saved server data could not be read. Resetting removes your saved " +
             "custom servers and sign-in tokens and restores the default hosted server."
+    }
+}
+
+extension TokenCleanupPendingStoreError {
+    /// A non-secret, user-facing explanation shown alongside an explicit,
+    /// user-confirmed credential reset. Distinct from
+    /// ``SessionStorageFailure/message``: this recovery removes only credential
+    /// material (every stored sign-in token and every cleanup marker), never any
+    /// saved server profile, and ``AppModel/retry()`` is likewise a no-op here — a
+    /// plain retry could never repair a malformed cleanup-registry entry, so this
+    /// never implies one might.
+    var message: String {
+        "Saved sign-in cleanup data could not be read. Resetting removes every " +
+            "sign-in token on this device, but keeps your saved servers."
     }
 }

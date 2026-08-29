@@ -53,6 +53,12 @@ extension AppModel {
         // can never be silently read and restored into a signed-in session.
         if let failure = await resolvePendingCleanup(for: profile.id) {
             guard isCurrent(generation) else { return }
+            // As in `beginAuthOperationAfterResolvingCleanup`: a registry-wide
+            // enumeration failure has already transitioned `sessionState` to
+            // `.credentialCleanupRegistryCorrupted`, session-wide, so this launch
+            // flow must stop without overwriting it with a narrower per-profile
+            // `.unavailable` presentation.
+            guard !isCredentialCleanupRegistryCorrupted else { return }
             let reason = TokenValidationFailure.tokenStore(failure)
             sessionState = .unavailable(profile: profile, reason: .tokenValidationFailed(reason))
             return

@@ -134,4 +134,143 @@ extension AppModelTests {
         // this later, unrelated completion.
         #expect(submissionForSampleProfile != model.currentProfileSubmissionID)
     }
+
+    // MARK: - Optimistic concurrency: stale opening snapshot
+
+    @Test(
+        """
+        A second editor's immutable opening snapshot is rejected as a conflict — \
+        without mutating the live profile, deleting any token, or touching state — \
+        once a first editor has already changed that same profile's endpoint; the \
+        second editor's own input is never overwritten with stale data
+        """
+    )
+    func staleOpeningSnapshotEndpointEditIsRejectedWithoutMutatingLiveProfile() async throws {
+        let tokenStore = FakeTokenStore(tokens: [sampleCustomProfile.id: "old-token"])
+        let model = makeEditorOwnershipModel(tokenStore: tokenStore)
+        await model.flowTask?.value
+
+        // Both editor A and editor B open on the very same immutable snapshot.
+        let openingSnapshotForBothEditors = sampleCustomProfile
+
+        // Editor A commits an endpoint change and fully completes before editor B
+        // ever submits — no operation is in flight when B calls in, so B's rejection
+        // can only come from the snapshot mismatch itself, never the `.idle` guard.
+        let submissionA = model.updateCustomProfile(
+            openingSnapshotForBothEditors,
+            displayName: "A's Server",
+            rawURL: "https://a-changed-host.example.com"
+        )
+        try #require(submissionA != nil)
+        await model.profileManagementTask?.value
+        #expect(model.profileManagementFailure == nil)
+        let afterA = try #require(model.profiles.first { $0.id == sampleCustomProfile.id })
+        #expect(afterA.displayName == "A's Server")
+        #expect(afterA.baseURL.host == "a-changed-host.example.com")
+        let deleteCallCountAfterA = await tokenStore.deleteCallCount
+
+        // Editor B never re-fetched: it still holds the exact snapshot it opened
+        // with, from before A's edit, and submits its own (different) change to it.
+        let submissionB = model.updateCustomProfile(
+            openingSnapshotForBothEditors,
+            displayName: "B's Server",
+            rawURL: "https://b-changed-host.example.com"
+        )
+
+        // Rejected synchronously: no submission identity, no operation started.
+        #expect(submissionB == nil)
+        #expect(model.profileManagementFailure == .editConflict)
+        #expect(model.profileManagementOperation == .idle)
+
+        // A's already-committed change is completely undisturbed by B's stale
+        // submission: not overwritten with B's (older) name/host, and no additional
+        // token-store activity was ever triggered by the rejected attempt.
+        let stillCurrent = try #require(model.profiles.first { $0.id == sampleCustomProfile.id })
+        #expect(stillCurrent == afterA)
+        #expect(stillCurrent.displayName == "A's Server")
+        #expect(stillCurrent.baseURL.host == "a-changed-host.example.com")
+        #expect(await tokenStore.deleteCallCount == deleteCallCountAfterA)
+    }
+
+    @Test(
+        """
+        A second editor's stale opening snapshot is rejected as a conflict even when \
+        the first editor's own edit only changed the display name, not the endpoint
+        """
+    )
+    func staleOpeningSnapshotNameOnlyEditIsRejectedWithoutMutatingLiveProfile() async throws {
+        let model = makeEditorOwnershipModel()
+        await model.flowTask?.value
+        let openingSnapshotForBothEditors = sampleCustomProfile
+
+        let submissionA = model.updateCustomProfile(
+            openingSnapshotForBothEditors,
+            displayName: "Renamed By A",
+            rawURL: sampleCustomProfile.baseURL.absoluteString
+        )
+        try #require(submissionA != nil)
+        await model.profileManagementTask?.value
+        #expect(model.profileManagementFailure == nil)
+
+        // Editor B still holds the pre-rename snapshot and submits its own edit
+        // without ever having observed A's rename.
+        let submissionB = model.updateCustomProfile(
+            openingSnapshotForBothEditors,
+            displayName: "Renamed By B",
+            rawURL: sampleCustomProfile.baseURL.absoluteString
+        )
+
+        #expect(submissionB == nil)
+        #expect(model.profileManagementFailure == .editConflict)
+        #expect(model.profiles.first { $0.id == sampleCustomProfile.id }?.displayName ==
+            "Renamed By A")
+    }
+
+    @Test(
+        """
+        The commit-boundary recheck immediately before persisting an endpoint-changing \
+        edit rejects a profile that changed underneath it during the cleanup \
+        suspension, rather than persisting the submitting editor's now-stale update \
+        over whatever changed it
+        """
+    )
+    func commitBoundaryRecheckRejectsProfileMutatedDuringCleanupSuspension() async throws {
+        // A gated store lets this test hold the edit's own cleanup delete pending so
+        // a mutation can be injected during the real `await` suspension inside
+        // `performProfileUpdate`, proving the recheck immediately before the write —
+        // not merely the synchronous check in `updateCustomProfile` — is what
+        // actually protects the write, exactly as its doc comment describes.
+        let tokenStore = GatedTokenStore(tokens: [sampleCustomProfile.id: "old-token"])
+        let model = makeEditorOwnershipModel(tokenStore: tokenStore)
+        await model.flowTask?.value
+
+        let submission = model.updateCustomProfile(
+            sampleCustomProfile,
+            displayName: "Submitted Edit",
+            rawURL: "https://submitted-host.example.com"
+        )
+        try #require(submission != nil)
+        await tokenStore.waitUntilPending(1)
+
+        // Simulate a profile mutation landing during the suspension — something the
+        // process-wide `profileManagementOperation` serialization guard makes
+        // unreachable today, but which this recheck must still guard against on its
+        // own, independent of that invariant holding.
+        let mutatedElsewhere = try ServerProfile.custom(
+            id: sampleCustomProfile.id,
+            displayName: "Changed During Suspension",
+            rawURL: "https://changed-during-suspension.example.com"
+        )
+        model.profiles = model.profiles.map {
+            $0.id == sampleCustomProfile.id ? mutatedElsewhere : $0
+        }
+
+        await tokenStore.resumeOldest()
+        await model.profileManagementTask?.value
+
+        #expect(model.profileManagementFailure == .editConflict)
+        // The injected mutation is exactly what remains — the submitting edit never
+        // persisted over it.
+        #expect(model.profiles.first { $0.id == sampleCustomProfile.id } == mutatedElsewhere)
+    }
 }

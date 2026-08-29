@@ -50,9 +50,9 @@ extension AppModelTests {
 
         #expect(model.operation == .registering)
         #expect(model.generation == generationBeforeCancel)
-        guard case .tokenStore = model.operationFailure else {
+        guard case .tokenStore = model.authFailure?.failure else {
             Issue.record(
-                "Expected .tokenStore failure, got \(String(describing: model.operationFailure))"
+                "Expected .tokenStore failure, got \(String(describing: model.authFailure))"
             )
             return
         }

@@ -85,6 +85,20 @@ struct AccountRouteTests {
         #expect(route == .storageCorrupted(failure))
     }
 
+    @Test(
+        """
+        Credential-cleanup-registry corrupted maps to its own distinct route with the \
+        exact typed failure, never conflated with storageCorrupted
+        """
+    )
+    func credentialCleanupRegistryCorruptedMapsToItsOwnRoute() {
+        let failure = TokenCleanupPendingStoreError.corruptData
+        let route = AccountRoute(
+            sessionState: .credentialCleanupRegistryCorrupted(failure), profiles: [.hosted]
+        )
+        #expect(route == .credentialCleanupRegistryCorrupted(failure))
+    }
+
     @Test("Accessibility identifiers are stable, non-empty, and unique")
     func accessibilityIdentifiersAreStableAndUnique() {
         let identifiers = [
@@ -106,6 +120,8 @@ struct AccountRouteTests {
             AccountAccessibilityID.serverRemoveButton(for: UUID()),
             AccountAccessibilityID.storageResetConfirmButton,
             AccountAccessibilityID.storageResetEntryButton,
+            AccountAccessibilityID.credentialCleanupResetConfirmButton,
+            AccountAccessibilityID.credentialCleanupResetEntryButton,
             AccountAccessibilityID.chooseServerButton,
             AccountAccessibilityID.serverRemoveConfirmButton,
         ]

@@ -50,6 +50,7 @@ extension AppModel {
         currentAuthAttemptID = attemptID
         operation = operationKind
         operationFailure = nil
+        authFailure = nil
         operationTask = Task { [weak self] in
             await self?.beginAuthOperationAfterResolvingCleanup(
                 profile: profile,
@@ -83,8 +84,14 @@ extension AppModel {
     ) async {
         if let failure = await resolvePendingCleanup(for: profile.id) {
             guard isCurrent(generation) else { return }
+            // A registry-wide enumeration failure has already transitioned
+            // `sessionState` to `.credentialCleanupRegistryCorrupted`, session-wide;
+            // this operation must still stop (credential use stays blocked), but
+            // must not clobber that state with a narrower, merely-per-operation
+            // failure presentation a plain retry could never actually repair.
             operation = .idle
-            operationFailure = .tokenStore(failure)
+            guard !isCredentialCleanupRegistryCorrupted else { return }
+            recordAuthFailure(.tokenStore(failure))
             return
         }
         guard isCurrent(generation) else { return }
@@ -114,7 +121,7 @@ extension AppModel {
         } catch {
             guard isCurrent(generation) else { return }
             operation = .idle
-            operationFailure = authOperationFailure(from: error)
+            recordAuthFailure(authOperationFailure(from: error))
             return
         }
         // Re-checked after every awaited auth result (not just in each `catch`) so a
@@ -128,7 +135,7 @@ extension AppModel {
         } catch {
             guard isCurrent(generation) else { return }
             operation = .idle
-            operationFailure = authOperationFailure(from: error)
+            recordAuthFailure(authOperationFailure(from: error))
             return
         }
         guard isCurrent(generation) else { return }
@@ -153,15 +160,17 @@ extension AppModel {
         } catch {
             guard isCurrent(generation) else { return }
             operation = .idle
-            operationFailure = (error is CancellationError || error is StaleCredentialEpochError)
-                ? nil
-                : .tokenStore(tokenStoreFailure(from: error))
+            recordAuthFailure(
+                (error is CancellationError || error is StaleCredentialEpochError)
+                    ? nil
+                    : .tokenStore(tokenStoreFailure(from: error))
+            )
             return
         }
 
         guard isCurrent(generation) else { return }
         operation = .idle
-        operationFailure = nil
+        authFailure = nil
         sessionState = .signedIn(profile: profile, compatibility: compatibility, user: user)
     }
 
@@ -234,8 +243,8 @@ extension AppModel {
     /// safely interrupted because its cleanup reservation failed
     /// (``AuthInterruptionOutcome/blocked(_:)``): the operation remains exactly as it
     /// was and the caller must **not** dismiss/navigate away, since doing so would
-    /// abandon an unprotected in-flight save; ``operationFailure`` is already set for
-    /// the UI to surface.
+    /// abandon an unprotected in-flight save; ``authFailure`` is already set,
+    /// attributed to this exact attempt, for the owning UI to surface.
     @discardableResult
     func cancelAuthOperation(ownedBy attemptID: UUID?) -> Bool {
         guard case let .signedOut(profile, compatibility) = sessionState else { return true }
@@ -255,14 +264,17 @@ extension AppModel {
             operationTask?.cancel()
             operationTask = nil
             operation = .idle
-            operationFailure = nil
+            authFailure = nil
             sessionState = .signedOut(profile: profile, compatibility: compatibility)
             return true
         case let .blocked(failure):
             // Reservation itself could not be made durable: preserve the genuinely
             // active operation — task, generation, epoch, and observable state —
-            // exactly as it was, and surface a typed, retryable failure instead.
-            operationFailure = .tokenStore(failure)
+            // exactly as it was, and surface a typed, retryable failure instead,
+            // attributed to the exact attempt this cancellation was requested for
+            // (already proven above to equal ``currentAuthAttemptID``) so only the
+            // owning form renders it.
+            recordAuthFailure(.tokenStore(failure))
             return false
         }
     }
@@ -334,6 +346,26 @@ extension AppModel {
             return .authentication(authError)
         }
         return .authentication(.transportFailure("Unexpected authentication failure."))
+    }
+
+    /// Records `failure` (or clears any prior failure, when `nil`) as the currently
+    /// active sign-in/registration attempt's own ``authFailure``, tagged with
+    /// ``currentAuthAttemptID``.
+    ///
+    /// Every call site here runs only once its own captured `generation` has already
+    /// been proven still current, and a new attempt cannot start (and so cannot
+    /// overwrite ``currentAuthAttemptID``) until this one has itself reached
+    /// ``SessionOperation/idle`` — so `currentAuthAttemptID` is guaranteed to still
+    /// name exactly this attempt at every call site. Falls back to simply clearing
+    /// ``authFailure`` if, defensively, no attempt ID were present at all (which
+    /// should not be reachable given the above), rather than attributing a failure to
+    /// no attempt at all.
+    private func recordAuthFailure(_ failure: SessionOperationFailure?) {
+        guard let attemptID = currentAuthAttemptID else {
+            authFailure = nil
+            return
+        }
+        authFailure = failure.map { AttemptScopedAuthFailure(attemptID: attemptID, failure: $0) }
     }
 }
 

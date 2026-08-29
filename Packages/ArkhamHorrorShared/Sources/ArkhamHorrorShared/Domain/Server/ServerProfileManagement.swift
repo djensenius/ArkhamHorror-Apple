@@ -15,6 +15,10 @@ enum ProfileManagementOperation: Equatable, Sendable {
     /// Corrupted profile/selection storage is being explicitly, user-confirmed reset:
     /// every stored token is being securely deleted before metadata is replaced.
     case resettingStorage
+    /// A corrupted credential-cleanup tombstone registry is being explicitly,
+    /// user-confirmed reset: every stored token and every cleanup marker is being
+    /// securely deleted, but saved server-profile metadata is left untouched.
+    case resettingCredentialCleanupRegistry
 }
 
 /// Why an add, edit, or remove of a custom server profile failed.
@@ -30,6 +34,11 @@ enum ProfileManagementFailure: Equatable, Sendable {
     case cannotModifyHosted
     /// The profile being edited or removed is no longer in the saved list.
     case profileNotFound
+    /// This edit's opening snapshot no longer matches the currently saved profile —
+    /// another window already changed it (name and/or endpoint). Nothing was mutated;
+    /// the editor should stay open with its unsaved fields so the user can review the
+    /// current values and resubmit.
+    case editConflict
     /// Securely deleting the profile's token failed; the profile was left unchanged.
     case tokenStore(TokenStoreFailure)
     /// Persisting the updated profile list or selection failed.
@@ -78,6 +87,8 @@ extension ProfileManagementFailure {
             "The hosted server can't be edited or removed."
         case .profileNotFound:
             "That server is no longer available."
+        case .editConflict:
+            "This server was changed elsewhere. Review the current details and try again."
         case .tokenStore:
             "Could not securely update your saved session for that server. Try again."
         case .storage:

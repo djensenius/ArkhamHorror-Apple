@@ -10,12 +10,14 @@ struct ServerIssueView: View {
         case incompatible(profile: ServerProfile, reason: CompatibilityRejection)
         case unavailable(profile: ServerProfile, reason: SessionUnavailableReason)
         case storageCorrupted(SessionStorageFailure)
+        case credentialCleanupRegistryCorrupted(TokenCleanupPendingStoreError)
     }
 
     let model: AppModel
     let kind: Kind
 
     @State private var isPresentingResetConfirmation = false
+    @State private var isPresentingCredentialResetConfirmation = false
     @State private var isPresentingServerManagement = false
     @AccessibilityFocusState private var isHeaderFocused: Bool
 
@@ -58,6 +60,22 @@ struct ServerIssueView: View {
             Text(
                 "This restores only the default hosted server and removes saved sign-in "
                     + "tokens. Custom servers you saved will be removed."
+            )
+        }
+        .confirmationDialog(
+            "Reset saved sign-in tokens?",
+            isPresented: $isPresentingCredentialResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reset and Continue", role: .destructive) {
+                model.confirmCredentialCleanupRegistryReset()
+            }
+            .accessibilityIdentifier(AccountAccessibilityID.credentialCleanupResetConfirmButton)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "This removes every sign-in token on this device. Your saved server "
+                    + "profiles are not affected."
             )
         }
         .sheet(isPresented: $isPresentingServerManagement) {
@@ -118,6 +136,27 @@ struct ServerIssueView: View {
                     .foregroundStyle(.red)
                     .accessibilityIdentifier(AccountAccessibilityID.profileManagementFailureText)
             }
+        case .credentialCleanupRegistryCorrupted:
+            if model.profileManagementOperation == .resettingCredentialCleanupRegistry {
+                ProgressView("Resetting…")
+                    .frame(maxWidth: .infinity)
+            } else {
+                Button(role: .destructive) {
+                    isPresentingCredentialResetConfirmation = true
+                } label: {
+                    Label("Reset Sign-In Tokens…", systemImage: "arrow.counterclockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.profileManagementOperation != .idle)
+                .accessibilityIdentifier(AccountAccessibilityID.credentialCleanupResetEntryButton)
+            }
+            if let failure = model.profileManagementFailure {
+                Text(failure.message)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier(AccountAccessibilityID.profileManagementFailureText)
+            }
         }
     }
 
@@ -126,6 +165,7 @@ struct ServerIssueView: View {
         case .incompatible: "Server Incompatible"
         case .unavailable: "Server Unavailable"
         case .storageCorrupted: "Storage Problem"
+        case .credentialCleanupRegistryCorrupted: "Sign-In Cleanup Problem"
         }
     }
 
@@ -133,7 +173,7 @@ struct ServerIssueView: View {
         switch kind {
         case let .incompatible(profile, _): profile.displayName
         case let .unavailable(profile, _): profile.displayName
-        case .storageCorrupted: nil
+        case .storageCorrupted, .credentialCleanupRegistryCorrupted: nil
         }
     }
 
@@ -142,6 +182,7 @@ struct ServerIssueView: View {
         case let .incompatible(_, reason): reason.message
         case let .unavailable(_, reason): reason.message
         case let .storageCorrupted(failure): failure.message
+        case let .credentialCleanupRegistryCorrupted(failure): failure.message
         }
     }
 }
@@ -172,6 +213,14 @@ struct ServerIssueView: View {
     ServerIssueView(
         model: previewAppModel(),
         kind: .storageCorrupted(.profileStore(.corruptData(key: "ArkhamHorror.serverProfiles")))
+    )
+    .background(ArkhamTheme.backgroundGradient)
+}
+
+#Preview("Credential Cleanup Registry Corrupted") {
+    ServerIssueView(
+        model: previewAppModel(),
+        kind: .credentialCleanupRegistryCorrupted(.corruptData)
     )
     .background(ArkhamTheme.backgroundGradient)
 }

@@ -102,7 +102,7 @@ extension AppModelTests {
         let expectedFailure = SessionOperationFailure.tokenStore(
             .keychain(.unhandledStatus(errSecAuthFailed))
         )
-        #expect(model.operationFailure == expectedFailure)
+        #expect(model.authFailure?.failure == expectedFailure)
         #expect(model.operation == .idle)
     }
 
@@ -144,7 +144,7 @@ extension AppModelTests {
         model.signIn(AuthenticationCredentials(email: "a@example.com", password: "secret-pw"))
         await model.operationTask?.value
 
-        let diagnostic: String? = switch model.operationFailure {
+        let diagnostic: String? = switch model.authFailure?.failure {
         case let .authentication(.transportFailure(value)):
             value
         default:

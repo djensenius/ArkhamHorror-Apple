@@ -15,13 +15,23 @@ import SwiftUI
 /// never complete and sign them in later. That call is a safe no-op once a sign-in has
 /// already succeeded, so it can never undo a just-completed, already-navigated-away-
 /// from success. Cancellation's cleanup must itself be durably reserved before this
-/// form dismisses: while it could not be (``AppModel/operationFailure`` surfaces why),
-/// the form stays open and interactive (swipe) dismissal is disabled — cancellation
-/// only ever happens through that button or the sign-in success path above;
-/// `onDisappear` deliberately has no side effect beyond clearing the password, because
-/// it cannot observe or react to a failed cleanup reservation, and because
+/// form dismisses: while it could not be (``AppModel/authFailure`` surfaces why, since
+/// this failure belongs to this form's own attempt exactly like any other failure
+/// here), the form stays open and interactive (swipe) dismissal is disabled —
+/// cancellation only ever happens through that button or the sign-in success path
+/// above; `onDisappear` deliberately has no side effect beyond clearing the password,
+/// because it cannot observe or react to a failed cleanup reservation, and because
 /// ``AppModel`` may be shared by more than one window: this form disappearing must
 /// never cancel a different window's legitimate, still-wanted sign-in.
+///
+/// Every credential/network/whoami/token-save/cancellation-reservation failure this
+/// form's own attempt produces is attributed to `ownedAttemptID` (via
+/// ``AppModel/authFailure``) and only ever rendered here when that ID matches — never
+/// via the shared, unattributed ``AppModel/operationFailure`` — so a second,
+/// pre-opened or later-opened sign-in/registration form (for the same or a different
+/// profile) never displays a failure it did not itself cause, and a stale attempt's
+/// late-arriving failure can never overwrite what a newer attempt reusing the same
+/// profile/kind should show.
 struct SignInView: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -53,7 +63,7 @@ struct SignInView: View {
                     .onSubmit(submit)
                     .accessibilityIdentifier(AccountAccessibilityID.passwordField)
             } footer: {
-                if let failure = model.operationFailure {
+                if let failure = ownedFailure {
                     ArkhamFailureText(message: failure.message)
                 }
             }
@@ -115,6 +125,16 @@ struct SignInView: View {
         !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !password.isEmpty
     }
 
+    /// This form's own attempt's failure, or `nil` if it never submitted or its
+    /// current failure (if any) belongs to a different attempt entirely — see this
+    /// type's own documentation for why only exact-attempt matches are ever rendered.
+    private var ownedFailure: SessionOperationFailure? {
+        guard let ownedAttemptID, let failure = model.authFailure,
+              failure.attemptID == ownedAttemptID
+        else { return nil }
+        return failure.failure
+    }
+
     private func submit() {
         guard isValid, model.operation == .idle else { return }
         ownedAttemptID = model.signIn(AuthenticationCredentials(email: email, password: password))
@@ -168,7 +188,7 @@ struct RegisterView: View {
                     .onSubmit(submit)
                     .accessibilityIdentifier(AccountAccessibilityID.passwordField)
             } footer: {
-                if let failure = model.operationFailure {
+                if let failure = ownedFailure {
                     ArkhamFailureText(message: failure.message)
                 }
             }
@@ -217,6 +237,16 @@ struct RegisterView: View {
         !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !password.isEmpty
+    }
+
+    /// This form's own attempt's failure, or `nil` if it never submitted or its
+    /// current failure (if any) belongs to a different attempt entirely — see this
+    /// type's own documentation for why only exact-attempt matches are ever rendered.
+    private var ownedFailure: SessionOperationFailure? {
+        guard let ownedAttemptID, let failure = model.authFailure,
+              failure.attemptID == ownedAttemptID
+        else { return nil }
+        return failure.failure
     }
 
     private func submit() {

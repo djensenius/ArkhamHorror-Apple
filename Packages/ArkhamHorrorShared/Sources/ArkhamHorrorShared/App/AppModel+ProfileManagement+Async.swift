@@ -32,6 +32,19 @@ extension AppModel {
             profileManagementFailure = .profileNotFound
             return
         }
+        // Rechecked here, at the serialized commit boundary, immediately before the
+        // write: `original` was already verified to match the then-current stored
+        // profile synchronously in `updateCustomProfile`, before either the cleanup
+        // reservation above or this continuation's own suspension at
+        // `awaitEndpointChangeCleanup` occurred. Today, `profileManagementOperation`
+        // serializes every add/edit/remove so nothing else can have mutated this
+        // profile in between — but this recheck makes that invariant load-bearing
+        // rather than assumed, so this can never persist over a profile that changed
+        // during any suspension this function awaits, now or in the future.
+        guard updatedProfiles[index] == original else {
+            profileManagementFailure = .editConflict
+            return
+        }
         updatedProfiles[index] = updated
 
         guard runProfileStorageVoid(generation: generation, {

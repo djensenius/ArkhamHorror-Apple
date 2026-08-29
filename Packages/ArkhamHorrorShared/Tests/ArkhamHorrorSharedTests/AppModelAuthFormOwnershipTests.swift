@@ -1,4 +1,5 @@
 @testable import ArkhamHorrorShared
+import Foundation
 import Testing
 
 /// Deterministic multiwindow coverage for sign-in/registration form ownership:
@@ -178,5 +179,106 @@ extension AppModelTests {
         #expect(model.cancelAuthOperation(ownedBy: attemptC) == true)
         #expect(model.operation == .idle)
         await auth.resumeOldest(with: .success(.sample))
+    }
+
+    @Test(
+        """
+        A rejected sign-in's failure is attributed to its own attempt: it never \
+        matches a pre-opened, never-submitted window's own (nil) owned attempt ID
+        """
+    )
+    func rejectedSignInFailureIsAttributedToOwningAttemptOnly() async throws {
+        let auth = GatedAuthenticating()
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+
+        // Window A submits and is mid-whoami; window B is a second, pre-existing
+        // form that never itself submitted, exactly like `SignInView`'s
+        // `ownedAttemptID` before `submit()` is ever called.
+        let attemptA = model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "a-token") }
+        try #require(attemptA != nil)
+        let bOwnedAttemptID: UUID? = nil
+        await auth.waitUntilPending(1)
+
+        await auth.resumeOldest(with: .failure(AuthenticationError.unauthorized))
+        await model.operationTask?.value
+
+        // A's own rejection is attributed to exactly its attempt.
+        #expect(model.authFailure?.attemptID == attemptA)
+        guard case .authentication(.unauthorized) = model.authFailure?.failure else {
+            Issue.record(
+                """
+                Expected .authentication(.unauthorized), got \
+                \(String(describing: model.authFailure))
+                """
+            )
+            return
+        }
+
+        // The exact condition `SignInView`/`RegisterView` render on: B's own
+        // (never-submitted) owned attempt ID is `nil`, so it can never equal A's
+        // real attempt ID here — B must not render A's failure.
+        let bWouldRenderAsOwnFailure =
+            bOwnedAttemptID != nil && model.authFailure?.attemptID == bOwnedAttemptID
+        #expect(bWouldRenderAsOwnFailure == false)
+
+        #expect(model.operation == .idle)
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+    }
+
+    @Test(
+        """
+        A's stale, already-interrupted operation's late whoami resolution cannot \
+        overwrite C's own newer, unrelated failure once C has started
+        """
+    )
+    func staleInterruptedAttemptCannotOverwriteNewerAttemptsFailure() async throws {
+        let auth = GatedAuthenticating()
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+
+        // Window A submits and is mid-whoami when its own window is dismissed via
+        // its own Cancel — a legitimate interruption, not a failure of A's own.
+        let attemptA = model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "a-token") }
+        try #require(attemptA != nil)
+        await auth.waitUntilPending(1)
+        #expect(model.cancelAuthOperation(ownedBy: attemptA) == true)
+        #expect(model.operation == .idle)
+        #expect(model.authFailure == nil)
+
+        // Window C starts an entirely new sign-in for the same profile/kind, whose
+        // own `issueToken` step itself fails synchronously (a different failure
+        // category than A's).
+        let attemptC = model.beginAuthOperation(.signingIn) { _ in
+            throw AuthenticationError.unauthorized
+        }
+        try #require(attemptC != nil)
+        try #require(attemptC != attemptA)
+        await model.operationTask?.value
+
+        #expect(model.authFailure?.attemptID == attemptC)
+        let failureAfterC = model.authFailure
+
+        // A's stale whoami, suspended this whole time, only now resolves late. Its
+        // captured generation was already superseded by both A's own interruption
+        // and C's subsequent start, so this must not touch `authFailure`,
+        // `operation`, or `sessionState` at all.
+        await auth.resumeOldest(with: .success(.sample))
+
+        #expect(model.authFailure?.attemptID == failureAfterC?.attemptID)
+        #expect(model.operation == .idle)
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
     }
 }
