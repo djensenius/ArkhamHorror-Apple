@@ -89,7 +89,8 @@ final class AppModel {
     var operation: SessionOperation = .idle
     /// The most recent operation failure, cleared at the start of the next operation.
     var operationFailure: SessionOperationFailure?
-    /// Whether a sign-in or registration is active anywhere in the process right now.
+    /// Whether a sign-in, registration, or sign-out is active anywhere in the process
+    /// right now.
     ///
     /// `AppModel` is shared process-wide across every window (see ``RootView``), so
     /// this can be `true` because of an operation a *different* window started.

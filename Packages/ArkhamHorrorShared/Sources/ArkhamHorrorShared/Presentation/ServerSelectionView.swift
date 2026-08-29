@@ -38,11 +38,11 @@ struct ServerSelectionView: View {
 
                     // `model` is shared process-wide across every window, so
                     // `model.isAuthOperationActive` can already be `true` due to a
-                    // sign-in/registration started in another window. Presenting
-                    // either sheet while that's true would let this window open — and
-                    // potentially cancel or otherwise interact with — an operation it
-                    // never itself started, so both entry points are disabled for as
-                    // long as any window's auth operation is in flight.
+                    // sign-in, registration, or sign-out started in another window.
+                    // Presenting either sheet while that's true would let this window
+                    // open — and potentially cancel or otherwise interact with — an
+                    // operation it never itself started, so both entry points are
+                    // disabled for as long as any window's auth operation is in flight.
                     ArkhamPrimaryButton("Sign In", systemImage: "arrow.right.circle.fill") {
                         presentedSheet = .signIn
                     }

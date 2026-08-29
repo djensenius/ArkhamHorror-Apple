@@ -57,7 +57,7 @@ struct ServerIssueView: View {
         } message: {
             Text(
                 "This restores only the default hosted server and removes saved sign-in "
-                    + "credentials. Custom servers you saved will be removed."
+                    + "tokens. Custom servers you saved will be removed."
             )
         }
         .sheet(isPresented: $isPresentingServerManagement) {
@@ -112,6 +112,7 @@ struct ServerIssueView: View {
                 Text(failure.message)
                     .font(.footnote)
                     .foregroundStyle(.red)
+                    .accessibilityIdentifier(AccountAccessibilityID.profileManagementFailureText)
             }
         }
     }
