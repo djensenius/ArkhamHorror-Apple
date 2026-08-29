@@ -164,14 +164,22 @@ extension AssetDiskCache {
             // A missing payload file, or one whose actual size is negative
             // or exceeds the configured cap, means this entry cannot be
             // trusted for accounting purposes either — quarantine it
-            // rather than let it silently under- or over-count.
+            // rather than let it silently under- or over-count. This key
+            // hash's metadata is being removed here, so — exactly like the
+            // undecodable/schema-mismatch branches above — no generation
+            // for it is left referenced by anything: sweep every other
+            // `.bin` generation for this key hash too (e.g. a stale
+            // pre-crash payload from between an earlier write and its own
+            // metadata commit), not just the one this metadata happened to
+            // reference, so it cannot be left orphaned, uncounted against
+            // `diskBudgetBytes`, and unevictable indefinitely.
             guard
                 let attributes = try? fileManager.attributesOfItem(atPath: payloadURL.path),
                 let actualPayloadSize = attributes[.size] as? Int,
                 actualPayloadSize >= 0, actualPayloadSize <= limits.maxEncodedBytes
             else {
-                try? fileManager.removeItem(at: payloadURL)
                 try? fileManager.removeItem(at: url)
+                cleanupSupersededPayloads(forKeyHash: hash, keeping: nil)
                 continue
             }
             result.append(

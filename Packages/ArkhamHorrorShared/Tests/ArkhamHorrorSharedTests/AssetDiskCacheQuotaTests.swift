@@ -169,6 +169,63 @@ extension AssetDiskCacheTests {
         }
     }
 
+    @Test(
+        """
+        Quarantining an entry whose actual on-disk payload is missing/unreadable/oversized \
+        also sweeps every other stale payload generation left on disk for that same key hash, \
+        not merely the one exact generation its metadata happened to reference — the same \
+        crash-recovery guarantee already applied when a sidecar itself is undecodable
+        """
+    )
+    func quarantiningUnreadablePayloadSweepsOtherStaleGenerationsForSameKeyHash() async throws {
+        try await withScratchDirectory { directory in
+            let limits = AssetCacheLimits(
+                maxEncodedBytes: 500,
+                maxDimension: 8192,
+                maxPixelCount: 32_000_000,
+                memoryBudgetBytes: 1_000_000,
+                diskBudgetBytes: 1_000_000
+            )
+            let cache = try AssetDiskCache(directory: directory, limits: limits)
+            let cacheKey = try key("01001")
+            let smallPayload = Data(count: 250)
+            try await cache.set(
+                cacheKey,
+                payload: smallPayload,
+                metadata: metadata(for: cacheKey, payload: smallPayload)
+            )
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: smallPayload
+            )
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+
+            // A second, stale `.bin` generation for the exact same key
+            // hash but a different (never-referenced) content hash —
+            // simulating a crash between a later payload write and its
+            // own metadata pointer commit, left behind after the
+            // once-per-instance startup orphan sweep already ran.
+            let staleGenerationURL = directory
+                .appendingPathComponent("\(cacheKey.digestHex).deadbeefstale.bin")
+            try Data(count: 10).write(to: staleGenerationURL)
+
+            // The metadata sidecar still claims 250 bytes; only the
+            // actual referenced payload file on disk is oversized, which
+            // is what triggers this entry's own quarantine.
+            try Data(count: 600).write(to: payloadURL)
+
+            let total = await cache.totalAccountedBytes()
+            #expect(total == 0, "The oversized entry must not be counted")
+            #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
+            #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
+            #expect(
+                !FileManager.default.fileExists(atPath: staleGenerationURL.path),
+                "A stale sibling generation for the same key hash must not survive quarantine"
+            )
+        }
+    }
+
     @Test("Removing a key deletes both its payload and metadata files")
     func removeDeletesBothFiles() async throws {
         try await withScratchDirectory { directory in
