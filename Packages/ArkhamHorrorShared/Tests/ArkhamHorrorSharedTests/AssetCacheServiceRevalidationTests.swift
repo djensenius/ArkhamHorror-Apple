@@ -91,4 +91,32 @@ extension AssetCacheServiceTests {
             }
         }
     }
+
+    @Test(
+        """
+        A definitive 404 while revalidating evicts the now-stale cached entry, so a subsequent \
+        asset(for:) call fetches fresh rather than re-serving the removed content
+        """
+    )
+    func notFoundDuringRevalidationEvictsStaleEntry() async throws {
+        try await withService { service, transport in
+            let key = try cardArtKey()
+            let urls = candidateURLs(for: key)
+            await transport.enqueue(.success(successResult(etag: "\"abc\"")), for: urls[0])
+            let initial = try await service.asset(for: key)
+            #expect(initial.metadata.etag == "\"abc\"")
+
+            await transport.enqueue(.success(.notFound), for: urls[0])
+            await #expect(throws: AssetError.candidatesExhausted) {
+                _ = try await service.revalidate(for: key)
+            }
+
+            // The stale entry must be gone from both cache layers: the next
+            // resolution has to hit the network again rather than silently
+            // continuing to serve the server-removed asset.
+            await transport.enqueue(.success(successResult(etag: "\"def\"")), for: urls[0])
+            let refetched = try await service.asset(for: key)
+            #expect(refetched.metadata.etag == "\"def\"")
+        }
+    }
 }

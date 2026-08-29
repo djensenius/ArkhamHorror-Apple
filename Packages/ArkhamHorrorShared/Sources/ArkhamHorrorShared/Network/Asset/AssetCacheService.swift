@@ -111,8 +111,13 @@ actor AssetCacheService {
             return refreshed
         case .notFound:
             // The previously cached resource no longer exists at its exact
-            // resolved URL. This is not "no change"; treat it the same as
-            // any other terminal transport outcome for a revalidation.
+            // resolved URL. This is not "no change": the stale entry must
+            // be evicted from both cache layers so subsequent `asset(for:)`
+            // calls do not keep serving content the server has definitively
+            // removed, then treat it the same as any other terminal
+            // transport outcome for a revalidation.
+            await memoryCache.remove(cacheKey)
+            await diskCache.remove(cacheKey)
             throw AssetError.candidatesExhausted
         case let .success(response):
             return try await assembleRevalidatedAsset(
