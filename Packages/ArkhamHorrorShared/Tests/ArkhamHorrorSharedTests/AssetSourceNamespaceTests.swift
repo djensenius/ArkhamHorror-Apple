@@ -24,9 +24,14 @@ struct AssetSourceNamespaceTests {
             "0.0.0.0", "[::]", "sub.localhost", "LOCALHOST.",
         ]
     )
-    func httpRejectedForNonLoopback(host: String) {
-        let url = URL(string: "http://\(host)/assets")
-        guard let url else { return }
+    func httpRejectedForNonLoopback(host: String) throws {
+        let url = try #require(
+            URL(string: "http://\(host)/assets"),
+            """
+            Test input host '\(host)' must itself produce a valid URL, or this test \
+            would vacuously pass without ever asserting rejection
+            """
+        )
         #expect(throws: AssetError.invalidAssetBase) {
             try AssetSourceNamespace(assetBase: url)
         }

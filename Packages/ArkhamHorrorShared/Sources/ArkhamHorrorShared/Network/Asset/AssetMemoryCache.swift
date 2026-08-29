@@ -12,12 +12,13 @@ struct CachedAsset: Sendable, Equatable {
 ///
 /// Explicit ``AssetCacheMetadata/lastAccessedAt`` (updated on every read)
 /// drives eviction order — never insertion order alone and never anything
-/// derived from the filesystem.
+/// derived from the filesystem. Eviction order is derived directly from
+/// this field only when a quota breach actually requires evicting (an
+/// infrequent operation relative to `get`/`set`), rather than maintaining a
+/// separately-tracked access-order list that would need an O(n) update on
+/// every single read or write to keep in sync.
 actor AssetMemoryCache {
     private var entries: [AssetCacheKey: CachedAsset] = [:]
-    /// Access order, most-recently-used last. Kept separately from the
-    /// dictionary so eviction can walk oldest-first without re-sorting.
-    private var accessOrder: [AssetCacheKey] = []
     private let limits: AssetCacheLimits
 
     init(limits: AssetCacheLimits) {
@@ -28,24 +29,20 @@ actor AssetMemoryCache {
         guard var entry = entries[key] else { return nil }
         entry.metadata.lastAccessedAt = Date()
         entries[key] = entry
-        touch(key)
         return entry
     }
 
     func set(_ key: AssetCacheKey, asset: CachedAsset) {
         entries[key] = asset
-        touch(key)
         evictIfNeeded()
     }
 
     func remove(_ key: AssetCacheKey) {
         entries.removeValue(forKey: key)
-        accessOrder.removeAll { $0 == key }
     }
 
     func removeAll() {
         entries.removeAll()
-        accessOrder.removeAll()
     }
 
     /// Current total accounted bytes (payload + metadata overhead) across
@@ -54,16 +51,16 @@ actor AssetMemoryCache {
         entries.values.reduce(0) { $0 + $1.metadata.accountedByteCount }
     }
 
-    private func touch(_ key: AssetCacheKey) {
-        accessOrder.removeAll { $0 == key }
-        accessOrder.append(key)
-    }
-
     private func evictIfNeeded() {
-        guard totalAccountedBytes > limits.highWaterMarkMemoryBytes else { return }
-        while totalAccountedBytes > limits.lowWaterMarkMemoryBytes, let oldest = accessOrder.first {
-            entries.removeValue(forKey: oldest)
-            accessOrder.removeFirst()
+        var total = totalAccountedBytes
+        guard total > limits.highWaterMarkMemoryBytes else { return }
+        let oldestFirst = entries.sorted {
+            $0.value.metadata.lastAccessedAt < $1.value.metadata.lastAccessedAt
+        }
+        for (key, asset) in oldestFirst {
+            guard total > limits.lowWaterMarkMemoryBytes else { break }
+            entries.removeValue(forKey: key)
+            total -= asset.metadata.accountedByteCount
         }
     }
 }

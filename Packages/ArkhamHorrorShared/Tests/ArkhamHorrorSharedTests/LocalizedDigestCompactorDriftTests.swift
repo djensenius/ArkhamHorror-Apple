@@ -26,10 +26,17 @@ struct LocalizedDigestCompactorDriftTests {
             )
         )
         let rawEntries = try JSONDecoder().decode([String].self, from: Data(contentsOf: rawURL))
-        let compacted = Set(LocalizedDigestCompactor
-            .compactCardIdentifiers(fromRawEntries: rawEntries))
+        // The compactor's own contract already sorts and deduplicates its
+        // output (see `LocalizedDigest.compactCardIdentifiers`), so
+        // comparing the shipped resource against it as an ordered array
+        // (not a `Set`) also catches ordering drift or accidental
+        // duplicate entries the shipped JSON could otherwise carry
+        // undetected — a `Set`-to-`Set` comparison alone could not.
+        let compacted = LocalizedDigestCompactor.compactCardIdentifiers(fromRawEntries: rawEntries)
 
-        let shipped = try #require(BundledLocalizedDigestProvider().identifierSet(for: locale))
+        let shipped = try #require(
+            BundledLocalizedDigestProvider().orderedIdentifiers(for: locale)
+        )
         #expect(shipped == compacted)
     }
 
