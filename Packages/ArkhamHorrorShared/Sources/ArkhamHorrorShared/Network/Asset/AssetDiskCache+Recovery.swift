@@ -85,12 +85,20 @@ extension AssetDiskCache {
                 contentHash: metadata.payloadSHA256Hex
             )
             // A metadata sidecar whose referenced payload file does not
-            // actually exist on disk is itself an orphan (e.g. left
-            // behind by a crash between the metadata commit and a
-            // previous, separately-crashed payload write, or by external
-            // tampering) — quarantine it too, rather than leaving it to
-            // be discovered only the next time this exact key is read.
-            guard (try? directoryAccess.attributes(name: referencedPayloadName)) != nil else {
+            // actually exist on disk *as a verified regular file* is
+            // itself an orphan (e.g. left behind by a crash between the
+            // metadata commit and a previous, separately-crashed payload
+            // write, or by external tampering — including a symlink or
+            // other non-regular entry planted at that exact name) —
+            // quarantine it too, rather than leaving it to be discovered
+            // only the next time this exact key is read. Accepting a
+            // non-regular entry here would also wrongly mark that name
+            // "referenced" below, letting the `.bin` orphan sweep skip
+            // removing it.
+            guard
+                (try? directoryAccess.attributes(name: referencedPayloadName))?.isRegularFile
+                == true
+            else {
                 _ = try? directoryAccess.remove(name: name)
                 continue
             }

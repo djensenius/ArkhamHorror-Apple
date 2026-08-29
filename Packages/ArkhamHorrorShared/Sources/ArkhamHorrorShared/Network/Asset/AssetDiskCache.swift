@@ -102,7 +102,17 @@ actor AssetDiskCache {
             keyHash: key.digestHex,
             contentHash: metadata.payloadSHA256Hex
         )
-        let payloadAlreadyExisted = (try? secureDirectory.attributes(name: payloadName)) != nil
+        // Only a verified *regular* file at this name counts as "already
+        // existed" for rollback purposes. A symlink or other non-regular
+        // entry occupying this name is never a payload a surviving prior
+        // generation could depend on — if this call's own write later
+        // fails to commit (the metadata pointer step below), the
+        // just-written real payload must still be rolled back rather than
+        // mistaken for pre-existing data it must not touch, or it would
+        // be left as an untracked, unevictable orphan until the next
+        // startup's orphan sweep.
+        let payloadAlreadyExisted =
+            (try? secureDirectory.attributes(name: payloadName))?.isRegularFile == true
 
         // Step 1: write the payload generation's bounded temp file, fsync
         // it, then rename+fsync-directory to publish it under its
@@ -171,7 +181,13 @@ actor AssetDiskCache {
             keyHash: key.digestHex,
             contentHash: metadata.payloadSHA256Hex
         )
-        guard (try? secureDirectory.attributes(name: payloadName)) != nil else {
+        // A symlink or other non-regular entry at this name is never a
+        // verified payload to touch: publishing a metadata sidecar that
+        // points at it would let a later read quarantine the mismatch,
+        // but only after having already accepted a bogus pointer as if it
+        // were a legitimate revalidation. Require a verified regular file
+        // before committing the metadata bump.
+        guard (try? secureDirectory.attributes(name: payloadName))?.isRegularFile == true else {
             throw AssetError.cachePersistenceFailed("No cached payload to touch for this key")
         }
         var stamped = metadata
@@ -208,9 +224,16 @@ actor AssetDiskCache {
     /// so one unremovable entry can never mask every other entry that
     /// could be removed; throws a single aggregated failure if any
     /// removal failed, so the caller can still tombstone accordingly.
+    ///
+    /// A failure to even list the directory is itself surfaced (never
+    /// swallowed into an empty list): treating a transient listing I/O
+    /// error as "the cache is already empty" would let this method report
+    /// success — and let a caller clear its own in-memory bookkeeping —
+    /// while every actual entry remains fully present and servable on
+    /// disk, breaking the "clear the cache" contract silently.
     func removeAll() throws {
         recoverOrphansIfNeeded()
-        let names = (try? secureDirectory.listNames()) ?? []
+        let names = try secureDirectory.listNames()
         var failureCount = 0
         for name in names {
             do {
