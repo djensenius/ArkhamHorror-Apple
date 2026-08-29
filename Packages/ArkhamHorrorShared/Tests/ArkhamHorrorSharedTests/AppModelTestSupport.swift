@@ -88,6 +88,30 @@ final class FakeServerProfileStore: ServerProfileStore, @unchecked Sendable {
         defer { lock.unlock() }
         return selectedID
     }
+
+    /// Scripts (or clears, when `nil`) the error thrown by a subsequent
+    /// ``loadProfiles()`` call.
+    func setLoadProfilesError(_ error: (any Error)?) {
+        lock.lock()
+        defer { lock.unlock() }
+        loadProfilesError = error
+    }
+
+    /// Scripts (or clears, when `nil`) the error thrown by a subsequent
+    /// ``saveProfiles(_:)`` call.
+    func setSaveProfilesError(_ error: (any Error)?) {
+        lock.lock()
+        defer { lock.unlock() }
+        saveProfilesError = error
+    }
+
+    /// Scripts (or clears, when `nil`) the error thrown by a subsequent
+    /// ``saveSelectedProfileID(_:)`` call.
+    func setSaveSelectionError(_ error: (any Error)?) {
+        lock.lock()
+        defer { lock.unlock() }
+        saveSelectionError = error
+    }
 }
 
 /// An in-memory ``TokenStore`` whose operations can be scripted to throw, with call
@@ -97,8 +121,10 @@ actor FakeTokenStore: TokenStore {
     private var readError: (any Error)?
     private var saveError: (any Error)?
     private var deleteError: (any Error)?
+    private var deleteAllError: (any Error)?
     private(set) var saveCallCount = 0
     private(set) var deleteCallCount = 0
+    private(set) var deleteAllCallCount = 0
     private(set) var lastSavedToken: String?
 
     init(tokens: [UUID: String] = [:]) {
@@ -115,6 +141,14 @@ actor FakeTokenStore: TokenStore {
 
     func setDeleteError(_ error: (any Error)?) {
         deleteError = error
+    }
+
+    func setDeleteAllError(_ error: (any Error)?) {
+        deleteAllError = error
+    }
+
+    func snapshotTokens() -> [UUID: String] {
+        tokens
     }
 
     func token(for profileID: UUID) async throws -> String? {
@@ -140,145 +174,13 @@ actor FakeTokenStore: TokenStore {
         deleteCallCount += 1
         tokens[profileID] = nil
     }
-}
 
-/// A ``CapabilityProbing`` fake that returns a fixed outcome or throws a fixed error.
-actor ScriptedCapabilityProbe: CapabilityProbing {
-    enum Script {
-        case outcome(CompatibilityOutcome)
-        case failure(any Error & Sendable)
-    }
-
-    private let script: Script
-    private(set) var callCount = 0
-    private(set) var lastProbedProfileID: UUID?
-
-    init(_ script: Script) {
-        self.script = script
-    }
-
-    func probe(_ profile: ServerProfile) async throws -> CompatibilityOutcome {
-        callCount += 1
-        lastProbedProfileID = profile.id
-        switch script {
-        case let .outcome(outcome):
-            return outcome
-        case let .failure(error):
-            throw error
+    func deleteAllTokens() async throws {
+        if let deleteAllError {
+            throw deleteAllError
         }
-    }
-}
-
-/// A ``CapabilityProbing`` fake that suspends every call on a FIFO queue of checked
-/// continuations until the test explicitly resumes it, ignoring outer task cancellation
-/// (as an injected dependency that does not itself observe cancellation would).
-actor GatedCapabilityProbe: CapabilityProbing {
-    private var continuations: [CheckedContinuation<CompatibilityOutcome, any Error>] = []
-    private var pendingWaiters: [(
-        threshold: Int, continuation: CheckedContinuation<Void, Never>
-    )] = []
-    private(set) var callCount = 0
-
-    func probe(_: ServerProfile) async throws -> CompatibilityOutcome {
-        callCount += 1
-        return try await withCheckedThrowingContinuation { continuation in
-            continuations.append(continuation)
-            notifyWaiters()
-        }
-    }
-
-    private func notifyWaiters() {
-        pendingWaiters.removeAll { entry in
-            guard continuations.count >= entry.threshold else { return false }
-            entry.continuation.resume()
-            return true
-        }
-    }
-
-    /// Suspends until at least `count` probe calls are simultaneously pending.
-    func waitUntilPending(_ count: Int) async {
-        if continuations.count >= count {
-            return
-        }
-        await withCheckedContinuation { pendingWaiters.append((count, $0)) }
-    }
-
-    /// Resumes the oldest (first-issued) still-pending call with `outcome`.
-    func resumeOldest(with outcome: CompatibilityOutcome) {
-        guard !continuations.isEmpty else { return }
-        continuations.removeFirst().resume(returning: outcome)
-    }
-
-    /// Resumes the newest (most recently issued) still-pending call with `outcome`.
-    func resumeNewest(with outcome: CompatibilityOutcome) {
-        guard !continuations.isEmpty else { return }
-        continuations.removeLast().resume(returning: outcome)
-    }
-}
-
-/// An ``AppAuthenticating`` fake whose `authenticate`/`register`/`currentUser` results
-/// are individually scriptable, and whose call order is recorded so tests can assert
-/// validate-before-save ordering.
-actor ScriptedAuthenticating: AppAuthenticating {
-    enum TokenResult {
-        case success(AuthToken)
-        case failure(any Error & Sendable)
-    }
-
-    enum UserResult {
-        case success(CurrentUser)
-        case failure(any Error & Sendable)
-    }
-
-    private var authenticateResult: TokenResult
-    private var registerResult: TokenResult
-    private var currentUserResult: UserResult
-    private(set) var callOrder: [String] = []
-    private(set) var lastCurrentUserToken: String?
-
-    init(
-        authenticateResult: TokenResult = .failure(TestFailure()),
-        registerResult: TokenResult = .failure(TestFailure()),
-        currentUserResult: UserResult = .failure(TestFailure())
-    ) {
-        self.authenticateResult = authenticateResult
-        self.registerResult = registerResult
-        self.currentUserResult = currentUserResult
-    }
-
-    func setCurrentUserResult(_ result: UserResult) {
-        currentUserResult = result
-    }
-
-    func authenticate(_: AuthenticationCredentials, on _: ServerProfile) async throws -> AuthToken {
-        callOrder.append("authenticate")
-        switch authenticateResult {
-        case let .success(token):
-            return token
-        case let .failure(error):
-            throw error
-        }
-    }
-
-    func register(_: RegistrationDetails, on _: ServerProfile) async throws -> AuthToken {
-        callOrder.append("register")
-        switch registerResult {
-        case let .success(token):
-            return token
-        case let .failure(error):
-            throw error
-        }
-    }
-
-    func currentUser(on _: ServerProfile, token: String) async throws -> CurrentUser {
-        callOrder.append("currentUser")
-        lastCurrentUserToken = token
-        switch currentUserResult {
-        case let .success(user):
-            return user
-        case let .failure(error):
-            throw error
-        }
+        deleteAllCallCount += 1
+        tokens.removeAll()
     }
 }
 

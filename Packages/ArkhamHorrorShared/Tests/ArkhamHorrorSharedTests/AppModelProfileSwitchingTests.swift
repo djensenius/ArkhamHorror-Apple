@@ -10,7 +10,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -32,7 +33,8 @@ extension AppModelTests {
             profileStore: store,
             tokenStore: FakeTokenStore(),
             capabilityProbe: gate,
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
 
         // The launch flow's probe(hosted) call is now suspended, mid-flight.
@@ -69,7 +71,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
             capabilityProbe: probe,
-            authenticationSession: ScriptedAuthenticating()
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         let expected = SessionState.unavailable(
@@ -92,7 +95,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -108,5 +112,257 @@ extension AppModelTests {
         }
 
         #expect(!containsSecret(model))
+    }
+
+    @Test(
+        """
+        Switching profiles while a sign-in save is in flight (already past its epoch \
+        check) interrupts it exactly as explicit cancellation would, deleting the \
+        token it durably applies
+        """
+    )
+    func switchingAwayDuringInFlightSaveInterruptsAndDeletesToken() async throws {
+        let store = FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile])
+        let tokenStore = GatedTokenStore()
+        let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+
+        model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "abandoned-token") }
+        await tokenStore.waitUntilPending(1)
+        #expect(
+            await tokenStore.pendingMutations() ==
+                [.save(token: "abandoned-token", profileID: ServerProfile.hosted.id)]
+        )
+        // Captured before switching: subsequent operations may overwrite
+        // `model.operationTask`, so this stale task's own handle is captured now to
+        // be awaited deterministically instead of inferred via fixed yields.
+        let staleTask = model.operationTask
+
+        // The user switches to a different server before the in-flight save resolves.
+        model.selectProfile(sampleCustomProfile)
+        // Captured immediately after switching, synchronously — registered by
+        // `enqueueCancellationCleanup` before `selectProfile(_:)` returns, so this can
+        // never race the cleanup task's own eventual pruning.
+        let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
+        await model.flowTask?.value
+        let expectedSignedOut = SessionState.signedOut(
+            profile: sampleCustomProfile, compatibility: .legacy
+        )
+        #expect(model.sessionState == expectedSignedOut)
+        #expect(model.selectedProfile == sampleCustomProfile)
+
+        // The abandoned save durably applies — it already passed its epoch recheck
+        // before the switch invalidated it for anything *afterward*. Awaiting the
+        // stale task's own handle proves this deterministically.
+        await tokenStore.resumeOldest()
+        await staleTask?.value
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "abandoned-token")
+
+        // The switch's own interruption cleanup, synchronously queued behind that
+        // save before `selectProfile(_:)` returned, now removes it.
+        await tokenStore.waitUntilPending(1)
+        #expect(
+            await tokenStore.pendingMutations() == [.delete(profileID: ServerProfile.hosted.id)]
+        )
+        await tokenStore.resumeOldest()
+        _ = await cleanupTask?.value
+
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
+        // The switch away is entirely unaffected by the cleanup's own timing.
+        #expect(model.sessionState == expectedSignedOut)
+    }
+
+    @Test(
+        """
+        Switching back to a profile whose sign-in was interrupted and cleaned up \
+        cannot restore the abandoned token
+        """
+    )
+    func switchingBackAfterInterruptedCleanupDoesNotRestoreToken() async throws {
+        let store = FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile])
+        let tokenStore = GatedTokenStore()
+        let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+
+        model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "abandoned-token") }
+        await tokenStore.waitUntilPending(1)
+        model.selectProfile(sampleCustomProfile)
+        // Captured immediately after switching, synchronously — registered by
+        // `enqueueCancellationCleanup` before `selectProfile(_:)` returns.
+        let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
+
+        // Let the abandoned save apply, then let its cleanup delete remove it.
+        await tokenStore.resumeOldest()
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest()
+        _ = await cleanupTask?.value
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
+        let callsBeforeSwitchingBack = await auth.callOrder.count
+
+        // Switching back to hosted restarts its flow; it must observe no token (the
+        // interruption cleanup already removed it) and reach `.signedOut` directly,
+        // never silently validating or restoring the abandoned token.
+        model.selectProfile(.hosted)
+        await model.flowTask?.value
+
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        // No new `currentUser` (whoami) call was made restoring into hosted: with no
+        // token to read, `restoreToken` never reaches token validation at all.
+        #expect(await auth.callOrder.count == callsBeforeSwitchingBack)
+    }
+
+    @Test(
+        """
+        A cleanup failure triggered by switching away preserves the durable tombstone; \
+        switching back later retries and resolves it before the profile can ever sign \
+        in again with the abandoned token
+        """
+    )
+    func switchAwayCleanupFailurePreservesTombstoneAndIsRetriedOnSwitchBack() async throws {
+        let store = FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile])
+        let tokenStore = GatedTokenStore()
+        let cleanupStore = FakeTokenCleanupPendingStore()
+        let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: cleanupStore
+        )
+        await model.flowTask?.value
+
+        model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "abandoned-token") }
+        await tokenStore.waitUntilPending(1)
+        model.selectProfile(sampleCustomProfile)
+        // Captured immediately after switching, synchronously — registered by
+        // `enqueueCancellationCleanup` before `selectProfile(_:)` returns. Its `.value`
+        // resolves to the typed failure below rather than throwing, since the
+        // cleanup task itself never throws.
+        let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
+
+        // Let the abandoned save apply, then let its cleanup delete fail.
+        await tokenStore.resumeOldest()
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest(throwing: KeychainError.unhandledStatus(-1))
+        _ = await cleanupTask?.value
+
+        #expect(cleanupStore.snapshotPendingIDs() == [ServerProfile.hosted.id])
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "abandoned-token")
+
+        // Switching back to hosted must retry — never skip — the still-pending
+        // cleanup before it can trust any token for it.
+        model.selectProfile(.hosted)
+        await tokenStore.waitUntilPending(1)
+        #expect(
+            await tokenStore.pendingMutations() == [.delete(profileID: ServerProfile.hosted.id)]
+        )
+
+        // This retried delete succeeds.
+        await tokenStore.resumeOldest()
+        await model.flowTask?.value
+
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(cleanupStore.snapshotPendingIDs().isEmpty)
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
+    }
+
+    @Test(
+        """
+        Switching profiles while no sign-in/registration is in flight is a pure \
+        no-op interruption: no cleanup is enqueued and no token is touched
+        """
+    )
+    func switchingWithNoInFlightAuthOperationEnqueuesNoCleanup() async throws {
+        let store = FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile])
+        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "kept-token"])
+        let cleanupStore = FakeTokenCleanupPendingStore()
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: cleanupStore
+        )
+        await model.flowTask?.value
+        // The hosted profile's own token restores it straight to `.signedIn`; no auth
+        // operation is ever in flight.
+        #expect(
+            model.sessionState ==
+                .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        )
+
+        model.selectProfile(sampleCustomProfile)
+        await model.flowTask?.value
+
+        #expect(cleanupStore.snapshotPendingIDs().isEmpty)
+        #expect(await tokenStore.deleteCallCount == 0)
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "kept-token")
+    }
+
+    @Test(
+        """
+        A shared AppModel instance (as every window observes, per the single \
+        process-level coordinator architecture) applies the exact same switch-away \
+        interruption regardless of which caller triggers the switch
+        """
+    )
+    func sharedModelAppliesSwitchInterruptionConsistently() async throws {
+        let store = FakeServerProfileStore(profiles: [.hosted, sampleCustomProfile])
+        let tokenStore = GatedTokenStore()
+        let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
+        // A single, shared `AppModel` — exactly as every `WindowGroup` window is
+        // injected the same process-level coordinator in production — observed
+        // through two independent local references, standing in for two windows.
+        let sharedModel = AppModel(
+            profileStore: store,
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await sharedModel.flowTask?.value
+        let windowOneModel = sharedModel
+        let windowTwoModel = sharedModel
+
+        // "Window one" begins a sign-in.
+        windowOneModel.beginAuthOperation(.signingIn) { _ in AuthToken(token: "abandoned-token") }
+        await tokenStore.waitUntilPending(1)
+
+        // "Window two" switches the shared coordinator's profile away from under it.
+        windowTwoModel.selectProfile(sampleCustomProfile)
+        // Captured immediately after switching, synchronously — registered by
+        // `enqueueCancellationCleanup` before `selectProfile(_:)` returns.
+        let cleanupTask = sharedModel.cleanupPendingTasks[ServerProfile.hosted.id]?.task
+        await sharedModel.flowTask?.value
+        #expect(
+            windowOneModel.sessionState ==
+                .signedOut(profile: sampleCustomProfile, compatibility: .legacy)
+        )
+
+        await tokenStore.resumeOldest()
+        await tokenStore.waitUntilPending(1)
+        #expect(
+            await tokenStore.pendingMutations() == [.delete(profileID: ServerProfile.hosted.id)]
+        )
+        await tokenStore.resumeOldest()
+        _ = await cleanupTask?.value
+
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == nil)
     }
 }

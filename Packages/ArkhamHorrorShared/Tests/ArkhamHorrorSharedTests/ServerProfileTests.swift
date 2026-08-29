@@ -53,6 +53,42 @@ struct ServerProfileTests {
         #expect(profile.baseURL.port == 9000)
     }
 
+    @Test("Explicit default HTTPS port :443 is canonicalized away")
+    func explicitDefaultHTTPSPortCanonicalized() throws {
+        let profile = try ServerProfile.custom(
+            displayName: "T",
+            rawURL: "https://example.com:443"
+        )
+        #expect(profile.baseURL.port == nil)
+        #expect(profile.baseURL.absoluteString == "https://example.com")
+    }
+
+    @Test("Explicit default loopback HTTP port :80 is canonicalized away")
+    func explicitDefaultHTTPPortCanonicalized() throws {
+        let profile = try ServerProfile.custom(
+            displayName: "T",
+            rawURL: "http://localhost:80"
+        )
+        #expect(profile.baseURL.port == nil)
+        #expect(profile.baseURL.absoluteString == "http://localhost")
+    }
+
+    @Test(
+        """
+        An explicit default port and an omitted port normalize to the identical \
+        canonical base URL, so they are the same endpoint
+        """
+    )
+    func defaultPortAndOmittedPortAreTheSameEndpoint() throws {
+        let explicit = try ServerProfile.custom(displayName: "T", rawURL: "https://example.com:443")
+        let omitted = try ServerProfile.custom(displayName: "T", rawURL: "https://example.com")
+        #expect(explicit.baseURL == omitted.baseURL)
+
+        let explicitHTTP = try ServerProfile.custom(displayName: "L", rawURL: "http://localhost:80")
+        let omittedHTTP = try ServerProfile.custom(displayName: "L", rawURL: "http://localhost")
+        #expect(explicitHTTP.baseURL == omittedHTTP.baseURL)
+    }
+
     @Test("Explicit path prefix is preserved")
     func preservesPathPrefix() throws {
         let profile = try ServerProfile.custom(

@@ -29,7 +29,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
@@ -59,7 +60,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -88,7 +90,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -99,7 +102,7 @@ extension AppModelTests {
         let expectedFailure = SessionOperationFailure.tokenStore(
             .keychain(.unhandledStatus(errSecAuthFailed))
         )
-        #expect(model.operationFailure == expectedFailure)
+        #expect(model.authFailure?.failure == expectedFailure)
         #expect(model.operation == .idle)
     }
 
@@ -110,7 +113,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
@@ -132,14 +136,15 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
 
         model.signIn(AuthenticationCredentials(email: "a@example.com", password: "secret-pw"))
         await model.operationTask?.value
 
-        let diagnostic: String? = switch model.operationFailure {
+        let diagnostic: String? = switch model.authFailure?.failure {
         case let .authentication(.transportFailure(value)):
             value
         default:
@@ -147,6 +152,115 @@ extension AppModelTests {
         }
         #expect(diagnostic == "Unexpected authentication failure.")
         #expect(diagnostic?.contains(secret) == false)
+    }
+
+    // MARK: - Explicit cancellation (`cancelAuthOperation`)
+
+    @Test("Cancelling sign-in stops a slow whoami from later signing in or saving a token")
+    func cancelAuthOperationPreventsLateSignIn() async {
+        let tokenStore = FakeTokenStore()
+        let auth = GatedAuthenticating()
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+
+        // Uses `beginAuthOperation` directly with a custom, instantly-issued token —
+        // the same production entry point `signIn`/`register` call — so the slow step
+        // under test is the whoami validation, exactly like `GatedAuthenticating`'s
+        // other race coverage.
+        model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "issued-token") }
+        await auth.waitUntilPending(1)
+        #expect(model.operation == .signingIn)
+
+        // Captured before `cancelAuthOperation(ownedBy:)` (which unconditionally nils
+        // `operationTask`), so this test can deterministically await the stale
+        // operation's own completion below instead of inferring scheduler progress
+        // with a fixed number of yields. `operationTask`'s body runs
+        // `beginAuthOperationAfterResolvingCleanup`/`performAuthOperation` end to end
+        // with no further unawaited indirection, so awaiting it fully waits for any
+        // save attempt this stale operation could still make.
+        let staleOperation = model.operationTask
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
+
+        #expect(model.operation == .idle)
+        #expect(model.operationFailure == nil)
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        // The task handle is released promptly, not retained past cancellation.
+        #expect(model.operationTask == nil)
+
+        // The slow whoami now resolves successfully, out of order, well after
+        // cancellation.
+        await auth.resumeOldest(with: .success(.sample))
+        await staleOperation?.value
+
+        // Cancellation must have stopped this from ever signing in or saving a token,
+        // even though the underlying dependency ignored the task cancellation.
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(await tokenStore.saveCallCount == 0)
+    }
+
+    @Test("Cancelling a registration stops it from later registering or saving its token")
+    func cancelAuthOperationPreventsLateRegistration() async {
+        let tokenStore = FakeTokenStore()
+        let auth = GatedAuthenticating()
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+
+        model.beginAuthOperation(.registering) { _ in AuthToken(token: "issued-token") }
+        await auth.waitUntilPending(1)
+        #expect(model.operation == .registering)
+
+        // See the identical rationale in `cancelAuthOperationPreventsLateSignIn`.
+        let staleOperation = model.operationTask
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
+        #expect(model.operation == .idle)
+        #expect(model.operationTask == nil)
+
+        await auth.resumeOldest(with: .success(.sample))
+        await staleOperation?.value
+
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(await tokenStore.saveCallCount == 0)
+    }
+
+    @Test("cancelAuthOperation is a no-op after success, so an idempotent dismissal cannot undo it")
+    func cancelAuthOperationIsNoOpAfterSuccess() async throws {
+        let tokenStore = FakeTokenStore()
+        let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+
+        model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "issued-token") }
+        await model.operationTask?.value
+        let signedIn = SessionState.signedIn(
+            profile: .hosted, compatibility: .legacy, user: .sample
+        )
+        #expect(model.sessionState == signedIn)
+
+        // A late, idempotent view-disappearance callback must not undo the
+        // already-successful sign-in.
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
+
+        #expect(model.sessionState == signedIn)
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "issued-token")
     }
 }
 
@@ -161,7 +275,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         let signedIn = SessionState.signedIn(
@@ -185,7 +300,8 @@ extension AppModelTests {
             profileStore: FakeServerProfileStore(),
             tokenStore: tokenStore,
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: auth
+            authenticationSession: auth,
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
         await tokenStore.setDeleteError(KeychainError.unhandledStatus(errSecAuthFailed))

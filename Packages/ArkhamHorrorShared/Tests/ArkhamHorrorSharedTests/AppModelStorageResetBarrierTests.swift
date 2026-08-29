@@ -1,0 +1,390 @@
+@testable import ArkhamHorrorShared
+import Testing
+
+/// Regression coverage for the service-wide storage-reset barrier: `confirmStorageReset()`
+/// must not race `deleteAllTokens()` against any per-profile token operation that is
+/// already in flight (or arrives while the reset is running), in either direction. See
+/// `AppModel+ProfileManagement.swift` (`confirmStorageReset`, `performStorageReset`) and
+/// `AppModel.swift` (`serviceResetBarrier`, `globalCredentialEpoch`,
+/// `serializedTokenAccess(for:epoch:globalEpoch:_:)`).
+extension AppModelTests {
+    /// Reaches `.storageCorrupted` with `store`/`tokenStore` already wired, exactly as
+    /// production startup would after profile-list corruption.
+    private func makeCorruptedModel(
+        store: FakeServerProfileStore, tokenStore: GatedTokenStore
+    ) async -> AppModel {
+        let model = AppModel(
+            profileStore: store,
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+        return model
+    }
+
+    /// Asserts each of `mutations`' `.applied` events appear in `log` strictly before
+    /// `.invoked(.deleteAll)`, proving delete-all never ran concurrently with (or
+    /// ahead of) any of them — using the store's own append-only, actor-serialized
+    /// event log rather than a scheduler-timing-sensitive snapshot, so the proof holds
+    /// regardless of how many turns separated the calls in practice.
+    private func assertAppliedBeforeDeleteAll(
+        _ mutations: [GatedTokenMutation], in log: [GatedTokenStoreEvent]
+    ) {
+        let deleteAllInvokedIndex = log.firstIndex(of: .invoked(.deleteAll))
+        #expect(deleteAllInvokedIndex != nil)
+        for mutation in mutations {
+            let appliedIndex = log.firstIndex(of: .applied(mutation))
+            #expect(appliedIndex != nil)
+            if let appliedIndex, let deleteAllInvokedIndex {
+                #expect(appliedIndex < deleteAllInvokedIndex)
+            }
+        }
+    }
+
+    @Test("A save already executing when a reset begins is fully awaited before delete-all runs")
+    func saveAlreadyExecutingIsAwaitedBeforeDeleteAllRuns() async {
+        let corruptKey = "ArkhamHorror.serverProfiles"
+        let store = FakeServerProfileStore(
+            loadProfilesError: ServerProfileStoreError.corruptData(key: corruptKey)
+        )
+        let tokenStore = GatedTokenStore()
+        let model = await makeCorruptedModel(store: store, tokenStore: tokenStore)
+        let expectedFailure = SessionStorageFailure.profileStore(.corruptData(key: corruptKey))
+        #expect(model.sessionState == .storageCorrupted(expectedFailure))
+
+        // A save for an arbitrary profile is already mid-flight, suspended inside the
+        // token store, when the reset begins.
+        let saveTask = Task {
+            await model.performAuthOperation(
+                profile: .hosted, compatibility: .legacy, epochContext: CredentialOperationContext(
+                    generation: model.generation,
+                    credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                    globalEpoch: model.currentGlobalCredentialEpoch()
+                )
+            ) { _ in AuthToken(token: "in-flight-token") }
+        }
+        await tokenStore.waitUntilPending(1)
+        #expect(
+            await tokenStore.pendingMutations() ==
+                [.save(token: "in-flight-token", profileID: ServerProfile.hosted.id)]
+        )
+
+        store.setLoadProfilesError(nil)
+        model.confirmStorageReset()
+
+        // Deliberately no assertion here that `deleteAllCallCount == 0`/that only the
+        // save is pending: that snapshot, taken at one arbitrary point while the
+        // barrier task may or may not have been scheduled yet, cannot distinguish "a
+        // broken implementation raced ahead but the scheduler simply has not run it
+        // yet" from "the ordering guarantee actually held" — it can only prove a
+        // negative it happened to observe, never the absence of a race across every
+        // possible interleaving. Instead, drive the whole scenario to completion and
+        // prove the ordering from `tokenStore`'s own append-only, actor-serialized
+        // event log below, which records every call in true call order regardless of
+        // how this test's task happens to be scheduled.
+        await tokenStore.resumeOldest()
+        await saveTask.value
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest()
+        await model.profileManagementTask?.value
+        // The barrier task itself only awaits `performStorageReset`, which spawns the
+        // post-reset compatibility/token-restore flow (`restartFlow`) as an
+        // independent, unawaited `flowTask` rather than awaiting it inline; the
+        // restored token read is nil (everything was just wiped), so this settles to
+        // `.signedOut` almost immediately, but it must still be awaited explicitly.
+        await model.flowTask?.value
+
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(model.profiles == [.hosted])
+        #expect(await tokenStore.snapshotTokens().isEmpty)
+        #expect(await tokenStore.deleteAllCallCount == 1)
+
+        // The authoritative ordering proof: the in-flight save's `applied` event —
+        // recorded on the actor at the exact moment its durable mutation actually
+        // took effect — precedes `deleteAll`'s `invoked` event in the log, no matter
+        // how many (or how few) scheduler turns separated the two calls in practice.
+        let log = await tokenStore.eventLog()
+        assertAppliedBeforeDeleteAll(
+            [.save(token: "in-flight-token", profileID: ServerProfile.hosted.id)], in: log
+        )
+    }
+
+    @Test(
+        """
+        Queued stale saves across multiple profiles are all awaited before a reset's delete-all \
+        runs
+        """
+    )
+    func queuedStaleSavesAcrossMultipleProfilesAreAllAwaited() async {
+        let corruptKey = "ArkhamHorror.serverProfiles"
+        let store = FakeServerProfileStore(
+            loadProfilesError: ServerProfileStoreError.corruptData(key: corruptKey)
+        )
+        let tokenStore = GatedTokenStore()
+        let model = await makeCorruptedModel(store: store, tokenStore: tokenStore)
+
+        /// Local helper so each save's context construction does not need to be
+        /// repeated per profile below.
+        func launchSave(profile: ServerProfile, token: String) -> Task<Void, Never> {
+            Task {
+                await model.performAuthOperation(
+                    profile: profile,
+                    compatibility: .legacy,
+                    epochContext: CredentialOperationContext(
+                        generation: model.generation,
+                        credentialEpoch: model.currentCredentialEpoch(for: profile.id),
+                        globalEpoch: model.currentGlobalCredentialEpoch()
+                    )
+                ) { _ in AuthToken(token: token) }
+            }
+        }
+        let hostedTask = launchSave(profile: .hosted, token: "hosted-token")
+        let customTask = launchSave(profile: sampleCustomProfile, token: "custom-token")
+        await tokenStore.waitUntilPending(2)
+        #expect(
+            await Set(tokenStore.pendingMutations()) == [
+                .save(token: "hosted-token", profileID: ServerProfile.hosted.id),
+                .save(token: "custom-token", profileID: sampleCustomProfile.id),
+            ]
+        )
+
+        store.setLoadProfilesError(nil)
+        model.confirmStorageReset()
+        // See the identical rationale in `saveAlreadyExecutingIsAwaitedBeforeDeleteAllRuns`:
+        // an immediate snapshot here — even a "still only 2 pending, delete-all not
+        // yet called" one — cannot distinguish a genuinely-held ordering guarantee
+        // from a broken implementation whose race simply has not been scheduled yet.
+        // Drive the whole scenario to completion and prove the ordering from
+        // `tokenStore`'s own append-only, actor-serialized event log instead.
+        await tokenStore.resumeOldest()
+        await tokenStore.resumeOldest()
+        await hostedTask.value
+        await customTask.value
+
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest()
+        await model.profileManagementTask?.value
+
+        #expect(model.profiles == [.hosted])
+        #expect(await tokenStore.snapshotTokens().isEmpty)
+        // The reset must only ever have used the single service-scoped delete-all —
+        // never an individual per-profile delete — to clean up either profile's token.
+        #expect(await tokenStore.deleteCallCount == 0)
+        #expect(await tokenStore.deleteAllCallCount == 1)
+
+        // The authoritative ordering proof: both saves' `applied` events precede
+        // `deleteAll`'s `invoked` event in the true call-order log, regardless of how
+        // many scheduler turns separated them in practice.
+        let log = await tokenStore.eventLog()
+        assertAppliedBeforeDeleteAll(
+            [
+                .save(token: "hosted-token", profileID: ServerProfile.hosted.id),
+                .save(token: "custom-token", profileID: sampleCustomProfile.id),
+            ],
+            in: log
+        )
+    }
+
+    @Test(
+        """
+        A new save arriving after a reset begins is blocked behind the barrier, never racing \
+        delete-all
+        """
+    )
+    func newSaveArrivingDuringResetIsBlockedBehindBarrier() async throws {
+        let corruptKey = "ArkhamHorror.serverProfiles"
+        let store = FakeServerProfileStore(
+            loadProfilesError: ServerProfileStoreError.corruptData(key: corruptKey)
+        )
+        let tokenStore = GatedTokenStore()
+        let model = await makeCorruptedModel(store: store, tokenStore: tokenStore)
+        let admissions = TokenAccessAdmissionCounter()
+        model.tokenAccessAdmissionHook = admissions.hook
+
+        store.setLoadProfilesError(nil)
+        model.confirmStorageReset()
+        // With no pre-existing tails to await, the barrier reaches `deleteAllTokens()`
+        // almost immediately.
+        await tokenStore.waitUntilPending(1)
+        #expect(await tokenStore.pendingMutations() == [.deleteAll])
+
+        // A brand-new save for an arbitrary profile arrives while the reset's
+        // delete-all is still suspended. It must capture the *new* global epoch (as any
+        // real caller would, via `currentGlobalCredentialEpoch()`), then block behind
+        // the active barrier rather than reaching the token store while delete-all is
+        // still pending.
+        let newSaveTask = Task {
+            await model.performAuthOperation(
+                profile: .hosted, compatibility: .legacy, epochContext: CredentialOperationContext(
+                    generation: model.generation,
+                    credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                    globalEpoch: model.currentGlobalCredentialEpoch()
+                )
+            ) { _ in AuthToken(token: "post-reset-token") }
+        }
+        // Waiting for this admission (rather than a fixed number of yields) proves
+        // the new save's own `serializedTokenAccess` call has synchronously captured
+        // the active barrier and registered itself as the new tail for `.hosted`.
+        // From that exact point on, reaching the token store is not merely
+        // "not yet observed" but structurally impossible until the barrier resolves:
+        // the scheduled continuation's very first `await` is on the barrier itself,
+        // strictly before it can call `operation()` (the save).
+        await admissions.waitForAdmissions(1, of: ServerProfile.hosted.id)
+        #expect(await tokenStore.pendingMutations() == [.deleteAll])
+
+        // Resolve the reset's delete-all: this releases the barrier.
+        await tokenStore.resumeOldest()
+        await model.profileManagementTask?.value
+
+        // Only now can the new save reach the token store.
+        await tokenStore.waitUntilPending(1)
+        #expect(
+            await tokenStore.pendingMutations() ==
+                [.save(token: "post-reset-token", profileID: ServerProfile.hosted.id)]
+        )
+        await tokenStore.resumeOldest()
+        await newSaveTask.value
+
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "post-reset-token")
+    }
+
+    @Test(
+        """
+        A delete-all failure during reset preserves corrupted metadata and surfaces a typed \
+        failure
+        """
+    )
+    func deleteAllFailurePreservesCorruptedMetadata() async {
+        let corruptKey = "ArkhamHorror.serverProfiles"
+        let store = FakeServerProfileStore(
+            loadProfilesError: ServerProfileStoreError.corruptData(key: corruptKey)
+        )
+        let tokenStore = GatedTokenStore()
+        let model = await makeCorruptedModel(store: store, tokenStore: tokenStore)
+        let expectedFailure = SessionStorageFailure.profileStore(.corruptData(key: corruptKey))
+        #expect(model.sessionState == .storageCorrupted(expectedFailure))
+
+        store.setLoadProfilesError(nil)
+        model.confirmStorageReset()
+        await tokenStore.waitUntilPending(1)
+        #expect(await tokenStore.pendingMutations() == [.deleteAll])
+
+        await tokenStore.resumeOldest(throwing: KeychainError.unhandledStatus(-1))
+        await model.profileManagementTask?.value
+
+        // The corrupted state is preserved rather than replaced, and never silently
+        // treated as a successful reset.
+        #expect(model.sessionState == .storageCorrupted(expectedFailure))
+        #expect(store.saveProfilesCallCount == 0)
+        #expect(store.saveSelectionCallCount == 0)
+        guard case .tokenStore = model.profileManagementFailure else {
+            Issue.record(
+                "Expected .tokenStore, got \(String(describing: model.profileManagementFailure))"
+            )
+            return
+        }
+        #expect(model.profileManagementOperation == .idle)
+    }
+
+    @Test(
+        """
+        A successful barrier-coordinated reset persists hosted-only metadata and releases the \
+        barrier
+        """
+    )
+    func successfulResetPersistsHostedOnlyMetadataAndReleasesBarrier() async throws {
+        let corruptKey = "ArkhamHorror.serverProfiles"
+        let store = FakeServerProfileStore(
+            loadProfilesError: ServerProfileStoreError.corruptData(key: corruptKey)
+        )
+        let tokenStore = GatedTokenStore()
+        let model = await makeCorruptedModel(store: store, tokenStore: tokenStore)
+
+        store.setLoadProfilesError(nil)
+        model.confirmStorageReset()
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest()
+        await model.profileManagementTask?.value
+        // See the equivalent comment in `saveAlreadyExecutingIsAwaitedBeforeDeleteAllRuns`:
+        // the barrier task does not itself await the post-reset `restartFlow`'s
+        // independent `flowTask`, so it must be awaited explicitly here too, both to
+        // observe the settled `.signedOut` state and to let its (nil, post-wipe) token
+        // read fully drain before the follow-up save below starts with a clean queue.
+        await model.flowTask?.value
+
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(model.profiles == [.hosted])
+        #expect(model.selectedProfile == .hosted)
+        #expect(store.snapshotProfiles() == [.hosted])
+        #expect(store.snapshotSelectedID() == ServerProfile.hosted.id)
+        #expect(model.profileManagementFailure == nil)
+        #expect(model.profileManagementOperation == .idle)
+
+        // A subsequent save for the (now sole) hosted profile must not be blocked by
+        // any leftover barrier state.
+        let followUpTask = Task {
+            await model.performAuthOperation(
+                profile: .hosted, compatibility: .legacy, epochContext: CredentialOperationContext(
+                    generation: model.generation,
+                    credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                    globalEpoch: model.currentGlobalCredentialEpoch()
+                )
+            ) { _ in AuthToken(token: "post-reset-token") }
+        }
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest()
+        await followUpTask.value
+
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "post-reset-token")
+    }
+
+    @Test(
+        """
+        The barrier is released after a delete-all failure, so a subsequent operation is not \
+        permanently blocked
+        """
+    )
+    func barrierIsReleasedAfterFailureAllowingSubsequentOperation() async throws {
+        let corruptKey = "ArkhamHorror.serverProfiles"
+        let store = FakeServerProfileStore(
+            loadProfilesError: ServerProfileStoreError.corruptData(key: corruptKey)
+        )
+        let tokenStore = GatedTokenStore()
+        let model = await makeCorruptedModel(store: store, tokenStore: tokenStore)
+
+        store.setLoadProfilesError(nil)
+        model.confirmStorageReset()
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest(throwing: KeychainError.unhandledStatus(-1))
+        await model.profileManagementTask?.value
+
+        guard case .tokenStore = model.profileManagementFailure else {
+            Issue.record("Expected the reset failure to be recorded before proceeding")
+            return
+        }
+
+        // A fresh token operation for an arbitrary profile, issued immediately after
+        // the failed reset, must not deadlock or be silently skipped: the barrier is
+        // released (success or failure) as soon as `deleteAllTokens()` returns.
+        let followUpTask = Task {
+            await model.performAuthOperation(
+                profile: .hosted, compatibility: .legacy, epochContext: CredentialOperationContext(
+                    generation: model.generation,
+                    credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                    globalEpoch: model.currentGlobalCredentialEpoch()
+                )
+            ) { _ in AuthToken(token: "retry-token") }
+        }
+        await tokenStore.waitUntilPending(1)
+        #expect(
+            await tokenStore.pendingMutations() ==
+                [.save(token: "retry-token", profileID: ServerProfile.hosted.id)]
+        )
+        await tokenStore.resumeOldest()
+        await followUpTask.value
+
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "retry-token")
+    }
+}

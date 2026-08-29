@@ -72,6 +72,20 @@ extension SessionOperationFailure {
     }
 }
 
+extension PendingCleanupFailure {
+    /// A short, user-facing, non-secret summary directing the user to retry.
+    ///
+    /// Deliberately generic about *why* (never a raw ``Error`` description): the
+    /// durable tombstone this describes already blocks this profile's token from
+    /// being read, restored, or saved regardless of whether the user ever taps
+    /// retry, so the only actionable detail worth surfacing is that a retry is
+    /// available and safe.
+    var message: String {
+        "A previous sign-out or server change couldn't finish securely removing a " +
+            "saved session for this server. Retry to complete it."
+    }
+}
+
 /// The compatibility posture of a server that has already passed the capability probe.
 ///
 /// Both cases permit sign-in and authentication restoration to proceed; ``legacy``
@@ -113,6 +127,15 @@ enum SessionState: Equatable, Sendable {
     /// Exposed rather than silently erased; recovery is intentionally out of scope for
     /// this coordinator.
     case storageCorrupted(SessionStorageFailure)
+    /// The durable credential-cleanup tombstone registry — a Keychain service
+    /// distinct from both the profile-metadata store and the token store itself —
+    /// could not be safely enumerated (a malformed or non-canonical marker, or an
+    /// unhandled Keychain status). Every saved server profile remains intact and
+    /// usable; only credential-cleanup bookkeeping is corrupt, so recovery here never
+    /// erases profile metadata the way ``storageCorrupted(_:)``'s reset does — only an
+    /// explicit, user-confirmed credential reset (every stored token and every
+    /// cleanup marker) can safely restore it.
+    case credentialCleanupRegistryCorrupted(TokenCleanupPendingStoreError)
 }
 
 // MARK: - User-facing summaries
@@ -139,6 +162,8 @@ extension SessionState {
             "Signed in as \(user.username)"
         case .storageCorrupted:
             "Storage error"
+        case .credentialCleanupRegistryCorrupted:
+            "Credential cleanup error"
         }
     }
 
@@ -166,6 +191,8 @@ extension SessionState {
             "Connected to \(profile.displayName)."
         case .storageCorrupted:
             "Saved server data could not be read."
+        case .credentialCleanupRegistryCorrupted:
+            "Saved sign-in cleanup data could not be read."
         }
     }
 
@@ -177,5 +204,91 @@ extension SessionState {
         default:
             false
         }
+    }
+}
+
+// MARK: - Detailed, reason-specific summaries
+
+/// A precise, non-secret, user-facing explanation of why an incompatible server was
+/// rejected. Reuses the exact typed ``CompatibilityRejection`` payload rather than any
+/// raw diagnostic, and is shared by every presentation surface (and its tests) so the
+/// reason category is never duplicated ad hoc.
+extension CompatibilityRejection {
+    var message: String {
+        switch self {
+        case let .clientTooOld(clientSupports, serverRequires):
+            "This app needs to be updated. The server requires app version " +
+                "\(serverRequires.description) or newer; this app supports up to " +
+                "\(clientSupports.description)."
+        case let .serverTooOld(serverRevision, clientRequires):
+            "This server needs to be updated. It reports version " +
+                "\(serverRevision.description), but this app requires at least " +
+                "\(clientRequires.description)."
+        case .apiBasePathMismatch:
+            "This server's configuration doesn't match what this app expects."
+        }
+    }
+}
+
+/// A precise, non-secret, user-facing explanation of why the selected server is
+/// currently unavailable, distinguishing an unreachable server from a session that
+/// could not be verified.
+extension SessionUnavailableReason {
+    var message: String {
+        switch self {
+        case let .probeFailed(reason):
+            reason.message
+        case .tokenValidationFailed(.authentication):
+            "Your saved session with this server could not be verified. Try again."
+        case .tokenValidationFailed(.tokenStore):
+            "Your saved session for this server could not be securely accessed. Try again."
+        }
+    }
+}
+
+extension CapabilityProbeError {
+    /// A non-secret, user-facing explanation distinguishing an unreachable server
+    /// (no response, transport failure) from one that *was* reached but returned an
+    /// unexpected or invalid response, since those call for different next steps
+    /// (check your connection vs. the server may be temporarily unavailable or
+    /// misconfigured). Never surfaces the raw diagnostic string carried by
+    /// ``malformedPayload(_:)``/``transportFailure(_:)``.
+    var message: String {
+        switch self {
+        case .transportFailure, .nonHTTPResponse:
+            "This server could not be reached. Check your connection and try again."
+        case .unexpectedStatus, .malformedPayload:
+            "This server responded unexpectedly. It may be temporarily unavailable " +
+                "or misconfigured. Try again."
+        }
+    }
+}
+
+extension SessionStorageFailure {
+    /// A non-secret, user-facing explanation shown alongside an explicit,
+    /// user-confirmed reset action; never surfaced as a reason to erase data silently.
+    ///
+    /// Deliberately does not promise a non-destructive retry: the only recovery this
+    /// state offers is the explicit, destructive reset below (``AppModel/retry()`` is a
+    /// no-op for `.storageCorrupted`), so the wording says exactly what resetting does
+    /// and does not do, rather than implying a "try again later without losing it"
+    /// path that doesn't exist.
+    var message: String {
+        "Your saved server data could not be read. Resetting removes your saved " +
+            "custom servers and sign-in tokens and restores the default hosted server."
+    }
+}
+
+extension TokenCleanupPendingStoreError {
+    /// A non-secret, user-facing explanation shown alongside an explicit,
+    /// user-confirmed credential reset. Distinct from
+    /// ``SessionStorageFailure/message``: this recovery removes only credential
+    /// material (every stored sign-in token and every cleanup marker), never any
+    /// saved server profile, and ``AppModel/retry()`` is likewise a no-op here — a
+    /// plain retry could never repair a malformed cleanup-registry entry, so this
+    /// never implies one might.
+    var message: String {
+        "Saved sign-in cleanup data could not be read. Resetting removes every " +
+            "sign-in token on this device, but keeps your saved servers."
     }
 }

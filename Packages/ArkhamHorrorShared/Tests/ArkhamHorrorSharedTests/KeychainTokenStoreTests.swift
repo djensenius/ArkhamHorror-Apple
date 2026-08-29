@@ -45,6 +45,19 @@ private final class InMemoryKeychainClient: KeychainClient, @unchecked Sendable 
     func delete(_ query: [String: Any]) -> OSStatus {
         lock.lock()
         defer { lock.unlock() }
+        guard query[kSecAttrAccount as String] != nil else {
+            // No account in the query: mirrors `SecItemDelete` matching every item
+            // under this service, regardless of account, when the query omits
+            // `kSecAttrAccount` — used by `deleteAllTokens()`.
+            let service = query[kSecAttrService as String] as? String ?? ""
+            let prefix = "\(service)\u{0}"
+            let matchingKeys = storage.keys.filter { $0.hasPrefix(prefix) }
+            guard !matchingKeys.isEmpty else { return errSecItemNotFound }
+            for matchingKey in matchingKeys {
+                storage[matchingKey] = nil
+            }
+            return errSecSuccess
+        }
         let key = key(query)
         guard storage[key] != nil else { return errSecItemNotFound }
         storage[key] = nil
@@ -257,6 +270,48 @@ struct KeychainTokenStoreTests {
         let store = makeStore(client, service: service)
         await #expect(throws: KeychainError.unexpectedData) {
             _ = try await store.token(for: profileA)
+        }
+    }
+
+    // MARK: - deleteAllTokens
+
+    @Test("deleteAllTokens removes every profile's token under this store's service")
+    func deleteAllTokensRemovesEveryProfile() async throws {
+        let store = makeStore(InMemoryKeychainClient())
+        try await store.save("token-a", for: profileA)
+        try await store.save("token-b", for: profileB)
+        try await store.deleteAllTokens()
+        #expect(try await store.token(for: profileA) == nil)
+        #expect(try await store.token(for: profileB) == nil)
+    }
+
+    @Test("deleteAllTokens on an empty store is not an error (errSecItemNotFound is success)")
+    func deleteAllTokensOnEmptyStoreSucceeds() async {
+        let store = makeStore(InMemoryKeychainClient())
+        await #expect(throws: Never.self) {
+            try await store.deleteAllTokens()
+        }
+    }
+
+    @Test("deleteAllTokens never deletes another service's tokens")
+    func deleteAllTokensDoesNotCrossServices() async throws {
+        let client = InMemoryKeychainClient()
+        let storeA = makeStore(client, service: "test.arkhamhorror.tokens.a")
+        let storeB = makeStore(client, service: "test.arkhamhorror.tokens.b")
+        try await storeA.save("token-a", for: profileA)
+        try await storeB.save("token-b", for: profileA)
+
+        try await storeA.deleteAllTokens()
+
+        #expect(try await storeA.token(for: profileA) == nil)
+        #expect(try await storeB.token(for: profileA) == "token-b")
+    }
+
+    @Test("An unhandled deleteAllTokens status maps to unhandledStatus")
+    func deleteAllTokensErrorMapping() async {
+        let store = makeStore(FixedStatusKeychainClient(status: errSecAuthFailed))
+        await #expect(throws: KeychainError.unhandledStatus(errSecAuthFailed)) {
+            try await store.deleteAllTokens()
         }
     }
 
