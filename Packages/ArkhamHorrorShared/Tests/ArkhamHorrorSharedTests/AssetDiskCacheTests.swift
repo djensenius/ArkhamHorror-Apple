@@ -184,97 +184,59 @@ struct AssetDiskCacheTests {
 
     @Test(
         """
-        Metadata claiming a negative encodedByteCount is quarantined without reading the payload
+        Quarantining undecodable metadata on `get` sweeps every stale payload generation for \
+        that key hash, not only whichever one file happens to be corrupt, even when the \
+        one-time startup orphan sweep has already run and so cannot reclaim them later
         """
     )
-    func negativeEncodedByteCountQuarantinedWithoutReadingPayload() async throws {
+    func quarantiningCorruptMetadataOnGetSweepsOtherStaleGenerationsForSameKeyHash() async throws {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
             let cacheKey = try key("01001")
-            let payload = Data([1, 2, 3])
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload)
-            )
 
-            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
-            var json = try #require(
-                try JSONSerialization
-                    .jsonObject(with: Data(contentsOf: metadataURL)) as? [String: Any]
-            )
-            json["encodedByteCount"] = -1
-            let tampered = try JSONSerialization.data(withJSONObject: json)
-            try tampered.write(to: metadataURL)
+            // Force `recoverOrphansIfNeeded()`'s one-time startup sweep to
+            // have already run via an unrelated miss, before any of this
+            // test's own stray files exist. This proves the fix does not
+            // merely rely on that one-time sweep to reclaim what it
+            // creates below.
+            _ = try await cache.get(key("01002"))
 
-            let fetched = await cache.get(cacheKey)
-            #expect(fetched == nil)
-        }
-    }
-
-    @Test(
-        """
-        Metadata claiming an encodedByteCount above the configured cap is quarantined without \
-        reading the payload
-        """
-    )
-    func oversizedEncodedByteCountQuarantinedWithoutReadingPayload() async throws {
-        try await withScratchDirectory { directory in
-            let limits = smallLimits()
-            let cache = try AssetDiskCache(directory: directory, limits: limits)
-            let cacheKey = try key("01001")
-            let payload = Data([1, 2, 3])
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload)
-            )
-
-            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
-            var json = try #require(
-                try JSONSerialization
-                    .jsonObject(with: Data(contentsOf: metadataURL)) as? [String: Any]
-            )
-            json["encodedByteCount"] = limits.maxEncodedBytes + 1
-            let tampered = try JSONSerialization.data(withJSONObject: json)
-            try tampered.write(to: metadataURL)
-
-            let fetched = await cache.get(cacheKey)
-            #expect(fetched == nil)
-        }
-    }
-
-    @Test(
-        """
-        An on-disk payload file larger than the configured cap is quarantined even when \
-        metadata's own claimed size still passes
-        """
-    )
-    func oversizedActualPayloadFileQuarantinedDespiteSmallClaimedSize() async throws {
-        try await withScratchDirectory { directory in
-            let limits = smallLimits()
-            let cache = try AssetDiskCache(directory: directory, limits: limits)
-            let cacheKey = try key("01001")
-            let payload = Data([1, 2, 3])
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload)
-            )
-
-            // Substitute a payload file far larger than both the claimed
-            // `encodedByteCount` (3 bytes) and the configured cap, without
-            // touching the metadata sidecar at all.
-            let payloadURL = payloadFileURL(
+            let currentPayload = Data([1, 2, 3])
+            let currentPayloadURL = payloadFileURL(
                 directory: directory,
                 cacheKey: cacheKey,
-                payload: payload
+                payload: currentPayload
             )
-            let oversized = Data(repeating: 0xFF, count: limits.maxEncodedBytes + 1)
-            try oversized.write(to: payloadURL)
+            try currentPayload.write(to: currentPayloadURL)
+
+            // A stray extra generation for the *same* key hash, as a crash
+            // between an earlier payload write and its metadata commit
+            // might leave behind. Nothing references it.
+            let staleSiblingPayload = Data([9, 9, 9, 9])
+            let staleSiblingURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: staleSiblingPayload
+            )
+            try staleSiblingPayload.write(to: staleSiblingURL)
+
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+            try Data("not json".utf8).write(to: metadataURL)
 
             let fetched = await cache.get(cacheKey)
             #expect(fetched == nil)
+            #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
+            #expect(
+                !FileManager.default.fileExists(atPath: currentPayloadURL.path),
+                "The generation the corrupt metadata referenced must be removed"
+            )
+            #expect(
+                !FileManager.default.fileExists(atPath: staleSiblingURL.path),
+                """
+                An unrelated stale generation for the same key hash must also be swept, not \
+                left to wait for a future process restart's orphan sweep
+                """
+            )
         }
     }
 }

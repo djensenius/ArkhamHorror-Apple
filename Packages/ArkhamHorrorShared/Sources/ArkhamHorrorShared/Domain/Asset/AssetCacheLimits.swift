@@ -10,8 +10,9 @@ struct AssetCacheLimits: Sendable, Equatable {
     let maxDimension: Int
     /// Maximum accepted total decoded pixel count (width × height).
     let maxPixelCount: Int
-    /// Total in-memory cache budget, in bytes (payload + a small per-entry
-    /// metadata overhead estimate).
+    /// Total in-memory cache budget, in bytes (payload plus each entry's
+    /// actual serialized-metadata-JSON byte count — not a fixed overhead
+    /// estimate; see ``CachedAsset/accountedByteCount``).
     let memoryBudgetBytes: Int
     /// Total on-disk cache budget, in bytes (payload + serialized metadata
     /// size for every entry).

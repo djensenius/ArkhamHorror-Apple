@@ -71,18 +71,14 @@ actor AssetDiskCache {
                   from: metadataData
               )
         else {
-            // No validated content hash exists yet to derive a specific
-            // payload filename to also remove; any now-unreferenced
-            // payload file for this key is reclaimed by the next startup's
-            // `recoverOrphansIfNeeded()` sweep instead.
-            try? fileManager.removeItem(at: metadataURL)
+            quarantine(keyHash: key.digestHex, metadataURL: metadataURL)
             return nil
         }
         guard metadata.schemaVersion == AssetCacheMetadata.currentSchemaVersion,
               metadata.cacheKeyHex == key.digestHex,
               Self.isValidContentHash(metadata.payloadSHA256Hex)
         else {
-            try? fileManager.removeItem(at: metadataURL)
+            quarantine(keyHash: key.digestHex, metadataURL: metadataURL)
             return nil
         }
         // Only derived from a hash this method has just validated is
@@ -99,7 +95,7 @@ actor AssetDiskCache {
         // before the byte-count mismatch check below ever runs.
         guard metadata.encodedByteCount >= 0, metadata.encodedByteCount <= limits.maxEncodedBytes
         else {
-            quarantine(payloadURL: payloadURL, metadataURL: metadataURL)
+            quarantine(keyHash: key.digestHex, metadataURL: metadataURL)
             return nil
         }
         // Also check the actual on-disk file size via filesystem
@@ -112,17 +108,17 @@ actor AssetDiskCache {
             let actualSize = attributes[.size] as? Int,
             actualSize >= 0, actualSize <= limits.maxEncodedBytes
         else {
-            quarantine(payloadURL: payloadURL, metadataURL: metadataURL)
+            quarantine(keyHash: key.digestHex, metadataURL: metadataURL)
             return nil
         }
         guard let payload = try? Data(contentsOf: payloadURL),
               payload.count == metadata.encodedByteCount
         else {
-            quarantine(payloadURL: payloadURL, metadataURL: metadataURL)
+            quarantine(keyHash: key.digestHex, metadataURL: metadataURL)
             return nil
         }
         guard AssetPayloadHasher.sha256Hex(payload) == metadata.payloadSHA256Hex else {
-            quarantine(payloadURL: payloadURL, metadataURL: metadataURL)
+            quarantine(keyHash: key.digestHex, metadataURL: metadataURL)
             return nil
         }
 
@@ -257,11 +253,20 @@ actor AssetDiskCache {
         directory.appendingPathComponent("\(key.digestHex).meta.json")
     }
 
-    /// Removes both files for an entry that has failed integrity
-    /// validation on read.
-    private func quarantine(payloadURL: URL, metadataURL: URL) {
-        try? fileManager.removeItem(at: payloadURL)
+    /// Removes an entry that has failed integrity validation on read: its
+    /// metadata sidecar, and — via
+    /// ``cleanupSupersededPayloads(forKeyHash:keeping:)`` — every `.bin`
+    /// payload generation on disk for `keyHash`, not merely whichever one
+    /// generation the now-quarantined metadata happened to reference. This
+    /// key hash's metadata is being deleted here, so no generation for it
+    /// is left referenced by anything: any other stale generation (e.g.
+    /// left behind by a crash between an earlier payload write and its own
+    /// metadata commit) must be swept in the same pass rather than left to
+    /// occupy disk space, uncounted against `diskBudgetBytes`, until a
+    /// future process restart's orphan sweep happens to run.
+    private func quarantine(keyHash: String, metadataURL: URL) {
         try? fileManager.removeItem(at: metadataURL)
+        cleanupSupersededPayloads(forKeyHash: keyHash, keeping: nil)
     }
 
     /// `true` only for a string that is exactly 64 lowercase ASCII hex
