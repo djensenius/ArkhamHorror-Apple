@@ -5,7 +5,7 @@ import Testing
 @Suite("AssetImageLoader")
 @MainActor
 struct AssetImageLoaderTests {
-    private func withLoader(
+    func withLoader(
         transport: FakeAssetTransport = FakeAssetTransport(),
         _ body: (AssetImageLoader, FakeAssetTransport) async throws -> Void
     ) async throws {
@@ -36,19 +36,19 @@ struct AssetImageLoaderTests {
         try await body(loader, transport)
     }
 
-    private func portraitKey(_ rawCardCode: String = "01001") throws -> AssetKey {
+    func portraitKey(_ rawCardCode: String = "01001") throws -> AssetKey {
         let identifier = try AssetIdentifier.cardCode(rawCardCode)
         return AssetKey(category: .portrait(identifier))
     }
 
-    private func portraitURL(for key: AssetKey) -> URL {
+    func portraitURL(for key: AssetKey) -> URL {
         AssetLocator.candidates(for: key, digest: FakeDigestLookup())[0].url(base: key.source)
     }
 
     /// Polls (test-only) until `loader.state` stops being `.loading`, since
     /// the loader mutates state asynchronously on `@MainActor` after its
     /// cache-service suspension.
-    private func waitForSettledState(
+    func waitForSettledState(
         _ loader: AssetImageLoader,
         timeoutNanoseconds: UInt64 = 2_000_000_000
     ) async {
@@ -109,6 +109,10 @@ struct AssetImageLoaderTests {
             }
             #expect(error == .candidatesExhausted)
             #expect(description == "Missing Investigator")
+            #expect(
+                loader.loadTask == nil,
+                "A definitively failed load must not retain its finished task"
+            )
         }
     }
 
@@ -156,6 +160,14 @@ struct AssetImageLoaderTests {
                 description == "Second",
                 "A stale, superseded load must never clobber a newer load's state"
             )
+            #expect(
+                loader.loadTask == nil,
+                """
+                the newer (second) load's own completion must have cleared `loadTask`, and the \
+                stale first load's later, generation-mismatched completion must not have \
+                resurrected it
+                """
+            )
         }
     }
 
@@ -176,12 +188,20 @@ struct AssetImageLoaderTests {
             await transport.waitForCallCount(1, for: url)
             loader.cancel()
             #expect(loader.state == .idle)
+            #expect(loader.loadTask == nil)
 
             await transport.release(url)
             try await Task.sleep(nanoseconds: 50_000_000)
             #expect(
                 loader.state == .idle,
                 "A cancelled load's late completion must never overwrite the idle state"
+            )
+            #expect(
+                loader.loadTask == nil,
+                """
+                a cancelled load's own generation-mismatched completion must not resurrect \
+                loadTask
+                """
             )
         }
     }

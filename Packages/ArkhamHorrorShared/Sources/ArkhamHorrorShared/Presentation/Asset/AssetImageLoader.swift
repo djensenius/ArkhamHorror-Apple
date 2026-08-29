@@ -25,7 +25,11 @@ final class AssetImageLoader {
 
     @ObservationIgnored private let cacheService: AssetCacheService
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    /// Not `private`: exposed at `internal` visibility solely so tests can
+    /// assert it is cleared on terminal completion (see
+    /// `AssetImageLoaderTests`), never read or written by anything outside
+    /// this type in production code.
+    @ObservationIgnored private(set) var loadTask: Task<Void, Never>?
 
     init(cacheService: AssetCacheService) {
         self.cacheService = cacheService
@@ -107,16 +111,25 @@ final class AssetImageLoader {
                 }
                 guard let self, generation == requestedGeneration else { return }
                 state = .success(image, accessibleDescription: accessibleDescription)
+                loadTask = nil
             } catch is CancellationError {
                 // A superseded or externally cancelled load leaves state
                 // alone: either a newer `load` already owns it, or
                 // `cancel()` was called and idle/whatever state preceded
-                // it is preserved deliberately.
+                // it is preserved deliberately. Only clears `loadTask`
+                // when this generation is still current: if a newer
+                // `load`/`cancel()` already ran, `loadTask` already
+                // refers to that call's own task (or is already `nil`),
+                // and this stale branch must not overwrite it.
+                if let self, generation == requestedGeneration {
+                    loadTask = nil
+                }
             } catch {
                 guard let self, generation == requestedGeneration else { return }
                 let assetError = (error as? AssetError) ??
                     .transportFailure(String(describing: error))
                 state = .failure(assetError, accessibleDescription: accessibleDescription)
+                loadTask = nil
             }
         }
     }
