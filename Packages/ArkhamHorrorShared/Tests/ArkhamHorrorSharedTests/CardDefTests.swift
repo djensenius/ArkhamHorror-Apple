@@ -75,7 +75,7 @@ struct CardDefTests {
         #expect(fixture.card.alternateCardCodes?.map(\.rawValue) == ["c01501", "c98004"])
     }
 
-    @Test("investigatorArtwork decodes as a plain list of card codes")
+    @Test("investigatorArtwork decodes as a plain list of artwork identifiers")
     func investigatorArtwork() throws {
         let fixture = try loadFixture()
         #expect(fixture.investigators.map(\.rawValue) == ["01001", "01002"])

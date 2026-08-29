@@ -79,6 +79,7 @@ extension CardDef: Equatable {}
 /// A list of ``CardDef``, as returned by `GET /arkham/cards` and `/arkham/homebrew/cards`.
 typealias CardList = [CardDef]
 
-/// Card codes for investigators with dedicated artwork, as returned by
-/// `GET /arkham/investigators`.
+/// Nonempty artwork identifiers for investigators with dedicated artwork, as returned by
+/// `GET /arkham/investigators`. These are the same kind of identifier as ``CardDef/art``,
+/// not card codes.
 typealias InvestigatorArtwork = [ArtworkIdentifier]
