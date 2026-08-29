@@ -57,6 +57,26 @@ struct ActionSuppressionState: Equatable {
     mutating func clearStaleSuppression() {
         isSuppressed = false
     }
+
+    /// The full decision for `SemanticActionControl`'s `isPressActive`
+    /// falling/rising edge, extracted so the view's `.onChange` closure has
+    /// no branching logic of its own left to get subtly wrong — it need only
+    /// forward this call and, when told to, schedule the deferred clear.
+    ///
+    /// Returns whether the caller should schedule a *deferred* call to
+    /// ``clearStaleSuppression()`` (never call it synchronously from here):
+    /// `true` on the falling edge (press truly ended/cancelled), `false`
+    /// otherwise. On the rising edge this also performs ``pressBegan()``
+    /// synchronously, since that clears leftover state before this same new
+    /// press's own gesture recognition or `Button` action can possibly run,
+    /// so no deferral is needed or correct there.
+    mutating func pressActiveDidChange(from wasActive: Bool, to isActive: Bool) -> Bool {
+        if !wasActive, isActive {
+            pressBegan()
+            return false
+        }
+        return wasActive && !isActive
+    }
 }
 
 /// The shared touch/pointer/visionOS-focus "action seam": a standard SwiftUI
@@ -79,15 +99,27 @@ struct ActionSuppressionState: Equatable {
 ///
 /// ``ActionSuppressionState`` (see above) governs the interaction between
 /// this control's simultaneous long-press gesture and `Button`'s own tap
-/// recognizer; `isLongPressing` (backed by `LongPressGesture`'s own
-/// `updating` state, which SwiftUI reports as `true` from the moment the
-/// press begins — well before `minimumDuration` elapses and `onEnded`
-/// fires, and `false` again once the press ends for any reason) drives both
-/// of that state machine's edge-triggered transitions. (A separate
-/// zero-distance `DragGesture` was considered for the "press began" signal
-/// instead, but `DragGesture` is unavailable on tvOS; reusing
-/// `LongPressGesture`'s own `updating` state keeps this control available on
-/// every platform target.)
+/// recognizer; `isPressActive` drives both of that state machine's
+/// edge-triggered transitions.
+///
+/// `isPressActive` is **not** a bare `LongPressGesture`'s own `updating`
+/// state: SwiftUI resets that the instant the press is *recognized* as a
+/// long press (at `minimumDuration`), which is well before the finger
+/// actually lifts — using it directly caused a real, reproduced double-
+/// dispatch bug (the deferred suppression-clear below would run on the very
+/// next main-actor turn *while the finger was still held down*, long before
+/// `Button`'s own touch-up-triggered action could fire, so by the time it
+/// did fire suppression had already been wrongly cleared). Instead,
+/// `isPressActive` is driven by *sequencing* an effectively-instant first
+/// `LongPressGesture` (so entering the gesture at all immediately satisfies
+/// it) before a second phase whose `minimumDuration` is `.infinity` — that
+/// second phase can only ever end by cancellation, which SwiftUI reports
+/// (by resetting this `@GestureState` to `false`) exactly when the
+/// underlying touch truly ends, for any reason (lift-off or cancel),
+/// regardless of whether an earlier, independent `LongPressGesture` (below)
+/// already recognized a long press while the finger was still down.
+/// `LongPressGesture` (rather than `DragGesture`) is used for both phases of
+/// this sequence because `DragGesture` is unavailable on tvOS.
 public struct SemanticActionControl<Label: View>: View {
     public let accessibilityLabel: Text
     public let semanticFocusID: SemanticFocusID
@@ -95,7 +127,13 @@ public struct SemanticActionControl<Label: View>: View {
     @ViewBuilder public let label: () -> Label
 
     @State private var suppression = ActionSuppressionState()
-    @GestureState private var isLongPressing = false
+    @GestureState private var isPressActive = false
+
+    /// How long a press must be held before it counts as the long-press
+    /// ``SemanticCommand/secondaryAction`` rather than a short tap.
+    private static var secondaryActionThreshold: Double {
+        0.5
+    }
 
     public init(
         accessibilityLabel: Text,
@@ -117,25 +155,34 @@ public struct SemanticActionControl<Label: View>: View {
         } label: {
             label()
         }
+        // Dispatches the secondary action exactly once, right when the long
+        // press is recognized — independent of `isPressActive` below, which
+        // exists purely to track the *real* touch lifecycle for suppression
+        // timing, not to gate this dispatch.
         .simultaneousGesture(
-            LongPressGesture()
-                .updating($isLongPressing) { currentState, state, _ in
-                    state = currentState
-                }
+            LongPressGesture(minimumDuration: Self.secondaryActionThreshold)
                 .onEnded { _ in
                     suppression.longPressSucceeded()
                     onOutcome(semanticFocusID, .command(.secondaryAction))
                 }
         )
-        .onChange(of: isLongPressing) { wasPressing, nowPressing in
-            if !wasPressing, nowPressing {
-                suppression.pressBegan()
-            } else if wasPressing, !nowPressing {
-                // Deferred so this can never race with (or undo) the same
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0)
+                .sequenced(before: LongPressGesture(minimumDuration: .infinity))
+                .updating($isPressActive) { _, state, _ in
+                    state = true
+                }
+        )
+        .onChange(of: isPressActive) { wasActive, nowActive in
+            if suppression.pressActiveDidChange(from: wasActive, to: nowActive) {
+                // Deferred so this can never race with (or undo) this same
                 // touch-up's own synchronous `Button` action consuming the
-                // flag first, when the press ended with a legitimate lift-off
-                // inside the control's bounds; see `clearStaleSuppression`'s
-                // documentation.
+                // flag first, when the lift lands inside the control's
+                // bounds; see `clearStaleSuppression`'s documentation. Unlike
+                // the historical, buggy signal this replaces, `isPressActive`
+                // only turns `false` at the *real* touch-up/cancel, so this
+                // deferred call is scheduled at the correct time instead of
+                // while the finger is still held down.
                 Task { @MainActor in
                     suppression.clearStaleSuppression()
                 }

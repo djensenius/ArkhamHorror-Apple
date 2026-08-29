@@ -111,4 +111,100 @@ struct ActionSuppressionStateTests {
             state.clearStaleSuppression()
         }
     }
+
+    // MARK: - Production event order (see SemanticActionControl's gesture
+
+    // composition doc comments)
+
+    @Test(
+        """
+        Production event order: press begins, long press succeeds while still \
+        held, then the real touch-up fires Button's action and schedules the \
+        deferred clear — the deferred clear must not run before Button's own \
+        action observes suppression, so exactly one primary is suppressed
+        """
+    )
+    func productionEventOrderSuppressesExactlyOneFollowOnTapAtTrueLift() {
+        // `SemanticActionControl.body`'s corrected `isPressActive` only goes
+        // false at the *real* touch-up — the same moment `Button`'s own
+        // action fires for a lift landing inside its bounds. Both are
+        // dispatched synchronously from that one touch-up event; the clear
+        // itself is scheduled via `Task { @MainActor in }`, which always
+        // runs strictly *after* every synchronous signal from that same
+        // event — so `attemptPrimaryAction()` (Button's action) must be
+        // driven here *before* `clearStaleSuppression()` (the deferred
+        // clear) to faithfully reproduce production ordering, even though
+        // the falling-edge signal that *schedules* the clear is observed
+        // first.
+        var state = ActionSuppressionState()
+        state.pressBegan()
+        state.longPressSucceeded()
+        // `.onChange(of: isPressActive)` observes the falling edge here and
+        // schedules (but does not yet run) the deferred clear.
+        let scheduledClear = state.pressActiveDidChange(from: true, to: false)
+        #expect(scheduledClear)
+        // Button's own action, synchronously part of the same touch-up:
+        let dispatchedAtRealLift = state.attemptPrimaryAction()
+        #expect(!dispatchedAtRealLift)
+        // Only now does the previously-scheduled deferred clear actually
+        // run (on the next main-actor turn) — a harmless no-op, since
+        // Button's action already consumed the flag above.
+        state.clearStaleSuppression()
+        // A later, wholly unrelated activation is unaffected.
+        let laterActivation = state.attemptPrimaryAction()
+        #expect(laterActivation)
+    }
+
+    @Test(
+        """
+        Historical bug regression: if the touch-active falling edge were \
+        (wrongly) signalled while the finger is still down — as the old, \
+        buggy bare LongPressGesture-based signal did, resetting at recognition \
+        rather than true lift — the deferred clear would run before Button's \
+        real, later touch-up action, incorrectly un-suppressing it and \
+        causing a double dispatch
+        """
+    )
+    func historicalPrematureFallingEdgeWouldHaveCausedDoubleDispatch() {
+        // This test intentionally reproduces the *buggy* ordering that
+        // `SemanticActionControl`'s original `isLongPressing` signal
+        // produced (falling edge observed — and its deferred clear run —
+        // while the touch was still conceptually held), to document exactly
+        // why `isPressActive`'s corrected, true-lift-only falling edge (see
+        // the production-order test above, and the gesture composition's
+        // doc comments) is load-bearing: this is the double-dispatch the
+        // reviewer reproduced, not a hypothetical.
+        var state = ActionSuppressionState()
+        state.pressBegan()
+        state.longPressSucceeded()
+        // The bug: the falling edge (and thus the deferred clear) fires
+        // immediately here, on the very next main-actor turn, while the
+        // finger is still physically down — long before the real touch-up.
+        let scheduledClear = state.pressActiveDidChange(from: true, to: false)
+        #expect(scheduledClear)
+        state.clearStaleSuppression()
+        // ... arbitrarily many main-actor turns pass while the finger
+        // remains down ...
+        // Only now, at the real (later) lift, does Button's tap fire:
+        let dispatchedAtRealLift = state.attemptPrimaryAction()
+        // Demonstrates the bug mechanism: suppression was already cleared
+        // long before this point, so the completed long press's own
+        // follow-on tap is incorrectly *not* suppressed.
+        #expect(dispatchedAtRealLift)
+    }
+
+    @Test("pressActiveDidChange's rising edge clears stale suppression, requests no deferred clear")
+    func pressActiveDidChangeRisingEdgeClearsAndRequestsNoDeferral() {
+        var state = ActionSuppressionState()
+        state.pressBegan()
+        state.longPressSucceeded()
+        // A brand new press begins (rising edge) before anything consumed
+        // the earlier long press's suppression flag.
+        let scheduledClear = state.pressActiveDidChange(from: false, to: true)
+        #expect(!scheduledClear)
+        // The rising edge itself already cleared it — this new press's own
+        // eventual tap is not suppressed by the unrelated earlier one.
+        let dispatched = state.attemptPrimaryAction()
+        #expect(dispatched)
+    }
 }
