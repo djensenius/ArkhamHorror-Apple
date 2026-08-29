@@ -61,8 +61,11 @@ enum BoardFocusGraphBuilder {
         nodes.append(FocusNode(id: BoardFocusID.scenarioHeader, zone: BoardFocusZone.scenario))
         zoneEntryPoints[BoardFocusZone.scenario] = BoardFocusID.scenarioHeader
 
-        let actAgendaChain = projection.acts.map { BoardFocusID.act($0.id) }
-            + projection.agendas.map { BoardFocusID.agenda($0.id) }
+        // Ordered agendas-then-acts to match `BoardActAgendaColumnView`'s own rendering
+        // order (agenda tiles above act tiles), so the zone's entry point and up/down
+        // focus traversal always agree with what's actually on screen.
+        let actAgendaChain = projection.agendas.map { BoardFocusID.agenda($0.id) }
+            + projection.acts.map { BoardFocusID.act($0.id) }
         appendVerticalChain(
             actAgendaChain, zone: BoardFocusZone.actAgenda,
             nodes: &nodes, zoneEntryPoints: &zoneEntryPoints

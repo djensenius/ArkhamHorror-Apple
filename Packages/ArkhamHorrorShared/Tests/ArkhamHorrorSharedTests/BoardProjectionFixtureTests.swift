@@ -45,7 +45,9 @@ struct BoardProjectionFixtureTests {
 
     @Test("The REST and WebSocket fixtures build an equal BoardProjection")
     func restAndWebSocketProjectionsAreEqual() throws {
-        #expect(try restProjection() == webSocketProjection())
+        let rest = try restProjection()
+        let webSocket = try webSocketProjection()
+        #expect(rest == webSocket)
     }
 
     @Test("The projection's game name and scenario summary decode from the governed fixture")
