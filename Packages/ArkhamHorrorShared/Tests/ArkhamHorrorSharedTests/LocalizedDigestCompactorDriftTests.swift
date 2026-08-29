@@ -12,6 +12,13 @@ import Testing
 struct LocalizedDigestCompactorDriftTests {
     private static let locales: [AssetLocale] = [.italian, .french, .spanish, .korean, .chinese]
 
+    /// `BundledLocalizedDigestProvider.init` eagerly loads and validates every
+    /// shipped locale digest, so constructing it once per parameterized case
+    /// would repeat that work needlessly. `Result` memoizes the (fallible)
+    /// construction the first time any test case touches it and shares the
+    /// same provider instance across the whole parameterized run.
+    private static let sharedProvider = Result { try BundledLocalizedDigestProvider() }
+
     @Test(
         "Every shipped digest resource matches the compactor's output for the pinned fixture",
         arguments: locales
@@ -27,16 +34,15 @@ struct LocalizedDigestCompactorDriftTests {
         )
         let rawEntries = try JSONDecoder().decode([String].self, from: Data(contentsOf: rawURL))
         // The compactor's own contract already sorts and deduplicates its
-        // output (see `LocalizedDigest.compactCardIdentifiers`), so
-        // comparing the shipped resource against it as an ordered array
+        // output (see `LocalizedDigestCompactor.compactCardIdentifiers(fromRawEntries:)`),
+        // so comparing the shipped resource against it as an ordered array
         // (not a `Set`) also catches ordering drift or accidental
         // duplicate entries the shipped JSON could otherwise carry
         // undetected — a `Set`-to-`Set` comparison alone could not.
         let compacted = LocalizedDigestCompactor.compactCardIdentifiers(fromRawEntries: rawEntries)
 
-        let shipped = try #require(
-            try BundledLocalizedDigestProvider().orderedIdentifiers(for: locale)
-        )
+        let provider = try Self.sharedProvider.get()
+        let shipped = try #require(provider.orderedIdentifiers(for: locale))
         #expect(shipped == compacted)
     }
 
