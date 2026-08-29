@@ -159,11 +159,25 @@ struct LosslessJSONKeyedDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
     }
 
     func superDecoder() throws -> Decoder {
-        LosslessJSONValueDecoder(value: .object(dictionary), codingPath: codingPath)
+        makeSuperDecoder(forKey: "super", codingPathKey: AnyCodingKey(stringValue: "super"))
     }
 
     func superDecoder(forKey key: Key) throws -> Decoder {
-        try LosslessJSONValueDecoder(value: value(forKey: key), codingPath: codingPath + [key])
+        makeSuperDecoder(forKey: key.stringValue, codingPathKey: key)
+    }
+
+    /// Reads the value stored under `key` (matching what
+    /// `LosslessJSONKeyedEncodingContainer.superEncoder()`/`superEncoder(forKey:)` actually
+    /// writes — the value *at that key*, never the entire enclosing object), defaulting to
+    /// `.null` when the key is absent rather than throwing. Foundation's own `JSONDecoder`
+    /// treats a missing "super" key identically: `superDecoder()`/`superDecoder(forKey:)`
+    /// are meant to support an optional intermediate class in an inheritance chain that may
+    /// not have encoded anything of its own, so a missing key is not malformed input.
+    private func makeSuperDecoder(forKey key: String, codingPathKey: CodingKey) -> Decoder {
+        LosslessJSONValueDecoder(
+            value: dictionary[key] ?? .null,
+            codingPath: codingPath + [codingPathKey]
+        )
     }
 }
 
@@ -277,25 +291,34 @@ struct LosslessJSONUnkeyedDecodingContainer: UnkeyedDecodingContainer {
     mutating func nestedContainer<NestedKey: CodingKey>(
         keyedBy _: NestedKey.Type
     ) throws -> KeyedDecodingContainer<NestedKey> {
+        let index = currentIndex
         guard case let .object(dict) = try nextValue() else {
             throw LosslessJSONPrimitive.typeMismatch([String: JSONValue].self, .null, codingPath)
         }
         let container = LosslessJSONKeyedDecodingContainer<NestedKey>(
             dictionary: dict,
-            codingPath: codingPath
+            codingPath: codingPath + [AnyCodingKey(intValue: index)]
         )
         return KeyedDecodingContainer(container)
     }
 
     mutating func nestedUnkeyedContainer() throws -> UnkeyedDecodingContainer {
+        let index = currentIndex
         guard case let .array(items) = try nextValue() else {
             throw LosslessJSONPrimitive.typeMismatch([JSONValue].self, .null, codingPath)
         }
-        return LosslessJSONUnkeyedDecodingContainer(elements: items, codingPath: codingPath)
+        return LosslessJSONUnkeyedDecodingContainer(
+            elements: items,
+            codingPath: codingPath + [AnyCodingKey(intValue: index)]
+        )
     }
 
     mutating func superDecoder() throws -> Decoder {
-        try LosslessJSONValueDecoder(value: nextValue(), codingPath: codingPath)
+        let index = currentIndex
+        return try LosslessJSONValueDecoder(
+            value: nextValue(),
+            codingPath: codingPath + [AnyCodingKey(intValue: index)]
+        )
     }
 }
 

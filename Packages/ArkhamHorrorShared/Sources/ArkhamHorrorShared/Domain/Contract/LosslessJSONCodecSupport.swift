@@ -53,12 +53,44 @@ enum LosslessJSONPrimitive {
         guard case let .number(number) = value, let result = Double(number.description) else {
             throw typeMismatch(Double.self, value, codingPath)
         }
-        return result
+        return try boundedFloatingResult(result, number: number, codingPath: codingPath)
     }
 
     static func float(_ value: JSONValue, codingPath: [CodingKey]) throws -> Float {
         guard case let .number(number) = value, let result = Float(number.description) else {
             throw typeMismatch(Float.self, value, codingPath)
+        }
+        return try boundedFloatingResult(result, number: number, codingPath: codingPath)
+    }
+
+    /// Rejects the two ways `BinaryFloatingPoint.init?(String)` silently loses information
+    /// at the extremes rather than failing: an out-of-range magnitude (`"1e999"`) that
+    /// parses to `.infinity`/`-.infinity`, and a nonzero source value so far below the
+    /// smallest representable magnitude that it silently underflows to `0`
+    /// (`"1e-999"` -> `0.0`). A source value that is genuinely zero still decodes to (signed)
+    /// zero; only a *nonzero* source collapsing to zero is treated as data loss. Ordinary
+    /// finite rounding (a value that fits, just not exactly) is always allowed — this only
+    /// guards the two failure modes that would otherwise be silent.
+    private static func boundedFloatingResult<T: BinaryFloatingPoint>(
+        _ result: T,
+        number: JSONNumber,
+        codingPath: [CodingKey]
+    ) throws -> T {
+        guard result.isFinite else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: codingPath,
+                    debugDescription: "\(number) overflows \(T.self)'s representable range"
+                )
+            )
+        }
+        guard result != 0 || number.isZero else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: codingPath,
+                    debugDescription: "\(number) underflows to zero in \(T.self)"
+                )
+            )
         }
         return result
     }

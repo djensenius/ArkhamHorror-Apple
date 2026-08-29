@@ -4,8 +4,39 @@ import Foundation
 /// its own file (and as an internal, not file-private, type) purely to stay under
 /// SwiftLint's type-length limit for `LosslessJSONParser` itself.
 struct LosslessJSONByteScanner {
+    /// A conservative ceiling on how many nested arrays/objects (combined; entering either
+    /// counts) a single document may contain before parsing fails with
+    /// ``LosslessJSONParserError/nestingTooDeep``. Chosen well beyond any realistic contract
+    /// payload's depth but far short of where Swift's own call stack would overflow — this
+    /// parser is mutually recursive (`parseValue` → `parseObject`/`parseArray` →
+    /// `parseValue` → ...), so unbounded input depth is otherwise a crash, not merely slow.
+    ///
+    /// This value was chosen empirically, not just theoretically: an earlier candidate of
+    /// 512 was proven unsafe by an adversarial test — `LosslessJSONSerializer.serialize`'s
+    /// own recursive descent (the most stack-hungry of the three recursive paths this limit
+    /// guards: parsing, serializing, and `JSONValue`'s Codable conformance) reliably
+    /// overflows the stack of the worker thread Swift Testing/Swift Concurrency runs a test
+    /// on somewhere around depth 397–400, i.e. *below* 512, even though the very same
+    /// recursion is fine on a full-size 8 MiB thread stack. Worker/task threads with
+    /// considerably smaller default stacks are a realistic execution context for this code
+    /// (background `Task`s, constrained platforms), not just a test-harness artifact, so the
+    /// limit must hold on the smallest stack this code can plausibly run on, not the
+    /// largest. 64 keeps a large (~6x) safety margin below that empirically observed
+    /// failure point, while remaining far beyond any real contract payload's nesting depth.
+    static let maxNestingDepth = 64
+
     let bytes: [UInt8]
     var position = 0
+    private var depth = 0
+
+    /// Explicit, unambiguously `internal` initializer. `depth`'s `private` access would
+    /// otherwise make the compiler-synthesized memberwise initializer itself `private`
+    /// (member-wise init access is the most restrictive of its stored properties'), which
+    /// is inconsistent across toolchains — some accept the cross-file call anyway, some
+    /// correctly reject it. Declaring this explicitly removes the ambiguity entirely.
+    init(bytes: [UInt8]) {
+        self.bytes = bytes
+    }
 
     var isAtEnd: Bool {
         position >= bytes.count
@@ -70,6 +101,8 @@ struct LosslessJSONByteScanner {
     }
 
     mutating func parseObject() throws -> JSONValue {
+        try enterContainer()
+        defer { exitContainer() }
         position += 1 // consume '{'
         var result: [String: JSONValue] = [:]
         var seenKeys: Set<String> = []
@@ -100,6 +133,8 @@ struct LosslessJSONByteScanner {
     }
 
     mutating func parseArray() throws -> JSONValue {
+        try enterContainer()
+        defer { exitContainer() }
         position += 1 // consume '['
         var result: [JSONValue] = []
         skipWhitespace()
@@ -113,6 +148,22 @@ struct LosslessJSONByteScanner {
             guard try consumeElementSeparator(closingByte: 0x5D) else { break }
         }
         return .array(result)
+    }
+
+    /// Increments the nesting-depth counter, throwing rather than allowing the
+    /// mutually-recursive `parseValue`/`parseObject`/`parseArray` cycle to descend past
+    /// ``maxNestingDepth``. Must be paired with ``exitContainer()`` (via `defer`) on every
+    /// path, including thrown errors, so a failed nested parse never leaves `depth`
+    /// permanently elevated for the rest of this scan.
+    private mutating func enterContainer() throws {
+        depth += 1
+        guard depth <= Self.maxNestingDepth else {
+            throw LosslessJSONParserError.nestingTooDeep
+        }
+    }
+
+    private mutating func exitContainer() {
+        depth -= 1
     }
 
     mutating func parseString() throws -> String {

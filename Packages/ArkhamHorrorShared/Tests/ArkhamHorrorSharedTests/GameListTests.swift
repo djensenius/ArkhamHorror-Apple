@@ -12,7 +12,7 @@ struct GameListTests {
                 subdirectory: "Fixtures/Contract"
             )
         )
-        return try JSONDecoder().decode(GameList.self, from: Data(contentsOf: url))
+        return try ContractJSON.decode(GameList.self, from: Data(contentsOf: url))
     }
 
     // MARK: - All five fixture rows, exercising all four game states plus a failed row
@@ -90,19 +90,19 @@ struct GameListTests {
     @Test("GameState.pending decodes and encodes its player UUID list")
     func gameStatePending() throws {
         let json = #"{"tag": "IsPending", "contents": ["00000000-0000-0000-0000-000000000001"]}"#
-        let state = try JSONDecoder().decode(GameState.self, from: Data(json.utf8))
+        let state = try ContractJSON.decode(GameState.self, from: Data(json.utf8))
         let expectedPlayer = try #require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
         )
         #expect(state == .pending([PlayerID(expectedPlayer)]))
-        let reencoded = try JSONEncoder().encode(state)
-        #expect(try JSONDecoder().decode(GameState.self, from: reencoded) == state)
+        let reencoded = try ContractJSON.encode(state)
+        #expect(try ContractJSON.decode(GameState.self, from: reencoded) == state)
     }
 
     @Test("GameState.active and .over encode without a contents key")
     func gameStateNoContentsEncoding() throws {
         for (state, tag) in [(GameState.active, "IsActive"), (GameState.over, "IsOver")] {
-            let data = try JSONEncoder().encode(state)
+            let data = try ContractJSON.encode(state)
             let json = try #require(String(data: data, encoding: .utf8))
             #expect(json.contains(tag))
             #expect(!json.contains("contents"))
@@ -112,7 +112,7 @@ struct GameListTests {
     @Test("An unrecognized GameState tag decodes to .unknown, preserving its full raw object")
     func gameStateUnknownTag() throws {
         let json = #"{"tag": "IsPaused", "contents": {"reason": "maintenance"}}"#
-        let state = try JSONDecoder().decode(GameState.self, from: Data(json.utf8))
+        let state = try ContractJSON.decode(GameState.self, from: Data(json.utf8))
         #expect(
             state
                 == .unknown(
@@ -133,7 +133,7 @@ struct GameListTests {
     func neitherShapeThrows() {
         let json = #"{"unexpected": true}"#
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(GameListEntry.self, from: Data(json.utf8))
+            try ContractJSON.decode(GameListEntry.self, from: Data(json.utf8))
         }
     }
 
@@ -144,7 +144,7 @@ struct GameListTests {
          "gameState": {"tag": "IsActive"}, "name": "n", "investigators": [],
          "otherInvestigators": [], "multiplayerVariant": "Solo", "hasOpenSeats": false}
         """
-        let entry = try JSONDecoder().decode(GameListEntry.self, from: Data(json.utf8))
+        let entry = try ContractJSON.decode(GameListEntry.self, from: Data(json.utf8))
         guard case .game = entry else {
             Issue.record("Expected .game")
             return
@@ -161,7 +161,7 @@ struct GameListTests {
          "otherInvestigators": [], "multiplayerVariant": "Solo", "hasOpenSeats": false}
         """
         #expect {
-            try JSONDecoder().decode(GameListEntry.self, from: Data(json.utf8))
+            try ContractJSON.decode(GameListEntry.self, from: Data(json.utf8))
         } throws: { error in
             // The propagated error must be about the malformed `gameState`, never a
             // "missing 'error' key" error from a silent fallback to FailedGameEntry.
@@ -174,7 +174,7 @@ struct GameListTests {
         let json = """
         {"id": "00000000-0000-0000-0000-000000000099", "error": "diagnostic"}
         """
-        let entry = try JSONDecoder().decode(GameListEntry.self, from: Data(json.utf8))
+        let entry = try ContractJSON.decode(GameListEntry.self, from: Data(json.utf8))
         #expect(entry == .failed(FailedGameEntry(error: "diagnostic")))
     }
 
@@ -185,7 +185,7 @@ struct GameListTests {
         let json = """
         {"id": "01", "difficulty": "Nightmare", "currentCampaignMode": "TheFutureExpansion"}
         """
-        let summary = try JSONDecoder().decode(CampaignSummary.self, from: Data(json.utf8))
+        let summary = try ContractJSON.decode(CampaignSummary.self, from: Data(json.utf8))
         #expect(summary.difficulty == Difficulty("Nightmare"))
         #expect(summary.currentCampaignMode == CampaignMode("TheFutureExpansion"))
     }

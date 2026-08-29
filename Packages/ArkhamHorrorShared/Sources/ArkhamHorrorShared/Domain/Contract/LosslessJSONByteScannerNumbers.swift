@@ -41,15 +41,22 @@ extension LosslessJSONByteScanner {
         return consumeDigitRun()
     }
 
-    /// The optional `e`/`E[+-]digits` exponent part. Returns 0 when absent; throws if an
-    /// `e`/`E` is present with no digits following the optional sign.
-    mutating func parseExponentPart() throws -> Int {
-        guard let byte = peek(), byte == 0x65 || byte == 0x45 else { return 0 }
+    /// The optional `e`/`E[+-]digits` exponent part. Returns `.zero` when absent; throws if
+    /// an `e`/`E` is present with no digits following the optional sign.
+    ///
+    /// The digit run is parsed directly into a ``DecimalExponent`` rather than through a
+    /// fixed-width `Int`: unlike `Int(safelyDecoding:)`, which fails (or, worse, could wrap)
+    /// once the exponent's own digit count exceeds what `Int64` can hold, `DecimalExponent`
+    /// has no ceiling on how many digits it can represent, so an exponent this large
+    /// (`1e9223372036854775807` and beyond) is parsed exactly rather than rejected or
+    /// mis-parsed.
+    mutating func parseExponentPart() throws -> DecimalExponent {
+        guard let byte = peek(), byte == 0x65 || byte == 0x45 else { return .zero }
         position += 1
-        var expSign = 1
+        var expSign: DecimalExponent.Sign = .plus
         if let signByte = peek(), signByte == 0x2B || signByte == 0x2D {
             if signByte == 0x2D {
-                expSign = -1
+                expSign = .minus
             }
             position += 1
         }
@@ -57,10 +64,7 @@ extension LosslessJSONByteScanner {
             throw LosslessJSONParserError.invalidNumber
         }
         let digits = consumeDigitRun()
-        guard let magnitude = Int(safelyDecoding: digits) else {
-            throw LosslessJSONParserError.invalidNumber
-        }
-        return expSign * magnitude
+        return DecimalExponent(sign: expSign, digits: digits)
     }
 
     mutating func parseNumber() throws -> JSONNumber {
@@ -84,16 +88,20 @@ extension LosslessJSONByteScanner {
         guard let coefficient = String(safelyDecoding: digits) else {
             throw LosslessJSONParserError.invalidNumber
         }
-        let exponent = explicitExponent - fracDigits.count
-        do {
-            return try JSONNumber(
-                sign: sign,
-                coefficient: coefficient,
-                exponent: exponent,
-                rawToken: rawToken
-            )
-        } catch {
-            throw LosslessJSONParserError.invalidNumber
-        }
+        // `fracDigits.count` is always small (bounded by the literal's own length in the
+        // input), so this subtraction can never overflow `DecimalExponent`'s arithmetic
+        // regardless of how astronomically large `explicitExponent` itself already is.
+        let exponent = explicitExponent.adding(-fracDigits.count)
+        // `coefficient` was built above purely from ASCII digit bytes (`0x30...0x39`), so
+        // it already satisfies every invariant the validating initializer would check;
+        // constructing directly here avoids both redundant re-validation and, more
+        // importantly, ever routing a `rawToken` through any path that would accept one
+        // paired with caller-supplied (as opposed to scanner-derived) components.
+        return JSONNumber.parsed(
+            sign: sign,
+            coefficient: coefficient,
+            exponent: exponent,
+            rawToken: rawToken
+        )
     }
 }

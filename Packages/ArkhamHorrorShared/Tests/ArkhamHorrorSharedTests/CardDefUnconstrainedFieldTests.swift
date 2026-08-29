@@ -23,7 +23,7 @@ struct CardDefUnconstrainedFieldTests {
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
          "cardType": "AssetType", "art": "01020", "\(fieldName)": null}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         let field: OptionalField<JSONValue> = try #require(
             card.value(forUnconstrainedField: fieldName)
         )
@@ -39,7 +39,7 @@ struct CardDefUnconstrainedFieldTests {
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
          "cardType": "AssetType", "art": "01020"}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         let field: OptionalField<JSONValue> = try #require(
             card.value(forUnconstrainedField: fieldName)
         )
@@ -52,11 +52,9 @@ struct CardDefUnconstrainedFieldTests {
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
          "cardType": "AssetType", "art": "01020", "additionalCost": null}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         #expect(card.additionalCost == .null)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(card)
+        let data = try ContractJSON.encode(card)
         let reencoded = try #require(String(data: data, encoding: .utf8))
         #expect(reencoded.contains("\"additionalCost\":null"))
     }
@@ -67,11 +65,11 @@ struct CardDefUnconstrainedFieldTests {
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
          "cardType": "AssetType", "art": "01020", "criteria": {"nested": [1, 2]}}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         let expectedNested: [JSONValue] = [.number(.integer(1)), .number(.integer(2))]
         #expect(card.criteria == .value(.object(["nested": .array(expectedNested)])))
-        let data = try JSONEncoder().encode(card)
-        let redecoded = try JSONDecoder().decode(CardDef.self, from: data)
+        let data = try ContractJSON.encode(card)
+        let redecoded = try ContractJSON.decode(CardDef.self, from: data)
         #expect(redecoded.criteria == card.criteria)
     }
 
@@ -106,8 +104,8 @@ struct CardDefUnconstrainedFieldTests {
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
          "cardType": "AssetType", "art": "01020"}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
-        let data = try JSONEncoder().encode(card)
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
+        let data = try ContractJSON.encode(card)
         let reencoded = try #require(String(data: data, encoding: .utf8))
         for fieldName in CardDefUnconstrainedFieldTests.unconstrainedFieldNames {
             #expect(!reencoded.contains("\"\(fieldName)\""), "\(fieldName) should be omitted")
@@ -124,7 +122,7 @@ struct CardDefUnconstrainedFieldTests {
          "classSymbols": ["Guardian", "Guardian"]}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
@@ -136,7 +134,7 @@ struct CardDefUnconstrainedFieldTests {
          "cardTraits": ["Item", "Item"]}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
@@ -148,7 +146,7 @@ struct CardDefUnconstrainedFieldTests {
          "revealedCardTraits": ["Item", "Item"]}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
@@ -159,7 +157,7 @@ struct CardDefUnconstrainedFieldTests {
          "cardType": "AssetType", "art": "01020",
          "classSymbols": ["Seeker", "Guardian", "Mystic"]}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         #expect(card.classSymbols?.elements == [.seeker, .guardian, .mystic])
     }
 
@@ -172,25 +170,25 @@ struct CardDefUnconstrainedFieldTests {
          "cardType": "AssetType", "art": ""}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
     @Test("An empty investigatorArtwork entry is rejected")
     func emptyInvestigatorArtworkEntryRejected() {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(InvestigatorArtwork.self, from: Data(#"[""]"#.utf8))
+            try ContractJSON.decode(InvestigatorArtwork.self, from: Data(#"[""]"#.utf8))
         }
     }
 
     @Test("A nonempty investigatorArtwork list round-trips exactly")
     func investigatorArtworkRoundTrips() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             InvestigatorArtwork.self,
             from: Data(#"["01001", "01002"]"#.utf8)
         )
-        let data = try JSONEncoder().encode(decoded)
-        let redecoded = try JSONDecoder().decode(InvestigatorArtwork.self, from: data)
+        let data = try ContractJSON.encode(decoded)
+        let redecoded = try ContractJSON.decode(InvestigatorArtwork.self, from: data)
         #expect(redecoded == decoded)
         #expect(redecoded.map(\.rawValue) == ["01001", "01002"])
     }

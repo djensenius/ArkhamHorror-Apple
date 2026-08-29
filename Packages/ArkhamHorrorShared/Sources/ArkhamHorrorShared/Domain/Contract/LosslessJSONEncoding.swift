@@ -103,7 +103,7 @@ struct LosslessJSONKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
     }
 
     mutating func encode(_ value: Float, forKey key: Key) throws {
-        try set(.leaf(.number(JSONNumber(double: Double(value)))), forKey: key)
+        try set(.leaf(.number(JSONNumber(float: value))), forKey: key)
     }
 
     mutating func encode(_ value: Int, forKey key: Key) throws {

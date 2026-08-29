@@ -25,7 +25,7 @@ struct GameLifecycleTests {
                 subdirectory: "Fixtures/Contract"
             )
         )
-        return try JSONDecoder().decode(GameLifecycleFixture.self, from: Data(contentsOf: url))
+        return try ContractJSON.decode(GameLifecycleFixture.self, from: Data(contentsOf: url))
     }
 
     // MARK: - createGame: every defaultable field present with a value
@@ -38,8 +38,9 @@ struct GameLifecycleTests {
         #expect(request.deckIds[0]?.rawValue.uuidString == "00000000-0000-0000-0000-000000000017")
         #expect(request.deckIds[1] == nil)
         #expect(request.playerCount == 2)
-        #expect(request.campaignId == "01")
-        #expect(request.scenarioId == nil)
+        #expect(request.campaignOrScenario == .campaignOnly(campaignId: "01"))
+        #expect(request.campaignOrScenario.campaignId == "01")
+        #expect(request.campaignOrScenario.scenarioId == nil)
         #expect(request.difficulty == .standard)
         #expect(request.campaignName == "Contract campaign")
         #expect(request.multiplayerVariant == .withFriends)
@@ -66,8 +67,7 @@ struct GameLifecycleTests {
         let fixture = try loadFixture()
         let request = fixture.createGameDefaults
         #expect(request.deckIds.isEmpty)
-        #expect(request.campaignId == nil)
-        #expect(request.scenarioId == "01104")
+        #expect(request.campaignOrScenario == .scenarioOnly(scenarioId: "01104"))
         #expect(request.strictAsIfAt == .absent)
         #expect(request.asIfRuling == .absent)
         #expect(request.ultimatumsAndBoons == .absent)
@@ -91,9 +91,7 @@ struct GameLifecycleTests {
     @Test("Encoding createGameDefaults omits every absent defaultable key")
     func encodeOmitsAbsentKeys() throws {
         let fixture = try loadFixture()
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(fixture.createGameDefaults)
+        let data = try ContractJSON.encode(fixture.createGameDefaults)
         let json = try #require(String(data: data, encoding: .utf8))
         for key in ["strictAsIfAt", "asIfRuling", "ultimatumsAndBoons", "achievementsEnabled"] {
             #expect(!json.contains(key), "Expected '\(key)' to be omitted, got: \(json)")
@@ -103,9 +101,7 @@ struct GameLifecycleTests {
     @Test("Encoding createGameNullDefaults emits explicit null for every defaultable key")
     func encodeEmitsExplicitNulls() throws {
         let fixture = try loadFixture()
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(fixture.createGameNullDefaults)
+        let data = try ContractJSON.encode(fixture.createGameNullDefaults)
         let json = try #require(String(data: data, encoding: .utf8))
         for key in ["strictAsIfAt", "asIfRuling", "ultimatumsAndBoons", "achievementsEnabled"] {
             #expect(
@@ -118,9 +114,7 @@ struct GameLifecycleTests {
     @Test("Encoding createGame emits each defaultable key's actual value")
     func encodeEmitsValues() throws {
         let fixture = try loadFixture()
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(fixture.createGame)
+        let data = try ContractJSON.encode(fixture.createGame)
         let json = try #require(String(data: data, encoding: .utf8))
         #expect(json.contains("\"strictAsIfAt\":false"))
         #expect(json.contains("\"achievementsEnabled\":false"))
@@ -130,59 +124,62 @@ struct GameLifecycleTests {
     @Test("campaignId and scenarioId are both always written, one as null")
     func campaignAndScenarioAlwaysBothPresent() throws {
         let fixture = try loadFixture()
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(fixture.createGame)
+        let data = try ContractJSON.encode(fixture.createGame)
         let json = try #require(String(data: data, encoding: .utf8))
         #expect(json.contains("\"campaignId\":\"01\""))
         #expect(json.contains("\"scenarioId\":null"))
     }
 
-    // MARK: - campaign/scenario invariant
+    // MARK: - campaign/scenario invariant (construction time)
 
-    @Test("Encoding throws when both campaignId and scenarioId are nil")
-    func missingBothThrows() throws {
-        let request = try makeMinimalRequest(campaignId: nil, scenarioId: nil)
-        #expect(throws: CreateGameRequestError.missingCampaignOrScenario) {
-            try JSONEncoder().encode(request)
+    //
+    // `CampaignOrScenario`'s validating initializer is the single point where this
+    // invariant is enforced — both `CreateGameRequest.encode(to:)` and `init(from:)` route
+    // through an already-validated `CampaignOrScenario`, so there is no longer a way to
+    // reach an encode-time-only failure: an invalid combination is rejected the moment
+    // someone tries to construct one, whether directly or by decoding.
+
+    @Test("Constructing throws when both campaignId and scenarioId are nil")
+    func missingBothThrows() {
+        #expect(throws: CampaignOrScenario.ValidationError.missingCampaignOrScenario) {
+            try makeMinimalRequest(campaignId: nil, scenarioId: nil)
         }
     }
 
-    @Test("Encoding throws when both campaignId and scenarioId are empty strings")
-    func bothEmptyThrows() throws {
-        let request = try makeMinimalRequest(campaignId: "", scenarioId: "")
-        #expect(throws: CreateGameRequestError.missingCampaignOrScenario) {
-            try JSONEncoder().encode(request)
+    @Test("Constructing throws when both campaignId and scenarioId are empty strings")
+    func bothEmptyThrows() {
+        // Per `CampaignOrScenario.init`, the empty-`campaignId` check happens before the
+        // missing-both check, so this is `.emptyCampaignId`, not `.missingCampaignOrScenario`.
+        #expect(throws: CampaignOrScenario.ValidationError.emptyCampaignId) {
+            try makeMinimalRequest(campaignId: "", scenarioId: "")
         }
     }
 
-    @Test("Encoding throws when campaignId is non-empty but scenarioId is an empty string")
-    func nonEmptyCampaignWithEmptyScenarioThrows() throws {
-        let request = try makeMinimalRequest(campaignId: "01", scenarioId: "")
-        #expect(throws: CreateGameRequestError.emptyIdentifierProvided) {
-            try JSONEncoder().encode(request)
+    @Test("Constructing throws when campaignId is non-empty but scenarioId is an empty string")
+    func nonEmptyCampaignWithEmptyScenarioThrows() {
+        #expect(throws: CampaignOrScenario.ValidationError.emptyScenarioId) {
+            try makeMinimalRequest(campaignId: "01", scenarioId: "")
         }
     }
 
-    @Test("Encoding throws when scenarioId is non-empty but campaignId is an empty string")
-    func nonEmptyScenarioWithEmptyCampaignThrows() throws {
-        let request = try makeMinimalRequest(campaignId: "", scenarioId: "01104")
-        #expect(throws: CreateGameRequestError.emptyIdentifierProvided) {
-            try JSONEncoder().encode(request)
+    @Test("Constructing throws when scenarioId is non-empty but campaignId is an empty string")
+    func nonEmptyScenarioWithEmptyCampaignThrows() {
+        #expect(throws: CampaignOrScenario.ValidationError.emptyCampaignId) {
+            try makeMinimalRequest(campaignId: "", scenarioId: "01104")
         }
     }
 
     @Test("Encoding succeeds when only scenarioId is present")
     func onlyScenarioSucceeds() throws {
         let request = try makeMinimalRequest(campaignId: nil, scenarioId: "01104")
-        let data = try JSONEncoder().encode(request)
+        let data = try ContractJSON.encode(request)
         #expect(!data.isEmpty)
     }
 
     @Test("Encoding succeeds when both campaignId and scenarioId are present")
     func bothPresentSucceeds() throws {
         let request = try makeMinimalRequest(campaignId: "01", scenarioId: "01104")
-        let data = try JSONEncoder().encode(request)
+        let data = try ContractJSON.encode(request)
         #expect(!data.isEmpty)
     }
 
@@ -190,11 +187,10 @@ struct GameLifecycleTests {
         campaignId: String?,
         scenarioId: String?
     ) throws -> CreateGameRequest {
-        CreateGameRequest(
+        try CreateGameRequest(
             deckIds: [],
             playerCount: 1,
-            campaignId: campaignId,
-            scenarioId: scenarioId,
+            campaignOrScenario: CampaignOrScenario(campaignId: campaignId, scenarioId: scenarioId),
             difficulty: .easy,
             campaignName: "Test",
             multiplayerVariant: .solo,
@@ -245,7 +241,7 @@ struct GameLifecycleTests {
     @Test("A malformed openSeats entry (missing 'c' prefix) throws DecodingError")
     func openSeatsMalformedEntryThrows() {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(OpenSeats.self, from: Data(#"["01001"]"#.utf8))
+            try ContractJSON.decode(OpenSeats.self, from: Data(#"["01001"]"#.utf8))
         }
     }
 }

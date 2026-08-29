@@ -18,7 +18,25 @@ indirect enum JSONValue: Sendable {
 extension JSONValue: Equatable, Hashable {}
 
 extension JSONValue: Codable {
+    /// The same conservative ceiling ``LosslessJSONByteScanner``/``LosslessJSONSerializer``
+    /// enforce while parsing/serializing raw bytes, applied here via `codingPath.count` (a
+    /// reliable depth proxy: every `Encoder`/`Decoder` this module vends — and Foundation's
+    /// own — appends exactly one coding-path entry per nested container level). This closes
+    /// the gap those two byte-level guards cannot: a `JSONValue` tree that was never parsed
+    /// from text at all, but instead built up (or decoded into `JSONValue` fields)
+    /// programmatically to an excessive depth, would otherwise recurse through this very
+    /// `init(from:)`/`encode(to:)` implementation without bound.
+    private static func checkNestingDepth(_ codingPath: [any CodingKey]) -> Bool {
+        codingPath.count <= LosslessJSONByteScanner.maxNestingDepth
+    }
+
     init(from decoder: any Decoder) throws {
+        guard Self.checkNestingDepth(decoder.codingPath) else {
+            throw try DecodingError.dataCorruptedError(
+                in: decoder.singleValueContainer(),
+                debugDescription: "JSON nesting exceeds the maximum supported depth"
+            )
+        }
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
             self = .null
@@ -41,6 +59,15 @@ extension JSONValue: Codable {
     }
 
     func encode(to encoder: any Encoder) throws {
+        guard Self.checkNestingDepth(encoder.codingPath) else {
+            throw EncodingError.invalidValue(
+                self,
+                EncodingError.Context(
+                    codingPath: encoder.codingPath,
+                    debugDescription: "JSON nesting exceeds the maximum supported depth"
+                )
+            )
+        }
         var container = encoder.singleValueContainer()
         switch self {
         case .null:

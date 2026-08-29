@@ -1,13 +1,30 @@
 import Foundation
 
+/// Thrown by ``LosslessJSONSerializer`` for the one failure mode a well-formed
+/// ``JSONValue`` tree can still exhibit: excessive nesting depth. Every other error this
+/// module raises happens at parse or decode time; a `JSONValue` that already exists in
+/// memory is otherwise always serializable.
+enum LosslessJSONSerializerError: Error, Equatable, Sendable {
+    case nestingTooDeep
+}
+
 enum LosslessJSONSerializer {
-    static func serialize(_ value: JSONValue) -> Data {
+    /// Serializes `value` to canonical (sorted-object-key) JSON bytes.
+    ///
+    /// Throws ``LosslessJSONSerializerError/nestingTooDeep`` rather than recursing without
+    /// bound: `value` may not have come from ``LosslessJSONParser`` (which already enforces
+    /// the identical ``LosslessJSONByteScanner/maxNestingDepth`` limit while parsing) —
+    /// it may equally be a `JSONValue` built up programmatically or by round-tripping
+    /// through this module's `Encoder`/decoder containers, and either path must reject the
+    /// same excessive depth before this recursive writer would otherwise exhaust the call
+    /// stack.
+    static func serialize(_ value: JSONValue) throws -> Data {
         var output: [UInt8] = []
-        write(value, into: &output)
+        try write(value, into: &output, depth: 0)
         return Data(output)
     }
 
-    private static func write(_ value: JSONValue, into output: inout [UInt8]) {
+    private static func write(_ value: JSONValue, into output: inout [UInt8], depth: Int) throws {
         switch value {
         case .null:
             output.append(contentsOf: "null".utf8)
@@ -18,15 +35,17 @@ enum LosslessJSONSerializer {
         case let .string(string):
             writeString(string, into: &output)
         case let .array(elements):
+            let nextDepth = try enteredDepth(depth)
             output.append(0x5B)
             for (index, element) in elements.enumerated() {
                 if index > 0 {
                     output.append(0x2C)
                 }
-                write(element, into: &output)
+                try write(element, into: &output, depth: nextDepth)
             }
             output.append(0x5D)
         case let .object(dictionary):
+            let nextDepth = try enteredDepth(depth)
             output.append(0x7B)
             for (index, key) in dictionary.keys.sorted().enumerated() {
                 if index > 0 {
@@ -34,10 +53,21 @@ enum LosslessJSONSerializer {
                 }
                 writeString(key, into: &output)
                 output.append(0x3A)
-                write(dictionary[key] ?? .null, into: &output)
+                try write(dictionary[key] ?? .null, into: &output, depth: nextDepth)
             }
             output.append(0x7D)
         }
+    }
+
+    /// `depth + 1`, throwing once it would exceed ``LosslessJSONByteScanner/maxNestingDepth``
+    /// — the same conservative ceiling the parser enforces, so a document this module could
+    /// parse is exactly the set of documents it can also serialize (and vice versa).
+    private static func enteredDepth(_ depth: Int) throws -> Int {
+        let nextDepth = depth + 1
+        guard nextDepth <= LosslessJSONByteScanner.maxNestingDepth else {
+            throw LosslessJSONSerializerError.nestingTooDeep
+        }
+        return nextDepth
     }
 
     private static func writeString(_ string: String, into output: inout [UInt8]) {
@@ -78,6 +108,6 @@ enum ContractJSON {
     static func encode(_ value: some Encodable) throws -> Data {
         let encoder = LosslessJSONValueEncoder(codingPath: [])
         try value.encode(to: encoder)
-        return LosslessJSONSerializer.serialize(encoder.encodedValue)
+        return try LosslessJSONSerializer.serialize(encoder.encodedValue)
     }
 }

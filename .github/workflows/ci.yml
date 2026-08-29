@@ -46,6 +46,19 @@ jobs:
       - name: Run tests
         run: mise run test
 
+  contract-provenance:
+    name: Contract fixture provenance
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Install tools
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+        with:
+          cache: true
+      - name: Verify vendored fixtures against pinned backend commit
+        run: mise run contract-provenance
+
   build:
     name: Build ${{ matrix.name }}
     runs-on: macos-26

@@ -14,13 +14,13 @@ struct DeckValidationTests {
     func cardQuantityMapInputRejectsEmptyKey() {
         let json = #"{"": 1}"#
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardQuantityMapInput.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardQuantityMapInput.self, from: Data(json.utf8))
         }
     }
 
     @Test("CardQuantityMapInput accepts nonempty opaque keys without a 'c' prefix")
     func cardQuantityMapInputAcceptsOpaqueKeys() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             CardQuantityMapInput.self,
             from: Data(#"{"01016": 2, "c01018": 1}"#.utf8)
         )
@@ -31,13 +31,13 @@ struct DeckValidationTests {
     func cardQuantityMapRejectsInvalidCardCodeKey() {
         let json = #"{"01016": 2}"#
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardQuantityMap.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardQuantityMap.self, from: Data(json.utf8))
         }
     }
 
     @Test("CardQuantityMap accepts validated CardCode keys")
     func cardQuantityMapAcceptsValidKeys() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             CardQuantityMap.self,
             from: Data(#"{"c01016": 2}"#.utf8)
         )
@@ -49,21 +49,21 @@ struct DeckValidationTests {
     @Test("DeckValidationSuccess rejects a non-empty array")
     func deckValidationSuccessRejectsNonEmpty() {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(DeckValidationSuccess.self, from: Data("[1]".utf8))
+            try ContractJSON.decode(DeckValidationSuccess.self, from: Data("[1]".utf8))
         }
     }
 
     @Test("DeckValidationErrors rejects an empty array (would-be success shape)")
     func deckValidationErrorsRejectsEmptyArray() {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(DeckValidationErrors.self, from: Data("[]".utf8))
+            try ContractJSON.decode(DeckValidationErrors.self, from: Data("[]".utf8))
         }
     }
 
     @Test("DeckValidationErrors accepts a non-empty array")
     func deckValidationErrorsAcceptsNonEmpty() throws {
         let json = #"[{"tag": "UnimplementedCard", "contents": "c99999"}]"#
-        let decoded = try JSONDecoder().decode(DeckValidationErrors.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(DeckValidationErrors.self, from: Data(json.utf8))
         #expect(try decoded.elements == [.unimplementedCard(CardCode("c99999"))])
     }
 
@@ -71,14 +71,14 @@ struct DeckValidationTests {
     func deckValidationErrorRejectsMalformedKnownTag() {
         let json = #"{"tag": "UnimplementedCard", "contents": "no-prefix"}"#
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(DeckValidationError.self, from: Data(json.utf8))
+            try ContractJSON.decode(DeckValidationError.self, from: Data(json.utf8))
         }
     }
 
     @Test("DeckValidationError preserves an unrecognized tag as .unsupported with the full payload")
     func deckValidationErrorUnknownTagPreservesFullPayload() throws {
         let json = #"{"tag": "FutureError", "contents": "details", "extra": 1}"#
-        let decoded = try JSONDecoder().decode(DeckValidationError.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(DeckValidationError.self, from: Data(json.utf8))
         guard case let .unsupported(rawObject) = decoded else {
             Issue.record("Expected .unsupported, got \(decoded)")
             return
@@ -93,7 +93,7 @@ struct DeckValidationTests {
     @Test("DeckValidationError preserves an unrecognized tag's explicit-null contents")
     func deckValidationErrorUnknownTagPreservesExplicitNullContents() throws {
         let json = #"{"tag": "FutureError", "contents": null}"#
-        let decoded = try JSONDecoder().decode(DeckValidationError.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(DeckValidationError.self, from: Data(json.utf8))
         guard case let .unsupported(rawObject) = decoded else {
             Issue.record("Expected .unsupported, got \(decoded)")
             return
@@ -104,16 +104,16 @@ struct DeckValidationTests {
     @Test("DeckValidationError.unsupported can never be encoded (never resubmittable)")
     func deckValidationErrorUnsupportedCannotEncode() throws {
         let json = #"{"tag": "FutureError"}"#
-        let decoded = try JSONDecoder().decode(DeckValidationError.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(DeckValidationError.self, from: Data(json.utf8))
         #expect(throws: DeckValidationErrorError.cannotEncodeUnsupportedTag) {
-            try JSONEncoder().encode(decoded)
+            try ContractJSON.encode(decoded)
         }
     }
 
     @Test("An unrecognized tag is never conflated with .unimplementedCard")
     func deckValidationErrorUnknownTagNeverBecomesUnimplementedCard() throws {
         let json = #"{"tag": "UnimplementedCardV2", "contents": "c99999"}"#
-        let decoded = try JSONDecoder().decode(DeckValidationError.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(DeckValidationError.self, from: Data(json.utf8))
         if case .unimplementedCard = decoded {
             Issue.record("Expected .unsupported, got .unimplementedCard")
         }
@@ -129,7 +129,7 @@ struct DeckValidationTests {
          "id": null}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(DeckList.self, from: Data(json.utf8))
+            try ContractJSON.decode(DeckList.self, from: Data(json.utf8))
         }
     }
 
@@ -146,14 +146,14 @@ struct DeckValidationTests {
             id: nil,
             name: nil
         )
-        let data = try JSONEncoder().encode(deckList)
+        let data = try ContractJSON.encode(deckList)
         let object = try #require(
             try JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
         for key in ["meta", "taboo_id", "url", "id", "name"] {
             #expect(object[key] is NSNull, "Expected \(key) to be explicit null")
         }
-        let redecoded = try JSONDecoder().decode(DeckList.self, from: data)
+        let redecoded = try ContractJSON.decode(DeckList.self, from: data)
         #expect(redecoded == deckList)
     }
 }

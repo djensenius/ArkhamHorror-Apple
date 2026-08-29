@@ -15,6 +15,7 @@ enum LosslessJSONParserError: Error, Equatable, Sendable {
     case unpairedSurrogate
     case invalidNumber
     case invalidLiteral
+    case nestingTooDeep
 }
 
 /// A hand-written, RFC 8259 JSON parser producing a ``JSONValue`` tree directly from raw

@@ -23,7 +23,7 @@ struct GameLifecycleRequestEnumTests {
                 subdirectory: "Fixtures/Contract"
             )
         )
-        return try JSONDecoder().decode(
+        return try ContractJSON.decode(
             GameLifecycleRequestEnumFixture.self,
             from: Data(contentsOf: url)
         )
@@ -38,11 +38,11 @@ struct GameLifecycleRequestEnumTests {
     @Test("Decoding RequestDifficulty from an unrecognized string throws, unlike Difficulty")
     func requestDifficultyDecodeUnrecognizedThrows() {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(RequestDifficulty.self, from: Data(#""Nightmare""#.utf8))
+            try ContractJSON.decode(RequestDifficulty.self, from: Data(#""Nightmare""#.utf8))
         }
         // Contrast: the response-side, open Difficulty tolerates the same string.
         #expect(throws: Never.self) {
-            try JSONDecoder().decode(Difficulty.self, from: Data(#""Nightmare""#.utf8))
+            try ContractJSON.decode(Difficulty.self, from: Data(#""Nightmare""#.utf8))
         }
     }
 
@@ -55,7 +55,7 @@ struct GameLifecycleRequestEnumTests {
     func asIfRulingCannotRepresentFutureRuling() {
         #expect(AsIfRuling(rawValue: "Chapter3AsIfRuling") == nil)
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(AsIfRuling.self, from: Data(#""Chapter3AsIfRuling""#.utf8))
+            try ContractJSON.decode(AsIfRuling.self, from: Data(#""Chapter3AsIfRuling""#.utf8))
         }
     }
 
@@ -63,15 +63,14 @@ struct GameLifecycleRequestEnumTests {
     func ultimatumOrBoonCannotRepresentFutureBoon() {
         #expect(UltimatumOrBoon(rawValue: "BoonOfSomeNewGod") == nil)
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(UltimatumOrBoon.self, from: Data(#""BoonOfSomeNewGod""#.utf8))
+            try ContractJSON.decode(UltimatumOrBoon.self, from: Data(#""BoonOfSomeNewGod""#.utf8))
         }
     }
 
     @Test("An encoded CreateGameRequest can never contain Nightmare, Coop, or a future ruling")
     func encoderCannotEmitUnrecognizedRequestValues() throws {
         let fixture = try loadFixture()
-        let encoder = JSONEncoder()
-        let data = try encoder.encode(fixture.createGame)
+        let data = try ContractJSON.encode(fixture.createGame)
         let json = try #require(String(data: data, encoding: .utf8))
         // Not a claim that these substrings can never appear for other reasons: a proof
         // that the *closed enum's own case set* is what makes them unconstructible, not an

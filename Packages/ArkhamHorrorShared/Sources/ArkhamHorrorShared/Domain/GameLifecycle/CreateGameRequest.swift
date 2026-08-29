@@ -20,30 +20,20 @@ enum RequestMultiplayerVariant: String, Sendable, Equatable, Hashable, Codable, 
     case withFriends = "WithFriends"
 }
 
-/// The error thrown when encoding a ``CreateGameRequest`` whose `campaignId`/`scenarioId`
-/// violate the contract's invariant that each must be either absent or a non-empty string,
-/// and that at least one of the two must be present.
-enum CreateGameRequestError: Error, Equatable, Sendable {
-    /// Both `campaignId` and `scenarioId` are absent or empty; at least one must be a
-    /// non-empty string.
-    case missingCampaignOrScenario
-    /// `campaignId` or `scenarioId` was provided as an empty string. Per the contract, a
-    /// present identifier must be non-empty — use `nil` to mean "absent" instead.
-    case emptyIdentifierProvided
-}
-
 /// A request to create a new game.
 ///
 /// `strictAsIfAt`, `asIfRuling`, `ultimatumsAndBoons`, and `achievementsEnabled` are
 /// tri-state: an absent key lets the server apply its own default, while an explicit
-/// `null` opts out of that default. `campaignId`/`scenarioId` are always both written to
-/// the wire (one as `null`), and encoding enforces — immediately before either is written —
-/// that at least one is a non-empty string, matching the contract's `anyOf` invariant.
+/// `null` opts out of that default. `campaignOrScenario` always writes both `campaignId`
+/// and `scenarioId` keys to the wire (one as `null` for the `.campaignOnly`/`.scenarioOnly`
+/// cases), matching the contract's `anyOf` invariant — and, because that invariant is
+/// enforced by ``CampaignOrScenario``'s own validating initializer rather than only at
+/// encode time, decoding a `CreateGameRequest` whose wire bytes violate it fails at decode
+/// time too, not just when a caller later tries to re-encode it.
 struct CreateGameRequest: Sendable {
     let deckIds: [DeckID?]
     let playerCount: Int
-    let campaignId: String?
-    let scenarioId: String?
+    let campaignOrScenario: CampaignOrScenario
     let difficulty: RequestDifficulty
     let campaignName: String
     let multiplayerVariant: RequestMultiplayerVariant
@@ -78,8 +68,12 @@ extension CreateGameRequest: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         deckIds = try container.decode([DeckID?].self, forKey: .deckIds)
         playerCount = try container.decode(Int.self, forKey: .playerCount)
-        campaignId = try container.decodeIfPresent(String.self, forKey: .campaignId)
-        scenarioId = try container.decodeIfPresent(String.self, forKey: .scenarioId)
+        let campaignId = try container.decodeIfPresent(String.self, forKey: .campaignId)
+        let scenarioId = try container.decodeIfPresent(String.self, forKey: .scenarioId)
+        // Routes through the exact same validating initializer `encode(to:)` requires,
+        // so a wire payload violating the campaign/scenario invariant fails here — at
+        // decode time — rather than only when a caller later tries to re-encode it.
+        campaignOrScenario = try CampaignOrScenario(campaignId: campaignId, scenarioId: scenarioId)
         difficulty = try container.decode(RequestDifficulty.self, forKey: .difficulty)
         campaignName = try container.decode(String.self, forKey: .campaignName)
         multiplayerVariant = try container.decode(
@@ -101,17 +95,11 @@ extension CreateGameRequest: Codable {
     }
 
     func encode(to encoder: any Encoder) throws {
-        guard Self.isNonEmpty(campaignId) || Self.isNonEmpty(scenarioId) else {
-            throw CreateGameRequestError.missingCampaignOrScenario
-        }
-        guard Self.isAbsentOrNonEmpty(campaignId), Self.isAbsentOrNonEmpty(scenarioId) else {
-            throw CreateGameRequestError.emptyIdentifierProvided
-        }
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(deckIds, forKey: .deckIds)
         try container.encode(playerCount, forKey: .playerCount)
-        try Self.encodeNullable(campaignId, in: &container, forKey: .campaignId)
-        try Self.encodeNullable(scenarioId, in: &container, forKey: .scenarioId)
+        try Self.encodeNullable(campaignOrScenario.campaignId, in: &container, forKey: .campaignId)
+        try Self.encodeNullable(campaignOrScenario.scenarioId, in: &container, forKey: .scenarioId)
         try container.encode(difficulty, forKey: .difficulty)
         try container.encode(campaignName, forKey: .campaignName)
         try container.encode(multiplayerVariant, forKey: .multiplayerVariant)
@@ -121,18 +109,6 @@ extension CreateGameRequest: Codable {
         try asIfRuling.encode(to: &container, forKey: .asIfRuling)
         try ultimatumsAndBoons.encode(to: &container, forKey: .ultimatumsAndBoons)
         try achievementsEnabled.encode(to: &container, forKey: .achievementsEnabled)
-    }
-
-    private static func isNonEmpty(_ value: String?) -> Bool {
-        guard let value else { return false }
-        return !value.isEmpty
-    }
-
-    /// `true` for `nil` (the field is legitimately absent) or a non-empty string; `false`
-    /// only for a present-but-empty string, which is never a valid wire value.
-    private static func isAbsentOrNonEmpty(_ value: String?) -> Bool {
-        guard let value else { return true }
-        return !value.isEmpty
     }
 
     private static func encodeNullable(

@@ -25,7 +25,7 @@ struct LosslessJSONUnkeyedEncodingContainer: UnkeyedEncodingContainer {
     }
 
     mutating func encode(_ value: Float) throws {
-        try box.elements.append(.leaf(.number(JSONNumber(double: Double(value)))))
+        try box.elements.append(.leaf(.number(JSONNumber(float: value))))
     }
 
     mutating func encode(_ value: Int) throws {
@@ -132,7 +132,7 @@ struct LosslessJSONSingleValueEncodingContainer: SingleValueEncodingContainer {
     }
 
     mutating func encode(_ value: Float) throws {
-        encoder.node = try .leaf(.number(JSONNumber(double: Double(value))))
+        encoder.node = try .leaf(.number(JSONNumber(float: value)))
     }
 
     mutating func encode(_ value: Int) throws {

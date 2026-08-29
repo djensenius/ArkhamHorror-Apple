@@ -9,7 +9,7 @@ import Testing
 struct CampaignOptionTests {
     @Test("A known campaign option flag decodes to .flag, never .unknown")
     func knownFlagDecodes() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             CampaignOption.self,
             from: Data(#"{"tag": "PerformIntro"}"#.utf8)
         )
@@ -20,7 +20,7 @@ struct CampaignOptionTests {
         "A genuinely unrecognized tag decodes to .unknown, never silently treated as a known flag"
     )
     func unrecognizedTagDecodesToUnknown() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             CampaignOption.self,
             from: Data(#"{"tag": "SomeFutureFlagNotYetKnown"}"#.utf8)
         )
@@ -33,7 +33,7 @@ struct CampaignOptionTests {
 
     @Test("CampaignVariant decodes its string contents")
     func campaignVariantDecodes() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             CampaignOption.self,
             from: Data(#"{"tag": "CampaignVariant", "contents": "return-to"}"#.utf8)
         )
@@ -43,7 +43,7 @@ struct CampaignOptionTests {
     @Test("CampaignVariant with null contents throws, rather than accepting a null string")
     func campaignVariantNullContentsThrows() {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(
+            try ContractJSON.decode(
                 CampaignOption.self,
                 from: Data(#"{"tag": "CampaignVariant", "contents": null}"#.utf8)
             )
@@ -57,7 +57,7 @@ struct CampaignOptionTests {
 
     @Test("An unknown CampaignOption preserves its full raw object, including additive keys")
     func unknownOptionPreservesRawObject() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             CampaignOption.self,
             from: Data(
                 #"{"tag": "SomeFutureFlagNotYetKnown", "contents": null, "extra": 1}"#.utf8
@@ -78,12 +78,12 @@ struct CampaignOptionTests {
 
     @Test("An unknown CampaignOption can never be encoded (never resubmittable)")
     func unknownOptionCannotBeEncoded() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             CampaignOption.self,
             from: Data(#"{"tag": "SomeFutureFlagNotYetKnown"}"#.utf8)
         )
         #expect(throws: CampaignOptionError.cannotEncodeUnknownTag("SomeFutureFlagNotYetKnown")) {
-            try JSONEncoder().encode(decoded)
+            try ContractJSON.encode(decoded)
         }
     }
 }

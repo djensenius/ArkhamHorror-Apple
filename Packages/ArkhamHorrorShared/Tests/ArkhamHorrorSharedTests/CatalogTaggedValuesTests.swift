@@ -20,7 +20,7 @@ struct CatalogTaggedValuesTests {
     )
     func cardCostNullaryTagsRejectContents(json: String) {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardCost.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardCost.self, from: Data(json.utf8))
         }
     }
 
@@ -33,14 +33,14 @@ struct CatalogTaggedValuesTests {
         ]
     )
     func cardCostNullaryTagsDecode(json: String, expected: CardCost) throws {
-        let decoded = try JSONDecoder().decode(CardCost.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(CardCost.self, from: Data(json.utf8))
         #expect(decoded == expected)
     }
 
     @Test("CardCost.unknown preserves the full raw object, including explicit-null contents")
     func cardCostUnknownPreservesExplicitNull() throws {
         let json = #"{"tag": "FutureCost", "contents": null}"#
-        let decoded = try JSONDecoder().decode(CardCost.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(CardCost.self, from: Data(json.utf8))
         #expect(decoded == .unknown(
             tag: "FutureCost",
             rawObject: .object(["tag": .string("FutureCost"), "contents": .null])
@@ -50,7 +50,7 @@ struct CatalogTaggedValuesTests {
     @Test("CardCost.unknown preserves additive keys beyond tag/contents")
     func cardCostUnknownPreservesAdditiveKeys() throws {
         let json = #"{"tag": "FutureCost", "extra": "value"}"#
-        let decoded = try JSONDecoder().decode(CardCost.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(CardCost.self, from: Data(json.utf8))
         #expect(decoded == .unknown(
             tag: "FutureCost",
             rawObject: .object(["tag": .string("FutureCost"), "extra": .string("value")])
@@ -59,20 +59,20 @@ struct CatalogTaggedValuesTests {
 
     @Test("CardCost.unknown cannot be encoded (never resubmittable)")
     func cardCostUnknownCannotEncode() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             CardCost.self,
             from: Data(#"{"tag": "FutureCost"}"#.utf8)
         )
         #expect(throws: CardCostError.cannotEncodeUnknownTag("FutureCost")) {
-            try JSONEncoder().encode(decoded)
+            try ContractJSON.encode(decoded)
         }
     }
 
     @Test("A known CardCost tag round-trips through encode/decode")
     func cardCostKnownTagRoundTrips() throws {
         let cost = CardCost.staticCost(3)
-        let data = try JSONEncoder().encode(cost)
-        let redecoded = try JSONDecoder().decode(CardCost.self, from: data)
+        let data = try ContractJSON.encode(cost)
+        let redecoded = try ContractJSON.decode(CardCost.self, from: data)
         #expect(redecoded == cost)
     }
 
@@ -89,14 +89,14 @@ struct CatalogTaggedValuesTests {
     )
     func gameValueNullaryTagsRejectContents(json: String) {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(GameValue.self, from: Data(json.utf8))
+            try ContractJSON.decode(GameValue.self, from: Data(json.utf8))
         }
     }
 
     @Test("GameValue.unknown preserves the full raw object")
     func gameValueUnknownPreservesFullPayload() throws {
         let json = #"{"tag": "FutureValue", "contents": [1, 2], "extra": true}"#
-        let decoded = try JSONDecoder().decode(GameValue.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(GameValue.self, from: Data(json.utf8))
         #expect(decoded == .unknown(
             tag: "FutureValue",
             rawObject: .object([
@@ -109,12 +109,12 @@ struct CatalogTaggedValuesTests {
 
     @Test("GameValue.unknown cannot be encoded")
     func gameValueUnknownCannotEncode() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             GameValue.self,
             from: Data(#"{"tag": "FutureValue"}"#.utf8)
         )
         #expect(throws: GameValueError.cannotEncodeUnknownTag("FutureValue")) {
-            try JSONEncoder().encode(decoded)
+            try ContractJSON.encode(decoded)
         }
     }
 
@@ -130,26 +130,26 @@ struct CatalogTaggedValuesTests {
     )
     func skillIconNullaryTagsRejectContents(json: String) {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(SkillIcon.self, from: Data(json.utf8))
+            try ContractJSON.decode(SkillIcon.self, from: Data(json.utf8))
         }
     }
 
     @Test("SkillIcon.unknown preserves the full raw object")
     func skillIconUnknownPreservesFullPayload() throws {
         let json = #"{"tag": "FutureIcon"}"#
-        let decoded = try JSONDecoder().decode(SkillIcon.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(SkillIcon.self, from: Data(json.utf8))
         let expected = JSONValue.object(["tag": .string("FutureIcon")])
         #expect(decoded == .unknown(tag: "FutureIcon", rawObject: expected))
     }
 
     @Test("SkillIcon.unknown cannot be encoded")
     func skillIconUnknownCannotEncode() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             SkillIcon.self,
             from: Data(#"{"tag": "FutureIcon"}"#.utf8)
         )
         #expect(throws: SkillIconError.cannotEncodeUnknownTag("FutureIcon")) {
-            try JSONEncoder().encode(decoded)
+            try ContractJSON.encode(decoded)
         }
     }
 
@@ -165,7 +165,7 @@ struct CatalogTaggedValuesTests {
     )
     func gameStateNullaryTagsRejectContents(json: String) {
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(GameState.self, from: Data(json.utf8))
+            try ContractJSON.decode(GameState.self, from: Data(json.utf8))
         }
     }
 
@@ -173,14 +173,14 @@ struct CatalogTaggedValuesTests {
     func gameStateNullaryTagsDecode() throws {
         let activeJSON = Data(#"{"tag": "IsActive"}"#.utf8)
         let overJSON = Data(#"{"tag": "IsOver"}"#.utf8)
-        #expect(try JSONDecoder().decode(GameState.self, from: activeJSON) == .active)
-        #expect(try JSONDecoder().decode(GameState.self, from: overJSON) == .over)
+        #expect(try ContractJSON.decode(GameState.self, from: activeJSON) == .active)
+        #expect(try ContractJSON.decode(GameState.self, from: overJSON) == .over)
     }
 
     @Test("GameState.unknown preserves the full raw object")
     func gameStateUnknownPreservesFullPayload() throws {
         let json = #"{"tag": "IsPaused", "reason": "maintenance"}"#
-        let decoded = try JSONDecoder().decode(GameState.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(GameState.self, from: Data(json.utf8))
         #expect(decoded == .unknown(
             tag: "IsPaused",
             rawObject: .object(["tag": .string("IsPaused"), "reason": .string("maintenance")])
@@ -189,12 +189,12 @@ struct CatalogTaggedValuesTests {
 
     @Test("GameState.unknown cannot be encoded")
     func gameStateUnknownCannotEncode() throws {
-        let decoded = try JSONDecoder().decode(
+        let decoded = try ContractJSON.decode(
             GameState.self,
             from: Data(#"{"tag": "IsPaused"}"#.utf8)
         )
         #expect(throws: GameStateError.cannotEncodeUnknownTag("IsPaused")) {
-            try JSONEncoder().encode(decoded)
+            try ContractJSON.encode(decoded)
         }
     }
 
@@ -202,14 +202,14 @@ struct CatalogTaggedValuesTests {
     func gameStatePendingRoundTrips() throws {
         let id = "00000000-0000-0000-0000-000000000001"
         let json = #"{"tag": "IsPending", "contents": ["\#(id)"]}"#
-        let decoded = try JSONDecoder().decode(GameState.self, from: Data(json.utf8))
+        let decoded = try ContractJSON.decode(GameState.self, from: Data(json.utf8))
         guard case let .pending(players) = decoded else {
             Issue.record("Expected .pending, got \(decoded)")
             return
         }
         #expect(players.map(\.description) == [id])
-        let reencoded = try JSONEncoder().encode(decoded)
-        let redecoded = try JSONDecoder().decode(GameState.self, from: reencoded)
+        let reencoded = try ContractJSON.encode(decoded)
+        let redecoded = try ContractJSON.decode(GameState.self, from: reencoded)
         #expect(redecoded == decoded)
     }
 }

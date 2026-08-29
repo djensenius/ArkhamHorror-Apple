@@ -26,7 +26,7 @@ struct DeckTests {
                 subdirectory: "Fixtures/Contract"
             )
         )
-        return try JSONDecoder().decode(DecksFixture.self, from: Data(contentsOf: url))
+        return try ContractJSON.decode(DecksFixture.self, from: Data(contentsOf: url))
     }
 
     // MARK: - Fixture decode: representative fields
@@ -103,7 +103,7 @@ struct DeckTests {
     @Test("ExternalID decodes a string, an integer, and an explicit null")
     func externalIDVariants() throws {
         func decode(_ json: String) throws -> ExternalID {
-            try JSONDecoder().decode(ExternalID.self, from: Data(json.utf8))
+            try ContractJSON.decode(ExternalID.self, from: Data(json.utf8))
         }
         #expect(try decode(#""4242""#) == .string("4242"))
         #expect(try decode("4242") == .number(.integer(4242)))
@@ -112,7 +112,7 @@ struct DeckTests {
 
     @Test("ExternalID decodes a fractional number losslessly as .decimal")
     func externalIDDecimalVariant() throws {
-        let decoded = try JSONDecoder().decode(ExternalID.self, from: Data("4242.5".utf8))
+        let decoded = try ContractJSON.decode(ExternalID.self, from: Data("4242.5".utf8))
         #expect(try decoded == .number(.decimal(#require(Decimal(string: "4242.5")))))
     }
 
@@ -136,6 +136,10 @@ struct DeckTests {
     func externalIDLargeIntegerIsLossyThroughStockDecoder() throws {
         let literal = String(repeating: "9", count: 45)
         let json = #"{"slots": {"x": 1}, "investigator_code": "01001", "id": \#(literal)}"#
+        // Deliberately the stock `JSONDecoder`, not `ContractJSON.decode`: this test exists
+        // specifically to prove that bypassing the lossless codec really does reintroduce
+        // numeric loss, contrasting with `externalIDLargeIntegerIsLosslessThroughContractJSON`
+        // immediately above. Every other test in this file uses `ContractJSON` deliberately.
         let input = try JSONDecoder().decode(DeckListInput.self, from: Data(json.utf8))
         guard case let .number(number) = input.id else {
             Issue.record("Expected a .number ExternalID, got \(String(describing: input.id))")
@@ -150,7 +154,7 @@ struct DeckTests {
     @Test("DeckListInput.id distinguishes absent, explicit null, and a present value")
     func deckListInputIDTriState() throws {
         func decode(_ json: String) throws -> ExternalID? {
-            try JSONDecoder().decode(DeckListInput.self, from: Data(json.utf8)).id
+            try ContractJSON.decode(DeckListInput.self, from: Data(json.utf8)).id
         }
         let base = #"{"slots": {"x": 1}, "investigator_code": "01001""#
         #expect(try decode(base + "}") == nil)
@@ -164,7 +168,7 @@ struct DeckTests {
     @Test("sideSlots absent decodes to .absent")
     func sideSlotsAbsent() throws {
         let json = #"{"slots": {"x": 1}, "investigator_code": "01001"}"#
-        let input = try JSONDecoder().decode(DeckListInput.self, from: Data(json.utf8))
+        let input = try ContractJSON.decode(DeckListInput.self, from: Data(json.utf8))
         #expect(input.sideSlots == .absent)
     }
 
@@ -173,7 +177,7 @@ struct DeckTests {
         let json = """
         {"slots": {"x": 1}, "investigator_code": "01001", "sideSlots": {"c01016": 1}}
         """
-        let input = try JSONDecoder().decode(DeckListInput.self, from: Data(json.utf8))
+        let input = try ContractJSON.decode(DeckListInput.self, from: Data(json.utf8))
         #expect(input.sideSlots == .valid(CardQuantityMapInput(["c01016": 1])))
     }
 
@@ -185,7 +189,7 @@ struct DeckTests {
         let json = """
         {"slots": {"x": 1}, "investigator_code": "01001", "sideSlots": \(rawSideSlots)}
         """
-        let input = try JSONDecoder().decode(DeckListInput.self, from: Data(json.utf8))
+        let input = try ContractJSON.decode(DeckListInput.self, from: Data(json.utf8))
         guard case .malformed = input.sideSlots else {
             Issue.record(
                 "Expected .malformed for raw sideSlots \(rawSideSlots), got \(input.sideSlots)"
@@ -197,7 +201,7 @@ struct DeckTests {
     @Test("DeckListInput encode round-trips absent/valid/malformed sideSlots exactly")
     func sideSlotsEncodeRoundTrip() throws {
         func roundTrip(_ input: DeckListInput) throws -> DeckListInput {
-            try JSONDecoder().decode(DeckListInput.self, from: JSONEncoder().encode(input))
+            try ContractJSON.decode(DeckListInput.self, from: ContractJSON.encode(input))
         }
         let base = try DeckListInput(
             slots: CardQuantityMapInput(["x": 1]),

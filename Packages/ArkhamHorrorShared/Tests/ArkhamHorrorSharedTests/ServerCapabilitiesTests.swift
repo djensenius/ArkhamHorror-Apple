@@ -14,7 +14,7 @@ struct ServerCapabilitiesTests {
                 subdirectory: "Fixtures/Contract"
             )
         )
-        return try JSONDecoder().decode(ServerCapabilities.self, from: Data(contentsOf: url))
+        return try ContractJSON.decode(ServerCapabilities.self, from: Data(contentsOf: url))
     }
 
     @Test("Canonical vendored fixture decodes correctly")
@@ -64,7 +64,7 @@ struct ServerCapabilitiesTests {
             "capabilities": ["known.feature", "unknown.future.capability.xyz"]
         }
         """
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         #expect(caps.capabilities.contains("unknown.future.capability.xyz"))
         #expect(caps.capabilities.contains("known.feature"))
     }
@@ -80,7 +80,7 @@ struct ServerCapabilitiesTests {
             "capabilities": []
         }
         """
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         #expect(caps.status.rawValue == "future-status-v3-not-yet-defined")
         #expect(caps.status != .stable)
         #expect(caps.status != .baselineIncomplete)
@@ -100,7 +100,7 @@ struct ServerCapabilitiesTests {
         }
         """
         // Decoding must not fail when unknown top-level keys are present.
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 11))
     }
 
@@ -123,7 +123,7 @@ struct ServerCapabilitiesTests {
             "capabilities": []
         }
         """
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         #expect(caps.status == expected)
     }
 
@@ -140,7 +140,7 @@ struct ServerCapabilitiesTests {
             "capabilities": []
         }
         """
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         #expect(caps.capabilities.isEmpty)
     }
 
@@ -156,7 +156,7 @@ struct ServerCapabilitiesTests {
         }
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+            try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         }
     }
 
@@ -173,7 +173,7 @@ struct ServerCapabilitiesTests {
         }
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+            try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         }
     }
 
@@ -190,7 +190,7 @@ struct ServerCapabilitiesTests {
         }
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+            try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         }
     }
 }

@@ -22,7 +22,7 @@ struct CardDefTests {
                 subdirectory: "Fixtures/Contract"
             )
         )
-        return try JSONDecoder().decode(CatalogFixture.self, from: Data(contentsOf: url))
+        return try ContractJSON.decode(CatalogFixture.self, from: Data(contentsOf: url))
     }
 
     // MARK: - Fixture decode: representative fields
@@ -90,7 +90,7 @@ struct CardDefTests {
          "cardType": "AssetType", "art": "01020"}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
@@ -101,7 +101,7 @@ struct CardDefTests {
          "cardType": "AssetType"}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
@@ -112,7 +112,7 @@ struct CardDefTests {
          "cardType": "AssetType", "art": "01020", "level": "zero"}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
@@ -122,7 +122,7 @@ struct CardDefTests {
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
          "cardType": "AssetType", "art": "01020", "somethingFromTheFuture": 123}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         #expect(card.cardCode.rawValue == "c01020")
     }
 
@@ -135,7 +135,7 @@ struct CardDefTests {
          "cardType": "AssetType", "art": "01020",
          "cost": {"tag": "FutureCost", "contents": {"future": true}}}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         #expect(card.cost == .unknown(
             tag: "FutureCost",
             rawObject: .object([
@@ -152,7 +152,7 @@ struct CardDefTests {
          "cardType": "AssetType", "art": "01020",
          "health": {"tag": "FutureValue"}}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         #expect(card.health == .unknown(
             tag: "FutureValue",
             rawObject: .object(["tag": .string("FutureValue")])
@@ -166,7 +166,7 @@ struct CardDefTests {
          "cardType": "AssetType", "art": "01020",
          "skills": [{"tag": "FutureIcon"}]}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         #expect(card.skills == [.unknown(
             tag: "FutureIcon",
             rawObject: .object(["tag": .string("FutureIcon")])
@@ -181,7 +181,7 @@ struct CardDefTests {
          "health": {"tag": "StaticWithPerPlayer", "contents": [1, 2]},
          "fight": {"tag": "ByPlayerCount", "contents": [1, 2, 3, 4]}}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         #expect(card.health == .staticWithPerPlayer(1, 2))
         #expect(card.fight == .byPlayerCount(1, 2, 3, 4))
     }
@@ -199,7 +199,7 @@ struct CardDefTests {
          "cardType": "AssetType", "art": "01020", "health": \(rawGameValue)}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
@@ -210,10 +210,10 @@ struct CardDefTests {
          "cardType": "AssetType", "art": "01020",
          "bondedWith": [[2, "c01021"]]}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         #expect(try card.bondedWith == [BondedCardEntry(count: 2, cardCode: CardCode("c01021"))])
-        let reencoded = try JSONEncoder().encode(card.bondedWith)
-        let redecoded = try JSONDecoder().decode([BondedCardEntry].self, from: reencoded)
+        let reencoded = try ContractJSON.encode(card.bondedWith)
+        let redecoded = try ContractJSON.decode([BondedCardEntry].self, from: reencoded)
         #expect(redecoded == card.bondedWith)
     }
 
@@ -225,7 +225,7 @@ struct CardDefTests {
          "bondedWith": [[2, "c01021", "unexpected"]]}
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
@@ -233,8 +233,8 @@ struct CardDefTests {
     func encodeDecodeRoundTrip() throws {
         let fixture = try loadFixture()
         let machete = try #require(fixture.cards.first)
-        let data = try JSONEncoder().encode(machete)
-        let redecoded = try JSONDecoder().decode(CardDef.self, from: data)
+        let data = try ContractJSON.encode(machete)
+        let redecoded = try ContractJSON.decode(CardDef.self, from: data)
         #expect(redecoded == machete)
     }
 
@@ -268,7 +268,7 @@ struct CardDefTests {
          "cardType": "AssetType", "art": "01020", "\(fieldName)": null}
         """
         #expect(throws: (any Error).self, "Expected \(fieldName): null to be rejected") {
-            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+            try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         }
     }
 
@@ -283,7 +283,7 @@ struct CardDefTests {
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
          "cardType": "AssetType", "art": "01020"}
         """
-        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        let card = try ContractJSON.decode(CardDef.self, from: Data(json.utf8))
         #expect(card.cardCode.rawValue == "c01020", "\(fieldName) baseline decode should succeed")
     }
 }
