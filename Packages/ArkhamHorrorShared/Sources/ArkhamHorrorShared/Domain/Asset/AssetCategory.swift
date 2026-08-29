@@ -2,7 +2,7 @@
 ///
 /// Mirrors `tokenImageNames` in `frontend/src/arkham/types/ChaosToken.ts`
 /// exactly: each case maps to `chaos-tokens/ct-<name>.png`.
-enum ChaosTokenFace: String, CaseIterable, Sendable, Equatable, Hashable {
+enum ChaosTokenArtFace: String, CaseIterable, Sendable, Equatable, Hashable {
     case plusOne = "plus1"
     case zero = "0"
     case minusOne = "minus1"
@@ -85,7 +85,7 @@ enum AssetCategory: Sendable, Equatable, Hashable {
     /// `portraits/<identifier>.jpg`.
     case portrait(AssetIdentifier)
     /// `chaos-tokens/ct-<face>.png`.
-    case chaosToken(ChaosTokenFace)
+    case chaosToken(ChaosTokenArtFace)
     /// `homebrew/<campaign>/chaos-tokens/<key>.png`.
     case homebrewChaosToken(campaign: AssetIdentifier, key: AssetIdentifier)
     /// `sets/<identifier>.png`, or `sets/<identifier>-<variant>.png` when a
