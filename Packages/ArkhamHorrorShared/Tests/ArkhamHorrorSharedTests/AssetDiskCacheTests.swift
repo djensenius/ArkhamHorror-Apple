@@ -7,7 +7,7 @@ struct AssetDiskCacheTests {
     /// A fresh scratch directory per test, nested under this package's own
     /// build output (never `/tmp`), removed unconditionally when the test
     /// finishes.
-    private func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
+    func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("DiskCacheScratch", isDirectory: true)
@@ -17,14 +17,14 @@ struct AssetDiskCacheTests {
         try await body(root)
     }
 
-    private func key(_ rawCardCode: String) throws -> AssetCacheKey {
+    func key(_ rawCardCode: String) throws -> AssetCacheKey {
         let identifier = try AssetIdentifier.cardCode(rawCardCode)
         let assetKey = AssetKey(category: .card(.art, identifier))
         let candidates = AssetLocator.candidates(for: assetKey, digest: FakeDigestLookup())
         return AssetCacheKey(for: assetKey, candidates: candidates)
     }
 
-    private func metadata(
+    func metadata(
         for cacheKey: AssetCacheKey,
         payload: Data,
         at date: Date = Date()
@@ -44,7 +44,7 @@ struct AssetDiskCacheTests {
         )
     }
 
-    private func smallLimits(diskBudgetBytes: Int = 1_000_000) -> AssetCacheLimits {
+    func smallLimits(diskBudgetBytes: Int = 1_000_000) -> AssetCacheLimits {
         AssetCacheLimits(
             maxEncodedBytes: 1_000_000,
             maxDimension: 8192,
@@ -202,190 +202,5 @@ struct AssetDiskCacheTests {
             _ = try await cache.get(key("01001"))
             #expect(!FileManager.default.fileExists(atPath: tempURL.path))
         }
-    }
-}
-
-extension AssetDiskCacheTests {
-    // MARK: - Atomic failure injection
-
-    @Test(
-        "If the metadata write fails after the payload write succeeds, no orphaned payload remains"
-    )
-    func metadataWriteFailureLeavesNoOrphanPayload() async throws {
-        try await withScratchDirectory { directory in
-            let failingFileManager = FailingFileManager()
-            failingFileManager.failPathSuffixes = [".meta.json"]
-            let cache = try AssetDiskCache(
-                directory: directory,
-                limits: smallLimits(),
-                fileManager: failingFileManager
-            )
-            let cacheKey = try key("01001")
-            let payload = Data([1, 2, 3])
-
-            await #expect(throws: AssetError.self) {
-                try await cache.set(
-                    cacheKey,
-                    payload: payload,
-                    metadata: self.metadata(for: cacheKey, payload: payload)
-                )
-            }
-
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
-            #expect(
-                !FileManager.default.fileExists(atPath: payloadURL.path),
-                "A half-written entry (payload with no valid metadata) must not be left on disk"
-            )
-        }
-    }
-
-    @Test(
-        "A restart (fresh actor over the same directory) still serves a previously stored entry"
-    )
-    func restartPersistsEntries() async throws {
-        try await withScratchDirectory { directory in
-            let cacheKey = try key("01001")
-            let payload = Data([7, 7, 7, 7])
-            do {
-                let firstInstance = try AssetDiskCache(directory: directory, limits: smallLimits())
-                try await firstInstance.set(
-                    cacheKey,
-                    payload: payload,
-                    metadata: metadata(for: cacheKey, payload: payload)
-                )
-            }
-            let secondInstance = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let fetched = await secondInstance.get(cacheKey)
-            #expect(fetched?.payload == payload)
-        }
-    }
-
-    // MARK: - Quota eviction
-
-    @Test(
-        "Inserting past the high water mark evicts the LRU entry down to the low mark"
-    )
-    func evictsLeastRecentlyAccessedEntryAtQuota() async throws {
-        try await withScratchDirectory { directory in
-            // Each entry accounts for its 1000-byte payload plus the real
-            // on-disk size of its metadata sidecar (a few hundred bytes,
-            // for this schema and these short URLs), which the assertions
-            // below only depend on being large enough to be non-negligible
-            // relative to the payload — the exact eviction/survival
-            // outcome does not depend on its precise value. Budget/ratios
-            // mirror `AssetMemoryCacheTests`' exact-watermark scenario.
-            let limits = AssetCacheLimits(
-                maxEncodedBytes: 1_000_000,
-                maxDimension: 8192,
-                maxPixelCount: 32_000_000,
-                memoryBudgetBytes: 4000,
-                diskBudgetBytes: 4000,
-                highWaterMarkRatio: 0.95,
-                lowWaterMarkRatio: 0.76
-            )
-            let cache = try AssetDiskCache(directory: directory, limits: limits)
-            let keyA = try key("01001")
-            let keyB = try key("01002")
-            let keyC = try key("01003")
-            let payloadA = Data(count: 1000)
-            let payloadB = Data(count: 1000)
-            let payloadC = Data(count: 1000)
-
-            try await cache.set(
-                keyA,
-                payload: payloadA,
-                metadata: metadata(for: keyA, payload: payloadA, at: Date().addingTimeInterval(-10))
-            )
-            try await cache.set(
-                keyB,
-                payload: payloadB,
-                metadata: metadata(for: keyB, payload: payloadB, at: Date().addingTimeInterval(-5))
-            )
-            // Re-access A so it is more-recently-used than B at the moment C is inserted.
-            _ = await cache.get(keyA)
-            try await cache.set(
-                keyC,
-                payload: payloadC,
-                metadata: metadata(for: keyC, payload: payloadC)
-            )
-
-            let entryA = await cache.get(keyA)
-            let entryB = await cache.get(keyB)
-            let entryC = await cache.get(keyC)
-            #expect(entryB == nil, "B was least-recently-used and should have been evicted")
-            #expect(entryA != nil, "A was re-accessed before C's insertion and must survive")
-            #expect(entryC != nil, "C was just inserted and must survive eviction")
-        }
-    }
-
-    @Test(
-        "totalAccountedBytes reflects exactly payload plus the metadata sidecar's real disk size"
-    )
-    func totalAccountedBytesIsExact() async throws {
-        try await withScratchDirectory { directory in
-            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let cacheKey = try key("01001")
-            let payload = Data(count: 250)
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload)
-            )
-            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
-            let metadataBytes = try #require(
-                try FileManager.default.attributesOfItem(atPath: metadataURL.path)[.size] as? Int
-            )
-            let total = await cache.totalAccountedBytes()
-            #expect(total == 250 + metadataBytes)
-            // A guard against this test becoming vacuous if some future
-            // change made the metadata sidecar implausibly tiny: the fixed
-            // estimate this used to compare against remains a reasonable
-            // lower bound on real serialized metadata size.
-            #expect(metadataBytes > 100)
-        }
-    }
-
-    @Test("Removing a key deletes both its payload and metadata files")
-    func removeDeletesBothFiles() async throws {
-        try await withScratchDirectory { directory in
-            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let cacheKey = try key("01001")
-            let payload = Data([1, 2, 3])
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload)
-            )
-
-            await cache.remove(cacheKey)
-            let fetched = await cache.get(cacheKey)
-            #expect(fetched == nil)
-            let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            #expect(contents.isEmpty)
-        }
-    }
-}
-
-/// A `FileManager` subclass that injects a deterministic failure into the
-/// final rename step (`moveItem`) for paths whose name ends in any of
-/// `failPathSuffixes`, leaving every other filesystem operation (including
-/// the *payload's* own atomic write) untouched.
-///
-/// This exercises ``AssetDiskCache``'s atomic-write failure-recovery path
-/// with a real, precisely-targeted filesystem failure, rather than a
-/// fragile permissions/filesystem-layout trick that risks failing (or
-/// succeeding) for reasons unrelated to the code path under test.
-private final class FailingFileManager: FileManager, @unchecked Sendable {
-    var failPathSuffixes: Set<String> = []
-
-    private func shouldFail(_ url: URL) -> Bool {
-        failPathSuffixes.contains { url.path.hasSuffix($0) }
-    }
-
-    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
-        if shouldFail(dstURL) {
-            throw NSError(domain: "FailingFileManagerTest", code: 1)
-        }
-        try super.moveItem(at: srcURL, to: dstURL)
     }
 }

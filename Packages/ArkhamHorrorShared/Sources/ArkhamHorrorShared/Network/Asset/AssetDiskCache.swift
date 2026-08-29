@@ -162,12 +162,17 @@ actor AssetDiskCache {
     /// payload.
     private func recoverOrphansIfNeeded() {
         guard !didRecoverOrphans else { return }
-        didRecoverOrphans = true
+        // Only mark recovery as done once the directory listing actually
+        // succeeds. If `contentsOfDirectory` fails (e.g. a transient I/O
+        // error), `didRecoverOrphans` must stay `false` so the very next
+        // `set` retries orphan/tmp cleanup instead of it being silently,
+        // permanently disabled for the lifetime of this cache instance.
         guard let contents = try? fileManager.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil
         )
         else { return }
+        didRecoverOrphans = true
 
         var payloadHashes: Set<String> = []
         var metadataHashes: Set<String> = []

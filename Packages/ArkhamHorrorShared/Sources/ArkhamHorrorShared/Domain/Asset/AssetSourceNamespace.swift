@@ -78,8 +78,19 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
         return components
     }
 
-    /// The non-empty, lowercased host, still carrying IPv6 brackets if
-    /// present (e.g. `"[::1]"`), as `URLComponents.host` produces them.
+    /// The non-empty, lowercased host, exactly as `URLComponents.host`
+    /// returns it. Apple's public documentation for `URLComponents.host`
+    /// describes IPv6 literals as unbracketed, but the actual Foundation
+    /// behavior on this project's supported platforms/OS versions returns
+    /// them still bracketed (e.g. `"[::1]"`) — verified directly by
+    /// ``AssetSourceNamespaceTests``'s IPv6-loopback cases, which fail if
+    /// that ever changes. `bareHost(_:)` below strips a bracket pair only
+    /// for the ``loopbackHosts`` comparison, and is a safe no-op if the
+    /// host were ever unbracketed instead; separately, if `.host` were
+    /// ever unbracketed, assigning it straight back into
+    /// `URLComponents.host` fails to build a URL at all (`.url` is `nil`),
+    /// so this class fails safe — surfacing ``AssetError/invalidAssetBase``
+    /// — rather than silently mis-canonicalizing such a host.
     private static func validatedLowercasedHost(_ components: URLComponents) throws -> String {
         guard let host = components.host, !host.isEmpty else {
             throw AssetError.invalidAssetBase
@@ -100,12 +111,14 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
         case "https":
             return scheme
         case "http":
-            // `URLComponents.host` returns an IPv6 literal with its
-            // brackets still attached, which the bracket-free
+            // On this project's supported Foundation (see the doc comment
+            // on `validatedLowercasedHost(_:)`), an IPv6 literal keeps its
+            // brackets in `lowercasedHost`, which the bracket-free
             // ``loopbackHosts`` set would never match; strip a single
             // surrounding bracket pair, if present, only for this
-            // comparison (the bracketed form is still what gets used to
-            // build the canonical origin URL).
+            // comparison (the bracketed form, whatever `.host` actually
+            // produced, is still what gets used to build the canonical
+            // origin URL).
             guard loopbackHosts.contains(bareHost(lowercasedHost)) else {
                 throw AssetError.invalidAssetBase
             }

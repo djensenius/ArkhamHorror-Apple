@@ -25,6 +25,15 @@ actor AssetCacheService {
     private let limits: AssetCacheLimits
     private var inFlight: [AssetCacheKey: InFlightFetch] = [:]
 
+    /// The most recent disk-cache persistence failure from ``publish``, if
+    /// any, retained so a best-effort (non-fatal) disk write failure is
+    /// still auditable rather than silently swallowed — a resolved asset
+    /// remains usable in-memory for the current process even when the
+    /// on-disk cache could not be written (e.g. an unwritable or full
+    /// cache directory), so this is deliberately not thrown back to the
+    /// caller that just successfully resolved the asset.
+    private(set) var lastDiskPersistenceFailure: AssetError?
+
     init(
         memoryCache: AssetMemoryCache,
         diskCache: AssetDiskCache,
@@ -291,9 +300,23 @@ actor AssetCacheService {
         throw AssetError.candidatesExhausted
     }
 
+    /// Publishes a resolved asset into both cache layers. The disk write
+    /// is deliberately best-effort (an in-memory-only asset is still
+    /// usable for the remainder of the process), but that decision is
+    /// centralized here in an explicit `do`/`catch` — rather than a bare
+    /// `try?` — so a persistence failure is captured in
+    /// ``lastDiskPersistenceFailure`` for auditing/instrumentation instead
+    /// of vanishing silently.
     private func publish(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
         await memoryCache.set(cacheKey, asset: asset)
-        try? await diskCache.set(cacheKey, payload: asset.payload, metadata: asset.metadata)
+        do {
+            try await diskCache.set(cacheKey, payload: asset.payload, metadata: asset.metadata)
+            lastDiskPersistenceFailure = nil
+        } catch let error as AssetError {
+            lastDiskPersistenceFailure = error
+        } catch {
+            lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
+        }
     }
 
     private static func sha256Hex(_ data: Data) -> String {

@@ -10,13 +10,30 @@ import Testing
 /// is split by concern across sibling files.
 @Suite("AssetCacheService")
 struct AssetCacheServiceTests {
-    /// A fresh scratch directory per test for the disk cache layer, nested
-    /// under this package's own build output (never `/tmp`), removed
-    /// unconditionally when the test finishes.
+    /// A fresh scratch directory per test, nested under this package's own
+    /// build output (never `/tmp`), removed unconditionally when the test
+    /// finishes.
     ///
     /// Not `private`: shared with the `extension AssetCacheServiceTests`
     /// test groups split across sibling files in this directory (see
-    /// ``AssetCacheServiceRevalidationTests``).
+    /// ``AssetCacheServiceRevalidationTests`` and
+    /// ``AssetCacheServicePersistenceTests``, the latter of which builds
+    /// its own `AssetDiskCache` directly over this directory with an
+    /// injected `FileManager` subclass, rather than routing it through
+    /// `withService` below — passing a non-`Sendable` `FileManager`
+    /// subclass through an intervening closure parameter defeats the
+    /// compiler's region-based "sending to an actor initializer" analysis
+    /// even though the direct call site itself is provably safe).
+    func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("CacheServiceScratch", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try await body(root)
+    }
+
     func withService(
         transport: FakeAssetTransport = FakeAssetTransport(),
         digest: any LocalizedDigestLookup = FakeDigestLookup(),
@@ -29,23 +46,18 @@ struct AssetCacheServiceTests {
         ),
         _ body: (AssetCacheService, FakeAssetTransport) async throws -> Void
     ) async throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("CacheServiceScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let memoryCache = AssetMemoryCache(limits: limits)
-        let diskCache = try AssetDiskCache(directory: root, limits: limits)
-        let service = AssetCacheService(
-            memoryCache: memoryCache,
-            diskCache: diskCache,
-            transport: transport,
-            digest: digest,
-            limits: limits
-        )
-        try await body(service, transport)
+        try await withScratchDirectory { root in
+            let memoryCache = AssetMemoryCache(limits: limits)
+            let diskCache = try AssetDiskCache(directory: root, limits: limits)
+            let service = AssetCacheService(
+                memoryCache: memoryCache,
+                diskCache: diskCache,
+                transport: transport,
+                digest: digest,
+                limits: limits
+            )
+            try await body(service, transport)
+        }
     }
 
     func cardArtKey(_ rawCardCode: String = "01001") throws -> AssetKey {
