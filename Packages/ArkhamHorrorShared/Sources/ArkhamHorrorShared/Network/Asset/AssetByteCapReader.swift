@@ -26,6 +26,12 @@ enum AssetByteCapReader {
         var data = Data()
         var buffer = [UInt8]()
         buffer.reserveCapacity(chunkSize)
+        // Incremented by exactly one per yielded byte (rather than
+        // recomputed as `data.count + buffer.count` on every single byte)
+        // so the incremental cap check stays O(1) per byte instead of
+        // re-deriving the same running total from two other counters on
+        // every iteration; it always equals `data.count + buffer.count`.
+        var runningTotal = 0
 
         for try await byte in bytes {
             buffer.append(byte)
@@ -33,7 +39,8 @@ enum AssetByteCapReader {
             // boundary), overflow-safely, so a small configured cap is
             // enforced the instant it is exceeded rather than allowing up
             // to an extra `chunkSize` bytes to buffer first.
-            let (runningTotal, overflowed) = data.count.addingReportingOverflow(buffer.count)
+            let (incremented, overflowed) = runningTotal.addingReportingOverflow(1)
+            runningTotal = incremented
             if overflowed || runningTotal > limits.maxEncodedBytes {
                 throw AssetError.responseTooLarge
             }

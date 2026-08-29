@@ -153,23 +153,25 @@ actor AssetDiskCache {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
         }
         let newPayloadURL = payloadURL(for: key, contentHash: metadata.payloadSHA256Hex)
-        // Content-addressed payloads are immutable: if a file with this
-        // exact hash is already on disk (e.g. a revalidation whose fresh
-        // body happens to be byte-identical to what is already cached, or
-        // a currently-referenced generation this call is about to
-        // re-publish unchanged), its bytes are already correct and
-        // rewriting them would only add a redundant, still-safe write —
-        // skipping it is a pure optimization, not a correctness
-        // requirement. Recorded so a subsequent metadata-commit failure
-        // only rolls back a payload file this call itself just created,
-        // never one a still-valid previous generation may depend on.
-        let didCreatePayload = !fileManager.fileExists(atPath: newPayloadURL.path)
-        if didCreatePayload {
-            do {
-                try atomicWrite(payload, to: newPayloadURL)
-            } catch {
-                throw AssetError.cachePersistenceFailed(String(describing: error))
-            }
+        // Content-addressed payloads are immutable *by contract*, but a
+        // pre-existing file at this exact name is not automatically
+        // trustworthy just because its name matches: it could have been
+        // corrupted on disk, or (in principle) tampered with, while still
+        // keeping the filename this call is about to publish under. So
+        // the write always happens — `atomicWrite` already replaces an
+        // existing file safely — re-asserting the known-good bytes rather
+        // than silently trusting whatever is already there. Only whether
+        // the file existed *before* this call is recorded, and purely to
+        // decide whether a later metadata-commit failure may roll it
+        // back: a payload this call did not originally create might still
+        // be the one a surviving, untouched prior metadata sidecar
+        // depends on, so it must never be deleted on rollback even though
+        // its bytes were just (re)written.
+        let payloadAlreadyExisted = fileManager.fileExists(atPath: newPayloadURL.path)
+        do {
+            try atomicWrite(payload, to: newPayloadURL)
+        } catch {
+            throw AssetError.cachePersistenceFailed(String(describing: error))
         }
         // The metadata sidecar is the single atomic "pointer" for this
         // key. If this write fails, any previous metadata — still
@@ -185,7 +187,7 @@ actor AssetDiskCache {
         do {
             try persistMetadata(metadata, to: metadataURL(for: key))
         } catch {
-            if didCreatePayload {
+            if !payloadAlreadyExisted {
                 try? fileManager.removeItem(at: newPayloadURL)
             }
             throw AssetError.cachePersistenceFailed(String(describing: error))

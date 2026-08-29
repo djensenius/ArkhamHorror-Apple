@@ -87,6 +87,47 @@ struct AssetDiskCacheTests {
         }
     }
 
+    @Test(
+        """
+        set(_:payload:metadata:) always (re)writes the content-addressed payload \
+        file, even when a file with the exact same content-hash name already \
+        exists on disk: a matching filename alone is not proof the existing bytes \
+        are still intact, so a pre-existing (possibly corrupted/tampered) file at \
+        that path must never be trusted and left as-is — it is always overwritten \
+        with the caller's known-good bytes
+        """
+    )
+    func setOverwritesAPreExistingFileAtTheSameContentAddressedNameRatherThanTrustingIt(
+    ) async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            let payload = Data([1, 2, 3, 4, 5])
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: payload
+            )
+
+            // Simulate a payload file that already exists at the exact name
+            // `set` is about to publish under, but whose bytes are corrupted
+            // (e.g. a prior crash, or on-disk tampering) rather than the
+            // genuine payload — this must never happen for a correctly
+            // computed content hash, but the write path must not assume that.
+            try Data([9, 9, 9]).write(to: payloadURL)
+
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: metadata(for: cacheKey, payload: payload)
+            )
+
+            #expect(try Data(contentsOf: payloadURL) == payload)
+            let fetched = await cache.get(cacheKey)
+            #expect(fetched?.payload == payload)
+        }
+    }
+
     @Test("A missing key returns nil, without creating any file")
     func missingKeyReturnsNilAndCreatesNoFiles() async throws {
         try await withScratchDirectory { directory in
