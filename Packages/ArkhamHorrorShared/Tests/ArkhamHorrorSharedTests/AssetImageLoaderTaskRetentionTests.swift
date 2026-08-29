@@ -40,8 +40,9 @@ extension AssetImageLoaderTests {
             // Poll briefly: the task itself clears `loadTask` from within
             // its own body immediately after publishing `.success`, which
             // is observably a moment after `waitForSettledState` sees the
-            // new `state`.
-            let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
+            // new `state`. Generous, for the same CI-contention reasons as
+            // `waitForSettledState`'s own default.
+            let deadline = DispatchTime.now().uptimeNanoseconds + 5_000_000_000
             while loader.loadTask != nil, DispatchTime.now().uptimeNanoseconds < deadline {
                 try? await Task.sleep(nanoseconds: 1_000_000)
             }

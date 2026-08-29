@@ -71,10 +71,22 @@ actor FakeAssetTransport: AssetTransport {
     /// symptom instead of reporting the real cause (a fetch that never
     /// started, or started fewer times than expected) at the point it
     /// actually happened.
+    ///
+    /// The default is deliberately generous (not a tight bound tied to any
+    /// expected latency): under a heavily parallel CI run sharing a single
+    /// process with this package's full test suite (which also spawns real
+    /// subprocesses with their own multi-second deadlines, e.g.
+    /// `SubprocessDeadlineGuardMechanicsTests`), Swift Testing's own task
+    /// scheduling can legitimately delay when a *cooperative* actor hop
+    /// like this fake transport's `fetch` first runs, even though nothing
+    /// is actually hung. A caller that genuinely never starts the expected
+    /// fetch still fails this precondition — just after tolerating
+    /// ordinary scheduling contention rather than a fixed, tight deadline
+    /// that mistakes CI load for a production bug.
     func waitForCallCount(
         _ count: Int,
         for url: URL,
-        timeoutNanoseconds: UInt64 = 2_000_000_000
+        timeoutNanoseconds: UInt64 = 10_000_000_000
     ) async {
         let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
         while startedCounts[url, default: 0] < count {

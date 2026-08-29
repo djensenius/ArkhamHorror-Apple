@@ -48,9 +48,16 @@ struct AssetImageLoaderTests {
     /// Polls (test-only) until `loader.state` stops being `.loading`, since
     /// the loader mutates state asynchronously on `@MainActor` after its
     /// cache-service suspension.
+    ///
+    /// The default is deliberately generous for the same reason
+    /// `FakeAssetTransport.waitForCallCount`'s is: under a heavily parallel
+    /// CI run sharing this package's full (contract + asset) test suite in
+    /// one process, ordinary scheduling contention can legitimately delay
+    /// when this polled `@MainActor` state mutation is observed, even
+    /// though nothing is actually hung.
     func waitForSettledState(
         _ loader: AssetImageLoader,
-        timeoutNanoseconds: UInt64 = 2_000_000_000
+        timeoutNanoseconds: UInt64 = 10_000_000_000
     ) async {
         let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
         while case .loading = loader.state, DispatchTime.now().uptimeNanoseconds < deadline {
