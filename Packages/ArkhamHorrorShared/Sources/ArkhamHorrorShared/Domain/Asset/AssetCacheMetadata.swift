@@ -39,10 +39,12 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// making same-second ties routine rather than rare), and a wall-clock
     /// step backward (e.g. an NTP correction) can misorder LRU eviction
     /// relative to the true access order. A plain actor-issued integer
-    /// sequence cannot regress and, encoded as an exact JSON integer
-    /// (never a `Double`), round-trips exactly for the entire `Int` range
-    /// this platform supports — including values far beyond 2^53, unlike
-    /// a numeric encoding that lost precision at that boundary.
+    /// sequence cannot regress and, encoded as a fixed-width decimal
+    /// string (never a JSON number, whose `Double`-based round-trip loses
+    /// precision beyond 2^53), round-trips exactly for the entire `Int`
+    /// range this platform supports. See
+    /// ``AssetAccessSequence``'s own doc comment for why the encoding is
+    /// fixed-width.
     var accessSequence: AssetAccessSequence
 
     static let currentSchemaVersion = 2

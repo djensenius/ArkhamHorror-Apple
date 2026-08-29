@@ -118,7 +118,7 @@ extension AssetCacheService {
         // ``revalidateDiskHit(_:key:cacheKey:candidates:)``): without
         // this, a persisted wrong-format, oversized, undecodable, or
         // stale-limits body could be silently "touched" (its
-        // `lastAccessedAt` refreshed) or re-cached in memory the moment
+        // `accessSequence` refreshed) or re-cached in memory the moment
         // the server happens to answer with 304, never re-validated
         // against this process's current contract at all.
         guard let validated = try await revalidateDiskHit(

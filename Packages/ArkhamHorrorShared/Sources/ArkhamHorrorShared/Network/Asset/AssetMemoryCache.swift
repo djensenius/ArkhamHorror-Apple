@@ -32,11 +32,11 @@ struct CachedAsset: Sendable, Equatable {
     /// JSON encode a one-time cost per entry rather than paying it again on
     /// every subsequent `set`/`get`/eviction accounting walk over every
     /// already-cached entry. `metadata`'s
-    /// `lastAccessedAt` still mutates on every read (see `get(_:)` below),
-    /// but that does not invalidate this cached value: `JSONEncoder`'s
-    /// `.iso8601` date strategy always encodes to the same string width
-    /// regardless of the specific instant, so the entry's true serialized
-    /// size never actually changes after construction.
+    /// `accessSequence` still mutates on every read (see `get(_:)` below),
+    /// but that does not invalidate this cached value: ``AssetAccessSequence``
+    /// always encodes to the same fixed-width string regardless of the
+    /// specific value, so the entry's true serialized size never actually
+    /// changes after construction.
     let accountedByteCount: Int
 
     init(payload: Data, metadata: AssetCacheMetadata) {
@@ -49,7 +49,7 @@ struct CachedAsset: Sendable, Equatable {
 /// An actor-isolated, in-memory LRU cache bounded by
 /// ``AssetCacheLimits/memoryBudgetBytes``.
 ///
-/// Explicit ``AssetCacheMetadata/lastAccessedAt`` (updated on every read)
+/// Explicit ``AssetCacheMetadata/accessSequence`` (updated on every read)
 /// drives eviction order — never insertion order alone and never anything
 /// derived from the filesystem. Eviction order is derived directly from
 /// this field only when a quota breach actually requires evicting (an
