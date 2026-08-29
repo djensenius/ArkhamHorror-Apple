@@ -114,10 +114,15 @@ enum SubprocessDeadlineGuard {
         }
     }
 
-    /// Returns `arguments` with its `--filter` value replaced by `victimFilter`, or with a
-    /// new trailing `--filter victimFilter` appended if `arguments` has none (or an
-    /// unpaired trailing `--filter` with no following value).
-    private static func replacingFilterArgument(
+    /// Returns `arguments` with its `--filter` value replaced by `victimFilter`. If
+    /// `arguments` has no `--filter` at all, a new trailing `--filter victimFilter` pair is
+    /// appended. If `arguments` ends in an unpaired trailing `--filter` (no following
+    /// value), only the missing value is appended -- pairing it with that existing flag --
+    /// rather than appending a *second* `--filter` flag, which would otherwise corrupt the
+    /// invocation into `... --filter --filter victimFilter` (a dangling, unpaired flag
+    /// immediately followed by another flag+value, which a filter-argument parser could
+    /// easily misinterpret).
+    static func replacingFilterArgument(
         in arguments: [String],
         with victimFilter: String
     ) -> [String] {
@@ -126,7 +131,7 @@ enum SubprocessDeadlineGuard {
         }
         let valueIndex = filterFlagIndex + 1
         guard arguments.indices.contains(valueIndex) else {
-            return arguments + ["--filter", victimFilter]
+            return arguments + [victimFilter]
         }
         var replaced = arguments
         replaced[valueIndex] = victimFilter
