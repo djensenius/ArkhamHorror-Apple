@@ -71,6 +71,7 @@ struct AccountShellView: View {
 
                     if let failure = model.operationFailure {
                         ArkhamFailureText(message: failure.message)
+                            .accessibilityIdentifier(AccountAccessibilityID.operationFailureText)
                     }
 
                     PendingCleanupRetryBanner(model: model, profileID: profile.id)
