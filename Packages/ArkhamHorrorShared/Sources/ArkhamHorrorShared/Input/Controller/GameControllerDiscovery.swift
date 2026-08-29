@@ -7,13 +7,15 @@
     /// visionOS all ship GameController); the `canImport` guard exists purely
     /// as defence-in-depth against a future target that does not.
     ///
-    /// GameController delivers connect/disconnect notifications and button
-    /// handlers on `GCController.current`'s `handlerQueue`, which defaults to
-    /// the main queue; this type never reassigns it, so every callback below
-    /// is expected to already be main-actor-isolated in practice. Rather than
-    /// asserting that with ``MainActor.assumeIsolated`` (which would trap if
-    /// that assumption is ever violated, e.g. by a future refactor changing
-    /// `handlerQueue`), every callback explicitly hops to the main actor via
+    /// GameController delivers connect/disconnect notifications via
+    /// `NotificationCenter` (this adapter explicitly requests `queue: .main`
+    /// for both observers below), and button-press handlers via each
+    /// `GCController`'s own `handlerQueue`, which defaults to the main queue;
+    /// this type never reassigns it, so every callback below is expected to
+    /// already be main-actor-isolated in practice. Rather than asserting that
+    /// with ``MainActor.assumeIsolated`` (which would trap if that assumption
+    /// is ever violated, e.g. by a future refactor changing `handlerQueue`),
+    /// every callback explicitly hops to the main actor via
     /// `Task { @MainActor in ... }`, which is safe regardless of the calling
     /// context and keeps actor isolation sound under Swift 6.
     @MainActor

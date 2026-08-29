@@ -12,10 +12,11 @@ import Observation
 /// alive by a controller it no longer tracks.
 ///
 /// Stale-event suppression: a button event is only ever dispatched while its
-/// source's ``ControllerID`` is still present in ``connectedControllers`` —
-/// checked at dispatch time, not merely at handler-install time — so an event
-/// that was already in flight the instant a disconnect is processed can never
-/// reach ``dispatch``.
+/// source's ``ControllerID`` is still present as a key in the internal
+/// `sources` dictionary — checked at dispatch time (in
+/// ``handleButtonEvent(from:control:phase:table:)``), not merely at
+/// handler-install time — so an event that was already in flight the
+/// instant a disconnect is processed can never reach ``dispatch``.
 @MainActor
 @Observable
 final class ControllerInputCenter {
