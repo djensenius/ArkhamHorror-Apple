@@ -47,6 +47,44 @@ extension AssetDiskCacheTests {
 
     @Test(
         """
+        A failed initial temp-file write during atomicWrite removes the leftover .tmp file \
+        immediately, even when that write already left a partially-written stub behind
+        """
+    )
+    func failedTempFileWriteCleansUpTempFileImmediately() async throws {
+        try await withScratchDirectory { directory in
+            let failingFileManager = FailingFileManager()
+            failingFileManager.failPathSuffixes = [".bin"]
+            let cache = try AssetDiskCache(
+                directory: directory,
+                limits: smallLimits(),
+                fileManager: failingFileManager
+            )
+            let cacheKey = try key("01001")
+            let payload = Data([1, 2, 3])
+
+            await #expect(throws: AssetError.self) {
+                try await cache.set(
+                    cacheKey,
+                    payload: payload,
+                    metadata: self.metadata(for: cacheKey, payload: payload)
+                )
+            }
+
+            let tempURL = payloadFileURL(directory: directory, cacheKey: cacheKey, payload: payload)
+                .appendingPathExtension("tmp")
+            #expect(
+                !FileManager.default.fileExists(atPath: tempURL.path),
+                """
+                A stub left behind by a failed initial write must be removed as soon as that \
+                write fails, not left for a future restart's orphan sweep
+                """
+            )
+        }
+    }
+
+    @Test(
+        """
         A failed rename during atomicWrite removes the leftover .tmp file immediately, \
         rather than leaving it for a future process restart's one-time orphan sweep
         """

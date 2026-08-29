@@ -27,10 +27,10 @@ final class AtomicCallCounter: @unchecked Sendable {
     }
 }
 
-/// A `FileManager` subclass that injects a deterministic failure into the
-/// final rename step (`moveItem`) for paths whose name ends in any of
-/// `failPathSuffixes`, leaving every other filesystem operation (including
-/// the *payload's* own atomic write) untouched.
+/// A `FileManager` subclass that injects a deterministic failure into
+/// either the initial temp-file write (`createFile`) or the final rename
+/// step (`moveItem`) for paths whose name ends in any of
+/// `failPathSuffixes`, leaving every other filesystem operation untouched.
 ///
 /// This exercises ``AssetDiskCache``'s atomic-write failure-recovery path
 /// with a real, precisely-targeted filesystem failure, rather than a
@@ -72,6 +72,30 @@ final class FailingFileManager: FileManager, @unchecked Sendable {
             throw NSError(domain: "FailingFileManagerTest", code: 1)
         }
         try super.moveItem(at: srcURL, to: dstURL)
+    }
+
+    /// `path` here is always a `.tmp`-suffixed temp file (see
+    /// `AssetDiskCache.atomicWrite`), so `failPathSuffixes`/
+    /// `failPathPrefixes` are matched against the *stripped* final name
+    /// (without the trailing `.tmp`) to line up with how they already
+    /// target `moveItem`'s `dstURL` above.
+    override func createFile(
+        atPath path: String,
+        contents data: Data?,
+        attributes attr: [FileAttributeKey: Any]? = nil
+    ) -> Bool {
+        let url = URL(fileURLWithPath: path)
+        let strippedURL = url.pathExtension == "tmp" ? url.deletingPathExtension() : url
+        if shouldFail(strippedURL) {
+            // A real out-of-space/I/O failure partway through a write can
+            // still leave a partially-written file behind before it
+            // throws; writing a stub here before returning false
+            // reproduces exactly that shape, so a test can assert the
+            // caller's cleanup removes it.
+            _ = try? Data([0xFF]).write(to: url)
+            return false
+        }
+        return super.createFile(atPath: path, contents: data, attributes: attr)
     }
 
     override func contentsOfDirectory(

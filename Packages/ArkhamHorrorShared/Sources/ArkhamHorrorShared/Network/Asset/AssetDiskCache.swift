@@ -298,18 +298,29 @@ actor AssetDiskCache {
     private func atomicWrite(_ data: Data, to finalURL: URL) throws {
         let tempURL = finalURL.appendingPathExtension("tmp")
         try? fileManager.removeItem(at: tempURL)
-        try data.write(to: tempURL, options: [])
         do {
+            // Routed through `fileManager` (rather than `data.write(to:)`
+            // directly) so an injected/real failure of the initial
+            // temp-file write itself — not just the subsequent
+            // rename/replace step — is exercised by the same cleanup path
+            // below, and so tests can target this exact step the same way
+            // they already target `moveItem`/`replaceItemAt`.
+            guard fileManager.createFile(atPath: tempURL.path, contents: data) else {
+                throw NSError(domain: "AssetDiskCache", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "Failed to write temp file at \(tempURL.path)",
+                ])
+            }
             if fileManager.fileExists(atPath: finalURL.path) {
                 _ = try fileManager.replaceItemAt(finalURL, withItemAt: tempURL)
             } else {
                 try fileManager.moveItem(at: tempURL, to: finalURL)
             }
         } catch {
-            // The rename/replace step is the only one that can fail after
-            // the temp file already exists on disk. Without this cleanup,
-            // a failure here would leave `tempURL` behind for the rest of
-            // this cache instance's lifetime: `recoverOrphansIfNeeded()`
+            // Either the initial temp-file write (e.g. out-of-space or I/O
+            // error) or the rename/replace step can fail after `tempURL`
+            // already (partially or fully) exists on disk. Without this
+            // cleanup, a failure here would leave `tempURL` behind for the
+            // rest of this cache instance's lifetime: `recoverOrphansIfNeeded()`
             // only sweeps `.tmp` files once, on its very first call, so a
             // temp file created by a *later* failed write would otherwise
             // never be removed until the process restarts.
