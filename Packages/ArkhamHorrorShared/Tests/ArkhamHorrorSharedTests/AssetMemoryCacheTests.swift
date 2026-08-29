@@ -103,33 +103,41 @@ struct AssetMemoryCacheTests {
 
     @Test("Eviction removes the least-recently-accessed entries first, down to the low water mark")
     func evictsLeastRecentlyAccessedFirst() async throws {
-        // Budget of 4000 bytes, high water 95% = 3800, low water 76% = 3040.
-        // Each entry accounts for 1000 + 512 = 1512 bytes. Budget/ratios are
-        // chosen so that two entries fit under the high water mark (no
-        // premature eviction), but a third entry pushes total usage over
-        // it, triggering eviction of exactly the least-recently-used entry
-        // down to (at or below) the low water mark.
+        // Each entry's exact accounted-byte cost is derived from the real
+        // metadata this test constructs (payload count plus the actual
+        // serialized-JSON size of its own metadata sidecar), never a fixed
+        // assumption about what that JSON happens to serialize to on this
+        // toolchain/Foundation version. The budget and water-mark ratios
+        // are then chosen as fractions of that one real per-entry cost, so
+        // the "2 entries fit, 3 don't; evicting exactly 1 restores
+        // headroom" scenario below holds for any positive per-entry cost.
+        let entryPayload = Data(count: 1000)
+        let entryMetadata = metadata(cacheKeyHex: "a", encodedByteCount: 1000)
+        let entryAccountedBytes = CachedAsset(
+            payload: entryPayload,
+            metadata: entryMetadata
+        ).accountedByteCount
+        let memoryBudgetBytes = entryAccountedBytes * 4
         let limits = AssetCacheLimits(
             maxEncodedBytes: 1_000_000,
             maxDimension: 8192,
             maxPixelCount: 32_000_000,
-            memoryBudgetBytes: 4000,
-            diskBudgetBytes: 4000,
-            highWaterMarkRatio: 0.95, // 3800: 2 entries (3024) fit; 3 (4536) don't.
-            lowWaterMarkRatio: 0.76 // 3040: stops after evicting exactly one entry (leaves 3024).
+            memoryBudgetBytes: memoryBudgetBytes,
+            diskBudgetBytes: memoryBudgetBytes,
+            // 0.7 * 4 = 2.8 entries: 2 fit under the high water mark, 3 do
+            // not, for any positive entryAccountedBytes.
+            highWaterMarkRatio: 0.7,
+            // 0.6 * 4 = 2.4 entries: strictly above the 2 entries left
+            // once eviction removes exactly the least-recently-used one,
+            // so eviction stops there rather than removing a second entry.
+            lowWaterMarkRatio: 0.6
         )
         let cache = AssetMemoryCache(limits: limits)
         let keyA = try key("01001")
         let keyB = try key("01002")
         let keyC = try key("01003")
 
-        await cache.set(
-            keyA,
-            asset: CachedAsset(
-                payload: Data(count: 1000),
-                metadata: metadata(cacheKeyHex: "a", encodedByteCount: 1000)
-            )
-        )
+        await cache.set(keyA, asset: CachedAsset(payload: entryPayload, metadata: entryMetadata))
         await cache.set(
             keyB,
             asset: CachedAsset(

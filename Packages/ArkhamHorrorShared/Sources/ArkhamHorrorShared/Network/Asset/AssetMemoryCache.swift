@@ -15,7 +15,11 @@ struct CachedAsset: Sendable, Equatable {
     /// *every* `set(_:asset:)` call via `evictIfNeeded()`, not only when a
     /// quota breach is actually near — would make every insert O(n) in the
     /// number of already-cached entries, with one JSON encode per entry.
-    /// Caching it here keeps `set`/`get` O(1) per call. `metadata`'s
+    /// Caching it here avoids re-encoding `metadata` to JSON on every
+    /// ``AssetMemoryCache`` accounting pass — i.e. it keeps that one JSON
+    /// encode a one-time cost per entry rather than paying it again on
+    /// every subsequent `set`/`get`/eviction accounting walk over every
+    /// already-cached entry. `metadata`'s
     /// `lastAccessedAt` still mutates on every read (see `get(_:)` below),
     /// but that does not invalidate this cached value: `JSONEncoder`'s
     /// `.iso8601` date strategy always encodes to the same string width
@@ -68,8 +72,10 @@ actor AssetMemoryCache {
         entries.removeAll()
     }
 
-    /// Current total accounted bytes (payload + metadata overhead) across
-    /// every entry.
+    /// Current total accounted bytes across every entry: each entry's
+    /// payload byte count plus its metadata sidecar's actual serialized
+    /// JSON size (see ``CachedAsset/accountedByteCount``) — not a fixed
+    /// metadata-overhead estimate.
     var totalAccountedBytes: Int {
         entries.values.reduce(0) { $0 + $1.accountedByteCount }
     }
