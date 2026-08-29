@@ -42,9 +42,16 @@ public struct SemanticInputHarnessView: View {
             }
         }
         .padding()
+        // While the modal is presented, the content behind it must be
+        // neither interactive nor visible to assistive technologies: without
+        // this, a pointer/touch could still reach through to the board grid
+        // underneath, and VoiceOver's swipe navigation could still land on
+        // it, even though it is visually covered.
+        .disabled(model.coordinator.isModalPresented)
+        .accessibilityHidden(model.coordinator.isModalPresented)
         .overlay {
             if model.coordinator.isModalPresented {
-                menuOverlay
+                modalOverlay
             }
         }
         .semanticKeyboardInput { model.handle($0) }
@@ -108,7 +115,31 @@ public struct SemanticInputHarnessView: View {
         .focused($focusedID, equals: id)
     }
 
-    private var menuOverlay: some View {
+    /// Fills the entire host, so the modal claims every point of the
+    /// surface it's presented over — not merely the menu card's own bounds —
+    /// preventing any pointer/touch from reaching through to whatever is
+    /// underneath. `.contentShape(Rectangle())` makes that full-size
+    /// transparent region itself hit-testable (a `Color.clear` background
+    /// alone is not, by default); the empty `onTapGesture` absorbs a tap
+    /// outside the card without dismissing the modal, which remains this
+    /// harness's ``SemanticActionControl``-routed "Close" button's job, not
+    /// an implicit tap-outside-to-dismiss gesture. `accessibilityElement(
+    /// children: .contain)` groups the whole modal as one VoiceOver
+    /// container, complementing the sibling content's own
+    /// ``accessibilityHidden(_:)`` above so assistive technologies cannot
+    /// navigate into what's now covered.
+    private var modalOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .contentShape(Rectangle())
+                .onTapGesture {}
+            menuCard
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var menuCard: some View {
         VStack(spacing: 16) {
             Text("Menu")
             SemanticActionControl(
