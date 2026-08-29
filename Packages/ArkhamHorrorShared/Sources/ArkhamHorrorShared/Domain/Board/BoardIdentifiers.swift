@@ -78,8 +78,19 @@ extension CardCode: CodingKeyRepresentable {
         AnyCodingKey(stringValue: rawValue)
     }
 
+    /// Explicit `do`/`catch` (rather than a bare `try? self.init(...)` statement):
+    /// verified safe either way — `try?` around a delegating `self.init` call already
+    /// makes this initializer return `nil` on failure rather than leaving `self` partially
+    /// initialized (see `BoardIdentifiersTests.cardCodeCodingKeyRepresentableRejects
+    /// InvalidKeyWithoutTrapping`) — but spelling out the `nil` return explicitly leaves no
+    /// ambiguity for a reader (or another reviewer) about what happens on failure, and
+    /// matches ``Identifier``/``CardCodeIdentifier``'s own `guard`-based conformances above.
     init?(codingKey: some CodingKey) {
-        try? self.init(codingKey.stringValue)
+        do {
+            try self.init(codingKey.stringValue)
+        } catch {
+            return nil
+        }
     }
 }
 

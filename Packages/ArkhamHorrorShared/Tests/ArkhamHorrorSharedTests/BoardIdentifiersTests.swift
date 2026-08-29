@@ -31,6 +31,17 @@ struct BoardIdentifiersTests {
         #expect(investigatorID.rawValue == actID.rawValue)
     }
 
+    @Test("CardCode's CodingKeyRepresentable.init?(codingKey:) returns nil, never traps, on invalid input") // swiftlint:disable:this line_length
+    func cardCodeCodingKeyRepresentableRejectsInvalidKeyWithoutTrapping() {
+        // Exercises the `try? self.init(...)` delegating-initializer pattern in
+        // `CardCode`'s `CodingKeyRepresentable` conformance directly (not merely through
+        // `Decodable`, which uses a different code path): confirms a malformed key
+        // safely produces `nil` rather than a partially-initialized value or a trap.
+        #expect(CardCode(codingKey: AnyCodingKey(stringValue: "not-c-prefixed")) == nil)
+        let valid = CardCode(codingKey: AnyCodingKey(stringValue: "c01001"))
+        #expect(valid?.rawValue == "c01001")
+    }
+
     @Test("[InvestigatorID: Int] round-trips through ContractJSON as a JSON object")
     func cardCodeKeyedDictionaryRoundTrips() throws {
         let original: [InvestigatorID: Int] = try [InvestigatorID(CardCode("c01001")): 3]
