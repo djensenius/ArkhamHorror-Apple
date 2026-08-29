@@ -209,12 +209,30 @@ extension CompatibilityRejection {
 extension SessionUnavailableReason {
     var message: String {
         switch self {
-        case .probeFailed:
-            "This server could not be reached. Check your connection and try again."
+        case let .probeFailed(reason):
+            reason.message
         case .tokenValidationFailed(.authentication):
             "Your saved session with this server could not be verified. Try again."
         case .tokenValidationFailed(.tokenStore):
             "Your saved session for this server could not be securely accessed. Try again."
+        }
+    }
+}
+
+extension CapabilityProbeError {
+    /// A non-secret, user-facing explanation distinguishing an unreachable server
+    /// (no response, transport failure) from one that *was* reached but returned an
+    /// unexpected or invalid response, since those call for different next steps
+    /// (check your connection vs. the server may be temporarily unavailable or
+    /// misconfigured). Never surfaces the raw diagnostic string carried by
+    /// ``malformedPayload(_:)``/``transportFailure(_:)``.
+    var message: String {
+        switch self {
+        case .transportFailure, .nonHTTPResponse:
+            "This server could not be reached. Check your connection and try again."
+        case .unexpectedStatus, .malformedPayload:
+            "This server responded unexpectedly. It may be temporarily unavailable " +
+                "or misconfigured. Try again."
         }
     }
 }
