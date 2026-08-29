@@ -73,11 +73,13 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// undermining the "bounded memory" guarantee.
     ///
     /// ``AssetDiskCache`` independently measures its own on-disk JSON
-    /// sidecar file's real byte count for the same reason (its measurement
-    /// uses a separate, differently-configured `JSONEncoder` instance
-    /// private to that file, since the two accounting paths measure
-    /// genuinely distinct things — an in-memory estimate here vs. an
-    /// actual written file there — and this type must not depend on
+    /// sidecar file's real byte count for the same reason (its
+    /// ``AssetDiskCache/Entry/metadataBytes`` is the exact `Data.count` of
+    /// the sidecar bytes already read back from disk while decoding
+    /// `metadata` — not a re-encode through any `JSONEncoder` at all —
+    /// since the two accounting paths measure genuinely distinct things:
+    /// an in-memory estimate of what *would* be written here, vs. what was
+    /// *actually* written there, and this type must not depend on
     /// ``AssetDiskCache``'s internals).
     var metadataOverheadBytes: Int {
         let measuredMetadataBytes = (try? Self.makeEncoderForAccounting().encode(self))?.count
@@ -91,9 +93,12 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// crashing or silently letting an entry bill zero metadata bytes.
     static let estimatedMetadataOverheadBytes = 512
 
-    /// A dedicated encoder configuration (not shared with
-    /// ``AssetDiskCache``'s own file-private encoder) used only to measure
-    /// this value's serialized byte count for in-memory quota accounting.
+    /// A dedicated encoder configuration used only to measure this value's
+    /// serialized byte count for in-memory quota accounting — `metadata`
+    /// is never actually persisted through this encoder; that is
+    /// ``AssetDiskCache``'s own responsibility, and its accounting instead
+    /// measures the exact bytes it already wrote/read on disk (see
+    /// ``metadataOverheadBytes`` above for the distinction).
     ///
     /// Returns a fresh instance per call, rather than a shared singleton,
     /// since `JSONEncoder` is not documented as thread-safe for concurrent

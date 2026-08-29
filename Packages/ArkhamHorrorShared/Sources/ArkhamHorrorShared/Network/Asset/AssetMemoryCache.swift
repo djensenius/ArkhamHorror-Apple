@@ -60,6 +60,18 @@ actor AssetMemoryCache {
     private var entries: [AssetCacheKey: CachedAsset] = [:]
     private let limits: AssetCacheLimits
 
+    /// Current total accounted bytes across every entry, maintained
+    /// incrementally on every ``set(_:asset:)``/``remove(_:)``/
+    /// ``removeAll()`` rather than re-summed from every entry on each
+    /// call: recomputing this from scratch on every `set` (which used to
+    /// happen via `evictIfNeeded()`) made every insert O(n) in the number
+    /// of already-cached entries, even when nowhere near the configured
+    /// budget. Each entry's own ``CachedAsset/accountedByteCount`` is
+    /// itself already a one-time-computed value (see that property's doc
+    /// comment), so this running total is exact by construction, not an
+    /// approximation.
+    private(set) var totalAccountedBytes = 0
+
     init(limits: AssetCacheLimits) {
         self.limits = limits
     }
@@ -72,36 +84,33 @@ actor AssetMemoryCache {
     }
 
     func set(_ key: AssetCacheKey, asset: CachedAsset) {
-        entries[key] = asset
+        if let previous = entries.updateValue(asset, forKey: key) {
+            totalAccountedBytes -= previous.accountedByteCount
+        }
+        totalAccountedBytes += asset.accountedByteCount
         evictIfNeeded()
     }
 
     func remove(_ key: AssetCacheKey) {
-        entries.removeValue(forKey: key)
+        if let removed = entries.removeValue(forKey: key) {
+            totalAccountedBytes -= removed.accountedByteCount
+        }
     }
 
     func removeAll() {
         entries.removeAll()
-    }
-
-    /// Current total accounted bytes across every entry: each entry's
-    /// payload byte count plus its metadata sidecar's actual serialized
-    /// JSON size (see ``CachedAsset/accountedByteCount``) — not a fixed
-    /// metadata-overhead estimate.
-    var totalAccountedBytes: Int {
-        entries.values.reduce(0) { $0 + $1.accountedByteCount }
+        totalAccountedBytes = 0
     }
 
     private func evictIfNeeded() {
-        var total = totalAccountedBytes
-        guard total > limits.highWaterMarkMemoryBytes else { return }
+        guard totalAccountedBytes > limits.highWaterMarkMemoryBytes else { return }
         let oldestFirst = entries.sorted {
             $0.value.metadata.lastAccessedAt < $1.value.metadata.lastAccessedAt
         }
         for (key, asset) in oldestFirst {
-            guard total > limits.lowWaterMarkMemoryBytes else { break }
+            guard totalAccountedBytes > limits.lowWaterMarkMemoryBytes else { break }
             entries.removeValue(forKey: key)
-            total -= asset.accountedByteCount
+            totalAccountedBytes -= asset.accountedByteCount
         }
     }
 }

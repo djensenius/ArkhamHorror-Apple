@@ -207,4 +207,60 @@ struct AssetMemoryCacheTests {
         #expect(asset.accountedByteCount == expected)
         #expect(asset.accountedByteCount != mismatchedMetadata.encodedByteCount)
     }
+
+    @Test(
+        """
+        totalAccountedBytes is maintained incrementally rather than \
+        re-summed from every entry: replacing an existing key's entry via \
+        set(_:asset:) subtracts the superseded entry's own accountedByteCount \
+        exactly once, never double-counting or leaking the old entry's bytes
+        """
+    )
+    func settingAnExistingKeyReplacesItsAccountedBytesExactlyOnce() async throws {
+        let cache = AssetMemoryCache(limits: AssetCacheLimits(
+            maxEncodedBytes: 1024,
+            maxDimension: 8192,
+            maxPixelCount: 32_000_000,
+            memoryBudgetBytes: 1_000_000,
+            diskBudgetBytes: 1_000_000
+        ))
+        let cacheKey = try key("01001")
+        let firstAsset = CachedAsset(
+            payload: Data(count: 10),
+            metadata: metadata(cacheKeyHex: "a", encodedByteCount: 10)
+        )
+        await cache.set(cacheKey, asset: firstAsset)
+        let totalAfterFirst = await cache.totalAccountedBytes
+        #expect(totalAfterFirst == firstAsset.accountedByteCount)
+
+        let replacementAsset = CachedAsset(
+            payload: Data(count: 3),
+            metadata: metadata(cacheKeyHex: "a", encodedByteCount: 3)
+        )
+        await cache.set(cacheKey, asset: replacementAsset)
+        let totalAfterReplacement = await cache.totalAccountedBytes
+        #expect(totalAfterReplacement == replacementAsset.accountedByteCount)
+    }
+
+    @Test("Removing a key that was never present leaves totalAccountedBytes unchanged")
+    func removingAnAbsentKeyDoesNotDisturbTheRunningTotal() async throws {
+        let cache = AssetMemoryCache(limits: AssetCacheLimits(
+            maxEncodedBytes: 1024,
+            maxDimension: 8192,
+            maxPixelCount: 32_000_000,
+            memoryBudgetBytes: 1_000_000,
+            diskBudgetBytes: 1_000_000
+        ))
+        let presentKey = try key("01001")
+        let asset = CachedAsset(
+            payload: Data(count: 4),
+            metadata: metadata(cacheKeyHex: "a", encodedByteCount: 4)
+        )
+        await cache.set(presentKey, asset: asset)
+
+        let absentKey = try key("01002")
+        await cache.remove(absentKey)
+        let total = await cache.totalAccountedBytes
+        #expect(total == asset.accountedByteCount)
+    }
 }
