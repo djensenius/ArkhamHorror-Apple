@@ -32,9 +32,15 @@ extension JSONValue: Codable {
 
     init(from decoder: any Decoder) throws {
         guard Self.checkNestingDepth(decoder.codingPath) else {
-            throw try DecodingError.dataCorruptedError(
-                in: decoder.singleValueContainer(),
-                debugDescription: "JSON nesting exceeds the maximum supported depth"
+            // `decoder.codingPath` is already available without obtaining (and thus
+            // without needing to `try`) a container, so this reports the same coding
+            // path `dataCorruptedError(in:debugDescription:)` would have derived from
+            // one, without a redundant `try` on a call that cannot itself throw.
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "JSON nesting exceeds the maximum supported depth"
+                )
             )
         }
         let container = try decoder.singleValueContainer()
