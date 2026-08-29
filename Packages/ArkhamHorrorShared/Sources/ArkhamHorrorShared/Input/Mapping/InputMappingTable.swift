@@ -5,15 +5,24 @@ import Foundation
 ///
 /// Reserved controls (``PhysicalInput/isReserved``) are never stored here —
 /// they are handled directly as system back/menu/escape by
-/// ``SemanticInputRouter`` — so both a lookup and a rebind attempt against one
-/// are always rejected rather than silently accepted. Because storage is a
-/// dictionary keyed by the physical control, one physical input can be bound
-/// to at most one command at a time by construction; several different
-/// physical inputs may still be bound to the same command (for example both
-/// a keyboard key and a controller button bound to `.inspect`).
+/// ``SemanticInputRouter``. A lookup against one always returns `nil` (see
+/// ``command(for:)``), and a post-construction ``rebind(_:to:)`` attempt is
+/// always rejected explicitly via ``RebindResult/rejectedReserved``. Because
+/// storage is a dictionary keyed by the physical control, one physical input
+/// can be bound to at most one command at a time by construction; several
+/// different physical inputs may still be bound to the same command (for
+/// example both a keyboard key and a controller button bound to `.inspect`).
 public struct InputMappingTable: Sendable, Equatable {
     public private(set) var bindings: [PhysicalInput: SemanticCommand]
 
+    /// Any reserved binding in `bindings` is silently dropped, not stored —
+    /// unlike ``rebind(_:to:)``'s explicit, observable
+    /// ``RebindResult/rejectedReserved``, this initializer has no result to
+    /// report a rejection through, since every call site so far constructs a
+    /// table from a static, hand-written literal (see
+    /// ``defaultKeyboard``/``defaultGamepad``/``defaultSiriRemote``) where
+    /// a reserved key would be a caller bug, not the mistake of an end user
+    /// this API should surface.
     public init(bindings: [PhysicalInput: SemanticCommand] = [:]) {
         self.bindings = bindings.filter { !$0.key.isReserved }
     }
