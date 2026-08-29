@@ -116,7 +116,9 @@ extension AssetCacheServiceTests {
             // modification date is meaningfully exercised below.
             await memoryCache.remove(cacheKey)
 
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let payloadURL = directory.appendingPathComponent(
+                "\(cacheKey.digestHex).\(AssetPayloadHasher.sha256Hex(initial.payload)).bin"
+            )
             let beforeAttributes = try FileManager.default
                 .attributesOfItem(atPath: payloadURL.path)
             let beforeModificationDate = try #require(

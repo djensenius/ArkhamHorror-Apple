@@ -42,4 +42,23 @@ struct AssetCandidateTests {
         let expected = "https://assets.arkhamhorror.app:443/img/arkham/cards/01001.avif"
         #expect(url.absoluteString == expected)
     }
+
+    @Test(
+        """
+        The constructed request URL always begins with the namespace's own origin and \
+        base path as a literal prefix: candidate construction can never standardize or \
+        otherwise resolve outside the configured base, because every segment folded in \
+        (the base path's own segments, and every ``AssetIdentifier``-derived candidate \
+        segment) is guaranteed by its own grammar to never be a `..` or `.` dot-segment
+        """
+    )
+    func requestURLNeverEscapesConfiguredBase() throws {
+        let assetBase = try #require(URL(string: "https://example.com/cdn/assets"))
+        let base = try AssetSourceNamespace(assetBase: assetBase)
+        let url = try candidate().url(base: base)
+        let expectedPrefix = base.canonicalOrigin.absoluteString + base.basePath
+        #expect(url.absoluteString.hasPrefix(expectedPrefix))
+        #expect(!url.path.contains("/../"))
+        #expect(!url.path.hasSuffix("/.."))
+    }
 }

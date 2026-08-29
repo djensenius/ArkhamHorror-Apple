@@ -40,6 +40,28 @@ struct AssetSourceNamespaceTests {
 
     @Test(
         """
+        The exact hostile inputs named in review — a percent-escaped-digit IPv4 \
+        loopback host, an empty explicit port, and an escaped dot-segment in the base \
+        path — are all rejected, while a canonical 127.0.0.0/8 dotted-quad still \
+        succeeds through the same raw entry point
+        """
+    )
+    func namedReviewHostileInputsRejectedWhileCanonicalLoopbackSucceeds() throws {
+        #expect(throws: AssetError.invalidAssetBase) {
+            try AssetSourceNamespace(rawAssetBase: "http://%31%32%37.0.0.1")
+        }
+        #expect(throws: AssetError.invalidAssetBase) {
+            try AssetSourceNamespace(rawAssetBase: "http://localhost:")
+        }
+        #expect(throws: AssetError.invalidAssetBase) {
+            try AssetSourceNamespace(rawAssetBase: "https://example.com/tenant/%2e%2e/admin")
+        }
+        let canonical = try AssetSourceNamespace(rawAssetBase: "http://127.1.1.1")
+        #expect(canonical.canonicalOrigin.host == "127.1.1.1")
+    }
+
+    @Test(
+        """
         Smuggled/lookalike loopback authorities are rejected against the raw literal \
         text, before Foundation's own percent-decoding or normalization can turn \
         them into something that only resolves to an accepted loopback form

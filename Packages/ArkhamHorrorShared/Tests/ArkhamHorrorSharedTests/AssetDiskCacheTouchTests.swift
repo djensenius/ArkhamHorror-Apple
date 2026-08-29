@@ -22,7 +22,11 @@ extension AssetDiskCacheTests {
                 metadata: metadata(for: cacheKey, payload: payload)
             )
 
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: payload
+            )
             let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
             let beforeAttributes = try FileManager.default
                 .attributesOfItem(atPath: payloadURL.path)

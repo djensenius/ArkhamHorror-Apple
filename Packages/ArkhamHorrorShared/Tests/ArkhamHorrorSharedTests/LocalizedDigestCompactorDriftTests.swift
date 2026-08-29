@@ -35,7 +35,7 @@ struct LocalizedDigestCompactorDriftTests {
         let compacted = LocalizedDigestCompactor.compactCardIdentifiers(fromRawEntries: rawEntries)
 
         let shipped = try #require(
-            BundledLocalizedDigestProvider().orderedIdentifiers(for: locale)
+            try BundledLocalizedDigestProvider().orderedIdentifiers(for: locale)
         )
         #expect(shipped == compacted)
     }

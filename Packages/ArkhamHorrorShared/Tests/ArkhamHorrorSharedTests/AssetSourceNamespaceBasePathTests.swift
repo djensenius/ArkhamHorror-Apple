@@ -87,6 +87,35 @@ struct AssetSourceNamespaceBasePathTests {
         }
     }
 
+    @Test(
+        """
+        Any percent escape, backslash, or raw control character in the raw base path \
+        is rejected outright, before Foundation's own decoding can turn an escaped \
+        separator, dot-segment, or control byte that looks benign in its literal \
+        form into something that behaves differently once decoded
+        """,
+        arguments: [
+            // A legitimate-looking percent escape that decodes to plain text is
+            // still rejected: a configured base path never needs escaping.
+            "https://assets.example.com/tenant/%61dmin",
+            // An escaped separator smuggling a hidden path-segment boundary.
+            "https://assets.example.com/tenant%2f..%2fadmin",
+            // An escaped dot-segment, matching the exact case from the review.
+            "https://example.com/tenant/%2e%2e/admin",
+            // A smuggled NUL byte.
+            "https://assets.example.com/tenant/%00admin",
+            // A literal (unescaped) backslash.
+            "https://assets.example.com/tenant\\admin",
+            // A literal (unescaped) ASCII control character (BEL, 0x07).
+            "https://assets.example.com/tenant/\u{7}admin",
+        ]
+    )
+    func rawBasePathHostileInputRejected(rawURLString: String) {
+        #expect(throws: AssetError.invalidAssetBase) {
+            try AssetSourceNamespace(rawAssetBase: rawURLString)
+        }
+    }
+
     @Test("An explicit non-default port is preserved")
     func explicitPortPreserved() throws {
         let url = try #require(URL(string: "https://assets.example.com:9443/cdn"))

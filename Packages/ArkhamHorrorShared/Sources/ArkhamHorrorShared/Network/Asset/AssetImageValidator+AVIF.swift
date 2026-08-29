@@ -1,21 +1,79 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 
 extension AssetImageValidator {
     // MARK: - AVIF (ISO-BMFF)
 
-    /// Walks top-level ISO-BMFF boxes looking for `ftyp` (validating the
-    /// `avif`/`avis` brand) and then `meta` → `iprp` → `ipco` → the first
-    /// `ispe` box (4-byte version/flags, then big-endian width/height).
-    /// Every box header is bounds-checked against the remaining buffer, and
-    /// box walking only moves forward, so a hostile box size cannot cause
-    /// an out-of-bounds read or an infinite loop.
+    /// Validates the top-level `ftyp` box's brand as a fast, pure,
+    /// allocation-light pre-filter (see ``validateFtypBrand(_:boxes:)``),
+    /// then resolves the *primary* item's pixel dimensions via ImageIO
+    /// rather than a hand-rolled `meta`/`iprp`/`ipco`/`ispe` walk.
+    ///
+    /// AVIF's primary-item association (`pitm` + `ipma` linking specific
+    /// property indices, including which `ispe` box, to the primary item)
+    /// is exactly the kind of multi-box, cross-referencing structure a
+    /// platform image framework is best positioned to resolve correctly —
+    /// a flat "first `ispe` box in document order" walk (this file's
+    /// previous approach) can silently report a *non-primary* item's
+    /// dimensions for a multi-item AVIF file, passing validation with the
+    /// wrong size entirely. `CGImageSourceCopyPropertiesAtIndex` reads only
+    /// this file format's own metadata — not a full pixel decode, so no
+    /// large allocation happens here — and, on every platform this package
+    /// deploys to (see `Package.swift`), correctly resolves the primary
+    /// item the same way a full AVIF decode itself would.
+    ///
     /// Not `private`: called from the main format dispatch in
     /// `AssetImageValidator.swift`.
     static func parseAVIFDimensions(_ data: Data) throws -> (width: Int, height: Int) {
         let boxes = try readBoxes(data, range: data.startIndex ..< data.endIndex, limit: 4096)
         try validateFtypBrand(data, boxes: boxes)
-        let ispe = try locateISPEBox(data, topLevelBoxes: boxes)
-        return try ispeDimensions(data, ispe: ispe)
+        return try avifPrimaryItemDimensions(data)
+    }
+
+    /// Resolves the primary image item's pixel dimensions via ImageIO,
+    /// without ever fully decoding pixels: `CGImageSourceCopyPropertiesAtIndex`
+    /// reads only container/property metadata for the item at `index`,
+    /// bounded work regardless of how large the (not-yet-decoded) image
+    /// itself claims to be.
+    ///
+    /// `CGImageSourceCreateWithData` also independently re-confirms this is
+    /// AVIF (not merely HEIC or some other ISO-BMFF-family sibling that
+    /// happens to share the `ftyp` brand check above) via
+    /// `CGImageSourceGetType`, and a file whose `meta` box describes an
+    /// item but carries no actual coded image data (`CGImageSourceGetCount
+    /// == 0`) is rejected here rather than reporting the shell's declared,
+    /// never-backed-by-real-pixels dimensions as if they were trustworthy.
+    private static func avifPrimaryItemDimensions(
+        _ data: Data
+    ) throws -> (width: Int, height: Int) {
+        // The top-level `ftyp` brand pre-filter above is the sole source
+        // of `signatureMismatch` for AVIF: it inspects the format's actual
+        // magic bytes directly. Everything from here on already knows
+        // this file *declares* itself as AVIF, so any way ImageIO fails to
+        // make sense of it — an unparseable buffer, an internally
+        // inconsistent brand, or a `meta` box describing an item with no
+        // backing coded picture data — is this content being malformed,
+        // never a "wrong format entirely" signature mismatch.
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            throw AssetError.malformedImageData
+        }
+        guard let sourceType = CGImageSourceGetType(source) as String?,
+              sourceType == "public.avif"
+        else {
+            throw AssetError.malformedImageData
+        }
+        guard CGImageSourceGetCount(source) > 0 else {
+            throw AssetError.malformedImageData
+        }
+        guard
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else {
+            throw AssetError.malformedImageData
+        }
+        return (width, height)
     }
 
     /// Validates the top-level `ftyp` box's major/compatible brands include
@@ -44,58 +102,6 @@ extension AssetImageValidator {
         }
     }
 
-    /// Walks `meta` → `iprp` → `ipco` → the first `ispe` box among the
-    /// top-level `boxes`.
-    private static func locateISPEBox(_ data: Data, topLevelBoxes: [ISOBox]) throws -> ISOBox {
-        guard let meta = topLevelBoxes.first(where: { $0.type == "meta" }) else {
-            throw AssetError.malformedImageData
-        }
-        // A "meta" box has a 4-byte version/flags field before its children.
-        let metaChildrenStart = meta.range.lowerBound + 4
-        guard metaChildrenStart <= meta.range.upperBound else {
-            throw AssetError.malformedImageData
-        }
-        var boxes = try readBoxes(
-            data,
-            range: metaChildrenStart ..< meta.range.upperBound,
-            limit: 4096
-        )
-        guard let iprp = boxes.first(where: { $0.type == "iprp" }) else {
-            throw AssetError.malformedImageData
-        }
-        boxes = try readBoxes(data, range: iprp.range, limit: 4096)
-        guard let ipco = boxes.first(where: { $0.type == "ipco" }) else {
-            throw AssetError.malformedImageData
-        }
-        boxes = try readBoxes(data, range: ipco.range, limit: 4096)
-        guard let ispe = boxes.first(where: { $0.type == "ispe" }) else {
-            throw AssetError.malformedImageData
-        }
-        return ispe
-    }
-
-    /// Parses an `ispe` box's payload (4-byte version/flags, then
-    /// big-endian width and height), each bounded to fit `Int32`.
-    private static func ispeDimensions(
-        _ data: Data,
-        ispe: ISOBox
-    ) throws -> (width: Int, height: Int) {
-        let payloadStart = ispe.range.lowerBound + 4
-        // Bound the read against `ispe.range` itself (not just `data`'s
-        // overall bounds), or a truncated box could read into a following
-        // box's bytes and report bogus-but-plausible dimensions.
-        guard payloadStart + 8 <= ispe.range.upperBound else {
-            throw AssetError.malformedImageData
-        }
-        guard let width = readUInt32BE(data, at: payloadStart),
-              let height = readUInt32BE(data, at: payloadStart + 4),
-              width <= Int(Int32.max), height <= Int(Int32.max)
-        else {
-            throw AssetError.malformedImageData
-        }
-        return (Int(width), Int(height))
-    }
-
     private struct ISOBox {
         let type: String
         /// The byte range of this box's *payload* (after its header).
@@ -105,6 +111,41 @@ extension AssetImageValidator {
     /// Parses a flat sequence of ISO-BMFF boxes within `range`, bounded by
     /// `limit` iterations as a defensive guard against a hostile file
     /// claiming an enormous number of zero-progress boxes.
+    /// Resolves a single box's header length and total size (including
+    /// that header) from its 32-bit size field, handling the `size32 == 1`
+    /// (64-bit extended size) and `size32 == 0` (extends to end of
+    /// `range`) special cases. Split out of ``readBoxes(_:range:limit:)``
+    /// purely to keep that function's cyclomatic complexity within this
+    /// package's limit; carries no state of its own.
+    private static func boxHeaderAndSize(
+        size32: UInt32,
+        offset: Data.Index,
+        range: Range<Data.Index>,
+        data: Data
+    ) throws -> (headerSize: Int, boxSize: Int) {
+        if size32 == 1 {
+            // 64-bit extended size follows the 4-byte type. Bound this
+            // read against `range` itself (not just `data`'s overall
+            // bounds), or a box near the end of a narrower sub-range
+            // (e.g. a child box list nested inside a larger buffer)
+            // could read its size field from bytes belonging to a
+            // sibling or parent box outside this range.
+            guard offset + 16 <= range.upperBound else {
+                throw AssetError.malformedImageData
+            }
+            guard let size64 = readUInt64BE(data, at: offset + 8) else {
+                throw AssetError.malformedImageData
+            }
+            guard size64 <= UInt64(Int.max) else { throw AssetError.malformedImageData }
+            return (16, Int(size64))
+        }
+        if size32 == 0 {
+            // Box extends to the end of the parent range.
+            return (8, range.upperBound - offset)
+        }
+        return (8, Int(size32))
+    }
+
     private static func readBoxes(
         _ data: Data,
         range: Range<Data.Index>,
@@ -118,41 +159,33 @@ extension AssetImageValidator {
             guard iterations <= limit else { throw AssetError.malformedImageData }
             guard let size32 = readUInt32BE(data, at: offset)
             else { throw AssetError.malformedImageData }
-            let headerSize: Int
-            let boxSize: Int
-            if size32 == 1 {
-                // 64-bit extended size follows the 4-byte type. Bound this
-                // read against `range` itself (not just `data`'s overall
-                // bounds), or a box near the end of a narrower sub-range
-                // (e.g. a child box list nested inside a larger buffer)
-                // could read its size field from bytes belonging to a
-                // sibling or parent box outside this range.
-                guard offset + 16 <= range.upperBound else {
-                    throw AssetError.malformedImageData
-                }
-                guard let size64 = readUInt64BE(data, at: offset + 8) else {
-                    throw AssetError.malformedImageData
-                }
-                guard size64 <= UInt64(Int.max) else { throw AssetError.malformedImageData }
-                headerSize = 16
-                boxSize = Int(size64)
-            } else if size32 == 0 {
-                // Box extends to the end of the parent range.
-                headerSize = 8
-                boxSize = range.upperBound - offset
-            } else {
-                headerSize = 8
-                boxSize = Int(size32)
+            let (headerSize, boxSize) = try boxHeaderAndSize(
+                size32: size32,
+                offset: offset,
+                range: range,
+                data: data
+            )
+            guard boxSize >= headerSize else {
+                throw AssetError.malformedImageData
             }
-            guard boxSize >= headerSize, offset + boxSize <= range.upperBound else {
+            // A 64-bit extended `boxSize` can be as large as `Int.max`
+            // itself, in which case adding any nonzero `offset` (i.e. any
+            // box that is not the very first one read) would silently
+            // overflow `Int` and crash the process with a fatal-error trap
+            // rather than throwing — turning a hostile file into a denial
+            // of service instead of a rejected asset. `addingReportingOverflow`
+            // proves the sum is representable before it is ever computed or
+            // compared.
+            let (boxEnd, overflowed) = offset.addingReportingOverflow(boxSize)
+            guard !overflowed, boxEnd <= range.upperBound else {
                 throw AssetError.malformedImageData
             }
             guard let type = String(bytes: data[offset + 4 ..< offset + 8], encoding: .utf8) else {
                 throw AssetError.malformedImageData
             }
-            let payloadRange = (offset + headerSize) ..< (offset + boxSize)
+            let payloadRange = (offset + headerSize) ..< boxEnd
             boxes.append(ISOBox(type: type, range: payloadRange))
-            offset += boxSize
+            offset = boxEnd
         }
         return boxes
     }

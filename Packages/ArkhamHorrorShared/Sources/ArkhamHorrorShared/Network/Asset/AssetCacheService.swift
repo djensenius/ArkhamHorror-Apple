@@ -18,12 +18,31 @@ import Foundation
 ///   URL a cached payload came from; a 304 is only ever treated as success
 ///   when paired with a currently valid cached payload.
 actor AssetCacheService {
-    private let memoryCache: AssetMemoryCache
-    private let diskCache: AssetDiskCache
-    private let transport: any AssetTransport
-    private let digest: any LocalizedDigestLookup
-    private let limits: AssetCacheLimits
+    /// Shorthand for the continuation type shared by both the coalesced
+    /// network-fetch and coalesced-revalidation waiter dictionaries, kept
+    /// as a single typealias (rather than repeating the full generic
+    /// spelling at every use site) purely so those call sites stay under
+    /// this package's line-length limit.
+    typealias AssetContinuation = CheckedContinuation<Result<CachedAsset, Error>, Never>
+
+    let memoryCache: AssetMemoryCache
+    let diskCache: AssetDiskCache
+    let transport: any AssetTransport
+    let digest: any LocalizedDigestLookup
+    let limits: AssetCacheLimits
     private var inFlight: [AssetCacheKey: InFlightFetch] = [:]
+
+    /// Monotonically increases every time a revalidation for a given
+    /// ``AssetCacheKey`` reaches ANY terminal, cache-mutating outcome (a
+    /// definitive 404 eviction, a 304 metadata touch, or a fresh publish).
+    /// A revalidation captures the generation current at its own start and
+    /// re-checks it immediately before every mutation; a mismatch means a
+    /// more authoritative (and logically newer) revalidation already
+    /// concluded while this one's network round trip was in flight, so
+    /// this one must not touch or reinsert its own (now stale) captured
+    /// bytes/metadata — see ``performRevalidation(_:)``.
+    var revalidationGeneration: [AssetCacheKey: Int] = [:]
+    var inFlightRevalidation: [RevalidationSlot: RevalidationFetch] = [:]
 
     /// The most recent disk-cache persistence failure from ``publish``, if
     /// any, retained so a best-effort (non-fatal) disk write failure is
@@ -60,127 +79,24 @@ actor AssetCacheService {
             return cached
         }
         if let cached = await diskCache.get(cacheKey) {
-            await memoryCache.set(cacheKey, asset: cached)
-            return cached
-        }
-        return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
-    }
-
-    /// Conditionally revalidates an already-cached entry for `key` against
-    /// the exact URL its payload came from. Requires a currently valid
-    /// cached entry (memory or disk) to condition against; if none exists,
-    /// throws ``AssetError/staleConditionalResponse`` immediately without
-    /// making any network call, since there is nothing to pair a 304 with.
-    ///
-    /// The persisted URL is also required to exactly match one of `key`'s
-    /// own current resolved candidates (never trusted as-is), so tampered
-    /// or corrupted on-disk metadata cannot redirect a revalidation request
-    /// to an unexpected host or path.
-    ///
-    /// Also requires the cached entry to actually carry a validator
-    /// (`ETag` or `Last-Modified`): a 304 is only meaningful in response to
-    /// a genuinely conditional request, so without either validator this
-    /// throws the same typed error immediately rather than sending an
-    /// unconditional request that a non-conforming server could still
-    /// answer with a 304 we would otherwise wrongly accept as "unchanged".
-    func revalidate(for key: AssetKey) async throws -> CachedAsset {
-        let candidates = AssetLocator.candidates(for: key, digest: digest)
-        guard !candidates.isEmpty else { throw AssetError.candidatesExhausted }
-        let cacheKey = AssetCacheKey(for: key, candidates: candidates)
-
-        var existing = await memoryCache.get(cacheKey)
-        if existing == nil {
-            existing = await diskCache.get(cacheKey)
-        }
-        guard let existing else {
-            throw AssetError.staleConditionalResponse
-        }
-        guard let url = URL(string: existing.metadata.resolvedURLString) else {
-            throw AssetError.staleConditionalResponse
-        }
-        // The persisted `resolvedURLString` is untrusted input (on-disk
-        // metadata could be corrupted or tampered while still decoding and
-        // passing the hash/size checks in `AssetDiskCache.get`): only ever
-        // issue a revalidation request against a URL that exactly matches
-        // one of this key's own current candidates, never whatever URL
-        // happens to be recorded, so tampered metadata cannot redirect a
-        // request to an unexpected host or path.
-        let candidateURLStrings = Set(candidates.map { $0.url(base: key.source).absoluteString })
-        guard candidateURLStrings.contains(existing.metadata.resolvedURLString) else {
-            throw AssetError.staleConditionalResponse
-        }
-        guard existing.metadata.etag != nil || existing.metadata.lastModified != nil else {
-            throw AssetError.staleConditionalResponse
-        }
-
-        let request = AssetHTTPRequest(
-            url: url,
-            ifNoneMatch: existing.metadata.etag,
-            ifModifiedSince: existing.metadata.etag == nil ? existing.metadata.lastModified : nil
-        )
-        let result = try await transport.fetch(request, limits: limits)
-        switch result {
-        case .notModified:
-            var refreshed = existing
-            refreshed.metadata.lastAccessedAt = Date()
-            await touch(cacheKey, asset: refreshed)
-            return refreshed
-        case .notFound:
-            // The previously cached resource no longer exists at its exact
-            // resolved URL. This is not "no change": the stale entry must
-            // be evicted from both cache layers so subsequent `asset(for:)`
-            // calls do not keep serving content the server has definitively
-            // removed, then treat it the same as any other terminal
-            // transport outcome for a revalidation.
-            await memoryCache.remove(cacheKey)
-            await diskCache.remove(cacheKey)
-            throw AssetError.candidatesExhausted
-        case let .success(response):
-            return try await assembleRevalidatedAsset(
+            if let revalidated = await revalidateDiskHit(
+                cached,
                 key: key,
                 cacheKey: cacheKey,
-                url: url,
-                existing: existing,
-                response: response
-            )
+                candidates: candidates
+            ) {
+                await memoryCache.set(cacheKey, asset: revalidated)
+                return revalidated
+            }
+            // The persisted entry failed re-validation against the
+            // *current* format/magic/dimension/limits/decode contract
+            // (see ``revalidateDiskHit``): it has already been quarantined
+            // (removed from disk), so fall through to a fresh network
+            // fetch exactly as if nothing had been cached at all, rather
+            // than surfacing the stale/invalid bytes or poisoning this
+            // call permanently.
         }
-    }
-
-    /// Validates a fresh (non-304) revalidation response, assembles the
-    /// replacement cache entry (preserving the original `insertedAt`), and
-    /// publishes it.
-    private func assembleRevalidatedAsset(
-        key: AssetKey,
-        cacheKey: AssetCacheKey,
-        url: URL,
-        existing: CachedAsset,
-        response: AssetHTTPResponse
-    ) async throws -> CachedAsset {
-        let validated = try AssetImageValidator.validate(
-            data: response.body,
-            declaredContentType: response.contentType,
-            expectedFormat: key.expectedFormat,
-            limits: limits
-        )
-        try Task.checkCancellation()
-        let asset = CachedAsset(
-            payload: response.body,
-            metadata: AssetCacheMetadata(
-                cacheKeyHex: cacheKey.digestHex,
-                contentType: response.contentType ?? validated.format.mimeType,
-                encodedByteCount: response.body.count,
-                width: validated.width,
-                height: validated.height,
-                payloadSHA256Hex: Self.sha256Hex(response.body),
-                etag: response.etag,
-                lastModified: response.lastModified,
-                resolvedURLString: url.absoluteString,
-                insertedAt: existing.metadata.insertedAt,
-                lastAccessedAt: Date()
-            )
-        )
-        await publish(cacheKey, asset: asset)
-        return asset
+        return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
     }
 
     /// Evicts every entry from both cache layers. Exposed for tests and for
@@ -193,32 +109,33 @@ actor AssetCacheService {
 
     // MARK: - Coalesced network fetch
 
-    /// Tracks a single shared in-flight fetch and how many callers are
-    /// still waiting on it. Uses its own lock (rather than actor
-    /// isolation) so a waiter's cancellation handler — which Swift may run
-    /// synchronously on an arbitrary executor — can adjust the waiter count
-    /// without needing to hop back onto the ``AssetCacheService`` actor.
-    private final class InFlightFetch: @unchecked Sendable {
-        var task: Task<CachedAsset, Error>!
-        private let lock = NSLock()
-        private var waiterCount = 1
-
-        func addWaiter() {
-            lock.lock()
-            waiterCount += 1
-            lock.unlock()
-        }
-
-        /// Returns `true` when the caller removing itself was the last
-        /// remaining waiter, meaning the underlying fetch should now be
-        /// cancelled.
-        func removeWaiter() -> Bool {
-            lock.lock()
-            waiterCount -= 1
-            let isLast = waiterCount <= 0
-            lock.unlock()
-            return isLast
-        }
+    /// Tracks a single shared in-flight fetch and the still-registered
+    /// waiters awaiting it, each identified by its own `UUID` and holding
+    /// its own `CheckedContinuation`.
+    ///
+    /// A plain, non-`Sendable` value type living only as a dictionary
+    /// value inside `inFlight` — never itself passed across a concurrency
+    /// boundary. The spawned cancellation-cleanup and completion-watcher
+    /// `Task`s below instead capture only genuinely `Sendable` values
+    /// (`AssetCacheKey`, `UUID`, `Task<CachedAsset, Error>`) and hop back
+    /// onto this actor (`cancelWaiter`/`completeFetch`) before ever
+    /// touching `inFlight` again, so every read/mutation of this type is
+    /// already serialized by actor isolation alone.
+    ///
+    /// Per-waiter continuations (rather than one shared `Task.value`) are
+    /// the key correctness property here: they let a single cancelling
+    /// waiter be resumed independently of whatever the shared fetch
+    /// itself eventually does — including a shared fetch that goes on to
+    /// succeed — rather than a cancelled waiter racing to observe (and
+    /// wrongly receiving) a shared task's own successful result.
+    private struct InFlightFetch {
+        /// Distinguishes this exact fetch attempt from a later one that
+        /// might reuse the same `AssetCacheKey` after this one is torn
+        /// down, without needing `InFlightFetch` itself to be a
+        /// reference type comparable by identity.
+        let id = UUID()
+        let task: Task<CachedAsset, Error>
+        var waiters: [UUID: AssetContinuation] = [:]
     }
 
     private func coalescedFetch(
@@ -226,43 +143,117 @@ actor AssetCacheService {
         cacheKey: AssetCacheKey,
         candidates: [AssetCandidate]
     ) async throws -> CachedAsset {
-        let fetch: InFlightFetch
+        let waiterID = UUID()
+        let fetchID: UUID
         if let existing = inFlight[cacheKey] {
-            existing.addWaiter()
-            fetch = existing
+            fetchID = existing.id
         } else {
-            let newFetch = InFlightFetch()
-            inFlight[cacheKey] = newFetch
-            newFetch.task = Task { [weak self] in
+            let newTask = Task { [weak self] in
                 guard let self else { throw CancellationError() }
-                do {
-                    let result = try await fetchAndValidate(
-                        key: key,
-                        cacheKey: cacheKey,
-                        candidates: candidates
-                    )
-                    await clearInFlight(cacheKey, matching: newFetch)
-                    return result
-                } catch {
-                    await clearInFlight(cacheKey, matching: newFetch)
-                    throw error
-                }
+                return try await fetchAndValidate(
+                    key: key,
+                    cacheKey: cacheKey,
+                    candidates: candidates
+                )
             }
-            fetch = newFetch
+            let newFetch = InFlightFetch(task: newTask)
+            inFlight[cacheKey] = newFetch
+            fetchID = newFetch.id
+            Task { [weak self] in
+                let result = await newTask.result
+                await self?.completeFetch(cacheKey, fetchID: fetchID, result: result)
+            }
         }
 
         return try await withTaskCancellationHandler {
-            try await fetch.task.value
-        } onCancel: {
-            if fetch.removeWaiter() {
-                fetch.task.cancel()
+            let result = await withCheckedContinuation { (continuation: AssetContinuation) in
+                // Runs synchronously, before this function suspends, while
+                // still isolated to this actor (`coalescedFetch` itself is
+                // actor-isolated, and no other actor-isolated code can run
+                // concurrently until the first genuine suspension below),
+                // so registering directly into `inFlight`'s dictionary
+                // here is race-free without any additional locking. Only
+                // registers into a fetch that is still exactly this one
+                // (`fetchID` match): if it was already torn down and
+                // replaced between the check above and here, resuming with
+                // a synthetic cancellation below is the correct outcome
+                // for this waiter (there is nothing left to join).
+                if inFlight[cacheKey]?.id == fetchID {
+                    inFlight[cacheKey]?.waiters[waiterID] = continuation
+                } else {
+                    continuation.resume(returning: .failure(CancellationError()))
+                }
             }
+            // Deterministically overrides to `CancellationError` for a
+            // waiter whose own task was cancelled, regardless of whether
+            // this waiter's cancellation cleanup (`cancelWaiter`, below)
+            // happened to run before or after the shared fetch's own
+            // completion (`completeFetch`) reached the actor — those two
+            // hops race against each other with no ordering guarantee,
+            // but `Task.isCancelled` is monotonic once set, so this check
+            // is race-free even though the resumed `result` value alone
+            // would not be.
+            if Task.isCancelled {
+                throw CancellationError()
+            }
+            return try result.get()
+        } onCancel: {
+            // `onCancel` may run synchronously on an arbitrary executor,
+            // so this hops back onto the actor rather than touching
+            // `inFlight` directly.
+            Task { await self.cancelWaiter(cacheKey, fetchID: fetchID, waiterID: waiterID) }
         }
     }
 
-    private func clearInFlight(_ key: AssetCacheKey, matching fetch: InFlightFetch) {
-        if inFlight[key] === fetch {
+    /// Removes exactly `waiterID` from the fetch identified by `fetchID`
+    /// (if it is still the current entry for `key`) and resumes it,
+    /// regardless of what the shared fetch itself later does. When this
+    /// was the last remaining waiter, atomically (within this single
+    /// actor-isolated call, before the underlying transport is ever told
+    /// to cancel) removes the entry from `inFlight` so a caller arriving
+    /// immediately afterward can never join a fetch that is already being
+    /// torn down — it instead starts fresh work.
+    private func cancelWaiter(_ key: AssetCacheKey, fetchID: UUID, waiterID: UUID) {
+        guard var fetch = inFlight[key], fetch.id == fetchID else {
+            // Already completed/replaced by the time this cancellation
+            // reached the actor; the completion path already resumed (or
+            // this waiter never actually registered) this waiter, so
+            // there is nothing left to do here.
+            return
+        }
+        if let continuation = fetch.waiters.removeValue(forKey: waiterID) {
+            continuation.resume(returning: .failure(CancellationError()))
+        }
+        if fetch.waiters.isEmpty {
             inFlight[key] = nil
+            fetch.task.cancel()
+        } else {
+            inFlight[key] = fetch
+        }
+    }
+
+    /// Called exactly once by the shared fetch's own completion watcher.
+    /// Resumes every still-registered waiter with the shared result, and
+    /// clears `inFlight` only if the entry for `key` is still exactly the
+    /// fetch identified by `fetchID` — a zero-waiter cancellation may
+    /// already have removed (and possibly replaced with fresh work) this
+    /// exact entry, in which case this stale completion must not touch
+    /// newer state.
+    private func completeFetch(
+        _ key: AssetCacheKey,
+        fetchID: UUID,
+        result: Result<CachedAsset, Error>
+    ) {
+        guard let fetch = inFlight[key], fetch.id == fetchID else {
+            // Already replaced (e.g. by a zero-waiter cancellation
+            // followed by fresh work); that replaced entry's waiters (if
+            // any) belong to the newer fetch and must not be touched by
+            // this stale completion.
+            return
+        }
+        inFlight[key] = nil
+        for (_, continuation) in fetch.waiters {
+            continuation.resume(returning: result)
         }
     }
 
@@ -297,6 +288,15 @@ actor AssetCacheService {
                     limits: limits
                 )
                 try Task.checkCancellation()
+                // See the identical decode gate in
+                // ``assembleRevalidatedAsset`` for why a full platform
+                // decode — not just the pure metadata/dimension parse
+                // above — is required before publication.
+                let decoded = try AssetImageDecoder.decode(response.body)
+                guard decoded.width == validated.width, decoded.height == validated.height else {
+                    throw AssetError.malformedImageData
+                }
+                try Task.checkCancellation()
                 let asset = CachedAsset(
                     payload: response.body,
                     metadata: AssetCacheMetadata(
@@ -328,7 +328,7 @@ actor AssetCacheService {
     /// `try?` — so a persistence failure is captured in
     /// ``lastDiskPersistenceFailure`` for auditing/instrumentation instead
     /// of vanishing silently.
-    private func publish(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
+    func publish(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
         await memoryCache.set(cacheKey, asset: asset)
         await recordDiskPersistenceResult {
             try await diskCache.set(cacheKey, payload: asset.payload, metadata: asset.metadata)
@@ -339,7 +339,7 @@ actor AssetCacheService {
     /// bumping `lastAccessedAt` after a 304 revalidation), without
     /// re-writing the unchanged payload bytes to disk. Falls back to the
     /// same best-effort, audited failure handling as ``publish(_:asset:)``.
-    private func touch(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
+    func touch(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
         await memoryCache.set(cacheKey, asset: asset)
         await recordDiskPersistenceResult {
             try await diskCache.touch(cacheKey, metadata: asset.metadata)
@@ -357,7 +357,7 @@ actor AssetCacheService {
         }
     }
 
-    private static func sha256Hex(_ data: Data) -> String {
+    static func sha256Hex(_ data: Data) -> String {
         AssetPayloadHasher.sha256Hex(data)
     }
 }

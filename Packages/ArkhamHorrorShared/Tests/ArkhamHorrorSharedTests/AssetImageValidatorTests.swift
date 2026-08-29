@@ -46,10 +46,10 @@ struct AssetImageValidatorTests {
     }
 
     @Test(
-        "A synthetic AVIF shell with no declared Content-Type still validates on magic bytes alone"
+        "A real, decodable AVIF with no declared Content-Type still validates on magic bytes alone"
     )
     func validAVIFAcceptedWithoutDeclaredContentType() throws {
-        let data = AssetImageFixtureBuilder.syntheticAVIF(width: 3, height: 4)
+        let data = AssetImageFixtureBuilder.validAVIF(width: 3, height: 4)
         let metadata = try AssetImageValidator.validate(
             data: data,
             declaredContentType: nil,
@@ -183,13 +183,13 @@ struct AssetImageValidatorTests {
 
     @Test(
         """
-        An AVIF ispe box truncated before its height field is rejected, even \
-        though plausible-looking height bytes happen to follow it in the \
-        buffer
+        An AVIF whose ftyp brand and meta/iprp/ipco/ispe box structure are well-formed, but \
+        which has no actual coded picture data, is rejected rather than accepted on the \
+        strength of its declared-but-never-backed-by-real-pixels dimensions
         """
     )
-    func avifTruncatedISPERejectedRatherThanReadingTrailingBytes() throws {
-        let data = AssetImageFixtureBuilder.syntheticAVIFTruncatedISPE(width: 100)
+    func avifShellWithNoCodedImageDataRejected() throws {
+        let data = AssetImageFixtureBuilder.syntheticAVIF(width: 100, height: 100)
         #expect(throws: AssetError.malformedImageData) {
             _ = try AssetImageValidator.validate(
                 data: data,
@@ -202,12 +202,12 @@ struct AssetImageValidatorTests {
 
     @Test(
         """
-        An AVIF child box using the 64-bit extended-size form but truncated before its \
-        size64 field is rejected, even though plausible bytes happen to follow it
+        A second top-level box using the 64-bit extended-size form with size64 == Int.max, \
+        at a nonzero starting offset, is rejected rather than crashing on integer overflow
         """
     )
-    func avifTruncatedExtendedSizeBoxRejectedRatherThanReadingTrailingBytes() throws {
-        let data = AssetImageFixtureBuilder.syntheticAVIFExtendedSizeBoxTruncated()
+    func avifTopLevelExtendedSizeOverflowAtNonzeroOffsetRejected() throws {
+        let data = AssetImageFixtureBuilder.avifExtendedSizeOverflowAtNonzeroOffset()
         #expect(throws: AssetError.malformedImageData) {
             _ = try AssetImageValidator.validate(
                 data: data,

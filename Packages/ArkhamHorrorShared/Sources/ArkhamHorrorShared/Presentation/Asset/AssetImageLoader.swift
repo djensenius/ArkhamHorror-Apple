@@ -31,6 +31,20 @@ final class AssetImageLoader {
         self.cacheService = cacheService
     }
 
+    deinit {
+        // The in-flight task holds `[weak self]` (see `load` below) and
+        // already re-checks that weak reference after every suspension
+        // rather than promoting it to a strong reference for the task's
+        // whole lifetime, so this instance's own deallocation is never
+        // blocked on that task. This proactively cancels it anyway,
+        // rather than leaving it to run to a completion nothing will ever
+        // observe: `cacheService.asset(for:)`/the decode task group both
+        // cooperate with cancellation, so this promptly releases the
+        // network/decode work instead of letting it linger after its
+        // last owner is gone.
+        loadTask?.cancel()
+    }
+
     /// Starts loading `key`, cancelling any load this instance previously
     /// started. `accessibleDescription` is carried through to the
     /// resulting ``AssetLoadState`` regardless of outcome.
@@ -40,11 +54,30 @@ final class AssetImageLoader {
         let requestedGeneration = generation
         state = .loading(accessibleDescription: accessibleDescription)
 
+        // Deliberately never unwraps `weak self` into a long-lived local
+        // `self` that would then be held strongly for the rest of this
+        // closure: doing so across an `await` would silently promote a
+        // weak reference into a strong one spanning every suspension
+        // point below (the network fetch and the decode task group),
+        // keeping this instance alive for the task's whole duration even
+        // if every other owner has already released it. Instead, `self`
+        // is re-checked via a fresh `guard let self` immediately after
+        // each suspension, so a caller-side deallocation in the interim
+        // is observed as `self == nil` right away rather than being
+        // masked by an already-promoted strong reference.
         loadTask = Task { [weak self, cacheService] in
-            guard let self else { return }
             do {
                 let cached = try await cacheService.asset(for: key)
-                guard generation == requestedGeneration else { return }
+                // Uses optional chaining rather than `guard let self` here
+                // (unlike the checkpoints below, which have no further
+                // `await` after them and so are safe to bind strongly):
+                // binding `self` into a shadowed local at this point would
+                // hold it strongly across the *next* suspension point (the
+                // decode task group below), reintroducing exactly the
+                // retain-across-suspension this design avoids. A `nil`
+                // `self` here is indistinguishable from (and handled the
+                // same as) a stale generation.
+                guard self?.generation == requestedGeneration else { return }
                 // Decoding (signature/dimension validation plus the full
                 // platform bitmap decode) is CPU-bound and can be
                 // expensive for large assets; running it as a child task
@@ -67,7 +100,7 @@ final class AssetImageLoader {
                     }
                     return decoded
                 }
-                guard generation == requestedGeneration else { return }
+                guard let self, generation == requestedGeneration else { return }
                 state = .success(image, accessibleDescription: accessibleDescription)
             } catch is CancellationError {
                 // A superseded or externally cancelled load leaves state
@@ -75,7 +108,7 @@ final class AssetImageLoader {
                 // `cancel()` was called and idle/whatever state preceded
                 // it is preserved deliberately.
             } catch {
-                guard generation == requestedGeneration else { return }
+                guard let self, generation == requestedGeneration else { return }
                 let assetError = (error as? AssetError) ??
                     .transportFailure(String(describing: error))
                 state = .failure(assetError, accessibleDescription: accessibleDescription)

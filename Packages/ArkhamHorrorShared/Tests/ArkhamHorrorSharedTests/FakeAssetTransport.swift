@@ -16,13 +16,35 @@ actor FakeAssetTransport: AssetTransport {
         let ifModifiedSince: String?
     }
 
+    private struct ScriptedEntry {
+        let result: Result<AssetHTTPResult, Error>
+        let delayNanoseconds: UInt64
+    }
+
     private(set) var calls: [Call] = []
-    private var scriptedResults: [URL: [Result<AssetHTTPResult, Error>]] = [:]
+    private var scriptedResults: [URL: [ScriptedEntry]] = [:]
     private var heldURLs: Set<URL> = []
     private var startedCounts: [URL: Int] = [:]
 
     func enqueue(_ result: Result<AssetHTTPResult, Error>, for url: URL) {
-        scriptedResults[url, default: []].append(result)
+        scriptedResults[url, default: []].append(
+            ScriptedEntry(result: result, delayNanoseconds: 0)
+        )
+    }
+
+    /// Like ``enqueue(_:for:)``, but the returned result is only handed back
+    /// after an explicit delay. This lets tests deterministically make a
+    /// request that *started* later actually *complete* first (and vice
+    /// versa), to exercise out-of-order/stale-completion protections without
+    /// depending on ambient task-scheduling order.
+    func enqueue(
+        _ result: Result<AssetHTTPResult, Error>,
+        for url: URL,
+        delayNanoseconds: UInt64
+    ) {
+        scriptedResults[url, default: []].append(
+            ScriptedEntry(result: result, delayNanoseconds: delayNanoseconds)
+        )
     }
 
     func hold(_ url: URL) {
@@ -76,6 +98,9 @@ actor FakeAssetTransport: AssetTransport {
         }
         let next = queue.removeFirst()
         scriptedResults[request.url] = queue
-        return try next.get()
+        if next.delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: next.delayNanoseconds)
+        }
+        return try next.result.get()
     }
 }

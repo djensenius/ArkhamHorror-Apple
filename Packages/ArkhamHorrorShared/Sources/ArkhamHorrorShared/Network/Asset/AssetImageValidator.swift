@@ -12,10 +12,16 @@ struct ValidatedImageMetadata: Sendable, Equatable {
 /// declared `Content-Type`, magic-byte signature, and safely-parsed pixel
 /// dimensions, all before any full image decode is attempted.
 ///
-/// Every check here is pure and allocation-light; none of it depends on
-/// platform image decoders (`CGImageSource`, `UIImage`, etc.), so it runs
-/// identically across every supported platform and is exercised by plain
-/// byte-array fixtures in tests without needing real image decode support.
+/// PNG and JPEG dimension parsing is pure and allocation-light and depends
+/// on no platform image decoder, so it runs identically across every
+/// supported platform and is exercised by plain byte-array fixtures in
+/// tests without needing real image decode support. AVIF's primary-item
+/// dimensions are instead resolved via a bounded ImageIO metadata read (see
+/// `AssetImageValidator+AVIF.swift`): AVIF's primary-item association
+/// (`pitm`/`ipma`/`ipco`/`ispe`) is a multi-box, cross-referencing
+/// structure a platform image framework is far better positioned to
+/// resolve correctly than a hand-rolled box walk, which risks silently
+/// reporting a non-primary item's dimensions.
 enum AssetImageValidator {
     /// Validates `data` against `expectedFormat` and `limits`.
     ///

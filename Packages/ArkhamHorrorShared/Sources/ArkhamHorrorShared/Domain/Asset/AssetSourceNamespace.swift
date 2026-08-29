@@ -60,8 +60,9 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
     ///   authorities `localhost`, a `127.0.0.0/8` dotted-quad, or `[::1]`
     ///   (see ``ServerProfile/assertStrictLoopbackAuthority(_:)``), the host
     ///   is missing/empty, the port is out of range, credentials/query/
-    ///   fragment are present, or the base path contains a dot-segment
-    ///   (`.` or `..`).
+    ///   fragment are present, or the raw base path contains a `%` escape,
+    ///   backslash, ASCII control character, or a dot-segment (`.` or `..`)
+    ///   (see ``normalizedPath(_:)``).
     init(rawAssetBase rawValue: String) throws {
         let withScheme = try Self.asInvalidAssetBase {
             try ServerProfile.withExplicitScheme(rawValue)
@@ -84,6 +85,16 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
                 try ServerProfile.assertStrictLoopbackAuthority(rawAuthority)
             }
         }
+        // The raw, literal path text — everything after the authority up to
+        // the first `?` or `#` — is captured here, before `URLComponents`
+        // ever parses it, for the same reason the authority above is
+        // validated pre-parse: `URLComponents.path` silently percent-decodes
+        // escapes (including an escaped `/` or `.`), so a path that looks
+        // benign in the raw, literal form a config-file author or reviewer
+        // would actually see could otherwise behave completely differently
+        // once decoded. See ``normalizedPath(_:)``, which validates this raw
+        // text directly rather than the decoded `URLComponents.path`.
+        let rawPath = withScheme[rawAuthority.endIndex...].prefix { $0 != "?" && $0 != "#" }
 
         guard let components = URLComponents(string: withScheme) else {
             throw AssetError.invalidAssetBase
@@ -107,7 +118,7 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
             throw AssetError.invalidAssetBase
         }
         canonicalOrigin = origin
-        basePath = try Self.normalizedPath(components.path)
+        basePath = try Self.normalizedPath(rawPath)
     }
 
     /// Constructs from an already-parsed `URL` (for example a value read back
@@ -166,14 +177,35 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
     /// two different ``canonicalIdentity`` strings, silently duplicating
     /// disk cache entries for what is really the same namespace.
     ///
-    /// - Throws: ``AssetError/invalidAssetBase`` if any path segment is a
-    ///   dot-segment (`.` or `..`). Left unrejected, `..` would flow into
-    ///   `AssetCandidate.url(base:)`'s `appendingPathComponent` calls and
-    ///   could escape the intended base-path prefix entirely (for example
-    ///   `https://host/a/../img` resolving outside `/a`), in addition to
-    ///   creating another spelling for the same effective path.
-    private static func normalizedPath(_ path: String) throws -> String {
-        let segments = path.split(separator: "/", omittingEmptySubsequences: true)
+    /// `rawPath` must be the raw, pre-`URLComponents` literal path text (see
+    /// the call site), not the Foundation-decoded `URLComponents.path`: a
+    /// legitimate configured base path is always a plain literal path with
+    /// no percent-encoding required, so any percent escape at all is
+    /// rejected outright, rather than attempting to decode it and then
+    /// enumerate every pathological decoded form (an escaped dot-segment
+    /// `%2e%2e`, an escaped separator `%2f` splicing in a segment boundary
+    /// that was not there in the literal text, a smuggled control character
+    /// such as `%00`, and so on). Backslashes and raw ASCII control
+    /// characters are rejected for the same reason: neither can appear in a
+    /// legitimate literal base path, and both are commonly abused for
+    /// path-confusion on other platforms/layers this URL may transit.
+    ///
+    /// - Throws: ``AssetError/invalidAssetBase`` if `rawPath` contains any
+    ///   `%` escape, backslash, or ASCII control character, or if any path
+    ///   segment is a dot-segment (`.` or `..`). Left unrejected, `..` would
+    ///   flow into `AssetCandidate.url(base:)`'s `appendingPathComponent`
+    ///   calls and could escape the intended base-path prefix entirely (for
+    ///   example `https://host/a/../img` resolving outside `/a`), in
+    ///   addition to creating another spelling for the same effective path.
+    private static func normalizedPath(_ rawPath: Substring) throws -> String {
+        guard !rawPath.contains("%"), !rawPath.contains("\\") else {
+            throw AssetError.invalidAssetBase
+        }
+        guard !rawPath.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F })
+        else {
+            throw AssetError.invalidAssetBase
+        }
+        let segments = rawPath.split(separator: "/", omittingEmptySubsequences: true)
         guard !segments.isEmpty else { return "" }
         guard segments.allSatisfy({ $0 != "." && $0 != ".." }) else {
             throw AssetError.invalidAssetBase

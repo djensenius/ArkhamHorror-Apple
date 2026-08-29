@@ -1,21 +1,39 @@
 import Foundation
 
 /// An actor-isolated on-disk cache bounded by
-/// ``AssetCacheLimits/diskBudgetBytes``, storing each entry as a payload
-/// file plus a versioned JSON metadata sidecar in the platform caches
+/// ``AssetCacheLimits/diskBudgetBytes``, storing each entry as an immutable,
+/// content-addressed payload file plus a versioned JSON metadata sidecar
+/// (the sole mutable "pointer" for that key) in the platform caches
 /// directory.
 ///
-/// Every write is atomic (temp file + rename) and metadata, not filesystem
-/// `atime`, is authoritative for LRU. Corrupt entries (hash/size mismatch,
-/// undecodable or version-mismatched metadata) are quarantined (deleted) on
-/// read rather than surfaced as valid data. Orphaned payload-without-
-/// metadata or metadata-without-payload files, and any leftover `.tmp` file
-/// from an interrupted write, are recovered (deleted) once at startup.
+/// A replacement is never published by overwriting an existing payload file
+/// in place: the new payload is written under its own filename (derived
+/// from ``AssetCacheMetadata/payloadSHA256Hex``, never from the request
+/// path), so it can never collide with — or destroy — the file a prior
+/// generation's metadata still references. Only after that write succeeds
+/// does the metadata sidecar's own atomic (temp file + rename) write
+/// "commit" the new generation; if that commit fails, the previous
+/// metadata (still pointing at its own untouched payload file) remains
+/// completely valid, so a mid-replacement failure can never leave a mixed
+/// pair or destroy the prior good generation. Only once the pointer commit
+/// has succeeded is any now-superseded payload file for that key removed.
+///
+/// Metadata, not filesystem `atime`, is authoritative for LRU. Corrupt
+/// entries (hash/size mismatch, undecodable or version-mismatched
+/// metadata, or a `payloadSHA256Hex` that is not exactly 64 lowercase hex
+/// characters — never trusted to build a filesystem path unvalidated,
+/// since it is untrusted on-disk input) are quarantined (deleted) on read
+/// rather than surfaced as valid data. Orphaned payload files not
+/// referenced by any currently valid metadata sidecar (including
+/// superseded generations left behind by a crash between a payload write
+/// and its metadata pointer commit), metadata sidecars with no payload at
+/// all, and any leftover `.tmp` file from an interrupted write, are
+/// recovered (deleted) once at startup.
 actor AssetDiskCache {
-    private let directory: URL
-    private let limits: AssetCacheLimits
-    private let fileManager: FileManager
-    private var didRecoverOrphans = false
+    let directory: URL
+    let limits: AssetCacheLimits
+    let fileManager: FileManager
+    var didRecoverOrphans = false
 
     init(directory: URL, limits: AssetCacheLimits, fileManager: FileManager = .default) throws {
         self.directory = directory
@@ -45,7 +63,6 @@ actor AssetDiskCache {
     /// "there is no valid cached copy" is identical either way.
     func get(_ key: AssetCacheKey) -> CachedAsset? {
         recoverOrphansIfNeeded()
-        let payloadURL = payloadURL(for: key)
         let metadataURL = metadataURL(for: key)
 
         guard let metadataData = try? Data(contentsOf: metadataURL),
@@ -54,15 +71,24 @@ actor AssetDiskCache {
                   from: metadataData
               )
         else {
-            quarantine(payloadURL: payloadURL, metadataURL: metadataURL)
+            // No validated content hash exists yet to derive a specific
+            // payload filename to also remove; any now-unreferenced
+            // payload file for this key is reclaimed by the next startup's
+            // `recoverOrphansIfNeeded()` sweep instead.
+            try? fileManager.removeItem(at: metadataURL)
             return nil
         }
         guard metadata.schemaVersion == AssetCacheMetadata.currentSchemaVersion,
-              metadata.cacheKeyHex == key.digestHex
+              metadata.cacheKeyHex == key.digestHex,
+              Self.isValidContentHash(metadata.payloadSHA256Hex)
         else {
-            quarantine(payloadURL: payloadURL, metadataURL: metadataURL)
+            try? fileManager.removeItem(at: metadataURL)
             return nil
         }
+        // Only derived from a hash this method has just validated is
+        // exactly 64 lowercase hex characters, so untrusted on-disk
+        // metadata can never steer this path outside `directory`.
+        let payloadURL = payloadURL(for: key, contentHash: metadata.payloadSHA256Hex)
         // Validate the claimed size against the configured cap *before*
         // reading the payload into memory. Metadata is untrusted input
         // (it could be corrupted or tampered while still round-tripping
@@ -105,36 +131,81 @@ actor AssetDiskCache {
         return CachedAsset(payload: payload, metadata: metadata)
     }
 
-    /// Persists `payload` and `metadata` atomically. If the metadata write
-    /// fails after the payload write succeeded, the payload is removed
-    /// before rethrowing so no orphaned, half-written entry is left looking
-    /// like it might be valid.
+    /// Publishes `payload` under `metadata`'s key as a new, immutable,
+    /// content-addressed generation, then atomically commits the metadata
+    /// "pointer" to it, per the crash-consistency contract documented on
+    /// this type.
+    ///
+    /// Rejects a `metadata.payloadSHA256Hex` that is not exactly 64
+    /// lowercase hex characters before it is ever used to build a
+    /// filesystem path — this value is normally computed by
+    /// ``AssetPayloadHasher`` from `payload` itself, but this method must
+    /// not assume that; validating its shape here is what keeps a future
+    /// caller (or a value that started life as untrusted input) from
+    /// steering a path outside `directory`.
     func set(_ key: AssetCacheKey, payload: Data, metadata: AssetCacheMetadata) throws {
         recoverOrphansIfNeeded()
-        let payloadURL = payloadURL(for: key)
-        let metadataURL = metadataURL(for: key)
+        guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
+            throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
+        }
+        let newPayloadURL = payloadURL(for: key, contentHash: metadata.payloadSHA256Hex)
+        // Content-addressed payloads are immutable: if a file with this
+        // exact hash is already on disk (e.g. a revalidation whose fresh
+        // body happens to be byte-identical to what is already cached, or
+        // a currently-referenced generation this call is about to
+        // re-publish unchanged), its bytes are already correct and
+        // rewriting them would only add a redundant, still-safe write —
+        // skipping it is a pure optimization, not a correctness
+        // requirement. Recorded so a subsequent metadata-commit failure
+        // only rolls back a payload file this call itself just created,
+        // never one a still-valid previous generation may depend on.
+        let didCreatePayload = !fileManager.fileExists(atPath: newPayloadURL.path)
+        if didCreatePayload {
+            do {
+                try atomicWrite(payload, to: newPayloadURL)
+            } catch {
+                throw AssetError.cachePersistenceFailed(String(describing: error))
+            }
+        }
+        // The metadata sidecar is the single atomic "pointer" for this
+        // key. If this write fails, any previous metadata — still
+        // pointing at its own, untouched, differently-named payload file —
+        // remains fully valid; the prior generation is never destroyed by
+        // a failure here. If this call itself just created `newPayloadURL`
+        // (rather than reusing a previously-persisted, still-referenced
+        // generation), that now-unreferenced file is rolled back so a
+        // failed publish never leaves an orphan behind; a payload this
+        // call did not create is left untouched, since it may still be
+        // the one a surviving, untouched prior metadata sidecar depends
+        // on.
         do {
-            try atomicWrite(payload, to: payloadURL)
+            try persistMetadata(metadata, to: metadataURL(for: key))
         } catch {
+            if didCreatePayload {
+                try? fileManager.removeItem(at: newPayloadURL)
+            }
             throw AssetError.cachePersistenceFailed(String(describing: error))
         }
-        do {
-            try persistMetadata(metadata, to: metadataURL)
-        } catch {
-            try? fileManager.removeItem(at: payloadURL)
-            throw AssetError.cachePersistenceFailed(String(describing: error))
-        }
+        // Only now that the new generation is durably referenced is any
+        // other, now-superseded payload file for this key removed —
+        // including one left behind by an earlier crash between a prior
+        // payload write and its own metadata pointer commit.
+        cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: metadata.payloadSHA256Hex)
         evictIfNeeded()
     }
 
     /// Updates only the metadata sidecar for an already-cached `key` (for
     /// example bumping `lastAccessedAt` after a 304 revalidation), without
     /// re-writing the (unchanged) payload file. Throws if no payload
-    /// currently exists on disk for `key`, so this can never create an
-    /// orphaned metadata-only entry.
+    /// currently exists on disk matching `metadata.payloadSHA256Hex`, so
+    /// this can never create an orphaned metadata-only entry, nor point a
+    /// committed metadata sidecar at a payload file that does not exist.
     func touch(_ key: AssetCacheKey, metadata: AssetCacheMetadata) throws {
         recoverOrphansIfNeeded()
-        let payloadURL = payloadURL(for: key)
+        guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
+            throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
+        }
+        let payloadURL = payloadURL(for: key, contentHash: metadata.payloadSHA256Hex)
         guard fileManager.fileExists(atPath: payloadURL.path) else {
             throw AssetError.cachePersistenceFailed("No cached payload to touch for this key")
         }
@@ -146,7 +217,11 @@ actor AssetDiskCache {
     }
 
     func remove(_ key: AssetCacheKey) {
-        try? fileManager.removeItem(at: payloadURL(for: key))
+        // Removes every payload generation for this key (normally just
+        // one), not only the one the current metadata references, so a
+        // caller-initiated removal can never leave a superseded
+        // generation behind.
+        cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
         try? fileManager.removeItem(at: metadataURL(for: key))
     }
 
@@ -165,12 +240,42 @@ actor AssetDiskCache {
 
     // MARK: - Paths
 
-    private func payloadURL(for key: AssetCacheKey) -> URL {
-        directory.appendingPathComponent("\(key.digestHex).bin")
+    /// The filename for `key`'s payload under `contentHash` — the caller
+    /// must have already validated `contentHash` via
+    /// ``isValidContentHash(_:)`` if it did not originate from a value
+    /// this cache computed itself (e.g. it was read back from an on-disk
+    /// metadata sidecar).
+    private func payloadURL(for key: AssetCacheKey, contentHash: String) -> URL {
+        Self.payloadURL(in: directory, keyHash: key.digestHex, contentHash: contentHash)
+    }
+
+    static func payloadURL(in directory: URL, keyHash: String, contentHash: String) -> URL {
+        directory.appendingPathComponent("\(keyHash).\(contentHash).bin")
     }
 
     private func metadataURL(for key: AssetCacheKey) -> URL {
         directory.appendingPathComponent("\(key.digestHex).meta.json")
+    }
+
+    /// Removes both files for an entry that has failed integrity
+    /// validation on read.
+    private func quarantine(payloadURL: URL, metadataURL: URL) {
+        try? fileManager.removeItem(at: payloadURL)
+        try? fileManager.removeItem(at: metadataURL)
+    }
+
+    /// `true` only for a string that is exactly 64 lowercase ASCII hex
+    /// characters — the shape of a real SHA-256 hex digest, and the only
+    /// shape ever safe to interpolate into a filesystem path derived from
+    /// otherwise-untrusted on-disk metadata. In particular this rejects
+    /// `/`, `..`, and any other path-traversal or delimiter-injection
+    /// attempt a tampered metadata sidecar's `payloadSHA256Hex` field could
+    /// otherwise smuggle into ``payloadURL(for:contentHash:)``.
+    static func isValidContentHash(_ value: String) -> Bool {
+        guard value.utf8.count == 64 else { return false }
+        return value.utf8.allSatisfy { byte in
+            (0x30 ... 0x39).contains(byte) || (0x61 ... 0x66).contains(byte)
+        }
     }
 
     // MARK: - Atomic persistence
@@ -202,157 +307,11 @@ actor AssetDiskCache {
         let data = try JSONEncoder.assetCache.encode(metadata)
         try atomicWrite(data, to: url)
     }
-
-    // MARK: - Corruption / orphan recovery
-
-    private func quarantine(payloadURL: URL, metadataURL: URL) {
-        try? fileManager.removeItem(at: payloadURL)
-        try? fileManager.removeItem(at: metadataURL)
-    }
-
-    /// Runs once per cache instance lifetime (covering the common "cache
-    /// created once at app launch" case, which is what makes this a real
-    /// restart-recovery pass rather than a per-call cost). Removes any
-    /// leftover `.tmp` file from an interrupted write, any payload with no
-    /// matching metadata sidecar, and any metadata sidecar with no matching
-    /// payload.
-    private func recoverOrphansIfNeeded() {
-        guard !didRecoverOrphans else { return }
-        // Only mark recovery as done once the directory listing actually
-        // succeeds. If `contentsOfDirectory` fails (e.g. a transient I/O
-        // error), `didRecoverOrphans` must stay `false` so the very next
-        // `set` retries orphan/tmp cleanup instead of it being silently,
-        // permanently disabled for the lifetime of this cache instance.
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
-        )
-        else { return }
-        didRecoverOrphans = true
-
-        var payloadHashes: Set<String> = []
-        var metadataHashes: Set<String> = []
-        for url in contents {
-            let name = url.lastPathComponent
-            if name.hasSuffix(".tmp") {
-                try? fileManager.removeItem(at: url)
-            } else if name.hasSuffix(".bin") {
-                payloadHashes.insert(String(name.dropLast(".bin".count)))
-            } else if name.hasSuffix(".meta.json") {
-                metadataHashes.insert(String(name.dropLast(".meta.json".count)))
-            }
-        }
-        for hash in payloadHashes.subtracting(metadataHashes) {
-            try? fileManager.removeItem(at: directory.appendingPathComponent("\(hash).bin"))
-        }
-        for hash in metadataHashes.subtracting(payloadHashes) {
-            try? fileManager.removeItem(at: directory.appendingPathComponent("\(hash).meta.json"))
-        }
-    }
-
-    // MARK: - Eviction
-
-    /// One valid entry's identity, decoded metadata, and its metadata
-    /// sidecar's exact serialized byte count (the same `Data` this decodes
-    /// `metadata` from), so accounting never relies on an estimate for
-    /// bytes that are actually persisted to disk.
-    ///
-    /// `payloadBytes` is likewise the actual on-disk payload file size (via
-    /// filesystem attributes), not `metadata.encodedByteCount`: metadata is
-    /// untrusted input, and if the payload file were ever larger than
-    /// metadata claims — corruption, a partial write, or external
-    /// modification — trusting the claimed size would let eviction
-    /// undercount real disk usage until that exact key was next read via
-    /// `get(_:)` and quarantined there. See ``get(_:)`` for the same
-    /// actual-file-size check applied on the read path.
-    private struct Entry {
-        let hash: String
-        let metadata: AssetCacheMetadata
-        let metadataBytes: Int
-        let payloadBytes: Int
-    }
-
-    private func entries() -> [Entry] {
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
-        )
-        else { return [] }
-        var result: [Entry] = []
-        for url in contents where url.lastPathComponent.hasSuffix(".meta.json") {
-            let hash = String(url.lastPathComponent.dropLast(".meta.json".count))
-            let payloadURL = directory.appendingPathComponent("\(hash).bin")
-            guard let data = try? Data(contentsOf: url),
-                  let metadata = try? JSONDecoder.assetCache.decode(
-                      AssetCacheMetadata.self,
-                      from: data
-                  )
-            else {
-                // An unreadable or undecodable sidecar can never be
-                // corrected by itself; quarantining it here (rather than
-                // merely skipping it) prevents it from silently occupying
-                // disk space forever, uncounted against `diskBudgetBytes`
-                // and unevictable, until its exact key happens to be
-                // looked up again via `get(_:)`.
-                quarantine(payloadURL: payloadURL, metadataURL: url)
-                continue
-            }
-            guard metadata.schemaVersion == AssetCacheMetadata.currentSchemaVersion,
-                  metadata.cacheKeyHex == hash
-            else {
-                quarantine(payloadURL: payloadURL, metadataURL: url)
-                continue
-            }
-            // Measure the payload the same untrusting way `get(_:)` does:
-            // via filesystem attributes, never `metadata.encodedByteCount`.
-            // A missing payload file, or one whose actual size is negative
-            // or exceeds the configured cap, means this entry cannot be
-            // trusted for accounting purposes either — quarantine it
-            // rather than let it silently under- or over-count.
-            guard
-                let attributes = try? fileManager.attributesOfItem(atPath: payloadURL.path),
-                let actualPayloadSize = attributes[.size] as? Int,
-                actualPayloadSize >= 0, actualPayloadSize <= limits.maxEncodedBytes
-            else {
-                quarantine(payloadURL: payloadURL, metadataURL: url)
-                continue
-            }
-            result.append(
-                Entry(
-                    hash: hash,
-                    metadata: metadata,
-                    metadataBytes: data.count,
-                    payloadBytes: actualPayloadSize
-                )
-            )
-        }
-        return result
-    }
-
-    /// The exact bytes an entry counts against the disk quota: the real
-    /// on-disk payload file size plus the real serialized size of its
-    /// metadata sidecar file — never a fixed estimate, and never a value
-    /// merely claimed by (untrusted) metadata.
-    private static func accountedBytes(for entry: Entry) -> Int {
-        entry.payloadBytes + entry.metadataBytes
-    }
-
-    private func evictIfNeeded() {
-        var current = entries()
-        var total = current.reduce(0) { $0 + Self.accountedBytes(for: $1) }
-        guard total > limits.highWaterMarkDiskBytes else { return }
-        current.sort { $0.metadata.lastAccessedAt < $1.metadata.lastAccessedAt }
-        for entry in current {
-            guard total > limits.lowWaterMarkDiskBytes else { break }
-            try? fileManager.removeItem(at: directory.appendingPathComponent("\(entry.hash).bin"))
-            try? fileManager
-                .removeItem(at: directory.appendingPathComponent("\(entry.hash).meta.json"))
-            total -= Self.accountedBytes(for: entry)
-        }
-    }
 }
 
-private extension JSONEncoder {
+/// Not `private`: `AssetDiskCache+Recovery.swift` also decodes metadata
+/// sidecars with this exact decoder during startup recovery.
+extension JSONEncoder {
     static let assetCache: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -360,7 +319,7 @@ private extension JSONEncoder {
     }()
 }
 
-private extension JSONDecoder {
+extension JSONDecoder {
     static let assetCache: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601

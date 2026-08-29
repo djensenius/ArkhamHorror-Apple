@@ -4,31 +4,91 @@ import Foundation
 /// (see `Resources/AssetDigests/PROVENANCE.md`) and answers
 /// ``LocalizedDigestLookup`` queries against them.
 ///
-/// Each locale's identifier list is decoded lazily, once, on first use, and
-/// cached in both its original shipped order and as a `Set` for O(1)
-/// membership lookups.
+/// Every locale's identifier list is validated and decoded eagerly, once,
+/// at construction — never lazily on first use — so a genuinely broken
+/// resource (missing from the bundle, unreadable, or not valid JSON) is
+/// surfaced as soon as this type is composed, as a typed, catchable
+/// ``AssetError/configurationFailure(_:)``, rather than trapping the
+/// process the first time some caller happens to touch that locale. A
+/// locale that legitimately ships an empty digest (`ko`, which has no
+/// localized card art yet) still loads successfully to `[]`: only an
+/// actual load/parse failure is ``AssetError/configurationFailure(_:)``,
+/// so the two conditions are never conflated. Once constructed, every
+/// query below is a plain, non-throwing, lock-free dictionary lookup
+/// against this already-validated state.
 final class BundledLocalizedDigestProvider: LocalizedDigestLookup, @unchecked Sendable {
     /// Shared instance backing the default ``AssetLocator``.
-    static let shared = BundledLocalizedDigestProvider()
+    ///
+    /// `AssetLocator.candidates(for:digest:)` and
+    /// ``AssetCacheService/init(memoryCache:diskCache:transport:digest:limits:)``
+    /// both use this as a default parameter value, and Swift does not
+    /// permit a throwing expression as a default argument — so this
+    /// property itself cannot be throwing. It resolves the throwing,
+    /// eagerly-validating initializer exactly once via `Result`, retains
+    /// whatever it produced (success or failure) in ``configurationError``
+    /// for observability, and falls back to an explicitly-empty instance
+    /// only in the failure case (an unrecoverable packaging regression in
+    /// this package's own shipped resources, which every other test in
+    /// this suite confirms does not occur for the real bundle).
+    static let shared: BundledLocalizedDigestProvider = switch Result(
+        catching: { try BundledLocalizedDigestProvider(bundle: .module) }
+    ) {
+    case let .success(provider):
+        provider
+    case let .failure(error):
+        BundledLocalizedDigestProvider(
+            configurationError: BundledLocalizedDigestProvider.asAssetError(error)
+        )
+    }
 
-    private let bundle: Bundle
-    private let lock = NSLock()
-    private var orderedCache: [AssetLocale: [String]] = [:]
-    private var lookupCache: [AssetLocale: Set<String>] = [:]
+    /// Non-`nil` only for the extraordinarily unlikely fallback branch of
+    /// ``shared``, where the real bundle's own resources failed to load —
+    /// exposed so that failure remains observable (loggable/reportable)
+    /// rather than silently indistinguishable from a legitimately-empty
+    /// locale.
+    let configurationError: AssetError?
 
-    init(bundle: Bundle = .module) {
-        self.bundle = bundle
+    private let orderedCache: [AssetLocale: [String]]
+    private let lookupCache: [AssetLocale: Set<String>]
+
+    /// The throwing, eagerly-validating composition-time initializer:
+    /// every locale named by ``AssetLocale/digestResourceName`` is loaded
+    /// and decoded right now, synchronously, and any failure throws
+    /// ``AssetError/configurationFailure(_:)`` immediately rather than
+    /// deferring the failure to whichever call happens to touch that
+    /// locale first.
+    init(bundle: Bundle = .module) throws {
+        var ordered: [AssetLocale: [String]] = [:]
+        var lookup: [AssetLocale: Set<String>] = [:]
+        for locale in AssetLocale.allCases {
+            guard let resourceName = locale.digestResourceName else { continue }
+            let identifiers = try Self.load(resourceName: resourceName, bundle: bundle)
+            ordered[locale] = identifiers
+            lookup[locale] = Set(identifiers)
+        }
+        orderedCache = ordered
+        lookupCache = lookup
+        configurationError = nil
+    }
+
+    /// Constructs an instance that answers "no localized art" for every
+    /// locale, recording `configurationError` for observability. Never
+    /// used by the throwing initializer above; only by ``shared``'s
+    /// fallback branch.
+    private init(configurationError: AssetError) {
+        orderedCache = [:]
+        lookupCache = [:]
+        self.configurationError = configurationError
     }
 
     func hasLocalizedArt(_ identifier: AssetIdentifier, locale: AssetLocale) -> Bool {
-        guard let identifiers = identifierSet(for: locale) else { return false }
-        return identifiers.contains(identifier.rawValue)
+        lookupCache[locale]?.contains(identifier.rawValue) ?? false
     }
 
     /// The full loaded identifier set for `locale`, or `nil` for
     /// ``AssetLocale/english`` (which has no digest resource).
     func identifierSet(for locale: AssetLocale) -> Set<String>? {
-        loadIfNeeded(for: locale)?.set
+        lookupCache[locale]
     }
 
     /// The full loaded identifier list for `locale`, in the exact order
@@ -41,21 +101,7 @@ final class BundledLocalizedDigestProvider: LocalizedDigestLookup, @unchecked Se
     /// needing to locate and re-decode this package's resource bundle
     /// itself.
     func orderedIdentifiers(for locale: AssetLocale) -> [String]? {
-        loadIfNeeded(for: locale)?.ordered
-    }
-
-    private func loadIfNeeded(for locale: AssetLocale) -> (ordered: [String], set: Set<String>)? {
-        guard let resourceName = locale.digestResourceName else { return nil }
-        lock.lock()
-        defer { lock.unlock() }
-        if let ordered = orderedCache[locale], let set = lookupCache[locale] {
-            return (ordered, set)
-        }
-        let ordered = Self.load(resourceName: resourceName, bundle: bundle)
-        let set = Set(ordered)
-        orderedCache[locale] = ordered
-        lookupCache[locale] = set
-        return (ordered, set)
+        orderedCache[locale]
     }
 
     /// Loads `resourceName.json` from `bundle`, preserving the shipped
@@ -78,30 +124,35 @@ final class BundledLocalizedDigestProvider: LocalizedDigestLookup, @unchecked Se
     /// for that failure would make a broken bundle indistinguishable from
     /// a locale that intentionally has nothing to localize, quietly
     /// disabling localization instead of surfacing the regression. So
-    /// this traps instead of returning a fallback value; `ko.json`
-    /// decodes successfully to `[]` and never reaches the trap.
-    private static func load(resourceName: String, bundle: Bundle) -> [String] {
+    /// this throws a typed, catchable error instead of trapping the
+    /// process; `ko.json` decodes successfully to `[]` and never reaches
+    /// any of the throw sites below.
+    private static func load(resourceName: String, bundle: Bundle) throws -> [String] {
         guard let url = bundle.url(
             forResource: resourceName,
             withExtension: "json",
             subdirectory: "Resources/AssetDigests"
         ) else {
-            preconditionFailure(
+            throw AssetError.configurationFailure(
                 "Missing bundled digest resource '\(resourceName).json': packaging regression"
             )
         }
         guard let data = try? Data(contentsOf: url) else {
-            preconditionFailure(
+            throw AssetError.configurationFailure(
                 "Bundled digest resource '\(resourceName).json' could not be read: "
                     + "packaging regression"
             )
         }
         guard let identifiers = try? JSONDecoder().decode([String].self, from: data) else {
-            preconditionFailure(
+            throw AssetError.configurationFailure(
                 "Bundled digest resource '\(resourceName).json' is not valid JSON: "
                     + "packaging regression"
             )
         }
         return identifiers
+    }
+
+    private static func asAssetError(_ error: any Error) -> AssetError {
+        (error as? AssetError) ?? .configurationFailure(String(describing: error))
     }
 }

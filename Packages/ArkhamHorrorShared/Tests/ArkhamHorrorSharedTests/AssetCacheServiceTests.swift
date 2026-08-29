@@ -65,6 +65,22 @@ struct AssetCacheServiceTests {
         return AssetKey(category: .card(.art, identifier))
     }
 
+    /// A PNG-expecting key (``AssetCategory/expectedFormat``), used by
+    /// decode-gate tests that need a format whose pure metadata parser
+    /// (unlike AVIF's) does not itself require ImageIO to already confirm
+    /// a real coded image is present.
+    func setIconKey(_ rawSetCode: String = "01") throws -> AssetKey {
+        let identifier = try AssetIdentifier.setOrBoxCode(rawSetCode)
+        return AssetKey(category: .setIcon(identifier, variant: nil))
+    }
+
+    /// A JPEG-expecting key (``AssetCategory/expectedFormat``), for the
+    /// same reason as ``setIconKey(_:)``.
+    func campaignBoxKey(_ rawSetCode: String = "01") throws -> AssetKey {
+        let identifier = try AssetIdentifier.setOrBoxCode(rawSetCode)
+        return AssetKey(category: .campaignBox(identifier))
+    }
+
     func candidateURLs(
         for key: AssetKey,
         digest: any LocalizedDigestLookup = FakeDigestLookup()
@@ -73,7 +89,7 @@ struct AssetCacheServiceTests {
     }
 
     func successResult(
-        body: Data = AssetImageFixtureBuilder.syntheticAVIF(width: 4, height: 4),
+        body: Data = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4),
         etag: String? = nil,
         lastModified: String? = nil
     ) -> AssetHTTPResult {
@@ -100,7 +116,7 @@ struct AssetCacheServiceTests {
             await transport.enqueue(.success(successResult()), for: urls[1])
 
             let asset = try await service.asset(for: key)
-            #expect(asset.payload == AssetImageFixtureBuilder.syntheticAVIF(width: 4, height: 4))
+            #expect(asset.payload == AssetImageFixtureBuilder.validAVIF(width: 4, height: 4))
         }
     }
 
@@ -162,92 +178,95 @@ struct AssetCacheServiceTests {
         }
     }
 
-    // MARK: - Coalescing
+    // MARK: - Decode gate (full platform decode before cache publication)
 
-    @Test("Two concurrent identical requests are coalesced onto a single network fetch")
-    func concurrentIdenticalRequestsCoalesce() async throws {
+    @Test(
+        """
+        A PNG whose signature and IHDR declare plausible dimensions, but which has no \
+        IDAT/IEND and so is not actually decodable, is rejected rather than cached
+        """
+    )
+    func headerOnlyPNGRejectedRatherThanCached() async throws {
         try await withService { service, transport in
-            let key = try cardArtKey()
+            let key = try setIconKey()
             let urls = candidateURLs(for: key)
-            await transport.hold(urls[0])
-            await transport.enqueue(.success(successResult()), for: urls[0])
-
-            async let first = service.asset(for: key)
-            async let second = service.asset(for: key)
-            // Coalescing means only one real network fetch ever starts;
-            // wait for that single fetch to begin, then give the second
-            // caller time to join the in-flight work rather than starting
-            // its own (which would show up as a second call once released).
-            await transport.waitForCallCount(1, for: urls[0])
-            try await Task.sleep(nanoseconds: 20_000_000)
-            await transport.release(urls[0])
-
-            let (firstResult, secondResult) = try await (first, second)
-            #expect(firstResult.payload == secondResult.payload)
-            let callCount = await transport.callCount(for: urls[0])
-            #expect(
-                callCount == 1,
-                "Only one network fetch should have started for two identical concurrent requests"
+            await transport.enqueue(
+                .success(.success(AssetHTTPResponse(
+                    body: AssetImageFixtureBuilder.pngHeaderOnly(width: 4, height: 4),
+                    contentType: "image/png",
+                    etag: nil,
+                    lastModified: nil
+                ))),
+                for: urls[0]
             )
+
+            await #expect(throws: AssetError.malformedImageData) {
+                _ = try await service.asset(for: key)
+            }
         }
     }
 
-    @Test("One waiter cancelling does not corrupt or cancel the shared fetch for the other waiter")
-    func oneWaiterCancellingDoesNotAffectOthers() async throws {
+    @Test(
+        """
+        A JPEG whose SOI/SOF declare plausible dimensions, but which has no scan data or \
+        EOI and so is not actually decodable, is rejected rather than cached
+        """
+    )
+    func headerOnlyJPEGRejectedRatherThanCached() async throws {
         try await withService { service, transport in
-            let key = try cardArtKey()
+            let key = try campaignBoxKey()
             let urls = candidateURLs(for: key)
-            await transport.hold(urls[0])
-            await transport.enqueue(.success(successResult()), for: urls[0])
+            await transport.enqueue(
+                .success(.success(AssetHTTPResponse(
+                    body: AssetImageFixtureBuilder.jpegHeaderOnly(width: 4, height: 4),
+                    contentType: "image/jpeg",
+                    etag: nil,
+                    lastModified: nil
+                ))),
+                for: urls[0]
+            )
 
-            let firstTask = Task { try await service.asset(for: key) }
-            let secondTask = Task { try await service.asset(for: key) }
-            await transport.waitForCallCount(1, for: urls[0])
-            try await Task.sleep(nanoseconds: 20_000_000)
-
-            firstTask.cancel()
-            // Give the cancellation handler a moment to run and decrement
-            // the waiter count before releasing the held fetch.
-            try await Task.sleep(nanoseconds: 20_000_000)
-            await transport.release(urls[0])
-
-            let secondResult = try await secondTask.value
-            #expect(secondResult.payload == AssetImageFixtureBuilder.syntheticAVIF(
-                width: 4,
-                height: 4
-            ))
-            let callCount = await transport.callCount(for: urls[0])
-            #expect(callCount == 1, "The shared fetch must not have been restarted or duplicated")
+            await #expect(throws: AssetError.malformedImageData) {
+                _ = try await service.asset(for: key)
+            }
         }
     }
 
-    @Test("The last waiter cancelling stops the fetch and leaves no cache entry behind")
-    func lastWaiterCancellingLeavesNoCacheEntry() async throws {
+    @Test(
+        """
+        A malformed/undecodable payload that fails the decode gate never reaches the disk \
+        or memory cache: a subsequent request for the same key still performs a fresh \
+        network fetch rather than replaying a poisoned failure or a partial entry
+        """
+    )
+    func decodeGateFailureNeverPublishesAndAllowsFreshRetry() async throws {
         try await withService { service, transport in
-            let key = try cardArtKey()
+            let key = try setIconKey()
             let urls = candidateURLs(for: key)
-            await transport.hold(urls[0])
-            await transport.enqueue(.success(successResult()), for: urls[0])
-
-            let onlyTask = Task { try await service.asset(for: key) }
-            await transport.waitForCallCount(1, for: urls[0])
-            try await Task.sleep(nanoseconds: 20_000_000)
-
-            onlyTask.cancel()
-            let result = await onlyTask.result
-            #expect(throws: (any Error).self) { try result.get() }
-
-            // Release afterward so the fake transport's internal polling
-            // loop doesn't spin forever; the fetch's own task should
-            // already have been cancelled by this point regardless.
-            await transport.release(urls[0])
-
-            let secondAttempt = try await service.asset(for: key)
-            #expect(
-                secondAttempt.payload == AssetImageFixtureBuilder
-                    .syntheticAVIF(width: 4, height: 4),
-                "A later, independent request must still succeed normally"
+            await transport.enqueue(
+                .success(.success(AssetHTTPResponse(
+                    body: AssetImageFixtureBuilder.pngHeaderOnly(width: 4, height: 4),
+                    contentType: "image/png",
+                    etag: nil,
+                    lastModified: nil
+                ))),
+                for: urls[0]
             )
+            await #expect(throws: AssetError.malformedImageData) {
+                _ = try await service.asset(for: key)
+            }
+
+            await transport.enqueue(
+                .success(.success(AssetHTTPResponse(
+                    body: AssetImageFixtureBuilder.validPNG(width: 4, height: 4),
+                    contentType: "image/png",
+                    etag: nil,
+                    lastModified: nil
+                ))),
+                for: urls[0]
+            )
+            let asset = try await service.asset(for: key)
+            #expect(asset.payload == AssetImageFixtureBuilder.validPNG(width: 4, height: 4))
         }
     }
 }

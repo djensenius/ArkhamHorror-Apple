@@ -44,6 +44,19 @@ struct AssetDiskCacheTests {
         )
     }
 
+    /// The exact on-disk filename ``AssetDiskCache`` derives for `payload`
+    /// under `cacheKey`: content-addressed by `payload`'s own SHA-256, not
+    /// a fixed name — a stored entry's payload filename changes if its
+    /// bytes ever do (a replacement never overwrites a prior generation's
+    /// file in place). Centralized here so every test that pokes at the
+    /// payload file directly derives the same filename the production
+    /// code does, rather than each hard-coding the old fixed-name scheme.
+    func payloadFileURL(directory: URL, cacheKey: AssetCacheKey, payload: Data) -> URL {
+        directory.appendingPathComponent(
+            "\(cacheKey.digestHex).\(AssetPayloadHasher.sha256Hex(payload)).bin"
+        )
+    }
+
     func smallLimits(diskBudgetBytes: Int = 1_000_000) -> AssetCacheLimits {
         AssetCacheLimits(
             maxEncodedBytes: 1_000_000,
@@ -103,7 +116,11 @@ struct AssetDiskCacheTests {
             )
 
             // Tamper with the payload on disk directly, bypassing the cache API.
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: payload
+            )
             try Data([9, 9, 9]).write(to: payloadURL)
 
             let fetched = await cache.get(cacheKey)
@@ -148,9 +165,14 @@ struct AssetDiskCacheTests {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
             let cacheKey = try key("01001")
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let payload = Data([1, 2, 3])
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: payload
+            )
             let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
-            try Data([1, 2, 3]).write(to: payloadURL)
+            try payload.write(to: payloadURL)
             try Data("not json".utf8).write(to: metadataURL)
 
             let fetched = await cache.get(cacheKey)
@@ -243,56 +265,16 @@ struct AssetDiskCacheTests {
             // Substitute a payload file far larger than both the claimed
             // `encodedByteCount` (3 bytes) and the configured cap, without
             // touching the metadata sidecar at all.
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: payload
+            )
             let oversized = Data(repeating: 0xFF, count: limits.maxEncodedBytes + 1)
             try oversized.write(to: payloadURL)
 
             let fetched = await cache.get(cacheKey)
             #expect(fetched == nil)
-        }
-    }
-
-    // MARK: - Orphan / temp-file recovery
-
-    @Test("An orphaned payload file with no metadata sidecar is removed on first access")
-    func orphanedPayloadWithoutMetadataRemoved() async throws {
-        try await withScratchDirectory { directory in
-            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let cacheKey = try key("01001")
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
-            try Data([1, 2, 3]).write(to: payloadURL)
-
-            // Any access triggers the once-per-instance orphan sweep.
-            _ = try await cache.get(key("01002"))
-            #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
-        }
-    }
-
-    @Test("An orphaned metadata sidecar with no payload file is removed on first access")
-    func orphanedMetadataWithoutPayloadRemoved() async throws {
-        try await withScratchDirectory { directory in
-            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let cacheKey = try key("01001")
-            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
-            let payload = Data([1, 2, 3])
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            try encoder.encode(metadata(for: cacheKey, payload: payload)).write(to: metadataURL)
-
-            _ = try await cache.get(key("01002"))
-            #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
-        }
-    }
-
-    @Test("A leftover .tmp file from an interrupted write is removed on first access")
-    func leftoverTempFileRemoved() async throws {
-        try await withScratchDirectory { directory in
-            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let tempURL = directory.appendingPathComponent("deadbeef.bin.tmp")
-            try Data([1, 2, 3]).write(to: tempURL)
-
-            _ = try await cache.get(key("01001"))
-            #expect(!FileManager.default.fileExists(atPath: tempURL.path))
         }
     }
 }

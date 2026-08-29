@@ -113,7 +113,11 @@ extension AssetDiskCacheTests {
             // the metadata sidecar, simulating corruption/tampering/a
             // partial write after the fact: metadata still claims 250
             // bytes, but the actual file is now 900 bytes.
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: originalPayload
+            )
             try Data(count: 900).write(to: payloadURL)
 
             let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
@@ -148,7 +152,11 @@ extension AssetDiskCacheTests {
                 payload: smallPayload,
                 metadata: metadata(for: cacheKey, payload: smallPayload)
             )
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: smallPayload
+            )
             let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
             // The metadata sidecar still claims 250 bytes; only the actual
             // file on disk is oversized.
@@ -198,7 +206,11 @@ extension AssetDiskCacheTests {
                 metadata: metadata(for: cacheKey, payload: payload)
             )
 
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: payload
+            )
             let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
             try Data("not json".utf8).write(to: metadataURL)
 
@@ -230,7 +242,11 @@ extension AssetDiskCacheTests {
                 metadata: metadata(for: cacheKey, payload: payload)
             )
 
-            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: payload
+            )
             let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
             var json = try #require(
                 try JSONSerialization

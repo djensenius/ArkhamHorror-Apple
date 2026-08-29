@@ -66,6 +66,15 @@ enum AssetError: Error, Sendable {
     /// Persisting the payload and metadata atomically failed; no half
     /// entry was left on disk.
     case cachePersistenceFailed(String)
+
+    // MARK: Configuration / packaging
+
+    /// A bundled resource this package's own configuration depends on
+    /// (e.g. a localized-digest lookup table) is missing, unreadable, or
+    /// not valid — a build/packaging regression, never a legitimate
+    /// runtime data condition. The associated `String` is diagnostic
+    /// only.
+    case configurationFailure(String)
 }
 
 extension AssetError: Equatable {
@@ -90,7 +99,8 @@ extension AssetError: Equatable {
         case let (.unexpectedStatus(lhsValue), .unexpectedStatus(rhsValue)):
             lhsValue == rhsValue
         case (.transportFailure, .transportFailure),
-             (.cachePersistenceFailed, .cachePersistenceFailed):
+             (.cachePersistenceFailed, .cachePersistenceFailed),
+             (.configurationFailure, .configurationFailure):
             // Diagnostic strings are informational only; equality ignores them.
             true
         default:
