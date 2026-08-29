@@ -32,6 +32,14 @@ run = "swiftlint lint --strict"
 description = "Run pure foundation tests"
 run = "swift test --package-path Packages/ArkhamHorrorShared"
 
+[tasks.contract-provenance]
+description = "Verify vendored contract fixtures are byte-identical to the pinned backend commit (network-dependent; not part of the offline test suite)"
+run = "Scripts/verify-contract-fixture-provenance.sh"
+
+[tasks.contract-provenance-selftest]
+description = "Offline self-test of verify-contract-fixture-provenance.sh's own logic against disposable scratch git repos (no network, part of the offline test suite)"
+run = "Scripts/test-verify-contract-fixture-provenance.sh"
+
 [tasks.build]
 description = "Build every application target"
 run = """

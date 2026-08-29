@@ -11,16 +11,16 @@ struct ServerCapabilitiesTests {
             Bundle.module.url(
                 forResource: "capabilities",
                 withExtension: "json",
-                subdirectory: "Fixtures"
+                subdirectory: "Fixtures/Contract"
             )
         )
-        return try JSONDecoder().decode(ServerCapabilities.self, from: Data(contentsOf: url))
+        return try ContractJSON.decode(ServerCapabilities.self, from: Data(contentsOf: url))
     }
 
     @Test("Canonical vendored fixture decodes correctly")
     func canonicalFixtureDecodes() throws {
         let caps = try loadFixture()
-        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 11))
+        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 12))
         #expect(caps.status == .baselineIncomplete)
         #expect(caps.apiBasePath == "/api/v1")
         let expectedClientMin = ContractRevision.literal(major: 0, minor: 1, patch: 0)
@@ -57,14 +57,14 @@ struct ServerCapabilitiesTests {
     func unknownCapabilitiesPreserved() throws {
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
             "capabilities": ["known.feature", "unknown.future.capability.xyz"]
         }
         """
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         #expect(caps.capabilities.contains("unknown.future.capability.xyz"))
         #expect(caps.capabilities.contains("known.feature"))
     }
@@ -73,14 +73,14 @@ struct ServerCapabilitiesTests {
     func unknownStatusPreserved() throws {
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "future-status-v3-not-yet-defined",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
             "capabilities": []
         }
         """
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         #expect(caps.status.rawValue == "future-status-v3-not-yet-defined")
         #expect(caps.status != .stable)
         #expect(caps.status != .baselineIncomplete)
@@ -90,7 +90,7 @@ struct ServerCapabilitiesTests {
     func unknownExtraFieldsAccepted() throws {
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
@@ -100,8 +100,8 @@ struct ServerCapabilitiesTests {
         }
         """
         // Decoding must not fail when unknown top-level keys are present.
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
-        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 11))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
+        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 12))
     }
 
     // MARK: - Known status values
@@ -123,7 +123,7 @@ struct ServerCapabilitiesTests {
             "capabilities": []
         }
         """
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         #expect(caps.status == expected)
     }
 
@@ -133,14 +133,14 @@ struct ServerCapabilitiesTests {
     func emptyCapabilities() throws {
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "stable",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
             "capabilities": []
         }
         """
-        let caps = try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+        let caps = try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         #expect(caps.capabilities.isEmpty)
     }
 
@@ -156,7 +156,7 @@ struct ServerCapabilitiesTests {
         }
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+            try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         }
     }
 
@@ -173,7 +173,7 @@ struct ServerCapabilitiesTests {
         }
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+            try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         }
     }
 
@@ -182,7 +182,7 @@ struct ServerCapabilitiesTests {
         // capabilities must be [String]; an integer element must fail
         let json = """
         {
-            "schemaRevision": "0.1.11",
+            "schemaRevision": "0.1.12",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
@@ -190,7 +190,7 @@ struct ServerCapabilitiesTests {
         }
         """
         #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(ServerCapabilities.self, from: Data(json.utf8))
+            try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
         }
     }
 }
