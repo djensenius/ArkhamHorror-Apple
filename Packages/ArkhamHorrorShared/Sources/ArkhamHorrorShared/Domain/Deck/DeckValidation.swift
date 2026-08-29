@@ -40,7 +40,9 @@ extension DeckValidationError: Codable {
     }
 }
 
-/// A non-empty list of deck validation failures.
+/// A list of deck validation failures. The wire contract guarantees at least one entry when
+/// this shape is returned; an empty array instead decodes as the separate success marker
+/// ``DeckValidationSuccess``, so this typealias itself does not enforce non-emptiness.
 typealias DeckValidationErrors = [DeckValidationError]
 
 /// The marker returned when deck validation finds no errors: always an empty JSON array.
