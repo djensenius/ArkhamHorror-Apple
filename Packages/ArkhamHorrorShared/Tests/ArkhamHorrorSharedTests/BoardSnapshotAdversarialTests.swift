@@ -149,6 +149,16 @@ struct BoardSnapshotAdversarialTests {
         #expect(throws: DecodingError.self) {
             _ = try ContractJSON.decode(Location.self, from: Data(fixture.utf8))
         }
+        // The thrown error's own coding path names the specific missing key ("shroud"),
+        // not merely the enclosing object, so a contract-drift diagnostic actually
+        // points at what's missing rather than only where.
+        do {
+            _ = try ContractJSON.decode(Location.self, from: Data(fixture.utf8))
+            Issue.record("Expected decoding to throw")
+        } catch let DecodingError.keyNotFound(key, context) {
+            #expect(key.stringValue == "shroud")
+            #expect(context.codingPath.last?.stringValue == "shroud")
+        }
     }
 
     // MARK: - Depth/input bounds

@@ -61,7 +61,7 @@ extension ChaosToken: Codable {
             InvestigatorID.self,
             from: container,
             forKey: .chaosTokenRevealedBy,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.chaosTokenRevealedBy]
         )
         chaosTokenCancelled = try container.decode(Bool.self, forKey: .chaosTokenCancelled)
         chaosTokenSealed = try container.decode(Bool.self, forKey: .chaosTokenSealed)
@@ -121,13 +121,13 @@ extension ChaosBag: Codable {
             JSONValue.self,
             from: container,
             forKey: .choice,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.choice]
         )
         forceDraw = try decodeRequiredNullable(
             ChaosTokenFace.self,
             from: container,
             forKey: .forceDraw,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.forceDraw]
         )
         tokenPool = try container.decode([ChaosToken].self, forKey: .tokenPool)
         totalRevealedChaosTokens = try container.decode(

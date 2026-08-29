@@ -109,7 +109,7 @@ extension PublicGameSnapshot: Codable {
         activePlayerID = try container.decode(PlayerID.self, forKey: .activePlayerID)
         turnPlayerInvestigatorID = try decodeRequiredNullable(
             InvestigatorID.self, from: container, forKey: .turnPlayerInvestigatorID,
-            codingPath: path
+            codingPath: path + [CodingKeys.turnPlayerInvestigatorID]
         )
         leadInvestigatorID = try container.decode(
             InvestigatorID.self, forKey: .leadInvestigatorID
@@ -121,7 +121,8 @@ extension PublicGameSnapshot: Codable {
         )
         inAction = try container.decode(Bool.self, forKey: .inAction)
         skillTest = try decodeRequiredNullable(
-            JSONValue.self, from: container, forKey: .skillTest, codingPath: path
+            JSONValue.self, from: container, forKey: .skillTest,
+            codingPath: path + [CodingKeys.skillTest]
         )
         skillTestChaosTokens = try container.decode(
             [JSONValue].self, forKey: .skillTestChaosTokens
@@ -132,13 +133,15 @@ extension PublicGameSnapshot: Codable {
         foundCards = try container.decode(JSONValue.self, forKey: .foundCards)
         focusedChaosTokens = try container.decode([JSONValue].self, forKey: .focusedChaosTokens)
         activeCard = try decodeRequiredNullable(
-            JSONValue.self, from: container, forKey: .activeCard, codingPath: path
+            JSONValue.self, from: container, forKey: .activeCard,
+            codingPath: path + [CodingKeys.activeCard]
         )
         removedFromPlay = try container.decode([JSONValue].self, forKey: .removedFromPlay)
         gameState = try container.decode(GameState.self, forKey: .gameState)
         inSetup = try container.decode(Bool.self, forKey: .inSetup)
         skillTestResults = try decodeRequiredNullable(
-            JSONValue.self, from: container, forKey: .skillTestResults, codingPath: path
+            JSONValue.self, from: container, forKey: .skillTestResults,
+            codingPath: path + [CodingKeys.skillTestResults]
         )
         question = try container.decode(UUIDEntityMap<PlayerIDTag>.self, forKey: .question)
         cards = try container.decode(UUIDEntityMap<WireCardIDTag>.self, forKey: .cards)
@@ -146,16 +149,20 @@ extension PublicGameSnapshot: Codable {
         totalClues = try container.decode(Int.self, forKey: .totalClues)
         scenarioSteps = try container.decode(Int.self, forKey: .scenarioSteps)
         undoActionStep = try decodeRequiredNullable(
-            Int.self, from: container, forKey: .undoActionStep, codingPath: path
+            Int.self, from: container, forKey: .undoActionStep,
+            codingPath: path + [CodingKeys.undoActionStep]
         )
         undoTurnStep = try decodeRequiredNullable(
-            Int.self, from: container, forKey: .undoTurnStep, codingPath: path
+            Int.self, from: container, forKey: .undoTurnStep,
+            codingPath: path + [CodingKeys.undoTurnStep]
         )
         undoPhaseStep = try decodeRequiredNullable(
-            Int.self, from: container, forKey: .undoPhaseStep, codingPath: path
+            Int.self, from: container, forKey: .undoPhaseStep,
+            codingPath: path + [CodingKeys.undoPhaseStep]
         )
         undoRoundStep = try decodeRequiredNullable(
-            Int.self, from: container, forKey: .undoRoundStep, codingPath: path
+            Int.self, from: container, forKey: .undoRoundStep,
+            codingPath: path + [CodingKeys.undoRoundStep]
         )
         roundHistory = try container.decode(CardCodeEntityMap.self, forKey: .roundHistory)
         phaseHistory = try container.decode(CardCodeEntityMap.self, forKey: .phaseHistory)

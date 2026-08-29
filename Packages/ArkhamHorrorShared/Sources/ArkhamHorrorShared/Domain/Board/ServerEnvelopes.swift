@@ -22,12 +22,18 @@ extension GetGameEnvelope: Codable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         playerID = try decodeRequiredNullable(
-            PlayerID.self, from: container, forKey: .playerID, codingPath: decoder.codingPath
+            PlayerID.self,
+            from: container,
+            forKey: .playerID,
+            codingPath: decoder.codingPath + [CodingKeys.playerID]
         )
         multiplayerMode = try container.decode(MultiplayerVariant.self, forKey: .multiplayerMode)
         game = try container.decode(PublicGameSnapshot.self, forKey: .game)
         eventID = try decodeRequiredNullable(
-            UUID.self, from: container, forKey: .eventID, codingPath: decoder.codingPath
+            UUID.self,
+            from: container,
+            forKey: .eventID,
+            codingPath: decoder.codingPath + [CodingKeys.eventID]
         )
     }
 

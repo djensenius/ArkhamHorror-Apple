@@ -86,7 +86,7 @@ extension EnemyLocationView: Codable {
             GameValue.self,
             from: container,
             forKey: .shroud,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.shroud]
         )
         revealed = try container.decode(Bool.self, forKey: .revealed)
         exhausted = try container.decode(Bool.self, forKey: .exhausted)
@@ -103,7 +103,7 @@ extension EnemyLocationView: Codable {
             Placement.self,
             from: container,
             forKey: .placement,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.placement]
         )
         brazier = try container.decode(JSONValue.self, forKey: .brazier)
         breaches = try container.decode(JSONValue.self, forKey: .breaches)

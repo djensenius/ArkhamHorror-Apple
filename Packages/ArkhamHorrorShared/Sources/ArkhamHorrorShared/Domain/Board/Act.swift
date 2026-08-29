@@ -103,7 +103,7 @@ extension Act: Codable {
             RuntimeCost.self,
             from: container,
             forKey: .advanceCost,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.advanceCost]
         )
         breaches = try container.decode(JSONValue.self, forKey: .breaches)
         cardsUnderneath = try container.decode([JSONValue].self, forKey: .cardsUnderneath)

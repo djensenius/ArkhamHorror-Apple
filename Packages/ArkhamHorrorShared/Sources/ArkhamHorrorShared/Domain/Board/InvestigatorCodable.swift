@@ -100,7 +100,8 @@ extension Investigator: Codable {
         assignedSanityDamage = try container.decode(Int.self, forKey: .assignedSanityDamage)
         assignedSanityHeal = try container.decode([JSONValue].self, forKey: .assignedSanityHeal)
         beganRoundAt = try decodeRequiredNullable(
-            LocationID.self, from: container, forKey: .beganRoundAt, codingPath: path
+            LocationID.self, from: container, forKey: .beganRoundAt,
+            codingPath: path + [CodingKeys.beganRoundAt]
         )
         bondedCards = try container.decode([JSONValue].self, forKey: .bondedCards)
         cardCode = try container.decode(CardCode.self, forKey: .cardCode)
@@ -114,19 +115,23 @@ extension Investigator: Codable {
         )
         deckSize = try container.decode(Int.self, forKey: .deckSize)
         deckURL = try decodeRequiredNullable(
-            String.self, from: container, forKey: .deckURL, codingPath: path
+            String.self, from: container, forKey: .deckURL,
+            codingPath: path + [CodingKeys.deckURL]
         )
         decks = try container.decode([JSONValue].self, forKey: .decks)
         defeated = try container.decode(Bool.self, forKey: .defeated)
         discard = try container.decode([JSONValue].self, forKey: .discard)
         discarding = try decodeRequiredNullable(
-            JSONValue.self, from: container, forKey: .discarding, codingPath: path
+            JSONValue.self, from: container, forKey: .discarding,
+            codingPath: path + [CodingKeys.discarding]
         )
         discover = try decodeRequiredNullable(
-            JSONValue.self, from: container, forKey: .discover, codingPath: path
+            JSONValue.self, from: container, forKey: .discover,
+            codingPath: path + [CodingKeys.discover]
         )
         drawing = try decodeRequiredNullable(
-            JSONValue.self, from: container, forKey: .drawing, codingPath: path
+            JSONValue.self, from: container, forKey: .drawing,
+            codingPath: path + [CodingKeys.drawing]
         )
         drawnCards = try container.decode([JSONValue].self, forKey: .drawnCards)
         drivenInsane = try container.decode(Bool.self, forKey: .drivenInsane)
@@ -150,7 +155,8 @@ extension Investigator: Codable {
         meta = try container.decode(JSONValue.self, forKey: .meta)
         modifiers = try container.decode([JSONValue].self, forKey: .modifiers)
         movement = try decodeRequiredNullable(
-            Movement.self, from: container, forKey: .movement, codingPath: path
+            Movement.self, from: container, forKey: .movement,
+            codingPath: path + [CodingKeys.movement]
         )
         mulligansTaken = try container.decode(Int.self, forKey: .mulligansTaken)
         mutated = try container.decode(JSONValue.self, forKey: .mutated)
@@ -159,7 +165,8 @@ extension Investigator: Codable {
         placement = try container.decode(Placement.self, forKey: .placement)
         playerID = try container.decode(PlayerID.self, forKey: .playerID)
         previousLocation = try decodeRequiredNullable(
-            LocationID.self, from: container, forKey: .previousLocation, codingPath: path
+            LocationID.self, from: container, forKey: .previousLocation,
+            codingPath: path + [CodingKeys.previousLocation]
         )
         remainingActions = try container.decode(Int.self, forKey: .remainingActions)
         resigned = try container.decode(Bool.self, forKey: .resigned)
@@ -168,7 +175,8 @@ extension Investigator: Codable {
         sealedChaosTokens = try container.decode([ChaosToken].self, forKey: .sealedChaosTokens)
         seals = try container.decode([JSONValue].self, forKey: .seals)
         search = try decodeRequiredNullable(
-            JSONValue.self, from: container, forKey: .search, codingPath: path
+            JSONValue.self, from: container, forKey: .search,
+            codingPath: path + [CodingKeys.search]
         )
         settings = try container.decode(JSONValue.self, forKey: .settings)
         sideDeck = try container.decode(JSONValue.self, forKey: .sideDeck)

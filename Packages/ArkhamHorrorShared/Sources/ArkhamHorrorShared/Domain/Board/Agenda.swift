@@ -86,7 +86,7 @@ extension Agenda: Codable {
             GameValue.self,
             from: container,
             forKey: .doomThreshold,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.doomThreshold]
         )
         flipped = try container.decode(Bool.self, forKey: .flipped)
         cardsUnderneath = try container.decode([JSONValue].self, forKey: .cardsUnderneath)

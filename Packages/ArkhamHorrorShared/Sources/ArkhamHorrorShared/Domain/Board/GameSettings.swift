@@ -49,7 +49,7 @@ extension GameSettings: Codable {
             String.self,
             from: container,
             forKey: .rolledUltimatumOrBoon,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.rolledUltimatumOrBoon]
         )
         screamedAllies = try container.decode([String].self, forKey: .screamedAllies)
         strictAsIfAt = try container.decode(Bool.self, forKey: .strictAsIfAt)

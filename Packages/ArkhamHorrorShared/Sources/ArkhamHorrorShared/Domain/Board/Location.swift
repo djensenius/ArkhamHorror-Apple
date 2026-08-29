@@ -167,7 +167,7 @@ extension OrdinaryLocation: Codable {
             GameValue.self,
             from: container,
             forKey: .shroud,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.shroud]
         )
         revealed = try container.decode(Bool.self, forKey: .revealed)
         symbol = try container.decode(LocationSymbol.self, forKey: .symbol)
@@ -190,7 +190,7 @@ extension OrdinaryLocation: Codable {
             Placement.self,
             from: container,
             forKey: .placement,
-            codingPath: decoder.codingPath
+            codingPath: decoder.codingPath + [CodingKeys.placement]
         )
         keys = try container.decode([JSONValue].self, forKey: .keys)
         seals = try container.decode([JSONValue].self, forKey: .seals)
