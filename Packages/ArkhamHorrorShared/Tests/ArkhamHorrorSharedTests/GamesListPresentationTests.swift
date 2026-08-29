@@ -92,6 +92,29 @@ struct GamesListPresentationTests {
         _ = view.body
     }
 
+    @Test(
+        """
+        identifiedRows keys a .game row by its own GameID and a .failed row by \
+        position, never index for a .game row
+        """
+    )
+    func identifiedRowsUseStableGameIDIdentity() async {
+        let firstGame = sampleGame()
+        let secondGame = sampleGame()
+        let games: GameList = [
+            .game(firstGame),
+            .failed(FailedGameEntry(error: "Could not load this game.")),
+            .game(secondGame),
+        ]
+        let model = await model(gameListState: .loaded(games))
+        let view = GamesListView(model: model)
+        let rows = view.identifiedRows(for: games)
+
+        #expect(rows.map(\.id) == [
+            AnyHashable(firstGame.id), AnyHashable(1), AnyHashable(secondGame.id),
+        ])
+    }
+
     // MARK: - GameRowView body evaluates for every notable game shape
 
     @Test("GameRowView's body evaluates for a plain solo game without crashing")
@@ -224,6 +247,7 @@ struct GamesListPresentationTests {
         let gameID = UUID()
         let identifiers = [
             AccountAccessibilityID.gamesRefreshButton,
+            AccountAccessibilityID.gamesRetryButton,
             AccountAccessibilityID.gameDeleteConfirmButton,
             AccountAccessibilityID.gameListFailureText,
             AccountAccessibilityID.accountDetailButton,

@@ -74,11 +74,45 @@ import Foundation
         func clearAll() throws {}
     }
 
-    /// A ``GameLifecycleServicing`` fake for previews: returns a small, fixed sample
-    /// list and otherwise never touches the network.
+    /// A ``GameLifecycleServicing`` fake for previews: returns a small, representative
+    /// sample list and otherwise never touches the network.
     struct PreviewGameLifecycleService: GameLifecycleServicing {
         func listGames(on _: ServerProfile, token _: String) async throws -> GameList {
-            []
+            [
+                .game(
+                    GameSummary(
+                        id: GameID(UUID()),
+                        scenario: ScenarioSummary(
+                            id: "01104", difficulty: .easy,
+                            name: CardName(title: "The Gathering", subtitle: nil), variant: nil
+                        ),
+                        campaign: nil,
+                        gameState: .active,
+                        name: "Preview solo game",
+                        investigators: [
+                            InvestigatorSummary(id: "01001", classSymbol: .init("Guardian")),
+                        ],
+                        otherInvestigators: [],
+                        multiplayerVariant: .solo,
+                        hasOpenSeats: false
+                    )
+                ),
+                .game(
+                    GameSummary(
+                        id: GameID(UUID()),
+                        scenario: nil,
+                        campaign: CampaignSummary(
+                            id: "01", difficulty: .standard, currentCampaignMode: nil
+                        ),
+                        gameState: .pending([]),
+                        name: "Preview campaign",
+                        investigators: [],
+                        otherInvestigators: [],
+                        multiplayerVariant: .withFriends,
+                        hasOpenSeats: true
+                    )
+                ),
+            ]
         }
 
         func createGame(

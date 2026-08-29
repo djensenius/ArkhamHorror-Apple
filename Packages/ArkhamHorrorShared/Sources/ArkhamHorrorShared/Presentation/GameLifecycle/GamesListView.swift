@@ -119,7 +119,7 @@ struct GamesListView: View {
             Text(error.message)
         } actions: {
             Button("Retry") { model.refreshGames() }
-                .accessibilityIdentifier(AccountAccessibilityID.gamesRefreshButton)
+                .accessibilityIdentifier(AccountAccessibilityID.gamesRetryButton)
         }
         .accessibilityIdentifier(AccountAccessibilityID.gameListFailureText)
     }
@@ -133,10 +133,25 @@ struct GamesListView: View {
                 }
             }
             Section {
-                ForEach(Array(games.enumerated()), id: \.offset) { _, entry in
-                    row(for: entry)
+                ForEach(identifiedRows(for: games)) { row in
+                    self.row(for: row.entry)
                 }
             }
+        }
+    }
+
+    /// Pairs each row with a stable identity: a successfully decoded game's own
+    /// ``GameID`` when available, falling back to its position only for a
+    /// ``GameListEntry/failed(_:)`` row (which carries no identifier of its own).
+    /// Using the row's own `GameID` -- rather than always keying by position --
+    /// keeps a row's swipe actions/context menu/focus bound to the same game
+    /// across a refresh that reorders or removes other rows, instead of SwiftUI
+    /// reusing that row's view for a different game at the same position. Not
+    /// `private` so a deterministic test can verify this identity assignment.
+    func identifiedRows(for games: GameList) -> [IdentifiedGameListEntry] {
+        games.enumerated().map { offset, entry in
+            let id = entry.gameID.map(AnyHashable.init) ?? AnyHashable(offset)
+            return IdentifiedGameListEntry(id: id, entry: entry)
         }
     }
 
@@ -170,6 +185,13 @@ struct GamesListView: View {
                 .foregroundStyle(.secondary)
         }
     }
+}
+
+/// Pairs a ``GameListEntry`` with a stable per-row identity for ``ForEach``. See
+/// ``GamesListView/identifiedRows(for:)``.
+struct IdentifiedGameListEntry: Identifiable {
+    let id: AnyHashable
+    let entry: GameListEntry
 }
 
 /// Applies swipe-to-delete on platforms that support list swipe gestures (iOS,

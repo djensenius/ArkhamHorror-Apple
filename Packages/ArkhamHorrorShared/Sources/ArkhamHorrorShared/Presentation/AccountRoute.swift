@@ -90,6 +90,7 @@ enum AccountAccessibilityID {
     // MARK: - Games list/lobby
 
     static let gamesRefreshButton = "games.refresh"
+    static let gamesRetryButton = "games.retry"
     static let gameDeleteConfirmButton = "games.delete.confirm"
     static let gameListFailureText = "games.list.failure"
 
