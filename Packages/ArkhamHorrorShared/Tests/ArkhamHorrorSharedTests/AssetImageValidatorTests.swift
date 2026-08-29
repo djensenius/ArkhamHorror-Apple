@@ -158,6 +158,25 @@ struct AssetImageValidatorTests {
         }
     }
 
+    @Test("A PNG with a non-13 IHDR chunk length is rejected as malformed, not decoded")
+    func pngWithWrongIHDRLengthRejected() throws {
+        var bytes: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        // A declared length of 12 (one byte short of the correct 13) with
+        // an otherwise well-formed "IHDR" tag and plausible width/height.
+        bytes += [0x00, 0x00, 0x00, 0x0C]
+        bytes += Array("IHDR".utf8)
+        bytes += [0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04]
+        bytes += [UInt8](repeating: 0, count: 21)
+        #expect(throws: AssetError.malformedImageData) {
+            _ = try AssetImageValidator.validate(
+                data: Data(bytes),
+                declaredContentType: nil,
+                expectedFormat: .png,
+                limits: limits
+            )
+        }
+    }
+
     @Test("A JPEG truncated mid-marker-walk is rejected as malformed, not a crash")
     func truncatedJPEGRejected() throws {
         // SOI + an APP0 marker whose length bytes never arrive: long enough
@@ -173,7 +192,9 @@ struct AssetImageValidatorTests {
             )
         }
     }
+}
 
+extension AssetImageValidatorTests {
     // MARK: - Dimension / pixel-count limits (via the real parsers)
 
     @Test("A real PNG whose dimensions exceed the configured maximum per-side limit is rejected")

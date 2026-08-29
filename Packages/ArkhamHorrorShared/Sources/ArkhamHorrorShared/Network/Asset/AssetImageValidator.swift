@@ -92,6 +92,9 @@ enum AssetImageValidator {
             throw AssetError.signatureMismatch
         }
         // Bytes 8-11: IHDR chunk length (must be 13). Bytes 12-15: "IHDR".
+        guard readUInt32BE(data, at: 8) == 13 else {
+            throw AssetError.malformedImageData
+        }
         let ihdrTag: [UInt8] = [0x49, 0x48, 0x44, 0x52]
         guard data[data.startIndex + 12 ..< data.startIndex + 16].elementsEqual(ihdrTag) else {
             throw AssetError.malformedImageData

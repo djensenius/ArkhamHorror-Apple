@@ -43,6 +43,7 @@ final class AssetImageLoader {
             guard let self else { return }
             do {
                 let cached = try await cacheService.asset(for: key)
+                guard generation == requestedGeneration else { return }
                 let image = try AssetImageDecoder.decode(cached.payload)
                 guard generation == requestedGeneration else { return }
                 state = .success(image, accessibleDescription: accessibleDescription)
