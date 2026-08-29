@@ -89,6 +89,19 @@ final class AppModel {
     var operation: SessionOperation = .idle
     /// The most recent operation failure, cleared at the start of the next operation.
     var operationFailure: SessionOperationFailure?
+    /// Whether a sign-in or registration is active anywhere in the process right now.
+    ///
+    /// `AppModel` is shared process-wide across every window (see ``RootView``), so
+    /// this can be `true` because of an operation a *different* window started.
+    /// Presentation code uses this to disable entry points (for example, this
+    /// window's own "Sign In"/"Create Account" buttons) that would otherwise let an
+    /// unrelated window open a form and interact with — or inadvertently disturb — an
+    /// operation it never itself began, rather than duplicating the raw `operation !=
+    /// .idle` comparison at every call site.
+    var isAuthOperationActive: Bool {
+        operation != .idle
+    }
+
     /// The persisted server profile list, including the canonical hosted profile.
     var profiles: [ServerProfile] = []
     /// The in-flight custom-profile add, edit, or remove operation, if any.

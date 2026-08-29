@@ -33,6 +33,7 @@ struct ServerIssueView: View {
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
                     }
 
                     actions

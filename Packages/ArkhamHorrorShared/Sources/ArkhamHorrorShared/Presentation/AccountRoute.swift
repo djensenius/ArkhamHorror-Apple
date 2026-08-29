@@ -76,6 +76,8 @@ enum AccountAccessibilityID {
     static let storageResetEntryButton = "account.storageReset.entry"
     static let chooseServerButton = "account.chooseServer"
     static let serverRemoveConfirmButton = "account.server.removeConfirm"
+    static let operationFailureText = "account.operationFailure"
+    static let profileManagementFailureText = "account.profileManagementFailure"
 
     /// A per-profile removal-action identifier, distinct for every custom server row.
     ///

@@ -29,8 +29,27 @@ struct ServerManagementView: View {
                     row(for: profile)
                 }
             } footer: {
-                if let failure = model.profileManagementFailure {
-                    ArkhamFailureText(message: failure.message)
+                // Two independent failure domains can both be non-nil at once: a
+                // blocked profile-selection interruption (`operationFailure`, set by
+                // `selectProfile(_:)` when a required cleanup reservation fails) and a
+                // failed add/edit/remove (`profileManagementFailure`). Neither is a
+                // stale echo of the other — they're set and cleared independently — so
+                // both are shown together rather than one hiding the other.
+                if model.operationFailure != nil || model.profileManagementFailure != nil {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let failure = model.operationFailure {
+                            ArkhamFailureText(message: failure.message)
+                                .accessibilityIdentifier(
+                                    AccountAccessibilityID.operationFailureText
+                                )
+                        }
+                        if let failure = model.profileManagementFailure {
+                            ArkhamFailureText(message: failure.message)
+                                .accessibilityIdentifier(
+                                    AccountAccessibilityID.profileManagementFailureText
+                                )
+                        }
+                    }
                 }
             }
         }

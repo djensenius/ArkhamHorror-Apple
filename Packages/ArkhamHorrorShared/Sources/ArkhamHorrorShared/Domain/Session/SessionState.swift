@@ -222,8 +222,14 @@ extension SessionUnavailableReason {
 extension SessionStorageFailure {
     /// A non-secret, user-facing explanation shown alongside an explicit,
     /// user-confirmed reset action; never surfaced as a reason to erase data silently.
+    ///
+    /// Deliberately does not promise a non-destructive retry: the only recovery this
+    /// state offers is the explicit, destructive reset below (``AppModel/retry()`` is a
+    /// no-op for `.storageCorrupted`), so the wording says exactly what resetting does
+    /// and does not do, rather than implying a "try again later without losing it"
+    /// path that doesn't exist.
     var message: String {
-        "Your saved server data could not be read. You can reset it and start over " +
-            "with the default server, or try again later without losing it."
+        "Your saved server data could not be read. Resetting removes your saved " +
+            "custom servers and sign-in tokens and restores the default hosted server."
     }
 }

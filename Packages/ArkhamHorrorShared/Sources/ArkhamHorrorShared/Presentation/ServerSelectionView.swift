@@ -36,9 +36,17 @@ struct ServerSelectionView: View {
                         .font(.subheadline)
                         .foregroundStyle(ArkhamTheme.bone.opacity(0.8))
 
+                    // `model` is shared process-wide across every window, so
+                    // `model.isAuthOperationActive` can already be `true` due to a
+                    // sign-in/registration started in another window. Presenting
+                    // either sheet while that's true would let this window open — and
+                    // potentially cancel or otherwise interact with — an operation it
+                    // never itself started, so both entry points are disabled for as
+                    // long as any window's auth operation is in flight.
                     ArkhamPrimaryButton("Sign In", systemImage: "arrow.right.circle.fill") {
                         presentedSheet = .signIn
                     }
+                    .disabled(model.isAuthOperationActive)
                     .accessibilityIdentifier(AccountAccessibilityID.signInEntryButton)
 
                     Button("Create Account") {
@@ -46,7 +54,13 @@ struct ServerSelectionView: View {
                     }
                     .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity)
+                    .disabled(model.isAuthOperationActive)
                     .accessibilityIdentifier(AccountAccessibilityID.registerEntryButton)
+
+                    if let failure = model.operationFailure {
+                        ArkhamFailureText(message: failure.message)
+                            .accessibilityIdentifier(AccountAccessibilityID.operationFailureText)
+                    }
                 }
             }
             .frame(maxWidth: 640, alignment: .leading)
