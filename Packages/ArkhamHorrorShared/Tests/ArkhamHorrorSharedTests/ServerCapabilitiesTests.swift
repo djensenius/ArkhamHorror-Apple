@@ -20,7 +20,7 @@ struct ServerCapabilitiesTests {
     @Test("Canonical vendored fixture decodes correctly")
     func canonicalFixtureDecodes() throws {
         let caps = try loadFixture()
-        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 12))
+        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 20))
         #expect(caps.status == .baselineIncomplete)
         #expect(caps.apiBasePath == "/api/v1")
         let expectedClientMin = ContractRevision.literal(major: 0, minor: 1, patch: 0)

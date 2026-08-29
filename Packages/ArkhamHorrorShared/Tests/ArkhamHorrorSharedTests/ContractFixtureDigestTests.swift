@@ -75,11 +75,15 @@ struct ContractFixtureDigestTests {
         #expect(names.count == Set(names).count, "Duplicate basename found in \(names)")
     }
 
-    @Test("The digest table covers manifest, capabilities, and all four contract fixtures")
+    @Test("The digest table covers every governed contract fixture")
     func tableCoversExpectedFiles() {
         let fileNames = Set(ContractFixtureDigests.all.map(\.fileName))
         #expect(fileNames == [
             "manifest", "capabilities", "catalog", "decks", "game-lifecycle", "game-list",
+            "get-game", "game-update", "mode-turn-zero", "mode-campaign-only",
+            "mode-campaign-scenario", "location-enemy-view", "movement",
+            "act-no-advance-cost", "investigator-unhealed-horror-negative",
+            "uuid-entity-map", "card-code-entity-map",
         ])
     }
 
@@ -144,6 +148,6 @@ struct ContractFixtureDigestTests {
 
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
-        #expect(ContractPin.current.backendCommit == "6a1befbd7b01b4a0f763e41260ae4dd1a5d14c27")
+        #expect(ContractPin.current.backendCommit == "7611b60abc1f0107abfba2c1939e4d170e20d948")
     }
 }

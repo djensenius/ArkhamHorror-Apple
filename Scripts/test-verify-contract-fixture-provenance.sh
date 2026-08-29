@@ -21,7 +21,11 @@ script_under_test="$repo_root/Scripts/verify-contract-fixture-provenance.sh"
 harness_root="$repo_root/.build/contract-fixture-provenance-selftest"
 real_contract_pin_file="$repo_root/Packages/ArkhamHorrorShared/Sources/ArkhamHorrorShared/Domain/Contract/ContractPin.swift"
 
-fixture_names="capabilities.json catalog.json decks.json game-lifecycle.json game-list.json"
+fixture_names="capabilities.json catalog.json decks.json game-lifecycle.json game-list.json \
+get-game.json game-update.json mode-turn-zero.json mode-campaign-only.json \
+mode-campaign-scenario.json location-enemy-view.json movement.json \
+act-no-advance-cost.json investigator-unhealed-horror-negative.json \
+uuid-entity-map.json card-code-entity-map.json"
 
 failures=0
 scenario_count=0
@@ -105,7 +109,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.12",'
+    echo '  "schemaRevision": "0.1.20",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
