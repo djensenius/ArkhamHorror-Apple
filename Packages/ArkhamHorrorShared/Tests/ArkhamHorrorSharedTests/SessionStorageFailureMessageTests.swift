@@ -11,7 +11,7 @@ import Testing
 struct SessionStorageFailureMessageTests {
     private let failures: [SessionStorageFailure] = [
         .profileStore(.corruptData(key: "ArkhamHorror.serverProfiles")),
-        .profileStore(.corruptData(key: "ArkhamHorror.selectedProfileID")),
+        .profileStore(.corruptData(key: "ArkhamHorror.selectedServerProfileID")),
         .unexpected,
     ]
 
