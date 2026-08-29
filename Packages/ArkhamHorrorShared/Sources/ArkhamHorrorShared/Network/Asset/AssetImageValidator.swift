@@ -201,11 +201,16 @@ enum AssetImageValidator {
         else {
             throw AssetError.malformedImageData
         }
-        // The segment length field includes its own 2 bytes, so the SOF
-        // payload (1-byte precision, 2-byte height, 2-byte width, plus at
-        // least one component descriptor) must be at least 7 to be valid,
-        // and the whole declared segment must itself fit within `data`.
-        guard segmentLength >= 7, segmentLengthOffset + Int(segmentLength) <= end else {
+        // The segment length field includes its own 2 bytes, so a valid
+        // SOF payload needs: 1-byte precision, 2-byte height, 2-byte
+        // width, 1-byte component count, and at least one 3-byte
+        // component descriptor (Ci/HiVi/Tqi) — 11 bytes total, including
+        // the length field itself. Anything shorter is missing required
+        // fields and must fail closed rather than be accepted (and
+        // potentially cached) on the strength of a plausible-looking
+        // width/height alone. The whole declared segment must also fit
+        // within `data`.
+        guard segmentLength >= 11, segmentLengthOffset + Int(segmentLength) <= end else {
             throw AssetError.malformedImageData
         }
         let payloadOffset = markerOffset + 3
