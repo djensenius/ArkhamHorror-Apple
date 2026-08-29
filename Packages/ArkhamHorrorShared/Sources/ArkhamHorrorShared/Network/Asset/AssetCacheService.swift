@@ -123,7 +123,7 @@ actor AssetCacheService {
         case .notModified:
             var refreshed = existing
             refreshed.metadata.lastAccessedAt = Date()
-            await publish(cacheKey, asset: refreshed)
+            await touch(cacheKey, asset: refreshed)
             return refreshed
         case .notFound:
             // The previously cached resource no longer exists at its exact
@@ -330,8 +330,25 @@ actor AssetCacheService {
     /// of vanishing silently.
     private func publish(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
         await memoryCache.set(cacheKey, asset: asset)
-        do {
+        await recordDiskPersistenceResult {
             try await diskCache.set(cacheKey, payload: asset.payload, metadata: asset.metadata)
+        }
+    }
+
+    /// Refreshes an already-cached asset's metadata only (for example
+    /// bumping `lastAccessedAt` after a 304 revalidation), without
+    /// re-writing the unchanged payload bytes to disk. Falls back to the
+    /// same best-effort, audited failure handling as ``publish(_:asset:)``.
+    private func touch(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
+        await memoryCache.set(cacheKey, asset: asset)
+        await recordDiskPersistenceResult {
+            try await diskCache.touch(cacheKey, metadata: asset.metadata)
+        }
+    }
+
+    private func recordDiskPersistenceResult(_ operation: () async throws -> Void) async {
+        do {
+            try await operation()
             lastDiskPersistenceFailure = nil
         } catch let error as AssetError {
             lastDiskPersistenceFailure = error

@@ -127,6 +127,24 @@ actor AssetDiskCache {
         evictIfNeeded()
     }
 
+    /// Updates only the metadata sidecar for an already-cached `key` (for
+    /// example bumping `lastAccessedAt` after a 304 revalidation), without
+    /// re-writing the (unchanged) payload file. Throws if no payload
+    /// currently exists on disk for `key`, so this can never create an
+    /// orphaned metadata-only entry.
+    func touch(_ key: AssetCacheKey, metadata: AssetCacheMetadata) throws {
+        recoverOrphansIfNeeded()
+        let payloadURL = payloadURL(for: key)
+        guard fileManager.fileExists(atPath: payloadURL.path) else {
+            throw AssetError.cachePersistenceFailed("No cached payload to touch for this key")
+        }
+        do {
+            try persistMetadata(metadata, to: metadataURL(for: key))
+        } catch {
+            throw AssetError.cachePersistenceFailed(String(describing: error))
+        }
+    }
+
     func remove(_ key: AssetCacheKey) {
         try? fileManager.removeItem(at: payloadURL(for: key))
         try? fileManager.removeItem(at: metadataURL(for: key))

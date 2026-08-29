@@ -105,4 +105,46 @@ enum AssetImageFixtureBuilder {
         ftypPayload.append(contentsOf: Array(brand.utf8))
         return box("ftyp", ftypPayload)
     }
+
+    /// An AVIF whose `ispe` box declares only enough payload for its
+    /// 4-byte version/flags field plus a 4-byte width — no room at all for
+    /// a height field — followed immediately, still inside `ipco`'s own
+    /// payload (not as a legitimate sibling box), by 4 bytes that look like
+    /// a plausible height value. A parser that bounds-checks reads only
+    /// against the whole buffer (rather than against the `ispe` box's own
+    /// declared payload range) would read those trailing bytes as if they
+    /// were the box's height field and report bogus-but-plausible
+    /// dimensions instead of rejecting the box as malformed.
+    static func syntheticAVIFTruncatedISPE(width: Int, brand: String = "avif") -> Data {
+        func box(_ type: String, _ payload: Data) -> Data {
+            var result = Data()
+            let size = UInt32(8 + payload.count)
+            result.append(contentsOf: withUnsafeBytes(of: size.bigEndian, Array.init))
+            result.append(contentsOf: Array(type.utf8))
+            result.append(payload)
+            return result
+        }
+
+        var ftypPayload = Data(Array(brand.utf8))
+        ftypPayload.append(contentsOf: [0, 0, 0, 0])
+        ftypPayload.append(contentsOf: Array(brand.utf8))
+        ftypPayload.append(contentsOf: Array("mif1".utf8))
+        let ftyp = box("ftyp", ftypPayload)
+
+        var truncatedISPEPayload = Data([0, 0, 0, 0]) // version/flags
+        truncatedISPEPayload.append(
+            contentsOf: withUnsafeBytes(of: UInt32(width).bigEndian, Array.init)
+        )
+        let truncatedISPE = box("ispe", truncatedISPEPayload)
+        let bogusTrailingHeightBytes = Data(
+            withUnsafeBytes(of: UInt32(9999).bigEndian, Array.init)
+        )
+        let ipco = box("ipco", truncatedISPE + bogusTrailingHeightBytes)
+        let iprp = box("iprp", ipco)
+        var metaPayload = Data([0, 0, 0, 0])
+        metaPayload.append(iprp)
+        let meta = box("meta", metaPayload)
+
+        return ftyp + meta
+    }
 }

@@ -178,6 +178,25 @@ struct AssetImageValidatorTests {
         }
     }
 
+    @Test(
+        """
+        An AVIF ispe box truncated before its height field is rejected, even \
+        though plausible-looking height bytes happen to follow it in the \
+        buffer
+        """
+    )
+    func avifTruncatedISPERejectedRatherThanReadingTrailingBytes() throws {
+        let data = AssetImageFixtureBuilder.syntheticAVIFTruncatedISPE(width: 100)
+        #expect(throws: AssetError.malformedImageData) {
+            _ = try AssetImageValidator.validate(
+                data: data,
+                declaredContentType: nil,
+                expectedFormat: .avif,
+                limits: self.limits
+            )
+        }
+    }
+
     @Test("A PNG with a non-13 IHDR chunk length is rejected as malformed, not decoded")
     func pngWithWrongIHDRLengthRejected() throws {
         var bytes: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]

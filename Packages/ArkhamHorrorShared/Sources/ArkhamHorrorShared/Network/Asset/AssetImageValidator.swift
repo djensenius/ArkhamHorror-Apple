@@ -231,11 +231,10 @@ extension AssetImageValidator {
 
     /// Walks top-level ISO-BMFF boxes looking for `ftyp` (validating the
     /// `avif`/`avis` brand) and then `meta` → `iprp` → `ipco` → the first
-    /// `ispe` box, whose payload is a 4-byte version/flags field followed by
-    /// big-endian width and height. Every box header is bounds-checked
-    /// against the remaining buffer before being trusted, and box walking
-    /// only ever moves forward, so a truncated or hostile box size cannot
-    /// cause an out-of-bounds read or an infinite loop.
+    /// `ispe` box (4-byte version/flags, then big-endian width/height).
+    /// Every box header is bounds-checked against the remaining buffer, and
+    /// box walking only moves forward, so a hostile box size cannot cause
+    /// an out-of-bounds read or an infinite loop.
     private static func parseAVIFDimensions(_ data: Data) throws -> (width: Int, height: Int) {
         let boxes = try readBoxes(data, range: data.startIndex ..< data.endIndex, limit: 4096)
         try validateFtypBrand(data, boxes: boxes)
@@ -306,6 +305,12 @@ extension AssetImageValidator {
         ispe: ISOBox
     ) throws -> (width: Int, height: Int) {
         let payloadStart = ispe.range.lowerBound + 4
+        // Bound the read against `ispe.range` itself (not just `data`'s
+        // overall bounds), or a truncated box could read into a following
+        // box's bytes and report bogus-but-plausible dimensions.
+        guard payloadStart + 8 <= ispe.range.upperBound else {
+            throw AssetError.malformedImageData
+        }
         guard let width = readUInt32BE(data, at: payloadStart),
               let height = readUInt32BE(data, at: payloadStart + 4),
               width <= Int(Int32.max), height <= Int(Int32.max)

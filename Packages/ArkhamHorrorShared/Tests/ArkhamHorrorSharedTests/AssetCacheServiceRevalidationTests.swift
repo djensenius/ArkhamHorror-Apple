@@ -78,6 +78,65 @@ extension AssetCacheServiceTests {
     }
 
     @Test(
+        """
+        A 304 revalidation updates only the metadata sidecar on disk, never rewriting the \
+        unchanged payload file's bytes or modification date
+        """
+    )
+    func notModifiedRevalidationDoesNotRewritePayloadFile() async throws {
+        try await withScratchDirectory { directory in
+            let limits = AssetCacheLimits(
+                maxEncodedBytes: 1_000_000,
+                maxDimension: 8192,
+                maxPixelCount: 32_000_000,
+                memoryBudgetBytes: 10_000_000,
+                diskBudgetBytes: 10_000_000
+            )
+            let diskCache = try AssetDiskCache(directory: directory, limits: limits)
+            let memoryCache = AssetMemoryCache(limits: limits)
+            let transport = FakeAssetTransport()
+            let service = AssetCacheService(
+                memoryCache: memoryCache,
+                diskCache: diskCache,
+                transport: transport,
+                digest: FakeDigestLookup(),
+                limits: limits
+            )
+
+            let key = try cardArtKey()
+            let urls = candidateURLs(for: key)
+            await transport.enqueue(.success(successResult(etag: "\"abc\"")), for: urls[0])
+            let initial = try await service.asset(for: key)
+            let cacheKey = AssetCacheKey(
+                for: key,
+                candidates: AssetLocator.candidates(for: key, digest: FakeDigestLookup())
+            )
+            // Force the revalidation read to come from disk, not the
+            // still-fresh in-memory entry, so the on-disk payload file's
+            // modification date is meaningfully exercised below.
+            await memoryCache.remove(cacheKey)
+
+            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let beforeAttributes = try FileManager.default
+                .attributesOfItem(atPath: payloadURL.path)
+            let beforeModificationDate = try #require(
+                beforeAttributes[.modificationDate] as? Date
+            )
+            let beforePayload = try Data(contentsOf: payloadURL)
+
+            await transport.enqueue(.success(.notModified), for: urls[0])
+            let revalidated = try await service.revalidate(for: key)
+            #expect(revalidated.payload == initial.payload)
+
+            let afterAttributes = try FileManager.default.attributesOfItem(atPath: payloadURL.path)
+            let afterModificationDate = try #require(afterAttributes[.modificationDate] as? Date)
+            let afterPayload = try Data(contentsOf: payloadURL)
+            #expect(afterModificationDate == beforeModificationDate)
+            #expect(afterPayload == beforePayload)
+        }
+    }
+
+    @Test(
         "An unconditional 304 during the initial (non-revalidating) fetch is a typed protocol error"
     )
     func unconditional304DuringInitialFetchIsError() async throws {
