@@ -76,10 +76,16 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
             throw AssetError.invalidAssetBase
         }
         // Validated against the raw, literal authority text — before
-        // `URLComponents` ever sees it — for exactly the reason documented
-        // above: Foundation's own percent-decoding, IDNA normalization, or
-        // numeric-host canonicalization must never be allowed to turn a
-        // non-loopback-looking authority into an accepted one.
+        // `URLComponents` ever sees it — for *every* scheme, not only
+        // `http`: without this, `https://%65xample.com` would reach
+        // `URLComponents` unchecked, and Foundation's own percent-decoding
+        // could resolve a raw authority that never looked like a
+        // legitimate literal host into something that behaves completely
+        // differently once decoded, undermining the whole point of
+        // validating raw, pre-parse text at all — the same class of
+        // problem ``ServerProfile/assertStrictLoopbackAuthority(_:)``
+        // documents for the `http` loopback exception specifically.
+        try Self.assertRawAuthoritySafe(rawAuthority)
         if rawScheme == "http" {
             try Self.asInvalidAssetBase {
                 try ServerProfile.assertStrictLoopbackAuthority(rawAuthority)
@@ -139,6 +145,28 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
             throw AssetError.invalidAssetBase
         }
         try self.init(rawAssetBase: assetBase.absoluteString)
+    }
+
+    /// Rejects raw authority-smuggling syntax that must never reach
+    /// `URLComponents`, for *every* scheme — not just the `http` loopback
+    /// path, which already enforces this same policy (and more) inside
+    /// `ServerProfile.assertStrictLoopbackAuthority`. Without this, an
+    /// `https` authority such as `%65xample.com` or one containing a raw
+    /// control character or backslash would reach `URLComponents`
+    /// completely unchecked, and Foundation's own percent-decoding or
+    /// normalization could resolve it to something entirely different
+    /// from what this raw text appears to say.
+    private static func assertRawAuthoritySafe(_ rawAuthority: Substring) throws {
+        guard rawAuthority.utf8.allSatisfy({ $0 < 0x80 }) else {
+            throw AssetError.invalidAssetBase
+        }
+        guard !rawAuthority.contains("%"), !rawAuthority.contains("\\") else {
+            throw AssetError.invalidAssetBase
+        }
+        guard !rawAuthority.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F })
+        else {
+            throw AssetError.invalidAssetBase
+        }
     }
 
     /// Runs `body`, converting any error it throws to

@@ -91,6 +91,69 @@ extension AssetIdentifier {
     }
 }
 
+// MARK: - Backend `CardCode` conversion
+
+/// The result of interpreting a typed backend ``CardCode`` (e.g. `c01001`,
+/// or the homebrew form `c:dark-matter:151`) as an art asset location.
+enum AssetArtworkIdentifier: Sendable, Equatable, Hashable {
+    /// An official card's own art identifier, e.g. from `c01001`.
+    case official(AssetIdentifier)
+    /// A homebrew card's campaign slug and art identifier, e.g. from
+    /// `c:circus-ex-mortis:151`.
+    case homebrew(campaign: AssetIdentifier, art: AssetIdentifier)
+}
+
+extension AssetIdentifier {
+    /// Converts a typed backend ``CardCode`` into the identifier(s) needed
+    /// to build a ``AssetCategory/card(_:_:)`` or
+    /// ``AssetCategory/homebrewCard(campaign:art:)`` asset key, applying
+    /// exactly the same normalization the web client applies (see
+    /// `frontend/src/utils/cards.ts`'s handling of `card`/`portrait`/
+    /// other/resolved-side art paths): strip *exactly one* leading `c` —
+    /// the Aeson prefix ``CardCode`` itself already guarantees is present
+    /// — never more, so a second, literal `c` anywhere later in the
+    /// payload (for example the start of a homebrew campaign slug like
+    /// `circus-ex-mortis`) is preserved as real content rather than
+    /// stripped away too. After that single strip, a payload beginning
+    /// with `:` is the homebrew `:campaign:code` form; everything else is
+    /// an official numeric/`x`-prefixed card code, validated by
+    /// ``cardCode(_:)`` exactly as any other card art identifier is.
+    ///
+    /// - Throws: ``AssetError/invalidIdentifier(field:)`` if the payload
+    ///   after stripping the prefix is empty, the homebrew form does not
+    ///   split into exactly two non-empty `:`-delimited components, or
+    ///   either resulting segment fails its own grammar
+    ///   (``homebrewSlug(_:)`` for the campaign, ``cardCode(_:)`` for the
+    ///   art code).
+    static func artwork(from cardCode: CardCode) throws -> AssetArtworkIdentifier {
+        let raw = cardCode.rawValue
+        // `CardCode.init` already guarantees `raw` starts with `c` and has
+        // a non-empty payload after it; re-checking here is cheap
+        // defense-in-depth against that invariant ever changing without
+        // this call site being revisited.
+        guard raw.first == "c" else {
+            throw AssetError.invalidIdentifier(field: "cardCode")
+        }
+        let payload = String(raw.dropFirst())
+        guard !payload.isEmpty else {
+            throw AssetError.invalidIdentifier(field: "cardCode")
+        }
+        guard payload.first == ":" else {
+            return try .official(AssetIdentifier.cardCode(payload))
+        }
+        let components = payload.dropFirst().split(
+            separator: ":",
+            omittingEmptySubsequences: false
+        )
+        guard components.count == 2, !components[0].isEmpty, !components[1].isEmpty else {
+            throw AssetError.invalidIdentifier(field: "cardCode")
+        }
+        let campaign = try AssetIdentifier.homebrewSlug(String(components[0]))
+        let art = try AssetIdentifier.cardCode(String(components[1]))
+        return .homebrew(campaign: campaign, art: art)
+    }
+}
+
 // MARK: - Grammar implementation
 
 private extension AssetIdentifier {

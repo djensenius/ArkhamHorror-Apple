@@ -29,6 +29,16 @@ enum AssetImageDecoder {
         guard let source = CGImageSourceCreateWithData(payload as CFData, nil) else {
             throw AssetError.malformedImageData
         }
+        // Exactly one coded image, never an animation/frame sequence (an
+        // animated PNG's `acTL`/`fcTL`/`fdAT` chunks, a multi-frame GIF
+        // masquerading behind a renamed extension, or an AVIF image
+        // *sequence*): this pipeline validates, decodes, and caches a
+        // single still image only, and silently accepting a multi-frame
+        // source here would decode and publish only its first frame while
+        // never having validated — or even looked at — the rest.
+        guard CGImageSourceGetCount(source) == 1 else {
+            throw AssetError.malformedImageData
+        }
         guard CGImageSourceGetStatus(source) == .statusComplete,
               CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete
         else {

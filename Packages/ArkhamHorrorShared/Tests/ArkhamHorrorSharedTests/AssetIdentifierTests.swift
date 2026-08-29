@@ -163,4 +163,84 @@ struct AssetIdentifierTests {
             try AssetIdentifier.cardCode("01001B")
         }
     }
+
+    // MARK: - artwork(from: CardCode) conversion
+
+    @Test(
+        "An official CardCode strips exactly one leading 'c' to produce a card-art AssetIdentifier"
+    )
+    func officialCardCodeConvertsToArtworkIdentifier() throws {
+        let cardCode = try CardCode("c01001")
+        let artwork = try AssetIdentifier.artwork(from: cardCode)
+        guard case let .official(identifier) = artwork else {
+            Issue.record("Expected .official, got \(artwork)")
+            return
+        }
+        #expect(identifier.rawValue == "01001")
+    }
+
+    @Test(
+        """
+        A homebrew CardCode with a leading literal 'c' inside its campaign slug strips only \
+        the Aeson prefix, never a second 'c'
+        """
+    )
+    func homebrewCardCodeStripsExactlyOneLeadingC() throws {
+        let cardCode = try CardCode("c:circus-ex-mortis:151")
+        let artwork = try AssetIdentifier.artwork(from: cardCode)
+        guard case let .homebrew(campaign, art) = artwork else {
+            Issue.record("Expected .homebrew, got \(artwork)")
+            return
+        }
+        #expect(campaign.rawValue == "circus-ex-mortis")
+        #expect(art.rawValue == "151")
+    }
+
+    @Test(
+        """
+        A CardCode whose payload is only the Aeson prefix followed by an empty homebrew form \
+        is rejected
+        """
+    )
+    func emptyHomebrewSegmentsRejected() {
+        // `CardCode.init` itself rejects a bare "c" (empty payload), so
+        // the narrowest reachable empty-segment case is a homebrew form
+        // with one side empty, e.g. "c::151" or "c:dark-matter:".
+        for raw in ["c::151", "c:dark-matter:", "c:"] {
+            let cardCode = try? CardCode(raw)
+            guard let cardCode else {
+                Issue.record(
+                    "CardCode(\(raw)) should construct; only artwork(from:) should reject it"
+                )
+                continue
+            }
+            #expect(throws: AssetError.invalidIdentifier(field: "cardCode")) {
+                _ = try AssetIdentifier.artwork(from: cardCode)
+            }
+        }
+    }
+
+    @Test("A homebrew CardCode with more than two ':'-delimited components is rejected")
+    func homebrewTooManyComponentsRejected() throws {
+        let cardCode = try CardCode("c:dark-matter:151:extra")
+        #expect(throws: AssetError.invalidIdentifier(field: "cardCode")) {
+            _ = try AssetIdentifier.artwork(from: cardCode)
+        }
+    }
+
+    @Test("A homebrew CardCode whose campaign slug fails the homebrew-slug grammar is rejected")
+    func homebrewInvalidSlugRejected() throws {
+        let cardCode = try CardCode("c:Uppercase-Slug:151")
+        #expect(throws: AssetError.invalidIdentifier(field: "homebrewSlug")) {
+            _ = try AssetIdentifier.artwork(from: cardCode)
+        }
+    }
+
+    @Test("A homebrew CardCode whose art code fails the card-code grammar is rejected")
+    func homebrewInvalidArtCodeRejected() throws {
+        let cardCode = try CardCode("c:dark-matter:151A")
+        #expect(throws: AssetError.invalidIdentifier(field: "cardCode")) {
+            _ = try AssetIdentifier.artwork(from: cardCode)
+        }
+    }
 }

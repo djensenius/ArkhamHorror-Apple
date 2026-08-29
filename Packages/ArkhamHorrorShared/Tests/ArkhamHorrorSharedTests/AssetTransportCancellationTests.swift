@@ -74,23 +74,40 @@ struct AssetTransportCancellationTests {
     /// should respond with and the recorder that should observe its
     /// cancellation, since `URLProtocol` subclasses are instantiated
     /// internally by the URL loading system rather than by the test.
+    /// Also carries an optional declared `Content-Length`, so a test can
+    /// exercise the pre-read declared-length rejection branch
+    /// specifically (as opposed to the incremental-cap branch, which
+    /// needs no declared length at all).
     final class StubRegistry: @unchecked Sendable {
         static let shared = StubRegistry()
         private let lock = NSLock()
         private var statusCodes: [URL: Int] = [:]
+        private var declaredContentLengths: [URL: Int] = [:]
         private var recorders: [URL: CancellationRecorder] = [:]
 
-        func register(url: URL, status: Int, recorder: CancellationRecorder) {
+        func register(
+            url: URL,
+            status: Int,
+            recorder: CancellationRecorder,
+            declaredContentLength: Int? = nil
+        ) {
             lock.lock()
             defer { lock.unlock() }
             statusCodes[url] = status
             recorders[url] = recorder
+            declaredContentLengths[url] = declaredContentLength
         }
 
         func status(for url: URL) -> Int? {
             lock.lock()
             defer { lock.unlock() }
             return statusCodes[url]
+        }
+
+        func declaredContentLength(for url: URL) -> Int? {
+            lock.lock()
+            defer { lock.unlock() }
+            return declaredContentLengths[url]
         }
 
         func recorder(for url: URL) -> CancellationRecorder? {
@@ -124,12 +141,20 @@ struct AssetTransportCancellationTests {
         override func startLoading() {
             guard
                 let url = request.url,
-                let status = StubRegistry.shared.status(for: url),
+                let status = StubRegistry.shared.status(for: url)
+            else {
+                client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+                return
+            }
+            let declaredContentLength = StubRegistry.shared.declaredContentLength(for: url)
+            guard
                 let response = HTTPURLResponse(
                     url: url,
                     statusCode: status,
                     httpVersion: "HTTP/1.1",
-                    headerFields: [:]
+                    headerFields: declaredContentLength.map {
+                        ["Content-Length": String($0)]
+                    } ?? [:]
                 )
             else {
                 client?.urlProtocol(self, didFailWithError: URLError(.badURL))
@@ -213,6 +238,36 @@ struct AssetTransportCancellationTests {
         assertStoppedPromptly(recorder, status: status)
     }
 
+    /// Registers a declared `Content-Length` that already exceeds
+    /// `standardLimits().maxEncodedBytes`, so `readBody`'s pre-read
+    /// declared-length check rejects the response before ever asking
+    /// `AssetByteCapReader` to read a single byte. This exercises a
+    /// distinct code path from the plain `expectedError:` overload above
+    /// (which, for a 2xx status with no declared length at all, instead
+    /// exercises the *incremental* cap via the feeding loop's real
+    /// chunks) -- both must independently cancel the underlying task.
+    private func assertDeclaredLengthCancellation() async throws {
+        let recorder = CancellationRecorder()
+        let url = try #require(URL(string: "https://transport-stub.test/\(UUID().uuidString)"))
+        let oversizedDeclaredLength = standardLimits().maxEncodedBytes + 1
+        StubRegistry.shared.register(
+            url: url,
+            status: 200,
+            recorder: recorder,
+            declaredContentLength: oversizedDeclaredLength
+        )
+        let transport = URLSessionAssetTransport(
+            protocolClasses: [NonDrainingStatusURLProtocol.self]
+        )
+
+        await #expect(throws: AssetError.responseTooLarge) {
+            _ = try await transport.fetch(AssetHTTPRequest(url: url), limits: standardLimits())
+        }
+
+        try await waitUntilStopped(recorder)
+        assertStoppedPromptly(recorder, status: 200)
+    }
+
     /// Common assertions once `fetch` has returned/thrown: the task must
     /// have been (or must promptly become) cancelled, and the feeding loop
     /// must not have squeezed in another chunk after noticing that. The
@@ -267,5 +322,22 @@ struct AssetTransportCancellationTests {
     )
     func unexpectedStatusCancelsUnderlyingTask() async throws {
         try await assertPromptCancellation(status: 500, expectedError: .unexpectedStatus(500))
+    }
+
+    @Test(
+        "A 2xx response whose incrementally-read body exceeds the cap cancels the underlying task"
+    )
+    func incrementalOverflowOn2xxCancelsUnderlyingTask() async throws {
+        try await assertPromptCancellation(status: 200, expectedError: .responseTooLarge)
+    }
+
+    @Test(
+        """
+        A 2xx response with an oversized declared Content-Length cancels the underlying task \
+        before any body byte is read
+        """
+    )
+    func declaredLengthOverflowOn2xxCancelsUnderlyingTask() async throws {
+        try await assertDeclaredLengthCancellation()
     }
 }

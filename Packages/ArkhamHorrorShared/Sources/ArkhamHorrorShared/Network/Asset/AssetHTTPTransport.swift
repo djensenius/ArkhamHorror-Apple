@@ -200,6 +200,18 @@ struct URLSessionAssetTransport: AssetTransport {
     /// to ``AssetByteCapReader``, translating its own transport-level
     /// failures (cancellation, connection errors) the same way the initial
     /// request does.
+    ///
+    /// Every failure path here — the declared-length pre-check, an
+    /// incremental-cap rejection partway through the body, or any other
+    /// transport-level failure raised while reading — explicitly cancels
+    /// `asyncBytes.task` before rethrowing. A successful 2xx status alone
+    /// does not mean the *body* is acceptable, and `AsyncBytes` does not
+    /// stop draining its underlying task merely because this function
+    /// stops iterating it (unlike the non-2xx branches in ``result(for:bytes:limits:)``,
+    /// which already cancel explicitly): without this, a declared or
+    /// incrementally-detected oversized transfer would keep arriving,
+    /// unbounded by `maxEncodedBytes`, purely to be discarded once this
+    /// function has already thrown.
     private static func readBody(
         _ asyncBytes: URLSession.AsyncBytes,
         response: HTTPURLResponse,
@@ -207,13 +219,16 @@ struct URLSessionAssetTransport: AssetTransport {
     ) async throws -> Data {
         let declaredLength = response.expectedContentLength
         if declaredLength > 0, declaredLength > Int64(limits.maxEncodedBytes) {
+            asyncBytes.task.cancel()
             throw AssetError.responseTooLarge
         }
         do {
             return try await AssetByteCapReader.read(asyncBytes, limits: limits)
         } catch let assetError as AssetError {
+            asyncBytes.task.cancel()
             throw assetError
         } catch {
+            asyncBytes.task.cancel()
             try mapTransportError(error)
         }
     }

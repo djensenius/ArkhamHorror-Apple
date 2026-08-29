@@ -204,6 +204,54 @@ enum AssetImageFixtureBuilder {
         return data as Data
     }
 
+    /// A genuinely two-item PNG: two real, independently-encoded solid-
+    /// color bitmaps written into a single `CGImageDestination` with a
+    /// frame count of 2. `CGImageSourceGetCount` reports `2` for the
+    /// result, exercising the same "exactly one coded item" rejection
+    /// this pipeline enforces for a real multi-frame/sequence source,
+    /// rather than a hand-built shell. AVIF has no equivalent local
+    /// builder: this platform's `CGImageDestinationCreateWithData` refuses
+    /// to create a multi-image AVIF destination at all, so the AVIF-
+    /// specific half of this same guard (`avifPrimaryItemDimensions`) is
+    /// exercised only indirectly, via ``AssetImageDecoder``'s shared,
+    /// format-independent `CGImageSourceGetCount == 1` check that this
+    /// fixture directly proves.
+    static func twoFramePNG(width: Int = 4, height: Int = 4) -> Data {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        func makeFrame(red: CGFloat) -> CGImage {
+            guard let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ), let image = {
+                context.setFillColor(CGColor(red: red, green: 0.2, blue: 0.2, alpha: 1))
+                context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+                return context.makeImage()
+            }() else {
+                preconditionFailure("Two-frame PNG fixture frame creation must succeed")
+            }
+            return image
+        }
+        let data = NSMutableData()
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                data, "public.png" as CFString, 2, nil
+            )
+        else {
+            preconditionFailure("Two-frame PNG fixture destination creation must succeed")
+        }
+        CGImageDestinationAddImage(destination, makeFrame(red: 0.8), nil)
+        CGImageDestinationAddImage(destination, makeFrame(red: 0.1), nil)
+        guard CGImageDestinationFinalize(destination) else {
+            preconditionFailure("Two-frame PNG fixture finalization must succeed")
+        }
+        return data as Data
+    }
+
     // MARK: - Hand-assembled adversarial AVIF (ISO-BMFF) shells
 
     /// Builds a byte sequence with a well-formed `ftyp`/`meta`/`iprp`/`ipco`/

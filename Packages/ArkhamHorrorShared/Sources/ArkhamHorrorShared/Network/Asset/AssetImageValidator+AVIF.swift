@@ -40,10 +40,15 @@ extension AssetImageValidator {
     /// `CGImageSourceCreateWithData` also independently re-confirms this is
     /// AVIF (not merely HEIC or some other ISO-BMFF-family sibling that
     /// happens to share the `ftyp` brand check above) via
-    /// `CGImageSourceGetType`, and a file whose `meta` box describes an
-    /// item but carries no actual coded image data (`CGImageSourceGetCount
-    /// == 0`) is rejected here rather than reporting the shell's declared,
-    /// never-backed-by-real-pixels dimensions as if they were trustworthy.
+    /// `CGImageSourceGetType`. A file whose `meta` box describes an item
+    /// but carries no actual coded image data (`CGImageSourceGetCount ==
+    /// 0`), or one that carries an animation/image *sequence* with more
+    /// than one coded item (`CGImageSourceGetCount > 1` — this pipeline
+    /// only ever validates and caches a single still image, never a
+    /// multi-frame `avis` sequence), is rejected here rather than
+    /// reporting the shell's declared, never-backed-by-real-pixels
+    /// dimensions as if they were trustworthy, or silently caching only
+    /// this file's first frame as if it were the whole asset.
     private static func avifPrimaryItemDimensions(
         _ data: Data
     ) throws -> (width: Int, height: Int) {
@@ -63,7 +68,7 @@ extension AssetImageValidator {
         else {
             throw AssetError.malformedImageData
         }
-        guard CGImageSourceGetCount(source) > 0 else {
+        guard CGImageSourceGetCount(source) == 1 else {
             throw AssetError.malformedImageData
         }
         guard
@@ -186,6 +191,15 @@ extension AssetImageValidator {
             let payloadRange = (offset + headerSize) ..< boxEnd
             boxes.append(ISOBox(type: type, range: payloadRange))
             offset = boxEnd
+        }
+        // Every byte of `range` must belong to some complete, fully-parsed
+        // box: 1-7 leftover bytes after the last complete box (too few to
+        // even hold another box header) is not "no more boxes to read" —
+        // it is trailing garbage this parser silently ignored while still
+        // reporting the brands it *did* find as trustworthy. Requiring an
+        // exact end match closes that gap.
+        guard offset == range.upperBound else {
+            throw AssetError.malformedImageData
         }
         return boxes
     }

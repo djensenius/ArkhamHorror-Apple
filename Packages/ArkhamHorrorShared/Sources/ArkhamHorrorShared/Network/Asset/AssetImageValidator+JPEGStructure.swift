@@ -139,10 +139,27 @@ extension AssetImageValidator {
                 continue
             }
             // A real marker: entropy data for this scan ends here.
-            return index
+            break
         }
-        // Ran off the end of the buffer while still inside entropy-coded
-        // scan data, with no terminating marker (not even `EOI`) at all.
-        throw AssetError.malformedImageData
+        guard index < end else {
+            // Ran off the end of the buffer while still inside
+            // entropy-coded scan data, with no terminating marker (not
+            // even `EOI`) at all.
+            throw AssetError.malformedImageData
+        }
+        // A start-of-scan segment immediately followed by a real marker —
+        // zero bytes of entropy-coded data at all (for example `SOS`
+        // directly followed by `EOI`) — is not a legitimate scan: ImageIO
+        // itself may still lazily/leniently decode such a truncated file
+        // for a small enough declared size, but no real compressed image
+        // data was ever actually present. Requiring strictly more than
+        // zero bytes here is what makes `sawScanData` (checked by
+        // ``requireTerminalEOI(markerOffset:end:sawSOF:sawScanData:)``)
+        // an honest claim that *some* entropy-coded content, not merely a
+        // scan *header*, was found.
+        guard index > start else {
+            throw AssetError.malformedImageData
+        }
+        return index
     }
 }

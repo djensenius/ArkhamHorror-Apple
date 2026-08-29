@@ -21,6 +21,12 @@ extension AssetImageValidator {
     static func validatePNGStructure(_ data: Data) throws {
         var offset = data.startIndex + 8 // past the 8-byte signature
         var sawIDAT = false
+        // PNG requires every `IDAT` chunk to appear consecutively, with no
+        // other chunk type interposed between them — a file with `IDAT`
+        // chunks split apart by an intervening (even CRC-valid) ancillary
+        // chunk is not a spec-conforming PNG and must not be trusted, even
+        // though each individual chunk's own CRC still checks out.
+        var idatRunEnded = false
         var isFirstChunk = true
 
         while true {
@@ -31,7 +37,10 @@ extension AssetImageValidator {
                 isFirstChunk = false
             }
             if type == "IDAT" {
+                guard !idatRunEnded else { throw AssetError.malformedImageData }
                 sawIDAT = true
+            } else if sawIDAT {
+                idatRunEnded = true
             }
             if type == "IEND" {
                 // Strict no-trailing-bytes policy: `IEND` must be the

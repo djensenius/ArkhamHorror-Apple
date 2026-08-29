@@ -127,4 +127,66 @@ extension AssetImageValidatorTests {
         #expect(metadata.width == 6)
         #expect(metadata.height == 9)
     }
+
+    @Test(
+        "A JPEG SOS segment immediately followed by EOI (zero entropy-coded bytes) is rejected"
+    )
+    func jpegZeroEntropyScanDataRejected() throws {
+        var bytes: [UInt8] = [0xFF, 0xD8] // SOI
+        bytes += [0xFF, 0xC0] // SOF0 marker
+        bytes += [0x00, 0x0B] // length = 11
+        bytes += [0x08] // precision
+        bytes += [0x00, 0x09] // height = 9
+        bytes += [0x00, 0x06] // width = 6
+        bytes += [0x01] // component count = 1
+        bytes += [0x01, 0x11, 0x00] // one component descriptor
+        bytes += [0xFF, 0xDA] // SOS marker
+        bytes += [0x00, 0x08] // SOS header length = 8
+        bytes += [0x01] // Ns = 1 component in this scan
+        bytes += [0x01, 0x00] // component selector, DC/AC table selector
+        bytes += [0x00, 0x3F, 0x00] // Ss, Se, AhAl
+        // No entropy-coded scan data bytes at all: the real marker below
+        // (EOI) begins immediately after the SOS header, unlike
+        // `jpegSOFSegmentExactMinimumLengthAccepted`'s one real byte.
+        bytes += [0xFF, 0xD9] // EOI
+        #expect(throws: AssetError.malformedImageData) {
+            _ = try AssetImageValidator.validate(
+                data: Data(bytes),
+                declaredContentType: nil,
+                expectedFormat: .jpeg,
+                limits: limits
+            )
+        }
+    }
+
+    @Test(
+        """
+        A real, complete JPEG with its entropy-coded scan data byte-stuffed to zero length \
+        (SOS directly followed by EOI, mutated from a genuinely decodable fixture) is rejected
+        """
+    )
+    func jpegRealFixtureWithScanDataRemovedIsRejected() throws {
+        let bytes = [UInt8](AssetImageFixtureBuilder.validJPEG(width: 4, height: 4))
+        // The real fixture's terminal EOI marker is unconditionally its
+        // last two bytes; find the SOS marker and splice the EOI directly
+        // after its own header, deleting every real entropy-coded byte
+        // in between.
+        guard let sosStart = bytes.firstRange(of: [0xFF, 0xDA]) else {
+            Issue.record("Fixture must contain an SOS marker")
+            return
+        }
+        let sosHeaderLength = Int(bytes[sosStart.upperBound]) << 8
+            | Int(bytes[sosStart.upperBound + 1])
+        let scanHeaderEnd = sosStart.upperBound + sosHeaderLength
+        let eoi: [UInt8] = [0xFF, 0xD9]
+        let mutated = bytes[..<scanHeaderEnd] + eoi
+        #expect(throws: AssetError.malformedImageData) {
+            _ = try AssetImageValidator.validate(
+                data: Data(mutated),
+                declaredContentType: nil,
+                expectedFormat: .jpeg,
+                limits: limits
+            )
+        }
+    }
 }
