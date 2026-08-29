@@ -3,9 +3,14 @@ import Foundation
 /// A single, fully-resolved path in a fallback chain that ``AssetLocator``
 /// produces for an ``AssetKey``.
 ///
-/// The initializer is not public: candidates can only be produced by
-/// ``AssetLocator``, from already-validated ``AssetIdentifier`` segments, so
-/// callers can never construct a request for an arbitrary relative path.
+/// The initializer is `fileprivate`; the only way to construct one from
+/// outside this file is ``AssetCandidateFactory/make(segments:localeRoot:format:)``,
+/// which is `internal` (module-wide), not restricted to ``AssetLocator``
+/// specifically. In practice only ``AssetLocator`` calls it today, from
+/// already-validated ``AssetIdentifier`` segments, so callers can never
+/// construct a request for an arbitrary relative path — but that guarantee
+/// comes from this module never exposing an unvalidated-segments entry
+/// point publicly, not from Swift access control naming a single caller.
 struct AssetCandidate: Sendable, Equatable, Hashable {
     /// Path segments relative to the CDN's `img/arkham/` root, in order
     /// (e.g. `["cards", "01001.avif"]`). Never contains `/`, and never
@@ -55,8 +60,17 @@ struct AssetCandidate: Sendable, Equatable, Hashable {
     }
 }
 
-// MARK: - Construction (AssetLocator-only)
+// MARK: - Construction (internal to this module; not a public API)
 
+/// Builds ``AssetCandidate`` values from already-validated segments.
+///
+/// This is `internal`, so any file within `ArkhamHorrorShared` can call it —
+/// not exclusively ``AssetLocator`` — but no target outside this package
+/// can, since nothing here is `public`. The actual guarantee this module
+/// upholds is: no caller, anywhere, can build an `AssetCandidate` from an
+/// arbitrary/unvalidated relative path string; every call site that exists
+/// today (``AssetLocator``) only ever passes segments that already came from
+/// a validated ``AssetIdentifier`` or a fixed literal.
 enum AssetCandidateFactory {
     static func make(
         segments: [String],

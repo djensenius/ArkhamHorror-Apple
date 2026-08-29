@@ -180,14 +180,18 @@ enum AssetImageValidator {
     ]
 
     /// Returns the parsed dimensions if `marker` is a start-of-frame marker,
-    /// or `nil` if it is some other segment (its length is still validated).
+    /// or `nil` immediately if it is some other segment — this function does
+    /// not itself validate a non-SOF segment's declared length; that
+    /// happens later, in `jpegNextMarkerOffset`, when the scan advances past
+    /// it.
     ///
-    /// Validates the segment's own declared length (not just that reading
-    /// stays within the whole buffer): a segment whose declared length is
-    /// too short to actually contain the precision/height/width fields is
-    /// rejected rather than silently reading past its boundary into
-    /// whatever bytes happen to follow (which could belong to an entirely
-    /// different segment) and returning bogus-but-plausible dimensions.
+    /// For a start-of-frame marker, validates the segment's own declared
+    /// length (not just that reading stays within the whole buffer): a
+    /// segment whose declared length is too short to actually contain the
+    /// precision/height/width fields is rejected rather than silently
+    /// reading past its boundary into whatever bytes happen to follow
+    /// (which could belong to an entirely different segment) and returning
+    /// bogus-but-plausible dimensions.
     private static func jpegSOFDimensions(
         _ data: Data,
         marker: UInt8,

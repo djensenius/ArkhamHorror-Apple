@@ -5,6 +5,29 @@ import Foundation
 struct CachedAsset: Sendable, Equatable {
     let payload: Data
     var metadata: AssetCacheMetadata
+
+    /// ``AssetCacheMetadata/accountedByteCount``, computed once here at
+    /// construction rather than re-derived on every accounting pass.
+    ///
+    /// ``AssetCacheMetadata/accountedByteCount`` measures a real serialized
+    /// JSON byte count (see that property's doc comment), so re-deriving it
+    /// on every ``AssetMemoryCache`` accounting pass — which runs on
+    /// *every* `set(_:asset:)` call via `evictIfNeeded()`, not only when a
+    /// quota breach is actually near — would make every insert O(n) in the
+    /// number of already-cached entries, with one JSON encode per entry.
+    /// Caching it here keeps `set`/`get` O(1) per call. `metadata`'s
+    /// `lastAccessedAt` still mutates on every read (see `get(_:)` below),
+    /// but that does not invalidate this cached value: `JSONEncoder`'s
+    /// `.iso8601` date strategy always encodes to the same string width
+    /// regardless of the specific instant, so the entry's true serialized
+    /// size never actually changes after construction.
+    let accountedByteCount: Int
+
+    init(payload: Data, metadata: AssetCacheMetadata) {
+        self.payload = payload
+        self.metadata = metadata
+        accountedByteCount = metadata.accountedByteCount
+    }
 }
 
 /// An actor-isolated, in-memory LRU cache bounded by
@@ -48,7 +71,7 @@ actor AssetMemoryCache {
     /// Current total accounted bytes (payload + metadata overhead) across
     /// every entry.
     var totalAccountedBytes: Int {
-        entries.values.reduce(0) { $0 + $1.metadata.accountedByteCount }
+        entries.values.reduce(0) { $0 + $1.accountedByteCount }
     }
 
     private func evictIfNeeded() {
@@ -60,7 +83,7 @@ actor AssetMemoryCache {
         for (key, asset) in oldestFirst {
             guard total > limits.lowWaterMarkMemoryBytes else { break }
             entries.removeValue(forKey: key)
-            total -= asset.metadata.accountedByteCount
+            total -= asset.accountedByteCount
         }
     }
 }
