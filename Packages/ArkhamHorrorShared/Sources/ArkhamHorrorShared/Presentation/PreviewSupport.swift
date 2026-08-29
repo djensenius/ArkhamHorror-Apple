@@ -74,6 +74,48 @@ import Foundation
         func clearAll() throws {}
     }
 
+    /// A ``GameLifecycleServicing`` fake for previews: returns a small, fixed sample
+    /// list and otherwise never touches the network.
+    struct PreviewGameLifecycleService: GameLifecycleServicing {
+        func listGames(on _: ServerProfile, token _: String) async throws -> GameList {
+            []
+        }
+
+        func createGame(
+            _: CreateGameRequest, on _: ServerProfile, token _: String
+        ) async throws -> GameLifecycleEnvelope {
+            .unsupported
+        }
+
+        func deleteGame(_: GameID, on _: ServerProfile, token _: String) async throws {}
+
+        func peekLobby(
+            _: GameID, on _: ServerProfile, token _: String
+        ) async throws -> GameLifecycleEnvelope {
+            .unsupported
+        }
+
+        func joinGame(
+            _: GameID, on _: ServerProfile, token _: String
+        ) async throws -> GameLifecycleEnvelope {
+            .unsupported
+        }
+
+        func openSeats(
+            for _: GameID, on _: ServerProfile, token _: String
+        ) async throws -> OpenSeats {
+            []
+        }
+
+        func claimSeat(
+            _: ClaimSeatRequest, in _: GameID, on _: ServerProfile, token _: String
+        ) async throws {}
+
+        func chooseDeck(
+            _: ChooseDeckRequest, in _: GameID, on _: ServerProfile, token _: String
+        ) async throws {}
+    }
+
     /// Builds a preview-only ``AppModel`` backed entirely by in-memory fakes.
     @MainActor
     func previewAppModel(
@@ -88,7 +130,8 @@ import Foundation
             tokenStore: PreviewTokenStore(),
             capabilityProbe: PreviewCapabilityProbe(outcome: outcome),
             authenticationSession: PreviewAuthenticating(),
-            cleanupPendingStore: PreviewTokenCleanupPendingStore()
+            cleanupPendingStore: PreviewTokenCleanupPendingStore(),
+            gameLifecycleService: PreviewGameLifecycleService()
         )
     }
 #endif

@@ -178,6 +178,11 @@ extension AppModel {
             return
         }
         guard isCurrent(generation) else { return }
+        // The rejected token may have been backing authenticated game-lifecycle/lobby
+        // content (this is also the path `AppModel.handleGameLifecycleSessionExpired(profile:)`
+        // routes an authenticated-endpoint 401 through), so any such content must not
+        // survive this transition back to signed-out.
+        resetGameLifecycleState()
         sessionState = .signedOut(profile: profile, compatibility: compatibility)
     }
 }
