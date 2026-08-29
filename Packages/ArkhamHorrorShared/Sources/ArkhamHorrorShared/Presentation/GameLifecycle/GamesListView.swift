@@ -29,6 +29,9 @@ struct GamesListView: View {
                         }
                     }
                     .disabled(model.gameListState.isLoading)
+                    .accessibilityLabel(
+                        model.gameListState.isLoading ? "Refreshing games" : "Refresh games"
+                    )
                     .accessibilityIdentifier(AccountAccessibilityID.gamesRefreshButton)
                 }
             }

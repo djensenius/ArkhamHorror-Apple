@@ -111,8 +111,9 @@ extension GameListEntry {
 }
 
 extension GameSummary {
-    /// The scenario or campaign name to display for this game, falling back to the
-    /// game's own stored `name` when neither is present.
+    /// The scenario name to display for this game, falling back to the game's own
+    /// stored `name` when there is no scenario. ``CampaignSummary`` carries no name
+    /// of its own, so a campaign-only game always falls back to the stored `name`.
     var displayName: String {
         if let scenario {
             scenario.name.title
