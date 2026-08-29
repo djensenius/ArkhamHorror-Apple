@@ -86,10 +86,32 @@ struct LosslessJSONParserTests {
 
     // MARK: - Number grammar
 
-    @Test("A leading-zero integer part like \"01\" is rejected")
+    @Test("A leading-zero integer part is rejected as invalidNumber, not as trailing data")
     func leadingZeroIntegerRejected() {
-        #expect(throws: LosslessJSONParserError.self) {
+        // Asserting only `throws: LosslessJSONParserError.self` would also pass if the
+        // scanner accepted the lone "0" and left "1" to be reported as unrelated
+        // `.trailingData` by the top-level parser — a different, less accurate failure
+        // mode for what RFC 8259 defines as an illegal numeral. Pin the exact case so a
+        // regression to that weaker behavior fails this test.
+        #expect(throws: LosslessJSONParserError.invalidNumber) {
             try LosslessJSONParser.parse(Data("01".utf8))
+        }
+        #expect(throws: LosslessJSONParserError.invalidNumber) {
+            try LosslessJSONParser.parse(Data("-01".utf8))
+        }
+        #expect(throws: LosslessJSONParserError.invalidNumber) {
+            try LosslessJSONParser.parse(Data("00".utf8))
+        }
+        // A lone "0" (optionally negative, optionally with a fractional/exponent part
+        // that legally follows a "0" integer part) remains valid.
+        #expect(throws: Never.self) {
+            try LosslessJSONParser.parse(Data("0".utf8))
+        }
+        #expect(throws: Never.self) {
+            try LosslessJSONParser.parse(Data("-0".utf8))
+        }
+        #expect(throws: Never.self) {
+            try LosslessJSONParser.parse(Data("0.5".utf8))
         }
     }
 

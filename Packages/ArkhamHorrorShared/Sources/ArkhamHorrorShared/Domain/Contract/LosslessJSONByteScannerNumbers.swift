@@ -24,7 +24,12 @@ extension LosslessJSONByteScanner {
         }
         let start = position
         if firstDigit == 0x30 {
-            position += 1 // a lone "0"; no further integer-part digits are legal
+            position += 1
+            // A leading "0" must be a lone "0": a further digit immediately after it
+            // (e.g. "01") is an illegal numeral per RFC 8259, not merely trailing data.
+            if let next = peek(), (0x30 ... 0x39).contains(next) {
+                throw LosslessJSONParserError.invalidNumber
+            }
             return bytes[start ..< position]
         }
         return consumeDigitRun()
