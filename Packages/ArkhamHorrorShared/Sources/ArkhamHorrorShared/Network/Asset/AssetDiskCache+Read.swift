@@ -39,16 +39,28 @@ extension AssetDiskCache {
         for key: AssetCacheKey,
         metadataName: String
     ) -> AssetCacheMetadata? {
-        // Both a genuine "does not exist" miss and any other read failure
-        // (permission error, unexpected type, oversized sidecar) degrade
-        // identically to a miss here: without a successfully read sidecar
-        // there is nothing this call could safely quarantine by name
-        // alone, and the caller's correct response ("there is no valid
-        // cached copy") is the same either way.
-        guard let metadataData = try? secureDirectory.read(
-            name: metadataName,
-            maxBytes: SecureCacheDirectory.maxMetadataBytes
-        ) else {
+        // A genuine "does not exist" miss (``SecureCacheDirectory/read``
+        // returns `nil`, never throws, for `ENOENT`) is not quarantined —
+        // there is nothing occupying this name to clean up. Any *other*
+        // failure — a thrown error for a symlink/non-regular entry, an
+        // oversized sidecar, or a permission error — means something
+        // invalid *does* occupy this exact, hash-derived name, and must be
+        // quarantined here rather than silently degrading to a miss:
+        // otherwise it can never be reclaimed (it is not valid JSON to
+        // decode, so it would never reach either `quarantine` call below)
+        // and every future lookup for this key repeats the same failed
+        // read forever.
+        let metadataData: Data?
+        do {
+            metadataData = try secureDirectory.read(
+                name: metadataName,
+                maxBytes: SecureCacheDirectory.maxMetadataBytes
+            )
+        } catch {
+            quarantine(keyHash: key.digestHex, metadataName: metadataName)
+            return nil
+        }
+        guard let metadataData else {
             return nil
         }
         guard let metadata = try? JSONDecoder.assetCache().decode(

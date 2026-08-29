@@ -8,12 +8,16 @@ import Testing
 /// (which retains the shared `withScratchDirectory`/`key`/`metadata`/
 /// `smallLimits` helpers) purely to stay under SwiftLint's `file_length`.
 ///
-/// Every case here targets one of four fixed suppressed-review findings:
+/// Every case here targets one of five fixed suppressed-review findings:
 /// `set(_:payload:metadata:)`'s rollback decision, `touch(_:metadata:)`'s
-/// existence check, `removeAll()`'s listing-failure handling, and startup
+/// existence check, `removeAll()`'s listing-failure handling, startup
 /// recovery's "is this payload name still referenced" check — all of which
 /// previously accepted `attributes(name:) != nil` (true for a symlink)
-/// where only `attributes(name:)?.isRegularFile == true` is trustworthy.
+/// where only `attributes(name:)?.isRegularFile == true` is trustworthy —
+/// and `get(_:)`'s metadata read, which previously collapsed *every*
+/// `SecureCacheDirectory.read` failure (including a thrown error for a
+/// symlink or oversized sidecar, not only a clean `ENOENT` miss) into an
+/// unquarantined miss.
 extension AssetDiskCacheTests {
     /// Plants a symlink at `name` within `directory`, pointing at an
     /// unrelated file that is never itself a legitimate payload/metadata
@@ -181,6 +185,61 @@ extension AssetDiskCacheTests {
             #expect(
                 !FileManager.default.fileExists(atPath: metadataURL.path),
                 "Metadata referencing a non-regular \"payload\" must be quarantined, not trusted"
+            )
+        }
+    }
+
+    @Test(
+        """
+        get(_:) quarantines a symlink occupying the metadata sidecar's name, rather than \
+        silently degrading to a miss and leaving it behind forever
+        """
+    )
+    func getQuarantinesSymlinkOccupyingMetadataName() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+            try plantSymlink(named: metadataURL.lastPathComponent, in: directory)
+
+            let fetched = await cache.get(cacheKey)
+
+            #expect(fetched == nil)
+            #expect(
+                !FileManager.default.fileExists(atPath: metadataURL.path),
+                """
+                A read failure caused by something other than a clean ENOENT miss (here, a \
+                symlink refused by O_NOFOLLOW) must quarantine the occupying entry rather than \
+                merely returning a miss and leaving it in place to fail every future lookup
+                """
+            )
+        }
+    }
+
+    @Test(
+        """
+        get(_:) quarantines a metadata sidecar larger than the bounded read cap, rather than \
+        silently degrading to a miss and leaving it behind forever
+        """
+    )
+    func getQuarantinesOversizedMetadataSidecar() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+            let oversized = Data(repeating: 0x41, count: SecureCacheDirectory.maxMetadataBytes + 1)
+            try oversized.write(to: metadataURL)
+
+            let fetched = await cache.get(cacheKey)
+
+            #expect(fetched == nil)
+            #expect(
+                !FileManager.default.fileExists(atPath: metadataURL.path),
+                """
+                An oversized sidecar throws (rather than returning a clean miss) from the \
+                bounded read, and must be quarantined rather than left to leak disk usage and \
+                fail every future lookup for this key
+                """
             )
         }
     }
