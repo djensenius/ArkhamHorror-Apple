@@ -3,17 +3,17 @@ import Foundation
 /// A canonicalized, validated identity for the asset CDN origin an
 /// ``AssetKey`` is resolved against.
 ///
-/// This is intentionally a fresh, narrowly-scoped implementation rather than
-/// a reuse of ``ServerProfile``'s private URL-normalization helpers: those
-/// helpers are private to that type and used by the account/server
-/// presentation and session composition flows this feature must not touch.
-/// The validation rules below mirror ``ServerProfile``'s strictness
-/// (lowercased scheme/host, no credentials/query/fragment, explicit port
-/// range) but add the asset-transport-specific cleartext restriction: `http`
-/// is accepted only for the exact loopback authorities `localhost`,
-/// `127.0.0.1`, and `::1`, so a self-hosted CDN can be exercised from a
-/// simulator or local development server without ever weakening the policy
-/// for any other host.
+/// The cleartext (`http`) policy here is not a fresh grammar: it delegates to
+/// the exact same raw-authority helpers that back ``ServerProfile``'s
+/// validation (`ServerProfile+Normalization.swift`) — `withExplicitScheme`,
+/// `assertStrictLoopbackAuthority`, `assertNoForbiddenComponents`, and
+/// `validatedSchemeAndHost` are internal (not `private`) on that type
+/// specifically so this asset-transport code, and any other consumer in this
+/// module, can reuse one already-audited policy instead of maintaining a
+/// second, subtly different one. Those helpers are pure URL-string
+/// validation with no dependency on account/server presentation or session
+/// composition, so reusing them does not touch any file this feature must
+/// stay independent of.
 ///
 /// The canonical string this type produces (scheme, lowercased host, an
 /// always-explicit port, and a normalized path with no trailing slash) is
@@ -29,25 +29,73 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
     /// The default hosted CDN, matching the web client's production default
     /// (`frontend/src/stores/site_settings.ts`).
     static let hosted: AssetSourceNamespace = {
-        guard let url = URL(string: "https://assets.arkhamhorror.app") else {
-            preconditionFailure("Hosted asset base literal is compile-time valid")
-        }
-        guard let namespace = try? AssetSourceNamespace(assetBase: url) else {
+        guard
+            let namespace = try? AssetSourceNamespace(
+                rawAssetBase: "https://assets.arkhamhorror.app"
+            )
+        else {
             preconditionFailure("Hosted asset base literal must pass validation")
         }
         return namespace
     }()
 
-    /// Validates and canonicalizes `assetBase` (typically an injected
-    /// site-settings asset host, or ``hosted``).
+    /// Validates and canonicalizes `rawValue` — the untrusted, never-yet-parsed
+    /// site-settings/config input — and is the **only** entry point that may
+    /// authorize cleartext `http`.
+    ///
+    /// This must take the raw `String`, not a `URL`: `URL(string:)` itself —
+    /// not merely the `.host` accessor read from it afterward — already
+    /// percent-decodes and Unicode-folds a raw authority at parse time (for
+    /// example a full-width-dot `127。0。0。1` or a circled-letter lookalike of
+    /// `localhost` both become the literal ASCII loopback text in
+    /// `URL.absoluteString` itself, before any of this type's code ever runs).
+    /// By the time a caller holds a `URL`, that folding has already happened
+    /// and is indistinguishable from genuinely-typed loopback input, so no
+    /// amount of re-inspecting a `URL`'s components can recover a trustworthy
+    /// cleartext decision. See ``init(assetBase:)``, which therefore never
+    /// authorizes `http` at all.
     ///
     /// - Throws: ``AssetError/invalidAssetBase`` if the scheme is unsupported,
-    ///   `http` is used on a non-loopback host, the host is missing/empty,
-    ///   the port is out of range, or credentials/query/fragment are present.
-    init(assetBase: URL) throws {
-        let components = try Self.validatedComponents(from: assetBase)
-        let lowercasedHost = try Self.validatedLowercasedHost(components)
-        let scheme = try Self.validatedScheme(components, lowercasedHost: lowercasedHost)
+    ///   `http` is used on anything other than the exact strict loopback
+    ///   authorities `localhost`, a `127.0.0.0/8` dotted-quad, or `[::1]`
+    ///   (see ``ServerProfile/assertStrictLoopbackAuthority(_:)``), the host
+    ///   is missing/empty, the port is out of range, or credentials/query/
+    ///   fragment are present.
+    init(rawAssetBase rawValue: String) throws {
+        let withScheme = try Self.asInvalidAssetBase {
+            try ServerProfile.withExplicitScheme(rawValue)
+        }
+        guard let schemeSeparator = withScheme.range(of: "://") else {
+            throw AssetError.invalidAssetBase
+        }
+        let rawScheme = withScheme[..<schemeSeparator.lowerBound].lowercased()
+        let rawAuthority = withScheme[schemeSeparator.upperBound...].prefix { !"/?#".contains($0) }
+        guard !rawAuthority.hasSuffix(":") else {
+            throw AssetError.invalidAssetBase
+        }
+        // Validated against the raw, literal authority text — before
+        // `URLComponents` ever sees it — for exactly the reason documented
+        // above: Foundation's own percent-decoding, IDNA normalization, or
+        // numeric-host canonicalization must never be allowed to turn a
+        // non-loopback-looking authority into an accepted one.
+        if rawScheme == "http" {
+            try Self.asInvalidAssetBase {
+                try ServerProfile.assertStrictLoopbackAuthority(rawAuthority)
+            }
+        }
+
+        guard let components = URLComponents(string: withScheme) else {
+            throw AssetError.invalidAssetBase
+        }
+        try Self.asInvalidAssetBase { try ServerProfile.assertNoForbiddenComponents(components) }
+        // Secondary, defense-in-depth check on the Foundation-normalized host,
+        // mirroring `ServerProfile`'s own two-layer design: the raw check
+        // above is what actually closes the smuggling gap, but re-checking
+        // here means a future change that removed/bypassed the raw check
+        // would still fail closed rather than silently authorizing cleartext.
+        let (scheme, lowercasedHost) = try Self.asInvalidAssetBase {
+            try ServerProfile.validatedSchemeAndHost(components)
+        }
         let effectivePort = try Self.effectivePort(scheme: scheme, components: components)
 
         var originComponents = URLComponents()
@@ -61,73 +109,36 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
         basePath = Self.normalizedPath(components.path)
     }
 
-    /// Parses `url` into `URLComponents` and rejects any credentials, query,
-    /// or fragment, none of which have a meaning for a CDN base origin.
-    private static func validatedComponents(from url: URL) throws -> URLComponents {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+    /// Constructs from an already-parsed `URL` (for example a value read back
+    /// from a typed configuration store).
+    ///
+    /// This entry point can **never** authorize cleartext `http`, regardless
+    /// of host: see ``init(rawAssetBase:)`` for why a `URL`'s components can
+    /// no longer be trusted to make that decision. A caller that legitimately
+    /// needs the loopback `http` exception (for example validating raw
+    /// site-settings text before it is ever turned into a `URL`) must use
+    /// ``init(rawAssetBase:)`` directly on that original string.
+    ///
+    /// - Throws: ``AssetError/invalidAssetBase`` if `assetBase`'s scheme is
+    ///   not `https`, or any of ``init(rawAssetBase:)``'s other validation
+    ///   fails.
+    init(assetBase: URL) throws {
+        guard assetBase.scheme?.lowercased() == "https" else {
             throw AssetError.invalidAssetBase
         }
-        guard
-            components.user == nil,
-            components.password == nil,
-            components.query == nil,
-            components.fragment == nil
-        else {
-            throw AssetError.invalidAssetBase
-        }
-        return components
+        try self.init(rawAssetBase: assetBase.absoluteString)
     }
 
-    /// The non-empty, lowercased host, exactly as `URLComponents.host`
-    /// returns it for the current platform/OS version — on this project's
-    /// supported runtime, that is still bracketed for IPv6 literals (e.g.
-    /// `"[::1]"`), which ``AssetSourceNamespaceTests``'s IPv6-loopback
-    /// cases pin directly. `bareHost(_:)` below tolerates either form: it
-    /// strips a bracket pair only for the ``loopbackHosts`` comparison,
-    /// and is a no-op if the host is already unbracketed, so this code is
-    /// correct regardless of which convention `.host` happens to follow.
-    private static func validatedLowercasedHost(_ components: URLComponents) throws -> String {
-        guard let host = components.host, !host.isEmpty else {
+    /// Runs `body`, converting any error it throws to
+    /// ``AssetError/invalidAssetBase`` — the shared `ServerProfile` helpers
+    /// this type reuses throw `ServerProfileError`, which is not a type this
+    /// asset-transport code should expose to its own callers.
+    private static func asInvalidAssetBase<T>(_ body: () throws -> T) throws -> T {
+        do {
+            return try body()
+        } catch {
             throw AssetError.invalidAssetBase
         }
-        return host.lowercased()
-    }
-
-    /// Validates the scheme, applying the cleartext (`http`) exception only
-    /// to the exact loopback authorities in ``loopbackHosts``.
-    private static func validatedScheme(
-        _ components: URLComponents,
-        lowercasedHost: String
-    ) throws -> String {
-        guard let scheme = components.scheme?.lowercased() else {
-            throw AssetError.invalidAssetBase
-        }
-        switch scheme {
-        case "https":
-            return scheme
-        case "http":
-            // `lowercasedHost` may carry IPv6 brackets or not, depending on
-            // the platform/OS version (see the doc comment on
-            // `validatedLowercasedHost(_:)`); strip a single surrounding
-            // bracket pair, if present, only for the bracket-free
-            // ``loopbackHosts`` comparison (the original form, whatever
-            // `.host` actually produced, is still what gets used to build
-            // the canonical origin URL).
-            guard loopbackHosts.contains(bareHost(lowercasedHost)) else {
-                throw AssetError.invalidAssetBase
-            }
-            return scheme
-        default:
-            throw AssetError.invalidAssetBase
-        }
-    }
-
-    /// Strips a single surrounding `[...]` bracket pair, if present.
-    private static func bareHost(_ lowercasedHost: String) -> String {
-        guard lowercasedHost.hasPrefix("["), lowercasedHost.hasSuffix("]") else {
-            return lowercasedHost
-        }
-        return String(lowercasedHost.dropFirst().dropLast())
     }
 
     /// The explicit port if present and in range, otherwise the scheme's
@@ -150,12 +161,6 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
         }
         return result == "/" ? "" : result
     }
-
-    /// The exact loopback authorities the cleartext (`http`) exception
-    /// applies to. Deliberately exact-match only: no wildcard subdomain, no
-    /// broader `127.0.0.0/8` range, matching the issue's "exact cleartext
-    /// loopback forms" requirement.
-    private static let loopbackHosts: Set<String> = ["localhost", "127.0.0.1", "::1"]
 
     /// A stable string identity for this namespace, folded into the disk
     /// cache key. Includes scheme, host, always-explicit port, and base

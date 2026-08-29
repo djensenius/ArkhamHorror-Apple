@@ -26,8 +26,7 @@ struct AssetCacheKeyTests {
     func distinctSourceProducesDistinctKey() throws {
         let identifier = try AssetIdentifier.cardCode("01001")
         let hostedKey = AssetKey(source: .hosted, category: .card(.art, identifier))
-        let selfHosted =
-            try AssetSourceNamespace(assetBase: #require(URL(string: "http://localhost:9000")))
+        let selfHosted = try AssetSourceNamespace(rawAssetBase: "http://localhost:9000")
         let selfHostedKey = AssetKey(source: selfHosted, category: .card(.art, identifier))
         let candidateList = candidates(for: hostedKey)
 
