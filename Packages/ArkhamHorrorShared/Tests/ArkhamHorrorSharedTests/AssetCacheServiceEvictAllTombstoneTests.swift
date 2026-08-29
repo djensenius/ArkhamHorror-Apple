@@ -104,4 +104,65 @@ extension AssetCacheServiceTests {
             )
         }
     }
+
+    @Test(
+        """
+        evictAll() still tombstones every on-disk key when removeAll()'s own directory \
+        listing itself fails (never removing anything), rather than treating an \
+        unenumerable disk as if it held no keys at all
+        """
+    )
+    func evictAllTombstonesEveryDiskKeyWhenRemoveAllsOwnListingFails() async throws {
+        try await withScratchDirectory { directory in
+            let limits = standardLimits()
+            let diskCache = try AssetDiskCache(directory: directory, limits: limits)
+            let layers = makeService(diskCache: diskCache, limits: limits)
+
+            let firstKey = try cardArtKey("01001")
+            let secondKey = try cardArtKey("01002")
+            let firstOriginalBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+            let secondOriginalBody = AssetImageFixtureBuilder.validAVIF(width: 6, height: 6)
+            try await publishAsset(firstKey, body: firstOriginalBody, via: layers)
+            try await publishAsset(secondKey, body: secondOriginalBody, via: layers)
+
+            // `removeAll()`'s own single `listNames()` call fails exactly
+            // once, so it throws before removing anything at all -- both
+            // entries survive completely intact. This is the exact
+            // scenario a separate, independently racy pre-attempt snapshot
+            // (via `entries()`, which itself also lists and would degrade
+            // an equivalent listing failure to an empty `[]`) could never
+            // safely recover from.
+            await diskCache.directoryAccess.installFaultInjection(listNamesFailuresRemaining: 1)
+            await layers.service.evictAll()
+
+            let failure = await layers.service.lastDiskPersistenceFailure
+            #expect(failure != nil, "A failed removeAll() must be audited")
+
+            // Neither key's disk entry was ever actually deleted (the
+            // failure happened before any removal was attempted), but
+            // both must still be tombstoned so a subsequent lookup cannot
+            // serve either one back from disk.
+            let firstFreshBody = AssetImageFixtureBuilder.validAVIF(width: 5, height: 5)
+            let secondFreshBody = AssetImageFixtureBuilder.validAVIF(width: 7, height: 7)
+            await layers.transport.enqueue(
+                .success(successResult(body: firstFreshBody)),
+                for: candidateURLs(for: firstKey)[0]
+            )
+            await layers.transport.enqueue(
+                .success(successResult(body: secondFreshBody)),
+                for: candidateURLs(for: secondKey)[0]
+            )
+
+            let firstAfterEviction = try await layers.service.asset(for: firstKey)
+            #expect(
+                firstAfterEviction.payload == firstFreshBody,
+                "Must be refetched, never served from its still-intact but evicted disk entry"
+            )
+            let secondAfterEviction = try await layers.service.asset(for: secondKey)
+            #expect(
+                secondAfterEviction.payload == secondFreshBody,
+                "Must equally be refetched, never served from its still-intact disk entry"
+            )
+        }
+    }
 }

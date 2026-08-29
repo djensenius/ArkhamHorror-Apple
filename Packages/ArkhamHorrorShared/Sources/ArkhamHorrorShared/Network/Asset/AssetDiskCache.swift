@@ -250,6 +250,33 @@ actor AssetDiskCache {
         }
     }
 
+    /// The key hash embedded in every entry name currently present in the
+    /// cache directory (metadata sidecars and payload generations alike),
+    /// as a raw directory listing — deliberately cheaper than
+    /// ``entries()``, which additionally reads and JSON-decodes every
+    /// metadata sidecar: a caller that only needs "which keys have
+    /// *something* on disk right now" (``AssetCacheService/evictAll()``'s
+    /// conservative tombstone snapshot) has no need to pay that cost, and
+    /// benefits from including even a corrupt/undecodable sidecar's key
+    /// hash, which `entries()` would silently omit.
+    ///
+    /// Throws (rather than degrading to an empty result) if the directory
+    /// cannot even be listed, so a caller can distinguish "the cache is
+    /// genuinely empty" from "disk state could not be determined" — never
+    /// silently treating the latter as the former.
+    func entryKeyHashes() throws -> Set<String> {
+        let names = try secureDirectory.listNames()
+        var hashes: Set<String> = []
+        for name in names {
+            if name.hasSuffix(".meta.json") {
+                hashes.insert(String(name.dropLast(".meta.json".count)))
+            } else if name.hasSuffix(".bin"), let dotIndex = name.firstIndex(of: ".") {
+                hashes.insert(String(name[name.startIndex ..< dotIndex]))
+            }
+        }
+        return hashes
+    }
+
     /// Total accounted bytes (payload + exact on-disk metadata size) across
     /// every currently valid entry. Used only by tests to assert exact
     /// quota accounting; production eviction re-derives this from disk

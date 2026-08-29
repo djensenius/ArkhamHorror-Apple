@@ -137,7 +137,7 @@ extension AssetCacheServiceTests {
                 _ = try await taskB.value
             }
 
-            await #expect(throws: AssetError.staleConditionalResponse) {
+            await #expect(throws: AssetError.staleOperation) {
                 _ = try await taskA.value
             }
 
@@ -199,7 +199,7 @@ extension AssetCacheServiceTests {
             let resultB = try await taskB.value
             #expect(resultB.payload == newBody)
 
-            await #expect(throws: AssetError.staleConditionalResponse) {
+            await #expect(throws: AssetError.staleOperation) {
                 _ = try await taskA.value
             }
 

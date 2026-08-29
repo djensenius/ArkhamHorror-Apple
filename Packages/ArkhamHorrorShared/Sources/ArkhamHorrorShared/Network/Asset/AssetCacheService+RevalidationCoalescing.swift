@@ -111,8 +111,19 @@ extension AssetCacheService {
         let result = try await transport.fetch(httpRequest, limits: limits)
         switch result {
         case .notModified:
+            // An epoch mismatch here means this specific operation was
+            // superseded by a more authoritative completion racing it (a
+            // newer fetch/revalidation, or `evictAll()`) — a staleness
+            // race, never a claim that the *conditional-response
+            // protocol itself* was violated (that is
+            // ``AssetError/staleConditionalResponse``'s distinct meaning,
+            // used elsewhere in this subsystem for "no cached payload
+            // exists to pair a 304 with" and similar protocol-level
+            // preconditions). Using the same error for both would make it
+            // impossible for a caller/test to tell a normal staleness
+            // race apart from a genuine protocol violation.
             guard isCurrentEpoch(request.startEpoch, for: cacheKey) else {
-                throw AssetError.staleConditionalResponse
+                throw AssetError.staleOperation
             }
             var refreshed = request.existing
             refreshed.metadata.accessSequence = AssetAccessSequence(0)
@@ -128,9 +139,12 @@ extension AssetCacheService {
             // branches: a *stale* 404 (a slow response to an old request,
             // completing after a newer request already published fresh
             // content) must not evict what that newer completion just
-            // published.
+            // published. See the `.notModified` case above for why this
+            // is ``AssetError/staleOperation`` (a race), not
+            // ``AssetError/staleConditionalResponse`` (a protocol
+            // violation).
             guard isCurrentEpoch(request.startEpoch, for: cacheKey) else {
-                throw AssetError.staleConditionalResponse
+                throw AssetError.staleOperation
             }
             bumpKeyEpoch(cacheKey)
             await invalidate(cacheKey)
@@ -148,8 +162,11 @@ extension AssetCacheService {
                 // revalidation, or `evictAll()`) concluded while this
                 // response was being received/validated/decoded;
                 // publishing this now-stale result would resurrect
-                // content that was already superseded or evicted.
-                throw AssetError.staleConditionalResponse
+                // content that was already superseded or evicted. See the
+                // `.notModified` case above for why this is
+                // ``AssetError/staleOperation``, not
+                // ``AssetError/staleConditionalResponse``.
+                throw AssetError.staleOperation
             }
             bumpKeyEpoch(cacheKey)
             await publish(cacheKey, asset: asset)

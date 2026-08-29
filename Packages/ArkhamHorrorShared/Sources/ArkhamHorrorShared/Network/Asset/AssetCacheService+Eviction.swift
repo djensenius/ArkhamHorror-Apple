@@ -51,29 +51,32 @@ extension AssetCacheService {
         inFlight.removeAll()
         inFlightRevalidation.removeAll()
         await memoryCache.removeAll()
-        // `AssetDiskCache.removeAll()` collects a failure *count*, not the
-        // identities of whichever entries could not be removed — snapshot
-        // every key persisted on disk *before* attempting removal, so a
-        // partial failure can still conservatively tombstone every key
-        // that was at risk, rather than only the ones already tombstoned
-        // beforehand (which would let an untouched-but-undeletable entry
-        // keep being served from disk after a claimed "clear cache").
-        let precedingDiskKeys = await diskCache.entries().map { AssetCacheKey(digestHex: $0.hash) }
         do {
             try await diskCache.removeAll()
             tombstonedKeys.removeAll()
+            lastDiskPersistenceFailure = nil
         } catch {
-            // A partial disk removal failure does not invalidate the
-            // epoch bump above (every in-flight/future operation is
-            // already correctly gated by it), but this actor cannot prove
-            // every entry was physically removed — tombstone every key
-            // that was on disk immediately before this attempt (in
-            // addition to whatever was already tombstoned) so a read can
-            // never resurrect whatever could not be deleted. Newly
-            // published keys after this point are unaffected:
-            // `publish`/`touch` always clear a key's own tombstone on a
-            // fresh, successful write.
-            tombstonedKeys.formUnion(precedingDiskKeys)
+            // `removeAll()` failed (partially or entirely): some entries
+            // may still be physically present on disk. Snapshot *after*
+            // this failed attempt, not before it — a pre-attempt snapshot
+            // (via a separate, independently racy listing call) can never
+            // be proven consistent with what `removeAll()` itself actually
+            // saw or removed, and silently degrading that separate
+            // snapshot to "no keys" on its own listing failure would let
+            // an undeletable entry go completely untombstoned. Listing
+            // the directory now instead reflects exactly what survived
+            // this exact attempt (correctly excluding whatever
+            // `removeAll()` did manage to remove before failing).
+            do {
+                let survivingKeys = try await diskCache.entryKeyHashes()
+                    .map { AssetCacheKey(digestHex: $0) }
+                tombstonedKeys.formUnion(survivingKeys)
+            } catch {
+                // Cannot even enumerate what remains: there is no specific
+                // key identity left to tombstone. `lastDiskPersistenceFailure`
+                // below is the only remaining signal that this eviction did
+                // not durably confirm a fully cleared disk cache.
+            }
             lastDiskPersistenceFailure = error as? AssetError
                 ?? .cachePersistenceFailed(String(describing: error))
         }
