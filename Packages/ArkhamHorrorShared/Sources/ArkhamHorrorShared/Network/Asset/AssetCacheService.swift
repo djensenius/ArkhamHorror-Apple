@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Actor-isolated orchestration for resolving an ``AssetKey`` to validated
@@ -293,8 +294,10 @@ actor AssetCacheService {
                 // See the identical decode gate in
                 // ``assembleRevalidatedAsset`` for why a full platform
                 // decode — not just the pure metadata/dimension parse
-                // above — is required before publication.
-                let decoded = try AssetImageDecoder.decode(response.body)
+                // above — is required before publication. Offloaded via
+                // ``decodeImageOffActor`` so this CPU-bound decode never
+                // blocks unrelated cache requests on this actor.
+                let decoded = try await decodeImageOffActor(response.body)
                 guard decoded.width == validated.width, decoded.height == validated.height else {
                     throw AssetError.malformedImageData
                 }
@@ -361,5 +364,24 @@ actor AssetCacheService {
 
     static func sha256Hex(_ data: Data) -> String {
         AssetPayloadHasher.sha256Hex(data)
+    }
+
+    /// Decodes `payload` on a genuine structured child task rather than
+    /// synchronously on this actor's own executor, so a full platform
+    /// image decode — whose CPU cost is not accounted for or bounded by
+    /// ``AssetCacheLimits`` — never blocks unrelated cache
+    /// requests/coalescing/cancellation handling for however long that
+    /// decode takes.
+    ///
+    /// `async let` starts a real child task that inherits this call's
+    /// cancellation (unlike a detached task): if the calling context is
+    /// cancelled while this decode is still in flight, the awaited result
+    /// below throws `CancellationError` at the next cooperative
+    /// cancellation check rather than silently continuing to hold up the
+    /// actor. Not `private`: shared by every call site across
+    /// `AssetCacheService+Revalidation.swift` too.
+    func decodeImageOffActor(_ payload: Data) async throws -> CGImage {
+        async let decodedImage = AssetImageDecoder.decode(payload)
+        return try await decodedImage
     }
 }

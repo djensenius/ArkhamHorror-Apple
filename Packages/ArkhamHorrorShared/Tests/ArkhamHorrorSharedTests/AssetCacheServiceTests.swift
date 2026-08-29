@@ -269,4 +269,38 @@ struct AssetCacheServiceTests {
             #expect(asset.payload == AssetImageFixtureBuilder.validPNG(width: 4, height: 4))
         }
     }
+
+    // MARK: - decodeImageOffActor
+
+    @Test(
+        """
+        decodeImageOffActor decodes a valid payload to a CGImage with the \
+        expected dimensions, off the actor's own executor via a structured \
+        `async let` child task
+        """
+    )
+    func decodeImageOffActorDecodesValidPayload() async throws {
+        try await withService { service, _ in
+            let payload = AssetImageFixtureBuilder.validPNG(width: 4, height: 4)
+            let decoded = try await service.decodeImageOffActor(payload)
+            #expect(decoded.width == 4)
+            #expect(decoded.height == 4)
+        }
+    }
+
+    @Test(
+        """
+        decodeImageOffActor throws malformedImageData for a header-only, \
+        non-decodable payload rather than crashing or silently returning a \
+        blank image
+        """
+    )
+    func decodeImageOffActorRejectsUndecodablePayload() async throws {
+        try await withService { service, _ in
+            let payload = AssetImageFixtureBuilder.pngHeaderOnly(width: 4, height: 4)
+            await #expect(throws: AssetError.malformedImageData) {
+                _ = try await service.decodeImageOffActor(payload)
+            }
+        }
+    }
 }

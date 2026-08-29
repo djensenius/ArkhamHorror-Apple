@@ -59,7 +59,7 @@ extension AssetCacheService {
             else {
                 throw AssetError.malformedImageData
             }
-            let decoded = try AssetImageDecoder.decode(cached.payload)
+            let decoded = try await decodeImageOffActor(cached.payload)
             guard decoded.width == validated.width, decoded.height == validated.height else {
                 throw AssetError.malformedImageData
             }
@@ -375,7 +375,7 @@ extension AssetCacheService {
         // `meta` shell with no backing `mdat`). Cross-checking the
         // decoded image's own dimensions against the validator's parsed
         // dimensions also catches a mismatched/ambiguous primary item.
-        let decoded = try AssetImageDecoder.decode(response.body)
+        let decoded = try await decodeImageOffActor(response.body)
         guard decoded.width == validated.width, decoded.height == validated.height else {
             throw AssetError.malformedImageData
         }
