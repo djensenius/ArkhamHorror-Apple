@@ -68,4 +68,23 @@ struct IdentifierTests {
         let decoded = try JSONDecoder().decode(GameID.self, from: data)
         #expect(decoded == id)
     }
+
+    @Test("Value-position encoding through ContractJSON is exact lowercase, matching the backend")
+    func valuePositionEncodingIsLowercase() throws {
+        // The backend's own UUID rendering (and this type's CodingKeyRepresentable
+        // map-key encoding) is lowercase-hyphenated; Foundation's UUID.uuidString is
+        // always uppercase. Encoding a value-position Identifier (for example a bare
+        // `"id": "..."` field, as opposed to a map key) must not silently diverge from
+        // that by delegating straight to UUID's own Encodable conformance.
+        let uuidString = "419015cc-abb7-41d0-9795-7ec1d981955f"
+        let id = try GameID(#require(UUID(uuidString: uuidString)))
+        let data = try ContractJSON.encode(id)
+        let json = try #require(String(data: data, encoding: .utf8))
+        #expect(json == "\"\(uuidString)\"")
+        #expect(!json.contains(uuidString.uppercased()))
+        // Decoding remains case-insensitive at this single-value position (matching
+        // UUID's own parsing), only encoding is normalized to the canonical form.
+        let decoded = try ContractJSON.decode(GameID.self, from: Data(json.utf8))
+        #expect(decoded == id)
+    }
 }
