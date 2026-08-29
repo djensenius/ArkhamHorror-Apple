@@ -68,17 +68,39 @@ final class BundledLocalizedDigestProvider: LocalizedDigestLookup, @unchecked Se
     /// `.copy("Resources")`, which (unlike `.process`) preserves the copied
     /// directory's own name inside the resource bundle, so the digest files
     /// actually land at `<bundle>/Resources/AssetDigests/*.json`.
+    ///
+    /// A resource that genuinely fails to load (missing from the bundle,
+    /// unreadable, or not valid JSON) is a build/packaging regression, not
+    /// a legitimate runtime data condition — every locale named by
+    /// ``AssetLocale/digestResourceName`` ships a resource by construction,
+    /// even when its content is deliberately an empty array (e.g. `ko`,
+    /// which has no localized card art yet). Silently substituting `[]`
+    /// for that failure would make a broken bundle indistinguishable from
+    /// a locale that intentionally has nothing to localize, quietly
+    /// disabling localization instead of surfacing the regression. So
+    /// this traps instead of returning a fallback value; `ko.json`
+    /// decodes successfully to `[]` and never reaches the trap.
     private static func load(resourceName: String, bundle: Bundle) -> [String] {
-        guard
-            let url = bundle.url(
-                forResource: resourceName,
-                withExtension: "json",
-                subdirectory: "Resources/AssetDigests"
-            ),
-            let data = try? Data(contentsOf: url),
-            let identifiers = try? JSONDecoder().decode([String].self, from: data)
-        else {
-            return []
+        guard let url = bundle.url(
+            forResource: resourceName,
+            withExtension: "json",
+            subdirectory: "Resources/AssetDigests"
+        ) else {
+            preconditionFailure(
+                "Missing bundled digest resource '\(resourceName).json': packaging regression"
+            )
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            preconditionFailure(
+                "Bundled digest resource '\(resourceName).json' could not be read: "
+                    + "packaging regression"
+            )
+        }
+        guard let identifiers = try? JSONDecoder().decode([String].self, from: data) else {
+            preconditionFailure(
+                "Bundled digest resource '\(resourceName).json' is not valid JSON: "
+                    + "packaging regression"
+            )
         }
         return identifiers
     }

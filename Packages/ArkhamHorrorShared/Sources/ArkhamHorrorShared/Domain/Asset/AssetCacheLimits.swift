@@ -32,6 +32,23 @@ struct AssetCacheLimits: Sendable, Equatable {
         highWaterMarkRatio: Double = 0.90,
         lowWaterMarkRatio: Double = 0.75
     ) {
+        precondition(maxEncodedBytes >= 0, "maxEncodedBytes must not be negative")
+        precondition(maxDimension >= 0, "maxDimension must not be negative")
+        precondition(maxPixelCount >= 0, "maxPixelCount must not be negative")
+        precondition(memoryBudgetBytes >= 0, "memoryBudgetBytes must not be negative")
+        precondition(diskBudgetBytes >= 0, "diskBudgetBytes must not be negative")
+        precondition(
+            highWaterMarkRatio.isFinite && (0 ... 1).contains(highWaterMarkRatio),
+            "highWaterMarkRatio must be a finite value in 0...1"
+        )
+        precondition(
+            lowWaterMarkRatio.isFinite && (0 ... 1).contains(lowWaterMarkRatio),
+            "lowWaterMarkRatio must be a finite value in 0...1"
+        )
+        precondition(
+            lowWaterMarkRatio <= highWaterMarkRatio,
+            "lowWaterMarkRatio must not exceed highWaterMarkRatio"
+        )
         self.maxEncodedBytes = maxEncodedBytes
         self.maxDimension = maxDimension
         self.maxPixelCount = maxPixelCount
