@@ -10,6 +10,14 @@ struct BundledLocalizedDigestProviderTests {
         for locale in AssetLocale.allCases where locale != .english {
             let identifiers = provider.orderedIdentifiers(for: locale)
             #expect(identifiers != nil, "\(locale) must have a loadable digest resource")
+            if locale == .korean {
+                #expect(identifiers?.isEmpty == true, "ko is expected to ship an empty digest")
+            } else {
+                #expect(
+                    identifiers?.isEmpty == false,
+                    "\(locale) is expected to ship a non-empty digest"
+                )
+            }
         }
     }
 
