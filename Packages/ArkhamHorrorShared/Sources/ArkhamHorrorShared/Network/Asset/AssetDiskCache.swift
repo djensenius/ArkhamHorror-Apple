@@ -241,12 +241,28 @@ actor AssetDiskCache {
         var result: [Entry] = []
         for url in contents where url.lastPathComponent.hasSuffix(".meta.json") {
             let hash = String(url.lastPathComponent.dropLast(".meta.json".count))
+            let payloadURL = directory.appendingPathComponent("\(hash).bin")
             guard let data = try? Data(contentsOf: url),
                   let metadata = try? JSONDecoder.assetCache.decode(
                       AssetCacheMetadata.self,
                       from: data
                   )
-            else { continue }
+            else {
+                // An unreadable or undecodable sidecar can never be
+                // corrected by itself; quarantining it here (rather than
+                // merely skipping it) prevents it from silently occupying
+                // disk space forever, uncounted against `diskBudgetBytes`
+                // and unevictable, until its exact key happens to be
+                // looked up again via `get(_:)`.
+                quarantine(payloadURL: payloadURL, metadataURL: url)
+                continue
+            }
+            guard metadata.schemaVersion == AssetCacheMetadata.currentSchemaVersion,
+                  metadata.cacheKeyHex == hash
+            else {
+                quarantine(payloadURL: payloadURL, metadataURL: url)
+                continue
+            }
             result.append(Entry(hash: hash, metadata: metadata, metadataBytes: data.count))
         }
         return result

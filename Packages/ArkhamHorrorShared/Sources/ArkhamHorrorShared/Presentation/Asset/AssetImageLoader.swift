@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Observation
 
@@ -46,15 +47,26 @@ final class AssetImageLoader {
                 guard generation == requestedGeneration else { return }
                 // Decoding (signature/dimension validation plus the full
                 // platform bitmap decode) is CPU-bound and can be
-                // expensive for large assets; running it on a detached
-                // task keeps this MainActor-isolated loader responsive
-                // instead of blocking the main thread for the duration of
-                // the decode. Only the final state publish below hops
-                // back onto the MainActor.
+                // expensive for large assets; running it as a child task
+                // in a throwing task group keeps this MainActor-isolated
+                // loader responsive instead of blocking the main thread
+                // for the duration of the decode, while — unlike
+                // `Task.detached`, which does not inherit cancellation —
+                // still participating in cooperative cancellation: if
+                // this outer task is cancelled or superseded, the child
+                // task is cancelled along with it rather than continuing
+                // to run to completion unobserved. Only the final state
+                // publish below hops back onto the MainActor.
                 let payload = cached.payload
-                let image = try await Task.detached(priority: .userInitiated) {
-                    try AssetImageDecoder.decode(payload)
-                }.value
+                let image = try await withThrowingTaskGroup(of: CGImage.self) { group in
+                    group.addTask {
+                        try AssetImageDecoder.decode(payload)
+                    }
+                    guard let decoded = try await group.next() else {
+                        throw CancellationError()
+                    }
+                    return decoded
+                }
                 guard generation == requestedGeneration else { return }
                 state = .success(image, accessibleDescription: accessibleDescription)
             } catch is CancellationError {

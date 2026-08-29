@@ -168,6 +168,72 @@ extension AssetDiskCacheTests {
     }
 
     @Test(
+        """
+        A corrupt (undecodable) metadata sidecar found during quota accounting is quarantined \
+        immediately, not merely skipped, so it cannot occupy disk space indefinitely uncounted
+        """
+    )
+    func undecodableEntryEncounteredDuringAccountingIsQuarantined() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            let payload = Data([1, 2, 3])
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: metadata(for: cacheKey, payload: payload)
+            )
+
+            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+            try Data("not json".utf8).write(to: metadataURL)
+
+            // totalAccountedBytes() walks every entry via the same
+            // internal accounting path evictIfNeeded() uses; it must not
+            // count (and must actively remove) an entry whose sidecar
+            // cannot be decoded.
+            let total = await cache.totalAccountedBytes()
+            #expect(total == 0)
+            #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
+            #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
+        }
+    }
+
+    @Test(
+        """
+        An entry whose metadata cacheKeyHex does not match its own filename hash is quarantined \
+        during quota accounting rather than silently skipped
+        """
+    )
+    func mismatchedCacheKeyHexEncounteredDuringAccountingIsQuarantined() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            let payload = Data([1, 2, 3])
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: metadata(for: cacheKey, payload: payload)
+            )
+
+            let payloadURL = directory.appendingPathComponent("\(cacheKey.digestHex).bin")
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+            var json = try #require(
+                try JSONSerialization
+                    .jsonObject(with: Data(contentsOf: metadataURL)) as? [String: Any]
+            )
+            json["cacheKeyHex"] = "0000000000000000000000000000000000000000000000000000000000000000"
+            let tampered = try JSONSerialization.data(withJSONObject: json)
+            try tampered.write(to: metadataURL)
+
+            let total = await cache.totalAccountedBytes()
+            #expect(total == 0)
+            #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
+            #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
+        }
+    }
+
+    @Test(
         "A transient directory-listing failure does not permanently disable orphan recovery"
     )
     func transientListingFailureRetriesOrphanRecoveryLater() async throws {
