@@ -62,13 +62,29 @@ actor FakeAssetTransport: AssetTransport {
     /// Polls (test-only; not a production concurrency pattern) until at
     /// least `count` fetches for `url` have started, or `timeoutNanoseconds`
     /// elapses.
+    ///
+    /// Fails fast via `preconditionFailure` if the deadline elapses first,
+    /// rather than silently returning: this is test-only infrastructure, so
+    /// letting a caller proceed without the expected call count ever having
+    /// been reached would let a test continue in an already-invalid state
+    /// and fail later, if at all, with a confusing, seemingly-unrelated
+    /// symptom instead of reporting the real cause (a fetch that never
+    /// started, or started fewer times than expected) at the point it
+    /// actually happened.
     func waitForCallCount(
         _ count: Int,
         for url: URL,
         timeoutNanoseconds: UInt64 = 2_000_000_000
     ) async {
         let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
-        while startedCounts[url, default: 0] < count, !Self.isPast(deadline) {
+        while startedCounts[url, default: 0] < count {
+            guard !Self.isPast(deadline) else {
+                preconditionFailure(
+                    "waitForCallCount(\(count), for: \(url)) timed out after "
+                        + "\(timeoutNanoseconds / 1_000_000)ms; only "
+                        + "\(startedCounts[url, default: 0]) call(s) had started"
+                )
+            }
             try? await Task.sleep(nanoseconds: 1_000_000)
         }
     }

@@ -16,7 +16,7 @@ import Foundation
 /// so the two conditions are never conflated. Once constructed, every
 /// query below is a plain, non-throwing, lock-free dictionary lookup
 /// against this already-validated state.
-final class BundledLocalizedDigestProvider: LocalizedDigestLookup, @unchecked Sendable {
+final class BundledLocalizedDigestProvider: LocalizedDigestLookup, Sendable {
     /// Shared instance backing the default ``AssetLocator``.
     ///
     /// `AssetLocator.candidates(for:digest:)` and
@@ -149,7 +149,42 @@ final class BundledLocalizedDigestProvider: LocalizedDigestLookup, @unchecked Se
                     + "packaging regression"
             )
         }
+        try validate(identifiers, resourceName: resourceName)
         return identifiers
+    }
+
+    /// Enforces the contract this type's doc comment claims: every
+    /// shipped identifier list is sorted, contains no duplicates, and is
+    /// composed entirely of grammar-valid card codes. A resource that
+    /// merely decodes as `[String]` but violates any of these is just as
+    /// much a packaging regression as one that fails to decode at all —
+    /// an unsorted or duplicated list would silently defeat
+    /// ``orderedIdentifiers(for:)``'s documented ordering guarantee (used
+    /// by drift tests to detect exactly that), and an entry outside
+    /// ``AssetIdentifier/cardCode(_:)``'s grammar could never actually
+    /// match a real lookup identifier, so it would be permanently dead,
+    /// silently-wrong data.
+    private static func validate(_ identifiers: [String], resourceName: String) throws {
+        guard identifiers == identifiers.sorted() else {
+            throw AssetError.configurationFailure(
+                "Bundled digest resource '\(resourceName).json' is not sorted: "
+                    + "packaging regression"
+            )
+        }
+        guard Set(identifiers).count == identifiers.count else {
+            throw AssetError.configurationFailure(
+                "Bundled digest resource '\(resourceName).json' contains duplicate "
+                    + "entries: packaging regression"
+            )
+        }
+        for identifier in identifiers {
+            guard (try? AssetIdentifier.cardCode(identifier)) != nil else {
+                throw AssetError.configurationFailure(
+                    "Bundled digest resource '\(resourceName).json' contains an entry "
+                        + "that is not a valid card code: packaging regression"
+                )
+            }
+        }
     }
 
     private static func asAssetError(_ error: any Error) -> AssetError {

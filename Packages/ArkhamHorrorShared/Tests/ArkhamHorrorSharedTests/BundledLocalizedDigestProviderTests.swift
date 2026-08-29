@@ -82,4 +82,72 @@ struct BundledLocalizedDigestProviderTests {
         let shared = BundledLocalizedDigestProvider.shared
         #expect(shared.configurationError == nil)
     }
+
+    /// Builds a loose, scratch-directory `Bundle` (removed unconditionally
+    /// after the test) supplying every non-English locale's digest
+    /// resource, so a single locale's content can be deliberately
+    /// malformed to prove `init(bundle:)` actually validates it rather
+    /// than only checking that it decodes as `[String]`.
+    private func withScratchBundle(
+        overriding overrideName: String,
+        content: [String],
+        _ body: (Bundle) throws -> Void
+    ) throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("DigestProviderScratch", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let resourcesDirectory = root.appendingPathComponent(
+            "Resources/AssetDigests", isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: resourcesDirectory, withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        for locale in AssetLocale.allCases {
+            guard let name = locale.digestResourceName else { continue }
+            let content = name == overrideName ? content : []
+            let data = try JSONEncoder().encode(content)
+            try data.write(to: resourcesDirectory.appendingPathComponent("\(name).json"))
+        }
+        let bundle = try #require(Bundle(url: root))
+        try body(bundle)
+    }
+
+    @Test("An unsorted digest resource is a typed configuration failure, not silently accepted")
+    func unsortedDigestResourceIsConfigurationFailure() throws {
+        try withScratchBundle(overriding: "fr", content: ["01002", "01001"]) { bundle in
+            #expect(throws: AssetError.configurationFailure("ignored")) {
+                _ = try BundledLocalizedDigestProvider(bundle: bundle)
+            }
+        }
+    }
+
+    @Test("A digest resource with a duplicate entry is a typed configuration failure")
+    func duplicateEntryDigestResourceIsConfigurationFailure() throws {
+        try withScratchBundle(overriding: "fr", content: ["01001", "01001"]) { bundle in
+            #expect(throws: AssetError.configurationFailure("ignored")) {
+                _ = try BundledLocalizedDigestProvider(bundle: bundle)
+            }
+        }
+    }
+
+    @Test(
+        "A digest resource entry that is not a valid card code is a typed configuration failure"
+    )
+    func invalidCardCodeDigestResourceIsConfigurationFailure() throws {
+        try withScratchBundle(overriding: "fr", content: ["not a card code!"]) { bundle in
+            #expect(throws: AssetError.configurationFailure("ignored")) {
+                _ = try BundledLocalizedDigestProvider(bundle: bundle)
+            }
+        }
+    }
+
+    @Test("A sorted, deduplicated, all-valid digest resource loads successfully")
+    func wellFormedScratchDigestResourceLoads() throws {
+        try withScratchBundle(overriding: "fr", content: ["01001", "01002"]) { bundle in
+            let provider = try BundledLocalizedDigestProvider(bundle: bundle)
+            #expect(provider.orderedIdentifiers(for: .french) == ["01001", "01002"])
+        }
+    }
 }
