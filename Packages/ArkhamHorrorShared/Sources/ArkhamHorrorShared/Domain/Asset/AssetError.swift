@@ -30,10 +30,6 @@ enum AssetError: Error, Sendable {
     /// The server issued an HTTP redirect (3xx). Every redirect is a failure;
     /// none are followed.
     case redirectRejected(status: Int)
-    /// The server returned 404 for a specific candidate. Callers advance to
-    /// the next candidate on this case only; every other transport failure
-    /// is terminal for the whole request.
-    case candidateNotFound
     /// The server returned an unexpected non-2xx, non-404 status code.
     case unexpectedStatus(Int)
     /// The response body exceeded the configured encoded-size cap. Enforced
@@ -70,13 +66,6 @@ enum AssetError: Error, Sendable {
     /// Persisting the payload and metadata atomically failed; no half
     /// entry was left on disk.
     case cachePersistenceFailed(String)
-
-    // MARK: Cooperative cancellation
-
-    /// The request was cancelled before it could complete. This is not
-    /// treated as a network failure and never advances the candidate chain
-    /// or corrupts shared in-flight work.
-    case cancelled
 }
 
 extension AssetError: Equatable {
@@ -87,7 +76,6 @@ extension AssetError: Equatable {
         case (.invalidAssetBase, .invalidAssetBase),
              (.candidatesExhausted, .candidatesExhausted),
              (.nonHTTPResponse, .nonHTTPResponse),
-             (.candidateNotFound, .candidateNotFound),
              (.responseTooLarge, .responseTooLarge),
              (.staleConditionalResponse, .staleConditionalResponse),
              (.contentTypeMismatch, .contentTypeMismatch),
@@ -95,8 +83,7 @@ extension AssetError: Equatable {
              (.malformedImageData, .malformedImageData),
              (.dimensionTooLarge, .dimensionTooLarge),
              (.pixelCountTooLarge, .pixelCountTooLarge),
-             (.corruptCacheEntry, .corruptCacheEntry),
-             (.cancelled, .cancelled):
+             (.corruptCacheEntry, .corruptCacheEntry):
             true
         case let (.redirectRejected(lhsValue), .redirectRejected(rhsValue)):
             lhsValue == rhsValue

@@ -103,7 +103,7 @@ struct AssetMemoryCacheTests {
 
     @Test("Eviction removes the least-recently-accessed entries first, down to the low water mark")
     func evictsLeastRecentlyAccessedFirst() async throws {
-        // Budget of 300 bytes, high water 90% = 270, low water 75% = 225.
+        // Budget of 4000 bytes, high water 95% = 3800, low water 76% = 3040.
         // Each entry accounts for 1000 + 512 = 1512 bytes. Budget/ratios are
         // chosen so that two entries fit under the high water mark (no
         // premature eviction), but a third entry pushes total usage over

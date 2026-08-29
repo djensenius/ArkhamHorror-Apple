@@ -7,8 +7,9 @@ import Foundation
 /// distinguishes between two non-English locales for the same identifier),
 /// so this coarser-than-`(identifier, locale)` granularity is sufficient;
 /// if a future test needs true per-locale seeding, extend `localized` to a
-/// `Set<AssetIdentifier, AssetLocale>`-keyed structure rather than
-/// reinterpreting this comment.
+/// `Set<AssetLocalizedKey>` of a small `Hashable` struct pairing
+/// `AssetIdentifier` and `AssetLocale`, rather than reinterpreting this
+/// comment.
 struct FakeDigestLookup: LocalizedDigestLookup {
     let localized: Set<AssetIdentifier>
 
