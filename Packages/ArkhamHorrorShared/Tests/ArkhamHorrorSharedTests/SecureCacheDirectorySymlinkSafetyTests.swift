@@ -139,4 +139,65 @@ struct SecureCacheDirectorySymlinkSafetyTests {
             #expect(stillReadable == Data("v1".utf8))
         }
     }
+
+    @Test(
+        """
+        A symlink planted at an intermediate path component between the filesystem and the \
+        cache root's own leaf directory — not the leaf itself — is refused at construction \
+        rather than silently traversed into its target
+        """
+    )
+    func intermediateComponentSymlinkRefusedAtConstruction() async throws {
+        try await withRoots { cacheRoot, outsideRoot in
+            // `cacheRoot` is `.../<uuid>/cache`; replace its *parent*
+            // component with a symlink pointing at `outsideRoot`, so a
+            // naive path-string-based directory creation (which
+            // `FileManager.createDirectory(at:withIntermediateDirectories:)`
+            // would happily do) would transparently create/use
+            // `outsideRoot/cache` instead of ever failing.
+            let parent = cacheRoot.deletingLastPathComponent()
+            try FileManager.default.removeItem(at: parent)
+            try FileManager.default.createSymbolicLink(
+                at: parent,
+                withDestinationURL: outsideRoot
+            )
+
+            #expect(throws: AssetError.self) {
+                _ = try SecureCacheDirectory(directory: cacheRoot, fileManager: .default)
+            }
+            // The symlink's target must never have had a `cache`
+            // subdirectory created inside it as a side effect of the
+            // refused attempt.
+            #expect(
+                !FileManager.default.fileExists(
+                    atPath: outsideRoot.appendingPathComponent("cache").path
+                )
+            )
+        }
+    }
+
+    @Test("A hardlinked entry sharing another file's inode is refused as an untrusted regular file")
+    func hardlinkedEntryRefused() async throws {
+        try await withRoots { cacheRoot, outsideRoot in
+            let directory = try SecureCacheDirectory(directory: cacheRoot, fileManager: .default)
+            try directory.writeTempAndFsync(tempName: "entry.tmp", data: Data("v1".utf8))
+            try directory.renameAndFsyncDirectory(from: "entry.tmp", to: "entry")
+
+            let entryPath = cacheRoot.appendingPathComponent("entry").path
+            let hardlinkPath = outsideRoot.appendingPathComponent("hardlink").path
+            guard link(entryPath, hardlinkPath) == 0 else {
+                // Hardlinks across the two directories used by this test
+                // (both created under this same scratch tree, so
+                // ordinarily the same device) are expected to succeed;
+                // if the test environment cannot create one here (e.g. a
+                // filesystem that disallows hardlinks at this location),
+                // there is nothing further this specific test can prove.
+                return
+            }
+
+            #expect(throws: AssetError.self) {
+                _ = try directory.read(name: "entry", maxBytes: 100)
+            }
+        }
+    }
 }

@@ -34,7 +34,17 @@ final class SecureCacheDirectory: @unchecked Sendable {
 
     let rootFD: Int32
     private let rootOwnerUID: uid_t
-    private let faultState = FaultInjectionState()
+    /// The root directory's own device number, recorded at `init` and
+    /// required (alongside a regular-file/link-count check) of every leaf
+    /// entry this type ever reads or writes — see
+    /// ``requireVerifiedRegularFile(descriptor:name:)``. A bind mount, a
+    /// different volume mounted at a name inside the cache root, or any
+    /// other cross-device substitution planted at an entry name changes
+    /// `st_dev`, so it can never silently pass as this cache's own data
+    /// even though `O_NOFOLLOW` alone would not by itself distinguish it
+    /// from a same-device file.
+    private let rootDevice: dev_t
+    let faultState = FaultInjectionState()
 
     /// Test-only deterministic fault injection, installed via `@testable
     /// import`. Replaces `FailingFileManager` (a `FileManager` subclass)
@@ -78,17 +88,25 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// ``AssetError/cachePersistenceFailed(_:)`` if `directory` cannot be
     /// opened as a directory (including if it is itself a symlink: opened
     /// with `O_NOFOLLOW`) or if creating it first fails.
-    init(directory: URL, fileManager: FileManager) throws {
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let descriptor = directory.withUnsafeFileSystemRepresentation { pathPointer -> Int32 in
-            guard let pathPointer else { return -1 }
-            return open(pathPointer, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-        }
-        guard descriptor >= 0 else {
-            throw AssetError.cachePersistenceFailed(
-                "Could not open cache root directory (errno \(errno))"
-            )
-        }
+    ///
+    /// Every path component from the filesystem root down to `directory`
+    /// itself is walked with its own `openat`/`mkdirat` call chained off
+    /// the previous component's own already-opened, `O_NOFOLLOW`-verified
+    /// descriptor (see ``Self/openVerifiedComponent(parentFD:name:createIfMissing:)``)
+    /// — never `FileManager.createDirectory(at:withIntermediateDirectories:)`,
+    /// which re-resolves the whole path string component-by-component on
+    /// every call and, since it never passes `O_NOFOLLOW` anywhere, would
+    /// silently follow a symlink an attacker (or a confused prior process)
+    /// planted at *any* intermediate component — not just the final leaf —
+    /// transparently redirecting where this cache's data is actually read
+    /// from and written to.
+    ///
+    /// `fileManager` is intentionally unused: kept only so every existing
+    /// call site (production and test) stays source-compatible without
+    /// this type ever again touching a `FileManager` path-string API for
+    /// directory creation.
+    init(directory: URL, fileManager _: FileManager) throws {
+        let descriptor = try Self.openOrCreateVerifiedDirectory(at: directory)
         var rootStat = stat()
         guard fstat(descriptor, &rootStat) == 0, (rootStat.st_mode & S_IFMT) == S_IFDIR else {
             close(descriptor)
@@ -96,6 +114,7 @@ final class SecureCacheDirectory: @unchecked Sendable {
         }
         rootFD = descriptor
         rootOwnerUID = rootStat.st_uid
+        rootDevice = rootStat.st_dev
     }
 
     deinit {
@@ -170,148 +189,6 @@ final class SecureCacheDirectory: @unchecked Sendable {
         return (size: Int(info.st_size), isRegularFile: isRegular)
     }
 
-    /// Writes `data` to a freshly created (never a pre-existing, possibly
-    /// attacker-owned) file at `tempName` — any leftover file at that exact
-    /// name is unlinked first — then `fsync`s the file itself before
-    /// returning, so the temp file's own bytes are durable on disk before
-    /// this cache ever attempts to rename it into place.
-    ///
-    /// If a test has installed fault injection matching `tempName`'s
-    /// final (non-`.tmp`) target name, a truncated one-byte stub is
-    /// written at `tempName` (reproducing the shape of a genuine
-    /// interrupted write) and this throws instead of performing the real,
-    /// full write — exercising the exact same caller cleanup path a real
-    /// I/O failure would.
-    func writeTempAndFsync(tempName: String, data: Data) throws {
-        if faultState.shouldFailTempWrite(tempName: tempName) {
-            _ = unlinkat(rootFD, tempName, 0)
-            let stubFD = openat(rootFD, tempName, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
-            if stubFD >= 0 {
-                var stubByte: UInt8 = 0xFF
-                _ = withUnsafeBytes(of: &stubByte) { Darwin.write(stubFD, $0.baseAddress, 1) }
-                close(stubFD)
-            }
-            throw AssetError.cachePersistenceFailed("injected fault: writeTemp '\(tempName)'")
-        }
-        _ = unlinkat(rootFD, tempName, 0)
-        let descriptor = openat(rootFD, tempName, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
-        guard descriptor >= 0 else {
-            throw AssetError.cachePersistenceFailed(
-                "Could not create temp file '\(tempName)' (errno \(errno))"
-            )
-        }
-        defer { close(descriptor) }
-        var totalWritten = 0
-        let byteCount = data.count
-        try data.withUnsafeBytes { rawBuffer in
-            guard let base = rawBuffer.baseAddress else { return }
-            while totalWritten < byteCount {
-                let writeCount = Darwin.write(
-                    descriptor, base + totalWritten, byteCount - totalWritten
-                )
-                if writeCount < 0 {
-                    // A `write()` interrupted by a signal (`EINTR`) is
-                    // not a genuine failure and must be retried rather
-                    // than surfaced as a spurious persistence failure;
-                    // any other negative result is a real failure,
-                    // reported with its errno for diagnosability.
-                    if errno == EINTR {
-                        continue
-                    }
-                    throw AssetError.cachePersistenceFailed(
-                        "write failed for '\(tempName)' (errno \(errno))"
-                    )
-                }
-                guard writeCount > 0 else {
-                    throw AssetError.cachePersistenceFailed("Short write for '\(tempName)'")
-                }
-                totalWritten += writeCount
-            }
-        }
-        guard fsync(descriptor) == 0 else {
-            throw AssetError.cachePersistenceFailed("fsync failed for '\(tempName)'")
-        }
-    }
-
-    /// Atomically renames `tempName` to `finalName` (replacing any existing
-    /// file at `finalName`, exactly like `rename(2)`), *without* fsyncing
-    /// the containing directory. Once this returns successfully, the
-    /// rename has already taken effect for this (and any other) currently
-    /// running process — `rename(2)` is not itself a two-phase operation —
-    /// only its durability across a crash is still unconfirmed until a
-    /// separate ``fsyncRootDirectory()`` call succeeds.
-    ///
-    /// This is deliberately a distinct, separately-throwing step from
-    /// ``renameAndFsyncDirectory(from:to:)`` (which simply calls this then
-    /// ``fsyncRootDirectory()``) so a caller that must react differently to
-    /// "the rename itself never happened" (safe to roll back whatever it
-    /// was about to publish — nothing changed) versus "the rename
-    /// succeeded but the following directory fsync failed" (the rename
-    /// *already* took effect; anything now referencing its target must
-    /// not be rolled back, or a reference that is already live in the
-    /// current process would be broken immediately, not merely at some
-    /// future crash) can distinguish the two by which specific call threw.
-    /// See ``AssetDiskCache/set(_:payload:metadata:token:)``'s metadata
-    /// pointer commit for the one call site where this distinction is
-    /// load-bearing.
-    func rename(from tempName: String, to finalName: String) throws {
-        guard renameat(rootFD, tempName, rootFD, finalName) == 0 else {
-            throw AssetError.cachePersistenceFailed(
-                "renameat failed for '\(tempName)' -> '\(finalName)' (errno \(errno))"
-            )
-        }
-        faultState.recordRename(finalName: finalName)
-    }
-
-    /// Atomically renames `tempName` to `finalName` (replacing any existing
-    /// file at `finalName`, exactly like `rename(2)`), then `fsync`s the
-    /// root directory itself so the rename's directory-entry update is
-    /// durable — required so a crash immediately after this call cannot
-    /// resurrect the pre-rename state on the next launch.
-    func renameAndFsyncDirectory(from tempName: String, to finalName: String) throws {
-        try rename(from: tempName, to: finalName)
-        try fsyncRootDirectory()
-    }
-
-    /// `fsync`s the root directory descriptor itself, making a prior
-    /// `rename`/`unlink` durable. Every crash-consistency boundary in
-    /// ``AssetDiskCache`` calls this immediately after any directory-entry
-    /// mutation it needs to survive a crash.
-    func fsyncRootDirectory() throws {
-        if faultState.shouldFailNextDirectoryFsync() {
-            throw AssetError.cachePersistenceFailed("injected fault: cache root directory fsync")
-        }
-        guard fsync(rootFD) == 0 else {
-            throw AssetError.cachePersistenceFailed("fsync failed for the cache root directory")
-        }
-    }
-
-    /// Removes `name`. Returns `true` if a file was actually removed,
-    /// `false` if `name` did not exist (never an error either way), and
-    /// throws only for a genuine, unexpected removal failure (e.g. a
-    /// permission error) — the caller decides how to react to a `false`
-    /// result (e.g. treating a definitive-404 eviction that could not
-    /// physically remove a file as still "invalidated" via its own
-    /// tombstone, per ``AssetDiskCache``'s crash/deletion-failure
-    /// contract).
-    @discardableResult
-    func remove(name: String) throws -> Bool {
-        if faultState.shouldFailRemove(name: name) {
-            throw AssetError.cachePersistenceFailed(
-                "injected failure removing '\(name)'"
-            )
-        }
-        guard unlinkat(rootFD, name, 0) == 0 else {
-            if errno == ENOENT {
-                return false
-            }
-            throw AssetError.cachePersistenceFailed(
-                "unlinkat failed for '\(name)' (errno \(errno))"
-            )
-        }
-        return true
-    }
-
     /// Lists every entry name directly inside the verified root directory,
     /// via a `fdopendir` over a `dup`'d copy of the held root descriptor
     /// (so the directory stream's own internal cursor state can never
@@ -352,11 +229,19 @@ final class SecureCacheDirectory: @unchecked Sendable {
     }
 
     /// Verifies an already-opened descriptor resolves to a regular file
-    /// owned by the same user as the verified root directory — never
+    /// owned by the same user as the verified root directory, on the same
+    /// device as that root, and with exactly one hardlink — never
     /// trusting `name` alone, since a symlink refused by `O_NOFOLLOW`
     /// already fails at `open`/`openat` time, but a *hardlinked* regular
-    /// file swapped in by another user on a shared filesystem would still
-    /// open successfully and must be rejected here instead.
+    /// file swapped in by another user (or process) on a shared
+    /// filesystem, or a different volume/bind-mount substituted at this
+    /// exact entry name, would still open successfully and must be
+    /// rejected here instead. `st_nlink == 1` specifically rules out an
+    /// external hardlink sharing this same inode: every entry this cache
+    /// itself ever creates is written fresh via `O_CREAT | O_EXCL` (see
+    /// ``writeTempAndFsync(tempName:data:)``) and only ever renamed, never
+    /// linked, so a legitimate cache-owned file can never have a link
+    /// count greater than one.
     private func requireVerifiedRegularFile(descriptor: Int32, name: String) throws {
         var info = stat()
         guard fstat(descriptor, &info) == 0 else {
@@ -367,6 +252,12 @@ final class SecureCacheDirectory: @unchecked Sendable {
         }
         guard info.st_uid == rootOwnerUID else {
             throw AssetError.cachePersistenceFailed("'\(name)' has an unexpected owner")
+        }
+        guard info.st_dev == rootDevice else {
+            throw AssetError.cachePersistenceFailed("'\(name)' is not on the cache root's device")
+        }
+        guard info.st_nlink == 1 else {
+            throw AssetError.cachePersistenceFailed("'\(name)' has an unexpected hardlink count")
         }
     }
 }
