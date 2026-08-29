@@ -9,8 +9,8 @@ enum BoardAccessibility {
     static func summary(scenario: BoardScenarioSummary?, hasCampaignContext: Bool) -> String {
         guard let scenario else {
             return hasCampaignContext
-                ? "Campaign summary. \(BoardDisplayFormatting.unsupportedContentNotice)."
-                : "No active scenario."
+                ? "Campaign summary. \(BoardDisplayFormatting.unsupportedContentNotice)"
+                : "No active scenario"
         }
         var parts = [
             "\(scenario.displayName), difficulty \(scenario.difficulty.rawValue), "
@@ -137,7 +137,10 @@ enum BoardAccessibility {
     static func summary(investigator: BoardInvestigatorNode) -> String {
         var parts = ["\(investigator.displayName), \(investigator.investigatorClass.rawValue)"]
         parts.append("Health \(investigator.health), sanity \(investigator.sanity)")
-        parts.append("\(investigator.remainingActions) action(s) remaining")
+        let actionsPhrase = BoardDisplayFormatting.pluralized(
+            investigator.remainingActions, singular: "action", plural: "actions"
+        )
+        parts.append("\(actionsPhrase) remaining")
         if investigator.isActiveInvestigator {
             parts.append("Active investigator")
         }

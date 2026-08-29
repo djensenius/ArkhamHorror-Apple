@@ -27,12 +27,17 @@ struct BoardInvestigatorRowView: View {
                 }
             }
             if otherInvestigatorCount > 0 || killedInvestigatorCount > 0 {
-                Text(
-                    "\(otherInvestigatorCount) other investigator(s), "
-                        + "\(killedInvestigatorCount) killed investigator(s)"
+                let otherPhrase = BoardDisplayFormatting.pluralized(
+                    otherInvestigatorCount, singular: "other investigator",
+                    plural: "other investigators"
                 )
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                let killedPhrase = BoardDisplayFormatting.pluralized(
+                    killedInvestigatorCount, singular: "killed investigator",
+                    plural: "killed investigators"
+                )
+                Text("\(otherPhrase), \(killedPhrase)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }

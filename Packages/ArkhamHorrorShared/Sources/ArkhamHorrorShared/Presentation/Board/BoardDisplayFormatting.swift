@@ -71,7 +71,8 @@ enum BoardDisplayFormatting {
         case .oneAtATime: "moving one step at a time"
         case .towards: "moving towards a destination"
         case .place: "being placed"
-        case let .towardsN(steps): "moving \(steps) step(s)"
+        case let .towardsN(steps):
+            "moving \(pluralized(steps, singular: "step", plural: "steps"))"
         case .unknown: unsupportedContentNotice
         }
         switch movement.moveDestination {

@@ -103,7 +103,7 @@ struct BoardChaosBagView: View {
     private func faceCountsRow(_ counts: [BoardChaosFaceCount]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(Array(counts.enumerated()), id: \.offset) { _, count in
+                ForEach(counts, id: \.face) { count in
                     BoardStatBadge(
                         systemImage: "circle.hexagongrid.fill",
                         value: "\(count.face.rawValue) ×\(count.count)"
