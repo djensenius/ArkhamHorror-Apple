@@ -2,12 +2,22 @@
 import Foundation
 import Testing
 
+/// Candidate-walk, cache-hit, and in-flight-coalescing behavior for
+/// ``AssetCacheService``. Conditional-revalidation (`If-None-Match`/304)
+/// coverage is split into `AssetCacheServiceRevalidationTests.swift` (an
+/// `extension AssetCacheServiceTests`, reusing the helpers below) purely to
+/// stay under SwiftLint's `type_body_length`, the same way `AppModelTests`
+/// is split by concern across sibling files.
 @Suite("AssetCacheService")
 struct AssetCacheServiceTests {
     /// A fresh scratch directory per test for the disk cache layer, nested
     /// under this package's own build output (never `/tmp`), removed
     /// unconditionally when the test finishes.
-    private func withService(
+    ///
+    /// Not `private`: shared with the `extension AssetCacheServiceTests`
+    /// test groups split across sibling files in this directory (see
+    /// ``AssetCacheServiceRevalidationTests``).
+    func withService(
         transport: FakeAssetTransport = FakeAssetTransport(),
         digest: any LocalizedDigestLookup = FakeDigestLookup(),
         limits: AssetCacheLimits = AssetCacheLimits(
@@ -38,19 +48,19 @@ struct AssetCacheServiceTests {
         try await body(service, transport)
     }
 
-    private func cardArtKey(_ rawCardCode: String = "01001") throws -> AssetKey {
+    func cardArtKey(_ rawCardCode: String = "01001") throws -> AssetKey {
         let identifier = try AssetIdentifier.cardCode(rawCardCode)
         return AssetKey(category: .card(.art, identifier))
     }
 
-    private func candidateURLs(
+    func candidateURLs(
         for key: AssetKey,
         digest: any LocalizedDigestLookup = FakeDigestLookup()
     ) -> [URL] {
         AssetLocator.candidates(for: key, digest: digest).map { $0.url(base: key.source) }
     }
 
-    private func successResult(
+    func successResult(
         body: Data = AssetImageFixtureBuilder.syntheticAVIF(width: 4, height: 4),
         etag: String? = nil,
         lastModified: String? = nil
@@ -226,60 +236,6 @@ struct AssetCacheServiceTests {
                     .syntheticAVIF(width: 4, height: 4),
                 "A later, independent request must still succeed normally"
             )
-        }
-    }
-
-    // MARK: - Conditional revalidation / 304
-
-    @Test(
-        "Revalidating with no prior cache entry throws staleConditionalResponse, no network call"
-    )
-    func revalidateWithNoCachedEntryThrowsWithoutNetworkCall() async throws {
-        try await withService { service, transport in
-            let key = try cardArtKey()
-            await #expect(throws: AssetError.staleConditionalResponse) {
-                _ = try await service.revalidate(for: key)
-            }
-            let urls = candidateURLs(for: key)
-            for url in urls {
-                let callCount = await transport.callCount(for: url)
-                #expect(callCount == 0)
-            }
-        }
-    }
-
-    @Test(
-        "A 304 with a currently valid cached payload succeeds and refreshes lastAccessedAt"
-    )
-    func notModifiedWithValidCacheSucceeds() async throws {
-        try await withService { service, transport in
-            let key = try cardArtKey()
-            let urls = candidateURLs(for: key)
-            await transport.enqueue(.success(successResult(etag: "\"abc\"")), for: urls[0])
-            let initial = try await service.asset(for: key)
-            #expect(initial.metadata.etag == "\"abc\"")
-
-            await transport.enqueue(.success(.notModified), for: urls[0])
-            let revalidated = try await service.revalidate(for: key)
-            #expect(revalidated.payload == initial.payload)
-
-            let call = await transport.calls.last
-            #expect(call?.ifNoneMatch == "\"abc\"")
-        }
-    }
-
-    @Test(
-        "An unconditional 304 during the initial (non-revalidating) fetch is a typed protocol error"
-    )
-    func unconditional304DuringInitialFetchIsError() async throws {
-        try await withService { service, transport in
-            let key = try cardArtKey()
-            let urls = candidateURLs(for: key)
-            await transport.enqueue(.success(.notModified), for: urls[0])
-
-            await #expect(throws: AssetError.staleConditionalResponse) {
-                _ = try await service.asset(for: key)
-            }
         }
     }
 }

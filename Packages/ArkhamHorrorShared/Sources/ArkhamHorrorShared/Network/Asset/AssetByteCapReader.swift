@@ -1,21 +1,22 @@
 import Foundation
 
 /// Reads a byte sequence incrementally, enforcing
-/// ``AssetCacheLimits/maxEncodedBytes`` after every buffered chunk so an
-/// oversized body is rejected while it is still arriving rather than after
-/// buffering it in full.
+/// ``AssetCacheLimits/maxEncodedBytes`` after every single byte arrives
+/// (not merely at each buffered-chunk boundary) so an oversized body is
+/// rejected the instant it exceeds the cap rather than after buffering an
+/// extra chunk, or the full body, past it.
 ///
 /// Generic over `AsyncSequence` (rather than concretely
 /// `URLSession.AsyncBytes`) purely so tests can exercise the exact cap
 /// boundary with a synthetic `AsyncStream<UInt8>`, without any real
 /// networking.
 enum AssetByteCapReader {
-    /// The number of bytes buffered before each incremental size check.
-    /// Compared against a fixed constant rather than `buffer.capacity`,
-    /// since `Array.capacity` is an implementation detail that can grow
-    /// past the value passed to `reserveCapacity`, which would delay (or
-    /// with the wrong comparison, silently skip) the incremental
-    /// `maxEncodedBytes` check.
+    /// The number of bytes buffered before each incremental flush into
+    /// `data`. Compared against a fixed constant rather than
+    /// `buffer.capacity`, since `Array.capacity` is an implementation
+    /// detail that can grow past the value passed to `reserveCapacity`,
+    /// which would delay (or with the wrong comparison, silently skip) the
+    /// incremental `maxEncodedBytes` check.
     private static let chunkSize = 64 * 1024
 
     static func read<S: AsyncSequence>(
@@ -28,12 +29,17 @@ enum AssetByteCapReader {
 
         for try await byte in bytes {
             buffer.append(byte)
+            // Checked on every byte (not only at each `chunkSize` flush
+            // boundary), overflow-safely, so a small configured cap is
+            // enforced the instant it is exceeded rather than allowing up
+            // to an extra `chunkSize` bytes to buffer first.
+            let (runningTotal, overflowed) = data.count.addingReportingOverflow(buffer.count)
+            if overflowed || runningTotal > limits.maxEncodedBytes {
+                throw AssetError.responseTooLarge
+            }
             if buffer.count >= chunkSize {
                 data.append(contentsOf: buffer)
                 buffer.removeAll(keepingCapacity: true)
-                if data.count > limits.maxEncodedBytes {
-                    throw AssetError.responseTooLarge
-                }
             }
         }
         if !buffer.isEmpty {

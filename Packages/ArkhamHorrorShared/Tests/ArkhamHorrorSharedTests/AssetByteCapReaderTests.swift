@@ -50,6 +50,44 @@ struct AssetByteCapReaderTests {
         }
     }
 
+    @Test(
+        """
+        A cap exceeded mid-chunk is rejected immediately, without buffering another \
+        full chunk past it
+        """
+    )
+    func capExceededRejectedBeforeNextChunkBoundary() async throws {
+        // A cap smaller than the reader's internal 64 KiB chunk size: if
+        // the incremental check only ran at each chunk-flush boundary
+        // (rather than on every byte), this could buffer up to an entire
+        // extra chunk beyond the cap before ever noticing. A counting
+        // sequence records exactly how many bytes were pulled before the
+        // reader throws, so this asserts that bound directly rather than
+        // only asserting "it eventually throws".
+        let tinyLimits = AssetCacheLimits(
+            maxEncodedBytes: 10,
+            maxDimension: 8192,
+            maxPixelCount: 32_000_000,
+            memoryBudgetBytes: 1024,
+            diskBudgetBytes: 1024
+        )
+        let counter = ByteConsumptionCounter()
+        await #expect(throws: AssetError.responseTooLarge) {
+            _ = try await AssetByteCapReader.read(
+                CountingByteSequence(totalByteCount: 200_000, counter: counter),
+                limits: tinyLimits
+            )
+        }
+        let consumed = await counter.count
+        #expect(
+            consumed <= 11,
+            """
+            Expected the reader to stop within one byte of the 10-byte cap, not after \
+            buffering a further 64 KiB chunk (consumed \(consumed) bytes)
+            """
+        )
+    }
+
     @Test("An empty body is accepted")
     func emptyBodyAccepted() async throws {
         let data = try await AssetByteCapReader.read(stream(byteCount: 0), limits: limits)
@@ -94,5 +132,43 @@ private struct SlowByteSequence: AsyncSequence {
 
     func makeAsyncIterator() -> AsyncIterator {
         AsyncIterator()
+    }
+}
+
+/// Actor-isolated counter recording how many bytes ``CountingByteSequence``
+/// has yielded, so a test can assert exactly how far ``AssetByteCapReader``
+/// read before rejecting an oversized body — not merely that it eventually
+/// rejected it.
+private actor ByteConsumptionCounter {
+    private(set) var count = 0
+
+    func increment() {
+        count += 1
+    }
+}
+
+/// A byte sequence that records each byte it yields into `counter`, so a
+/// test can measure exactly how many bytes a consumer pulled before
+/// stopping (e.g. due to a reader throwing partway through), rather than
+/// only observing the consumer's final outcome.
+private struct CountingByteSequence: AsyncSequence {
+    let totalByteCount: Int
+    let counter: ByteConsumptionCounter
+
+    struct AsyncIterator: AsyncIteratorProtocol {
+        let totalByteCount: Int
+        let counter: ByteConsumptionCounter
+        var index = 0
+
+        mutating func next() async throws -> UInt8? {
+            guard index < totalByteCount else { return nil }
+            defer { index += 1 }
+            await counter.increment()
+            return UInt8(index % 256)
+        }
+    }
+
+    func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(totalByteCount: totalByteCount, counter: counter)
     }
 }

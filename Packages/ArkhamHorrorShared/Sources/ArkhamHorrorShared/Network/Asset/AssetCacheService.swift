@@ -62,6 +62,13 @@ actor AssetCacheService {
     /// cached entry (memory or disk) to condition against; if none exists,
     /// throws ``AssetError/staleConditionalResponse`` immediately without
     /// making any network call, since there is nothing to pair a 304 with.
+    ///
+    /// Also requires the cached entry to actually carry a validator
+    /// (`ETag` or `Last-Modified`): a 304 is only meaningful in response to
+    /// a genuinely conditional request, so without either validator this
+    /// throws the same typed error immediately rather than sending an
+    /// unconditional request that a non-conforming server could still
+    /// answer with a 304 we would otherwise wrongly accept as "unchanged".
     func revalidate(for key: AssetKey) async throws -> CachedAsset {
         let candidates = AssetLocator.candidates(for: key, digest: digest)
         guard !candidates.isEmpty else { throw AssetError.candidatesExhausted }
@@ -75,6 +82,9 @@ actor AssetCacheService {
             throw AssetError.staleConditionalResponse
         }
         guard let url = URL(string: existing.metadata.resolvedURLString) else {
+            throw AssetError.staleConditionalResponse
+        }
+        guard existing.metadata.etag != nil || existing.metadata.lastModified != nil else {
             throw AssetError.staleConditionalResponse
         }
 
