@@ -374,11 +374,17 @@ actor AssetCacheService {
     /// decode takes.
     ///
     /// `async let` starts a real child task that inherits this call's
-    /// cancellation (unlike a detached task): if the calling context is
-    /// cancelled while this decode is still in flight, the awaited result
-    /// below throws `CancellationError` at the next cooperative
-    /// cancellation check rather than silently continuing to hold up the
-    /// actor. Not `private`: shared by every call site across
+    /// cancellation (unlike a detached task). However,
+    /// ``AssetImageDecoder/decode(_:)`` itself is synchronous and performs
+    /// no cooperative cancellation check while it runs, so a cancellation
+    /// that arrives mid-decode does not interrupt the decode itself — it
+    /// is only observed here, at the `await` below, once the child task's
+    /// decode has actually finished (successfully or not) and the awaited
+    /// result throws `CancellationError` instead of returning it. The
+    /// benefit this method provides is solely that the decode's CPU cost
+    /// runs off the actor's own executor, so it never blocks unrelated
+    /// cache requests/coalescing/cancellation handling in the meantime.
+    /// Not `private`: shared by every call site across
     /// `AssetCacheService+Revalidation.swift` too.
     func decodeImageOffActor(_ payload: Data) async throws -> CGImage {
         async let decodedImage = AssetImageDecoder.decode(payload)

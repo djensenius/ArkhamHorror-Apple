@@ -28,9 +28,21 @@ final class AtomicCallCounter: @unchecked Sendable {
 }
 
 /// A `FileManager` subclass that injects a deterministic failure into
-/// either the initial temp-file write (`createFile`) or the final rename
-/// step (`moveItem`) for paths whose name ends in any of
-/// `failPathSuffixes`, leaving every other filesystem operation untouched.
+/// either the initial temp-file write (`createFile`) or the rename step
+/// for a *new* destination filename (`moveItem`) for paths whose name ends
+/// in any of `failPathSuffixes`, leaving every other filesystem operation
+/// untouched.
+///
+/// `AssetDiskCache.atomicWrite` only calls `moveItem` when its destination
+/// does not already exist; when it does (replacing an existing generation
+/// at the same content-addressed filename), it calls
+/// `FileManager.replaceItemAt` instead — an extension method that cannot
+/// be overridden by a subclass, so this double cannot inject a failure
+/// into that specific step. Tests that need to simulate a *replacement*
+/// rename failure (see `metadataReplaceFailureLeavesPriorGenerationIntact`
+/// in `AssetDiskCacheAtomicityTests.swift`) instead use a real filesystem
+/// failure (e.g. revoking directory write permission) rather than this
+/// double.
 ///
 /// This exercises ``AssetDiskCache``'s atomic-write failure-recovery path
 /// with a real, precisely-targeted filesystem failure, rather than a
