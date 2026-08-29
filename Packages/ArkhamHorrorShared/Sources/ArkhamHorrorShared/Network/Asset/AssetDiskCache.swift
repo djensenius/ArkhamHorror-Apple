@@ -65,6 +65,14 @@ actor AssetDiskCache {
         recoverOrphansIfNeeded()
         let metadataURL = metadataURL(for: key)
 
+        // A clean miss (no sidecar at all) is the common case for a
+        // first-time lookup and must stay cheap: only fall through to the
+        // quarantine path — which sweeps every payload generation for this
+        // key hash via a full directory listing — once a sidecar is known
+        // to exist but is unreadable or fails to decode.
+        guard fileManager.fileExists(atPath: metadataURL.path) else {
+            return nil
+        }
         guard let metadataData = try? Data(contentsOf: metadataURL),
               var metadata = try? JSONDecoder.assetCache.decode(
                   AssetCacheMetadata.self,

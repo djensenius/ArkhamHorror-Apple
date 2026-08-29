@@ -8,6 +8,52 @@ import Testing
 extension AssetDiskCacheTests {
     @Test(
         """
+        A clean miss (no metadata sidecar at all) returns nil without ever listing the cache \
+        directory, so the common first-time-lookup case stays O(1) rather than paying an \
+        O(n) directory-listing cost that only genuine corruption should incur
+        """
+    )
+    func cleanMissNeverListsDirectoryButCorruptSidecarDoes() async throws {
+        try await withScratchDirectory { directory in
+            let failingFileManager = FailingFileManager()
+            let cache = try AssetDiskCache(
+                directory: directory,
+                limits: smallLimits(),
+                fileManager: failingFileManager
+            )
+            let missingKey = try key("01001")
+
+            // The very first call on a fresh instance also runs the
+            // one-time `recoverOrphansIfNeeded()` startup sweep, which
+            // legitimately lists the (here, empty) directory once; that
+            // one call is not what this test is asserting against.
+            let firstMiss = await cache.get(missingKey)
+            #expect(firstMiss == nil)
+            let callsAfterStartupSweep = failingFileManager.contentsOfDirectoryCallCount
+            #expect(callsAfterStartupSweep >= 1)
+
+            // A second clean miss, now that the one-time sweep has
+            // already run: must not list the directory again at all.
+            let secondMiss = await cache.get(missingKey)
+            #expect(secondMiss == nil)
+            #expect(failingFileManager.contentsOfDirectoryCallCount == callsAfterStartupSweep)
+
+            // By contrast, a key whose sidecar exists but is undecodable
+            // must fall through to the quarantine path, which does list
+            // the directory (to sweep any other stale generation).
+            let corruptKey = try key("01002")
+            let metadataURL = directory.appendingPathComponent(
+                "\(corruptKey.digestHex).meta.json"
+            )
+            try Data("not json".utf8).write(to: metadataURL)
+            let corruptMiss = await cache.get(corruptKey)
+            #expect(corruptMiss == nil)
+            #expect(failingFileManager.contentsOfDirectoryCallCount > callsAfterStartupSweep)
+        }
+    }
+
+    @Test(
+        """
         Metadata claiming a negative encodedByteCount is quarantined without reading the payload
         """
     )

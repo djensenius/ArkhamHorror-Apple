@@ -203,7 +203,9 @@ extension AssetCacheService {
                 // this synchronous registration, performed directly from
                 // actor-isolated code, is race-free without extra locking.
                 if inFlightRevalidation[slot]?.id == fetchID {
-                    inFlightRevalidation[slot]?.waiters[waiterID] = continuation
+                    var fetch = inFlightRevalidation[slot]
+                    fetch?.waiters[waiterID] = continuation
+                    inFlightRevalidation[slot] = fetch
                 } else {
                     continuation.resume(returning: .failure(CancellationError()))
                 }

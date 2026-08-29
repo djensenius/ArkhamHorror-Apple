@@ -179,7 +179,9 @@ actor AssetCacheService {
                 // a synthetic cancellation below is the correct outcome
                 // for this waiter (there is nothing left to join).
                 if inFlight[cacheKey]?.id == fetchID {
-                    inFlight[cacheKey]?.waiters[waiterID] = continuation
+                    var fetch = inFlight[cacheKey]
+                    fetch?.waiters[waiterID] = continuation
+                    inFlight[cacheKey] = fetch
                 } else {
                     continuation.resume(returning: .failure(CancellationError()))
                 }
