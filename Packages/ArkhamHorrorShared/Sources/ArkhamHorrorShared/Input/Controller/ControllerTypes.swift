@@ -1,0 +1,78 @@
+import Foundation
+
+/// A stable identity for one connected controller, independent of connection
+/// order, so a reconnect of the same physical device does not need special
+/// casing beyond an ordinary connect event.
+struct ControllerID: Hashable, Sendable {
+    private let objectID: ObjectIdentifier
+
+    init(objectID: ObjectIdentifier) {
+        self.objectID = objectID
+    }
+}
+
+/// The glyph family used to render button prompts for a connected
+/// controller. Distinct from ``ControllerControl`` (which is already
+/// brand-independent): this exists purely so presentation code can choose the
+/// right glyph set, never to change which semantic command a control
+/// produces.
+enum ControllerGlyphFamily: Hashable, Sendable {
+    case xbox
+    case playStation
+    case mfi
+    case unknown
+}
+
+/// Which input profile a connected controller exposes.
+enum ControllerProfileKind: Hashable, Sendable {
+    /// The controller exposes `GCExtendedGamepad` (or equivalent): every
+    /// ``ControllerControl`` case is meaningful.
+    case extendedGamepad
+    /// The controller is connected but exposes no profile this layer
+    /// understands; it never calls ``ControllerInputSource/onButtonEvent``.
+    case unsupported
+}
+
+/// An immutable, `Equatable` description of one connected controller, safe to
+/// store in `@Observable` state and to compare in tests without touching the
+/// live controller.
+struct ControllerSnapshot: Sendable, Equatable {
+    let id: ControllerID
+    let profile: ControllerProfileKind
+    let glyphFamily: ControllerGlyphFamily
+    let vendorName: String?
+}
+
+/// The injected seam over one connected controller's button-level input, so
+/// production code (backed by `GCExtendedGamepad`) and deterministic tests
+/// (backed by a fake) share one shape. `@MainActor`-isolated: every
+/// conformance is expected to be a reference type uniquely identifying one
+/// physical controller, and ``onButtonEvent`` is only ever installed,
+/// invoked, or torn down on the main actor.
+@MainActor
+protocol ControllerInputSource: AnyObject {
+    var id: ControllerID { get }
+    var snapshot: ControllerSnapshot { get }
+    /// Installed by ``ControllerInputCenter``. A conformance must stop
+    /// invoking this the moment its controller disconnects, and must never
+    /// invoke it again afterward even if the underlying hardware briefly
+    /// re-delivers a queued event.
+    var onButtonEvent: ((ControllerControl, InputPhase) -> Void)? { get set }
+}
+
+/// Test/production seam for controller connect/disconnect discovery, injected
+/// into ``ControllerInputCenter`` so tests can simulate hardware
+/// deterministically without touching the real GameController framework.
+@MainActor
+protocol ControllerDiscovering: AnyObject {
+    /// Begins observing connect/disconnect, reporting every controller
+    /// already connected at call time as an immediate `onConnect`. Calling
+    /// `start` again before `stop` replaces the previous callbacks.
+    func start(
+        onConnect: @escaping (any ControllerInputSource) -> Void,
+        onDisconnect: @escaping (ControllerID) -> Void
+    )
+    /// Stops observing and releases every retained callback/observer. Safe to
+    /// call more than once.
+    func stop()
+}
