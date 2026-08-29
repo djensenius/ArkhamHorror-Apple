@@ -39,7 +39,11 @@ final class ArrayBox {
 /// Foundation's `JSONEncoder`, used by ``ContractJSON/encode(_:)``. Conforms to
 /// ``LosslessJSONNumberSink``, so a ``JSONNumber`` encoded anywhere in the graph keeps its
 /// exact original precision rather than round-tripping through a fixed-precision type.
-final class LosslessJSONValueEncoder: Encoder, LosslessJSONNumberSink {
+///
+/// Not `final`: ``LosslessJSONReferencingEncoder`` subclasses it to implement
+/// `superEncoder()`/`superEncoder(forKey:)`, which must write their encoded value back into
+/// the parent container rather than discarding it.
+class LosslessJSONValueEncoder: Encoder, LosslessJSONNumberSink {
     let codingPath: [CodingKey]
     let userInfo: [CodingUserInfoKey: Any] = [:]
     var node: EncodingNode = .leaf(.null)
@@ -168,10 +172,18 @@ struct LosslessJSONKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingContaine
     }
 
     mutating func superEncoder() -> Encoder {
-        LosslessJSONValueEncoder(codingPath: codingPath)
+        makeSuperEncoder(forKey: "super")
     }
 
     mutating func superEncoder(forKey key: Key) -> Encoder {
-        LosslessJSONValueEncoder(codingPath: codingPath + [key])
+        makeSuperEncoder(forKey: key.stringValue)
+    }
+
+    private func makeSuperEncoder(forKey key: String) -> Encoder {
+        LosslessJSONReferencingEncoder(
+            keyedInto: box,
+            key: key,
+            codingPath: codingPath + [AnyCodingKey(stringValue: key)]
+        )
     }
 }

@@ -78,23 +78,36 @@ struct LosslessJSONUnkeyedEncodingContainer: UnkeyedEncodingContainer {
     mutating func nestedContainer<NestedKey: CodingKey>(
         keyedBy _: NestedKey.Type
     ) -> KeyedEncodingContainer<NestedKey> {
+        let index = box.elements.count
         let nestedBox = ObjectBox()
         box.elements.append(.object(nestedBox))
         let container = LosslessJSONKeyedEncodingContainer<NestedKey>(
-            codingPath: codingPath,
+            codingPath: codingPath + [AnyCodingKey(intValue: index)],
             box: nestedBox
         )
         return KeyedEncodingContainer(container)
     }
 
     mutating func nestedUnkeyedContainer() -> UnkeyedEncodingContainer {
+        let index = box.elements.count
         let nestedBox = ArrayBox()
         box.elements.append(.array(nestedBox))
-        return LosslessJSONUnkeyedEncodingContainer(codingPath: codingPath, box: nestedBox)
+        return LosslessJSONUnkeyedEncodingContainer(
+            codingPath: codingPath + [AnyCodingKey(intValue: index)],
+            box: nestedBox
+        )
     }
 
     mutating func superEncoder() -> Encoder {
-        LosslessJSONValueEncoder(codingPath: codingPath)
+        // Reserve the slot immediately (not just at deinit) so any sibling `encode(_:)`
+        // calls made after this one still see the correct, stable index.
+        let index = box.elements.count
+        box.elements.append(.leaf(.null))
+        return LosslessJSONReferencingEncoder(
+            unkeyedInto: box,
+            index: index,
+            codingPath: codingPath + [AnyCodingKey(intValue: index)]
+        )
     }
 }
 
