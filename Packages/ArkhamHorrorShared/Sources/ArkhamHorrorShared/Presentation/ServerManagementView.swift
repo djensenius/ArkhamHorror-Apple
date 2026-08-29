@@ -272,11 +272,17 @@ struct ServerProfileEditorView: View {
     }
 
     /// The profile ID this editor's own save/edit is (or would be) tracked under in
-    /// ``AppModel/profileManagementOperation``, so this editor's loading/disabled/
-    /// dismiss state reflects only its own operation rather than any other window's.
-    /// `.add` has no stable ID before ``AppModel/addCustomProfile(displayName:rawURL:)``
-    /// creates one, but that call is fully synchronous — its own operation state
-    /// never outlives the call, so there is no separate in-flight state to track.
+    /// ``AppModel/profileManagementOperation``, so this editor's loading spinner and
+    /// dismiss-on-completion both reflect only its own operation rather than any other
+    /// window's. The Save button's *disabled* state is intentionally coarser: since
+    /// profile-management operations are serialized process-wide (mirroring
+    /// authentication's single-flight design), `submit()` and the button both disable
+    /// whenever `model.profileManagementOperation != .idle`, regardless of which
+    /// window's operation is in flight — so a different window's own in-progress add,
+    /// edit, or removal also disables this editor's Save button. `.add` has no stable
+    /// ID before ``AppModel/addCustomProfile(displayName:rawURL:)`` creates one, but
+    /// that call is fully synchronous — its own operation state never outlives the
+    /// call, so there is no separate in-flight state to track.
     private var ownProfileID: UUID? {
         switch mode {
         case .add: nil
