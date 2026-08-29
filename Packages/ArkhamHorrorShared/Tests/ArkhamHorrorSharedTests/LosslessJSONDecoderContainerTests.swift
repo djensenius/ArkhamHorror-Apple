@@ -2,6 +2,13 @@
 import Foundation
 import Testing
 
+/// Alias purely to keep the `UnkeyedScalarKind.decode(from:)` family's signatures under
+/// the line length limit. File-scope (not nested) to respect SwiftLint's one-level
+/// type-nesting limit, since `UnkeyedScalarKind` itself is already nested one level. Not
+/// `private`: methods using it as a parameter type need at least the enclosing enum's
+/// (internal) visibility for the Swift Testing macro's discovery.
+typealias UnkeyedContainer = LosslessJSONUnkeyedDecodingContainer
+
 /// Coverage for `LosslessJSONValueDecoder`/its containers' error-reporting fidelity: a
 /// genuine type mismatch under the lossless decode path must surface as an actual
 /// `DecodingError.typeMismatch` naming the real offending value and the exact coding path
@@ -147,6 +154,131 @@ struct LosslessJSONDecoderContainerTests {
             let mentionsRealValue = context.debugDescription.contains("not-an-array")
             let pathHasKey = context.codingPath.contains { $0.stringValue == "nested" }
             return mentionsRealValue && pathHasKey
+        }
+    }
+
+    // MARK: - Unkeyed container: every scalar decode(_:) overload reports the real index
+
+    /// Every scalar overload `LosslessJSONUnkeyedDecodingContainer.decode(_:)` supports,
+    /// so a single parameterized test can drive all of them through the same mismatch.
+    /// Not `private`: a `@Test` method's parameter type must be no more restrictive than
+    /// the method itself, and `@Test` methods need at least internal visibility for the
+    /// Swift Testing macro's discovery to see them from the module's test entry point.
+    enum UnkeyedScalarKind: String, CaseIterable, CustomStringConvertible {
+        case bool, string, double, float
+        case int, int8, int16, int32, int64
+        case uint, uint8, uint16, uint32, uint64
+
+        var description: String {
+            rawValue
+        }
+
+        /// Split into three sub-switches (each well under SwiftLint's cyclomatic-complexity
+        /// limit) rather than one 14-case switch.
+        func decode(from container: inout UnkeyedContainer) throws {
+            switch self {
+            case .bool, .string, .double, .float:
+                try decodeNonInteger(from: &container)
+            case .int, .int8, .int16, .int32, .int64:
+                try decodeSignedInteger(from: &container)
+            case .uint, .uint8, .uint16, .uint32, .uint64:
+                try decodeUnsignedInteger(from: &container)
+            }
+        }
+
+        private func decodeNonInteger(from container: inout UnkeyedContainer) throws {
+            switch self {
+            case .bool: _ = try container.decode(Bool.self)
+            case .string: _ = try container.decode(String.self)
+            case .double: _ = try container.decode(Double.self)
+            case .float: _ = try container.decode(Float.self)
+            default: break
+            }
+        }
+
+        private func decodeSignedInteger(from container: inout UnkeyedContainer) throws {
+            switch self {
+            case .int: _ = try container.decode(Int.self)
+            case .int8: _ = try container.decode(Int8.self)
+            case .int16: _ = try container.decode(Int16.self)
+            case .int32: _ = try container.decode(Int32.self)
+            case .int64: _ = try container.decode(Int64.self)
+            default: break
+            }
+        }
+
+        private func decodeUnsignedInteger(from container: inout UnkeyedContainer) throws {
+            switch self {
+            case .uint: _ = try container.decode(UInt.self)
+            case .uint8: _ = try container.decode(UInt8.self)
+            case .uint16: _ = try container.decode(UInt16.self)
+            case .uint32: _ = try container.decode(UInt32.self)
+            case .uint64: _ = try container.decode(UInt64.self)
+            default: break
+            }
+        }
+    }
+
+    @Test(
+        "Every unkeyed scalar decode(_:) overload reports the real failing index",
+        arguments: UnkeyedScalarKind.allCases
+    )
+    func unkeyedScalarDecodeIncludesFailingIndex(kind: UnkeyedScalarKind) throws {
+        // An object never satisfies any scalar overload, so element 2 always mismatches
+        // regardless of which scalar type is requested.
+        let wire = try ContractJSON.decode(JSONValue.self, from: Data("[1, 2, {}]".utf8))
+        guard case let .array(items) = wire else {
+            Issue.record("Expected a parsed JSON array")
+            return
+        }
+        var container = LosslessJSONUnkeyedDecodingContainer(elements: items, codingPath: [])
+        _ = try container.decode(Int.self)
+        _ = try container.decode(Int.self)
+        #expect {
+            try kind.decode(from: &container)
+        } throws: { error in
+            guard let decodingError = error as? DecodingError else { return false }
+            guard case let .typeMismatch(_, context) = decodingError else { return false }
+            return context.codingPath.contains { $0.intValue == 2 }
+        }
+    }
+
+    // MARK: - Unkeyed container: at-end errors (decodeNil/scalar reads past the end)
+
+    @Test("decodeNil() past the end of an unkeyed container reports the failing index")
+    func decodeNilPastEndReportsIndex() throws {
+        let wire = try ContractJSON.decode(JSONValue.self, from: Data("[1]".utf8))
+        guard case let .array(items) = wire else {
+            Issue.record("Expected a parsed JSON array")
+            return
+        }
+        var container = LosslessJSONUnkeyedDecodingContainer(elements: items, codingPath: [])
+        _ = try container.decode(Int.self)
+        #expect {
+            _ = try container.decodeNil()
+        } throws: { error in
+            guard let decodingError = error as? DecodingError else { return false }
+            guard case let .valueNotFound(_, context) = decodingError else { return false }
+            // Element 1 is the position that was requested but does not exist.
+            return context.codingPath.contains { $0.intValue == 1 }
+        }
+    }
+
+    @Test("A scalar decode(_:) past the end of an unkeyed container reports the failing index")
+    func scalarDecodePastEndReportsIndex() throws {
+        let wire = try ContractJSON.decode(JSONValue.self, from: Data("[]".utf8))
+        guard case let .array(items) = wire else {
+            Issue.record("Expected a parsed JSON array")
+            return
+        }
+        var container = LosslessJSONUnkeyedDecodingContainer(elements: items, codingPath: [])
+        #expect {
+            _ = try container.decode(Int.self)
+        } throws: { error in
+            guard let decodingError = error as? DecodingError else { return false }
+            guard case let .valueNotFound(_, context) = decodingError else { return false }
+            // The empty container's first (nonexistent) slot is index 0.
+            return context.codingPath.contains { $0.intValue == 0 }
         }
     }
 }
