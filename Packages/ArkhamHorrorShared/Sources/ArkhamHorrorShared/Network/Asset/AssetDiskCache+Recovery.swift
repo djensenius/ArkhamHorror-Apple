@@ -56,10 +56,6 @@ extension AssetDiskCache {
         guard let names = try? directoryAccess.listNames() else { return }
         didRecoverOrphans = true
 
-        for name in names where name.hasSuffix(".tmp") {
-            _ = try? directoryAccess.remove(name: name)
-        }
-
         var referencedPayloadFilenames: Set<String> = []
         var highestAccessSequence: Int?
         for name in names where name.hasSuffix(".meta.json") {
@@ -108,11 +104,55 @@ extension AssetDiskCache {
                 metadata.accessSequence.value
             )
         }
-        for name in names where name.hasSuffix(".bin") {
-            guard !referencedPayloadFilenames.contains(name) else { continue }
-            _ = try? directoryAccess.remove(name: name)
-        }
+        _ = sweepOrphanFiles(names: names, referencedPayloadFilenames: referencedPayloadFilenames)
         seedAccessSequenceAllocator(resumingAfter: highestAccessSequence)
+    }
+
+    /// Attempts to remove every leftover `.tmp` file and every `.bin`
+    /// payload not present in `referencedPayloadFilenames`, then returns
+    /// the total on-disk bytes of any such file that could **not** actually
+    /// be removed (a real removal failure — e.g. a permission error — not
+    /// merely "did not exist"), so quota accounting can never silently
+    /// treat a still-present, unreclaimed file as though its bytes had
+    /// already been freed.
+    ///
+    /// Called from both ``recoverOrphansIfNeeded()`` (once per instance
+    /// lifetime) and ``evictIfNeeded()`` (every ``set(_:payload:metadata:token:)``),
+    /// so a transient removal failure is retried on every subsequent
+    /// write rather than being permanently given up on the moment the
+    /// one-time startup recovery pass happened to run — a persistently
+    /// unremovable orphan (e.g. a temporarily read-only filesystem, or a
+    /// concurrent external process holding the name open) is retried
+    /// indefinitely, and its bytes remain counted against the quota for
+    /// exactly as long as it remains stranded, never silently forgotten
+    /// beyond that.
+    ///
+    /// Takes an already-listed `names` array rather than listing the
+    /// directory itself, so a caller that already needed a listing for
+    /// another purpose in the same operation (``evictIfNeeded()``, via
+    /// ``entries(names:)``) never pays for — or can transiently fail on —
+    /// a second, redundant directory listing.
+    @discardableResult
+    func sweepOrphanFiles(names: [String], referencedPayloadFilenames: Set<String>) -> Int {
+        var strandedBytes = 0
+        for name in names {
+            let isOrphanCandidate = name.hasSuffix(".tmp")
+                || (name.hasSuffix(".bin") && !referencedPayloadFilenames.contains(name))
+            guard isOrphanCandidate else { continue }
+            _ = try? directoryAccess.remove(name: name)
+            // Re-check after attempting removal, rather than trusting
+            // `remove(name:)`'s own return value alone: this is the one
+            // place that must distinguish "successfully removed" and
+            // "never existed" (both fine — nothing to strand) from "still
+            // present because the removal attempt itself failed" (its
+            // bytes are still physically occupying the cache directory
+            // and must not vanish from quota accounting).
+            let attributes = try? directoryAccess.attributes(name: name)
+            if attributes?.isRegularFile == true {
+                strandedBytes += attributes?.size ?? 0
+            }
+        }
+        return strandedBytes
     }
 
     // MARK: - Eviction
@@ -139,6 +179,15 @@ extension AssetDiskCache {
 
     func entries() -> [Entry] {
         guard let names = try? directoryAccess.listNames() else { return [] }
+        return entries(names: names)
+    }
+
+    /// Same as ``entries()``, but reuses an already-listed `names` array
+    /// instead of listing the directory itself — see
+    /// ``sweepOrphanFiles(names:referencedPayloadFilenames:)`` for why
+    /// ``evictIfNeeded()`` needs this to avoid a second, redundant (and
+    /// separately fallible) directory listing per write.
+    func entries(names: [String]) -> [Entry] {
         var result: [Entry] = []
         for name in names where name.hasSuffix(".meta.json") {
             let hash = String(name.dropLast(".meta.json".count))
@@ -212,9 +261,30 @@ extension AssetDiskCache {
     /// throw or stop early on an individual removal failure — it keeps
     /// evicting other entries so one unremovable entry can never mask
     /// eviction of everything else.
+    ///
+    /// Also sweeps orphaned `.bin`/`.tmp` files (see
+    /// ``sweepOrphanFiles(names:referencedPayloadFilenames:)``) on every
+    /// call — not merely once at startup — and folds whatever bytes could
+    /// not actually be reclaimed this pass into `total` before comparing
+    /// against the water marks: a persistently unremovable orphan
+    /// physically occupies disk space regardless of whether any currently
+    /// valid metadata sidecar references it, and must count against the
+    /// same budget a tracked entry would, or a failed deletion could let
+    /// unbounded stray bytes accumulate invisibly to every future quota
+    /// check. Lists the directory exactly once for both purposes, so a
+    /// transient listing failure has one, not two, chances to affect a
+    /// single `set` call.
     func evictIfNeeded() {
-        var current = entries()
-        var total = current.reduce(0) { $0 + Self.accountedBytes(for: $1) }
+        guard let names = try? directoryAccess.listNames() else { return }
+        var current = entries(names: names)
+        let referencedPayloadFilenames = Set(current.map {
+            payloadFilename(keyHash: $0.hash, contentHash: $0.metadata.payloadSHA256Hex)
+        })
+        let strandedBytes = sweepOrphanFiles(
+            names: names,
+            referencedPayloadFilenames: referencedPayloadFilenames
+        )
+        var total = current.reduce(strandedBytes) { $0 + Self.accountedBytes(for: $1) }
         guard total > limits.highWaterMarkDiskBytes else { return }
         current.sort {
             $0.metadata.accessSequence != $1.metadata.accessSequence

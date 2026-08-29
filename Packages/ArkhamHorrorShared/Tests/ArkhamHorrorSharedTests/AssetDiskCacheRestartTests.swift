@@ -73,10 +73,16 @@ extension AssetDiskCacheTests {
     func transientListingFailureRetriesOrphanRecoveryLater() async throws {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
-            // The very first `set` call's `recoverOrphansIfNeeded()` will
-            // fail to list the directory exactly once, simulating a
-            // transient I/O error rather than a permanent one.
-            await cache.directoryAccess.installFaultInjection(listNamesFailuresRemaining: 1)
+            // The very first `set` call lists the directory three times —
+            // once in `recoverOrphansIfNeeded()`'s one-time startup
+            // sweep, once in `commitMetadataPointerLocked`'s
+            // `cleanupSupersededPayloads` (removing any now-superseded
+            // prior generation for this key), and once more in
+            // `evictIfNeeded()`'s every-write orphan sweep — so all three
+            // must fail to keep the orphan present through the entire
+            // first `set`, simulating a transient I/O error spanning that
+            // call rather than a permanent one.
+            await cache.directoryAccess.installFaultInjection(listNamesFailuresRemaining: 3)
 
             let tempURL = directory.appendingPathComponent("deadbeef.bin.tmp")
             try Data([1, 2, 3]).write(to: tempURL)
