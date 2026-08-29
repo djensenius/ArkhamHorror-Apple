@@ -104,6 +104,14 @@ final class FakeServerProfileStore: ServerProfileStore, @unchecked Sendable {
         defer { lock.unlock() }
         saveProfilesError = error
     }
+
+    /// Scripts (or clears, when `nil`) the error thrown by a subsequent
+    /// ``saveSelectedProfileID(_:)`` call.
+    func setSaveSelectionError(_ error: (any Error)?) {
+        lock.lock()
+        defer { lock.unlock() }
+        saveSelectionError = error
+    }
 }
 
 /// An in-memory ``TokenStore`` whose operations can be scripted to throw, with call

@@ -148,6 +148,35 @@ struct ArkhamFailureText: View {
     }
 }
 
+/// A shared banner surfacing a pending cancellation-cleanup failure for a specific
+/// profile (see ``AppModel/pendingCleanupFailures``) with an accessible Retry action,
+/// used identically wherever that profile can currently be shown to the user (server
+/// selection, server management, the signed-in account shell, and the
+/// incompatible/unavailable server-issue presentation). Renders nothing when
+/// `profileID` currently has no pending cleanup failure.
+struct PendingCleanupRetryBanner: View {
+    let model: AppModel
+    let profileID: UUID
+
+    var body: some View {
+        if let failure = model.pendingCleanupFailures[profileID] {
+            VStack(alignment: .leading, spacing: 4) {
+                ArkhamFailureText(message: failure.message)
+                    .accessibilityIdentifier(
+                        AccountAccessibilityID.pendingCleanupFailureText(for: profileID)
+                    )
+                Button("Retry") {
+                    Task { await model.retryPendingCleanup(for: profileID) }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.pendingCleanupRetryButton(for: profileID)
+                )
+            }
+        }
+    }
+}
+
 extension View {
     /// Applies email-appropriate keyboard/autocapitalization on platforms with an
     /// on-screen keyboard concept, and disables autocorrection everywhere.

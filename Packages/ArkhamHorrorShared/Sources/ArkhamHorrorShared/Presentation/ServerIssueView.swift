@@ -70,7 +70,7 @@ struct ServerIssueView: View {
     @ViewBuilder
     private var actions: some View {
         switch kind {
-        case .incompatible:
+        case let .incompatible(profile, _):
             Button {
                 isPresentingServerManagement = true
             } label: {
@@ -79,7 +79,9 @@ struct ServerIssueView: View {
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier(AccountAccessibilityID.chooseServerButton)
-        case .unavailable:
+
+            PendingCleanupRetryBanner(model: model, profileID: profile.id)
+        case let .unavailable(profile, _):
             ArkhamPrimaryButton("Retry", systemImage: "arrow.clockwise") {
                 model.retry()
             }
@@ -93,6 +95,8 @@ struct ServerIssueView: View {
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier(AccountAccessibilityID.chooseServerButton)
+
+            PendingCleanupRetryBanner(model: model, profileID: profile.id)
         case .storageCorrupted:
             if model.profileManagementOperation == .resettingStorage {
                 ProgressView("Resetting…")

@@ -7,7 +7,8 @@ import Testing
 /// limit.
 ///
 /// Every caller that must interrupt or protect an in-flight credential mutation
-/// (``AppModel/cancelAuthOperation()``, ``AppModel/interruptActiveAuthOperationIfNeeded()``,
+/// (``AppModel/cancelAuthOperation(ownedBy:)``,
+/// ``AppModel/interruptActiveAuthOperationIfNeeded()``,
 /// ``AppModel/updateCustomProfile(_:displayName:rawURL:)``,
 /// ``AppModel/removeCustomProfile(_:)``) reserves the same durable mark-then-admit
 /// cleanup (``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``) *before*
@@ -45,7 +46,7 @@ extension AppModelTests {
         let generationBeforeCancel = model.generation
 
         cleanupStore.setMarkError(TokenCleanupPendingStoreError.corruptData)
-        #expect(model.cancelAuthOperation() == false)
+        #expect(model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID) == false)
 
         #expect(model.operation == .registering)
         #expect(model.generation == generationBeforeCancel)

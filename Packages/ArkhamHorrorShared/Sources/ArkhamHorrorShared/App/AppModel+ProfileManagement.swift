@@ -92,19 +92,32 @@ extension AppModel {
     /// retains the profile's token untouched. When it changes, the existing token for
     /// `profile.id` is securely deleted before the new endpoint is persisted or (if
     /// `profile` is currently selected) activated.
-    func updateCustomProfile(_ profile: ServerProfile, displayName: String, rawURL: String) {
+    ///
+    /// Returns a fresh submission identity (recorded in ``currentProfileSubmissionID``)
+    /// once this edit is actually started, or `nil` if it was rejected synchronously
+    /// (invalid kind/profile, a concurrent operation already in flight, validation
+    /// failure, or a mark failure). A caller such as ``ServerProfileEditorView``
+    /// should remember this and compare it against ``currentProfileSubmissionID``
+    /// before treating a later ``profileManagementOperation`` transition to `.idle` as
+    /// *its own* completion: two windows editing the same profile ID would otherwise
+    /// both recognize a `.saving(profileID) -> .idle` transition as "my save
+    /// finished," even when only one of them actually submitted.
+    @discardableResult
+    func updateCustomProfile(
+        _ profile: ServerProfile, displayName: String, rawURL: String
+    ) -> UUID? {
         guard profile.kind == .custom else {
             profileManagementFailure = .cannotModifyHosted
-            return
+            return nil
         }
         guard profiles.contains(where: { $0.id == profile.id }) else {
             profileManagementFailure = .profileNotFound
-            return
+            return nil
         }
-        guard profileManagementOperation == .idle else { return }
+        guard profileManagementOperation == .idle else { return nil }
         guard let updated = validatedCustomProfileEdit(
             profile, displayName: displayName, rawURL: rawURL
-        ) else { return }
+        ) else { return nil }
 
         let endpointChanged = !isSameEndpoint(profile, updated)
         // For an endpoint-changing edit, ``reserveCleanupInterruptingActiveAuth(for:)``
@@ -129,9 +142,11 @@ extension AppModel {
                 cleanupTask = task
             case let .markFailed(failure):
                 profileManagementFailure = .tokenStore(failure)
-                return
+                return nil
             }
         }
+        let submissionID = UUID()
+        currentProfileSubmissionID = submissionID
         profileManagementOperation = .saving(profile.id)
         profileManagementGeneration += 1
         let operationGeneration = profileManagementGeneration
@@ -147,6 +162,7 @@ extension AppModel {
                 )
             )
         }
+        return submissionID
     }
 
     /// Validates `profile`'s edit in isolation from
@@ -364,10 +380,14 @@ extension AppModel {
     /// Clears every durable cleanup tombstone as the second, required step of a
     /// storage reset (only reached once `deleteAllTokensForReset` has succeeded).
     /// Failure preserves the old (corrupted) stored state and every tombstone
-    /// untouched and surfaces a typed, actionable, retryable failure.
+    /// untouched and surfaces a typed, actionable, retryable failure. Success also
+    /// clears every profile's ``pendingCleanupFailures`` entry: with every tombstone
+    /// gone, no cleanup obligation can still be genuinely outstanding for any
+    /// profile, so none should keep being surfaced as one.
     private func clearAllTombstonesForReset(operationGeneration: Int) -> Bool {
         do {
             try cleanupPendingStore.clearAll()
+            pendingCleanupFailures.removeAll()
             return true
         } catch {
             guard isCurrentProfileOperation(operationGeneration) else { return false }

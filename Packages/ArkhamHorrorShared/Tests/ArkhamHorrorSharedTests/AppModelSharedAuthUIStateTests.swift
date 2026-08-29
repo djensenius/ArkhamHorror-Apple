@@ -53,7 +53,7 @@ extension AppModelTests {
         await auth.waitUntilPending(1)
         #expect(model.isAuthOperationActive == true)
 
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
         #expect(model.operation == .idle)
         #expect(model.isAuthOperationActive == false)
     }

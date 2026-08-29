@@ -23,6 +23,15 @@ struct CleanupPendingTask {
     let task: Task<TokenStoreFailure?, Never>
 }
 
+/// A cancellation-cleanup deletion that ultimately failed after being durably
+/// reserved (see ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``), tagged
+/// with the exact cleanup-attempt identity that produced it. See
+/// ``AppModel/pendingCleanupFailures``.
+struct PendingCleanupFailure: Equatable, Sendable {
+    let attemptID: UUID
+    let failure: TokenStoreFailure
+}
+
 /// The generation and credential/global epoch snapshot captured at the start of an
 /// operation that may reach a durable token mutation, threaded through as a single
 /// value so the functions that recheck it immediately before touching the token
@@ -110,6 +119,28 @@ final class AppModel {
     /// The most recent profile-management failure, cleared at the start of the next one.
     var profileManagementFailure: ProfileManagementFailure?
 
+    /// Every custom or hosted profile with a cancellation-cleanup deletion that was
+    /// durably reserved (see ``enqueueCancellationCleanup(for:globalEpoch:)``) but has
+    /// not yet fully resolved — either because its own delete/tombstone-clear
+    /// ultimately failed, or because querying the durable tombstone registry itself
+    /// failed. Purely observational: the durable tombstone in ``cleanupPendingStore``
+    /// already blocks any read, restore, or save for the named profile regardless of
+    /// whether this is ever populated (``resolvePendingCleanup(for:)`` enforces that
+    /// unconditionally); this exists so presentation code can surface an otherwise
+    /// invisible obligation and let the user force a retry
+    /// (``retryPendingCleanup(for:)``) rather than only ever resolving silently the
+    /// next time some unrelated operation happens to touch the profile. Every write is
+    /// tagged with the exact cleanup-attempt identity that produced it, so a stale
+    /// attempt's completion can never overwrite or clear a newer attempt's own outcome
+    /// for the same profile — mirroring the identical tail-identity check
+    /// ``cleanupPendingTasks``/``tokenAccessQueues`` pruning already uses. Never
+    /// cleared merely because ``generation``/``operation`` change: an active
+    /// auth/profile-management flow moving on must never make a still-unresolved
+    /// durable cleanup obligation silently disappear from view. Cleared for every
+    /// profile only once a service-scoped reset's own tombstone clear
+    /// (``AppModel/confirmStorageReset()``) actually succeeds.
+    var pendingCleanupFailures: [UUID: PendingCleanupFailure] = [:]
+
     @ObservationIgnored let profileStore: any ServerProfileStore
     @ObservationIgnored let tokenStore: any TokenStore
     @ObservationIgnored let capabilityProbe: any CapabilityProbing
@@ -121,6 +152,31 @@ final class AppModel {
 
     @ObservationIgnored var selectedProfile: ServerProfile = .hosted
     @ObservationIgnored var generation = 0
+    /// The identity of the currently in-flight sign-in/registration attempt, if any —
+    /// returned to the form that started it (see ``beginAuthOperation(_:issueToken:)``)
+    /// so a later ``cancelAuthOperation(ownedBy:)`` call can prove it is cancelling the
+    /// exact attempt it believes is active, never a different, unrelated one that
+    /// happens to reuse the same profile/operation kind. `AppModel` is shared
+    /// process-wide across every window (see ``RootView``), so two windows can each
+    /// have their own sign-in/registration form open at once; only the form whose own
+    /// remembered ID matches this value may cancel the operation it names. A stale
+    /// value left over after this operation's own natural completion is harmless:
+    /// every caller checks ``operation`` is still `.signingIn`/`.registering` *before*
+    /// comparing this, and `operation` is reset to `.idle` at that same completion, so
+    /// a leftover match can never be reached once the operation it named is no longer
+    /// active.
+    @ObservationIgnored var currentAuthAttemptID: UUID?
+    /// The submission identity of the most recently started add/edit of a custom
+    /// server profile, returned to the editor that started it (see
+    /// ``updateCustomProfile(_:displayName:rawURL:)``/
+    /// ``addCustomProfile(displayName:rawURL:)``) so a later
+    /// ``ServerProfileEditorView``'s completion-triggered dismissal can prove it is
+    /// reacting to its *own* submission, never a different window's edit of the *same*
+    /// profile ID. Without this, two windows editing the same profile would both
+    /// recognize a `.saving(profileID) -> .idle` transition as "my save finished,"
+    /// silently dismissing whichever one did not actually submit and discarding its
+    /// unsaved fields.
+    @ObservationIgnored var currentProfileSubmissionID: UUID?
     /// The in-flight launch/compatibility/token-restoration task, if any.
     @ObservationIgnored var flowTask: Task<Void, Never>?
     /// The in-flight sign-in/registration/sign-out operation task, if any.

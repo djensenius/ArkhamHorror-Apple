@@ -4,24 +4,30 @@ import SwiftUI
 /// contract exactly. The password is local view state, cleared immediately after a
 /// successful sign-in and whenever the form disappears; it never enters an alert,
 /// identifier, diagnostic, preview, or log. Tapping Cancel calls
-/// ``AppModel/cancelAuthOperation()``, which cancels the in-flight task, advances the
-/// generation/credential epoch, and returns to signed-out — so a slow sign-in or
-/// registration the user has already cancelled can never complete and sign them in
-/// later. That call is a safe no-op once a sign-in has already succeeded, so it can
-/// never undo a just-completed, already-navigated-away-from success. Cancellation's
-/// cleanup must itself be durably reserved before this form dismisses: while it could
-/// not be (``AppModel/operationFailure`` surfaces why), the form stays open and
-/// interactive (swipe) dismissal is disabled — cancellation only ever happens through
-/// that button or the sign-in success path above; `onDisappear` deliberately has no
-/// side effect beyond clearing the password, because it cannot observe or react to a
-/// failed cleanup reservation, and because ``AppModel`` may be shared by more than one
-/// window (for example on macOS/visionOS): this form disappearing must never cancel a
-/// different window's legitimate, still-wanted sign-in.
+/// ``AppModel/cancelAuthOperation(ownedBy:)``, passing this form's own remembered
+/// attempt identity (see ``AppModel/currentAuthAttemptID``) so it can only ever cancel
+/// the exact sign-in/registration attempt *this form itself* started — `AppModel` is
+/// shared process-wide across every window (for example on macOS/visionOS), so a
+/// second window's own, unrelated sign-in/registration must never be interrupted by
+/// this form's Cancel button, even if it happens to reuse the same profile. Cancelling
+/// the in-flight task advances the generation/credential epoch and returns to
+/// signed-out — so a slow sign-in or registration the user has already cancelled can
+/// never complete and sign them in later. That call is a safe no-op once a sign-in has
+/// already succeeded, so it can never undo a just-completed, already-navigated-away-
+/// from success. Cancellation's cleanup must itself be durably reserved before this
+/// form dismisses: while it could not be (``AppModel/operationFailure`` surfaces why),
+/// the form stays open and interactive (swipe) dismissal is disabled — cancellation
+/// only ever happens through that button or the sign-in success path above;
+/// `onDisappear` deliberately has no side effect beyond clearing the password, because
+/// it cannot observe or react to a failed cleanup reservation, and because
+/// ``AppModel`` may be shared by more than one window: this form disappearing must
+/// never cancel a different window's legitimate, still-wanted sign-in.
 struct SignInView: View {
     let model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var email = ""
     @State private var password = ""
+    @State private var ownedAttemptID: UUID?
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -70,10 +76,14 @@ struct SignInView: View {
                 Button("Cancel") {
                     // Only dismiss once cancellation's cleanup reservation actually
                     // succeeded; a `false` result means a genuinely active operation
-                    // could not be safely interrupted, so the form must stay open
-                    // with its typed failure visible rather than abandoning an
-                    // unprotected in-flight save.
-                    if model.cancelAuthOperation() {
+                    // this form itself owns could not be safely interrupted, so the
+                    // form must stay open with its typed failure visible rather than
+                    // abandoning an unprotected in-flight save. Passing
+                    // `ownedAttemptID` (rather than an unconditional, process-global
+                    // cancel) ensures this can only ever affect the attempt this form
+                    // itself started — never a different window's own sign-in that
+                    // happens to reuse the same profile.
+                    if model.cancelAuthOperation(ownedBy: ownedAttemptID) {
                         dismiss()
                     }
                 }
@@ -107,7 +117,7 @@ struct SignInView: View {
 
     private func submit() {
         guard isValid, model.operation == .idle else { return }
-        model.signIn(AuthenticationCredentials(email: email, password: password))
+        ownedAttemptID = model.signIn(AuthenticationCredentials(email: email, password: password))
     }
 }
 
@@ -123,6 +133,7 @@ struct RegisterView: View {
     @State private var email = ""
     @State private var username = ""
     @State private var password = ""
+    @State private var ownedAttemptID: UUID?
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -179,8 +190,9 @@ struct RegisterView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
                     // See the matching comment in `SignInView`: only dismiss once
-                    // cancellation's cleanup reservation actually succeeded.
-                    if model.cancelAuthOperation() {
+                    // cancellation's cleanup reservation actually succeeded, and only
+                    // this form's own remembered attempt can ever be the one cancelled.
+                    if model.cancelAuthOperation(ownedBy: ownedAttemptID) {
                         dismiss()
                     }
                 }
@@ -209,7 +221,7 @@ struct RegisterView: View {
 
     private func submit() {
         guard isValid, model.operation == .idle else { return }
-        model.register(
+        ownedAttemptID = model.register(
             RegistrationDetails(email: email, username: username, password: password)
         )
     }

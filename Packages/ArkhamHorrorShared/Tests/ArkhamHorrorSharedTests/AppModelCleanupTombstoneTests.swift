@@ -19,13 +19,13 @@ extension AppModelTests {
     ) async {
         model.beginAuthOperation(.signingIn) { _ in AuthToken(token: "cancelled-token") }
         await tokenStore.waitUntilPending(1)
-        // Captured before `cancelAuthOperation()` nils it, so the save's completion
+        // Captured before `cancelAuthOperation(ownedBy:)` nils it, so the save's completion
         // below can be awaited deterministically instead of inferring it via a fixed
         // number of scheduler yields.
         let staleOperation = model.operationTask
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
         // Synchronously registered by `enqueueCancellationCleanup` before
-        // `cancelAuthOperation()` returns.
+        // `cancelAuthOperation(ownedBy:)` returns.
         let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
 
         await tokenStore.resumeOldest()

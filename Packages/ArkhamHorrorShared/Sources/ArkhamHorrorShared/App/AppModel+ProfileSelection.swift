@@ -11,7 +11,7 @@ extension AppModel {
     func selectProfile(_ profile: ServerProfile) {
         guard profiles.contains(where: { $0.id == profile.id }) else { return }
         // If a sign-in/registration is in flight for the profile being switched away
-        // from, it must be interrupted exactly as an explicit ``cancelAuthOperation()``
+        // from, it must be interrupted exactly as an explicit ``cancelAuthOperation(ownedBy:)``
         // would be: a save that has already passed its epoch recheck (or already
         // durably applied) must still be cleaned up, or switching back to that profile
         // later could silently observe — and sign in with — a token this switch was

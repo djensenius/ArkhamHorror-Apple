@@ -257,7 +257,7 @@ extension AppModelTests {
         #expect(model.operation == .signingIn)
 
         // Captured before the endpoint-changing edit (which resets `operationTask`
-        // to `nil` exactly as `cancelAuthOperation()` does), so this test can
+        // to `nil` exactly as `cancelAuthOperation(ownedBy:)` does), so this test can
         // deterministically await the stale operation's own completion below instead
         // of inferring scheduler progress with a fixed number of yields.
         // `operationTask`'s body runs end to end with no further unawaited
@@ -275,7 +275,7 @@ extension AppModelTests {
 
         // The restarted flow for the edited endpoint must not be left stuck behind a
         // stale in-flight operation: `operation` and its task handle are reset exactly
-        // as `selectProfile(_:)`/`retry()`/`cancelAuthOperation()` already do, so the
+        // as `selectProfile(_:)`/`retry()`/`cancelAuthOperation(ownedBy:)` already do, so the
         // new sign-in/register UI is not permanently disabled.
         #expect(model.operation == .idle)
         #expect(model.operationFailure == nil)

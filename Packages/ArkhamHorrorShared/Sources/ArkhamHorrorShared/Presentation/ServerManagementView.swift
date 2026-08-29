@@ -52,6 +52,24 @@ struct ServerManagementView: View {
                     }
                 }
             }
+
+            if !model.pendingCleanupFailures.isEmpty {
+                Section("Needs Attention") {
+                    // Sorted by ID for a stable, deterministic order — dictionary
+                    // iteration order is not guaranteed and would otherwise make this
+                    // list visibly reorder itself for no user-facing reason.
+                    ForEach(
+                        model.pendingCleanupFailures.keys.sorted { $0.uuidString < $1.uuidString },
+                        id: \.self
+                    ) { profileID in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(profileDisplayName(for: profileID))
+                                .font(.subheadline)
+                            PendingCleanupRetryBanner(model: model, profileID: profileID)
+                        }
+                    }
+                }
+            }
         }
         .navigationTitle("Servers")
         .toolbar {
@@ -98,6 +116,14 @@ struct ServerManagementView: View {
         } message: { profile in
             Text("This removes \"\(profile.displayName)\" and its saved sign-in.")
         }
+    }
+
+    /// A saved profile's display name for `profileID`, or a neutral fallback if it is
+    /// no longer in ``AppModel/profiles`` (for example, a cleanup failure for a
+    /// profile whose removal itself already durably persisted, leaving only its
+    /// token-cleanup obligation still outstanding).
+    private func profileDisplayName(for profileID: UUID) -> String {
+        model.profiles.first { $0.id == profileID }?.displayName ?? "A removed server"
     }
 
     private func row(for profile: ServerProfile) -> some View {
@@ -197,6 +223,7 @@ struct ServerProfileEditorView: View {
 
     @State private var displayName: String
     @State private var rawURL: String
+    @State private var ownedSubmissionID: UUID?
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -263,13 +290,21 @@ struct ServerProfileEditorView: View {
         .onChange(of: model.profileManagementOperation) { oldValue, newValue in
             // `model` is shared process-wide across every window, so its
             // `profileManagementOperation` can transition through unrelated states
-            // driven by a completely different window's add/edit/remove. Only treat
-            // this as *this* editor's own save completing — and so only dismiss —
-            // when the transition is specifically from this editor's own profile ID
-            // saving to idle; any other transition (another window's operation, or
-            // this editor's synchronous `.add` path, which already dismisses inline
-            // in ``submit()``) is ignored here.
+            // driven by a completely different window's add/edit/remove — including
+            // another window editing this *same* profile ID at the same time, whose
+            // own `.saving(profileID) -> .idle` transition looks identical from here.
+            // Matching `ownProfileID` alone is therefore not enough: `ownedSubmissionID`
+            // (returned by `AppModel.updateCustomProfile(_:displayName:rawURL:)` only
+            // to the editor that actually called it, and compared here against
+            // `model.currentProfileSubmissionID`, the identity of whichever submission
+            // most recently started or resolved) proves this transition is *this*
+            // editor's own save completing, not a different window's — which would
+            // otherwise silently dismiss this editor and discard its unsaved fields.
+            // This editor's synchronous `.add` path already dismisses inline in
+            // ``submit()`` and is unaffected by any of this.
             guard let ownProfileID,
+                  let ownedSubmissionID,
+                  ownedSubmissionID == model.currentProfileSubmissionID,
                   oldValue == .saving(ownProfileID),
                   newValue == .idle,
                   model.profileManagementFailure == nil
@@ -323,7 +358,9 @@ struct ServerProfileEditorView: View {
                 dismiss()
             }
         case let .edit(profile):
-            model.updateCustomProfile(profile, displayName: displayName, rawURL: rawURL)
+            ownedSubmissionID = model.updateCustomProfile(
+                profile, displayName: displayName, rawURL: rawURL
+            )
         }
     }
 }

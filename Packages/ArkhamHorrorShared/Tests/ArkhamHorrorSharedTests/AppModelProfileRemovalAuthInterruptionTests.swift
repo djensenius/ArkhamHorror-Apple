@@ -59,7 +59,7 @@ extension AppModelTests {
         await model.flowTask?.value
 
         // The removal's single reservation also reset the stuck auth operation exactly
-        // as `cancelAuthOperation()`/`selectProfile(_:)` already do, so sign-in/register
+        // as `cancelAuthOperation(ownedBy:)`/`selectProfile(_:)` already do, so sign-in/register
         // UI for the fallback hosted profile is not left permanently disabled.
         #expect(model.operation == .idle)
         #expect(model.operationFailure == nil)

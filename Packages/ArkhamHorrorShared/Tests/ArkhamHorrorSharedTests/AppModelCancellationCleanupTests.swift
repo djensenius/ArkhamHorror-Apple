@@ -1,7 +1,7 @@
 @testable import ArkhamHorrorShared
 import Testing
 
-/// Regression coverage for cancellation-cleanup structural safety: `cancelAuthOperation()`
+/// Regression coverage for cancellation-cleanup structural safety: `cancelAuthOperation(ownedBy:)`
 /// must not merely hide/clear the auth form while a durable token save that has already
 /// passed its epoch recheck — or already completed inside the token store — is left to
 /// silently apply or persist. See `AppModel+Authentication.swift` (`cancelAuthOperation`,
@@ -57,17 +57,17 @@ extension AppModelTests {
                 [.save(token: "cancelled-token", profileID: ServerProfile.hosted.id)]
         )
 
-        // Captured before cancelling: `cancelAuthOperation()` clears
+        // Captured before cancelling: `cancelAuthOperation(ownedBy:)` clears
         // `model.operationTask` once its interruption is reserved, so this stale
         // task's own handle must be captured first in order to deterministically
         // await its completion afterward rather than inferring it via fixed yields.
         let staleOperationTask = model.operationTask
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
         #expect(model.operation == .idle)
         #expect(model.operationFailure == nil)
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
         // Captured immediately after cancellation, synchronously: `enqueueCancellationCleanup`
-        // registers this cleanup task before `cancelAuthOperation()` returns, so reading
+        // registers this cleanup task before `cancelAuthOperation(ownedBy:)` returns, so reading
         // it here can never race its own pruning (which only happens once the task itself
         // completes, strictly after the token-store mutations below are resumed).
         let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
@@ -81,7 +81,7 @@ extension AppModelTests {
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "cancelled-token")
 
         // The cancellation cleanup delete — synchronously enqueued behind this save's
-        // tail by `cancelAuthOperation()` — can only reach the token store once the save
+        // tail by `cancelAuthOperation(ownedBy:)` — can only reach the token store once the save
         // it was queued behind actually finishes.
         await tokenStore.waitUntilPending(1)
         #expect(
@@ -118,7 +118,7 @@ extension AppModelTests {
         // though the `save` call itself has not yet returned to its caller.
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "cancelled-token")
 
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
 
         // Let the suspended `save` call finally return.
@@ -162,13 +162,13 @@ extension AppModelTests {
         )
 
         // Captured before cancelling, for the same reason as in
-        // `cancelDuringInFlightSaveStillDeletesToken`: `cancelAuthOperation()` (and the
+        // `cancelDuringInFlightSaveStillDeletesToken`: `cancelAuthOperation(ownedBy:)` (and the
         // immediately following `signIn`) will overwrite `model.operationTask`, so this
         // stale task's own handle must be captured now to be awaited deterministically.
         let staleTask = model.operationTask
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
         // Captured immediately after cancellation, synchronously, before `signIn` below
-        // runs — registered by `enqueueCancellationCleanup` before `cancelAuthOperation()`
+        // runs — registered by `enqueueCancellationCleanup` before `cancelAuthOperation(ownedBy:)`
         // returns, so this can never race the cleanup task's own eventual pruning.
         let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
         // A fresh, legitimate sign-in for the same profile begins immediately after

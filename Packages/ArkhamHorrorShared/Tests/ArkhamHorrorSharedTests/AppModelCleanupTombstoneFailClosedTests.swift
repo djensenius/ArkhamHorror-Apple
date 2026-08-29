@@ -44,7 +44,7 @@ extension AppModelTests {
         let generationBeforeCancel = model.generation
 
         cleanupStore.setMarkError(TokenCleanupPendingStoreError.corruptData)
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
 
         // Cancellation must not be reported as having succeeded while its cleanup
         // could not be durably reserved: `operation`, `generation`, and
@@ -84,7 +84,7 @@ extension AppModelTests {
         // completed sign-in) is now a safe no-op, since `operation` is no longer
         // `.signingIn`/`.registering`.
         cleanupStore.setMarkError(nil)
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
         #expect(model.operation == .idle)
         #expect(model.operationFailure == nil)
         #expect(
@@ -183,9 +183,9 @@ extension AppModelTests {
         // The delete this cancellation reserves will succeed, but clearing the
         // tombstone afterward will not.
         cleanupStore.setClearError(TokenCleanupPendingStoreError.corruptData)
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
         // Synchronously registered by `enqueueCancellationCleanup` before
-        // `cancelAuthOperation()` returns, so this is available deterministically
+        // `cancelAuthOperation(ownedBy:)` returns, so this is available deterministically
         // rather than by inferring scheduler progress.
         let cleanupTask = model.cleanupPendingTasks[ServerProfile.hosted.id]?.task
 

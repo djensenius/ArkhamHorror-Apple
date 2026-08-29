@@ -61,6 +61,8 @@ struct ServerSelectionView: View {
                         ArkhamFailureText(message: failure.message)
                             .accessibilityIdentifier(AccountAccessibilityID.operationFailureText)
                     }
+
+                    PendingCleanupRetryBanner(model: model, profileID: selected.id)
                 }
             }
             .frame(maxWidth: 640, alignment: .leading)

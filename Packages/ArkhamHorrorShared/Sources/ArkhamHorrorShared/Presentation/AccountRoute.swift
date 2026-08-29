@@ -79,6 +79,18 @@ enum AccountAccessibilityID {
     static let operationFailureText = "account.operationFailure"
     static let profileManagementFailureText = "account.profileManagementFailure"
 
+    /// A per-profile pending-cleanup-failure text identifier, distinct for every
+    /// profile that currently has one (see ``AppModel/pendingCleanupFailures``).
+    static func pendingCleanupFailureText(for profileID: UUID) -> String {
+        "account.pendingCleanupFailure.\(profileID.uuidString)"
+    }
+
+    /// A per-profile pending-cleanup retry-action identifier, distinct for every
+    /// profile that currently has a pending cleanup failure.
+    static func pendingCleanupRetryButton(for profileID: UUID) -> String {
+        "account.pendingCleanupRetry.\(profileID.uuidString)"
+    }
+
     /// A per-profile removal-action identifier, distinct for every custom server row.
     ///
     /// A single shared identifier here would make UI automation unable to distinguish

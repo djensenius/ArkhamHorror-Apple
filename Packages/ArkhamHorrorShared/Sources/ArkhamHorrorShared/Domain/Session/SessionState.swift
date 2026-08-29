@@ -72,6 +72,20 @@ extension SessionOperationFailure {
     }
 }
 
+extension PendingCleanupFailure {
+    /// A short, user-facing, non-secret summary directing the user to retry.
+    ///
+    /// Deliberately generic about *why* (never a raw ``Error`` description): the
+    /// durable tombstone this describes already blocks this profile's token from
+    /// being read, restored, or saved regardless of whether the user ever taps
+    /// retry, so the only actionable detail worth surfacing is that a retry is
+    /// available and safe.
+    var message: String {
+        "A previous sign-out or server change couldn't finish securely removing a " +
+            "saved session for this server. Retry to complete it."
+    }
+}
+
 /// The compatibility posture of a server that has already passed the capability probe.
 ///
 /// Both cases permit sign-in and authentication restoration to proceed; ``legacy``

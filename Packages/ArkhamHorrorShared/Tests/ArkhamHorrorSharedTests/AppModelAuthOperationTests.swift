@@ -178,7 +178,7 @@ extension AppModelTests {
         await auth.waitUntilPending(1)
         #expect(model.operation == .signingIn)
 
-        // Captured before `cancelAuthOperation()` (which unconditionally nils
+        // Captured before `cancelAuthOperation(ownedBy:)` (which unconditionally nils
         // `operationTask`), so this test can deterministically await the stale
         // operation's own completion below instead of inferring scheduler progress
         // with a fixed number of yields. `operationTask`'s body runs
@@ -186,7 +186,7 @@ extension AppModelTests {
         // with no further unawaited indirection, so awaiting it fully waits for any
         // save attempt this stale operation could still make.
         let staleOperation = model.operationTask
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
 
         #expect(model.operation == .idle)
         #expect(model.operationFailure == nil)
@@ -224,7 +224,7 @@ extension AppModelTests {
 
         // See the identical rationale in `cancelAuthOperationPreventsLateSignIn`.
         let staleOperation = model.operationTask
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
         #expect(model.operation == .idle)
         #expect(model.operationTask == nil)
 
@@ -257,7 +257,7 @@ extension AppModelTests {
 
         // A late, idempotent view-disappearance callback must not undo the
         // already-successful sign-in.
-        model.cancelAuthOperation()
+        model.cancelAuthOperation(ownedBy: model.currentAuthAttemptID)
 
         #expect(model.sessionState == signedIn)
         #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "issued-token")
