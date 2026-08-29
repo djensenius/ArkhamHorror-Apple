@@ -57,22 +57,39 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     }
 
     /// Total bytes this entry counts against the *in-memory* cache's quota:
-    /// payload plus a conservative fixed estimate of this metadata value's
-    /// in-memory footprint. Used by ``AssetMemoryCache``, which holds no
-    /// serialized representation to measure exactly.
+    /// payload plus this metadata value's own real serialized-JSON byte
+    /// count. Measuring the actual encoded size — rather than a fixed
+    /// constant — matters because ``resolvedURLString`` (and, to a lesser
+    /// extent, ``etag``/``lastModified``) has no fixed upper bound: a fixed
+    /// estimate could be exceeded by a long URL, silently under-billing the
+    /// true bytes counted against the configured memory budget and
+    /// undermining the "bounded memory" guarantee.
     ///
-    /// ``AssetDiskCache`` does **not** use this property for its own quota
-    /// accounting: since its metadata actually is serialized to a JSON
-    /// sidecar file on disk, it measures that file's real encoded byte
-    /// count instead, which is exact rather than an estimate (a `512`-byte
-    /// estimate could genuinely be exceeded by a long `resolvedURLString`,
-    /// under-billing the true bytes counted against the configured disk
-    /// budget).
+    /// ``AssetDiskCache`` independently measures its own on-disk JSON
+    /// sidecar file's real byte count for the same reason (its measurement
+    /// uses a separate, differently-configured `JSONEncoder` instance
+    /// private to that file, since the two accounting paths measure
+    /// genuinely distinct things — an in-memory estimate here vs. an
+    /// actual written file there — and this type must not depend on
+    /// ``AssetDiskCache``'s internals).
     var accountedByteCount: Int {
-        encodedByteCount + Self.estimatedMetadataOverheadBytes
+        let measuredMetadataBytes = (try? Self.encoderForAccounting.encode(self))?.count
+        return encodedByteCount + (measuredMetadataBytes ?? Self.estimatedMetadataOverheadBytes)
     }
 
-    /// A fixed, conservative estimate rather than re-serializing on every
-    /// accounting pass; real serialized size is a few hundred bytes at most.
+    /// A fallback only: used if encoding this `Codable` value ever somehow
+    /// fails, which it should not for a struct composed only of strings,
+    /// ints, and dates. Chosen so that an otherwise-impossible encoding
+    /// failure fails toward *over*-counting metadata size rather than
+    /// crashing or silently letting an entry bill zero metadata bytes.
     static let estimatedMetadataOverheadBytes = 512
+
+    /// A dedicated encoder instance (not shared with ``AssetDiskCache``'s
+    /// own file-private encoder) used only to measure this value's
+    /// serialized byte count for in-memory quota accounting.
+    private static let encoderForAccounting: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
 }
