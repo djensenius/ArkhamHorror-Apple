@@ -56,7 +56,7 @@ extension DeckSideSlotsInput: Equatable, Hashable {}
 struct DeckListInput: Sendable {
     let slots: CardQuantityMapInput
     let sideSlots: DeckSideSlotsInput
-    let investigatorCode: String
+    let investigatorCode: InvestigatorCode
     let investigatorName: String?
     let meta: String?
     let tabooId: Int?
@@ -93,7 +93,7 @@ extension DeckListInput: Codable {
         } else {
             sideSlots = .absent
         }
-        investigatorCode = try container.decode(String.self, forKey: .investigatorCode)
+        investigatorCode = try container.decode(InvestigatorCode.self, forKey: .investigatorCode)
         investigatorName = try container.decodeIfPresent(String.self, forKey: .investigatorName)
         meta = try container.decodeIfPresent(String.self, forKey: .meta)
         tabooId = try container.decodeIfPresent(Int.self, forKey: .tabooId)

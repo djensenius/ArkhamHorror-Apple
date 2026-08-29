@@ -8,14 +8,29 @@ enum CardCodeError: Error, Equatable, Sendable {
 
 /// A validated card code: the Aeson `c` prefix followed by a non-empty payload.
 ///
-/// Matches the contract's `^c.+$` pattern. Covers both official codes (`c01020`) and
-/// homebrew codes (`c:dark-matter:151`); no further structure is imposed beyond the
-/// published pattern.
+/// Matches the contract's `^c.+$` pattern at Unicode scalar (code point) granularity, not
+/// `String`'s grapheme-cluster granularity: a combining mark immediately after `c` (for
+/// example `"c\u{0301}"`) is a second Unicode scalar and therefore a valid one-character
+/// payload, even though Swift's default grapheme clustering merges it with `c` into a
+/// single `Character`. `.` in the published regex is ECMAScript-style — it matches any
+/// scalar except the four line terminators (`\n`, `\r`, `U+2028`, `U+2029`) — so a payload
+/// containing one of those is rejected. The raw string is stored and compared verbatim;
+/// no Unicode normalization is ever applied.
 struct CardCode: Sendable {
     let rawValue: String
 
+    /// The four code points ECMAScript's `.` excludes from matching by default.
+    private static let lineTerminators: Set<Unicode.Scalar> = [
+        "\u{000A}", "\u{000D}", "\u{2028}", "\u{2029}",
+    ]
+
     init(_ rawValue: String) throws {
-        guard rawValue.first == "c", rawValue.count > 1 else {
+        let scalars = rawValue.unicodeScalars
+        guard scalars.first == "c" else {
+            throw CardCodeError.malformed
+        }
+        let payload = scalars.dropFirst()
+        guard !payload.isEmpty, !payload.contains(where: Self.lineTerminators.contains) else {
             throw CardCodeError.malformed
         }
         self.rawValue = rawValue

@@ -11,7 +11,7 @@ struct ServerCapabilitiesTests {
             Bundle.module.url(
                 forResource: "capabilities",
                 withExtension: "json",
-                subdirectory: "Fixtures"
+                subdirectory: "Fixtures/Contract"
             )
         )
         return try JSONDecoder().decode(ServerCapabilities.self, from: Data(contentsOf: url))

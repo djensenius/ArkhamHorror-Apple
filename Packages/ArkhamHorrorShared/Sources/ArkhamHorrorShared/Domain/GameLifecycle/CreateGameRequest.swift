@@ -1,5 +1,25 @@
 import Foundation
 
+/// `CreateGameRequest.difficulty`'s value. A closed, validated enum: this is a request-side
+/// field, and the exact backend build this client targets only accepts these 4 values.
+/// Distinct from `GameListModels.swift`'s response-side `Difficulty` (an ``OpenStringEnum``,
+/// which must stay forward-compatible with server-reported difficulties this client build
+/// doesn't yet know about) — an unknown value decoded from a response can never be fed
+/// directly back into a request field of this type.
+enum RequestDifficulty: String, Sendable, Equatable, Hashable, Codable, CaseIterable {
+    case easy = "Easy"
+    case standard = "Standard"
+    case hard = "Hard"
+    case expert = "Expert"
+}
+
+/// `CreateGameRequest.multiplayerVariant`'s value. A closed, validated enum, analogous to
+/// ``RequestDifficulty``: distinct from the response-side ``MultiplayerVariant``.
+enum RequestMultiplayerVariant: String, Sendable, Equatable, Hashable, Codable, CaseIterable {
+    case solo = "Solo"
+    case withFriends = "WithFriends"
+}
+
 /// The error thrown when encoding a ``CreateGameRequest`` whose `campaignId` and
 /// `scenarioId` are both absent or empty, violating the contract's invariant that at least
 /// one of the two must be present as a non-empty string.
@@ -19,9 +39,9 @@ struct CreateGameRequest: Sendable {
     let playerCount: Int
     let campaignId: String?
     let scenarioId: String?
-    let difficulty: Difficulty
+    let difficulty: RequestDifficulty
     let campaignName: String
-    let multiplayerVariant: MultiplayerVariant
+    let multiplayerVariant: RequestMultiplayerVariant
     let includeTarotReadings: Bool
     let options: [CampaignOption]
     let strictAsIfAt: OptionalField<Bool>
@@ -55,10 +75,10 @@ extension CreateGameRequest: Codable {
         playerCount = try container.decode(Int.self, forKey: .playerCount)
         campaignId = try container.decodeIfPresent(String.self, forKey: .campaignId)
         scenarioId = try container.decodeIfPresent(String.self, forKey: .scenarioId)
-        difficulty = try container.decode(Difficulty.self, forKey: .difficulty)
+        difficulty = try container.decode(RequestDifficulty.self, forKey: .difficulty)
         campaignName = try container.decode(String.self, forKey: .campaignName)
         multiplayerVariant = try container.decode(
-            MultiplayerVariant.self,
+            RequestMultiplayerVariant.self,
             forKey: .multiplayerVariant
         )
         includeTarotReadings = try container.decode(Bool.self, forKey: .includeTarotReadings)

@@ -22,7 +22,7 @@ struct GameLifecycleTests {
             Bundle.module.url(
                 forResource: "game-lifecycle",
                 withExtension: "json",
-                subdirectory: "Fixtures"
+                subdirectory: "Fixtures/Contract"
             )
         )
         return try JSONDecoder().decode(GameLifecycleFixture.self, from: Data(contentsOf: url))
@@ -46,14 +46,14 @@ struct GameLifecycleTests {
         #expect(request.includeTarotReadings == true)
         #expect(
             request.options == [
-                .flag(CampaignOptionFlag("PerformIntro")), .campaignVariant("return-to"),
+                .flag(.performIntro), .campaignVariant("return-to"),
             ]
         )
         #expect(request.strictAsIfAt == .value(false))
         #expect(request.asIfRuling == .value(.chapter1))
         #expect(
             request.ultimatumsAndBoons == .value([
-                UltimatumOrBoon("BoonOfHades"), UltimatumOrBoon("UltimatumOfChaos"),
+                .boonOfHades, .ultimatumOfChaos,
             ])
         )
         #expect(request.achievementsEnabled == .value(false))
@@ -191,72 +191,33 @@ struct GameLifecycleTests {
         )
     }
 
-    // MARK: - CampaignOption: known flag, unknown flag, and CampaignVariant
-
-    @Test("A known campaign option flag decodes to .flag, never .unknown")
-    func knownFlagDecodes() throws {
-        let decoded = try JSONDecoder().decode(
-            CampaignOption.self,
-            from: Data(#"{"tag": "PerformIntro"}"#.utf8)
-        )
-        #expect(decoded == .flag(CampaignOptionFlag("PerformIntro")))
-    }
-
-    @Test(
-        "A genuinely unrecognized tag decodes to .unknown, never silently treated as a known flag"
-    )
-    func unrecognizedTagDecodesToUnknown() throws {
-        let decoded = try JSONDecoder().decode(
-            CampaignOption.self,
-            from: Data(#"{"tag": "SomeFutureFlagNotYetKnown"}"#.utf8)
-        )
-        guard case let .unknown(tag, _) = decoded else {
-            Issue.record("Expected .unknown, got \(decoded)")
-            return
-        }
-        #expect(tag == "SomeFutureFlagNotYetKnown")
-    }
-
-    @Test("CampaignVariant decodes its string contents")
-    func campaignVariantDecodes() throws {
-        let decoded = try JSONDecoder().decode(
-            CampaignOption.self,
-            from: Data(#"{"tag": "CampaignVariant", "contents": "return-to"}"#.utf8)
-        )
-        #expect(decoded == .campaignVariant("return-to"))
-    }
-
-    @Test("An unknown CampaignOption re-encodes with its original tag, still distinct from .flag")
-    func unknownOptionRoundTrips() throws {
-        let original = CampaignOption.unknown(tag: "SomeFutureFlagNotYetKnown", contents: nil)
-        let data = try JSONEncoder().encode(original)
-        let redecoded = try JSONDecoder().decode(CampaignOption.self, from: data)
-        #expect(redecoded == original)
-        if case .flag = redecoded {
-            Issue.record("An unknown option must never decode back as .flag")
-        }
-    }
-
     // MARK: - ChooseDeckRequest / ClaimSeatRequest / OpenSeats
 
     @Test("chooseDeck decodes investigatorId without the 'c' prefix and ignores unknownField")
     func chooseDeckRequest() throws {
         let fixture = try loadFixture()
-        #expect(fixture.chooseDeck.investigatorId == "01001")
+        #expect(fixture.chooseDeck.investigatorId.rawValue == "01001")
         #expect(fixture.chooseDeck.deckUrl == "https://arkhamdb.com/decklist/view/4242")
-        #expect(fixture.chooseDeck.deckList?.investigatorCode == "01001")
+        #expect(fixture.chooseDeck.deckList?.investigatorCode.rawValue == "01001")
     }
 
     @Test("continueWithoutUpgrade decodes investigatorId with the 'c' prefix")
     func continueWithoutUpgradeRequest() throws {
         let fixture = try loadFixture()
-        #expect(fixture.continueWithoutUpgrade.investigatorId == "c01001")
+        #expect(fixture.continueWithoutUpgrade.investigatorId.rawValue == "c01001")
     }
 
     @Test("claimSeat decodes investigatorId and ignores unknownField")
     func claimSeatRequest() throws {
         let fixture = try loadFixture()
-        #expect(fixture.claimSeat.investigatorId == "01001")
+        #expect(fixture.claimSeat.investigatorId.rawValue == "01001")
+    }
+
+    @Test("An empty investigatorId is rejected before it could ever be encoded")
+    func emptyInvestigatorIdRejected() {
+        #expect(throws: (any Error).self) {
+            try ClaimSeatRequest(investigatorId: InvestigatorCode(""))
+        }
     }
 
     @Test("openSeats decodes a list of validated CardCodes")

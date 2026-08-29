@@ -1,49 +1,5 @@
 import Foundation
 
-/// A JSON number decoded and encoded without `Double` precision loss.
-///
-/// Backend identifiers and numeric literals may exceed `Double`'s 53-bit mantissa (for
-/// example ArkhamDB deck IDs). Whole numbers are captured as `Int64`; anything else
-/// (fractional, or too large for `Int64`) is captured as `Decimal`, which Foundation's
-/// `JSONDecoder` parses directly from the original digit sequence rather than through a
-/// lossy `Double` conversion.
-enum JSONNumber: Sendable {
-    case integer(Int64)
-    case decimal(Decimal)
-}
-
-extension JSONNumber: Equatable, Hashable {}
-
-extension JSONNumber: Codable {
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let intValue = try? container.decode(Int64.self) {
-            self = .integer(intValue)
-        } else {
-            self = try .decimal(container.decode(Decimal.self))
-        }
-    }
-
-    func encode(to encoder: any Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case let .integer(value):
-            try container.encode(value)
-        case let .decimal(value):
-            try container.encode(value)
-        }
-    }
-}
-
-extension JSONNumber: CustomStringConvertible {
-    var description: String {
-        switch self {
-        case let .integer(value): String(value)
-        case let .decimal(value): "\(value)"
-        }
-    }
-}
-
 /// A recursive JSON value used for schema fields the contract intentionally leaves
 /// unconstrained (for example `CardDef.criteria` or `CardDef.customizations`).
 ///

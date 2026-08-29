@@ -8,11 +8,17 @@ enum GameState: Sendable {
     case active
     /// The game has ended.
     case over
-    /// A tag not recognized by this client build.
-    case unknown(tag: String, contents: JSONValue?)
+    /// A tag not recognized by this client build. Preserves the complete raw wire object
+    /// so nothing is lost; never encodable.
+    case unknown(tag: String, rawObject: JSONValue)
 }
 
 extension GameState: Equatable, Hashable {}
+
+/// Thrown when encoding a ``GameState`` whose tag this client build never recognized.
+enum GameStateError: Error, Equatable, Sendable {
+    case cannotEncodeUnknownTag(String)
+}
 
 extension GameState: Codable {
     private enum CodingKeys: String, CodingKey {
@@ -29,12 +35,23 @@ extension GameState: Codable {
         case "IsChooseDecks":
             self = try .chooseDecks(container.decode([PlayerID].self, forKey: .contents))
         case "IsActive":
+            try rejectPresentContents(
+                container,
+                contentsKey: .contents,
+                tag: tag,
+                codingPath: decoder.codingPath
+            )
             self = .active
         case "IsOver":
+            try rejectPresentContents(
+                container,
+                contentsKey: .contents,
+                tag: tag,
+                codingPath: decoder.codingPath
+            )
             self = .over
         default:
-            let contents = try container.decodeIfPresent(JSONValue.self, forKey: .contents)
-            self = .unknown(tag: tag, contents: contents)
+            self = try .unknown(tag: tag, rawObject: JSONValue(from: decoder))
         }
     }
 
@@ -51,9 +68,8 @@ extension GameState: Codable {
             try container.encode("IsActive", forKey: .tag)
         case .over:
             try container.encode("IsOver", forKey: .tag)
-        case let .unknown(tag, contents):
-            try container.encode(tag, forKey: .tag)
-            try container.encodeIfPresent(contents, forKey: .contents)
+        case let .unknown(tag, _):
+            throw GameStateError.cannotEncodeUnknownTag(tag)
         }
     }
 }

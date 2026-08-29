@@ -58,4 +58,64 @@ struct CardCodeTests {
         let second = try CardCode("c01020")
         #expect([first: 1] == [second: 1])
     }
+
+    // MARK: - Unicode scalar semantics (not grapheme-cluster count)
+
+    @Test("A combining mark immediately after c is a valid one-scalar payload")
+    func combiningMarkPayload() throws {
+        // "c" + U+0301 COMBINING ACUTE ACCENT forms a single Swift `Character` (one
+        // grapheme cluster), but is two Unicode scalars, satisfying `^c.+$` at the
+        // scalar level the published pattern actually operates on.
+        let input = "c\u{0301}"
+        #expect(input.count == 1, "sanity check: this is one grapheme cluster")
+        let code = try CardCode(input)
+        #expect(code.rawValue == input)
+    }
+
+    @Test("An astral (supplementary-plane) suffix scalar is a valid payload")
+    func astralSuffix() throws {
+        // U+1F600 GRINNING FACE is a single Unicode scalar outside the BMP.
+        let input = "c\u{1F600}"
+        let code = try CardCode(input)
+        #expect(code.rawValue == input)
+    }
+
+    @Test("Decomposed (NFD) Unicode is accepted and never renormalized")
+    func decomposedUnicodeNotNormalized() throws {
+        // "é" as "e" + combining acute accent (NFD), rather than the precomposed U+00E9.
+        let input = "c" + "e\u{0301}"
+        let code = try CardCode(input)
+        #expect(code.rawValue == input)
+        #expect(Array(code.rawValue.unicodeScalars) == Array(input.unicodeScalars))
+    }
+
+    @Test("Empty payload after c is rejected")
+    func emptyPayloadAfterC() {
+        #expect(throws: CardCodeError.malformed) {
+            try CardCode("c")
+        }
+    }
+
+    @Test("A wrong prefix is rejected")
+    func wrongPrefix() {
+        #expect(throws: CardCodeError.malformed) {
+            try CardCode("d01020")
+        }
+    }
+
+    @Test(
+        "A line terminator anywhere in the payload is rejected, matching ECMAScript dot",
+        arguments: ["c\n", "c\r", "c\u{2028}", "c\u{2029}", "c01\n020", "c\n01020"]
+    )
+    func lineTerminatorRejected(input: String) {
+        #expect(throws: CardCodeError.malformed) {
+            try CardCode(input)
+        }
+    }
+
+    @Test("A non-line-terminator payload after a valid character is still accepted")
+    func multiCharacterPayloadStillAccepted() throws {
+        let code = try CardCode("c01\t020")
+        #expect(code.rawValue == "c01\t020")
+    }
 }

@@ -93,7 +93,7 @@ struct CapabilityProbeTransportTests {
             Bundle.module.url(
                 forResource: "capabilities",
                 withExtension: "json",
-                subdirectory: "Fixtures"
+                subdirectory: "Fixtures/Contract"
             )
         )
         return try Data(contentsOf: url)

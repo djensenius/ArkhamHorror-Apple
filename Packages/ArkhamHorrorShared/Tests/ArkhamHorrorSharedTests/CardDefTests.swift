@@ -19,7 +19,7 @@ struct CardDefTests {
             Bundle.module.url(
                 forResource: "catalog",
                 withExtension: "json",
-                subdirectory: "Fixtures"
+                subdirectory: "Fixtures/Contract"
             )
         )
         return try JSONDecoder().decode(CatalogFixture.self, from: Data(contentsOf: url))
@@ -36,12 +36,12 @@ struct CardDefTests {
         #expect(machete.cost == .staticCost(3))
         #expect(machete.level == 0)
         #expect(machete.cardType == .asset)
-        #expect(machete.classSymbols == [.guardian])
+        #expect(machete.classSymbols?.elements == [.guardian])
         #expect(machete.skills == [.skill(.combat)])
-        #expect(machete.cardTraits == ["Item", "Melee", "Weapon"])
+        #expect(machete.cardTraits?.elements == ["Item", "Melee", "Weapon"])
         #expect(machete.slots == [.hand])
         #expect(machete.alternateCardCodes?.map(\.rawValue) == ["c01520", "c12020"])
-        #expect(machete.art == "01020")
+        #expect(machete.art.rawValue == "01020")
         #expect(machete.alternateErrata?["c12020"]?.contains("succeed") == true)
         // Every field the fixture doesn't set stays nil, not a default sentinel.
         #expect(machete.revealedName == nil)
@@ -55,7 +55,7 @@ struct CardDefTests {
         let rats = try #require(fixture.homebrewCards.first)
         #expect(rats.cardCode.rawValue == "c:dark-matter:151")
         #expect(rats.cardType == .enemy)
-        #expect(rats.cardTraits == ["Creature", "Monster"])
+        #expect(rats.cardTraits?.elements == ["Creature", "Monster"])
         #expect(rats.encounterSet == ":dark-matter:in_the_shadow_of_earth")
         #expect(rats.encounterSetQuantity == 3)
         #expect(rats.health == .staticValue(1))
@@ -78,7 +78,7 @@ struct CardDefTests {
     @Test("investigatorArtwork decodes as a plain list of card codes")
     func investigatorArtwork() throws {
         let fixture = try loadFixture()
-        #expect(fixture.investigators == ["01001", "01002"])
+        #expect(fixture.investigators.map(\.rawValue) == ["01001", "01002"])
     }
 
     // MARK: - Malformed / missing / wrong-type inputs
@@ -128,7 +128,7 @@ struct CardDefTests {
 
     // MARK: - Tagged union forward compatibility
 
-    @Test("An unrecognized cardCost tag decodes to .unknown, not a decode failure")
+    @Test("An unrecognized cardCost tag decodes to .unknown, preserving the full raw object")
     func unknownCardCostTag() throws {
         let json = """
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
@@ -136,12 +136,16 @@ struct CardDefTests {
          "cost": {"tag": "FutureCost", "contents": {"future": true}}}
         """
         let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
-        #expect(
-            card.cost == .unknown(tag: "FutureCost", contents: .object(["future": .bool(true)]))
-        )
+        #expect(card.cost == .unknown(
+            tag: "FutureCost",
+            rawObject: .object([
+                "tag": .string("FutureCost"),
+                "contents": .object(["future": .bool(true)]),
+            ])
+        ))
     }
 
-    @Test("An unrecognized gameValue tag decodes to .unknown")
+    @Test("An unrecognized gameValue tag decodes to .unknown, preserving the full raw object")
     func unknownGameValueTag() throws {
         let json = """
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
@@ -149,10 +153,13 @@ struct CardDefTests {
          "health": {"tag": "FutureValue"}}
         """
         let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
-        #expect(card.health == .unknown(tag: "FutureValue", contents: nil))
+        #expect(card.health == .unknown(
+            tag: "FutureValue",
+            rawObject: .object(["tag": .string("FutureValue")])
+        ))
     }
 
-    @Test("An unrecognized skillIcon tag decodes to .unknown")
+    @Test("An unrecognized skillIcon tag decodes to .unknown, preserving the full raw object")
     func unknownSkillIconTag() throws {
         let json = """
         {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
@@ -160,7 +167,10 @@ struct CardDefTests {
          "skills": [{"tag": "FutureIcon"}]}
         """
         let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
-        #expect(card.skills == [.unknown(tag: "FutureIcon", contents: nil)])
+        #expect(card.skills == [.unknown(
+            tag: "FutureIcon",
+            rawObject: .object(["tag": .string("FutureIcon")])
+        )])
     }
 
     @Test("GameValue's StaticWithPerPlayer and ByPlayerCount decode their fixed-size arrays")
@@ -226,5 +236,54 @@ struct CardDefTests {
         let data = try JSONEncoder().encode(machete)
         let redecoded = try JSONDecoder().decode(CardDef.self, from: data)
         #expect(redecoded == machete)
+    }
+
+    // MARK: - Absent-only optional fields reject an explicit null (issue #2, exhaustive audit)
+
+    /// Every optional `CardDef` property the schema types strictly (never including `null`
+    /// in its own type union). A missing key is fine; an explicit `null` must be rejected.
+    /// This is the complete list, not a sample: every property below is exercised, so
+    /// adding an absent-only property to `CardDef` without adding it here (or wiring it
+    /// through `decodeAbsentOnly`) is caught by an unexpectedly-passing test.
+    private static let absentOnlyFieldNames: [String] = [
+        "revealedName", "cost", "level", "cardSubType", "classSymbols", "skills",
+        "cardTraits", "revealedCardTraits", "keywords", "revelation", "victoryPoints",
+        "vengeancePoints", "overrideActionPlayableIfCriteriaMet", "commitRestrictions",
+        "attackOfOpportunityModifiers", "permanent", "encounterSet", "encounterSetQuantity",
+        "unique", "doubleSided", "limits", "exceptional", "playableFromDiscard", "stage",
+        "slots", "alternateCardCodes", "locationConnections", "locationRevealedConnections",
+        "grantedXp", "canReplace", "deckRestrictions", "bondedWith", "skipPlayWindows",
+        "beforeEffect", "otherSide", "whenDiscarded", "canCommitWhenNoIcons",
+        "commitTrigger", "meta", "tags", "outOfPlayEffects", "health", "fight", "evade",
+        "healthDamage", "sanityDamage", "alternateSkills", "alternateErrata", "errata",
+    ]
+
+    @Test(
+        "Every absent-only optional field rejects an explicit null",
+        arguments: CardDefTests.absentOnlyFieldNames
+    )
+    func absentOnlyFieldRejectsExplicitNull(fieldName: String) throws {
+        let json = """
+        {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
+         "cardType": "AssetType", "art": "01020", "\(fieldName)": null}
+        """
+        #expect(throws: (any Error).self, "Expected \(fieldName): null to be rejected") {
+            try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        }
+    }
+
+    @Test(
+        "Every absent-only optional field is fine when the key is entirely omitted",
+        arguments: CardDefTests.absentOnlyFieldNames
+    )
+    func absentOnlyFieldOmittedIsFine(fieldName: String) throws {
+        // Baseline: confirms the prior test's failures are specifically about the
+        // explicit-null value, not about the field name itself being unrecognized.
+        let json = """
+        {"cardCode": "c01020", "name": {"title": "X", "subtitle": null},
+         "cardType": "AssetType", "art": "01020"}
+        """
+        let card = try JSONDecoder().decode(CardDef.self, from: Data(json.utf8))
+        #expect(card.cardCode.rawValue == "c01020", "\(fieldName) baseline decode should succeed")
     }
 }

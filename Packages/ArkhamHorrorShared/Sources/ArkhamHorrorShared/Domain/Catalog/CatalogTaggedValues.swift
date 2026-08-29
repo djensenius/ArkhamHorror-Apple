@@ -17,11 +17,19 @@ enum CardCost: Sendable {
     case anyMatchingCardCost(JSONValue)
     /// A cost keyed to a matching enemy field; contents are schema-unconstrained.
     case matchingEnemyFieldCost(JSONValue)
-    /// A tag not recognized by this client build.
-    case unknown(tag: String, contents: JSONValue?)
+    /// A tag not recognized by this client build. Preserves the complete raw wire object
+    /// (tag, contents presence/absence/null-ness, and any additive keys) so nothing is
+    /// lost; never encodable, since resubmitting data this client doesn't understand is
+    /// unsafe by construction.
+    case unknown(tag: String, rawObject: JSONValue)
 }
 
 extension CardCost: Equatable, Hashable {}
+
+/// Thrown when encoding a ``CardCost`` whose tag this client build never recognized.
+enum CardCostError: Error, Equatable, Sendable {
+    case cannotEncodeUnknownTag(String)
+}
 
 extension CardCost: Codable {
     private enum CodingKeys: String, CodingKey {
@@ -36,10 +44,28 @@ extension CardCost: Codable {
         case "StaticCost":
             self = try .staticCost(container.decode(Int.self, forKey: .contents))
         case "DynamicCost":
+            try rejectPresentContents(
+                container,
+                contentsKey: .contents,
+                tag: tag,
+                codingPath: decoder.codingPath
+            )
             self = .dynamicCost
         case "DiscardAmountCost":
+            try rejectPresentContents(
+                container,
+                contentsKey: .contents,
+                tag: tag,
+                codingPath: decoder.codingPath
+            )
             self = .discardAmountCost
         case "DeferredCost":
+            try rejectPresentContents(
+                container,
+                contentsKey: .contents,
+                tag: tag,
+                codingPath: decoder.codingPath
+            )
             self = .deferredCost
         case "MaxDynamicCost":
             self = try .maxDynamicCost(container.decode(JSONValue.self, forKey: .contents))
@@ -48,8 +74,7 @@ extension CardCost: Codable {
         case "MatchingEnemyFieldCost":
             self = try .matchingEnemyFieldCost(container.decode(JSONValue.self, forKey: .contents))
         default:
-            let contents = try container.decodeIfPresent(JSONValue.self, forKey: .contents)
-            self = .unknown(tag: tag, contents: contents)
+            self = try .unknown(tag: tag, rawObject: JSONValue(from: decoder))
         }
     }
 
@@ -74,9 +99,8 @@ extension CardCost: Codable {
         case let .matchingEnemyFieldCost(contents):
             try container.encode("MatchingEnemyFieldCost", forKey: .tag)
             try container.encode(contents, forKey: .contents)
-        case let .unknown(tag, contents):
-            try container.encode(tag, forKey: .tag)
-            try container.encodeIfPresent(contents, forKey: .contents)
+        case let .unknown(tag, _):
+            throw CardCostError.cannotEncodeUnknownTag(tag)
         }
     }
 }
@@ -98,11 +122,17 @@ enum GameValue: Sendable {
     case valueStar
     /// Not revealed until play.
     case valueUnknown
-    /// A tag not recognized by this client build.
-    case unknown(tag: String, contents: JSONValue?)
+    /// A tag not recognized by this client build. Preserves the complete raw wire object
+    /// so nothing is lost; never encodable.
+    case unknown(tag: String, rawObject: JSONValue)
 }
 
 extension GameValue: Equatable, Hashable {}
+
+/// Thrown when encoding a ``GameValue`` whose tag this client build never recognized.
+enum GameValueError: Error, Equatable, Sendable {
+    case cannotEncodeUnknownTag(String)
+}
 
 extension GameValue: Codable {
     private enum CodingKeys: String, CodingKey {
@@ -110,49 +140,61 @@ extension GameValue: Codable {
         case contents
     }
 
+    /// Decodes exactly `count` `Int`s from `contents`, throwing if more or fewer than
+    /// `count` elements are present. Shared by `StaticWithPerPlayer`'s 2-element array and
+    /// `ByPlayerCount`'s 4-element array.
+    private static func decodeFixedIntArray(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        count: Int
+    ) throws -> [Int] {
+        var contents = try container.nestedUnkeyedContainer(forKey: .contents)
+        var values: [Int] = []
+        while !contents.isAtEnd {
+            try values.append(contents.decode(Int.self))
+        }
+        guard values.count == count else {
+            let context = DecodingError.Context(
+                codingPath: contents.codingPath,
+                debugDescription: "Expected exactly \(count) elements, found \(values.count)"
+            )
+            throw DecodingError.dataCorrupted(context)
+        }
+        return values
+    }
+
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let tag = try container.decode(String.self, forKey: .tag)
+        func nullaryCase() throws {
+            try rejectPresentContents(
+                container,
+                contentsKey: .contents,
+                tag: tag,
+                codingPath: decoder.codingPath
+            )
+        }
         switch tag {
         case "Static":
             self = try .staticValue(container.decode(Int.self, forKey: .contents))
         case "PerPlayer":
             self = try .perPlayer(container.decode(Int.self, forKey: .contents))
         case "StaticWithPerPlayer":
-            var contents = try container.nestedUnkeyedContainer(forKey: .contents)
-            let base = try contents.decode(Int.self)
-            let perPlayer = try contents.decode(Int.self)
-            guard contents.isAtEnd else {
-                let context = DecodingError.Context(
-                    codingPath: contents.codingPath,
-                    debugDescription: "Expected exactly 2 elements for StaticWithPerPlayer"
-                )
-                throw DecodingError.dataCorrupted(context)
-            }
-            self = .staticWithPerPlayer(base, perPlayer)
+            let values = try Self.decodeFixedIntArray(from: container, count: 2)
+            self = .staticWithPerPlayer(values[0], values[1])
         case "ByPlayerCount":
-            var contents = try container.nestedUnkeyedContainer(forKey: .contents)
-            let one = try contents.decode(Int.self)
-            let two = try contents.decode(Int.self)
-            let three = try contents.decode(Int.self)
-            let four = try contents.decode(Int.self)
-            guard contents.isAtEnd else {
-                let context = DecodingError.Context(
-                    codingPath: contents.codingPath,
-                    debugDescription: "Expected exactly 4 elements for ByPlayerCount"
-                )
-                throw DecodingError.dataCorrupted(context)
-            }
-            self = .byPlayerCount(one, two, three, four)
+            let values = try Self.decodeFixedIntArray(from: container, count: 4)
+            self = .byPlayerCount(values[0], values[1], values[2], values[3])
         case "ValueX":
+            try nullaryCase()
             self = .valueX
         case "ValueStar":
+            try nullaryCase()
             self = .valueStar
         case "ValueUnknown":
+            try nullaryCase()
             self = .valueUnknown
         default:
-            let contents = try container.decodeIfPresent(JSONValue.self, forKey: .contents)
-            self = .unknown(tag: tag, contents: contents)
+            self = try .unknown(tag: tag, rawObject: JSONValue(from: decoder))
         }
     }
 
@@ -183,9 +225,8 @@ extension GameValue: Codable {
             try container.encode("ValueStar", forKey: .tag)
         case .valueUnknown:
             try container.encode("ValueUnknown", forKey: .tag)
-        case let .unknown(tag, contents):
-            try container.encode(tag, forKey: .tag)
-            try container.encodeIfPresent(contents, forKey: .contents)
+        case let .unknown(tag, _):
+            throw GameValueError.cannotEncodeUnknownTag(tag)
         }
     }
 }
@@ -198,11 +239,17 @@ enum SkillIcon: Sendable {
     case wildIcon
     /// A wild-minus icon, usable for any skill but reducing the skill value.
     case wildMinusIcon
-    /// A tag not recognized by this client build.
-    case unknown(tag: String, contents: JSONValue?)
+    /// A tag not recognized by this client build. Preserves the complete raw wire object
+    /// so nothing is lost; never encodable.
+    case unknown(tag: String, rawObject: JSONValue)
 }
 
 extension SkillIcon: Equatable, Hashable {}
+
+/// Thrown when encoding a ``SkillIcon`` whose tag this client build never recognized.
+enum SkillIconError: Error, Equatable, Sendable {
+    case cannotEncodeUnknownTag(String)
+}
 
 extension SkillIcon: Codable {
     private enum CodingKeys: String, CodingKey {
@@ -217,12 +264,23 @@ extension SkillIcon: Codable {
         case "SkillIcon":
             self = try .skill(container.decode(Skill.self, forKey: .contents))
         case "WildIcon":
+            try rejectPresentContents(
+                container,
+                contentsKey: .contents,
+                tag: tag,
+                codingPath: decoder.codingPath
+            )
             self = .wildIcon
         case "WildMinusIcon":
+            try rejectPresentContents(
+                container,
+                contentsKey: .contents,
+                tag: tag,
+                codingPath: decoder.codingPath
+            )
             self = .wildMinusIcon
         default:
-            let contents = try container.decodeIfPresent(JSONValue.self, forKey: .contents)
-            self = .unknown(tag: tag, contents: contents)
+            self = try .unknown(tag: tag, rawObject: JSONValue(from: decoder))
         }
     }
 
@@ -236,9 +294,8 @@ extension SkillIcon: Codable {
             try container.encode("WildIcon", forKey: .tag)
         case .wildMinusIcon:
             try container.encode("WildMinusIcon", forKey: .tag)
-        case let .unknown(tag, contents):
-            try container.encode(tag, forKey: .tag)
-            try container.encodeIfPresent(contents, forKey: .contents)
+        case let .unknown(tag, _):
+            throw SkillIconError.cannotEncodeUnknownTag(tag)
         }
     }
 }

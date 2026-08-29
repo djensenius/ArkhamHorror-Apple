@@ -20,7 +20,11 @@ private struct DecksFixture: Decodable {
 struct DeckTests {
     private func loadFixture() throws -> DecksFixture {
         let url = try #require(
-            Bundle.module.url(forResource: "decks", withExtension: "json", subdirectory: "Fixtures")
+            Bundle.module.url(
+                forResource: "decks",
+                withExtension: "json",
+                subdirectory: "Fixtures/Contract"
+            )
         )
         return try JSONDecoder().decode(DecksFixture.self, from: Data(contentsOf: url))
     }
@@ -33,7 +37,7 @@ struct DeckTests {
         #expect(fixture.createDeck.deckId == "external-4242")
         #expect(fixture.createDeck.deckName == "Contract deck")
         #expect(fixture.createDeck.deckList.id == .number(.integer(4242)))
-        #expect(fixture.createDeck.deckList.investigatorCode == "01001")
+        #expect(fixture.createDeck.deckList.investigatorCode.rawValue == "01001")
         #expect(fixture.createDeck.deckList.slots.quantities == ["01016": 2, "c01018": 1])
         if case let .malformed(.array(items)) = fixture.createDeck.deckList.sideSlots {
             #expect(items.isEmpty)
@@ -53,7 +57,7 @@ struct DeckTests {
     @Test("validateDeckList ignores its unknown additive externalField")
     func validateDeckListIgnoresUnknownField() throws {
         let fixture = try loadFixture()
-        #expect(fixture.validateDeckList.investigatorCode == "01001")
+        #expect(fixture.validateDeckList.investigatorCode.rawValue == "01001")
         #expect(fixture.validateDeckList.tabooId == nil)
     }
 
@@ -79,7 +83,7 @@ struct DeckTests {
     @Test("validationErrors decodes the known UnimplementedCard tag")
     func validationErrors() throws {
         let fixture = try loadFixture()
-        #expect(try fixture.validationErrors == [.unimplementedCard(CardCode("c99999"))])
+        #expect(try fixture.validationErrors.elements == [.unimplementedCard(CardCode("c99999"))])
     }
 
     @Test("validationSuccess decodes the always-empty marker")
@@ -110,6 +114,37 @@ struct DeckTests {
     func externalIDDecimalVariant() throws {
         let decoded = try JSONDecoder().decode(ExternalID.self, from: Data("4242.5".utf8))
         #expect(try decoded == .number(.decimal(#require(Decimal(string: "4242.5")))))
+    }
+
+    @Test("ExternalID beyond Decimal's ~38 significant digits round-trips exactly via ContractJSON")
+    func externalIDLargeIntegerIsLosslessThroughContractJSON() throws {
+        // 45 nines: more significant digits than Decimal's ~38-digit budget can hold exactly.
+        let literal = String(repeating: "9", count: 45)
+        let json = #"{"slots": {"x": 1}, "investigator_code": "01001", "id": \#(literal)}"#
+        let input = try ContractJSON.decode(DeckListInput.self, from: Data(json.utf8))
+        guard case let .number(number) = input.id else {
+            Issue.record("Expected a .number ExternalID, got \(String(describing: input.id))")
+            return
+        }
+        #expect(number.coefficient == literal)
+        let reencoded = try ContractJSON.encode(input)
+        let reencodedText = try #require(String(data: reencoded, encoding: .utf8))
+        #expect(reencodedText.contains(literal))
+    }
+
+    @Test("The same 45-nines ExternalID is silently rounded by a stock JSONDecoder")
+    func externalIDLargeIntegerIsLossyThroughStockDecoder() throws {
+        let literal = String(repeating: "9", count: 45)
+        let json = #"{"slots": {"x": 1}, "investigator_code": "01001", "id": \#(literal)}"#
+        let input = try JSONDecoder().decode(DeckListInput.self, from: Data(json.utf8))
+        guard case let .number(number) = input.id else {
+            Issue.record("Expected a .number ExternalID, got \(String(describing: input.id))")
+            return
+        }
+        // Decimal's ~38 significant digits cannot hold all 45 nines exactly: this proves
+        // the stock-`Decoder` fallback path really is lossy here, unlike ContractJSON,
+        // which is the entire point of routing contract decoding through it.
+        #expect(number.coefficient != literal)
     }
 
     @Test("DeckListInput.id distinguishes absent, explicit null, and a present value")
@@ -164,10 +199,10 @@ struct DeckTests {
         func roundTrip(_ input: DeckListInput) throws -> DeckListInput {
             try JSONDecoder().decode(DeckListInput.self, from: JSONEncoder().encode(input))
         }
-        let base = DeckListInput(
+        let base = try DeckListInput(
             slots: CardQuantityMapInput(["x": 1]),
             sideSlots: .absent,
-            investigatorCode: "01001",
+            investigatorCode: InvestigatorCode("01001"),
             investigatorName: nil,
             meta: nil,
             tabooId: nil,
@@ -192,95 +227,5 @@ struct DeckTests {
             investigatorName: nil, meta: nil, tabooId: nil, url: nil, id: nil, name: nil
         )
         #expect(try roundTrip(withMalformed).sideSlots == withMalformed.sideSlots)
-    }
-
-    // MARK: - Card quantity map key validation
-
-    @Test("CardQuantityMapInput rejects an empty-string key")
-    func cardQuantityMapInputRejectsEmptyKey() {
-        let json = #"{"": 1}"#
-        #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardQuantityMapInput.self, from: Data(json.utf8))
-        }
-    }
-
-    @Test("CardQuantityMapInput accepts nonempty opaque keys without a 'c' prefix")
-    func cardQuantityMapInputAcceptsOpaqueKeys() throws {
-        let decoded = try JSONDecoder().decode(
-            CardQuantityMapInput.self,
-            from: Data(#"{"01016": 2, "c01018": 1}"#.utf8)
-        )
-        #expect(decoded.quantities == ["01016": 2, "c01018": 1])
-    }
-
-    @Test("CardQuantityMap rejects a key without the 'c' prefix")
-    func cardQuantityMapRejectsInvalidCardCodeKey() {
-        let json = #"{"01016": 2}"#
-        #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(CardQuantityMap.self, from: Data(json.utf8))
-        }
-    }
-
-    @Test("CardQuantityMap accepts validated CardCode keys")
-    func cardQuantityMapAcceptsValidKeys() throws {
-        let decoded = try JSONDecoder().decode(
-            CardQuantityMap.self,
-            from: Data(#"{"c01016": 2}"#.utf8)
-        )
-        #expect(try decoded.quantities[CardCode("c01016")] == 2)
-    }
-
-    // MARK: - DeckValidationSuccess strictness
-
-    @Test("DeckValidationSuccess rejects a non-empty array")
-    func deckValidationSuccessRejectsNonEmpty() {
-        #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(DeckValidationSuccess.self, from: Data("[1]".utf8))
-        }
-    }
-
-    @Test("DeckValidationError preserves an unrecognized tag as .unknown")
-    func deckValidationErrorUnknownTag() throws {
-        let json = #"{"tag": "FutureError", "contents": "details"}"#
-        let decoded = try JSONDecoder().decode(DeckValidationError.self, from: Data(json.utf8))
-        #expect(decoded == .unknown(tag: "FutureError", contents: .string("details")))
-    }
-
-    // MARK: - DeckList: all nine keys always present
-
-    @Test("DeckList rejects a payload missing one of its always-present nullable keys")
-    func deckListRejectsMissingNullableKey() {
-        let json = """
-        {"slots": {}, "sideSlots": {}, "investigator_code": "c01001",
-         "investigator_name": "Roland Banks", "meta": null, "taboo_id": null, "url": null,
-         "id": null}
-        """
-        #expect(throws: (any Error).self) {
-            try JSONDecoder().decode(DeckList.self, from: Data(json.utf8))
-        }
-    }
-
-    @Test("DeckList encodes its nil optional fields as explicit null, not an omitted key")
-    func deckListEncodesExplicitNull() throws {
-        let deckList = try DeckList(
-            slots: CardQuantityMap([CardCode("c01016"): 2]),
-            sideSlots: CardQuantityMap([:]),
-            investigatorCode: CardCode("c01001"),
-            investigatorName: "Roland Banks",
-            meta: nil,
-            tabooId: nil,
-            url: nil,
-            id: nil,
-            name: nil
-        )
-        let data = try JSONEncoder().encode(deckList)
-        let object = try #require(
-            try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        )
-        for key in ["meta", "taboo_id", "url", "id", "name"] {
-            #expect(object[key] is NSNull, "Expected \(key) to be explicit null")
-        }
-        let redecoded = try JSONDecoder().decode(DeckList.self, from: data)
-        #expect(redecoded == deckList)
     }
 }

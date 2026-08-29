@@ -9,7 +9,7 @@ struct GameListTests {
             Bundle.module.url(
                 forResource: "game-list",
                 withExtension: "json",
-                subdirectory: "Fixtures"
+                subdirectory: "Fixtures/Contract"
             )
         )
         return try JSONDecoder().decode(GameList.self, from: Data(contentsOf: url))
@@ -109,7 +109,7 @@ struct GameListTests {
         }
     }
 
-    @Test("An unrecognized GameState tag decodes to .unknown, preserving its contents")
+    @Test("An unrecognized GameState tag decodes to .unknown, preserving its full raw object")
     func gameStateUnknownTag() throws {
         let json = #"{"tag": "IsPaused", "contents": {"reason": "maintenance"}}"#
         let state = try JSONDecoder().decode(GameState.self, from: Data(json.utf8))
@@ -117,7 +117,10 @@ struct GameListTests {
             state
                 == .unknown(
                     tag: "IsPaused",
-                    contents: .object(["reason": .string("maintenance")])
+                    rawObject: .object([
+                        "tag": .string("IsPaused"),
+                        "contents": .object(["reason": .string("maintenance")]),
+                    ])
                 )
         )
     }
