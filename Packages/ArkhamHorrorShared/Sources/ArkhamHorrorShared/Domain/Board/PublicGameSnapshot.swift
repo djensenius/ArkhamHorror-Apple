@@ -42,7 +42,7 @@ struct PublicGameSnapshot: Sendable {
     /// `PublicGame.modifiers`. Broad and additive, out of scope for this contract slice.
     let modifiers: [JSONValue]
     let encounterDeckSize: Int
-    let locations: [LocationID: Location]
+    let locations: UUIDKeyedMap<LocationIDTag, Location>
     let investigators: [InvestigatorID: Investigator]
     let otherInvestigators: [InvestigatorID: Investigator]
     let killedInvestigators: [InvestigatorID: Investigator]

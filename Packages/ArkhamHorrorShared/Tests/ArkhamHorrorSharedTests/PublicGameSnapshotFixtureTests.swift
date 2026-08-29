@@ -118,4 +118,80 @@ struct PublicGameSnapshotFixtureTests {
         let game = try loadGetGame().game
         #expect(game.phaseStep == .investigation(.investigatorTakesAction))
     }
+
+    // MARK: - Aggregate semantic round-trip
+
+    @Test("Decode→encode→reparse of get-game is semantically equal JSON, not just byte-order")
+    func getGameSemanticJSONRoundTrips() throws {
+        let original = try fixtureData(named: "get-game")
+        let originalValue = try LosslessJSONParser.parse(original)
+        let envelope = try ContractJSON.decode(GetGameEnvelope.self, from: original)
+        let reencoded = try ContractJSON.encode(envelope)
+        let reencodedValue = try LosslessJSONParser.parse(reencoded)
+        // Comparing parsed `JSONValue` trees (object members are an unordered
+        // `[String: JSONValue]`) rather than raw bytes tolerates re-encoding's different
+        // key order while still comparing every leaf value exactly — including string
+        // case — so a UUID leaf or map key that silently re-encoded with different case
+        // than the original wire bytes would make this comparison fail.
+        #expect(originalValue == reencodedValue)
+    }
+
+    @Test("Decode→encode→reparse of game-update is semantically equal JSON, not just byte-order")
+    func gameUpdateSemanticJSONRoundTrips() throws {
+        let original = try fixtureData(named: "game-update")
+        let originalValue = try LosslessJSONParser.parse(original)
+        let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: original)
+        let reencoded = try ContractJSON.encode(update)
+        let reencodedValue = try LosslessJSONParser.parse(reencoded)
+        #expect(originalValue == reencodedValue)
+    }
+
+    // MARK: - Aggregate mutation regressions
+
+    @Test("A genuinely missing phaseStep key fails aggregate decode for both REST and WS")
+    func missingPhaseStepKeyFailsForBothEnvelopes() throws {
+        let phaseStepBlock = """
+            "phaseStep": {
+              "tag": "InvestigationPhaseStep",
+              "contents": "InvestigatorTakesActionStep"
+            },
+
+        """
+        let getGameFixture = try #require(
+            String(data: fixtureData(named: "get-game"), encoding: .utf8)
+        )
+        #expect(getGameFixture.contains(phaseStepBlock))
+        let mutatedGetGame = getGameFixture.replacingOccurrences(of: phaseStepBlock, with: "")
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(GetGameEnvelope.self, from: Data(mutatedGetGame.utf8))
+        }
+
+        let gameUpdateFixture = try #require(
+            String(data: fixtureData(named: "game-update"), encoding: .utf8)
+        )
+        #expect(gameUpdateFixture.contains(phaseStepBlock))
+        let mutatedGameUpdate = gameUpdateFixture.replacingOccurrences(
+            of: phaseStepBlock, with: ""
+        )
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(
+                BoardSnapshotUpdate.self, from: Data(mutatedGameUpdate.utf8)
+            )
+        }
+    }
+
+    @Test("An uppercase-rendered locations map key fails aggregate decode")
+    func uppercaseLocationsMapKeyFailsAggregate() throws {
+        var fixture = try #require(
+            String(data: fixtureData(named: "get-game"), encoding: .utf8)
+        )
+        let lowercaseKey = "d5a66e84-c729-4066-8475-d8a155609025"
+        #expect(fixture.contains("\"\(lowercaseKey)\":"))
+        fixture = fixture.replacingOccurrences(
+            of: "\"\(lowercaseKey)\":", with: "\"\(lowercaseKey.uppercased())\":"
+        )
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(GetGameEnvelope.self, from: Data(fixture.utf8))
+        }
+    }
 }

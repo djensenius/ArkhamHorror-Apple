@@ -80,7 +80,9 @@ extension PublicGameSnapshot: Codable {
         mode = try container.decode(GameMode.self, forKey: .mode)
         modifiers = try container.decode([JSONValue].self, forKey: .modifiers)
         encounterDeckSize = try container.decode(Int.self, forKey: .encounterDeckSize)
-        locations = try container.decode([LocationID: Location].self, forKey: .locations)
+        locations = try container.decode(
+            UUIDKeyedMap<LocationIDTag, Location>.self, forKey: .locations
+        )
         investigators = try container.decode(
             [InvestigatorID: Investigator].self, forKey: .investigators
         )
@@ -116,8 +118,8 @@ extension PublicGameSnapshot: Codable {
         )
         playerOrder = try container.decode([InvestigatorID].self, forKey: .playerOrder)
         phase = try container.decode(GamePhase.self, forKey: .phase)
-        phaseStep = try NullablePhaseStep.decode(
-            from: container.superDecoder(forKey: .phaseStep)
+        phaseStep = try NullablePhaseStep.decodeRequiredNullable(
+            from: container, forKey: .phaseStep, codingPath: path + [CodingKeys.phaseStep]
         )
         inAction = try container.decode(Bool.self, forKey: .inAction)
         skillTest = try decodeRequiredNullable(

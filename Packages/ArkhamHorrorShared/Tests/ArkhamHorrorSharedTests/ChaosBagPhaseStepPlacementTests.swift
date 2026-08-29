@@ -5,9 +5,12 @@ import Testing
 /// A minimal manual-`Decodable` wrapper for exercising `PhaseStep?` in isolation:
 /// `PhaseStep` itself intentionally has no `Decodable` conformance of its own (only
 /// the free ``NullablePhaseStep`` decode/encode pair, mirroring how
-/// `PublicGameSnapshot`'s own manual `init(from:)` decodes its `phaseStep` field via
-/// `superDecoder(forKey:)`), so a synthesized `Decodable` on a struct that merely
-/// stores a `PhaseStep?` would not compile.
+/// `PublicGameSnapshot`'s own manual `init(from:)` decodes its `phaseStep` field), so a
+/// synthesized `Decodable` on a struct that merely stores a `PhaseStep?` would not
+/// compile. Uses the exact same `NullablePhaseStep.decodeRequiredNullable` helper
+/// production code uses (rather than a bare `superDecoder(forKey:)` call), so this
+/// wrapper's behavior — including failing on a genuinely missing key rather than
+/// silently decoding `nil` — stays representative of the real implementation.
 private struct PhaseStepWrapper: Decodable {
     let phaseStep: PhaseStep?
 
@@ -15,8 +18,10 @@ private struct PhaseStepWrapper: Decodable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        phaseStep = try NullablePhaseStep.decode(
-            from: container.superDecoder(forKey: .phaseStep)
+        phaseStep = try NullablePhaseStep.decodeRequiredNullable(
+            from: container,
+            forKey: .phaseStep,
+            codingPath: decoder.codingPath + [CodingKeys.phaseStep]
         )
     }
 }
@@ -97,6 +102,22 @@ struct ChaosBagPhaseStepPlacementTests {
             return
         }
         #expect(tag == "ResolutionPhaseStep")
+    }
+
+    @Test("A genuinely missing phaseStep key fails, distinct from an explicit null value")
+    func missingPhaseStepKeyFailsDistinctFromExplicitNull() throws {
+        // The key itself must always be present (the pinned schema requires it and the
+        // backend always emits it, using null rather than omitting the key); omitting it
+        // entirely is a contract violation, not merely another way to spell "no step".
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(PhaseStepWrapper.self, from: Data(#"{}"#.utf8))
+        }
+        // An explicit null, by contrast, is the normal way "no step" is represented and
+        // must keep succeeding.
+        let explicitNull = try ContractJSON.decode(
+            PhaseStepWrapper.self, from: Data(#"{"phaseStep": null}"#.utf8)
+        )
+        #expect(explicitNull.phaseStep == nil)
     }
 
     @Test("Placement preserves the tri-state absent/null/value contents distinction")

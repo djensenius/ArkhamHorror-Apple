@@ -140,6 +140,32 @@ enum NullablePhaseStep {
             throw PhaseStepError.cannotEncodeUnknownTag(tag)
         }
     }
+
+    /// Decodes a schema field the contract marks required (the key itself must always be
+    /// present) but nullable (whose value may be an explicit JSON `null`), mirroring
+    /// ``decodeRequiredNullable``'s presence-vs-null distinction for `PhaseStep?`
+    /// specifically. This exists because `superDecoder(forKey:)` substitutes a literal
+    /// `.null` `JSONValue` for a genuinely *absent* key (see
+    /// `LosslessJSONKeyedDecodingContainer.makeSuperDecoder`), which would otherwise make a
+    /// missing required `phaseStep` key indistinguishable from an explicit `null` and
+    /// silently decode to `nil` — masking a real contract violation, since the pinned
+    /// schema requires this key and the backend always emits it — instead of failing with
+    /// a coding path that names the missing key.
+    static func decodeRequiredNullable<Key: CodingKey>(
+        from container: KeyedDecodingContainer<Key>,
+        forKey key: Key,
+        codingPath: [any CodingKey]
+    ) throws -> PhaseStep? {
+        guard container.contains(key) else {
+            let context = DecodingError.Context(
+                codingPath: codingPath,
+                debugDescription: "Missing required key \"\(key.stringValue)\"; the backend "
+                    + "always includes this key, using null rather than omitting it"
+            )
+            throw DecodingError.keyNotFound(key, context)
+        }
+        return try decode(from: container.superDecoder(forKey: key))
+    }
 }
 
 enum PhaseStepCodingKeys: String, CodingKey {

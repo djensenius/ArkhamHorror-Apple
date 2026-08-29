@@ -57,6 +57,44 @@ struct EntityMapFixtureTests {
         }
     }
 
+    @Test("A UUID map key that is not exact canonical lowercase text fails to decode")
+    func nonCanonicalCaseUUIDMapKeyFails() throws {
+        // The backend's own ToJSONKey derivation only ever emits lowercase-hyphenated
+        // UUID text; an uppercase-only rendering (even though UUID(uuidString:) itself
+        // parses it case-insensitively) must be rejected rather than silently accepted.
+        let bytes = Data(#"{"D5A66E84-C729-4066-8475-D8A155609025": {}}"#.utf8)
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(UUIDEntityMap<EnemyIDTag>.self, from: bytes)
+        }
+    }
+
+    @Test("Two raw UUID map keys differing only in case collide after normalization and fail")
+    func caseVariantDuplicateUUIDMapKeysFail() throws {
+        // Two textually distinct raw keys that would otherwise parse to the identical
+        // UUID (and, via the stdlib's own Dictionary(from:) CodingKeyRepresentable path,
+        // silently collapse to a last-write-wins single entry) must fail closed instead.
+        let bytes = Data(
+            """
+            {"D5A66E84-C729-4066-8475-D8A155609025": {}, \
+             "d5a66e84-c729-4066-8475-d8a155609025": {}}
+            """.utf8
+        )
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(UUIDEntityMap<EnemyIDTag>.self, from: bytes)
+        }
+    }
+
+    @Test("An exact canonical lowercase UUID map key decodes and re-encodes lowercase")
+    func canonicalLowercaseUUIDMapKeyRoundTrips() throws {
+        let bytes = Data(#"{"d5a66e84-c729-4066-8475-d8a155609025": {}}"#.utf8)
+        let map = try ContractJSON.decode(UUIDEntityMap<EnemyIDTag>.self, from: bytes)
+        #expect(map.count == 1)
+        let reencoded = try ContractJSON.encode(map)
+        let json = try #require(String(data: reencoded, encoding: .utf8))
+        #expect(json.contains("d5a66e84-c729-4066-8475-d8a155609025"))
+        #expect(!json.contains("D5A66E84"))
+    }
+
     @Test("A CardCode entity map with an invalid (non-'c'-prefixed) map key fails to decode")
     func invalidCardCodeMapKeyFails() throws {
         let bytes = Data(#"{"not-a-card-code": {}}"#.utf8)

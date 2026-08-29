@@ -56,8 +56,19 @@ extension Identifier: CodingKeyRepresentable {
         AnyCodingKey(stringValue: rawValue.uuidString.lowercased())
     }
 
+    // Strict: requires the raw key to already be the exact canonical lowercase-hyphenated
+    // text `UUID(uuidString:)` would itself produce for that value -- not merely "some
+    // string `UUID(uuidString:)` can parse". `UUID(uuidString:)` alone is case-insensitive
+    // (it accepts `"D5A6..."` and `"d5a6..."` as the same value), which would otherwise let
+    // two textually distinct raw map keys collide onto the same `Identifier` once decoded.
+    // Rejecting any non-canonical rendering here closes that gap at the source for every
+    // caller of this conformance (both the stdlib's `Dictionary` and this contract slice's
+    // own `UUIDKeyedMap`), rather than only in one call site.
     init?(codingKey: some CodingKey) {
-        guard let uuid = UUID(uuidString: codingKey.stringValue) else { return nil }
+        let raw = codingKey.stringValue
+        guard let uuid = UUID(uuidString: raw), uuid.uuidString.lowercased() == raw else {
+            return nil
+        }
         self.init(uuid)
     }
 }

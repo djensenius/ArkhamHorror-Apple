@@ -7,8 +7,11 @@
 /// scope for this map-key slice (see `public-game.schema.json`'s `uuidEntityMap` `$def`) —
 /// while the key domain itself stays distinctly typed per entity kind so a future
 /// snapshot diff/focus feature can compare/reference stable identities without
-/// interpreting rules.
-typealias UUIDEntityMap<Tag: Sendable> = [Identifier<Tag>: JSONValue]
+/// interpreting rules. Backed by ``UUIDKeyedMap`` (not a bare `[Identifier<Tag>: Value]`)
+/// so a raw key that is not the backend's exact canonical lowercase UUID text, or that
+/// collides with an already-seen key after normalization, fails to decode instead of
+/// silently overwriting.
+typealias UUIDEntityMap<Tag: Sendable> = UUIDKeyedMap<Tag, JSONValue>
 
 /// Wire shape for `PublicGame`'s maps keyed by a `CardCode`-backed newtype whose
 /// `ToJSONKey` is `deriving newtype` from `CardCode` (`Arkham/Id.hs` unless noted):
