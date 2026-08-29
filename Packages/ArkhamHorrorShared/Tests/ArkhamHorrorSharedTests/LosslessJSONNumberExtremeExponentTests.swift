@@ -13,6 +13,20 @@ import Testing
 /// test in this section is simply that the operation *completes* (parses, hashes, compares,
 /// converts, or encodes) rather than crashing or attempting an astronomical allocation —
 /// most assertions on the *result* are secondary to that.
+/// Single source of truth for the environment-variable keys shared between each
+/// subprocess-guard call site below and its corresponding victim test. Duplicating these
+/// as independent string literals in two places was flagged as a producer/consumer drift
+/// risk: a typo in either copy would make the victim's `ProcessInfo` lookup silently miss,
+/// causing it to no-op (return immediately, "passing" trivially) while the parent still
+/// saw a healthy zero exit code and could wrongly report a genuine pass. (In addition to
+/// this shared-constant fix, `SubprocessDeadlineGuard` itself independently requires a
+/// completion-sentinel proof before treating any exit-0 child as a real pass, which also
+/// catches this same failure mode by construction, not merely by convention.)
+private enum QuadraticGuardVictimEnvironmentKey {
+    static let exponentZeroCount = "QUADRATIC_GUARD_EXPONENT_ZERO_COUNT"
+    static let coefficientZeroCount = "QUADRATIC_GUARD_COEFFICIENT_ZERO_COUNT"
+}
+
 @Suite("JSONNumber extreme-exponent losslessness")
 struct LosslessJSONNumberExtremeExponentTests {
     @Test("A tiny coefficient with a huge negative exponent parses without trapping")
@@ -178,11 +192,14 @@ struct LosslessJSONNumberExtremeExponentTests {
         // a second even accounting for process-launch overhead, while the old quadratic
         // loop at this size needs ~45-54s -- more than double the deadline below, with a
         // wide non-flaky margin on both sides.
-        try SubprocessDeadlineGuard.runFiltered(
+        let outcome = try SubprocessDeadlineGuard.runFiltered(
             victimFilter: "quadraticGuardVictimExponentParse",
-            additionalEnvironment: ["QUADRATIC_GUARD_EXPONENT_ZERO_COUNT": "200000"],
+            additionalEnvironment: [
+                QuadraticGuardVictimEnvironmentKey.exponentZeroCount: "200000",
+            ],
             deadlineSeconds: 20
         )
+        recordIfSkipped(outcome)
     }
 
     @Test("An all-zero exponent of many digits still normalizes to a plain zero exponent")
@@ -222,11 +239,14 @@ struct LosslessJSONNumberExtremeExponentTests {
         // quadratic `removeFirst()` loop scales with the *square* of the digit count and
         // would need well over a minute -- comfortably exceeding the deadline below by a
         // wide, non-flaky margin.
-        try SubprocessDeadlineGuard.runFiltered(
+        let outcome = try SubprocessDeadlineGuard.runFiltered(
             victimFilter: "quadraticGuardVictimCoefficientParse",
-            additionalEnvironment: ["QUADRATIC_GUARD_COEFFICIENT_ZERO_COUNT": "3000000"],
+            additionalEnvironment: [
+                QuadraticGuardVictimEnvironmentKey.coefficientZeroCount: "3000000",
+            ],
             deadlineSeconds: 20
         )
+        recordIfSkipped(outcome)
     }
 
     @Test("Zero and negative zero still normalize correctly after the coefficient-trim fix")
@@ -246,6 +266,30 @@ struct LosslessJSONNumberExtremeExponentTests {
         #expect(negativeZero == .integer(0))
     }
 
+    // MARK: - Round 8: honest handling of the Xcode bare-xctest host
+
+    /// Round 8 HIGH: under `xcodebuild test` against this package's auto-generated Xcode
+    /// scheme, the test host is Apple's classic bare `xctest` agent (`CommandLine.
+    /// arguments.count == 1`), which has no `--filter`-shaped argv for
+    /// `SubprocessDeadlineGuard` to replay into. Rather than either a false-slow "timed
+    /// out" report (appending `--filter` there is silently ignored, so the child would run
+    /// the whole bundle) or a silent no-op, an unsupported host is surfaced as a visible,
+    /// non-fatal `.warning`-severity issue -- the structural/semantic assertions above
+    /// (which do not depend on any subprocess) still ran and still had to pass regardless.
+    private func recordIfSkipped(_ outcome: SubprocessDeadlineGuardOutcome) {
+        guard case let .skippedUnsupportedHost(reason) = outcome else {
+            return
+        }
+        _ = Issue.record(
+            Comment(
+                rawValue: "SubprocessDeadlineGuard's subprocess mutation-detection layer " +
+                    "was skipped: \(reason). The structural/semantic assertions above " +
+                    "already ran in-process and still had to pass."
+            ),
+            severity: .warning
+        )
+    }
+
     // MARK: - Round 7: subprocess victims backing the deadline guards above
 
     // These two are never invoked directly by the full-suite run itself: swift-testing
@@ -253,12 +297,18 @@ struct LosslessJSONNumberExtremeExponentTests {
     // unless its corresponding environment variable is present, which only
     // `SubprocessDeadlineGuard.runFiltered` sets, and only in the dedicated child process it
     // launches. Their function names double as the `--filter` argument that isolates them
-    // from the rest of the suite in that child process, so each name must stay unique.
+    // from the rest of the suite in that child process, so each name must stay unique. Each
+    // calls `SubprocessDeadlineGuard.recordVictimCompletion()` as its very last step,
+    // strictly after its own assertions have already passed, so the parent can tell a
+    // genuine pass apart from a child that exited 0 without ever running this code (round 8
+    // LOW: a missing/mismatched trigger environment variable must not be silently treated
+    // as a pass).
 
     @Test("Quadratic-guard victim: exponent leading-zero parse (subprocess-only)")
     func quadraticGuardVictimExponentParse() throws {
         guard
-            let raw = ProcessInfo.processInfo.environment["QUADRATIC_GUARD_EXPONENT_ZERO_COUNT"],
+            let raw = ProcessInfo.processInfo
+            .environment[QuadraticGuardVictimEnvironmentKey.exponentZeroCount],
             let zeroCount = Int(raw)
         else {
             return
@@ -269,13 +319,14 @@ struct LosslessJSONNumberExtremeExponentTests {
         #expect(decoded.exponent.asInt == 1)
         let equivalent = try ContractJSON.decode(JSONNumber.self, from: Data("1e1".utf8))
         #expect(decoded == equivalent)
+        SubprocessDeadlineGuard.recordVictimCompletion()
     }
 
     @Test("Quadratic-guard victim: coefficient leading-zero parse (subprocess-only)")
     func quadraticGuardVictimCoefficientParse() throws {
         guard
             let raw = ProcessInfo.processInfo
-            .environment["QUADRATIC_GUARD_COEFFICIENT_ZERO_COUNT"],
+            .environment[QuadraticGuardVictimEnvironmentKey.coefficientZeroCount],
             let zeroCount = Int(raw)
         else {
             return
@@ -289,5 +340,6 @@ struct LosslessJSONNumberExtremeExponentTests {
         )
         #expect(decoded == equivalent)
         #expect(!decoded.isZero)
+        SubprocessDeadlineGuard.recordVictimCompletion()
     }
 }
