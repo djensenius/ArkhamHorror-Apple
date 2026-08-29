@@ -73,7 +73,13 @@ extension BoardSnapshotUpdate: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let tag = try container.decode(String.self, forKey: .tag)
         guard tag == "GameUpdate" else {
-            let rawContents = try container.decodeIfPresent(JSONValue.self, forKey: .contents)
+            // Distinguishes an absent `contents` key (`nil`) from an explicit
+            // `"contents": null` (`.some(.null)`): `decodeIfPresent(JSONValue.self, ...)`
+            // would collapse both to `nil`, losing exactly the raw-payload diagnostic
+            // this case exists to preserve.
+            let rawContents = container.contains(.contents)
+                ? try container.decode(JSONValue.self, forKey: .contents)
+                : nil
             self = .unsupportedMessage(tag: tag, rawContents: rawContents)
             return
         }

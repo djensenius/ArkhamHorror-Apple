@@ -104,6 +104,27 @@ struct BoardSnapshotAdversarialTests {
         #expect(rawContents == nil)
     }
 
+    @Test("An unsupported message's explicit null contents is preserved as .null, not absent")
+    func unsupportedMessageExplicitNullContentsIsPreserved() throws {
+        // An explicit "contents": null is a materially different wire shape from the
+        // key being entirely absent (see genuinelyUnknownServerMessageTagIsUnsupported
+        // above): the former must decode to .some(.null), never collapse to the same
+        // nil an absent key would produce.
+        let bytes = Data(#"{"tag": "GameError", "contents": null}"#.utf8)
+        let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
+        guard case let .unsupportedMessage(tag, rawContents) = update else {
+            Issue.record("Expected .unsupportedMessage")
+            return
+        }
+        #expect(tag == "GameError")
+        #expect(rawContents == .null)
+        // Round-trips: the encoded form must still carry an explicit "contents": null,
+        // not omit the key.
+        let reencoded = try ContractJSON.encode(update)
+        let json = try #require(String(data: reencoded, encoding: .utf8))
+        #expect(json.contains("\"contents\":null") || json.contains("\"contents\": null"))
+    }
+
     @Test("A malformed ServerMessage missing its tag entirely fails to decode")
     func missingTagFails() throws {
         let bytes = Data(#"{"contents": {}}"#.utf8)
