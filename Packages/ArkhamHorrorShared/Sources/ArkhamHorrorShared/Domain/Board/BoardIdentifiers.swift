@@ -78,8 +78,11 @@ extension CardCodeIdentifier: CodingKeyRepresentable {
         AnyCodingKey(stringValue: rawValue.rawValue)
     }
 
+    /// Delegates entirely to `CardCode`'s own `CodingKeyRepresentable` initializer (rather
+    /// than re-deriving validation here) so the governed, map-key-specific `cardCodeMapKey`
+    /// rules live in exactly one place.
     init?(codingKey: some CodingKey) {
-        guard let code = try? CardCode(codingKey.stringValue) else { return nil }
+        guard let code = CardCode(codingKey: codingKey) else { return nil }
         self.init(code)
     }
 }
@@ -89,16 +92,35 @@ extension CardCode: CodingKeyRepresentable {
         AnyCodingKey(stringValue: rawValue)
     }
 
-    /// Explicit `do`/`catch` (rather than a bare `try? self.init(...)` statement):
-    /// verified safe either way — `try?` around a delegating `self.init` call already
-    /// makes this initializer return `nil` on failure rather than leaving `self` partially
-    /// initialized (see `BoardIdentifiersTests.cardCodeCodingKeyRepresentableRejects
-    /// InvalidKeyWithoutTrapping`) — but spelling out the `nil` return explicitly leaves no
-    /// ambiguity for a reader (or another reviewer) about what happens on failure, and
-    /// matches ``Identifier``/``CardCodeIdentifier``'s own `guard`-based conformances above.
+    /// Validates against the governed `cardCodeMapKey` domain (`^c[0-9a-z:._-]+$`) —
+    /// strictly narrower than `CardCode.init(_:)`'s own general value-position validation
+    /// (`^c.+$` minus line terminators). The pinned schema documents that `CardCode`
+    /// itself (`Arkham/Card/CardCode.hs`) has no character-class constraint at the type
+    /// level and only ever prepends a literal `'c'`, but constrains *map keys*
+    /// specifically to this narrower pattern (matching every one of the 815 real card
+    /// codes in the backend's card data). A value position (for example a `cardCode`
+    /// field) must stay as permissive as `CardCode.init(_:)` already is, but a JSON
+    /// *object key* must not silently accept text outside that governed domain (for
+    /// example a tab or other control character `CardCode.init(_:)` alone would admit).
+    private static func isValidMapKeyText(_ raw: String) -> Bool {
+        guard raw.unicodeScalars.first == "c" else { return false }
+        let payload = raw.unicodeScalars.dropFirst()
+        guard !payload.isEmpty else { return false }
+        return payload.allSatisfy { scalar in
+            switch scalar {
+            case "0" ... "9", "a" ... "z", ":", ".", "_", "-":
+                true
+            default:
+                false
+            }
+        }
+    }
+
     init?(codingKey: some CodingKey) {
+        let raw = codingKey.stringValue
+        guard Self.isValidMapKeyText(raw) else { return nil }
         do {
-            try self.init(codingKey.stringValue)
+            try self.init(raw)
         } catch {
             return nil
         }

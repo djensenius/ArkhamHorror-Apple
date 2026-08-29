@@ -103,6 +103,40 @@ struct EntityMapFixtureTests {
         }
     }
 
+    @Test("A CardCode map key outside the governed cardCodeMapKey pattern fails to decode")
+    func cardCodeMapKeyOutsideGovernedPatternFails() throws {
+        // "c01\t020" is a *valid* CardCode value (CardCode.init(_:) only requires a "c"
+        // prefix plus at least one non-line-terminator scalar — see CardCodeTests), but
+        // the governed cardCodeMapKey pattern (^c[0-9a-z:._-]+$) is strictly narrower and
+        // does not permit a tab. A map *key* must enforce that narrower domain even
+        // though the identical text remains an accepted CardCode *value* elsewhere.
+        let bytes = Data("{\"c01\\t020\": {}}".utf8)
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(CardCodeEntityMap.self, from: bytes)
+        }
+        // The same text still decodes fine as an ordinary (non-map-key) CardCode value.
+        let value = try ContractJSON.decode(CardCode.self, from: Data("\"c01\\t020\"".utf8))
+        #expect(value.rawValue == "c01\t020")
+    }
+
+    @Test("Governed cardCodeMapKey punctuation (: . _ -) still decodes as a valid map key")
+    func cardCodeMapKeyGovernedPunctuationDecodes() throws {
+        let bytes = Data(#"{"c01:020._-1": {}}"#.utf8)
+        let map = try ContractJSON.decode(CardCodeEntityMap.self, from: bytes)
+        #expect(map.count == 1)
+    }
+
+    @Test("A CardCodeIdentifier-keyed map also enforces the governed cardCodeMapKey domain")
+    func cardCodeIdentifierKeyedMapEnforcesGovernedPattern() throws {
+        // InvestigatorID (a CardCodeIdentifier) delegates its CodingKeyRepresentable
+        // decoding to CardCode's own, so this same protection applies uniformly rather
+        // than only to the untyped CardCodeEntityMap.
+        let bytes = Data("{\"c01\\t020\": 1}".utf8)
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode([InvestigatorID: Int].self, from: bytes)
+        }
+    }
+
     @Test("An entity map round-trips through ContractJSON encode/decode, preserving keys")
     func entityMapRoundTrips() throws {
         let map = try ContractJSON.decode(
