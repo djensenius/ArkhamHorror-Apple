@@ -80,7 +80,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// actual written file there — and this type must not depend on
     /// ``AssetDiskCache``'s internals).
     var metadataOverheadBytes: Int {
-        let measuredMetadataBytes = (try? Self.encoderForAccounting.encode(self))?.count
+        let measuredMetadataBytes = (try? Self.makeEncoderForAccounting().encode(self))?.count
         return measuredMetadataBytes ?? Self.estimatedMetadataOverheadBytes
     }
 
@@ -91,12 +91,21 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// crashing or silently letting an entry bill zero metadata bytes.
     static let estimatedMetadataOverheadBytes = 512
 
-    /// A dedicated encoder instance (not shared with ``AssetDiskCache``'s
-    /// own file-private encoder) used only to measure this value's
-    /// serialized byte count for in-memory quota accounting.
-    private static let encoderForAccounting: JSONEncoder = {
+    /// A dedicated encoder configuration (not shared with
+    /// ``AssetDiskCache``'s own file-private encoder) used only to measure
+    /// this value's serialized byte count for in-memory quota accounting.
+    ///
+    /// Returns a fresh instance per call, rather than a shared singleton,
+    /// since `JSONEncoder` is not documented as thread-safe for concurrent
+    /// `encode` calls: `metadataOverheadBytes` above is a plain (non-actor-
+    /// isolated) computed property that could otherwise be evaluated
+    /// concurrently — e.g. from parallel tests, or multiple in-flight
+    /// ``CachedAsset`` constructions — and race on one shared encoder's
+    /// internal state. Constructing one is cheap (only setting a date
+    /// strategy), so this costs nothing meaningful per call.
+    private static func makeEncoderForAccounting() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return encoder
-    }()
+    }
 }

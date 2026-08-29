@@ -74,7 +74,7 @@ actor AssetDiskCache {
             return nil
         }
         guard let metadataData = try? Data(contentsOf: metadataURL),
-              var metadata = try? JSONDecoder.assetCache.decode(
+              var metadata = try? JSONDecoder.assetCache().decode(
                   AssetCacheMetadata.self,
                   from: metadataData
               )
@@ -330,25 +330,33 @@ actor AssetDiskCache {
     }
 
     private func persistMetadata(_ metadata: AssetCacheMetadata, to url: URL) throws {
-        let data = try JSONEncoder.assetCache.encode(metadata)
+        let data = try JSONEncoder.assetCache().encode(metadata)
         try atomicWrite(data, to: url)
     }
 }
 
 /// Not `private`: `AssetDiskCache+Recovery.swift` also decodes metadata
-/// sidecars with this exact decoder during startup recovery.
+/// sidecars with this exact configuration during startup recovery.
+///
+/// A fresh instance per call, rather than a shared singleton, since
+/// `JSONEncoder`/`JSONDecoder` are not documented as thread-safe for
+/// concurrent `encode`/`decode` calls: multiple `AssetDiskCache` actor
+/// instances (or concurrently running tests) could otherwise race on one
+/// shared encoder/decoder's internal state. Constructing one is cheap
+/// (only setting a date strategy), so this costs nothing meaningful per
+/// call.
 extension JSONEncoder {
-    static let assetCache: JSONEncoder = {
+    static func assetCache() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return encoder
-    }()
+    }
 }
 
 extension JSONDecoder {
-    static let assetCache: JSONDecoder = {
+    static func assetCache() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
-    }()
+    }
 }

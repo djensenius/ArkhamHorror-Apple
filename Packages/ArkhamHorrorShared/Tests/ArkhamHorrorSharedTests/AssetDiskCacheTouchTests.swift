@@ -55,7 +55,7 @@ extension AssetDiskCacheTests {
             // is not guaranteed to match `JSONEncoder`'s `.iso8601`
             // strategy's exact formatting across Foundation
             // versions/platforms.
-            let persistedMetadata = try JSONDecoder.assetCache.decode(
+            let persistedMetadata = try JSONDecoder.assetCache().decode(
                 AssetCacheMetadata.self,
                 from: Data(contentsOf: metadataURL)
             )

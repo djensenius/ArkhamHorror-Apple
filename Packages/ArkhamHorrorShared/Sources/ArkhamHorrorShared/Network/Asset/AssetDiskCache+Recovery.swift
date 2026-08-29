@@ -61,7 +61,7 @@ extension AssetDiskCache {
         for url in contents where url.lastPathComponent.hasSuffix(".meta.json") {
             let keyHash = String(url.lastPathComponent.dropLast(".meta.json".count))
             guard let data = try? Data(contentsOf: url),
-                  let metadata = try? JSONDecoder.assetCache.decode(
+                  let metadata = try? JSONDecoder.assetCache().decode(
                       AssetCacheMetadata.self,
                       from: data
                   ),
@@ -127,7 +127,7 @@ extension AssetDiskCache {
         for url in contents where url.lastPathComponent.hasSuffix(".meta.json") {
             let hash = String(url.lastPathComponent.dropLast(".meta.json".count))
             guard let data = try? Data(contentsOf: url),
-                  let metadata = try? JSONDecoder.assetCache.decode(
+                  let metadata = try? JSONDecoder.assetCache().decode(
                       AssetCacheMetadata.self,
                       from: data
                   )
