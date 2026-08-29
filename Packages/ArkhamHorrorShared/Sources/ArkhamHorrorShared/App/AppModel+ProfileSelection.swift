@@ -27,6 +27,35 @@ extension AppModel {
             operationFailure = .tokenStore(failure)
             return
         }
+        activateProfileSelection(profile)
+    }
+
+    /// Selects the canonical hosted profile after a *selected* custom profile's
+    /// removal, whose own cleanup reservation
+    /// (``AppModel/reserveCleanupInterruptingActiveAuth(for:)``) has *already*
+    /// interrupted any active sign-in/registration for it as part of that same
+    /// reservation.
+    ///
+    /// Must never call ``interruptActiveAuthOperationIfNeeded()`` (directly, or via
+    /// the public ``selectProfile(_:)``, which does): the profile just removed no
+    /// longer exists in ``profiles`` by the time this runs, and a second, independent
+    /// call to ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)`` for the same
+    /// profile ID would be not only redundant — that cleanup already durably
+    /// succeeded — but itself independently fallible; if *that* second, unnecessary
+    /// mark somehow failed, a caller checking its outcome would have to leave
+    /// already-persisted removed-profile metadata paired with a stuck, never
+    /// actually-interrupted auth operation. This performs only the same
+    /// persist-then-restart tail ``selectProfile(_:)`` itself uses.
+    func activateHostedProfileAfterRemoval() {
+        activateProfileSelection(.hosted)
+    }
+
+    /// The common tail of ``selectProfile(_:)`` and
+    /// ``activateHostedProfileAfterRemoval()``: cancels any superseded flow/operation
+    /// tasks, persists the new selection, and restarts the flow only once persistence
+    /// succeeds. Does not itself interrupt any active auth operation — every caller
+    /// must already have done so (or already know none exists) before calling this.
+    private func activateProfileSelection(_ profile: ServerProfile) {
         flowTask?.cancel()
         operationTask?.cancel()
         generation += 1

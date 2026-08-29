@@ -11,6 +11,24 @@ enum GatedTokenMutation: Hashable, Sendable {
     case deleteAll
 }
 
+/// A single, actor-serialized entry in ``GatedTokenStore``'s append-only event log:
+/// either a mutation call being *invoked* (before it suspends on the FIFO gate) or a
+/// mutation being *applied* (after the test resumes it and the durable in-memory
+/// state has actually been mutated).
+///
+/// Because every ``GatedTokenStore`` method runs on the actor, appends to the log
+/// happen in true call order regardless of how the test's own task happens to be
+/// scheduled — this is what lets a test assert an ordering relationship (e.g. "this
+/// save's `applied` entry precedes `deleteAll`'s `invoked` entry") from the log
+/// itself, after driving the whole scenario to completion, rather than from a
+/// same-instant snapshot taken at one arbitrary point during the run (which cannot
+/// distinguish "the racing call truly cannot have happened yet" from "the scheduler
+/// simply has not yet run it").
+enum GatedTokenStoreEvent: Equatable, Sendable {
+    case invoked(GatedTokenMutation)
+    case applied(GatedTokenMutation)
+}
+
 /// A ``TokenStore`` fake whose `save`/`deleteToken` calls each suspend on a FIFO queue
 /// of checked continuations until the test explicitly resumes them, ignoring outer task
 /// cancellation (as an injected dependency that does not itself observe cancellation
@@ -34,6 +52,7 @@ actor GatedTokenStore: TokenStore {
     private(set) var saveCallCount = 0
     private(set) var deleteCallCount = 0
     private(set) var deleteAllCallCount = 0
+    private var events: [GatedTokenStoreEvent] = []
 
     /// When `true`, `save`/`deleteToken` suspend a *second* time — after the durable
     /// mutation has already been applied to `tokens`, but before returning control to
@@ -56,26 +75,34 @@ actor GatedTokenStore: TokenStore {
 
     func save(_ token: String, for profileID: UUID) async throws {
         saveCallCount += 1
-        try await suspend(.save(token: token, profileID: profileID))
+        let mutation = GatedTokenMutation.save(token: token, profileID: profileID)
+        events.append(.invoked(mutation))
+        try await suspend(mutation)
         tokens[profileID] = token
+        events.append(.applied(mutation))
         if suspendAfterApply {
-            await suspendPostApply(.save(token: token, profileID: profileID))
+            await suspendPostApply(mutation)
         }
     }
 
     func deleteToken(for profileID: UUID) async throws {
         deleteCallCount += 1
-        try await suspend(.delete(profileID: profileID))
+        let mutation = GatedTokenMutation.delete(profileID: profileID)
+        events.append(.invoked(mutation))
+        try await suspend(mutation)
         tokens[profileID] = nil
+        events.append(.applied(mutation))
         if suspendAfterApply {
-            await suspendPostApply(.delete(profileID: profileID))
+            await suspendPostApply(mutation)
         }
     }
 
     func deleteAllTokens() async throws {
         deleteAllCallCount += 1
+        events.append(.invoked(.deleteAll))
         try await suspend(.deleteAll)
         tokens.removeAll()
+        events.append(.applied(.deleteAll))
         if suspendAfterApply {
             await suspendPostApply(.deleteAll)
         }
@@ -84,6 +111,12 @@ actor GatedTokenStore: TokenStore {
     /// The current storage snapshot, independent of any pending mutation.
     func snapshotTokens() -> [UUID: String] {
         tokens
+    }
+
+    /// The append-only log of every mutation call's `invoked`/`applied` events, in
+    /// true (actor-serialized) call order. See ``GatedTokenStoreEvent``.
+    func eventLog() -> [GatedTokenStoreEvent] {
+        events
     }
 
     private func suspend(_ mutation: GatedTokenMutation) async throws {

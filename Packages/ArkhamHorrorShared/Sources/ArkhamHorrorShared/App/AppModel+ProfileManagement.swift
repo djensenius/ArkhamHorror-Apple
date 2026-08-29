@@ -107,27 +107,26 @@ extension AppModel {
         ) else { return }
 
         let endpointChanged = !isSameEndpoint(profile, updated)
-        // For an endpoint-changing edit, the same durable mark-then-admit
-        // reservation an explicit auth cancellation uses
-        // (``enqueueCancellationCleanup(for:globalEpoch:)``) must succeed *before*
-        // anything else is mutated here: on a mark failure, the profile, its token,
-        // ``profileManagementOperation``/``profileManagementGeneration``, and the
-        // profile's credential epoch are all left exactly as they were, rather than
-        // half-applying the edit or leaving an in-flight save for this profile able
-        // to reach the Keychain under an epoch that was never actually invalidated.
-        // Only on success is the credential epoch invalidated — synchronously,
-        // immediately afterward, so every token-store operation for this profile
-        // already in flight (or enqueued but not yet run), captured under any epoch
-        // prior to this call, is guaranteed to observe a mismatch when its turn in
-        // the queue actually arrives.
+        // For an endpoint-changing edit, ``reserveCleanupInterruptingActiveAuth(for:)``
+        // must succeed *before* anything else is mutated here: on a mark failure, the
+        // profile, its token, ``profileManagementOperation``/``profileManagementGeneration``,
+        // the profile's credential epoch, and any active sign-in/registration for it
+        // are all left exactly as they were, rather than half-applying the edit or
+        // leaving an in-flight save for this profile able to reach the Keychain under
+        // an epoch that was never actually invalidated. Only on success are the
+        // credential epoch — and, if `profile` is exactly the one an active
+        // sign-in/registration currently names, that operation itself — invalidated
+        // synchronously, as part of that same reservation, so every token-store
+        // operation for this profile already in flight (or enqueued but not yet run),
+        // captured under any epoch prior to this call, is guaranteed to observe a
+        // mismatch when its turn in the queue actually arrives, and a stuck auth
+        // operation is never left running past the endpoint it was authenticating
+        // against.
         var cleanupTask: Task<TokenStoreFailure?, Never>?
         if endpointChanged {
-            switch enqueueCancellationCleanup(
-                for: profile.id, globalEpoch: currentGlobalCredentialEpoch()
-            ) {
+            switch reserveCleanupInterruptingActiveAuth(for: profile) {
             case let .reserved(task):
                 cleanupTask = task
-                invalidateCredentialEpoch(for: profile.id)
             case let .markFailed(failure):
                 profileManagementFailure = .tokenStore(failure)
                 return
@@ -204,19 +203,22 @@ extension AppModel {
         guard profileManagementOperation == .idle else { return }
         profileManagementFailure = nil
 
-        // The same durable mark-then-admit reservation used by an endpoint-changing
-        // edit (and by explicit auth cancellation) must succeed before anything else
-        // is mutated here — see the matching comment in
+        // ``reserveCleanupInterruptingActiveAuth(for:)`` must succeed before anything
+        // else is mutated here — see the matching comment in
         // ``updateCustomProfile(_:displayName:rawURL:)``. On a mark failure, the
-        // profile and its `profileManagementOperation`/`profileManagementGeneration`/
-        // credential epoch are all left exactly as they were.
+        // profile, its `profileManagementOperation`/`profileManagementGeneration`/
+        // credential epoch, and any active sign-in/registration for it are all left
+        // exactly as they were. On success, that same reservation both invalidates
+        // the profile's credential epoch and — if `profile` is exactly the one an
+        // active sign-in/registration currently names — interrupts that operation,
+        // so no second, independent reservation is ever needed (or attempted) after
+        // this profile's metadata is removed; see
+        // ``AppModel/activateHostedProfileAfterRemoval()`` below, used instead of the
+        // public ``selectProfile(_:)`` for exactly this reason.
         let cleanupTask: Task<TokenStoreFailure?, Never>
-        switch enqueueCancellationCleanup(
-            for: profile.id, globalEpoch: currentGlobalCredentialEpoch()
-        ) {
+        switch reserveCleanupInterruptingActiveAuth(for: profile) {
         case let .reserved(task):
             cleanupTask = task
-            invalidateCredentialEpoch(for: profile.id)
         case let .markFailed(failure):
             profileManagementFailure = .tokenStore(failure)
             return

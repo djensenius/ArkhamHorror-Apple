@@ -20,6 +20,11 @@ final class FakeTokenCleanupPendingStore: TokenCleanupPendingStore, @unchecked S
     private var pendingReadError: (any Error)?
     private var markError: (any Error)?
     private var clearError: (any Error)?
+    private var markPendingCallCount = 0
+    /// The 1-based ``markPending(_:)`` call number at which `markError` (once set)
+    /// actually starts being thrown; calls before it succeed normally. `1` (the
+    /// default) preserves every existing test's "fail immediately" behavior.
+    private var markErrorMinimumCallCount = 1
 
     init(ids: Set<UUID> = []) {
         self.ids = ids
@@ -37,7 +42,8 @@ final class FakeTokenCleanupPendingStore: TokenCleanupPendingStore, @unchecked S
     func markPending(_ profileID: UUID) throws {
         lock.lock()
         defer { lock.unlock() }
-        if let markError {
+        markPendingCallCount += 1
+        if let markError, markPendingCallCount >= markErrorMinimumCallCount {
             throw markError
         }
         ids.insert(profileID)
@@ -70,11 +76,16 @@ final class FakeTokenCleanupPendingStore: TokenCleanupPendingStore, @unchecked S
     }
 
     /// Scripts (or clears, when `nil`) the error thrown by a subsequent
-    /// ``markPending(_:)`` call.
-    func setMarkError(_ error: (any Error)?) {
+    /// ``markPending(_:)`` call. `fromCallCount` (default `1`) is the 1-based call
+    /// number at which the error actually starts being thrown; calls before it
+    /// succeed normally, so a test can prove a profile-management mutation's *first*
+    /// reservation succeeds while arming a failure for any (deliberately
+    /// never-issued) second one.
+    func setMarkError(_ error: (any Error)?, fromCallCount: Int = 1) {
         lock.lock()
         defer { lock.unlock() }
         markError = error
+        markErrorMinimumCallCount = fromCallCount
     }
 
     /// Scripts (or clears, when `nil`) the error thrown by a subsequent
@@ -90,6 +101,16 @@ final class FakeTokenCleanupPendingStore: TokenCleanupPendingStore, @unchecked S
         lock.lock()
         defer { lock.unlock() }
         return ids
+    }
+
+    /// The number of ``markPending(_:)`` calls made so far (successful or not), so a
+    /// test can prove a profile-management mutation never issues a second,
+    /// independent reservation for the same mutation after its first already
+    /// succeeded.
+    func markPendingCallCountSnapshot() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return markPendingCallCount
     }
 }
 

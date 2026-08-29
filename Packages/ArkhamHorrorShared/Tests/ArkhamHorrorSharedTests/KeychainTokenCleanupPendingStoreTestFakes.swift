@@ -143,3 +143,35 @@ struct CorruptAccountKeychainClient: KeychainClient {
         (errSecSuccess, ["not-a-uuid"])
     }
 }
+
+/// A client whose `copyMatchingAccounts` reports success with a caller-supplied, fixed
+/// list of raw account strings — regardless of whether any of them is the exact
+/// canonical `UUID.uuidString` spelling `markPending`/`clearPending` actually
+/// query/write by — to exercise ``KeychainTokenCleanupPendingStore/pendingProfileIDs()``'s
+/// requirement that every returned account round-trip exactly through
+/// `UUID(uuidString:)` and back, not merely parse.
+struct FixedAccountsKeychainClient: KeychainClient {
+    let accounts: [String]
+
+    func add(_: [String: Any]) -> OSStatus {
+        errSecSuccess
+    }
+
+    func update(_: [String: Any], with _: [String: Any]) -> OSStatus {
+        errSecSuccess
+    }
+
+    func delete(_: [String: Any]) -> OSStatus {
+        errSecSuccess
+    }
+
+    func copyData(matching _: [String: Any]) -> (status: OSStatus, data: Data?) {
+        (errSecItemNotFound, nil)
+    }
+
+    func copyMatchingAccounts(
+        matching _: [String: Any]
+    ) -> (status: OSStatus, accounts: [String]?) {
+        accounts.isEmpty ? (errSecItemNotFound, nil) : (errSecSuccess, accounts)
+    }
+}

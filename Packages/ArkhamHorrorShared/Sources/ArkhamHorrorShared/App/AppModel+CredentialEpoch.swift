@@ -235,6 +235,63 @@ extension AppModel {
         return .reserved(cleanupTask)
     }
 
+    /// Reserves a durable cleanup deletion for `profile.id` (see
+    /// ``enqueueCancellationCleanup(for:globalEpoch:)``) and, only if `profile` is
+    /// exactly the profile whose sign-in/registration is currently active, interrupts
+    /// that operation as part of the very *same* synchronous transaction — advancing
+    /// ``generation``, cancelling and releasing ``operationTask``, and resetting
+    /// ``operation``/``operationFailure`` — all before this call returns.
+    ///
+    /// Used by an endpoint-changing profile edit (``updateCustomProfile(_:displayName:rawURL:)``)
+    /// and by profile removal (``removeCustomProfile(_:)``) so that an active auth
+    /// operation for the profile being mutated is interrupted exactly once, atomically
+    /// with the very reservation that protects its token, rather than via a second,
+    /// independently fallible call to ``interruptActiveAuthOperationIfNeeded()`` after
+    /// metadata has already been mutated/persisted. A profile-management caller must
+    /// never call ``interruptActiveAuthOperationIfNeeded()`` (directly, or indirectly
+    /// through ``selectProfile(_:)``) again for the same mutation: doing so would
+    /// re-attempt `cleanupPendingStore.markPending` a second time for a profile ID
+    /// whose reservation already succeeded — a second fallible durable write with
+    /// nothing left to protect against, whose own, independent failure could leave
+    /// already-persisted metadata (a removed/edited profile) paired with a
+    /// still-active, never-interrupted auth operation and task.
+    ///
+    /// On a mark failure, nothing here is mutated at all — not ``generation``, not the
+    /// credential epoch, not `operation`/`operationTask` — exactly like
+    /// ``enqueueCancellationCleanup(for:globalEpoch:)`` alone; the caller must treat the
+    /// edit/removal it was attempting as not having safely started.
+    ///
+    /// A profile's credential epoch is invalidated on every successful reservation
+    /// (endpoint-changing edits and removals always need this, whether or not an auth
+    /// operation happens to be active for it right now, so a save already queued
+    /// behind this cleanup — for a profile with no in-flight sign-in at all — is still
+    /// rejected at its recheck). The *additional* auth-operation interruption below is
+    /// conditioned separately, only on `profile` being the one named by `sessionState`
+    /// while ``operation`` is ``SessionOperation/signingIn``/``SessionOperation/registering``,
+    /// exactly the same condition ``interruptActiveAuthOperationIfNeeded()`` itself
+    /// checks — this function performs the equivalent of that check and mutation
+    /// inline, using the *same* reservation, instead of issuing a second one.
+    @discardableResult
+    func reserveCleanupInterruptingActiveAuth(for profile: ServerProfile) -> CleanupReservation {
+        let reservation = enqueueCancellationCleanup(
+            for: profile.id, globalEpoch: currentGlobalCredentialEpoch()
+        )
+        guard case .reserved = reservation else { return reservation }
+        invalidateCredentialEpoch(for: profile.id)
+        guard case let .signedOut(activeProfile, _) = sessionState,
+              activeProfile.id == profile.id
+        else {
+            return reservation
+        }
+        guard operation == .signingIn || operation == .registering else { return reservation }
+        generation += 1
+        operationTask?.cancel()
+        operationTask = nil
+        operation = .idle
+        operationFailure = nil
+        return reservation
+    }
+
     /// Resolves any durable cleanup-pending tombstone for `profileID`, retrying the
     /// token deletion it records if necessary, before a caller trusts/reads an
     /// existing token or saves a new one for it. Returns a typed failure (leaving the

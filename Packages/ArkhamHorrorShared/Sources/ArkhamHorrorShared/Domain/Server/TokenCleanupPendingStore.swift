@@ -111,7 +111,21 @@ struct KeychainTokenCleanupPendingStore: TokenCleanupPendingStore {
             guard let accounts else { throw TokenCleanupPendingStoreError.corruptData }
             var ids = Set<UUID>()
             for account in accounts {
-                guard let uuid = UUID(uuidString: account) else {
+                // Every marker this store itself ever writes uses exactly
+                // `profileID.uuidString` (always canonical, upper-case, unbraced) as
+                // its account — see `markPending`/`baseQuery(for:)` — and `clearPending`
+                // and `resolvePendingCleanup` likewise only ever query/delete by that
+                // same canonical form. `UUID(uuidString:)` alone is not enough to
+                // guard that invariant: it happily accepts lower-case, mixed-case, or
+                // whitespace/brace-decorated spellings and silently re-canonicalizes
+                // them, which would let a raw account string that does *not* actually
+                // match what `clearPending`'s query looks for be reported as pending
+                // here, yet never actually be clearable — an un-clearable tombstone
+                // that permanently (and silently) blocks that profile's credential
+                // use. Requiring an exact round-trip match against the same
+                // `uuidString` representation fails closed on any such alternate
+                // spelling instead, exactly like an unparseable string.
+                guard let uuid = UUID(uuidString: account), uuid.uuidString == account else {
                     throw TokenCleanupPendingStoreError.corruptData
                 }
                 ids.insert(uuid)

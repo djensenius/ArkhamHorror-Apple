@@ -126,9 +126,15 @@ extension AppModel {
         profiles = updatedProfiles
 
         if selectedProfile.id == profile.id {
-            // Coherently fall back to hosted and restart the flow, exactly as an
-            // explicit user-initiated profile switch would.
-            selectProfile(.hosted)
+            // Any active sign-in/registration for this profile was already
+            // interrupted synchronously, as part of the same reservation that
+            // protected its token (``reserveCleanupInterruptingActiveAuth(for:)``, in
+            // ``removeCustomProfile(_:)``, before this async continuation ever ran) —
+            // this must not call the public ``selectProfile(_:)`` (which would attempt
+            // a second, independent, and now-redundant cleanup reservation for a
+            // profile ID whose metadata has already been persisted as removed), only
+            // its persist-then-restart tail.
+            activateHostedProfileAfterRemoval()
         }
     }
 

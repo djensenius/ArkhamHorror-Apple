@@ -7,10 +7,14 @@ import Testing
 
 @Suite("KeychainTokenCleanupPendingStore")
 struct KeychainTokenCleanupPendingStoreTests {
-    private let profileA = ServerProfile.hosted.id
-    private let profileB = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+    let profileA = ServerProfile.hosted.id
+    let profileB = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+    /// A UUID whose canonical spelling actually contains hex letters (`A`–`F`), unlike
+    /// `profileA`/`profileB` above, so a lower/mixed-case variant of it is a genuinely
+    /// different raw string rather than an accidental no-op transform.
+    let profileWithLetters = UUID(uuidString: "ABCDEF12-3456-7890-ABCD-EF1234567890")!
 
-    private func makeStore(
+    func makeStore(
         _ client: some KeychainClient,
         service: String = "test.arkhamhorror.cleanup-pending"
     ) -> KeychainTokenCleanupPendingStore {
@@ -176,6 +180,12 @@ struct KeychainTokenCleanupPendingStoreTests {
             _ = try store.pendingProfileIDs()
         }
     }
+
+    // MARK: - Account-spelling canonicalization
+
+    // See `KeychainTokenCleanupPendingStoreAccountValidationTests.swift` for coverage
+    // of non-canonical account spellings (lower/mixed-case, braced, whitespace-padded)
+    // — split out purely to stay within the type-body-length lint limit.
 
     // MARK: - Duplicate-item race
 

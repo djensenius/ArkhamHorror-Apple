@@ -24,6 +24,25 @@ extension AppModelTests {
         return model
     }
 
+    /// Asserts each of `mutations`' `.applied` events appear in `log` strictly before
+    /// `.invoked(.deleteAll)`, proving delete-all never ran concurrently with (or
+    /// ahead of) any of them — using the store's own append-only, actor-serialized
+    /// event log rather than a scheduler-timing-sensitive snapshot, so the proof holds
+    /// regardless of how many turns separated the calls in practice.
+    private func assertAppliedBeforeDeleteAll(
+        _ mutations: [GatedTokenMutation], in log: [GatedTokenStoreEvent]
+    ) {
+        let deleteAllInvokedIndex = log.firstIndex(of: .invoked(.deleteAll))
+        #expect(deleteAllInvokedIndex != nil)
+        for mutation in mutations {
+            let appliedIndex = log.firstIndex(of: .applied(mutation))
+            #expect(appliedIndex != nil)
+            if let appliedIndex, let deleteAllInvokedIndex {
+                #expect(appliedIndex < deleteAllInvokedIndex)
+            }
+        }
+    }
+
     @Test("A save already executing when a reset begins is fully awaited before delete-all runs")
     func saveAlreadyExecutingIsAwaitedBeforeDeleteAllRuns() async {
         let corruptKey = "ArkhamHorror.serverProfiles"
@@ -55,27 +74,19 @@ extension AppModelTests {
         store.setLoadProfilesError(nil)
         model.confirmStorageReset()
 
-        // The barrier snapshots and awaits every pre-existing per-profile queue tail
-        // — including this still-suspended save, the tail for `.hosted` — before its
-        // own `performStorageReset` ever calls `deleteAllTokens()`. This is not a
-        // race to win with a fixed number of yields: it is a structural guarantee, so
-        // it can be asserted immediately, with no settling delay at all — no matter
-        // how much the scheduler runs `model.profileManagementTask` forward, it
-        // cannot pass its own `await tail.value` for this still-gated save.
-        #expect(
-            await tokenStore.pendingMutations() ==
-                [.save(token: "in-flight-token", profileID: ServerProfile.hosted.id)]
-        )
-        #expect(await tokenStore.deleteAllCallCount == 0)
-
-        // Letting the in-flight save durably apply unblocks the barrier, which then
-        // (and only then) reaches `deleteAllTokens()`.
+        // Deliberately no assertion here that `deleteAllCallCount == 0`/that only the
+        // save is pending: that snapshot, taken at one arbitrary point while the
+        // barrier task may or may not have been scheduled yet, cannot distinguish "a
+        // broken implementation raced ahead but the scheduler simply has not run it
+        // yet" from "the ordering guarantee actually held" — it can only prove a
+        // negative it happened to observe, never the absence of a race across every
+        // possible interleaving. Instead, drive the whole scenario to completion and
+        // prove the ordering from `tokenStore`'s own append-only, actor-serialized
+        // event log below, which records every call in true call order regardless of
+        // how this test's task happens to be scheduled.
         await tokenStore.resumeOldest()
         await saveTask.value
         await tokenStore.waitUntilPending(1)
-        #expect(await tokenStore.pendingMutations() == [.deleteAll])
-        #expect(await tokenStore.deleteAllCallCount == 1)
-
         await tokenStore.resumeOldest()
         await model.profileManagementTask?.value
         // The barrier task itself only awaits `performStorageReset`, which spawns the
@@ -88,6 +99,16 @@ extension AppModelTests {
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
         #expect(model.profiles == [.hosted])
         #expect(await tokenStore.snapshotTokens().isEmpty)
+        #expect(await tokenStore.deleteAllCallCount == 1)
+
+        // The authoritative ordering proof: the in-flight save's `applied` event —
+        // recorded on the actor at the exact moment its durable mutation actually
+        // took effect — precedes `deleteAll`'s `invoked` event in the log, no matter
+        // how many (or how few) scheduler turns separated the two calls in practice.
+        let log = await tokenStore.eventLog()
+        assertAppliedBeforeDeleteAll(
+            [.save(token: "in-flight-token", profileID: ServerProfile.hosted.id)], in: log
+        )
     }
 
     @Test(
@@ -132,20 +153,17 @@ extension AppModelTests {
         store.setLoadProfilesError(nil)
         model.confirmStorageReset()
         // See the identical rationale in `saveAlreadyExecutingIsAwaitedBeforeDeleteAllRuns`:
-        // the barrier's own snapshot of pre-existing tails must include both of these
-        // still-suspended saves before it can ever call `deleteAllTokens()`, so
-        // neither being overtaken (nor delete-all being reached) is a structural
-        // guarantee assertable immediately, not a fixed-yield timing assumption.
-        #expect(await tokenStore.pendingMutations().count == 2)
-        #expect(await tokenStore.deleteAllCallCount == 0)
-
+        // an immediate snapshot here — even a "still only 2 pending, delete-all not
+        // yet called" one — cannot distinguish a genuinely-held ordering guarantee
+        // from a broken implementation whose race simply has not been scheduled yet.
+        // Drive the whole scenario to completion and prove the ordering from
+        // `tokenStore`'s own append-only, actor-serialized event log instead.
         await tokenStore.resumeOldest()
         await tokenStore.resumeOldest()
         await hostedTask.value
         await customTask.value
 
         await tokenStore.waitUntilPending(1)
-        #expect(await tokenStore.pendingMutations() == [.deleteAll])
         await tokenStore.resumeOldest()
         await model.profileManagementTask?.value
 
@@ -155,6 +173,18 @@ extension AppModelTests {
         // never an individual per-profile delete — to clean up either profile's token.
         #expect(await tokenStore.deleteCallCount == 0)
         #expect(await tokenStore.deleteAllCallCount == 1)
+
+        // The authoritative ordering proof: both saves' `applied` events precede
+        // `deleteAll`'s `invoked` event in the true call-order log, regardless of how
+        // many scheduler turns separated them in practice.
+        let log = await tokenStore.eventLog()
+        assertAppliedBeforeDeleteAll(
+            [
+                .save(token: "hosted-token", profileID: ServerProfile.hosted.id),
+                .save(token: "custom-token", profileID: sampleCustomProfile.id),
+            ],
+            in: log
+        )
     }
 
     @Test(
