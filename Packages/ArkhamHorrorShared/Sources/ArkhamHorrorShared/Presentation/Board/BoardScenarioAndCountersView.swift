@@ -85,15 +85,31 @@ struct BoardChaosBagView: View {
         ) {
             VStack(alignment: .leading, spacing: 6) {
                 BoardSectionHeading(title: "Chaos bag")
-                if chaosBag.poolCounts.isEmpty, chaosBag.revealedCounts.isEmpty {
+                if chaosBag.isEntirelyEmpty {
                     Text(BoardDisplayFormatting.unsupportedContentNotice)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
-                    faceCountsRow(chaosBag.poolCounts)
+                    if !chaosBag.poolCounts.isEmpty {
+                        faceCountsRow(chaosBag.poolCounts)
+                    }
                     if !chaosBag.revealedCounts.isEmpty {
                         Text("Revealed").font(.caption2).foregroundStyle(.secondary)
                         faceCountsRow(chaosBag.revealedCounts)
+                    }
+                    if !chaosBag.setAsideCounts.isEmpty {
+                        Text("Set aside").font(.caption2).foregroundStyle(.secondary)
+                        faceCountsRow(chaosBag.setAsideCounts)
+                    }
+                    if let forceDrawFace = chaosBag.forceDrawFace {
+                        Text("Forced draw: \(forceDrawFace.rawValue)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    if chaosBag.hasPendingChoice {
+                        Text("Pending chaos bag resolution")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

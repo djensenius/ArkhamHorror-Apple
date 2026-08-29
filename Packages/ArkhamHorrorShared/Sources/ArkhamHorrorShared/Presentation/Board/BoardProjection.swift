@@ -157,6 +157,15 @@ struct BoardChaosBagSummary: Sendable, Equatable {
     /// Whether an in-progress chaos-bag draw/resolution step exists. Deliberately not
     /// further detailed: `ChaosBag.choice`'s payload is broad and out of scope.
     let hasPendingChoice: Bool
+
+    /// Whether every field here carries no information at all: no pool/revealed/set-
+    /// aside tokens, no forced draw, and no pending choice. Used (instead of checking
+    /// `poolCounts`/`revealedCounts` alone) so a chaos bag that only has set-aside tokens,
+    /// a forced draw, or a pending choice is never misrepresented as unsupported/empty.
+    var isEntirelyEmpty: Bool {
+        poolCounts.isEmpty && revealedCounts.isEmpty && setAsideCounts.isEmpty
+            && forceDrawFace == nil && !hasPendingChoice
+    }
 }
 
 /// Scenario-wide entity counts for the entity kinds this contract slice leaves as broad

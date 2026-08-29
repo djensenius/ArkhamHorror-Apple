@@ -170,7 +170,7 @@ enum BoardAccessibility {
     }
 
     static func summary(chaosBag: BoardChaosBagSummary) -> String {
-        guard !chaosBag.poolCounts.isEmpty || !chaosBag.revealedCounts.isEmpty else {
+        guard !chaosBag.isEntirelyEmpty else {
             return "Chaos bag. \(BoardDisplayFormatting.unsupportedContentNotice)."
         }
         var parts = ["Chaos bag"]
@@ -179,6 +179,9 @@ enum BoardAccessibility {
         }
         if !chaosBag.revealedCounts.isEmpty {
             parts.append("Revealed: " + faceCountsSummary(chaosBag.revealedCounts))
+        }
+        if !chaosBag.setAsideCounts.isEmpty {
+            parts.append("Set aside: " + faceCountsSummary(chaosBag.setAsideCounts))
         }
         if let forceDrawFace = chaosBag.forceDrawFace {
             parts.append("Forced draw: \(forceDrawFace.rawValue)")

@@ -68,6 +68,22 @@ struct BoardCommandControllerTests {
         #expect(controller.inspectedID == BoardFocusID.scenarioHeader)
     }
 
+    @Test("A repeated inspect while an inspector is already open never stacks a second modal")
+    func repeatedInspectNeverStacksModal() {
+        let controller = BoardCommandController(projection: twoLocationProjection())
+        #expect(controller.handle(.command(.inspect)))
+        #expect(controller.coordinator.isModalPresented)
+        // Reports itself unconsumed: this second call must be a pure no-op, never a
+        // second nested `presentModal(entry:)` call.
+        #expect(!controller.handle(.command(.inspect)))
+        #expect(controller.coordinator.isModalPresented)
+        // A single close must fully dismiss the inspector — proving no second modal was
+        // ever stacked underneath it.
+        #expect(controller.handle(.command(.secondaryAction)))
+        #expect(!controller.coordinator.isModalPresented)
+        #expect(controller.inspectedID == nil)
+    }
+
     @Test("secondaryAction closes an open inspector and restores the prior focus")
     func secondaryActionClosesInspector() {
         let controller = BoardCommandController(projection: twoLocationProjection())

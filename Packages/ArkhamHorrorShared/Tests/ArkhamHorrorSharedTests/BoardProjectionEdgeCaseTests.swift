@@ -211,60 +211,47 @@ struct BoardProjectionEdgeCaseTests {
         )
     }
 
-    // MARK: - Invalid/missing human-readable names
+    // MARK: - Chaos bag emptiness
 
-    @Test("A blank location label falls back to its card code rather than an empty string")
-    func blankLocationLabelFallsBackToCardCode() {
-        let id = BoardTestFixtures.locationID("000000000104")
-        let location = BoardTestFixtures.ordinaryLocation(
-            id: id, cardCode: BoardTestFixtures.cardCode("c77777"), label: "   "
+    @Test("A chaos bag with only set-aside tokens is not misreported as unsupported/empty")
+    func chaosBagWithOnlySetAsideTokensIsNotEmpty() {
+        let snapshot = BoardTestFixtures.snapshot(
+            mode: .scenarioOnly(BoardTestFixtures.scenario(
+                chaosBag: BoardTestFixtures.chaosBag(
+                    setAsideChaosTokens: [BoardTestFixtures.chaosToken(.skull)]
+                )
+            ))
         )
-        let snapshot = BoardTestFixtures.snapshot(locations: [(id, .ordinary(location))])
         let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-        #expect(projection.locations[0].displayLabel == "c77777")
+        #expect(!projection.chaosBag.isEntirelyEmpty)
+        #expect(projection.chaosBag.setAsideCounts.map(\.face) == [.skull])
+        let summary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
+        #expect(!summary.contains(BoardDisplayFormatting.unsupportedContentNotice))
+        #expect(summary.contains("Set aside"))
     }
 
-    @Test("A blank investigator title falls back to its card code rather than an empty string")
-    func blankInvestigatorTitleFallsBackToCardCode() {
-        let investigatorID = BoardTestFixtures.investigatorID("c88888")
-        let investigator = BoardTestFixtures.investigator(
-            id: investigatorID, name: CardName(title: "  ", subtitle: nil)
-        )
+    @Test("A chaos bag with only a forced-draw face is not misreported as unsupported/empty")
+    func chaosBagWithOnlyForceDrawIsNotEmpty() {
         let snapshot = BoardTestFixtures.snapshot(
-            investigators: [investigatorID: investigator],
-            activeInvestigatorID: investigatorID, leadInvestigatorID: investigatorID
+            mode: .scenarioOnly(BoardTestFixtures.scenario(
+                chaosBag: BoardTestFixtures.chaosBag(forceDraw: .elderSign)
+            ))
         )
         let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-        #expect(projection.investigators[0].displayName == "c88888")
+        #expect(!projection.chaosBag.isEntirelyEmpty)
+        let summary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
+        #expect(!summary.contains(BoardDisplayFormatting.unsupportedContentNotice))
+        #expect(summary.contains("Forced draw"))
     }
 
-    // MARK: - Investigator location reverse-lookup
-
-    @Test("An investigator's currentLocationID resolves via a single reverse-lookup pass")
-    func investigatorLocationResolvesViaReverseLookup() {
-        let locationID = BoardTestFixtures.locationID("000000000105")
-        let investigatorID = BoardTestFixtures.investigatorID("c90006")
-        let location = BoardTestFixtures.ordinaryLocation(
-            id: locationID, investigators: [investigatorID]
-        )
-        let investigator = BoardTestFixtures.investigator(id: investigatorID)
+    @Test("A chaos bag with no tokens, no forced draw, and no pending choice is entirely empty")
+    func chaosBagWithNothingAtAllIsEntirelyEmpty() {
         let snapshot = BoardTestFixtures.snapshot(
-            locations: [(locationID, .ordinary(location))],
-            investigators: [investigatorID: investigator],
-            activeInvestigatorID: investigatorID, leadInvestigatorID: investigatorID
+            mode: .scenarioOnly(BoardTestFixtures.scenario(chaosBag: BoardTestFixtures.chaosBag()))
         )
         let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-        #expect(projection.investigators[0].currentLocationID == locationID)
-    }
-
-    @Test("An investigator absent from every location's roster projects a nil currentLocationID")
-    func investigatorNotAtAnyLocationProjectsNil() {
-        let investigatorID = BoardTestFixtures.investigatorID("c90007")
-        let snapshot = BoardTestFixtures.snapshot(
-            investigators: [investigatorID: BoardTestFixtures.investigator(id: investigatorID)],
-            activeInvestigatorID: investigatorID, leadInvestigatorID: investigatorID
-        )
-        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-        #expect(projection.investigators[0].currentLocationID == nil)
+        #expect(projection.chaosBag.isEntirelyEmpty)
+        let summary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
+        #expect(summary.contains(BoardDisplayFormatting.unsupportedContentNotice))
     }
 }

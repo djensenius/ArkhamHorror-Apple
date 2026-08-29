@@ -119,8 +119,16 @@ final class BoardCommandController {
     /// Presents the inspector for whatever is currently focused, reusing that same node
     /// as the modal's own focus entry (see ``FocusCoordinator/presentModal(entry:)``) so
     /// dismissal trivially restores focus to the entity that was already focused.
+    ///
+    /// A no-op (reported unconsumed) when an inspector is already presented: without this
+    /// guard, a repeated `.inspect`/`.primaryAction` would stack a second modal via
+    /// `presentModal(entry:)`, and a single subsequent close/back would then only pop the
+    /// innermost one — leaving `isModalPresented == true` with no inspector content
+    /// visible, and the board stuck disabled/`accessibilityHidden` behind it.
     private func openInspector() -> Bool {
-        guard let focused = coordinator.currentFocus else { return false }
+        guard !coordinator.isModalPresented, let focused = coordinator.currentFocus else {
+            return false
+        }
         inspectedID = focused
         coordinator.presentModal(entry: focused)
         return true
