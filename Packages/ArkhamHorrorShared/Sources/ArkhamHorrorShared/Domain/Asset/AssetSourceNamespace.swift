@@ -59,8 +59,9 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
     ///   `http` is used on anything other than the exact strict loopback
     ///   authorities `localhost`, a `127.0.0.0/8` dotted-quad, or `[::1]`
     ///   (see ``ServerProfile/assertStrictLoopbackAuthority(_:)``), the host
-    ///   is missing/empty, the port is out of range, or credentials/query/
-    ///   fragment are present.
+    ///   is missing/empty, the port is out of range, credentials/query/
+    ///   fragment are present, or the base path contains a dot-segment
+    ///   (`.` or `..`).
     init(rawAssetBase rawValue: String) throws {
         let withScheme = try Self.asInvalidAssetBase {
             try ServerProfile.withExplicitScheme(rawValue)
@@ -106,7 +107,7 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
             throw AssetError.invalidAssetBase
         }
         canonicalOrigin = origin
-        basePath = Self.normalizedPath(components.path)
+        basePath = try Self.normalizedPath(components.path)
     }
 
     /// Constructs from an already-parsed `URL` (for example a value read back
@@ -164,9 +165,19 @@ struct AssetSourceNamespace: Sendable, Equatable, Hashable {
     /// `/cdn//assets`) would build the identical request URL but fold into
     /// two different ``canonicalIdentity`` strings, silently duplicating
     /// disk cache entries for what is really the same namespace.
-    private static func normalizedPath(_ path: String) -> String {
+    ///
+    /// - Throws: ``AssetError/invalidAssetBase`` if any path segment is a
+    ///   dot-segment (`.` or `..`). Left unrejected, `..` would flow into
+    ///   `AssetCandidate.url(base:)`'s `appendingPathComponent` calls and
+    ///   could escape the intended base-path prefix entirely (for example
+    ///   `https://host/a/../img` resolving outside `/a`), in addition to
+    ///   creating another spelling for the same effective path.
+    private static func normalizedPath(_ path: String) throws -> String {
         let segments = path.split(separator: "/", omittingEmptySubsequences: true)
         guard !segments.isEmpty else { return "" }
+        guard segments.allSatisfy({ $0 != "." && $0 != ".." }) else {
+            throw AssetError.invalidAssetBase
+        }
         return "/" + segments.joined(separator: "/")
     }
 
