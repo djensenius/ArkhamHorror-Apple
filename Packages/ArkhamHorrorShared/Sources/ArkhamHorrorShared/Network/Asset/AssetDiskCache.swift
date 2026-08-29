@@ -52,6 +52,16 @@ actor AssetDiskCache {
     var didRecoverOrphans = false
     var accessSequenceAllocator = AssetAccessSequenceAllocator()
 
+    /// This actor's own independent half of the token compare-and-swap
+    /// described in `AssetCacheService+Epoch.swift` and mirrored by
+    /// ``AssetMemoryCache``'s identical `appliedToken`/`acceptedGeneration`
+    /// pair (see that type's doc comment for why this actor needs its own
+    /// copy rather than relying solely on `AssetCacheService`'s own
+    /// re-checks: actor call scheduling order is not guaranteed to match
+    /// issuance order).
+    var appliedToken: [AssetCacheKey: AssetCacheService.CacheToken] = [:]
+    var acceptedGeneration = 0
+
     init(directory: URL, limits: AssetCacheLimits, fileManager: FileManager = .default) throws {
         self.directory = directory
         self.limits = limits
@@ -81,6 +91,11 @@ actor AssetDiskCache {
     /// the caller passed in — this cache's own counter is always
     /// authoritative for order among the entries *it* persists.
     ///
+    /// `token`, when supplied, gates the entire write behind this actor's
+    /// own token compare-and-swap (see the type-level doc comment): a
+    /// silent no-op (nothing written, no temp file even created) if a
+    /// more-recently-issued token has already been applied for `key`.
+    ///
     /// Rejects a `metadata.payloadSHA256Hex` that is not exactly 64
     /// lowercase hex characters before it is ever used to build a
     /// filename, and independently recomputes the hash from `payload`
@@ -88,8 +103,16 @@ actor AssetDiskCache {
     /// addressed filenames are only a valid substitute for a full
     /// integrity check as long as the name always matches the bytes
     /// stored under it.
-    func set(_ key: AssetCacheKey, payload: Data, metadata: AssetCacheMetadata) throws {
+    func set(
+        _ key: AssetCacheKey,
+        payload: Data,
+        metadata: AssetCacheMetadata,
+        token: AssetCacheService.CacheToken? = nil
+    ) throws {
         recoverOrphansIfNeeded()
+        if let token, !acceptToken(token, for: key) {
+            return
+        }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
         }
@@ -131,29 +154,50 @@ actor AssetDiskCache {
             throw AssetError.cachePersistenceFailed(String(describing: error))
         }
 
-        // Step 2: commit the metadata pointer the exact same way. If this
-        // fails, the previous metadata (still pointing at its own,
-        // untouched, differently-named payload file) remains fully valid;
-        // roll back the payload just written above only if this call
-        // itself created it (never a payload a surviving prior metadata
-        // sidecar may still depend on), and likewise clean up any
-        // leftover metadata temp file immediately.
+        // Step 2: commit the metadata pointer. The rename and the
+        // subsequent directory `fsync` are deliberately two separately
+        // -throwing calls (not the composite ``renameAndFsyncDirectory``
+        // helper other call sites use), because this call site's failure
+        // handling *must* distinguish them: if the rename itself never
+        // took effect (or the write/encode before it failed), the
+        // previous metadata sidecar (still pointing at its own, untouched,
+        // differently-named payload file) remains fully valid, and the
+        // payload just written above -- not yet referenced by anything --
+        // is safe to roll back. But if the rename *succeeded* and only the
+        // following directory `fsync` failed, the metadata pointer has
+        // already, currently, actually been switched to reference the new
+        // payload -- in this running process, independent of any future
+        // crash -- so deleting that payload here (as an unconditional
+        // "the commit failed, undo it" rollback would) would immediately
+        // break a reference that is already live, not merely leave a
+        // future crash free to resurrect stale state. In that case this
+        // still throws (the caller must know durability was not
+        // confirmed), but never deletes the payload; at worst, a real
+        // crash before a later `fsync` reverts the rename at the
+        // filesystem level, which the next startup's orphan sweep already
+        // tolerates by design (the payload simply becomes an unreferenced
+        // orphan, never a dangling reference).
         var stamped = metadata
         stamped.accessSequence = accessSequenceAllocator.allocate()
         let metadataName = metadataFilename(for: key)
+        let metadataTempName = metadataName + ".tmp"
         do {
             let data = try JSONEncoder.assetCache().encode(stamped)
-            try secureDirectory.writeTempAndFsync(tempName: metadataName + ".tmp", data: data)
-            try secureDirectory.renameAndFsyncDirectory(
-                from: metadataName + ".tmp",
-                to: metadataName
-            )
+            try secureDirectory.writeTempAndFsync(tempName: metadataTempName, data: data)
+            try secureDirectory.rename(from: metadataTempName, to: metadataName)
         } catch {
-            _ = try? secureDirectory.remove(name: metadataName + ".tmp")
+            _ = try? secureDirectory.remove(name: metadataTempName)
             if !payloadAlreadyExisted {
                 _ = try? secureDirectory.remove(name: payloadName)
             }
             throw AssetError.cachePersistenceFailed(String(describing: error))
+        }
+        do {
+            try secureDirectory.fsyncRootDirectory()
+        } catch {
+            throw AssetError.cachePersistenceFailed(
+                "metadata pointer committed but its directory fsync failed: \(error)"
+            )
         }
 
         // Step 3: only now that the new generation is durably referenced,
@@ -171,9 +215,17 @@ actor AssetDiskCache {
     /// revalidation), without re-writing the unchanged payload file.
     /// Throws if no payload currently exists on disk matching
     /// `metadata.payloadSHA256Hex`, so this can never create an orphaned
-    /// metadata-only entry.
-    func touch(_ key: AssetCacheKey, metadata: AssetCacheMetadata) throws {
+    /// metadata-only entry. `token`, when supplied, gates this the same
+    /// way as ``set(_:payload:metadata:token:)``.
+    func touch(
+        _ key: AssetCacheKey,
+        metadata: AssetCacheMetadata,
+        token: AssetCacheService.CacheToken? = nil
+    ) throws {
         recoverOrphansIfNeeded()
+        if let token, !acceptToken(token, for: key) {
+            return
+        }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
         }
@@ -199,92 +251,6 @@ actor AssetDiskCache {
         }
     }
 
-    /// Removes `key`'s metadata pointer (so it can never again be served
-    /// by ``get(_:)``, regardless of whether any payload generation's
-    /// bytes are still physically present on disk afterward), then
-    /// best-effort sweeps every payload generation for it. Throws only if
-    /// the metadata pointer itself could not be removed — that is the one
-    /// failure the caller must react to (by tombstoning the key), since a
-    /// leftover *payload* file with no metadata pointer referencing it can
-    /// never be served by `get(_:)` and is simply reclaimed by the next
-    /// orphan sweep.
-    func remove(_ key: AssetCacheKey) throws {
-        recoverOrphansIfNeeded()
-        _ = try secureDirectory.remove(name: metadataFilename(for: key))
-        try secureDirectory.fsyncRootDirectory()
-        cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
-    }
-
-    /// Removes every entry currently in the cache directory. Never deletes
-    /// and recreates the directory itself (which would silently detach
-    /// this cache's already-held root descriptor from the visible
-    /// filesystem namespace, making every subsequent write invisible and
-    /// unreclaimable until process exit) — instead unlinks each entry name
-    /// individually. Collects (rather than stopping at) the first failure,
-    /// so one unremovable entry can never mask every other entry that
-    /// could be removed; throws a single aggregated failure if any
-    /// removal failed, so the caller can still tombstone accordingly.
-    ///
-    /// A failure to even list the directory is itself surfaced (never
-    /// swallowed into an empty list): treating a transient listing I/O
-    /// error as "the cache is already empty" would let this method report
-    /// success — and let a caller clear its own in-memory bookkeeping —
-    /// while every actual entry remains fully present and servable on
-    /// disk, breaking the "clear the cache" contract silently.
-    func removeAll() throws {
-        recoverOrphansIfNeeded()
-        let names = try secureDirectory.listNames()
-        var failureCount = 0
-        for name in names {
-            do {
-                _ = try secureDirectory.remove(name: name)
-            } catch {
-                failureCount += 1
-            }
-        }
-        try? secureDirectory.fsyncRootDirectory()
-        guard failureCount == 0 else {
-            throw AssetError.cachePersistenceFailed(
-                "\(failureCount) cache entries could not be removed"
-            )
-        }
-    }
-
-    /// The key hash embedded in every entry name currently present in the
-    /// cache directory (metadata sidecars and payload generations alike),
-    /// as a raw directory listing — deliberately cheaper than
-    /// ``entries()``, which additionally reads and JSON-decodes every
-    /// metadata sidecar: a caller that only needs "which keys have
-    /// *something* on disk right now" (``AssetCacheService/evictAll()``'s
-    /// conservative tombstone snapshot) has no need to pay that cost, and
-    /// benefits from including even a corrupt/undecodable sidecar's key
-    /// hash, which `entries()` would silently omit.
-    ///
-    /// Throws (rather than degrading to an empty result) if the directory
-    /// cannot even be listed, so a caller can distinguish "the cache is
-    /// genuinely empty" from "disk state could not be determined" — never
-    /// silently treating the latter as the former.
-    func entryKeyHashes() throws -> Set<String> {
-        let names = try secureDirectory.listNames()
-        var hashes: Set<String> = []
-        for name in names {
-            if name.hasSuffix(".meta.json") {
-                hashes.insert(String(name.dropLast(".meta.json".count)))
-            } else if name.hasSuffix(".bin"), let dotIndex = name.firstIndex(of: ".") {
-                hashes.insert(String(name[name.startIndex ..< dotIndex]))
-            }
-        }
-        return hashes
-    }
-
-    /// Total accounted bytes (payload + exact on-disk metadata size) across
-    /// every currently valid entry. Used only by tests to assert exact
-    /// quota accounting; production eviction re-derives this from disk
-    /// directly so it never drifts from what is actually persisted.
-    func totalAccountedBytes() -> Int {
-        entries().reduce(0) { $0 + Self.accountedBytes(for: $1) }
-    }
-
     // MARK: - Names
 
     /// The filename for `key`'s payload under `contentHash` — the caller
@@ -302,6 +268,29 @@ actor AssetDiskCache {
 
     func metadataFilename(for key: AssetCacheKey) -> String {
         "\(key.digestHex).meta.json"
+    }
+
+    /// The compare half of this actor's own token CAS: accepts `token`
+    /// only if its generation is not older than the generation this actor
+    /// currently accepts writes under, and it is strictly newer than
+    /// whatever token this actor last recorded as applied for `key` (a
+    /// `nil` prior value always accepts). Records `token` as the new
+    /// applied value on acceptance so a subsequent, older-issued token for
+    /// the same key can never later overwrite it. Mirrors
+    /// ``AssetMemoryCache``'s identical private helper of the same name.
+    /// Not `private`: also called from `AssetDiskCache+Removal.swift`'s
+    /// `remove(_:token:)`/`removeAll()`, in the same file-length budget
+    /// as this type.
+    func acceptToken(
+        _ token: AssetCacheService.CacheToken,
+        for key: AssetCacheKey
+    ) -> Bool {
+        guard token.generation >= acceptedGeneration else { return false }
+        if let applied = appliedToken[key], applied >= token {
+            return false
+        }
+        appliedToken[key] = token
+        return true
     }
 
     /// Removes an entry that has failed integrity validation on read: its

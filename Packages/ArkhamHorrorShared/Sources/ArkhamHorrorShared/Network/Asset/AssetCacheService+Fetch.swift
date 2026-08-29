@@ -9,17 +9,16 @@ import Foundation
 extension AssetCacheService {
     /// Walks `candidates` in order against the network, advancing only on
     /// an exact 404, validating and persisting the first successful
-    /// response. Re-checks cancellation *and* `epoch` immediately before
+    /// response. Re-checks cancellation *and* `token` immediately before
     /// publishing so a last-waiter cancellation, or a concurrent
-    /// authoritative mutation (an `evictAll()`, or another operation for
-    /// the same key that already completed) racing with a
-    /// just-completed network read, never results in a published,
-    /// now-stale entry.
+    /// authoritative mutation (an `evictAll()`, or a more-recently-issued
+    /// operation for the same key), racing with a just-completed network
+    /// read, never results in a published, now-stale entry.
     func fetchAndValidate(
         key: AssetKey,
         cacheKey: AssetCacheKey,
         candidates: [AssetCandidate],
-        epoch: CacheEpoch
+        token: CacheToken
     ) async throws -> CachedAsset {
         for candidate in candidates {
             try Task.checkCancellation()
@@ -39,7 +38,7 @@ extension AssetCacheService {
                     candidate: candidate,
                     url: url,
                     cacheKey: cacheKey,
-                    epoch: epoch,
+                    token: token,
                     response: response
                 )
             }
@@ -54,7 +53,7 @@ extension AssetCacheService {
         candidate: AssetCandidate,
         url: URL,
         cacheKey: AssetCacheKey,
-        epoch: CacheEpoch,
+        token: CacheToken,
         response: AssetHTTPResponse
     ) async throws -> CachedAsset {
         let validated = try AssetImageValidator.validate(
@@ -74,7 +73,7 @@ extension AssetCacheService {
             throw AssetError.malformedImageData
         }
         try Task.checkCancellation()
-        guard isCurrentEpoch(epoch, for: cacheKey) else {
+        guard isAuthoritative(token, for: cacheKey) else {
             throw AssetError.staleOperation
         }
         let asset = CachedAsset(
@@ -94,11 +93,10 @@ extension AssetCacheService {
             )
         )
         try Task.checkCancellation()
-        guard isCurrentEpoch(epoch, for: cacheKey) else {
+        guard isAuthoritative(token, for: cacheKey) else {
             throw AssetError.staleOperation
         }
-        bumpKeyEpoch(cacheKey)
-        await publish(cacheKey, asset: asset)
+        await publish(cacheKey, asset: asset, token: token)
         return asset
     }
 

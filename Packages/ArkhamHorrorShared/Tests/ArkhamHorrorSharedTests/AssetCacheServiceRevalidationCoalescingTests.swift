@@ -214,6 +214,86 @@ extension AssetCacheServiceTests {
 
     @Test(
         """
+        An older-issued revalidation that completes and would-be-publish \
+        *before* a newer-issued one (still in flight) does not win: \
+        authority is fixed by issuance order, not completion order, so the \
+        newer-issued operation remains sole publish authority even though \
+        it finishes later
+        """
+    )
+    func olderIssuedFastCompletionCannotOutrankNewerIssuedStillInFlight() async throws {
+        try await withScratchDirectory { directory in
+            let layers = try makeService(directory: directory, limits: standardLimits())
+            let memoryCache = layers.memoryCache
+            let diskCache = layers.diskCache
+            let transport = layers.transport
+            let service = layers.service
+
+            let key = try cardArtKey()
+            let urls = candidateURLs(for: key)
+            let cacheKey = AssetCacheKey(
+                for: key,
+                candidates: AssetLocator.candidates(for: key, digest: FakeDigestLookup())
+            )
+            await transport.enqueue(.success(successResult(etag: "\"v1\"")), for: urls[0])
+            let initial = try await service.asset(for: key)
+
+            let olderBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+            let newerBody = AssetImageFixtureBuilder.validAVIF(width: 8, height: 8)
+            // Op A (etag "v1", issued first) gets a short delay -- just
+            // long enough that it is still in flight (has dequeued its
+            // response and registered its call, but has not yet finished
+            // validating/checking authority) when op B (etag "v2", issued
+            // second) is started -- but resolves and completes its own
+            // pipeline well *before* op B's much longer delay elapses.
+            // This is the *inverse* of ``oldDelayed200CannotOverwriteANewer200``
+            // above: here the *older*-issued operation is the one that
+            // completes first. Under the old completion-ordered epoch
+            // design, A's completion would have bumped the epoch first
+            // (nothing else had bumped it yet), and B -- having captured
+            // its starting epoch *before* that bump -- would then find its
+            // own, later completion looks stale and be wrongly rejected.
+            // Under the issuance-ordered token design, B's issuance alone
+            // (recorded synchronously at B's start, before any network
+            // round trip) already supersedes A the moment it happens,
+            // regardless of which one's network response returns first.
+            await transport.enqueue(
+                .success(successResult(body: olderBody, etag: "\"v1-refreshed\"")),
+                for: urls[0],
+                delayNanoseconds: 20_000_000
+            )
+            await transport.enqueue(
+                .success(successResult(body: newerBody, etag: "\"v2-refreshed\"")),
+                for: urls[0],
+                delayNanoseconds: 300_000_000
+            )
+
+            let taskA = Task { try await service.revalidate(for: key) }
+            await transport.waitForCallCount(2, for: urls[0])
+
+            let bumped = withSubstitutedETag(initial, etag: "\"v2\"")
+            await memoryCache.set(cacheKey, asset: bumped)
+
+            let taskB = Task { try await service.revalidate(for: key) }
+
+            await #expect(throws: AssetError.staleOperation) {
+                _ = try await taskA.value
+            }
+            let resultB = try await taskB.value
+            #expect(resultB.payload == newerBody)
+
+            // Op A's fast-but-older response must never have been
+            // published at all -- not even transiently -- and op B's
+            // slower-but-newer response is what both cache layers hold.
+            let memoryAfter = await memoryCache.get(cacheKey)
+            #expect(memoryAfter?.payload == newerBody)
+            let diskAfter = await diskCache.get(cacheKey)
+            #expect(diskAfter?.payload == newerBody)
+        }
+    }
+
+    @Test(
+        """
         Cancelling the sole waiter of a revalidation stops the fetch and leaves the previously \
         cached entry untouched; a subsequent revalidate(for:) starts entirely fresh work
         """

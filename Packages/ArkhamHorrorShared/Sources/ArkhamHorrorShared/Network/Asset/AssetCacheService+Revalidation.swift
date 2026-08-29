@@ -36,12 +36,13 @@ extension AssetCacheService {
         _ cached: CachedAsset,
         key: AssetKey,
         cacheKey: AssetCacheKey,
-        candidates: [AssetCandidate]
+        candidates: [AssetCandidate],
+        token: CacheToken
     ) async throws -> CachedAsset? {
         guard let candidate = candidates.first(where: {
             $0.url(base: key.source).absoluteString == cached.metadata.resolvedURLString
         }) else {
-            await invalidate(cacheKey)
+            await invalidate(cacheKey, token: token)
             return nil
         }
         do {
@@ -65,7 +66,7 @@ extension AssetCacheService {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            await invalidate(cacheKey)
+            await invalidate(cacheKey, token: token)
             return nil
         }
     }
@@ -115,17 +116,26 @@ extension AssetCacheService {
         // conditional request until it has passed the exact same current
         // format/magic-byte/dimension/limits/decode validation as a disk
         // *hit* in ``asset(for:)`` (see
-        // ``revalidateDiskHit(_:key:cacheKey:candidates:)``): without
-        // this, a persisted wrong-format, oversized, undecodable, or
-        // stale-limits body could be silently "touched" (its
+        // ``revalidateDiskHit(_:key:cacheKey:candidates:token:)``):
+        // without this, a persisted wrong-format, oversized, undecodable,
+        // or stale-limits body could be silently "touched" (its
         // `accessSequence` refreshed) or re-cached in memory the moment
         // the server happens to answer with 304, never re-validated
-        // against this process's current contract at all.
+        // against this process's current contract at all. Issues a fresh
+        // token for this exact disk-hit-revalidation attempt, exactly
+        // like ``asset(for:)``'s own disk-hit branch, so the suspension
+        // inside `revalidateDiskHit` (a full platform decode) is itself
+        // gated: a concurrent `evictAll()` or a more-recently-issued
+        // operation for this key that already concluded while that
+        // decode was running can never be resurrected by caching this now-
+        // stale read into memory.
+        let token = issueToken(for: cacheKey)
         guard let validated = try await revalidateDiskHit(
             onDisk,
             key: key,
             cacheKey: cacheKey,
-            candidates: candidates
+            candidates: candidates,
+            token: token
         ) else {
             // Already quarantined by `revalidateDiskHit`: there is no
             // longer any valid basis for a *conditional* request, so fall
@@ -134,7 +144,9 @@ extension AssetCacheService {
             // risking a 304 paired with content nobody has validated.
             return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
         }
-        await memoryCache.set(cacheKey, asset: validated)
+        if isAuthoritative(token, for: cacheKey) {
+            await memoryCache.set(cacheKey, asset: validated, token: token)
+        }
         return try await revalidateExisting(
             validated,
             key: key,
@@ -207,7 +219,7 @@ extension AssetCacheService {
         if let current = inFlightRevalidation[slot] {
             return current.id
         }
-        let startEpoch = currentEpoch(for: cacheKey)
+        let token = issueToken(for: cacheKey)
         let revalidationRequest = RevalidationRequest(
             cacheKey: cacheKey,
             url: url,
@@ -215,7 +227,7 @@ extension AssetCacheService {
             existing: existing,
             etag: slot.etag,
             lastModified: slot.lastModified,
-            startEpoch: startEpoch
+            token: token
         )
         let newTask = Task { [weak self] in
             guard let self else { throw CancellationError() }

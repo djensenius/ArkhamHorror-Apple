@@ -21,6 +21,8 @@ final class FaultInjectionState: @unchecked Sendable {
     private var _failRemovePrefixes: Set<String> = []
     private var _listNamesFailuresRemaining = 0
     private var _listNamesCallCount = 0
+    private var _failFsyncAfterRenameSuffixes: Set<String> = []
+    private var _lastRenamedFinalName: String?
 
     var failSuffixes: Set<String> {
         get { lock.withLock { _failSuffixes } }
@@ -49,6 +51,18 @@ final class FaultInjectionState: @unchecked Sendable {
 
     var listNamesCallCount: Int {
         lock.withLock { _listNamesCallCount }
+    }
+
+    /// Matched against the *final* name most recently passed to
+    /// ``SecureCacheDirectory/rename(from:to:)`` — lets a test fail only
+    /// the directory `fsync` that immediately follows a *specific*
+    /// rename (e.g. the metadata pointer's, but not the payload
+    /// generation's), reproducing exactly "the rename itself already
+    /// succeeded, but confirming its durability did not" without also
+    /// perturbing unrelated renames earlier in the same call.
+    var failFsyncAfterRenameSuffixes: Set<String> {
+        get { lock.withLock { _failFsyncAfterRenameSuffixes } }
+        set { lock.withLock { _failFsyncAfterRenameSuffixes = newValue } }
     }
 
     /// `tempName` is always `.tmp`-suffixed (see
@@ -84,6 +98,23 @@ final class FaultInjectionState: @unchecked Sendable {
         }
         guard !shouldFail else {
             throw AssetError.cachePersistenceFailed("injected fault: listNames")
+        }
+    }
+
+    /// Records the final name of a rename that just succeeded, for
+    /// attribution by the *next* ``shouldFailNextDirectoryFsync()`` call
+    /// only — cleared unconditionally by that call (whether or not it
+    /// actually injects a failure) so a later, unrelated `fsync` can never
+    /// be mistakenly attributed to a stale prior rename.
+    func recordRename(finalName: String) {
+        lock.withLock { _lastRenamedFinalName = finalName }
+    }
+
+    func shouldFailNextDirectoryFsync() -> Bool {
+        lock.withLock {
+            defer { _lastRenamedFinalName = nil }
+            guard let name = _lastRenamedFinalName else { return false }
+            return _failFsyncAfterRenameSuffixes.contains { name.hasSuffix($0) }
         }
     }
 }

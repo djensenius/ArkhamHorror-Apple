@@ -47,6 +47,6 @@ extension AssetCacheService {
         let existing: CachedAsset
         let etag: String?
         let lastModified: String?
-        let startEpoch: CacheEpoch
+        let token: CacheToken
     }
 }

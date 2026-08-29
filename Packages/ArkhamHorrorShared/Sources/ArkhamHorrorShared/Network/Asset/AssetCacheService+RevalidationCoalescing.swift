@@ -88,19 +88,23 @@ extension AssetCacheService {
     }
 
     /// Performs the actual conditional network round trip and every
-    /// cache-mutating outcome, gated by `request.startEpoch` — a 404, a
+    /// cache-mutating outcome, gated by `request.token` — a 404, a
     /// 304, and a fresh 200 are all checked identically (see
     /// `AssetCacheService+Epoch.swift`'s doc comment for why an
     /// unconditionally-authoritative 404 is itself a hazard: a *stale*
     /// 404, completing after a newer request already published fresh
     /// content for this exact key, must not evict it). Each branch
-    /// re-checks ``AssetCacheService/isCurrentEpoch(_:for:)`` immediately
-    /// before its own mutation and bumps this key's epoch immediately
-    /// after — never touching or reinserting captured bytes/metadata if a
-    /// more authoritative completion (this same check, from a different
-    /// overlapping revalidation, fetch, or `evictAll()`) already moved the
-    /// epoch forward while this round trip — including the network wait
-    /// *and* the validate/decode work for a 200 — was in progress.
+    /// re-checks ``AssetCacheService/isAuthoritative(_:for:)`` immediately
+    /// before its own mutation — never touching or reinserting captured
+    /// bytes/metadata if a more-recently-issued operation for this exact
+    /// key (a different overlapping revalidation, a fetch, or
+    /// `evictAll()`) has already been issued while this round trip —
+    /// including the network wait *and* the validate/decode work for a
+    /// 200 — was in progress. Unlike the old completion-ordered epoch
+    /// design, there is no "bump on completion" step here: authority is
+    /// fixed once, at issuance (see ``AssetCacheService/issueToken(for:)``),
+    /// so an older-issued operation that happens to complete first can
+    /// never win against a newer-issued one that is still in flight.
     func performRevalidation(_ request: RevalidationRequest) async throws -> CachedAsset {
         let cacheKey = request.cacheKey
         let httpRequest = AssetHTTPRequest(
@@ -111,8 +115,8 @@ extension AssetCacheService {
         let result = try await transport.fetch(httpRequest, limits: limits)
         switch result {
         case .notModified:
-            // An epoch mismatch here means this specific operation was
-            // superseded by a more authoritative completion racing it (a
+            // A lost-authority result here means this specific operation
+            // was superseded by a more-recently-issued one racing it (a
             // newer fetch/revalidation, or `evictAll()`) — a staleness
             // race, never a claim that the *conditional-response
             // protocol itself* was violated (that is
@@ -122,20 +126,19 @@ extension AssetCacheService {
             // preconditions). Using the same error for both would make it
             // impossible for a caller/test to tell a normal staleness
             // race apart from a genuine protocol violation.
-            guard isCurrentEpoch(request.startEpoch, for: cacheKey) else {
+            guard isAuthoritative(request.token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
             var refreshed = request.existing
             refreshed.metadata.accessSequence = AssetAccessSequence(0)
-            bumpKeyEpoch(cacheKey)
-            await touch(cacheKey, asset: refreshed)
+            await touch(cacheKey, asset: refreshed, token: request.token)
             return refreshed
         case .notFound:
             // The previously cached resource no longer exists at its exact
             // resolved URL. This is not "no change": the stale entry must
             // be evicted from both cache layers so subsequent `asset(for:)`
             // calls do not keep serving content the server has definitively
-            // removed. Still epoch-gated exactly like the other two
+            // removed. Still authority-gated exactly like the other two
             // branches: a *stale* 404 (a slow response to an old request,
             // completing after a newer request already published fresh
             // content) must not evict what that newer completion just
@@ -143,11 +146,10 @@ extension AssetCacheService {
             // is ``AssetError/staleOperation`` (a race), not
             // ``AssetError/staleConditionalResponse`` (a protocol
             // violation).
-            guard isCurrentEpoch(request.startEpoch, for: cacheKey) else {
+            guard isAuthoritative(request.token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
-            bumpKeyEpoch(cacheKey)
-            await invalidate(cacheKey)
+            await invalidate(cacheKey, token: request.token)
             throw AssetError.candidatesExhausted
         case let .success(response):
             let asset = try await assembleRevalidatedAsset(
@@ -157,19 +159,18 @@ extension AssetCacheService {
                 existing: request.existing,
                 response: response
             )
-            guard isCurrentEpoch(request.startEpoch, for: cacheKey) else {
-                // A more authoritative completion (another fetch,
-                // revalidation, or `evictAll()`) concluded while this
-                // response was being received/validated/decoded;
-                // publishing this now-stale result would resurrect
-                // content that was already superseded or evicted. See the
-                // `.notModified` case above for why this is
-                // ``AssetError/staleOperation``, not
+            guard isAuthoritative(request.token, for: cacheKey) else {
+                // A more-recently-issued operation (another fetch,
+                // revalidation, or `evictAll()`) has already concluded
+                // while this response was being received/validated/
+                // decoded; publishing this now-stale result would
+                // resurrect content that was already superseded or
+                // evicted. See the `.notModified` case above for why this
+                // is ``AssetError/staleOperation``, not
                 // ``AssetError/staleConditionalResponse``.
                 throw AssetError.staleOperation
             }
-            bumpKeyEpoch(cacheKey)
-            await publish(cacheKey, asset: asset)
+            await publish(cacheKey, asset: asset, token: request.token)
             return asset
         }
     }

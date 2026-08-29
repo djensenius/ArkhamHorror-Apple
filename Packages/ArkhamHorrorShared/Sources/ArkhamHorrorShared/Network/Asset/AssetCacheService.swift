@@ -38,15 +38,16 @@ actor AssetCacheService {
     /// otherwise find their entry already gone.
     var inFlight: [AssetCacheKey: InFlightFetch] = [:]
 
-    /// Per-key mutation epoch and the shared global epoch, together
-    /// forming the single authority every cache-mutating operation (a
-    /// normal fetch's publish, a revalidation's 404/304/200 outcome, or
-    /// ``evictAll()``) must check itself against immediately before ever
-    /// touching memory/disk state — see `AssetCacheService+Epoch.swift`
-    /// for the full ``CacheEpoch`` capture/CAS contract this replaces the
-    /// old, revalidation-only generation counter with.
-    var keyEpoch: [AssetCacheKey: Int] = [:]
-    var globalEpoch = 0
+    /// Per-key issuance-ordered authority state and the shared global
+    /// generation, together forming the single authority every
+    /// cache-mutating operation (a normal fetch's publish, a
+    /// revalidation's 404/304/200 outcome, or ``evictAll()``) must check
+    /// itself against immediately before ever touching memory/disk state
+    /// — see `AssetCacheService+Epoch.swift` for the full ``CacheToken``
+    /// issuance/CAS contract.
+    var keyIssuance: [AssetCacheKey: Int] = [:]
+    var keyLatestToken: [AssetCacheKey: CacheToken] = [:]
+    var globalGeneration = 0
     var inFlightRevalidation: [RevalidationSlot: RevalidationFetch] = [:]
 
     /// Keys whose disk entry this actor knows it *intended* to invalidate
@@ -106,20 +107,26 @@ actor AssetCacheService {
         // bytes might still physically be present, until a fresh publish
         // clears the tombstone.
         if !tombstonedKeys.contains(cacheKey), let cached = await diskCache.get(cacheKey) {
-            let epoch = currentEpoch(for: cacheKey)
+            let token = issueToken(for: cacheKey)
             if let revalidated = try await revalidateDiskHit(
                 cached,
                 key: key,
                 cacheKey: cacheKey,
-                candidates: candidates
+                candidates: candidates,
+                token: token
             ) {
                 // `revalidateDiskHit` suspends (a full platform decode);
-                // re-check this key's epoch immediately before caching its
-                // result back into memory, so a concurrent `evictAll()` or
-                // definitive invalidation that ran during that suspension
-                // can never be resurrected by this now-stale read.
-                if isCurrentEpoch(epoch, for: cacheKey) {
-                    await memoryCache.set(cacheKey, asset: revalidated)
+                // re-check this key's authority immediately before caching
+                // its result back into memory, so a concurrent
+                // `evictAll()` or a more-recently-issued operation for
+                // this exact key that already concluded while this
+                // suspension was in progress can never be resurrected by
+                // this now-stale read. `memoryCache.set` independently
+                // re-checks the same token itself (see its doc comment),
+                // so this is deliberately defense-in-depth, not this
+                // check's only enforcement point.
+                if isAuthoritative(token, for: cacheKey) {
+                    await memoryCache.set(cacheKey, asset: revalidated, token: token)
                 }
                 return revalidated
             }
@@ -182,19 +189,20 @@ actor AssetCacheService {
         if let existing = inFlight[cacheKey] {
             fetchID = existing.id
         } else {
-            // Captured synchronously here — before the `Task` below is
-            // even created, let alone runs — so it exactly reflects this
-            // key's mutation epoch "at issuance" of this fresh (never
-            // coalesced-into) fetch, per the epoch contract in
-            // `AssetCacheService+Epoch.swift`.
-            let epoch = currentEpoch(for: cacheKey)
+            // Issued synchronously here — before the `Task` below is even
+            // created, let alone runs — so this token's issuance order
+            // exactly reflects the moment this fresh (never
+            // coalesced-into) fetch was issued, per the issuance contract
+            // in `AssetCacheService+Epoch.swift`. Every waiter that joins
+            // this exact `inFlight` entry shares this one token.
+            let token = issueToken(for: cacheKey)
             let newTask = Task { [weak self] in
                 guard let self else { throw CancellationError() }
                 return try await fetchAndValidate(
                     key: key,
                     cacheKey: cacheKey,
                     candidates: candidates,
-                    epoch: epoch
+                    token: token
                 )
             }
             let newFetch = InFlightFetch(task: newTask)
@@ -300,20 +308,36 @@ actor AssetCacheService {
         }
     }
 
-    /// Publishes a resolved asset into both cache layers. The disk write
-    /// is deliberately best-effort (an in-memory-only asset is still
-    /// usable for the remainder of the process), but that decision is
-    /// centralized here in an explicit `do`/`catch` — rather than a bare
-    /// `try?` — so a persistence failure is captured in
-    /// ``lastDiskPersistenceFailure`` for auditing/instrumentation instead
-    /// of vanishing silently. A successful disk write always clears
-    /// `cacheKey`'s tombstone (see ``tombstonedKeys``): a fresh, verified
-    /// generation on disk supersedes whatever an earlier failed deletion
-    /// was protecting against.
-    func publish(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
-        await memoryCache.set(cacheKey, asset: asset)
+    /// Publishes a resolved asset into both cache layers, gated by
+    /// `token` at every hop: immediately before the memory-cache write,
+    /// again immediately before the disk-cache write (a disk write is a
+    /// second, independent suspension after the first), and — beyond this
+    /// actor's own re-checks — ``AssetMemoryCache/set(_:asset:token:)``
+    /// and ``AssetDiskCache/set(_:payload:metadata:token:)`` each
+    /// independently re-verify the same token themselves before mutating
+    /// their own state, so a write that loses the race strictly *within*
+    /// one of those actor calls (not merely between this actor's own
+    /// checks) still cannot land. The disk write is deliberately
+    /// best-effort (an in-memory-only asset is still usable for the
+    /// remainder of the process), but that decision is centralized here
+    /// in an explicit `do`/`catch` — rather than a bare `try?` — so a
+    /// persistence failure is captured in ``lastDiskPersistenceFailure``
+    /// for auditing/instrumentation instead of vanishing silently. A
+    /// successful disk write always clears `cacheKey`'s tombstone (see
+    /// ``tombstonedKeys``): a fresh, verified generation on disk
+    /// supersedes whatever an earlier failed deletion was protecting
+    /// against.
+    func publish(_ cacheKey: AssetCacheKey, asset: CachedAsset, token: CacheToken) async {
+        guard isAuthoritative(token, for: cacheKey) else { return }
+        await memoryCache.set(cacheKey, asset: asset, token: token)
+        guard isAuthoritative(token, for: cacheKey) else { return }
         await recordDiskPersistenceResult {
-            try await diskCache.set(cacheKey, payload: asset.payload, metadata: asset.metadata)
+            try await diskCache.set(
+                cacheKey,
+                payload: asset.payload,
+                metadata: asset.metadata,
+                token: token
+            )
         }
         if lastDiskPersistenceFailure == nil {
             tombstonedKeys.remove(cacheKey)
@@ -323,12 +347,14 @@ actor AssetCacheService {
     /// Refreshes an already-cached asset's metadata only (for example
     /// bumping ``AssetCacheMetadata/accessSequence`` after a 304
     /// revalidation), without re-writing the unchanged payload bytes to
-    /// disk. Falls back to the same best-effort, audited failure handling
-    /// as ``publish(_:asset:)``.
-    func touch(_ cacheKey: AssetCacheKey, asset: CachedAsset) async {
-        await memoryCache.set(cacheKey, asset: asset)
+    /// disk. Gated by `token` at each hop exactly like ``publish(_:asset:token:)``.
+    /// Falls back to the same best-effort, audited failure handling.
+    func touch(_ cacheKey: AssetCacheKey, asset: CachedAsset, token: CacheToken) async {
+        guard isAuthoritative(token, for: cacheKey) else { return }
+        await memoryCache.set(cacheKey, asset: asset, token: token)
+        guard isAuthoritative(token, for: cacheKey) else { return }
         await recordDiskPersistenceResult {
-            try await diskCache.touch(cacheKey, metadata: asset.metadata)
+            try await diskCache.touch(cacheKey, metadata: asset.metadata, token: token)
         }
     }
 
@@ -338,10 +364,23 @@ actor AssetCacheService {
     /// (a definitive 404, a failed re-validation quarantine) so none of
     /// them can accidentally swallow a deletion failure the way a bare
     /// `try?`/best-effort `remove` used to.
-    func invalidate(_ cacheKey: AssetCacheKey) async {
-        await memoryCache.remove(cacheKey)
+    ///
+    /// `token` is optional: a re-validation quarantine
+    /// (``revalidateDiskHit(_:key:cacheKey:candidates:token:)``'s own
+    /// `catch`) still passes its caller's token so this stays gated like
+    /// every other mutation, but this is also called with no token at all
+    /// from contexts that are not part of any issuance race (there is no
+    /// prior in-flight operation whose authority could be superseded).
+    func invalidate(_ cacheKey: AssetCacheKey, token: CacheToken? = nil) async {
+        if let token, !isAuthoritative(token, for: cacheKey) {
+            return
+        }
+        await memoryCache.remove(cacheKey, token: token)
+        if let token, !isAuthoritative(token, for: cacheKey) {
+            return
+        }
         do {
-            try await diskCache.remove(cacheKey)
+            try await diskCache.remove(cacheKey, token: token)
         } catch {
             tombstonedKeys.insert(cacheKey)
         }

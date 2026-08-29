@@ -7,16 +7,16 @@ extension AssetCacheService {
     /// an explicit user-initiated "clear cache" action; never called
     /// automatically.
     ///
-    /// Bumps the shared global epoch *before* awaiting either cache
+    /// Issues a global invalidation *before* awaiting either cache
     /// layer's removal, so every operation already in flight (a normal
     /// fetch's eventual publish, or a revalidation's eventual 404/304/200
-    /// outcome) that captured its epoch before this call can no longer
-    /// pass its own CAS check once this returns — none of them can
+    /// outcome) that issued its token before this call can no longer
+    /// pass its own authority check once this returns — none of them can
     /// resurrect anything this call is in the middle of clearing. Also
     /// cancels every currently in-flight fetch/revalidation task itself
-    /// (not merely invalidating their eventual epoch check), so a caller
-    /// that asked to clear the cache does not keep paying for network
-    /// work whose result is now guaranteed to be discarded.
+    /// (not merely invalidating their eventual authority check), so a
+    /// caller that asked to clear the cache does not keep paying for
+    /// network work whose result is now guaranteed to be discarded.
     ///
     /// Every already-registered waiter for a fetch/revalidation this call
     /// is about to tear down is resumed (with `CancellationError`)
@@ -35,7 +35,7 @@ extension AssetCacheService {
     /// ``coalescedRevalidation`` at the moment this method ran would hang
     /// forever instead of observing `CancellationError`.
     func evictAll() async {
-        globalEpoch += 1
+        issueGlobalInvalidation()
         for (_, fetch) in inFlight {
             for (_, continuation) in fetch.waiters {
                 continuation.resume(returning: .failure(CancellationError()))
