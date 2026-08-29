@@ -3,13 +3,13 @@ import Testing
 
 @Suite("CompatibilityEvaluator")
 struct CompatibilityEvaluatorTests {
-    /// Evaluator using the compiled-in pin (supportedSchemaRevision 0.1.12, min server 0.1.12,
+    /// Evaluator using the compiled-in pin (supportedSchemaRevision 0.1.20, min server 0.1.20,
     /// path /api/v1)
     private let evaluator = CompatibilityEvaluator(pin: .current)
 
     /// A baseline-compatible server response for tests that vary individual fields.
     private func compatibleServer(
-        schemaRevision: ContractRevision = .literal(major: 0, minor: 1, patch: 12),
+        schemaRevision: ContractRevision = .literal(major: 0, minor: 1, patch: 20),
         nativeClientMinimumRevision: ContractRevision = .literal(major: 0, minor: 1, patch: 0),
         apiBasePath: String = "/api/v1",
         capabilities: Set<String> = []
@@ -44,7 +44,7 @@ struct CompatibilityEvaluatorTests {
     @Test("Server at exactly the minimum schema revision is compatible")
     func exactMinimumSchemaRevision() {
         let caps = compatibleServer(
-            schemaRevision: .literal(major: 0, minor: 1, patch: 12)
+            schemaRevision: .literal(major: 0, minor: 1, patch: 20)
         )
         let outcome = evaluator.evaluate(caps)
         if case .compatible = outcome {} else {
@@ -52,9 +52,9 @@ struct CompatibilityEvaluatorTests {
         }
     }
 
-    @Test("Server minimum 0.1.0 accepts a client that supports 0.1.12")
+    @Test("Server minimum 0.1.0 accepts a client that supports 0.1.20")
     func serverMinimumAcceptsClient() {
-        // pin.supportedSchemaRevision 0.1.12 >= server floor 0.1.0: compatible
+        // pin.supportedSchemaRevision 0.1.20 >= server floor 0.1.0: compatible
         let caps = compatibleServer(
             nativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 0)
         )
@@ -64,30 +64,30 @@ struct CompatibilityEvaluatorTests {
         }
     }
 
-    @Test("Server schema 0.1.13 is accepted when its client floor remains <=0.1.12")
+    @Test("Server schema 0.1.21 is accepted when its client floor remains <=0.1.20")
     func higherServerSchemaAccepted() {
-        // server 0.1.13 > client minimum 0.1.12: passes serverTooOld check
-        // server floor 0.1.12 <= client supports 0.1.12: passes clientTooOld check
+        // server 0.1.21 > client minimum 0.1.20: passes serverTooOld check
+        // server floor 0.1.20 <= client supports 0.1.20: passes clientTooOld check
         let caps = compatibleServer(
-            schemaRevision: .literal(major: 0, minor: 1, patch: 13),
-            nativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 12)
+            schemaRevision: .literal(major: 0, minor: 1, patch: 21),
+            nativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 20)
         )
         let outcome = evaluator.evaluate(caps)
         if case .compatible = outcome {} else {
-            Issue.record("Expected .compatible for server 0.1.13 with floor 0.1.12, got \(outcome)")
+            Issue.record("Expected .compatible for server 0.1.21 with floor 0.1.20, got \(outcome)")
         }
     }
 
     // MARK: - Client too old
 
-    @Test("Server minimum 0.1.13 rejects a client that only supports 0.1.12")
+    @Test("Server minimum 0.1.21 rejects a client that only supports 0.1.20")
     func serverMinimumRejectsClient() {
-        let serverMinimum = ContractRevision.literal(major: 0, minor: 1, patch: 13)
+        let serverMinimum = ContractRevision.literal(major: 0, minor: 1, patch: 21)
         let caps = compatibleServer(nativeClientMinimumRevision: serverMinimum)
         let outcome = evaluator.evaluate(caps)
         #expect(
             outcome == .incompatible(reason: .clientTooOld(
-                clientSupports: .literal(major: 0, minor: 1, patch: 12),
+                clientSupports: .literal(major: 0, minor: 1, patch: 20),
                 serverRequires: serverMinimum
             ))
         )
@@ -126,12 +126,12 @@ struct CompatibilityEvaluatorTests {
         #expect(
             outcome == .incompatible(reason: .serverTooOld(
                 serverRevision: .literal(major: 0, minor: 1, patch: 5),
-                clientRequires: .literal(major: 0, minor: 1, patch: 12)
+                clientRequires: .literal(major: 0, minor: 1, patch: 20)
             ))
         )
     }
 
-    @Test("Numeric ordering prevents false serverTooOld: 0.1.9 vs 0.1.12")
+    @Test("Numeric ordering prevents false serverTooOld: 0.1.9 vs 0.1.20")
     func numericServerVersionOrdering() {
         let caps = compatibleServer(
             schemaRevision: .literal(major: 0, minor: 1, patch: 9)
@@ -140,7 +140,7 @@ struct CompatibilityEvaluatorTests {
         #expect(
             outcome == .incompatible(reason: .serverTooOld(
                 serverRevision: .literal(major: 0, minor: 1, patch: 9),
-                clientRequires: .literal(major: 0, minor: 1, patch: 12)
+                clientRequires: .literal(major: 0, minor: 1, patch: 20)
             ))
         )
     }
@@ -174,8 +174,8 @@ struct CompatibilityEvaluatorTests {
 
     @Test("clientTooOld is reported before serverTooOld when both conditions fail")
     func clientTooOldTakesPrecedence() {
-        // client supports 0.1.12 < server floor 0.2.0 → clientTooOld
-        // server schema 0.1.0 < client minimum 0.1.12 → serverTooOld (not reached)
+        // client supports 0.1.20 < server floor 0.2.0 → clientTooOld
+        // server schema 0.1.0 < client minimum 0.1.20 → serverTooOld (not reached)
         let caps = compatibleServer(
             schemaRevision: .literal(major: 0, minor: 1, patch: 0),
             nativeClientMinimumRevision: .literal(major: 0, minor: 2, patch: 0)
