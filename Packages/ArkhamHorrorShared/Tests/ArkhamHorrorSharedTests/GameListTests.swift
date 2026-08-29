@@ -148,6 +148,33 @@ struct GameListTests {
         }
     }
 
+    @Test(
+        "A malformed GameSummary propagates its own decode error, not a masked failure entry"
+    )
+    func malformedGameSummaryIsNotMaskedAsFailed() {
+        let json = """
+        {"id": "00000000-0000-0000-0000-000000000099", "scenario": null, "campaign": null,
+         "gameState": "not-an-object", "name": "n", "investigators": [],
+         "otherInvestigators": [], "multiplayerVariant": "Solo", "hasOpenSeats": false}
+        """
+        #expect {
+            try JSONDecoder().decode(GameListEntry.self, from: Data(json.utf8))
+        } throws: { error in
+            // The propagated error must be about the malformed `gameState`, never a
+            // "missing 'error' key" error from a silent fallback to FailedGameEntry.
+            "\(error)".contains("gameState") || "\(error)".contains("GameState")
+        }
+    }
+
+    @Test("An object with both id and error keys resolves deterministically, not via try?")
+    func ambiguousRowResolvesDeterministically() throws {
+        let json = """
+        {"id": "00000000-0000-0000-0000-000000000099", "error": "diagnostic"}
+        """
+        let entry = try JSONDecoder().decode(GameListEntry.self, from: Data(json.utf8))
+        #expect(entry == .failed(FailedGameEntry(error: "diagnostic")))
+    }
+
     // MARK: - Forward-compatible enums
 
     @Test("An unrecognized difficulty/currentCampaignMode string decodes losslessly")

@@ -81,12 +81,28 @@ enum GameListEntry: Sendable {
 extension GameListEntry: Equatable {}
 
 extension GameListEntry: Codable {
+    /// Discriminates the two `GameListEntry` shapes by key presence rather than by
+    /// speculatively decoding one shape and swallowing its errors: `error` is unique to
+    /// ``FailedGameEntry``, `id` is unique to ``GameSummary``. This keeps genuine decode
+    /// failures (contract drift) from being silently reinterpreted as the other shape.
+    private enum DiscriminatorKeys: String, CodingKey {
+        case id
+        case error
+    }
+
     init(from decoder: any Decoder) throws {
-        if let summary = try? GameSummary(from: decoder) {
-            self = .game(summary)
-            return
+        let discriminator = try decoder.container(keyedBy: DiscriminatorKeys.self)
+        if discriminator.contains(.error) {
+            self = try .failed(FailedGameEntry(from: decoder))
+        } else if discriminator.contains(.id) {
+            self = try .game(GameSummary(from: decoder))
+        } else {
+            let context = DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Expected a game-list row with an \"id\" or \"error\" key"
+            )
+            throw DecodingError.dataCorrupted(context)
         }
-        self = try .failed(FailedGameEntry(from: decoder))
     }
 
     func encode(to encoder: any Encoder) throws {

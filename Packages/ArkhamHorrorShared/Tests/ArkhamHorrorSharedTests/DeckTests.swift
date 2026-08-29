@@ -245,4 +245,42 @@ struct DeckTests {
         let decoded = try JSONDecoder().decode(DeckValidationError.self, from: Data(json.utf8))
         #expect(decoded == .unknown(tag: "FutureError", contents: .string("details")))
     }
+
+    // MARK: - DeckList: all nine keys always present
+
+    @Test("DeckList rejects a payload missing one of its always-present nullable keys")
+    func deckListRejectsMissingNullableKey() {
+        let json = """
+        {"slots": {}, "sideSlots": {}, "investigator_code": "c01001",
+         "investigator_name": "Roland Banks", "meta": null, "taboo_id": null, "url": null,
+         "id": null}
+        """
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(DeckList.self, from: Data(json.utf8))
+        }
+    }
+
+    @Test("DeckList encodes its nil optional fields as explicit null, not an omitted key")
+    func deckListEncodesExplicitNull() throws {
+        let deckList = try DeckList(
+            slots: CardQuantityMap([CardCode("c01016"): 2]),
+            sideSlots: CardQuantityMap([:]),
+            investigatorCode: CardCode("c01001"),
+            investigatorName: "Roland Banks",
+            meta: nil,
+            tabooId: nil,
+            url: nil,
+            id: nil,
+            name: nil
+        )
+        let data = try JSONEncoder().encode(deckList)
+        let object = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        for key in ["meta", "taboo_id", "url", "id", "name"] {
+            #expect(object[key] is NSNull, "Expected \(key) to be explicit null")
+        }
+        let redecoded = try JSONDecoder().decode(DeckList.self, from: data)
+        #expect(redecoded == deckList)
+    }
 }
