@@ -61,13 +61,19 @@ extension AppModel {
 
     /// Resolves this action's bearer token, recording a typed failure (and clearing
     /// the in-flight action marker) on every non-stale failure. Returns `nil` on any
-    /// failure or staleness; callers must return immediately when `nil`.
+    /// failure or staleness; callers must return immediately when `nil`. Cancellation
+    /// while `attempt` is still current also clears the in-flight marker (see
+    /// ``performGameAction(_:kind:attempt:body:onSuccess:)``'s matching cancellation
+    /// handling) so the row is never left stuck disabled with no way to retry.
     private func resolveGameActionToken(
         _ id: GameID, kind: GameLifecycleAction, attempt: GameActionAttempt
     ) async -> String? {
         do {
             return try await currentGameLifecycleToken(for: attempt.profile)
         } catch is CancellationError {
+            if isCurrentGameAction(id, attempt) {
+                gameLifecycleActions[id] = nil
+            }
             return nil
         } catch let tokenError as GameLifecycleTokenAccessError {
             switch tokenError {
@@ -80,6 +86,9 @@ extension AppModel {
             }
             return nil
         } catch {
+            if isCurrentGameAction(id, attempt) {
+                gameLifecycleActions[id] = nil
+            }
             return nil
         }
     }
@@ -97,6 +106,16 @@ extension AppModel {
     /// derived from `kind` (see ``GameLifecycleAction/diagnosticFailureMessage``)
     /// rather than taken as a separate parameter, keeping this within this
     /// project's function-parameter-count convention.
+    ///
+    /// Cancellation is never recorded as a failure, but it must not leave `id`
+    /// permanently marked in flight either: when `attempt` is *still* this game's
+    /// current action at cancellation time (nothing else superseded it -- for
+    /// example the underlying transport was cancelled by the system independently
+    /// of any newer action ever starting), the in-flight marker is cleared so the
+    /// row becomes interactive again rather than staying stuck disabled forever
+    /// with no failure shown and no way to retry. When a *newer* action already
+    /// superseded this one, its own marker is left completely untouched, exactly
+    /// like every other stale-completion guard here.
     private func performGameAction(
         _ id: GameID,
         kind: GameLifecycleAction,
@@ -107,6 +126,9 @@ extension AppModel {
         do {
             try await body()
         } catch is CancellationError {
+            if isCurrentGameAction(id, attempt) {
+                gameLifecycleActions[id] = nil
+            }
             return
         } catch let error as GameLifecycleError {
             recordGameActionFailure(id, attempt: attempt, kind: kind, error: error)

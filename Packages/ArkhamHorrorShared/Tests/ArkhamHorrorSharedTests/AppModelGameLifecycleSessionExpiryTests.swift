@@ -106,7 +106,7 @@ struct AppModelGameLifecycleSessionExpiryTests {
     @Test(
         """
         Cancellation observed after the response is in flight is never recorded as a \
-        failure or treated as session expiry
+        failure, but does clear the in-flight marker so the row is never stuck
         """
     )
     func cancellationAfterResponseIsNotRecordedAsFailure() async {
@@ -118,12 +118,44 @@ struct AppModelGameLifecycleSessionExpiryTests {
         model.deleteGame(gameID)
         await model.gameLifecycleActionTasks[gameID]?.value
 
-        // Cancellation must be silently swallowed: no failure recorded, and the
-        // in-flight marker is left exactly as `beginGameAction` set it (never cleared
-        // to `nil` as if the action had failed or succeeded).
-        #expect(model.gameLifecycleActions[gameID] == .deleting)
+        // Cancellation must be silently swallowed (no failure recorded), but since
+        // this attempt is still `gameID`'s current one (nothing superseded it), the
+        // in-flight marker must be cleared back to `nil` -- never left stuck at
+        // `.deleting` forever with the row's controls permanently disabled and no
+        // way to retry.
+        #expect(model.gameLifecycleActions[gameID] == nil)
         #expect(model.gameLifecycleActionFailures[gameID] == nil)
         #expect(model.sessionState.isSignedIn)
+    }
+
+    @Test(
+        "A superseded action's cancellation never clears a newer, still-pending action's own marker"
+    )
+    func cancellationOfSupersededActionDoesNotClearNewerPendingMarker() async {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.setDeleteGameGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        // T1: begins deleting `gameID`.
+        model.deleteGame(gameID)
+        await service.waitUntilDeleteGamePending(1)
+        let staleDeleteTask = model.gameLifecycleActionTasks[gameID]
+
+        // T2: a newer delete for the *same* game supersedes T1, which is still gated
+        // (pending) at this point.
+        model.deleteGame(gameID)
+        await service.waitUntilDeleteGamePending(2)
+        #expect(model.gameLifecycleActions[gameID] == .deleting)
+
+        // T1's now-stale call observes cancellation.
+        await service.resumeOldestDeleteGame(with: .failure(CancellationError()))
+        await staleDeleteTask?.value
+
+        // T2 is still genuinely in flight; T1's stale cancellation must not have
+        // cleared T2's own marker prematurely.
+        #expect(model.gameLifecycleActions[gameID] == .deleting)
+        #expect(model.gameLifecycleActionFailures[gameID] == nil)
     }
 }
 

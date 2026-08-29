@@ -127,6 +127,73 @@ struct AppModelGameLifecycleTests {
         #expect(model.gameListState == .loaded(finalGames))
     }
 
+    // MARK: - Cancellation
+
+    @Test(
+        "A still-current refresh's cancellation reverts .loading to .idle rather than sticking"
+    )
+    func cancellationOfCurrentRefreshRevertsToIdle() async {
+        let service = ScriptedGameLifecycleService()
+        await service.setListGamesGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        model.refreshGames()
+        await service.waitUntilListGamesPending(1)
+        #expect(model.gameListState == .loading(previous: nil))
+
+        await service.resumeOldestListGames(with: .failure(CancellationError()))
+        await model.gameListTask?.value
+
+        #expect(model.gameListState == .idle)
+    }
+
+    @Test(
+        """
+        A still-current refresh's cancellation reverts .loading back to the prior \
+        loaded content, never dropping it
+        """
+    )
+    func cancellationOfCurrentRefreshRevertsToPriorContent() async {
+        let service = ScriptedGameLifecycleService()
+        let games: GameList = [.game(sampleGame())]
+        await service.enqueueListGamesResult(.success(games))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        model.refreshGames()
+        await model.gameListTask?.value
+        #expect(model.gameListState == .loaded(games))
+
+        await service.setListGamesGated(true)
+        model.refreshGames()
+        await service.waitUntilListGamesPending(1)
+        await service.resumeOldestListGames(with: .failure(CancellationError()))
+        await model.gameListTask?.value
+
+        #expect(model.gameListState == .loaded(games))
+    }
+
+    @Test(
+        "A superseded refresh's cancellation never clears a newer, still-pending refresh's state"
+    )
+    func cancellationOfSupersededRefreshDoesNotClearNewerPendingState() async {
+        let service = ScriptedGameLifecycleService()
+        await service.setListGamesGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        model.refreshGames()
+        await service.waitUntilListGamesPending(1)
+        model.refreshGames()
+        await service.waitUntilListGamesPending(2)
+
+        // The older (now-stale) refresh observes cancellation while the newer one is
+        // still genuinely pending.
+        await service.resumeOldestListGames(with: .failure(CancellationError()))
+        await Task.yield()
+        await Task.yield()
+
+        #expect(model.gameListState == .loading(previous: nil))
+    }
+
     // MARK: - Sign-out / profile switch / 401 invalidation
 
     @Test("Sign-out resets gameListState and every per-game action/open-seat entry")

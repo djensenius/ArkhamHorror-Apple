@@ -182,7 +182,7 @@ extension AppModel {
             guard isCurrentGameList(attempt) else { return }
             gameListState = .loaded(games)
         } catch is CancellationError {
-            return
+            revertGameListStateAfterCancellation(attempt)
         } catch let error as GameLifecycleError {
             guard isCurrentGameList(attempt) else { return }
             gameListState = .failed(error, previous: gameListState.games)
@@ -202,6 +202,23 @@ extension AppModel {
         }
     }
 
+    /// Reverts `gameListState` out of `.loading` back to a neutral, retry-able state
+    /// when a load/refresh is cancelled while `attempt` is still current (nothing
+    /// else superseded it) -- for example the underlying transport was cancelled by
+    /// the system independently of any newer refresh ever starting. Cancellation is
+    /// never recorded as a failure, but leaving `gameListState` stuck in `.loading`
+    /// forever would disable the toolbar refresh action (and the `onAppear`
+    /// auto-load check) with no way to recover. A no-op when a newer refresh has
+    /// already superseded this one -- its own state is left completely untouched.
+    private func revertGameListStateAfterCancellation(_ attempt: GameListLoadAttempt) {
+        guard isCurrentGameList(attempt) else { return }
+        if let games = gameListState.games {
+            gameListState = .loaded(games)
+        } else {
+            gameListState = .idle
+        }
+    }
+
     /// Resolves the games list's bearer token, recording a typed failure on every
     /// non-stale failure. Returns `nil` on any failure or staleness; callers must
     /// return immediately when `nil`. Split out of ``performRefreshGames(_:)`` purely
@@ -210,6 +227,7 @@ extension AppModel {
         do {
             return try await currentGameLifecycleToken(for: attempt.profile)
         } catch is CancellationError {
+            revertGameListStateAfterCancellation(attempt)
             return nil
         } catch let tokenError as GameLifecycleTokenAccessError {
             guard isCurrentGameList(attempt) else { return nil }
