@@ -217,4 +217,62 @@ extension AssetCacheServiceTests {
             )
         }
     }
+
+    @Test(
+        """
+        evictAll() resumes every waiter still suspended in a coalescedFetch it is about to \
+        tear down (with CancellationError) rather than silently dropping the in-flight entry \
+        and leaving that waiter's continuation unresumed forever
+        """
+    )
+    func evictAllResumesSuspendedFetchWaitersRatherThanHangingThem() async throws {
+        try await withService { service, transport in
+            let key = try cardArtKey()
+            let urls = candidateURLs(for: key)
+            await transport.hold(urls[0])
+            await transport.enqueue(.success(successResult()), for: urls[0])
+
+            let waiterTask = Task { try await service.asset(for: key) }
+            await transport.waitForCallCount(1, for: urls[0])
+            try await Task.sleep(nanoseconds: 20_000_000)
+
+            // `evictAll()` itself never touches the transport, so it is
+            // safe to call while the fetch is still held/pending: this is
+            // exactly the moment a waiter is suspended inside
+            // `coalescedFetch`'s `withCheckedContinuation`, the scenario
+            // that must never hang.
+            await service.evictAll()
+            await transport.release(urls[0])
+
+            // `Task.value`/`.result` alone would hang forever if this
+            // waiter's continuation was never resumed; racing it against a
+            // generous timeout turns that hang into a reported failure
+            // instead of a stuck test process.
+            let result = await withTaskGroup(
+                of: Result<CachedAsset, Error>?.self,
+                returning: Result<CachedAsset, Error>?.self
+            ) { group in
+                group.addTask { () -> Result<CachedAsset, Error>? in
+                    await waiterTask.result
+                }
+                group.addTask { () -> Result<CachedAsset, Error>? in
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    return nil
+                }
+                let first: Result<CachedAsset, Error>?? = await group.next()
+                group.cancelAll()
+                return first ?? nil
+            }
+            guard let result else {
+                Issue.record(
+                    "evictAll() must resume every suspended waiter; this one hung instead"
+                )
+                return
+            }
+            #expect(throws: (any Error).self) { try result.get() }
+            if case let .failure(error) = result {
+                #expect(error is CancellationError, "Expected CancellationError, got \(error)")
+            }
+        }
+    }
 }

@@ -134,21 +134,29 @@ actor AssetCacheService {
     /// automatically.
     ///
     /// Bumps the shared global epoch *before* awaiting either cache
-    /// layer's removal, so every operation already in flight (a normal
-    /// fetch's eventual publish, or a revalidation's eventual 404/304/200
-    /// outcome) that captured its epoch before this call can no longer
-    /// pass its own CAS check once this returns — none of them can
-    /// resurrect anything this call is in the middle of clearing. Also
-    /// cancels every currently in-flight fetch/revalidation task itself
-    /// (not merely invalidating their eventual epoch check), so a caller
-    /// that asked to clear the cache does not keep paying for network
-    /// work whose result is now guaranteed to be discarded.
+    /// layer's removal, so nothing already in flight can pass its own CAS
+    /// check afterwards, and cancels every in-flight fetch/revalidation
+    /// task so a caller does not keep paying for now-discarded work.
+    ///
+    /// Every already-registered waiter is resumed (with
+    /// `CancellationError`) synchronously here, *before* its entry is
+    /// removed from `inFlight`/`inFlightRevalidation`: a plain
+    /// `task.cancel()` never itself resumes a waiter, and once the entry
+    /// is removed, that fetch's completion watcher silently returns
+    /// without resuming anything — otherwise a caller suspended in
+    /// ``coalescedFetch``/``coalescedRevalidation`` would hang forever.
     func evictAll() async {
         globalEpoch += 1
         for (_, fetch) in inFlight {
+            for (_, continuation) in fetch.waiters {
+                continuation.resume(returning: .failure(CancellationError()))
+            }
             fetch.task.cancel()
         }
         for (_, fetch) in inFlightRevalidation {
+            for (_, continuation) in fetch.waiters {
+                continuation.resume(returning: .failure(CancellationError()))
+            }
             fetch.task.cancel()
         }
         inFlight.removeAll()
@@ -159,14 +167,10 @@ actor AssetCacheService {
             tombstonedKeys.removeAll()
         } catch {
             // A partial disk removal failure does not invalidate the
-            // epoch bump above (every in-flight/future operation is
-            // already correctly gated by it), but this actor cannot prove
-            // every entry was physically removed — keep every
-            // currently-tracked key tombstoned (never narrower than
-            // before) so a read cannot resurrect whatever could not be
-            // deleted. Newly published keys after this point are not
-            // affected: `publish`/`touch` always clear a key's own
-            // tombstone on a fresh, successful write.
+            // epoch bump above, but this actor cannot prove every entry
+            // was physically removed — keep every tracked key tombstoned
+            // so a stale read cannot resurrect it; a fresh publish clears
+            // a key's own tombstone.
             lastDiskPersistenceFailure = error as? AssetError
                 ?? .cachePersistenceFailed(String(describing: error))
         }
