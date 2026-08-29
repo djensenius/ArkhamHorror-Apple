@@ -73,6 +73,12 @@ struct ChaosBagPhaseStepPlacementTests {
                 == .mythos(.mythosPhaseBegins)
         )
         #expect(
+            try decode(
+                #"{"tag": "InvestigationPhaseStep", "contents": "InvestigatorTakesActionStep"}"#
+            )
+                == .investigation(.investigatorTakesAction)
+        )
+        #expect(
             try decode(#"{"tag": "EnemyPhaseStep", "contents": "ResolveAttacksStep"}"#)
                 == .enemy(.resolveAttacks)
         )
