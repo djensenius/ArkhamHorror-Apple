@@ -41,21 +41,26 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// now that this type performs its own POSIX I/O directly rather than
     /// routing writes/renames/listings through `FileManager` at all — a
     /// fake `FileManager` subclass can no longer intercept anything.
-    /// `failSuffixes`/`failPrefixes` are matched against the *final*
-    /// (non-`.tmp`) target name of a temp-file write, mirroring exactly
-    /// the shape a real interrupted write produces: a truncated stub left
-    /// behind at the temp name, then a thrown error — so a test can still
-    /// assert on production code's cleanup of that exact leftover file.
-    /// `listNamesFailuresRemaining` fails that many subsequent
-    /// `listNames()` calls (simulating a transient, not permanent,
-    /// directory-listing failure) before succeeding normally again.
+    /// `failSuffixes`/`failPrefixes` match the *final* (non-`.tmp`) target
+    /// name of a temp-file write, mirroring a real interrupted write: a
+    /// truncated stub left at the temp name, then a thrown error, so a
+    /// test can assert on production code's cleanup of that leftover
+    /// file. `listNamesFailuresRemaining` fails that many subsequent
+    /// `listNames()` calls before succeeding normally again.
+    /// `failRemoveSuffixes`/`failRemovePrefixes` independently fail
+    /// `remove(name:)` for any matching name (e.g. an unremovable entry
+    /// during a real `removeAll()`), without affecting temp-file writes.
     func installFaultInjection(
         failSuffixes: Set<String> = [],
         failPrefixes: Set<String> = [],
+        failRemoveSuffixes: Set<String> = [],
+        failRemovePrefixes: Set<String> = [],
         listNamesFailuresRemaining: Int = 0
     ) {
         faultState.failSuffixes = failSuffixes
         faultState.failPrefixes = failPrefixes
+        faultState.failRemoveSuffixes = failRemoveSuffixes
+        faultState.failRemovePrefixes = failRemovePrefixes
         faultState.listNamesFailuresRemaining = listNamesFailuresRemaining
     }
 
@@ -234,6 +239,11 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// contract).
     @discardableResult
     func remove(name: String) throws -> Bool {
+        if faultState.shouldFailRemove(name: name) {
+            throw AssetError.cachePersistenceFailed(
+                "injected failure removing '\(name)'"
+            )
+        }
         guard unlinkat(rootFD, name, 0) == 0 else {
             if errno == ENOENT {
                 return false
@@ -318,6 +328,8 @@ private final class FaultInjectionState: @unchecked Sendable {
     private let lock = NSLock()
     private var _failSuffixes: Set<String> = []
     private var _failPrefixes: Set<String> = []
+    private var _failRemoveSuffixes: Set<String> = []
+    private var _failRemovePrefixes: Set<String> = []
     private var _listNamesFailuresRemaining = 0
     private var _listNamesCallCount = 0
 
@@ -329,6 +341,16 @@ private final class FaultInjectionState: @unchecked Sendable {
     var failPrefixes: Set<String> {
         get { lock.withLock { _failPrefixes } }
         set { lock.withLock { _failPrefixes = newValue } }
+    }
+
+    var failRemoveSuffixes: Set<String> {
+        get { lock.withLock { _failRemoveSuffixes } }
+        set { lock.withLock { _failRemoveSuffixes = newValue } }
+    }
+
+    var failRemovePrefixes: Set<String> {
+        get { lock.withLock { _failRemovePrefixes } }
+        set { lock.withLock { _failRemovePrefixes = newValue } }
     }
 
     var listNamesFailuresRemaining: Int {
@@ -351,6 +373,16 @@ private final class FaultInjectionState: @unchecked Sendable {
         return lock.withLock {
             _failSuffixes.contains { strippedName.hasSuffix($0) }
                 || _failPrefixes.contains { strippedName.hasPrefix($0) }
+        }
+    }
+
+    /// Independent of `shouldFailTempWrite`: `name` here is already the
+    /// exact, final entry name `remove(name:)` was called with (never a
+    /// `.tmp` name), so no suffix-stripping is needed.
+    func shouldFailRemove(name: String) -> Bool {
+        lock.withLock {
+            _failRemoveSuffixes.contains { name.hasSuffix($0) }
+                || _failRemovePrefixes.contains { name.hasPrefix($0) }
         }
     }
 

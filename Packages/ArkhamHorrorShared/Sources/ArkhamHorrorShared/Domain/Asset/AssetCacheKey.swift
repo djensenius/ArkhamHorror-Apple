@@ -58,4 +58,17 @@ struct AssetCacheKey: Sendable, Equatable, Hashable {
         let digest = SHA256.hash(data: Data(canonical.utf8))
         digestHex = digest.map { String(format: "%02x", $0) }.joined()
     }
+
+    /// Reconstructs a key's identity purely from an already-derived
+    /// digest hex string (e.g. one read back from an on-disk filename or
+    /// metadata sidecar) — never from raw, uncanonicalized input. Used
+    /// only where a value on this side of the digest boundary already
+    /// exists and needs to be compared/stored alongside `AssetCacheKey`
+    /// values built the normal way (for example tombstoning every disk
+    /// entry a partially-failed `removeAll()` could not confirm was
+    /// removed); never used to fabricate a key from anything other than a
+    /// hash this type itself already produced.
+    init(digestHex: String) {
+        self.digestHex = digestHex
+    }
 }

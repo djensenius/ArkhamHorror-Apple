@@ -31,7 +31,12 @@ actor AssetCacheService {
     let transport: any AssetTransport
     let digest: any LocalizedDigestLookup
     let limits: AssetCacheLimits
-    private var inFlight: [AssetCacheKey: InFlightFetch] = [:]
+
+    /// Not `private`: also mutated by `AssetCacheService+Eviction.swift`'s
+    /// ``evictAll()``, which must resume and clear every in-flight
+    /// fetch's waiters before this actor's own completion watchers would
+    /// otherwise find their entry already gone.
+    var inFlight: [AssetCacheKey: InFlightFetch] = [:]
 
     /// Per-key mutation epoch and the shared global epoch, together
     /// forming the single authority every cache-mutating operation (a
@@ -65,8 +70,10 @@ actor AssetCacheService {
     /// remains usable in-memory for the current process even when the
     /// on-disk cache could not be written (e.g. an unwritable or full
     /// cache directory), so this is deliberately not thrown back to the
-    /// caller that just successfully resolved the asset.
-    private(set) var lastDiskPersistenceFailure: AssetError?
+    /// caller that just successfully resolved the asset. Not
+    /// `private(set)`: also written by `AssetCacheService+Eviction.swift`'s
+    /// ``evictAll()`` on a partial disk-clear failure.
+    var lastDiskPersistenceFailure: AssetError?
 
     init(
         memoryCache: AssetMemoryCache,
@@ -129,53 +136,6 @@ actor AssetCacheService {
         return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
     }
 
-    /// Evicts every entry from both cache layers. Exposed for tests and for
-    /// an explicit user-initiated "clear cache" action; never called
-    /// automatically.
-    ///
-    /// Bumps the shared global epoch *before* awaiting either cache
-    /// layer's removal, so nothing already in flight can pass its own CAS
-    /// check afterwards, and cancels every in-flight fetch/revalidation
-    /// task so a caller does not keep paying for now-discarded work.
-    ///
-    /// Every already-registered waiter is resumed (with
-    /// `CancellationError`) synchronously here, *before* its entry is
-    /// removed from `inFlight`/`inFlightRevalidation`: a plain
-    /// `task.cancel()` never itself resumes a waiter, and once the entry
-    /// is removed, that fetch's completion watcher silently returns
-    /// without resuming anything — otherwise a caller suspended in
-    /// ``coalescedFetch``/``coalescedRevalidation`` would hang forever.
-    func evictAll() async {
-        globalEpoch += 1
-        for (_, fetch) in inFlight {
-            for (_, continuation) in fetch.waiters {
-                continuation.resume(returning: .failure(CancellationError()))
-            }
-            fetch.task.cancel()
-        }
-        for (_, fetch) in inFlightRevalidation {
-            for (_, continuation) in fetch.waiters {
-                continuation.resume(returning: .failure(CancellationError()))
-            }
-            fetch.task.cancel()
-        }
-        inFlight.removeAll()
-        inFlightRevalidation.removeAll()
-        await memoryCache.removeAll()
-        do {
-            try await diskCache.removeAll()
-            tombstonedKeys.removeAll()
-        } catch {
-            // A partial disk removal failure does not invalidate the
-            // epoch bump above, but this actor cannot prove every entry
-            // was physically removed — keep every tracked key tombstoned
-            // so a stale read cannot resurrect it; a fresh publish clears
-            // a key's own tombstone.
-            lastDiskPersistenceFailure = error as? AssetError
-                ?? .cachePersistenceFailed(String(describing: error))
-        }
-    }
-
     // MARK: - Coalesced network fetch
 
     /// Tracks a single shared in-flight fetch and the still-registered
@@ -197,7 +157,7 @@ actor AssetCacheService {
     /// itself eventually does — including a shared fetch that goes on to
     /// succeed — rather than a cancelled waiter racing to observe (and
     /// wrongly receiving) a shared task's own successful result.
-    private struct InFlightFetch {
+    struct InFlightFetch {
         /// Distinguishes this exact fetch attempt from a later one that
         /// might reuse the same `AssetCacheKey` after this one is torn
         /// down, without needing `InFlightFetch` itself to be a
