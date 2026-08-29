@@ -119,4 +119,71 @@ extension AssetCacheServiceTests {
             #expect(refetched.metadata.etag == "\"def\"")
         }
     }
+
+    @Test(
+        """
+        Revalidation refuses to trust a persisted resolvedURLString that does not match any of \
+        the key's current candidates, surfacing a typed error without a network call
+        """
+    )
+    func revalidateRejectsResolvedURLNotMatchingAnyCandidate() async throws {
+        try await withScratchDirectory { directory in
+            let limits = AssetCacheLimits(
+                maxEncodedBytes: 1_000_000,
+                maxDimension: 8192,
+                maxPixelCount: 32_000_000,
+                memoryBudgetBytes: 10_000_000,
+                diskBudgetBytes: 10_000_000
+            )
+            let diskCache = try AssetDiskCache(directory: directory, limits: limits)
+            let memoryCache = AssetMemoryCache(limits: limits)
+            let transport = FakeAssetTransport()
+            let service = AssetCacheService(
+                memoryCache: memoryCache,
+                diskCache: diskCache,
+                transport: transport,
+                digest: FakeDigestLookup(),
+                limits: limits
+            )
+
+            let key = try cardArtKey()
+            let urls = candidateURLs(for: key)
+            await transport.enqueue(.success(successResult(etag: "\"abc\"")), for: urls[0])
+            let cacheKey = AssetCacheKey(
+                for: key,
+                candidates: AssetLocator.candidates(for: key, digest: FakeDigestLookup())
+            )
+            _ = try await service.asset(for: key)
+            // Force the subsequent read to come from disk (not the
+            // still-untampered in-memory entry) so tampering the on-disk
+            // metadata file below actually takes effect.
+            await memoryCache.remove(cacheKey)
+
+            // Tamper with the persisted metadata's resolvedURLString on
+            // disk directly, bypassing every cache API, to simulate
+            // corrupted/tampered metadata pointing at an unrelated host.
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+            var json = try #require(
+                try JSONSerialization
+                    .jsonObject(with: Data(contentsOf: metadataURL)) as? [String: Any]
+            )
+            json["resolvedURLString"] = "https://attacker.example.com/payload"
+            let tampered = try JSONSerialization.data(withJSONObject: json)
+            try tampered.write(to: metadataURL)
+
+            await #expect(throws: AssetError.staleConditionalResponse) {
+                _ = try await service.revalidate(for: key)
+            }
+            // No revalidation request was ever sent: exactly the one
+            // initial fetch call to urls[0], and no further call to any
+            // legitimate candidate (and certainly never to the tampered
+            // host, which isn't even a candidate URL at all).
+            let firstCallCount = await transport.callCount(for: urls[0])
+            #expect(firstCallCount == 1)
+            for url in urls.dropFirst() {
+                let callCount = await transport.callCount(for: url)
+                #expect(callCount == 0)
+            }
+        }
+    }
 }

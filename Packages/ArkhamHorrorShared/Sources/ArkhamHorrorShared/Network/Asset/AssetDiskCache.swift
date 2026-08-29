@@ -63,6 +63,32 @@ actor AssetDiskCache {
             quarantine(payloadURL: payloadURL, metadataURL: metadataURL)
             return nil
         }
+        // Validate the claimed size against the configured cap *before*
+        // reading the payload into memory. Metadata is untrusted input
+        // (it could be corrupted or tampered while still round-tripping
+        // through JSON decoding): without this guard, a claimed
+        // `encodedByteCount` that is negative or absurdly large could
+        // force an oversized `Data(contentsOf:)` allocation, or mask a
+        // read of a payload file that was substituted after the fact,
+        // before the byte-count mismatch check below ever runs.
+        guard metadata.encodedByteCount >= 0, metadata.encodedByteCount <= limits.maxEncodedBytes
+        else {
+            quarantine(payloadURL: payloadURL, metadataURL: metadataURL)
+            return nil
+        }
+        // Also check the actual on-disk file size via filesystem
+        // attributes (not by reading it) before the read below: if the
+        // payload file itself was substituted for something larger than
+        // whatever size metadata claims, the file-size check catches that
+        // without ever allocating for the oversized read.
+        guard
+            let attributes = try? fileManager.attributesOfItem(atPath: payloadURL.path),
+            let actualSize = attributes[.size] as? Int,
+            actualSize >= 0, actualSize <= limits.maxEncodedBytes
+        else {
+            quarantine(payloadURL: payloadURL, metadataURL: metadataURL)
+            return nil
+        }
         guard let payload = try? Data(contentsOf: payloadURL),
               payload.count == metadata.encodedByteCount
         else {

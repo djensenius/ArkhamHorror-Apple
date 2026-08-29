@@ -72,6 +72,11 @@ actor AssetCacheService {
     /// throws ``AssetError/staleConditionalResponse`` immediately without
     /// making any network call, since there is nothing to pair a 304 with.
     ///
+    /// The persisted URL is also required to exactly match one of `key`'s
+    /// own current resolved candidates (never trusted as-is), so tampered
+    /// or corrupted on-disk metadata cannot redirect a revalidation request
+    /// to an unexpected host or path.
+    ///
     /// Also requires the cached entry to actually carry a validator
     /// (`ETag` or `Last-Modified`): a 304 is only meaningful in response to
     /// a genuinely conditional request, so without either validator this
@@ -91,6 +96,17 @@ actor AssetCacheService {
             throw AssetError.staleConditionalResponse
         }
         guard let url = URL(string: existing.metadata.resolvedURLString) else {
+            throw AssetError.staleConditionalResponse
+        }
+        // The persisted `resolvedURLString` is untrusted input (on-disk
+        // metadata could be corrupted or tampered while still decoding and
+        // passing the hash/size checks in `AssetDiskCache.get`): only ever
+        // issue a revalidation request against a URL that exactly matches
+        // one of this key's own current candidates, never whatever URL
+        // happens to be recorded, so tampered metadata cannot redirect a
+        // request to an unexpected host or path.
+        let candidateURLStrings = Set(candidates.map { $0.url(base: key.source).absoluteString })
+        guard candidateURLStrings.contains(existing.metadata.resolvedURLString) else {
             throw AssetError.staleConditionalResponse
         }
         guard existing.metadata.etag != nil || existing.metadata.lastModified != nil else {

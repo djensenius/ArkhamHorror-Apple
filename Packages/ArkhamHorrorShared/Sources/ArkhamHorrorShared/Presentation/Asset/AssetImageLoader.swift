@@ -44,7 +44,17 @@ final class AssetImageLoader {
             do {
                 let cached = try await cacheService.asset(for: key)
                 guard generation == requestedGeneration else { return }
-                let image = try AssetImageDecoder.decode(cached.payload)
+                // Decoding (signature/dimension validation plus the full
+                // platform bitmap decode) is CPU-bound and can be
+                // expensive for large assets; running it on a detached
+                // task keeps this MainActor-isolated loader responsive
+                // instead of blocking the main thread for the duration of
+                // the decode. Only the final state publish below hops
+                // back onto the MainActor.
+                let payload = cached.payload
+                let image = try await Task.detached(priority: .userInitiated) {
+                    try AssetImageDecoder.decode(payload)
+                }.value
                 guard generation == requestedGeneration else { return }
                 state = .success(image, accessibleDescription: accessibleDescription)
             } catch is CancellationError {
