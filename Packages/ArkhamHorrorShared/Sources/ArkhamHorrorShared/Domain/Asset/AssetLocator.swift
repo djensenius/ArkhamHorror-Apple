@@ -111,10 +111,16 @@ enum AssetLocator {
                 return identifier
             }
         }
-        var base = raw
-        if let last = base.last, "aceg".contains(last) {
-            base.removeLast()
+        guard let last = raw.last, "aceg".contains(last) else {
+            // Not a documented front-side identifier (e.g. already a back,
+            // or some other mutation suffix): the generic strip-and-append
+            // rule does not apply here. Fail closed by returning the input
+            // unchanged rather than risking a double-mutated identifier
+            // like an errant "...bb".
+            return front
         }
+        var base = raw
+        base.removeLast()
         let candidate = base + "b"
         guard let identifier = try? AssetIdentifier.cardCode(candidate) else {
             // The input was already validated on construction, so appending a

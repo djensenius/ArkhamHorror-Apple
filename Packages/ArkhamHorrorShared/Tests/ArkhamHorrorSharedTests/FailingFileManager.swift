@@ -63,7 +63,7 @@ final class FailingFileManager: FileManager, @unchecked Sendable {
     let contentsOfDirectoryCallCounter = AtomicCallCounter()
 
     private func shouldFail(_ url: URL) -> Bool {
-        failPathSuffixes.contains { url.path.hasSuffix($0) }
+        failPathSuffixes.contains { url.lastPathComponent.hasSuffix($0) }
             || failPathPrefixes.contains { url.lastPathComponent.hasPrefix($0) }
     }
 

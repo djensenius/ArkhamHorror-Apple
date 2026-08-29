@@ -283,6 +283,16 @@ extension AssetLocatorTests {
         #expect(resolved.rawValue == expectedBack)
     }
 
+    @Test(
+        "resolvedBackIdentifier fails closed with no front-side letter or override",
+        arguments: ["01001b", "01001d", "01001"]
+    )
+    func resolvedBackIdentifierFailsClosedForNonFrontSideInput(front: String) throws {
+        let identifier = try AssetIdentifier.cardCode(front)
+        let resolved = AssetLocator.resolvedBackIdentifier(from: identifier)
+        #expect(resolved.rawValue == front)
+    }
+
     // MARK: - Determinism
 
     @Test("Resolving the same key twice against the same digest produces identical candidate lists")
