@@ -10,8 +10,10 @@ final class LosslessJSONValueDecoder: Decoder, LosslessJSONNumberSource {
         self.codingPath = codingPath
     }
 
-    func losslessJSONNumber() throws -> JSONNumber? {
-        guard case let .number(number) = value else { return nil }
+    func losslessJSONNumber() throws -> JSONNumber {
+        guard case let .number(number) = value else {
+            throw LosslessJSONPrimitive.typeMismatch(JSONNumber.self, value, codingPath)
+        }
         return number
     }
 
@@ -135,26 +137,30 @@ struct LosslessJSONKeyedDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
         forKey key: Key
     ) throws -> KeyedDecodingContainer<NestedKey> {
         let nestedValue = try value(forKey: key)
+        let nestedCodingPath = codingPath + [key]
         guard case let .object(dict) = nestedValue else {
             throw LosslessJSONPrimitive.typeMismatch(
-                [String: JSONValue].self, nestedValue, codingPath
+                [String: JSONValue].self, nestedValue, nestedCodingPath
             )
         }
         let container = LosslessJSONKeyedDecodingContainer<NestedKey>(
             dictionary: dict,
-            codingPath: codingPath + [key]
+            codingPath: nestedCodingPath
         )
         return KeyedDecodingContainer(container)
     }
 
     func nestedUnkeyedContainer(forKey key: Key) throws -> UnkeyedDecodingContainer {
         let nestedValue = try value(forKey: key)
+        let nestedCodingPath = codingPath + [key]
         guard case let .array(elements) = nestedValue else {
-            throw LosslessJSONPrimitive.typeMismatch([JSONValue].self, nestedValue, codingPath)
+            throw LosslessJSONPrimitive.typeMismatch(
+                [JSONValue].self, nestedValue, nestedCodingPath
+            )
         }
         return LosslessJSONUnkeyedDecodingContainer(
             elements: elements,
-            codingPath: codingPath + [key]
+            codingPath: nestedCodingPath
         )
     }
 
@@ -181,216 +187,5 @@ struct LosslessJSONKeyedDecodingContainer<Key: CodingKey>: KeyedDecodingContaine
     }
 }
 
-struct LosslessJSONUnkeyedDecodingContainer: UnkeyedDecodingContainer {
-    let elements: [JSONValue]
-    let codingPath: [CodingKey]
-    private(set) var currentIndex: Int = 0
-
-    var count: Int? {
-        elements.count
-    }
-
-    var isAtEnd: Bool {
-        currentIndex >= elements.count
-    }
-
-    private static let atEndDescription = "Unkeyed container is at end"
-
-    private mutating func nextValue() throws -> JSONValue {
-        guard !isAtEnd else {
-            let context = DecodingError.Context(
-                codingPath: codingPath,
-                debugDescription: Self.atEndDescription
-            )
-            throw DecodingError.valueNotFound(JSONValue.self, context)
-        }
-        defer { currentIndex += 1 }
-        return elements[currentIndex]
-    }
-
-    mutating func decodeNil() throws -> Bool {
-        guard !isAtEnd else {
-            let context = DecodingError.Context(
-                codingPath: codingPath,
-                debugDescription: Self.atEndDescription
-            )
-            throw DecodingError.valueNotFound(JSONValue.self, context)
-        }
-        if case .null = elements[currentIndex] {
-            currentIndex += 1
-            return true
-        }
-        return false
-    }
-
-    mutating func decode<T: Decodable>(_: T.Type) throws -> T {
-        let index = currentIndex
-        let child = try LosslessJSONValueDecoder(
-            value: nextValue(),
-            codingPath: codingPath + [AnyCodingKey(intValue: index)]
-        )
-        return try T(from: child)
-    }
-
-    mutating func decode(_: Bool.Type) throws -> Bool {
-        try LosslessJSONPrimitive.bool(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: String.Type) throws -> String {
-        try LosslessJSONPrimitive.string(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: Double.Type) throws -> Double {
-        try LosslessJSONPrimitive.double(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: Float.Type) throws -> Float {
-        try LosslessJSONPrimitive.float(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: Int.Type) throws -> Int {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: Int8.Type) throws -> Int8 {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: Int16.Type) throws -> Int16 {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: Int32.Type) throws -> Int32 {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: Int64.Type) throws -> Int64 {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: UInt.Type) throws -> UInt {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: UInt8.Type) throws -> UInt8 {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: UInt16.Type) throws -> UInt16 {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: UInt32.Type) throws -> UInt32 {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func decode(_: UInt64.Type) throws -> UInt64 {
-        try LosslessJSONPrimitive.integer(nextValue(), codingPath: codingPath)
-    }
-
-    mutating func nestedContainer<NestedKey: CodingKey>(
-        keyedBy _: NestedKey.Type
-    ) throws -> KeyedDecodingContainer<NestedKey> {
-        let index = currentIndex
-        guard case let .object(dict) = try nextValue() else {
-            throw LosslessJSONPrimitive.typeMismatch([String: JSONValue].self, .null, codingPath)
-        }
-        let container = LosslessJSONKeyedDecodingContainer<NestedKey>(
-            dictionary: dict,
-            codingPath: codingPath + [AnyCodingKey(intValue: index)]
-        )
-        return KeyedDecodingContainer(container)
-    }
-
-    mutating func nestedUnkeyedContainer() throws -> UnkeyedDecodingContainer {
-        let index = currentIndex
-        guard case let .array(items) = try nextValue() else {
-            throw LosslessJSONPrimitive.typeMismatch([JSONValue].self, .null, codingPath)
-        }
-        return LosslessJSONUnkeyedDecodingContainer(
-            elements: items,
-            codingPath: codingPath + [AnyCodingKey(intValue: index)]
-        )
-    }
-
-    mutating func superDecoder() throws -> Decoder {
-        let index = currentIndex
-        return try LosslessJSONValueDecoder(
-            value: nextValue(),
-            codingPath: codingPath + [AnyCodingKey(intValue: index)]
-        )
-    }
-}
-
-struct LosslessJSONSingleValueDecodingContainer: SingleValueDecodingContainer {
-    let value: JSONValue
-    let codingPath: [CodingKey]
-
-    func decodeNil() -> Bool {
-        if case .null = value {
-            return true
-        }
-        return false
-    }
-
-    func decode(_: Bool.Type) throws -> Bool {
-        try LosslessJSONPrimitive.bool(value, codingPath: codingPath)
-    }
-
-    func decode(_: String.Type) throws -> String {
-        try LosslessJSONPrimitive.string(value, codingPath: codingPath)
-    }
-
-    func decode(_: Double.Type) throws -> Double {
-        try LosslessJSONPrimitive.double(value, codingPath: codingPath)
-    }
-
-    func decode(_: Float.Type) throws -> Float {
-        try LosslessJSONPrimitive.float(value, codingPath: codingPath)
-    }
-
-    func decode(_: Int.Type) throws -> Int {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode(_: Int8.Type) throws -> Int8 {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode(_: Int16.Type) throws -> Int16 {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode(_: Int32.Type) throws -> Int32 {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode(_: Int64.Type) throws -> Int64 {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode(_: UInt.Type) throws -> UInt {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode(_: UInt8.Type) throws -> UInt8 {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode(_: UInt16.Type) throws -> UInt16 {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode(_: UInt32.Type) throws -> UInt32 {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode(_: UInt64.Type) throws -> UInt64 {
-        try LosslessJSONPrimitive.integer(value, codingPath: codingPath)
-    }
-
-    func decode<T: Decodable>(_: T.Type) throws -> T {
-        let child = LosslessJSONValueDecoder(value: value, codingPath: codingPath)
-        return try T(from: child)
-    }
-}
+// `LosslessJSONUnkeyedDecodingContainer`/`LosslessJSONSingleValueDecodingContainer` live in
+// `LosslessJSONDecodingContainers.swift`, purely for SwiftLint file-length compliance.

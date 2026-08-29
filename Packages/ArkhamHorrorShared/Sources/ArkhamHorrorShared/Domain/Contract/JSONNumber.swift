@@ -197,7 +197,12 @@ struct JSONNumber: Sendable {
 /// otherwise (see that conformance's own documentation for the exact gate and its one
 /// documented residual limitation).
 protocol LosslessJSONNumberSource {
-    func losslessJSONNumber() throws -> JSONNumber?
+    /// The exact `JSONNumber` at the decoder's current position. Must throw — never
+    /// return an optional/`nil` sentinel — when the current value isn't numeric, so a
+    /// genuine type mismatch under a lossless-capable decoder is reported as exactly
+    /// that, rather than being mistaken for "this decoder has no lossless capability at
+    /// all" and silently misrouted into the stock-`Decoder` fallback below.
+    func losslessJSONNumber() throws -> JSONNumber
 }
 
 /// Implemented by an `Encoder` that can accept an exact ``JSONNumber`` directly, rather
@@ -208,8 +213,9 @@ protocol LosslessJSONNumberSink {
 
 extension JSONNumber: Codable {
     /// The exact value, if `decoder` is a lossless-aware source (see
-    /// ``LosslessJSONNumberSource``). `nil` for a stock `Decoder`, which has no way to
-    /// expose one.
+    /// ``LosslessJSONNumberSource``). `nil` only when `decoder` has no lossless
+    /// capability at all (a stock `Decoder`); a lossless-capable decoder whose current
+    /// value simply isn't numeric throws instead of returning `nil` here.
     private static func losslessValue(from decoder: any Decoder) throws -> JSONNumber? {
         guard let source = decoder as? LosslessJSONNumberSource else { return nil }
         return try source.losslessJSONNumber()
