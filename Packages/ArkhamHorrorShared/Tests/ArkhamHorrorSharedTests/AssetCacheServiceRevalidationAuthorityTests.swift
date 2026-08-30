@@ -127,7 +127,7 @@ extension AssetCacheServiceTests {
             // more-authoritative concurrent event (a definitive 404 on a
             // distinct in-flight fetch, or an explicit "clear cache"
             // action) actually invalidated this key in production.
-            await layers.service.evictAll()
+            try await layers.service.evictAll()
             await gate.release()
 
             // The stale-authority 304 must never be treated as success:

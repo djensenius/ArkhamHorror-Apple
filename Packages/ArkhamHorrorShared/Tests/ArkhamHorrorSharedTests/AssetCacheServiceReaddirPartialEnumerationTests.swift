@@ -50,7 +50,7 @@ extension AssetCacheServiceTests {
                 failReaddirAfterEntryCount: 1
             )
 
-            await layers.service.evictAll()
+            try await layers.service.evictAll()
 
             let failure = await layers.service.lastDiskPersistenceFailure
             #expect(

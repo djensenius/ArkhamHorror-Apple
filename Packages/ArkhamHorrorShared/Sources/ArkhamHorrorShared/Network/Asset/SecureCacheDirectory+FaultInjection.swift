@@ -75,11 +75,25 @@ final class FaultInjectionState: @unchecked Sendable {
     /// (without the trailing `.tmp`) to line up with the target filename a
     /// test actually cares about, exactly as `FailingFileManager` matched
     /// against `moveItem`'s destination URL.
+    ///
+    /// A *prefix*-based match deliberately excludes the per-key
+    /// issuance/applied ticket counter files (`.gen`/`.applied` — see
+    /// `AssetDiskCache+WriteGeneration.swift`): those share a key's
+    /// content-file prefix purely as an implementation detail, but a
+    /// test that installs `failPrefixes: ["<keyHash>."]` to model "this
+    /// key's *content* persistence is failing" means the payload/
+    /// metadata write, not this key's internal issue-order bookkeeping —
+    /// conflating the two would make an ordinary, narrowly-scoped
+    /// best-effort-disk-failure scenario also fail durable ticket
+    /// issuance itself, which is a categorically different scenario a
+    /// test must opt into explicitly via `failSuffixes: [".gen"]`/
+    /// `[".applied"]` instead.
     func shouldFailTempWrite(tempName: String) -> Bool {
         let strippedName = tempName.hasSuffix(".tmp") ? String(tempName.dropLast(4)) : tempName
         return lock.withLock {
             _failSuffixes.contains { strippedName.hasSuffix($0) }
-                || _failPrefixes.contains { strippedName.hasPrefix($0) }
+                || (!strippedName.hasSuffix(".gen") && !strippedName.hasSuffix(".applied")
+                    && _failPrefixes.contains { strippedName.hasPrefix($0) })
         }
     }
 

@@ -125,7 +125,7 @@ struct AssetCacheServiceDurableClearEpochTests {
             // in-flight fetch at all -- this is the whole point: it clears
             // *its own* memory cache (empty) and the *shared* on-disk
             // directory, then durably records that clear before returning.
-            await serviceB.evictAll()
+            try await serviceB.evictAll()
 
             // Only now does instance A's held network response resolve --
             // strictly after B's clear has already fully committed.

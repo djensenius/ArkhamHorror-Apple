@@ -162,7 +162,7 @@ extension AssetCacheServiceTests {
             // While the paused read still only holds the stale bytes it
             // already captured from memory, run a cache-wide invalidation
             // to completion.
-            await service.evictAll()
+            try await service.evictAll()
             await gate.release()
 
             await transport.enqueue(.success(successResult(body: freshBody)), for: urls[0])

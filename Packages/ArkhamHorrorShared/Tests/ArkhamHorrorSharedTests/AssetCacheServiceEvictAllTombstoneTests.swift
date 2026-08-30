@@ -60,7 +60,7 @@ extension AssetCacheServiceTests {
             await diskCache.directoryAccess.installFaultInjection(
                 failRemovePrefixes: ["\(firstCacheKey.digestHex)."]
             )
-            await layers.service.evictAll()
+            try await layers.service.evictAll()
 
             let failure = await layers.service.lastDiskPersistenceFailure
             #expect(failure != nil, "A partially-failed removeAll() must be audited")
@@ -139,7 +139,7 @@ extension AssetCacheServiceTests {
             await diskCache.directoryAccess.installFaultInjection(
                 failRemovePrefixes: ["\(firstCacheKey.digestHex).", "not-a-real-hex-key-hash"]
             )
-            await layers.service.evictAll()
+            try await layers.service.evictAll()
 
             let failure = await layers.service.lastDiskPersistenceFailure
             #expect(failure != nil, "A partially-failed removeAll() must be audited")
@@ -180,7 +180,7 @@ extension AssetCacheServiceTests {
             // an equivalent listing failure to an empty `[]`) could never
             // safely recover from.
             await diskCache.directoryAccess.installFaultInjection(listNamesFailuresRemaining: 1)
-            await layers.service.evictAll()
+            try await layers.service.evictAll()
 
             let failure = await layers.service.lastDiskPersistenceFailure
             #expect(failure != nil, "A failed removeAll() must be audited")
@@ -245,7 +245,7 @@ extension AssetCacheServiceTests {
             // ``AssetCacheService/asset(for:)``, independent of whether
             // this in-memory set ever learned about the key at all.
             await diskCache.directoryAccess.installFaultInjection(listNamesFailuresRemaining: 2)
-            await layers.service.evictAll()
+            try await layers.service.evictAll()
 
             let failure = await layers.service.lastDiskPersistenceFailure
             #expect(failure != nil, "An unenumerable removeAll() failure must be audited")

@@ -45,10 +45,17 @@ struct ClearEpochCorruptionTests {
         try await body(base)
     }
 
-    @Test("A cache root with no clear-epoch file yet reads a safe baseline of 0")
+    @Test(
+        """
+        A cache root, once its durable root authority has been initialized \
+        (``SecureCacheDirectory/ensureRootAuthorityInitializedLocked()``), reads a safe \
+        baseline clear epoch of 0
+        """
+    )
     func missingFileReadsZero() throws {
         try withScratchDirectory { base in
             let secure = try SecureCacheDirectory(directory: base, fileManager: .default)
+            try secure.ensureRootAuthorityInitializedLocked()
             #expect(try secure.readPersistedClearEpoch() == 0)
         }
     }
@@ -96,6 +103,7 @@ struct ClearEpochCorruptionTests {
     func validValueRoundTrips() throws {
         try withScratchDirectory { base in
             let secure = try SecureCacheDirectory(directory: base, fileManager: .default)
+            try secure.ensureRootAuthorityInitializedLocked()
             let bumped = try secure.bumpClearEpoch()
             #expect(bumped == 1)
             #expect(try secure.readPersistedClearEpoch() == 1)

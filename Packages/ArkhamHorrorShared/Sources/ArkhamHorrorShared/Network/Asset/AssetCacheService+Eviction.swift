@@ -34,7 +34,30 @@ extension AssetCacheService {
     /// Without this, a caller still suspended in ``coalescedFetch``/
     /// ``coalescedRevalidation`` at the moment this method ran would hang
     /// forever instead of observing `CancellationError`.
-    func evictAll() async {
+    ///
+    /// **Throws only when the disk-durable cross-instance/cross-process
+    /// authority fence itself failed to advance** —
+    /// ``AssetError/clearFenceNotDurable(_:)`` specifically (see that
+    /// case's own doc comment). In that case this call's own in-process
+    /// state (the global-generation bump above, every in-flight
+    /// cancellation, and the in-process memory-cache clear) has *already*
+    /// taken effect by the time this throws — undoing any of that would
+    /// not restore any actual authority a sibling instance/process could
+    /// rely on, and this process's own future reads must stay just as
+    /// distrustful of stale content as if the fence had truly advanced.
+    /// What this throw specifically prevents is this call's caller
+    /// mistaking a call that did *not* durably fence out a sibling
+    /// instance/process for one that did — this must never be folded
+    /// into ``lastDiskPersistenceFailure`` and silently swallowed the way
+    /// an ordinary, merely-partial physical-deletion failure already is
+    /// (that failure mode remains non-fatal below, exactly as before:
+    /// once the fence itself is durably advanced, best-effort physical
+    /// cleanup — and this process's own tombstone bookkeeping for
+    /// whatever it could not immediately delete — is sufficient, since
+    /// every disk hit for any key must independently pass a fresh online
+    /// conditional revalidation regardless; see ``AssetDiskCache``'s own
+    /// doc comment).
+    func evictAll() async throws {
         issueGlobalInvalidation()
         for (_, fetch) in inFlight {
             for (_, continuation) in fetch.waiters {
@@ -55,6 +78,18 @@ extension AssetCacheService {
             try await diskCache.removeAll()
             tombstonedKeys.removeAll()
             lastDiskPersistenceFailure = nil
+        } catch let fenceError as AssetError where isFenceFailure(fenceError) {
+            // The durable fence itself (the clear epoch, or the root-
+            // authority transaction that guards it) never advanced: this
+            // is categorically worse than a partial physical-deletion
+            // failure (see this method's own doc comment) and must
+            // propagate to this call's caller rather than being folded
+            // into ``lastDiskPersistenceFailure`` as a soft, swallowed
+            // failure. Recorded here too, purely for diagnostics/
+            // instrumentation parity with the best-effort path below —
+            // never treated as cleared.
+            lastDiskPersistenceFailure = fenceError
+            throw fenceError
         } catch {
             // `removeAll()` failed (partially or entirely): some entries
             // may still be physically present on disk. Snapshot *after*
@@ -112,6 +147,20 @@ extension AssetCacheService {
         return rawNames
             .filter { AssetDiskCache.isValidContentHash($0) }
             .map { AssetCacheKey(digestHex: $0) }
+    }
+
+    /// `true` only for ``AssetError/clearFenceNotDurable(_:)`` — the one
+    /// ``AssetDiskCache/removeAll()`` failure mode that must propagate
+    /// out of ``evictAll()`` rather than being folded into the same
+    /// best-effort/tombstoned handling as every other error it can throw
+    /// (an ordinary partial physical-deletion or removal-pass `fsync`
+    /// failure, both still surfaced as ``AssetError/cachePersistenceFailed(_:)``).
+    /// Factored out purely so the `catch` clause above stays legible.
+    private func isFenceFailure(_ error: AssetError) -> Bool {
+        if case .clearFenceNotDurable = error {
+            return true
+        }
+        return false
     }
 
     /// Removes `cacheKey` from both cache layers, tombstoning it if the
@@ -190,8 +239,10 @@ extension AssetCacheService {
         guard await stillAuthoritative() else {
             return .stale
         }
+        var diskOutcomeIsStale = false
         do {
-            try await diskCache.remove(cacheKey, token: token)
+            let diskOutcome = try await diskCache.remove(cacheKey, token: token)
+            diskOutcomeIsStale = diskOutcome == .stale
             lastDiskPersistenceFailure = nil
         } catch let error as AssetError {
             tombstonedKeys.insert(cacheKey)
@@ -199,6 +250,22 @@ extension AssetCacheService {
         } catch {
             tombstonedKeys.insert(cacheKey)
             lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
+        }
+        guard !diskOutcomeIsStale else {
+            // The disk-durable, cross-instance/cross-process CAS itself
+            // rejected this removal as stale: a more-recently-issued
+            // sibling instance/process sharing this same directory has
+            // already published a newer write for this exact key since
+            // `token` was issued. This call's own memory removal above
+            // must not be allowed to stand as if this invalidation were
+            // still authoritative — otherwise a caller could believe this
+            // key was cleanly invalidated while a sibling's genuinely
+            // newer content survives untouched on disk, with nothing to
+            // repopulate this instance's own memory cache for it. There
+            // is nothing further to retract here (the removal, being
+            // rejected, never took effect), so this simply reports
+            // `.stale` exactly like every other authority re-check.
+            return .stale
         }
         guard await stillAuthoritative() else {
             return .stale

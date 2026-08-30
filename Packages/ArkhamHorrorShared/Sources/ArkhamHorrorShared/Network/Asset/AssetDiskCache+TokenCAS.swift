@@ -46,17 +46,38 @@ extension AssetDiskCache {
     }
 
     /// The compare half of this cache's durable, cross-instance/cross-
-    /// process per-key token CAS: accepts `token` only if **both** of its
-    /// two durable authority halves still exactly match the values the
-    /// caller already read (under the same already-held exclusive lock)
-    /// via ``SecureCacheDirectory/readPersistedClearEpoch()`` and
-    /// ``currentWriteGenerationLocked(for:)`` — never against any
+    /// process per-key token CAS: accepts `token` only if its durable
+    /// clear epoch still *exactly* matches the value the caller already
+    /// read (under the same already-held exclusive lock) via
+    /// ``SecureCacheDirectory/readPersistedClearEpoch()``, **and** its own
+    /// issued ticket (``AssetCacheService/CacheToken/diskWriteGeneration``)
+    /// is still `>=` the highest ticket any mutation for this key has
+    /// actually applied so far (`currentApplied`, read via
+    /// ``currentAppliedTicketLocked(for:)``) — never against any
     /// actor-local, in-memory bookkeeping, and never re-read internally
     /// here (the caller reads both exactly once, so it can reuse the same
-    /// values to durably commit the next generation immediately after a
-    /// successful mutation, without a second, potentially-inconsistent
-    /// read). A `nil` on either half of `token` (a durable read failure
-    /// at issuance time) always rejects; there is no in-memory fallback.
+    /// values to durably commit the next applied ticket immediately after
+    /// a successful mutation, without a second, potentially-inconsistent
+    /// read). A `nil` on either half of `token` (a durable read failure at
+    /// issuance time) always rejects; there is no in-memory fallback.
+    ///
+    /// **Deliberately `>=`, not `==`.** An earlier revision compared
+    /// `token`'s captured generation for *exact* equality against the
+    /// current value — completion-ordered, not issuance-ordered: two
+    /// operations issued concurrently for the same key, before either has
+    /// published, could capture the *identical* snapshot, and whichever
+    /// one's write merely *completed* first would "win" that equality
+    /// check, wrongly rejecting a genuinely later-issued operation that
+    /// simply took longer to reach this point. Comparing `>=` against the
+    /// highest *applied* ticket instead only ever rejects a token whose
+    /// own issued ticket has already been superseded by some other
+    /// mutation's — regardless of which one's network round trip or
+    /// decode happened to finish first — and this file's own
+    /// ``reserveAndCommitMutationTicketLocked(for:)`` (invoked by every
+    /// successful mutation immediately before it takes effect) guarantees
+    /// every successfully applied ticket is itself always strictly higher
+    /// than whatever was applied before it, so a stale token's own ticket
+    /// can never again satisfy `>=` once any later ticket has applied.
     ///
     /// This is what actually makes two independently wired instances/
     /// processes sharing this same on-disk directory agree on write
@@ -73,54 +94,60 @@ extension AssetDiskCache {
     func acceptToken(
         _ token: AssetCacheService.CacheToken,
         currentEpoch: Int,
-        currentGeneration: Int
+        currentApplied: Int
     ) -> Bool {
         guard
             let expectedEpoch = token.durableClearEpoch,
-            let expectedGeneration = token.diskWriteGeneration
+            let issuedTicket = token.diskWriteGeneration
         else {
             return false
         }
-        return currentEpoch == expectedEpoch && currentGeneration == expectedGeneration
+        return currentEpoch == expectedEpoch && issuedTicket >= currentApplied
     }
 
     /// Removes `key`'s on-disk entry only if `token` is *exactly* the
-    /// token whose own write is currently the last-applied one for this
-    /// key — i.e. the current durable write generation is exactly one
-    /// past what `token` itself captured at issuance (the value
-    /// ``AssetDiskCache/commitWriteGenerationLocked(_:for:)`` durably
-    /// persisted immediately after `token` passed
-    /// ``acceptToken(_:for:)``'s own pre-write check) — and the durable
-    /// clear epoch has not changed since. Deliberately a different
-    /// comparison than ``acceptToken(_:for:)``'s own pre-write CAS: by
-    /// the time this runs, `token`'s own write has *already* durably
-    /// bumped the generation counter past the value `token` captured at
-    /// issuance, so comparing against that same pre-write value again
-    /// here would always (wrongly) reject the very token whose mutation
-    /// this call exists to retract. Mirrors
-    /// ``AssetMemoryCache/removeIfApplied(_:token:)``'s exact-match
-    /// semantics (as opposed to ``acceptToken(_:for:)``'s "reject if a
-    /// newer token already applied" compare-and-swap). Used by
+    /// token whose own mutation is currently the last-applied one for
+    /// this key — i.e. the current durable applied ticket is *exactly*
+    /// `token`'s own issued ticket — and the durable clear epoch has not
+    /// changed since. Deliberately exact-match, not the `>=` compare
+    /// ``acceptToken(_:currentEpoch:currentApplied:)`` uses: by the time
+    /// this runs, `token`'s own mutation has already durably become the
+    /// applied ticket for this key (via
+    /// ``reserveAndCommitMutationTicketLocked(for:)``), so this only ever
+    /// retracts a mutation that is still exactly the current, unsuperseded
+    /// state — never a token some other, later mutation has since moved
+    /// past. Mirrors ``AssetMemoryCache/removeIfApplied(_:token:)``'s
+    /// exact-match semantics. Used by
     /// ``AssetCacheService/publish(_:asset:token:)``/
     /// ``AssetCacheService/touch(_:asset:token:)`` to retract a disk write
     /// that landed successfully but was only afterward discovered to
-    /// already have been superseded.
+    /// already have been superseded (e.g. the last waiter of a coalesced
+    /// operation cancelled before delivery).
     func removeIfApplied(_ key: AssetCacheKey, token: AssetCacheService.CacheToken) async {
         guard let lockFD = try? await secureDirectory.acquireExclusiveLock() else { return }
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try? ensureRootAuthorityInitializedLocked()
         guard
-            let issuedGeneration = token.diskWriteGeneration,
+            let issuedTicket = token.diskWriteGeneration,
             let issuedEpoch = token.durableClearEpoch,
             let currentEpoch = try? secureDirectory.readPersistedClearEpoch(),
             currentEpoch == issuedEpoch,
-            let currentGeneration = try? currentWriteGenerationLocked(for: key),
-            currentGeneration == issuedGeneration + 1
+            let currentApplied = try? currentAppliedTicketLocked(for: key),
+            currentApplied == issuedTicket
         else {
             return
         }
         _ = try? secureDirectory.remove(name: metadataFilename(for: key))
         try? secureDirectory.fsyncRootDirectory()
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
+        // Advances the applied ticket one further step past this exact
+        // retraction, mirroring every other successful mutation in this
+        // file: leaves no window where a *third*, even-later-issued
+        // token could still find `currentApplied == its own ticket` by
+        // coincidence after this retraction, and correctly permits a
+        // still-in-flight, genuinely newer operation for this same key to
+        // freely proceed afterward.
+        _ = try? reserveAndCommitMutationTicketLocked(for: key)
     }
 
     /// `true` only for a string that is exactly 64 lowercase ASCII hex

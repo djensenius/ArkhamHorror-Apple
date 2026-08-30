@@ -28,15 +28,21 @@ extension AssetDiskCacheTests {
             }
 
             // Excludes the cache's own reserved cross-process lock file
-            // (`SecureCacheDirectory.lockFileName`) and durable clear-
+            // (`SecureCacheDirectory.lockFileName`), durable clear-
             // epoch counter (`SecureCacheDirectory.clearEpochFileName`),
-            // both of which are expected to persist for the cache's
-            // entire lifetime regardless of what entries it holds --
-            // neither is itself a cache entry.
+            // and durable root-authority-initialization marker
+            // (`SecureCacheDirectory.rootInitMarkerFileName`) -- all of
+            // which are expected to persist for the cache's entire
+            // lifetime regardless of what entries it holds (the root
+            // marker in particular is durably created on this first-ever
+            // operation against a pristine root, before this call's own
+            // hash check even runs), and none of which is itself a cache
+            // entry.
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
                 .filter {
                     $0 != SecureCacheDirectory.lockFileName
                         && $0 != SecureCacheDirectory.clearEpochFileName
+                        && $0 != SecureCacheDirectory.rootInitMarkerFileName
                 }
             #expect(contents.isEmpty, "A rejected mismatched hash must write nothing at all")
             let fetched = try await cache.get(cacheKey)

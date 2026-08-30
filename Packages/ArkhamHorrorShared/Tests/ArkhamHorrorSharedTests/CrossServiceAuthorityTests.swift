@@ -17,7 +17,14 @@ import Testing
 ///    by the durable, disk-persisted write generation -- not either
 ///    service's own private, actor-local bookkeeping -- so an older
 ///    service's delayed publish can never overwrite a newer sibling's
-///    already-applied one, and vice versa.
+///    already-applied one, and vice versa. Critically, the *older*
+///    service's own caller must also observe that rejection as a typed
+///    failure (``AssetError/staleOperation``), never a successfully
+///    returned but already-superseded result: a purely disk-side CAS
+///    rejection that never propagates back through
+///    ``AssetCacheService/publish(_:asset:token:)``/``AssetCacheService/asset(for:)``
+///    would leave that service's own caller believing its own stale
+///    bytes were the current, cache-consistent answer.
 @Suite("AssetCacheService cross-service authority")
 struct CrossServiceAuthorityTests {
     private func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
@@ -108,7 +115,7 @@ struct CrossServiceAuthorityTests {
 
             // B, sharing no in-memory state with A at all, clears the
             // shared on-disk directory and durably records that clear.
-            await serviceB.evictAll()
+            try await serviceB.evictAll()
 
             // A's own next lookup for this exact key must not trust its
             // already-published memory entry: the durable clear epoch it
@@ -131,8 +138,9 @@ struct CrossServiceAuthorityTests {
         """
         An older-issued fetch on service A, held up in the network layer, must not overwrite \
         a newer, already-published fetch service B independently completed first for the \
-        exact same key -- A's own publish attempt must instead fail as stale, and the disk \
-        entry a later, fresh service sees must be B's
+        exact same key -- A's own publish attempt must itself fail as stale (never returning \
+        its own already-superseded bytes as if they were still the resolved, cache-consistent \
+        answer), and the disk entry a later, fresh service sees must be B's
         """
     )
     func olderIssuedFetchCannotOverwriteNewerSiblingFetch() async throws {
@@ -167,13 +175,28 @@ struct CrossServiceAuthorityTests {
             #expect(completedB.payload == payloadB)
 
             // Only now does A's held response resolve -- strictly after
-            // B's newer write has already durably landed.
+            // B's newer write has already durably landed. A's own
+            // publish attempt must be rejected as stale by the disk-
+            // durable, cross-instance/cross-process per-key write-
+            // generation CAS (``AssetDiskCache/acceptToken(_:currentEpoch:currentApplied:)``),
+            // and that rejection must propagate all the way back to this
+            // exact caller as a thrown ``AssetError/staleOperation`` --
+            // *never* as a successfully returned ``CachedAsset`` carrying
+            // A's own already-superseded `payloadA` bytes. A prior
+            // revision of this test instead asserted the opposite
+            // (`resultA.payload == payloadA`, treating A's own stale
+            // fetch as if it had succeeded from A's point of view): that
+            // was itself the exact defect a review round required fixing
+            // -- an older-issued operation must never deliver its own
+            // stale result to its own caller merely because its *local*
+            // token bookkeeping never learned a sibling had already won;
+            // the disk layer's own CAS rejection must be surfaced back
+            // through the full ``AssetCacheService/asset(for:)`` call
+            // chain as a definitive, typed failure instead.
             await transportA.release(urls[0])
-            let resultA = try await fetchTaskA.value
-            #expect(
-                resultA.payload == payloadA,
-                "A's own in-process view of its own fetch's result is unaffected by B's publish"
-            )
+            await #expect(throws: AssetError.staleOperation) {
+                try await fetchTaskA.value
+            }
 
             // The disk entry itself -- the shared, durable resource both
             // services actually write through -- must still hold B's

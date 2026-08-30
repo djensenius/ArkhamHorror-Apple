@@ -46,18 +46,52 @@ import Foundation
 /// whose durable counter file *existed* (recording one or more real
 /// clears) but was since deleted, lost, or otherwise made unreadable —
 /// silently reusing `0` for the latter would let a resurrection exactly
-/// this file exists to prevent slip through undetected. This type instead
-/// durably creates the counter file — atomically, with its initial value —
-/// as part of ``SecureCacheDirectory/init(directory:fileManager:)`` itself
-/// (see ``ensureClearEpochInitialized()``), strictly before any other
-/// call on this instance can ever read or bump it. From that point on,
-/// for the remaining lifetime of every
-/// ``SecureCacheDirectory``/``AssetDiskCache`` ever constructed against
-/// this directory, the file is guaranteed to already exist — so any
-/// further "does not exist" result is no longer the safe pristine-root
-/// case at all; it is unambiguous evidence the file was lost after
-/// initialization, and is treated as a hard, typed, fail-closed failure
-/// exactly like a corrupt/unparsable one, never as a fresh `0` baseline.
+/// this file exists to prevent slip through undetected.
+///
+/// A *later* revision moved initialization into
+/// ``SecureCacheDirectory/init(directory:fileManager:)`` itself, on the
+/// theory that two racing initializers would always write the exact same
+/// content and so no cross-process lock was needed. That reasoning holds
+/// only while comparing two initializers racing *against each other* on a
+/// root neither has ever touched before — it does not hold once a
+/// *third* party (a real, already-completed ``AssetDiskCache/removeAll()``
+/// durably bumping the epoch to a real, non-zero value) can interleave
+/// between one racing initializer's own "does not exist" read and its own
+/// unconditional "write `0`" step: that late writer's unconditional
+/// `rename` would silently replace the just-committed, genuinely higher
+/// epoch back down to `0`, resurrecting exactly the authority a clear that
+/// already, durably happened was supposed to have revoked. Worse, that
+/// same unconditional-write shape cannot tell "a genuinely pristine root"
+/// apart from "a previously-initialized root whose counter file was later
+/// lost" even with no racing initializer in the picture at all — both
+/// look identical to a bare existence check taken at any single point in
+/// time.
+///
+/// This revision closes both gaps at once, with two changes:
+///
+/// 1. Initialization is a genuine cross-process **locked** transaction —
+///    see ``ensureRootAuthorityInitializedLocked()`` — run by every
+///    ``AssetDiskCache`` locked entry point (never from
+///    ``SecureCacheDirectory/init(directory:fileManager:)``, which cannot
+///    itself acquire ``acquireExclusiveLock()`` since that is `async`).
+///    While one process holds this directory's exclusive lock, no other
+///    process can be inside this same transaction at all, eliminating the
+///    write-after-read race entirely: a fresh clear can never land between
+///    a racing initializer's own read and its own write, because both
+///    steps now happen atomically with respect to every other holder of
+///    this lock.
+/// 2. A separate, permanent **root-init marker** file
+///    (``rootInitMarkerFileName``) durably records "this root has been
+///    initialized at least once, ever" — created together with, and only
+///    together with, the epoch counter's very first value, and never
+///    removed by anything (including a whole-cache
+///    ``AssetDiskCache/removeAll()``) for the remaining lifetime of this
+///    directory. A missing epoch counter is only ever treated as the safe
+///    "genuinely pristine root" case when the marker is *also* missing;
+///    if the marker exists but the counter does not, this root was
+///    definitely initialized before and its counter was definitely lost
+///    since — a hard, typed, fail-closed failure, never a silent
+///    reinitialization to `0`.
 extension SecureCacheDirectory {
     /// The fixed leaf name of this cache's durable clear-epoch counter
     /// file, inside the verified root directory. Not `private`, for the
@@ -79,26 +113,60 @@ extension SecureCacheDirectory {
     /// ones that happen to need fewer digits.
     static let clearEpochDigitWidth = 20
 
-    /// Idempotently ensures this cache directory's durable clear-epoch
-    /// counter file exists, initializing it to `0` ("never cleared") if
-    /// it does not. Called exactly once, synchronously, as the final step
-    /// of ``SecureCacheDirectory/init(directory:fileManager:)``,
-    /// establishing the "always already exists past this point" invariant
-    /// every later ``readPersistedClearEpoch()`` call relies on to treat
-    /// a subsequent miss as a hard failure rather than a safe default.
+    /// The fixed leaf name of this cache's permanent root-init marker
+    /// file — see this file's type-level doc comment for exactly what it
+    /// durably proves and why a separate file (rather than folding this
+    /// into the epoch counter itself) is required. Not `private`, for the
+    /// same reason as ``clearEpochFileName``: ``AssetDiskCache/removeAll()``
+    /// must recognize and preserve this exact name across a whole-cache
+    /// clear — this marker must never be removable by anything, ever, for
+    /// the lifetime of this directory.
+    static let rootInitMarkerFileName = ".arkham-cache.root-init"
+
+    /// Idempotently ensures this cache directory's durable root authority
+    /// — the root-init marker and the clear-epoch counter together — is
+    /// fully initialized, as one cross-process locked transaction.
     ///
-    /// Deliberately does **not** require this instance's own
-    /// cross-process ``acquireExclusiveLock()`` (which requires `async`,
-    /// unavailable from a synchronous, throwing `init`): two processes
-    /// racing to construct against the same brand-new directory for the
-    /// first time could both observe "does not exist" and both attempt
-    /// this same initializing write, but since both would write the
-    /// exact identical initial content, and the final `rename` step is
-    /// itself atomic at the filesystem level, this race is harmless
-    /// regardless of which writer's `rename` lands last — there is no
-    /// scenario in which racing initializers disagree on what value to
-    /// initialize to.
-    func ensureClearEpochInitialized() throws {
+    /// **Must only ever be called while the caller already holds this
+    /// instance's ``acquireExclusiveLock()``** — unlike the prior
+    /// unlocked `ensureClearEpochInitialized()` this replaces, callers
+    /// (every ``AssetDiskCache`` locked entry point) run this as the
+    /// very first step of their own already-held critical section, before
+    /// ``AssetDiskCache/recoverOrphansIfNeeded()`` and before any other
+    /// read of the durable epoch — see
+    /// `AssetDiskCache+RootAuthority.swift`'s call sites.
+    ///
+    /// Three cases, distinguished by the marker and counter's independent
+    /// presence:
+    ///
+    /// - **Counter already exists.** Already initialized (by this
+    ///   instance or any prior instance/process sharing this directory,
+    ///   at any point in the past) — nothing to do, regardless of the
+    ///   marker's own state. This is the overwhelmingly common case for
+    ///   every call after the very first one against a given directory.
+    /// - **Counter missing, marker exists.** This root was *definitely*
+    ///   initialized before (the marker is only ever created together
+    ///   with the counter's very first value, in the branch below, and
+    ///   is never subsequently removed by anything) — so the counter's
+    ///   current absence is definite evidence it was lost, deleted, or
+    ///   corrupted away *after* initialization, never a safe "pristine
+    ///   root" case. Fails closed with a typed, hard failure rather than
+    ///   silently resetting authority back to `0` and potentially
+    ///   resurrecting content a clear already durably revoked.
+    /// - **Counter missing, marker missing.** As far as this locked
+    ///   transaction can ever prove — no other process can be
+    ///   concurrently inside this same method for this same directory
+    ///   while this one holds the lock — this is genuinely the very first
+    ///   time any process has ever initialized this root. Commits the
+    ///   marker first, then the counter, both durably (write, `fsync`,
+    ///   rename, directory `fsync`) before returning. A crash strictly
+    ///   between the two leaves the marker installed and the counter
+    ///   still missing, which the branch above then correctly refuses to
+    ///   silently repair on any future open — requiring explicit,
+    ///   deliberate intervention rather than an automatic, unaudited
+    ///   reset of a root whose true prior history a crash mid-transaction
+    ///   leaves genuinely unknowable.
+    func ensureRootAuthorityInitializedLocked() throws {
         guard try read(name: Self.clearEpochFileName, maxBytes: Self.clearEpochDigitWidth) == nil
         else {
             // Already exists (whatever its content) -- never overwritten
@@ -109,7 +177,25 @@ extension SecureCacheDirectory {
             // parse for some unrelated, possibly transient reason.
             return
         }
-        try persistClearEpoch(0)
+        guard try read(name: Self.rootInitMarkerFileName, maxBytes: 1) == nil else {
+            throw AssetError.clearFenceNotDurable(
+                "Clear-epoch counter is missing on a previously initialized cache root; " +
+                    "refusing to silently reinitialize its authority"
+            )
+        }
+        do {
+            let markerTempName = Self.rootInitMarkerFileName + ".tmp"
+            try writeTempAndFsync(tempName: markerTempName, data: Data([0x01]))
+            try renameAndFsyncDirectory(from: markerTempName, to: Self.rootInitMarkerFileName)
+            try persistClearEpoch(0)
+        } catch let error as AssetError {
+            if case .clearFenceNotDurable = error {
+                throw error
+            }
+            throw AssetError.clearFenceNotDurable(
+                "Durable root-authority initialization failed: \(error)"
+            )
+        }
     }
 
     /// Reads the currently persisted clear-epoch value. Throws for *any*
@@ -174,17 +260,41 @@ extension SecureCacheDirectory {
     /// directory is not achievable in practice) preserves the invariant
     /// that every two clears this method ever successfully commits are
     /// always distinguishable.
+    ///
+    /// Every failure here — reading the current value, saturation, or
+    /// the write/rename/`fsync` durably committing the new one — is
+    /// surfaced as ``AssetError/clearFenceNotDurable(_:)`` specifically,
+    /// never the generic ``AssetError/cachePersistenceFailed(_:)`` an
+    /// ordinary best-effort disk I/O failure elsewhere in this package
+    /// produces: see that case's own doc comment for why
+    /// ``AssetDiskCache/removeAll()``'s caller
+    /// (``AssetCacheService/evictAll()``) must be able to tell "the
+    /// cross-instance/cross-process authority fence itself never
+    /// durably advanced" apart from "the fence advanced fine, but some
+    /// physical entry afterward could not be deleted" — the two demand
+    /// entirely different handling, and folding both into the same
+    /// error case would make that distinction unrecoverable by the time
+    /// it reaches that caller.
     @discardableResult
     func bumpClearEpoch() throws -> Int {
-        let persisted = try readPersistedClearEpoch()
-        guard persisted < Int.max else {
-            throw AssetError.cachePersistenceFailed(
-                "Clear-epoch counter is exhausted and cannot be durably distinguished further"
+        do {
+            let persisted = try readPersistedClearEpoch()
+            guard persisted < Int.max else {
+                throw AssetError.clearFenceNotDurable(
+                    "Clear-epoch counter is exhausted and cannot be durably distinguished further"
+                )
+            }
+            let next = persisted + 1
+            try persistClearEpoch(next)
+            return next
+        } catch let error as AssetError {
+            if case .clearFenceNotDurable = error {
+                throw error
+            }
+            throw AssetError.clearFenceNotDurable(
+                "Durable clear-epoch bump failed: \(error)"
             )
         }
-        let next = persisted + 1
-        try persistClearEpoch(next)
-        return next
     }
 
     private func persistClearEpoch(_ epoch: Int) throws {

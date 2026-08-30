@@ -20,13 +20,23 @@ extension AssetDiskCacheTests {
             // below only depend on being large enough to be non-negligible
             // relative to the payload — the exact eviction/survival
             // outcome does not depend on its precise value. Budget/ratios
-            // mirror `AssetMemoryCacheTests`' exact-watermark scenario.
+            // mirror `AssetMemoryCacheTests`' exact-watermark scenario,
+            // with `diskBudgetBytes` given extra headroom (disk-only,
+            // `memoryBudgetBytes` is untouched) over that memory-only
+            // scenario's value: unlike the memory cache, the disk cache
+            // also durably accounts for this directory's root-authority
+            // marker, clear-epoch file, and every key's own per-key
+            // issuance-ticket bookkeeping files (which persist across an
+            // ordinary single-entry eviction by design, see
+            // `AssetDiskCache+WriteGeneration.swift`), and that fixed
+            // overhead must not itself force evicting more than the one
+            // truly-least-recently-used entry this test expects.
             let limits = AssetCacheLimits(
                 maxEncodedBytes: 1_000_000,
                 maxDimension: 8192,
                 maxPixelCount: 32_000_000,
                 memoryBudgetBytes: 4000,
-                diskBudgetBytes: 4000,
+                diskBudgetBytes: 4500,
                 highWaterMarkRatio: 0.95,
                 lowWaterMarkRatio: 0.76
             )
@@ -242,13 +252,14 @@ extension AssetDiskCacheTests {
             let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
             // Excludes the cache's own reserved cross-process lock file,
-            // durable clear-epoch counter, and this exact key's own
-            // durable disk-write-generation counter file (`<hash>.gen`,
+            // durable root-authority-initialization marker, durable
+            // clear-epoch counter, and this exact key's own durable
+            // disk-write-generation counters (`<hash>.gen`/`<hash>.applied`,
             // see `AssetDiskCache+WriteGeneration.swift`): unlike the
             // payload/metadata pair a removal is actually responsible for
-            // deleting, that counter is deliberately never removed by an
+            // deleting, those counters are deliberately never removed by an
             // ordinary per-key `remove(_:token:)` -- see that file's own
-            // doc comment for why letting it survive an ordinary removal
+            // doc comment for why letting them survive an ordinary removal
             // (while still being fully reset by a whole-cache
             // `removeAll()`) is required to keep a stale, still-in-flight
             // write for this exact key from being able to resurrect
@@ -258,7 +269,9 @@ extension AssetDiskCacheTests {
                     $0 != SecureCacheDirectory.lockFileName
                         && $0 != SecureCacheDirectory.accessSequenceFileName
                         && $0 != SecureCacheDirectory.clearEpochFileName
+                        && $0 != SecureCacheDirectory.rootInitMarkerFileName
                         && $0 != "\(cacheKey.digestHex).gen"
+                        && $0 != "\(cacheKey.digestHex).applied"
                 }
             #expect(contents.isEmpty)
         }

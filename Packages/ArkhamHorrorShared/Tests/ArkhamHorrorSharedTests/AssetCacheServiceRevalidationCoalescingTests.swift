@@ -364,7 +364,7 @@ extension AssetCacheServiceTests {
             await transport.waitForCallCount(2, for: urls[0])
             try await Task.sleep(nanoseconds: 20_000_000)
 
-            await service.evictAll()
+            try await service.evictAll()
             await transport.release(urls[0])
 
             let result = await withTaskGroup(

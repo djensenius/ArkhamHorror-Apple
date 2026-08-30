@@ -253,7 +253,7 @@ extension AssetCacheServiceTests {
             // exactly the moment a waiter is suspended inside
             // `coalescedFetch`'s `withCheckedContinuation`, the scenario
             // that must never hang.
-            await service.evictAll()
+            try await service.evictAll()
             await transport.release(urls[0])
 
             // `Task.value`/`.result` alone would hang forever if this

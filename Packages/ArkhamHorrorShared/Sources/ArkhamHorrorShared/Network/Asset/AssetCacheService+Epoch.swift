@@ -113,26 +113,28 @@ extension AssetCacheService {
         /// separately, against a *freshly re-read* current value, by
         /// every authority check.
         var durableClearEpoch: Int?
-        /// This key's durable, cross-instance/cross-process
-        /// ``AssetDiskCache/currentWriteGenerationLocked(for:)`` value
-        /// observed at the moment this token was issued (see
+        /// This key's durable, cross-instance/cross-process issuance
+        /// ticket (``AssetDiskCache/issueTicketLocked(for:)``'s return
+        /// value) reserved at the moment this token was issued (see
         /// ``AssetDiskCache/beginIssuance(for:)`` and
         /// `AssetDiskCache+WriteGeneration.swift`'s type-level doc
-        /// comment) — `nil` only if that durable read itself failed at
-        /// issuance time, which ``AssetDiskCache/acceptToken(_:for:)``
+        /// comment) — `nil` only if that durable reservation itself
+        /// failed at issuance time, which ``AssetDiskCache/acceptToken(_:for:)``
         /// treats as permanently unacceptable (fail closed), never a
         /// silent "no other write has ever happened for this key"
         /// default. This is the disk-durable, cross-process half of the
         /// per-key compare-and-swap: unlike `generation`/`clearGeneration`
         /// /`durableClearEpoch` (all whole-cache concerns),
-        /// `AssetDiskCache` compares this value against the *current*
-        /// on-disk counter for this exact key, independent of and in
-        /// addition to any other instance/process's own in-memory
-        /// bookkeeping, which is what actually makes two independently
-        /// wired instances/processes sharing one disk directory agree on
-        /// write ordering for the same key. Deliberately not part of
-        /// `==`/`<`'s identity comparison, for the identical reason
-        /// `clearGeneration`/`durableClearEpoch` are not.
+        /// `AssetDiskCache` compares this globally-ordered issuance
+        /// ticket against the *currently applied* on-disk ticket for this
+        /// exact key (``AssetDiskCache/currentAppliedTicketLocked(for:)``),
+        /// independent of and in addition to any other instance/process's
+        /// own in-memory bookkeeping, which is what actually makes two
+        /// independently wired instances/processes sharing one disk
+        /// directory agree on write ordering for the same key.
+        /// Deliberately not part of `==`/`<`'s identity comparison, for
+        /// the identical reason `clearGeneration`/`durableClearEpoch` are
+        /// not.
         var diskWriteGeneration: Int?
 
         static func == (lhs: CacheToken, rhs: CacheToken) -> Bool {

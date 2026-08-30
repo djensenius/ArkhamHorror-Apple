@@ -220,8 +220,10 @@ struct SecureCacheDirectoryLockingTests {
             let namesAfterClear = try FileManager.default
                 .contentsOfDirectory(atPath: directory.path)
             // The reserved lock file, the durable access-sequence counter
-            // file, and the durable cross-process clear-epoch counter file
-            // (see `SecureCacheDirectory+ClearEpoch.swift`) are the only
+            // file, the durable cross-process clear-epoch counter file
+            // (see `SecureCacheDirectory+ClearEpoch.swift`), and the
+            // durable root-authority-initialization marker (also in
+            // `SecureCacheDirectory+ClearEpoch.swift`) are the only
             // entries expected to survive a `removeAll()` -- every actual
             // cache entry must be gone. The clear-epoch file must survive
             // *this exact clear* (rather than merely a later one) because
@@ -234,12 +236,17 @@ struct SecureCacheDirectoryLockingTests {
             // provide. The access-sequence counter, similarly, must
             // survive to keep LRU ordering globally monotonic across a
             // clear, not because it is itself a correctness-sensitive
-            // authority token.
+            // authority token. The root-authority marker must survive
+            // because it records this exact root as already-initialized;
+            // deleting it would let a later re-open of this same,
+            // previously-cleared root be misclassified as genuinely
+            // pristine.
             #expect(
                 Set(namesAfterClear) == [
                     SecureCacheDirectory.lockFileName,
                     SecureCacheDirectory.accessSequenceFileName,
                     SecureCacheDirectory.clearEpochFileName,
+                    SecureCacheDirectory.rootInitMarkerFileName,
                 ]
             )
 

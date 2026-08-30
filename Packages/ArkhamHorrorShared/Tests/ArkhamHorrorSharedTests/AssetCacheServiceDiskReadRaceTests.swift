@@ -111,7 +111,7 @@ extension AssetCacheServiceTests {
             // invalidation to completion. The disk actor is free to
             // service it: the paused `get(_:)` call already yielded via
             // its own internal `await` at the pause point.
-            await layers.service.evictAll()
+            try await layers.service.evictAll()
 
             // Only once eviction has fully completed does the test let
             // the stale read actually return to its caller, so the

@@ -141,19 +141,17 @@ final class SecureCacheDirectory: @unchecked Sendable {
         rootFD = descriptor
         rootOwnerUID = rootStat.st_uid
         rootDevice = rootStat.st_dev
-        // Durably establishes "the clear-epoch counter file already
-        // exists" as an invariant that holds for the remaining lifetime
-        // of every instance ever constructed against this directory,
-        // strictly before any other call on this instance (or a sibling
-        // instance sharing this same directory, constructed afterward)
-        // can ever read or bump it — see
-        // `SecureCacheDirectory+ClearEpoch.swift`'s type-level doc
-        // comment for why this matters: without it, a missing file could
-        // mean either "freshly created root" (safe to default to `0`) or
-        // "durable counter lost after real clears already happened"
-        // (unsafe to default at all), and the two are indistinguishable
-        // from a bare existence check taken any later than this.
-        try ensureClearEpochInitialized()
+        // Deliberately does *not* initialize the durable clear-epoch
+        // counter (or its root-init marker) here: doing so race-free
+        // requires this directory's cross-process
+        // ``acquireExclusiveLock()``, which is `async` and unavailable
+        // from this synchronous, throwing `init`. See
+        // ``ensureRootAuthorityInitializedLocked()`` in
+        // `SecureCacheDirectory+ClearEpoch.swift` for where that
+        // durable, cross-process-locked transaction actually happens —
+        // called by every ``AssetDiskCache`` locked entry point, exactly
+        // once per instance, strictly before that entry point's own
+        // first read of the durable epoch.
     }
 
     deinit {

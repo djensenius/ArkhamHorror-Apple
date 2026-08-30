@@ -14,9 +14,15 @@ extension AssetDiskCache {
     /// leftover *payload* file with no metadata pointer referencing it can
     /// never be served by `get(_:)` and is simply reclaimed by the next
     /// orphan sweep. `token`, when supplied, gates this the same way as
-    /// ``set(_:payload:metadata:token:)``: a stale removal request can
-    /// never delete bytes a more-recently-issued operation just published.
-    func remove(_ key: AssetCacheKey, token: AssetCacheService.CacheToken? = nil) async throws {
+    /// ``set(_:payload:metadata:token:)``: a stale removal request never
+    /// deletes bytes a more-recently-issued operation just published —
+    /// returns ``AssetCacheService/MutationOutcome/stale`` (not a silent
+    /// `Void` success) in that case.
+    @discardableResult
+    func remove(
+        _ key: AssetCacheKey,
+        token: AssetCacheService.CacheToken? = nil
+    ) async throws -> AssetCacheService.MutationOutcome {
         // Single top-level lock acquisition, same convention as
         // ``set(_:payload:metadata:token:)``: acquired and run directly on
         // this actor's own executor, never via a closure passed into
@@ -24,16 +30,17 @@ extension AssetDiskCache {
         // doc comment for why that distinction matters).
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try ensureRootAuthorityInitializedLocked()
         recoverOrphansIfNeeded()
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentGeneration = try currentWriteGenerationLocked(for: key)
+        let currentApplied = try currentAppliedTicketLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
                 currentEpoch: currentEpoch,
-                currentGeneration: currentGeneration
+                currentApplied: currentApplied
             ) else {
-                return
+                return .stale
             }
         }
         do {
@@ -59,16 +66,18 @@ extension AssetDiskCache {
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
         // Removal counts as this key's next durable "write" for CAS
         // purposes exactly like ``set(_:payload:metadata:token:)``/
-        // ``touch(_:metadata:token:)``: durably advancing past the
-        // generation `token` captured is what lets
-        // ``removeIfApplied(_:token:)`` later recognize this exact
-        // removal as "the last thing this token did" (current == issued
-        // + 1) if it needs to be retracted, and what lets a subsequent
-        // fresh write for this key (which reads the *post*-removal
-        // generation at its own issuance) durably outrank any other
-        // still-in-flight, now-stale operation that captured the
-        // *pre*-removal value.
-        try commitWriteGenerationLocked(currentGeneration, for: key)
+        // ``touch(_:metadata:token:)``: a token-gated removal commits
+        // *exactly* that token's own already-accepted ticket (never a
+        // freshly-reserved one — see
+        // ``AssetDiskCache/commitMutationTicketLocked(for:token:)``'s own
+        // doc comment for why conflating the two would break
+        // ``removeIfApplied(_:token:)``'s exact-match retraction), while
+        // an unconditional (`token: nil`) removal instead reserves a
+        // brand-new ticket so a *later* replay of a token issued
+        // *before* this removal can never again satisfy `>=` against the
+        // unchanged applied value.
+        try commitMutationTicketLocked(for: key, token: token)
+        return .applied
     }
 
     /// Removes every entry currently in the cache directory. Never deletes
@@ -97,8 +106,9 @@ extension AssetDiskCache {
         // just published. This loop's own `where name !=
         // SecureCacheDirectory.lockFileName && name !=
         // SecureCacheDirectory.accessSequenceFileName && name !=
-        // SecureCacheDirectory.clearEpochFileName` guard is what keeps
-        // all three reserved files out of every removal pass here
+        // SecureCacheDirectory.clearEpochFileName && name !=
+        // SecureCacheDirectory.rootInitMarkerFileName` guard is what keeps
+        // all four reserved files out of every removal pass here
         // (`listNames()`/`remove(name:)` themselves have no special-case
         // awareness of any of them): unlinking the lock file while this
         // very call still holds it open would detach every subsequent
@@ -111,10 +121,14 @@ extension AssetDiskCache {
         // whole cross-instance monotonicity guarantee; deleting the
         // durable clear-epoch counter would reset every future reader
         // back to "never cleared", undoing this very call's own bump
-        // below. Acquired and run directly on this actor's own executor,
+        // below; deleting the root-init marker would let a future missing
+        // clear-epoch counter be wrongly treated as a genuinely pristine
+        // root again (see ``SecureCacheDirectory/ensureRootAuthorityInitializedLocked()``).
+        // Acquired and run directly on this actor's own executor,
         // same as ``remove(_:token:)``.
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try ensureRootAuthorityInitializedLocked()
         recoverOrphansIfNeeded()
         // Committed durably *before* any destructive removal work below,
         // and before this actor's own in-process generation bump: see
@@ -135,17 +149,18 @@ extension AssetDiskCache {
         // begins: a caller must never observe "entries are already gone"
         // without the durable epoch having also already advanced.
         try secureDirectory.bumpClearEpoch()
-        // Every per-key durable write-generation counter file (see
-        // `AssetDiskCache+WriteGeneration.swift`) is deliberately *not*
-        // specially reserved here the way the lock/access-sequence/clear-
-        // epoch files are: this clear's own epoch bump above already
-        // durably fences every token issued before it (any such token's
-        // ``AssetCacheService/CacheToken/durableClearEpoch`` can never
-        // again match, regardless of what its ``AssetCacheService/CacheToken/diskWriteGeneration``
-        // says), so letting the removal pass below sweep away every
-        // `.gen` file too is both safe and desirable: it lets every key
-        // restart from a clean generation baseline after a real clear,
-        // rather than accumulating one small counter file per key ever
+        // Every per-key durable issuance/applied ticket counter file
+        // (`.gen`/`.applied`, see `AssetDiskCache+WriteGeneration.swift`)
+        // is deliberately *not* specially reserved here the way the
+        // lock/access-sequence/clear-epoch files are: this clear's own
+        // epoch bump above already durably fences every token issued
+        // before it (any such token's ``AssetCacheService/CacheToken/durableClearEpoch``
+        // can never again match, regardless of what its
+        // ``AssetCacheService/CacheToken/diskWriteGeneration`` says), so
+        // letting the removal pass below sweep away every `.gen`/
+        // `.applied` file too is both safe and desirable: it lets every
+        // key restart from a clean ticket baseline after a real clear,
+        // rather than accumulating two small counter files per key ever
         // written for the lifetime of this cache directory.
         let names = try secureDirectory.listNames()
         var failureCount = 0
@@ -191,6 +206,7 @@ extension AssetDiskCache {
     func currentClearEpoch() async throws -> Int {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try ensureRootAuthorityInitializedLocked()
         return try secureDirectory.readPersistedClearEpoch()
     }
 
@@ -207,6 +223,7 @@ extension AssetDiskCache {
         name != SecureCacheDirectory.lockFileName
             && name != SecureCacheDirectory.accessSequenceFileName
             && name != SecureCacheDirectory.clearEpochFileName
+            && name != SecureCacheDirectory.rootInitMarkerFileName
     }
 
     /// The key hash embedded in every entry name currently present in the

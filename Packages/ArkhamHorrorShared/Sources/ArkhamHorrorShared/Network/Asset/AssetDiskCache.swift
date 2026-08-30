@@ -60,6 +60,18 @@ actor AssetDiskCache {
     let secureDirectory: SecureCacheDirectory
     var didRecoverOrphans = false
 
+    /// One-time-per-instance guard for
+    /// ``ensureRootAuthorityInitializedLocked()`` (see
+    /// `AssetDiskCache+RootAuthority.swift`) — mirrors ``didRecoverOrphans``'s
+    /// identical pattern: cheap to skip once this instance has already
+    /// confirmed the shared directory's root authority is initialized, at
+    /// no cost to correctness (the underlying
+    /// ``SecureCacheDirectory/ensureRootAuthorityInitializedLocked()`` is
+    /// itself fully idempotent and safe to call unconditionally; this
+    /// flag exists purely to avoid a redundant read on every single locked
+    /// entry point for the remainder of this instance's lifetime).
+    var didEnsureRootAuthorityInitialized = false
+
     /// This process's own in-memory fail-closed half of the disk-writes-
     /// disabled marker (see `AssetDiskCache+Tombstone.swift`'s type-level
     /// doc comment). Set to `true` *before* ``markDiskWritesDisabledLocked()``
@@ -150,9 +162,18 @@ actor AssetDiskCache {
     /// authoritative for order among the entries *it* persists.
     ///
     /// `token`, when supplied, gates the entire write behind this actor's
-    /// own token compare-and-swap (see the type-level doc comment): a
-    /// silent no-op (nothing written, no temp file even created) if a
-    /// more-recently-issued token has already been applied for `key`.
+    /// own token compare-and-swap (see the type-level doc comment):
+    /// returns ``AssetCacheService/MutationOutcome/stale`` (nothing
+    /// written, no temp file even created) if a more-recently-issued
+    /// token has already been applied for `key` — never a silent `Void`
+    /// success a caller cannot distinguish from an actual write. A prior
+    /// revision returned plain `Void` even on a CAS rejection, which let
+    /// ``AssetCacheService/publish(_:asset:token:)`` believe its own
+    /// write had landed purely because nothing was thrown, even though a
+    /// completely independent sibling instance/process sharing this same
+    /// directory had already durably won the write for this exact key —
+    /// the disk-layer half of this cache's cross-process authority was
+    /// silently discarded the instant it crossed this actor boundary.
     ///
     /// Rejects a `metadata.payloadSHA256Hex` that is not exactly 64
     /// lowercase hex characters before it is ever used to build a
@@ -161,12 +182,13 @@ actor AssetDiskCache {
     /// addressed filenames are only a valid substitute for a full
     /// integrity check as long as the name always matches the bytes
     /// stored under it.
+    @discardableResult
     func set(
         _ key: AssetCacheKey,
         payload: Data,
         metadata: AssetCacheMetadata,
         token: AssetCacheService.CacheToken? = nil
-    ) async throws {
+    ) async throws -> AssetCacheService.MutationOutcome {
         // The entire write (orphan recovery, payload publish, metadata
         // pointer commit, superseded-generation cleanup, and eviction) runs
         // inside one cross-process/cross-instance exclusive lock (see
@@ -190,7 +212,7 @@ actor AssetDiskCache {
         }
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
-        try setLocked(key, payload: payload, metadata: metadata, token: token)
+        return try setLocked(key, payload: payload, metadata: metadata, token: token)
     }
 
     private func setLocked(
@@ -198,26 +220,30 @@ actor AssetDiskCache {
         payload: Data,
         metadata: AssetCacheMetadata,
         token: AssetCacheService.CacheToken?
-    ) throws {
+    ) throws -> AssetCacheService.MutationOutcome {
+        try ensureRootAuthorityInitializedLocked()
         recoverOrphansIfNeeded()
         try requireDiskWritesEnabledLocked()
-        // Read once, under this already-held lock, and reused both for
-        // ``acceptToken(_:currentEpoch:currentGeneration:)``'s compare
-        // and — on acceptance — as the exact prior value
-        // ``commitWriteGenerationLocked(_:for:)`` durably advances past
-        // below: a second, later re-read here could in principle observe
-        // a value a *different* concurrent writer already changed, which
-        // would defeat the whole point of holding this single exclusive
-        // lock across the entire critical section.
+        // Read once, under this already-held lock, and reused for
+        // ``acceptToken(_:currentEpoch:currentApplied:)``'s compare: a
+        // second, later re-read here could in principle observe a value a
+        // *different* concurrent writer already changed, which would
+        // defeat the whole point of holding this single exclusive lock
+        // across the entire critical section. The applied ticket this
+        // write itself commits (via
+        // ``reserveAndCommitMutationTicketLocked(for:)`` below) is a
+        // freshly reserved value, not a function of this read — see that
+        // method's own doc comment for why that is what makes it always
+        // strictly greater than whatever was read here.
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentGeneration = try currentWriteGenerationLocked(for: key)
+        let currentApplied = try currentAppliedTicketLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
                 currentEpoch: currentEpoch,
-                currentGeneration: currentGeneration
+                currentApplied: currentApplied
             ) else {
-                return
+                return .stale
             }
         }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
@@ -270,97 +296,15 @@ actor AssetDiskCache {
             payloadAlreadyExisted: payloadAlreadyExisted
         )
         // Only after both the payload and metadata pointer are durably
-        // committed: this key's durable write generation must never
-        // advance past a mutation that did not itself actually land.
-        try commitWriteGenerationLocked(currentGeneration, for: key)
-    }
-
-    /// Updates only the metadata sidecar for an already-cached `key` (for
-    /// example bumping ``AssetCacheMetadata/accessSequence`` after a 304
-    /// revalidation), without re-writing the unchanged payload file.
-    /// Throws if no payload currently exists on disk matching
-    /// `metadata.payloadSHA256Hex`, so this can never create an orphaned
-    /// metadata-only entry. `token`, when supplied, gates this the same
-    /// way as ``set(_:payload:metadata:token:)``.
-    func touch(
-        _ key: AssetCacheKey,
-        metadata: AssetCacheMetadata,
-        token: AssetCacheService.CacheToken? = nil
-    ) async throws {
-        // Same single-top-level-lock convention as ``set(_:payload:metadata:token:)``.
-        let lockFD = try await secureDirectory.acquireExclusiveLock()
-        defer { secureDirectory.releaseExclusiveLock(lockFD) }
-        try touchLocked(key, metadata: metadata, token: token)
-    }
-
-    private func touchLocked(
-        _ key: AssetCacheKey,
-        metadata: AssetCacheMetadata,
-        token: AssetCacheService.CacheToken?
-    ) throws {
-        recoverOrphansIfNeeded()
-        let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentGeneration = try currentWriteGenerationLocked(for: key)
-        if let token {
-            guard acceptToken(
-                token,
-                currentEpoch: currentEpoch,
-                currentGeneration: currentGeneration
-            ) else {
-                return
-            }
-        }
-        guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
-            throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
-        }
-        let payloadName = payloadFilename(
-            keyHash: key.digestHex,
-            contentHash: metadata.payloadSHA256Hex
-        )
-        // A symlink or other non-regular entry at this name is never a
-        // verified payload to touch: publishing a metadata sidecar that
-        // points at it would let a later read quarantine the mismatch,
-        // but only after having already accepted a bogus pointer as if it
-        // were a legitimate revalidation. Require a verified regular file
-        // before committing the metadata bump.
-        //
-        // Deliberately a distinct, typed case
-        // (``AssetError/entryNoLongerCachedToTouch``) rather than the
-        // generic ``AssetError/cachePersistenceFailed(_:)`` used
-        // elsewhere in this method: a missing payload here is not a mere
-        // I/O hiccup a caller may treat as best-effort/non-fatal — it is
-        // definitive proof that some other, more-recently-concluded
-        // operation for this exact key (a definitive 404 invalidation, a
-        // fresh publish under new content whose own commit already
-        // cleaned up this generation, or a whole-cache clear) already
-        // removed this entry from the *shared* disk cache. A caller
-        // (``AssetCacheService/touch(_:asset:token:)``) that already
-        // wrote this same revalidation into its own *private* in-memory
-        // cache under this same token must retract that write rather
-        // than treat this as recoverable — otherwise memory alone could
-        // go on serving stale bytes the shared disk has already disowned,
-        // indefinitely, regardless of what any other cache instance
-        // sharing this directory has since done.
-        guard (try? secureDirectory.attributes(name: payloadName))?.isRegularFile == true else {
-            throw AssetError.entryNoLongerCachedToTouch
-        }
-        var stamped = metadata
-        // See ``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``'s
-        // doc comment: `metadata.accessSequence` here is this exact
-        // entry's own previously-known value (as most recently observed
-        // by whichever caller is now touching it), folded in purely as an
-        // extra floor for a freshly created cache root whose durable
-        // counter file does not exist yet — the counter file itself is
-        // always authoritative once it exists.
-        stamped.accessSequence = try secureDirectory.allocateAccessSequence(
-            atLeastAfter: metadata.accessSequence
-        )
-        do {
-            try persistMetadata(stamped, name: metadataFilename(for: key))
-        } catch {
-            throw AssetError.cachePersistenceFailed(String(describing: error))
-        }
-        try commitWriteGenerationLocked(currentGeneration, for: key)
+        // committed: this key's durable applied ticket must never advance
+        // past a mutation that did not itself actually land. Commits
+        // `token`'s own already-accepted ticket verbatim (never a
+        // freshly-reserved one) when `token` is non-nil — see
+        // ``commitMutationTicketLocked(for:token:)``'s own doc comment
+        // for why conflating the two would break
+        // ``removeIfApplied(_:token:)``'s exact-match retraction.
+        try commitMutationTicketLocked(for: key, token: token)
+        return .applied
     }
 
     // MARK: - Names
