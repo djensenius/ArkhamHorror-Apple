@@ -255,6 +255,7 @@ extension AppModelLiveGameTests {
         #expect(current.identity != oldIdentity)
         #expect(current.actionPhase == .retryable(reason))
         #expect(current.canRetry)
+        #expect(model.basicChoiceActions[gameID]?.connectionID == current.identity.connectionID)
 
         await replacement.enqueueSendResult(.success(()))
         #expect(

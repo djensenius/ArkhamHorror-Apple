@@ -260,6 +260,9 @@ extension AppModel {
                 sessionAttemptID: liveGameSessions[gameID]?.attemptID,
                 connectionID: liveGameConnections[gameID]?.connectionID
             )
+            if let connectionID = liveGameConnections[gameID]?.connectionID {
+                basicChoiceActions[gameID]?.connectionID = connectionID
+            }
             if action.phase == .uncertain {
                 basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
             }

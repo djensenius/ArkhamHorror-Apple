@@ -143,7 +143,7 @@ struct BasicChoiceActionRecord: Sendable, Equatable {
     var identity: BasicChoicePromptIdentity
     let choiceIndex: Int
     let attemptID: UUID
-    let connectionID: UUID
+    var connectionID: UUID
     var phase: BasicChoiceActionPhase
 }
 
