@@ -36,11 +36,21 @@ struct BoardView: View {
             }
         }
         .onAppear {
-            if controller == nil {
+            let activeController: BoardCommandController
+            if let controller {
+                activeController = controller
+            } else {
                 let newController = BoardCommandController(projection: projection)
                 controller = newController
-                focusedID = newController.coordinator.currentFocus
+                activeController = newController
             }
+            // Re-synced on every appearance, not only when the controller is first
+            // created: if this view disappears and reappears with the same
+            // already-existing controller (for example a tab/detail switch), SwiftUI may
+            // have reset `focusedID` to `nil` independently of `coordinator.currentFocus`,
+            // which would otherwise leave platform focus stale. Matches
+            // `SemanticInputHarnessView`'s identical `.onAppear` re-sync.
+            focusedID = activeController.coordinator.currentFocus
         }
         .onChange(of: projection) { _, newValue in
             controller?.applySnapshot(newValue)
