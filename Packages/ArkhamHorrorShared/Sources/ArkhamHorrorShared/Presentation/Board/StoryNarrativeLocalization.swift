@@ -81,19 +81,32 @@ enum StoryNarrativeLocalization {
         return ResolvedStory(title: title, body: body)
     }
 
-    /// A `FlavorText.title`/`Label.label`-style field: a leading `$` marks an i18n lookup
-    /// key (stripped before lookup); any other string is already literal backend-provided
-    /// text (matching the reference Vue client's own `maybeFormat`/`tformat` convention --
-    /// see `StoryEntry.vue`) and passes through unresolved-but-verbatim. `nil` title means
-    /// no title at all, distinct from an unresolved one: the outer optional distinguishes
-    /// "failed to resolve" (`nil`) from "resolved, and there simply is no title"
-    /// (`.some(nil)`).
+    /// A `FlavorText.title`/`BasicEntry.text`/`Label.label`-style field: a leading `$`
+    /// marks an i18n lookup key (stripped before lookup, no `{variable}` substitution --
+    /// see the reference Vue client's own `FormattedEntry.vue`, `case 'BasicEntry':
+    /// entry.text.startsWith('$') ? t(entry.text.slice(1)) : entry.text`, and
+    /// `StoryEntry.vue`'s equivalent `maybeFormat`/`tformat` convention for titles/labels);
+    /// any other string is already literal backend-provided text and passes through
+    /// unresolved-but-verbatim. Returns `nil` -- fail closed -- if the field is
+    /// `$`-prefixed but its key (everything after the `$`, including the empty string for
+    /// a bare `"$"`) isn't in `vocabulary`; never partially substitutes or guesses.
+    private static func resolvedLiteralOrKey(
+        _ rawValue: String, vocabulary: [String: String]
+    ) -> String? {
+        guard rawValue.hasPrefix("$") else { return rawValue }
+        return vocabulary[String(rawValue.dropFirst())]
+    }
+
+    /// `nil` title means no title at all, distinct from an unresolved one: the outer
+    /// optional distinguishes "failed to resolve" (`nil`) from "resolved, and there simply
+    /// is no title" (`.some(nil)`).
     private static func resolvedTitle(
         _ rawTitle: String?, vocabulary: [String: String]
     ) -> String?? {
         guard let rawTitle else { return .some(nil) }
-        guard rawTitle.hasPrefix("$") else { return .some(rawTitle) }
-        guard let resolved = vocabulary[String(rawTitle.dropFirst())] else { return nil }
+        guard let resolved = resolvedLiteralOrKey(rawTitle, vocabulary: vocabulary) else {
+            return nil
+        }
         return .some(resolved)
     }
 
@@ -102,10 +115,16 @@ enum StoryNarrativeLocalization {
     ) -> ResolvedStoryEntry? {
         switch entry {
         case let .basic(text):
-            // `BasicEntry` is always literal backend-provided text (never an i18n lookup
-            // key) per this governed slice's own contract, so it passes through
-            // completely unresolved-but-verbatim -- never looked up, never fails closed.
-            return .text(text)
+            // `BasicEntry.text` follows the exact same `$`-prefix i18n-lookup convention
+            // as `title`/`Label.label` (see ``resolvedLiteralOrKey(_:vocabulary:)``'s own
+            // documentation) -- it is *not* always literal, and a `$`-prefixed key missing
+            // from `vocabulary` must fail this whole story closed exactly like an
+            // unresolved title, never render its raw `$key` text as though it were
+            // finished narrative.
+            guard let resolved = resolvedLiteralOrKey(text, vocabulary: vocabulary) else {
+                return nil
+            }
+            return .text(resolved)
         case let .i18n(key, variables):
             guard let template = vocabulary[key] else { return nil }
             guard let substituted = substituteVariables(template, variables: variables) else {

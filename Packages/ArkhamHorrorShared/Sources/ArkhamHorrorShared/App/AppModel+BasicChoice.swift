@@ -258,9 +258,11 @@ extension AppModel {
         let current = projection.questions[action.identity.ownerID]
         let samePrompt = projection.counters.scenarioSteps == action.identity.questionVersion
             && current?.rawValue == action.identity.rawQuestion
-        if !samePrompt {
+        guard samePrompt else {
             basicChoiceActions[gameID] = nil
-        } else if isRESTSnapshot {
+            return
+        }
+        if isRESTSnapshot {
             basicChoiceActions[gameID]?.identity = BasicChoicePromptIdentity(
                 gameID: gameID,
                 ownerID: action.identity.ownerID,
@@ -276,6 +278,36 @@ extension AppModel {
                 basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
             }
         }
+        retireStaleRetryRecordIfNeeded(gameID: gameID, current: current, projection: projection)
+    }
+
+    /// A `.retryable` record is definitively not in flight -- the exact same authoritative
+    /// prompt (`samePrompt`, established by the caller: same `scenarioSteps` *and* same raw
+    /// question bytes) has just been observed again unanswered, so the prior send attempt
+    /// provably never advanced the game. That is exactly the fingerprint/version/projection
+    /// evidence needed to safely retire a record whose originally-targeted choice this
+    /// fresh authoritative `projection` (never a stale local rendering) no longer considers
+    /// actionable -- for example a `.chooseLocation` choice whose `LocationTarget` has
+    /// meanwhile stopped being known to the board, or a `.continueReading` choice whose
+    /// story has stopped resolving -- so a different, currently-actionable choice isn't
+    /// permanently blocked behind it (see independent-review blocker 2 on PR #36).
+    ///
+    /// Deliberately never applied to `.sending`/`.awaitingSnapshot`/`.uncertain`: while a
+    /// send might still be in flight or its outcome is still genuinely unknown, retiring
+    /// the record here could let a second, different choice be claimed and sent while the
+    /// first is still capable of landing, producing two accepted answers for one prompt.
+    /// If the original choice remains actionable, the record is left untouched entirely,
+    /// preserving the existing manual-retry path.
+    private func retireStaleRetryRecordIfNeeded(
+        gameID: GameID, current: BasicChoiceQuestionPayload?, projection: BoardProjection
+    ) {
+        guard case .retryable = basicChoiceActions[gameID]?.phase,
+              let choiceIndex = basicChoiceActions[gameID]?.choiceIndex,
+              let question = current?.supportedQuestion,
+              let originalChoice = question.choices.first(where: { $0.index == choiceIndex }),
+              !projection.isChoiceActionable(originalChoice, story: question.story)
+        else { return }
+        basicChoiceActions[gameID] = nil
     }
 
     /// `GameError` is broadcast room-wide and carries no player, question, or request

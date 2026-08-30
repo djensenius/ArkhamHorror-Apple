@@ -7,10 +7,12 @@ import Testing
 /// localization boundary (issue djensenius/ArkhamHorror-Apple#35, independent-review
 /// blocker 2). Proves the real, currently-vendored `question-read.json` fails closed
 /// (none of its 4 real keys are in ``StoryNarrativeLocalization/chromeVocabulary``), that
-/// the substitution/`$`-prefix/`BasicEntry`-literal/recursive-`ListEntry` mechanisms are
-/// each independently correct against an injected synthetic vocabulary (never real,
-/// copyrighted narrative content), and that every malformed/missing/unsupported-type input
-/// fails closed rather than partially substituting or guessing.
+/// the substitution/`$`-prefix (for both `title` and `BasicEntry.text`)/recursive-
+/// `ListEntry` mechanisms are each independently correct against an injected synthetic
+/// vocabulary (never real, copyrighted narrative content), and that every
+/// malformed/missing/unsupported-type input fails closed rather than partially
+/// substituting or guessing. `BasicEntry.text`'s own `$`-prefix coverage lives in the
+/// sibling `StoryNarrativeLocalizationBasicEntryTests.swift` extension.
 @Suite("Story narrative localization boundary")
 struct StoryNarrativeLocalizationTests {
     private func fixture(_ name: String) throws -> Data {
@@ -74,16 +76,10 @@ struct StoryNarrativeLocalizationTests {
         #expect(StoryNarrativeLocalization.resolvedStory(for: flavorText) == nil)
     }
 
-    // MARK: - BasicEntry is always literal, never looked up
+    // MARK: - BasicEntry `$`-prefix semantics
 
-    @Test("BasicEntry text is always literal, even if it happens to start with $")
-    func basicEntryNeverLooksUpEvenWithDollarPrefix() {
-        let flavorText = FlavorText(title: nil, body: [.basic(text: "$continue")])
-        let resolved = StoryNarrativeLocalization.resolvedStory(for: flavorText)
-        // Unlike `title`, `BasicEntry.text` is never treated as an i18n key -- it passes
-        // through completely verbatim, including its literal "$continue" characters.
-        #expect(resolved?.body == [.text("$continue")])
-    }
+    // See `StoryNarrativeLocalizationBasicEntryTests.swift` (split out to stay under the
+    // `type_body_length` limit).
 
     // MARK: - I18nEntry resolution and variable substitution (synthetic vocabulary only)
 
