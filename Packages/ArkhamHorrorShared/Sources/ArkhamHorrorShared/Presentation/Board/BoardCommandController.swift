@@ -267,7 +267,8 @@ final class BoardCommandController {
         return true
     }
 
-    /// Jumps to the first exact supported choice in the participant-authorized prompt.
+    /// Jumps to retry when recovery is required, then the first supported authorized
+    /// choice, or the scenario header for an otherwise unsupported pending prompt.
     private func jumpToActivePrompt() -> Bool {
         guard !coordinator.isModalPresented else { return false }
         if prompt == nil, projection.counters.pendingPromptCount > 0 {

@@ -12,8 +12,10 @@ extension AppModel {
         let selected: (PlayerID, BasicChoiceQuestionPayload)? = switch identity {
         case let .participant(playerID):
             projection.questions[playerID].map { (playerID, $0) }
-        case .spectator, .none:
+        case .spectator:
             firstQuestion(in: projection)
+        case .none:
+            nil
         }
         guard let (ownerID, payload) = selected else { return nil }
 
