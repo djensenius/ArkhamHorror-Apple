@@ -74,6 +74,21 @@ enum AssetError: Error, Sendable {
     /// Persisting the payload and metadata atomically failed; no half
     /// entry was left on disk.
     case cachePersistenceFailed(String)
+    /// A `touch(_:asset:token:)` call found no currently-persisted payload
+    /// for this exact key to refresh: a more-recently-concluded operation
+    /// for the same key (a definitive 404 invalidation, a fresh publish
+    /// under new content, or a whole-cache clear) has already removed or
+    /// superseded it, strictly *between* this touch's own token authority
+    /// check and its disk write actually reaching this key's payload
+    /// file. Distinct from ``cachePersistenceFailed(_:)`` (a genuine I/O
+    /// failure while writing) precisely so a caller can treat this one
+    /// case as a definitive staleness signal — proof the entry this
+    /// touch was about to refresh no longer exists to be refreshed —
+    /// rather than a merely best-effort, non-fatal disk hiccup: an
+    /// in-process memory write already applied under this same token
+    /// must be retracted, not left resurrecting content the shared disk
+    /// has already disowned.
+    case entryNoLongerCachedToTouch
 
     // MARK: Configuration / packaging
 
@@ -101,7 +116,8 @@ extension AssetError: Equatable {
              (.malformedImageData, .malformedImageData),
              (.dimensionTooLarge, .dimensionTooLarge),
              (.pixelCountTooLarge, .pixelCountTooLarge),
-             (.corruptCacheEntry, .corruptCacheEntry):
+             (.corruptCacheEntry, .corruptCacheEntry),
+             (.entryNoLongerCachedToTouch, .entryNoLongerCachedToTouch):
             true
         case let (.redirectRejected(lhsValue), .redirectRejected(rhsValue)):
             lhsValue == rhsValue

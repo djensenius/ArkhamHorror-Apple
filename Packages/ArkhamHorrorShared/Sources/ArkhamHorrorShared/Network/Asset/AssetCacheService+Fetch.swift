@@ -100,7 +100,8 @@ extension AssetCacheService {
                 resolvedURLString: url.absoluteString,
                 insertedAt: Date(),
                 accessSequence: AssetAccessSequence(0)
-            )
+            ),
+            durableClearEpoch: token.durableClearEpoch
         )
         try Task.checkCancellation()
         guard await isAuthoritative(token, for: cacheKey) else {

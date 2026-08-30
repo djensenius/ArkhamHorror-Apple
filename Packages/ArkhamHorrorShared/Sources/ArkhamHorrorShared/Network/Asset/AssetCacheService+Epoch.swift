@@ -181,7 +181,7 @@ extension AssetCacheService {
     /// this stays a plain, synchronous, in-memory-only operation
     /// specifically so it can run inside an atomic "check the coalescing
     /// dictionary, else create and insert" section (``coalescedFetch(key:cacheKey:candidates:)``,
-    /// ``resolveRevalidationFetchID(cacheKey:url:expectedFormat:existing:slot:preIssuedToken:)``)
+    /// ``resolveRevalidationFetchID(expectedFormat:existing:slot:preIssuedEpoch:)``)
     /// without introducing a suspension point that would let two
     /// concurrent callers for the same key both observe "nothing in
     /// flight yet" and each start their own independent, uncoalesced

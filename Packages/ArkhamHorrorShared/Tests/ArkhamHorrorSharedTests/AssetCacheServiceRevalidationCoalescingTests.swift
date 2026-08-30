@@ -8,19 +8,17 @@ import Testing
 /// single-caller 304/404/validator-precondition behavior) purely to stay
 /// under SwiftLint's `type_body_length`, the same way `AppModelTests` is
 /// split by concern across sibling files.
-///
 /// Several tests below need a request that *starts* later to *complete*
 /// before one that started earlier (to prove a delayed, now-stale
 /// completion cannot resurrect or overwrite what a more authoritative one
 /// already concluded). ``FakeAssetTransport``'s per-URL `hold`/`release` is
 /// intentionally URL-scoped, not call-scoped, so it cannot express "hold
 /// only the first of two calls to the same URL, then release only that
-/// one" — the two calls would both be released together. Instead, these
-/// tests use the transport's per-item `delayNanoseconds` (the first-issued
-/// request's queued response is given a long artificial delay, the
-/// second-issued request's a short one), which deterministically reorders
-/// *completion* without touching *start* order or depending on ambient
-/// task-scheduling.
+/// one" — both calls would be released together. Instead, these tests use
+/// the transport's per-item `delayNanoseconds` (the first-issued request's
+/// queued response is given a long artificial delay, the second-issued
+/// request's a short one), which deterministically reorders *completion*
+/// without touching *start* order or depending on ambient task-scheduling.
 extension AssetCacheServiceTests {
     /// `AssetCacheMetadata.etag` is deliberately `let` (see its own file):
     /// this rebuilds a ``CachedAsset`` with every field preserved except a
@@ -44,7 +42,11 @@ extension AssetCacheServiceTests {
                 resolvedURLString: metadata.resolvedURLString,
                 insertedAt: metadata.insertedAt,
                 accessSequence: metadata.accessSequence
-            )
+            ),
+            // "Every field preserved" includes the entry's real published
+            // durable clear epoch, or `memoryEntryStillCurrent(_:)` would
+            // fail closed for reasons unrelated to this test.
+            durableClearEpoch: asset.durableClearEpoch
         )
     }
 

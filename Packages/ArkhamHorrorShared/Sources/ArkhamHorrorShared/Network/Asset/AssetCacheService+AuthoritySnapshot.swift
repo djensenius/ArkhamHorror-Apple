@@ -103,6 +103,44 @@ extension AssetCacheService {
         return snapshotEpoch == currentEpoch
     }
 
+    /// `true` only if `storedEpoch` — a ``CachedAsset/durableClearEpoch``
+    /// captured at the moment some prior call published or revalidated
+    /// this exact memory entry — still exactly matches a *freshly re-read*
+    /// ``currentDurableClearEpoch()``. `false` if either value is `nil`
+    /// (an unstamped entry, or a durable read failure just now — both
+    /// fail closed, the same reasoning ``isAuthoritative(_:for:)`` and
+    /// ``unchanged(since:for:)`` already apply to their own durable-epoch
+    /// comparisons) or if they simply differ.
+    ///
+    /// Deliberately *additive* to, not a replacement for, the existing
+    /// ``unchanged(since:for:)``/``clearStateUnchanged(since:for:)``
+    /// snapshot-then-recheck pairs already guarding every memory hit:
+    /// those two remain exactly correct for the race they were built to
+    /// catch (an invalidation/clear that happens *during* this specific
+    /// call's own suspension window, between their own snapshot and
+    /// recheck reads). What neither of them can ever detect is a clear
+    /// that already completed *before* this call even began — both of
+    /// their reads would then trivially observe the same
+    /// already-superseded epoch and agree "unchanged", even though the
+    /// cached entry itself was published under a durable epoch that
+    /// predates that clear. Comparing the entry's own *stored* epoch
+    /// (fixed at the moment it was written) against a fresh read here,
+    /// on every hit, closes exactly that gap: a memory entry published
+    /// under epoch *N* can never again pass this check once any
+    /// instance/process sharing this cache's directory has since bumped
+    /// the durable epoch past *N*, regardless of how long ago that
+    /// publish happened or whether this specific call has been suspended
+    /// at all.
+    func memoryEntryStillCurrent(_ storedEpoch: Int?) async -> Bool {
+        guard
+            let storedEpoch,
+            let currentEpoch = await currentDurableClearEpoch()
+        else {
+            return false
+        }
+        return storedEpoch == currentEpoch
+    }
+
     /// A named, non-tuple result type for ``snapshotClearState(for:)``/
     /// ``clearStateUnchanged(since:for:)`` — see ``AuthoritySnapshot``'s
     /// own doc comment for why a plain tuple is avoided here too, now

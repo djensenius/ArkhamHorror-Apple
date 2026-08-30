@@ -1,5 +1,74 @@
 import Foundation
 
+/// A FIFO queue offering amortized O(1) `append`/`popFirst`, backing
+/// ``AssetCacheService/authorityKeyOrder``. A bare `Array` used purely as
+/// a queue (`append` at the back, `removeFirst()` at the front) costs
+/// O(n) per `removeFirst()` — an element shift over everything still
+/// remaining — since `Array` has no notion of "already-consumed" prefix
+/// slots it can reclaim without moving the rest. During a sustained
+/// all-keys-busy burst at ``AssetCacheService/maxTrackedAuthorityKeys``
+/// capacity, ``AssetCacheService/noteAuthorityKeyTouched(_:)`` re-scans
+/// (and requeues) every busy key on every single touch, so that O(n) cost
+/// per removal would make the whole burst quadratic in the number of
+/// touches. This type instead tracks a `head` cursor into a single
+/// backing array, so `popFirst()` is an O(1) index bump, and only
+/// occasionally (once consumed slots are a large-enough fraction of the
+/// backing storage) compacts them away in one pass — amortized O(1)
+/// overall, the same guarantee `Array.append` itself already gives for
+/// growth.
+struct AuthorityKeyQueue<Element: Sendable>: Sendable {
+    private var storage: [Element] = []
+    private var head = 0
+
+    /// The compaction threshold below which a mostly-empty prefix is left
+    /// alone rather than paying a compaction pass for a handful of
+    /// entries — purely to avoid compacting on every single pop once the
+    /// queue is nearly empty (compaction itself is O(remaining), so
+    /// doing it too eagerly at tiny sizes would make *popping* the
+    /// quadratic operation instead).
+    private static var minimumCompactionHead: Int {
+        64
+    }
+
+    var count: Int {
+        storage.count - head
+    }
+
+    var isEmpty: Bool {
+        head == storage.count
+    }
+
+    mutating func append(_ element: Element) {
+        storage.append(element)
+    }
+
+    @discardableResult
+    mutating func popFirst() -> Element? {
+        guard head < storage.count else { return nil }
+        let element = storage[head]
+        head += 1
+        compactIfNeeded()
+        return element
+    }
+
+    mutating func removeAll() {
+        storage.removeAll()
+        head = 0
+    }
+
+    /// Reclaims consumed prefix slots once they make up at least half of
+    /// backing storage (and are a large-enough absolute count to be
+    /// worth an O(remaining) pass at all) — keeping the backing array's
+    /// true size bounded by roughly twice the queue's live element count,
+    /// rather than growing forever across the queue's lifetime purely
+    /// from popped-but-never-reclaimed prefix slots.
+    private mutating func compactIfNeeded() {
+        guard head >= Self.minimumCompactionHead, head * 2 >= storage.count else { return }
+        storage.removeFirst(head)
+        head = 0
+    }
+}
+
 /// Authority-key tracking/pruning subsystem for ``AssetCacheService``:
 /// bounding how many distinct cache keys' authority bookkeeping
 /// (`keyLatestToken`/`keyClearGeneration`) this actor retains at once,
@@ -18,34 +87,50 @@ extension AssetCacheService {
     /// exceeds ``AssetCacheService/maxTrackedAuthorityKeys`` — see that
     /// constant's own doc comment for why this bound exists at all.
     ///
+    /// `key` itself — the one this exact call is registering or
+    /// re-touching — is always protected from this same pruning pass,
+    /// even before its caller has had any chance to record it as "busy"
+    /// via ``inFlight``/``inFlightRevalidation``/``openAuthorityWindows``
+    /// (``issueToken(for:)`` in particular only sets
+    /// ``AssetCacheService/keyLatestToken`` *after* this call returns).
+    /// Without that self-protection, a `key` freshly inserted into
+    /// ``authorityKeyOrder`` right when tracking is already at capacity
+    /// with every other entry genuinely busy could immediately prune
+    /// *itself* out of ``trackedAuthorityKeys``/``authorityKeyOrder``
+    /// before its caller ever got to establish real liveness for it —
+    /// after which ``issueToken(for:)`` would still go on to unconditionally
+    /// write ``keyLatestToken[key]``, permanently orphaning that entry:
+    /// present in the map forever, but no longer counted against (or
+    /// reachable by) any future prune pass at all.
+    ///
     /// A key currently referenced by ``AssetCacheService/inFlight`` or
     /// ``AssetCacheService/inFlightRevalidation`` is never pruned: doing
     /// so would delete the very authority state a live operation for that
     /// exact key is about to check itself against, silently turning a
     /// perfectly legitimate in-progress fetch/revalidation into one that
     /// spuriously (and wrongly) finds itself no longer authoritative the
-    /// next time it checks. Such a key is instead put back at the front
-    /// of the queue exactly as it was, and the scan continues over the
-    /// next-oldest entries; the scan itself is bounded to at most one
-    /// full pass over the keys present when this call began, so a
-    /// workload with more distinct keys genuinely in flight at once than
-    /// `maxTrackedAuthorityKeys` simply — and safely — exceeds the
-    /// nominal bound for as long as that burst of concurrency lasts,
-    /// rather than looping forever or discarding live authority state.
+    /// next time it checks. Such a busy key is instead requeued exactly
+    /// as it was, and the scan continues over the next-oldest entries;
+    /// the scan itself is bounded to at most one full pass over the keys
+    /// present when this call began, so a workload with more distinct
+    /// keys genuinely in flight at once than `maxTrackedAuthorityKeys`
+    /// simply — and safely — exceeds the nominal bound for as long as
+    /// that burst of concurrency lasts, rather than looping forever or
+    /// discarding live authority state.
     func noteAuthorityKeyTouched(_ key: AssetCacheKey) {
         if trackedAuthorityKeys.insert(key).inserted {
             authorityKeyOrder.append(key)
         }
-        pruneAuthorityKeysIfNeeded()
+        pruneAuthorityKeysIfNeeded(protecting: key)
     }
 
-    private func pruneAuthorityKeysIfNeeded() {
+    private func pruneAuthorityKeysIfNeeded(protecting protectedKey: AssetCacheKey) {
         guard authorityKeyOrder.count > Self.maxTrackedAuthorityKeys else { return }
         var attemptsRemaining = authorityKeyOrder.count
         while authorityKeyOrder.count > Self.maxTrackedAuthorityKeys, attemptsRemaining > 0 {
             attemptsRemaining -= 1
-            let oldest = authorityKeyOrder.removeFirst()
-            guard !isAuthorityKeyBusy(oldest) else {
+            guard let oldest = authorityKeyOrder.popFirst() else { break }
+            guard oldest != protectedKey, !isAuthorityKeyBusy(oldest) else {
                 authorityKeyOrder.append(oldest)
                 continue
             }
@@ -85,9 +170,9 @@ extension AssetCacheService {
     /// tracked fetch/revalidation) — regardless of which exit path is
     /// taken, including a thrown error.
     ///
-    /// Without this, ``pruneAuthorityKeysIfNeeded()`` could discard
-    /// `key`'s bookkeeping while such a window is genuinely still open,
-    /// and a subsequent fresh operation for the same key could then
+    /// Without this, ``pruneAuthorityKeysIfNeeded(protecting:)`` could
+    /// discard `key`'s bookkeeping while such a window is genuinely still
+    /// open, and a subsequent fresh operation for the same key could then
     /// restart `key`'s ``keyClearGeneration`` at `0` — the exact value
     /// the still-suspended snapshot itself captured *before* any real
     /// invalidation happened — letting it wrongly observe "unchanged"

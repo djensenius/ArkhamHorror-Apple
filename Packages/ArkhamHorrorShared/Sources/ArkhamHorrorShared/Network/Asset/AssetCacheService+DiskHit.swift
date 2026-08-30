@@ -94,14 +94,21 @@ extension AssetCacheService {
                     // actual publish/touch on a successful outcome; a
                     // thrown protocol/transport/cache error propagates
                     // straight out rather than falling back to
-                    // unverified local bytes.
+                    // unverified local bytes. Passes only
+                    // `token.durableClearEpoch` (the epoch value, not
+                    // `token` itself) — see `revalidateExisting`'s doc
+                    // comment for why forwarding this branch's own
+                    // already-issued token (reserved above purely for
+                    // its own decode-authority re-check) would clobber
+                    // whatever token an already in-flight coalesced
+                    // revalidation for this key is relying on.
                     do {
                         return try await coalescedRevalidation(
                             cacheKey: cacheKey,
                             url: target.url,
                             expectedFormat: target.format,
                             existing: revalidated,
-                            preIssuedToken: token
+                            preIssuedEpoch: token.durableClearEpoch
                         )
                     } catch AssetError.candidatesExhausted {
                         // `performRevalidation`'s `.notFound` branch

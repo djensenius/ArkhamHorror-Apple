@@ -153,9 +153,23 @@ extension AssetDiskCache {
     /// another purpose in the same operation (``evictIfNeeded()``, via
     /// ``entries(names:)``) never pays for — or can transiently fail on —
     /// a second, redundant directory listing.
+    ///
+    /// Returns `nil` — rather than silently treating it as zero stranded
+    /// bytes — if any orphan-candidate name that could not be removed
+    /// turns out to be a **non-regular** entry (a directory, FIFO, device
+    /// node, or symlink planted at a `.tmp`/`.bin`-suffixed name, whether
+    /// by external tampering or a very unusual failure mode): such an
+    /// entry still occupies a real directory slot (and, for a directory,
+    /// arbitrarily many additional physical bytes/inodes this cache has
+    /// no way to safely enumerate without walking into it), so accounting
+    /// must treat its size as *unknown*, not zero, exactly like a stat
+    /// failure. Every other name in `names` is still attempted first, so
+    /// one such entry never prevents every other genuine orphan in the
+    /// same pass from being reclaimed.
     @discardableResult
-    func sweepOrphanFiles(names: [String], referencedPayloadFilenames: Set<String>) -> Int {
+    func sweepOrphanFiles(names: [String], referencedPayloadFilenames: Set<String>) -> Int? {
         var strandedBytes = 0
+        var sawUncertain = false
         for name in names {
             let isOrphanCandidate = name.hasSuffix(".tmp")
                 || (name.hasSuffix(".bin") && !referencedPayloadFilenames.contains(name))
@@ -168,12 +182,17 @@ extension AssetDiskCache {
             // present because the removal attempt itself failed" (its
             // bytes are still physically occupying the cache directory
             // and must not vanish from quota accounting).
-            let attributes = try? directoryAccess.attributes(name: name)
-            if attributes?.isRegularFile == true {
-                strandedBytes += attributes?.size ?? 0
+            guard let attributes = try? directoryAccess.attributes(name: name) else {
+                // Confirmed gone.
+                continue
             }
+            guard attributes.isRegularFile else {
+                sawUncertain = true
+                continue
+            }
+            strandedBytes += attributes.size
         }
-        return strandedBytes
+        return sawUncertain ? nil : strandedBytes
     }
 
     // MARK: - Eviction
@@ -252,43 +271,22 @@ extension AssetDiskCache {
             markDiskWritesDisabledLocked()
             return
         }
-        let (entriesResult, strandedSidecarBytes) = entries(names: names)
-        var current = entriesResult
-        guard let strandedSidecarBytes else {
-            // A quarantined invalid metadata sidecar's post-removal size
-            // could not be confirmed -- exactly the same "physical usage
-            // is not fully known" fail-closed reasoning as an unreadable
-            // stray file below, just for a `.meta.json`-suffixed one.
+        guard var accounted = accountedUsage(names: names) else {
+            // Every individual "physical usage is not fully known" case
+            // is documented on ``accountedUsage(names:)`` itself; all of
+            // them must fail closed exactly the same way an unenumerable
+            // directory listing does.
             markDiskWritesDisabledLocked()
             return
         }
-        let referencedPayloadFilenames = Set(current.map {
-            payloadFilename(keyHash: $0.hash, contentHash: $0.metadata.payloadSHA256Hex)
-        })
-        let strandedBytes = sweepOrphanFiles(
-            names: names,
-            referencedPayloadFilenames: referencedPayloadFilenames
-        )
-        guard let otherBytes = accountedStrayCacheFileBytes(names: names) else {
-            // A stray cache-owned file's size could not be determined
-            // (e.g. a tombstone/marker/lock file whose `fstatat` itself
-            // failed): real physical usage is not fully known, so this
-            // must fail closed exactly like an unenumerable directory
-            // listing, rather than silently under-counting it.
-            markDiskWritesDisabledLocked()
-            return
-        }
-        var total = current.reduce(strandedBytes + otherBytes + strandedSidecarBytes) {
-            $0 + Self.accountedBytes(for: $1)
-        }
-        if total > limits.highWaterMarkDiskBytes {
-            current.sort {
+        if accounted.total > limits.highWaterMarkDiskBytes {
+            accounted.entries.sort {
                 $0.metadata.accessSequence != $1.metadata.accessSequence
                     ? $0.metadata.accessSequence < $1.metadata.accessSequence
                     : $0.hash < $1.hash
             }
-            for entry in current {
-                guard total > limits.lowWaterMarkDiskBytes else { break }
+            for entry in accounted.entries {
+                guard accounted.total > limits.lowWaterMarkDiskBytes else { break }
                 let payloadName = payloadFilename(
                     keyHash: entry.hash,
                     contentHash: entry.metadata.payloadSHA256Hex
@@ -297,11 +295,11 @@ extension AssetDiskCache {
                 let payloadRemoved = (try? directoryAccess.remove(name: payloadName)) ?? false
                 let metadataRemoved = (try? directoryAccess.remove(name: metadataName)) ?? false
                 guard payloadRemoved, metadataRemoved else { continue }
-                total -= Self.accountedBytes(for: entry)
+                accounted.total -= Self.accountedBytes(for: entry)
             }
         }
         let fsyncSucceeded = (try? directoryAccess.fsyncRootDirectory()) != nil
-        guard fsyncSucceeded, total <= limits.highWaterMarkDiskBytes
+        guard fsyncSucceeded, accounted.total <= limits.highWaterMarkDiskBytes
         else {
             // Either this pass's own cleanup `fsync` could not be
             // confirmed durable, or accounted usage is still over budget
@@ -316,25 +314,73 @@ extension AssetDiskCache {
         clearDiskWritesDisabledLocked()
     }
 
+    /// Every currently-decodable entry plus the exact total accounted
+    /// disk usage (entries + orphan/stray/quarantined-sidecar bytes),
+    /// or `nil` if *any* component of that total could not be fully and
+    /// safely determined -- factored out of ``evictIfNeeded()`` purely to
+    /// keep that function's body within this package's
+    /// `function_body_length` convention. Every `nil` case here means
+    /// "physical usage is not fully known", which the caller must treat
+    /// identically: fail closed exactly like an unenumerable directory
+    /// listing, never silently under-counting or guessing.
+    private func accountedUsage(
+        names: [String]
+    ) -> (entries: [Entry], total: Int)? {
+        let (entriesResult, strandedSidecarBytes) = entries(names: names)
+        let current = entriesResult
+        // A quarantined invalid metadata sidecar's post-removal size
+        // could not be confirmed.
+        guard let strandedSidecarBytes else { return nil }
+        let referencedPayloadFilenames = Set(current.map {
+            payloadFilename(keyHash: $0.hash, contentHash: $0.metadata.payloadSHA256Hex)
+        })
+        // A surviving orphan candidate turned out to be a non-regular
+        // entry whose real size cannot be safely determined.
+        guard
+            let strandedBytes = sweepOrphanFiles(
+                names: names,
+                referencedPayloadFilenames: referencedPayloadFilenames
+            )
+        else { return nil }
+        // A stray cache-owned file's size could not be determined (e.g.
+        // a tombstone/marker/lock file whose `fstatat` itself failed).
+        guard let otherBytes = accountedStrayCacheFileBytes(names: names) else { return nil }
+        let total = current.reduce(strandedBytes + otherBytes + strandedSidecarBytes) {
+            $0 + Self.accountedBytes(for: $1)
+        }
+        return (current, total)
+    }
+
     /// The accounted bytes of every cache-owned regular file in `names`
     /// that ``entries(names:)``/``sweepOrphanFiles(names:referencedPayloadFilenames:)``
     /// do not already account for — the whole-cache disabled-writes
     /// marker and the cross-process lock file — so ``evictIfNeeded()``'s
     /// budget accounting is never blind to any file this cache itself
     /// creates. Returns `nil` (rather than silently under-counting) if
-    /// any such file's actual on-disk size could not be determined.
+    /// any such file's actual on-disk size could not be determined, or if
+    /// any of them turns out to be a **non-regular** entry (a directory,
+    /// FIFO, device node, or symlink occupying a name this cache
+    /// otherwise expects to be a plain reserved marker/lock file): such
+    /// an entry's true size (and, for a directory, its entire recursive
+    /// contents) cannot be safely determined without walking into it, so
+    /// it must never silently count as zero bytes.
     private func accountedStrayCacheFileBytes(names: [String]) -> Int? {
         var total = 0
+        var sawUncertain = false
         for name in names {
             let isAlreadyAccountedElsewhere =
                 name.hasSuffix(".meta.json") || name.hasSuffix(".tmp") || name.hasSuffix(".bin")
             guard !isAlreadyAccountedElsewhere else { continue }
             guard let attributes = try? directoryAccess.attributes(name: name) else {
-                return nil
+                sawUncertain = true
+                continue
             }
-            guard attributes.isRegularFile else { continue }
+            guard attributes.isRegularFile else {
+                sawUncertain = true
+                continue
+            }
             total += attributes.size
         }
-        return total
+        return sawUncertain ? nil : total
     }
 }

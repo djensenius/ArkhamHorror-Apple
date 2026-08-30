@@ -73,8 +73,14 @@ extension AssetCacheService {
     ) async throws -> CachedAsset {
         let waiterID = UUID()
         let fetchID: UUID
+        let token: CacheToken
         if let existing = inFlight[cacheKey] {
             fetchID = existing.id
+            // The already-registered fetch's own token, issued when *it*
+            // started — governs every one of its waiters uniformly, this
+            // one included, never a freshly-derived token for this join
+            // alone.
+            token = existing.token
         } else {
             // Issued synchronously here — before the `Task` below is even
             // created, let alone runs — so this token's issuance order
@@ -82,17 +88,18 @@ extension AssetCacheService {
             // coalesced-into) fetch was issued, per the issuance contract
             // in `AssetCacheService+Epoch.swift`. Every waiter that joins
             // this exact `inFlight` entry shares this one token.
-            let token = issueToken(for: cacheKey)
+            let issued = issueToken(for: cacheKey)
+            token = issued
             let newTask = Task { [weak self] in
                 guard let self else { throw CancellationError() }
                 return try await fetchAndValidate(
                     key: key,
                     cacheKey: cacheKey,
                     candidates: candidates,
-                    token: token
+                    token: issued
                 )
             }
-            let newFetch = InFlightFetch(task: newTask, token: token)
+            let newFetch = InFlightFetch(task: newTask, token: issued)
             inFlight[cacheKey] = newFetch
             fetchID = newFetch.id
             Task { [weak self] in
@@ -134,7 +141,52 @@ extension AssetCacheService {
             if Task.isCancelled {
                 throw CancellationError()
             }
-            return try result.get()
+            let delivered = try result.get()
+            // Final actor-isolated authority/liveness re-check,
+            // immediately before this specific waiter returns a
+            // success-shaped value to its own caller. Significant
+            // suspension can elapse between the moment the shared
+            // fetch's own `publish` call landed successfully under
+            // `token` and the moment this exact waiter's continuation
+            // actually resumes (the completion watcher iterating every
+            // waiter, this waiter's own scheduling, or another waiter's
+            // continuation being resumed first) — during which a
+            // more-recently-issued operation for this exact key, or a
+            // cache-wide `evictAll()`, may already have superseded
+            // `token`. Without this, such a waiter could still return a
+            // value shaped as current/successful even though this
+            // actor's own bookkeeping no longer considers it so, entirely
+            // independent of whether the underlying cache mutation
+            // itself remains correct (``publish``/``touch`` already
+            // retract their own mutation the instant *they* detect this
+            // same staleness — this closes the analogous gap for what
+            // this waiter hands back to its caller).
+            //
+            // `token` itself (captured above, before this shared fetch's
+            // `Task` was even created) is deliberately never durably
+            // stamped: doing so would require an `await`, which would
+            // reopen the very duplicate-in-flight-work race the
+            // synchronous "check the coalescing dictionary, else create
+            // and insert" section above exists to prevent (see
+            // ``issueToken(for:)``'s doc comment). The actual durable
+            // epoch this fetch was published under only exists once
+            // ``fetchAndValidate(key:cacheKey:candidates:token:)``'s own
+            // body stamps its own local copy — which `delivered` (a
+            // successfully published ``CachedAsset``) now carries
+            // forward as its own ``CachedAsset/durableClearEpoch``. Since
+            // `token`'s `generation`/`issuance`/`clearGeneration` already
+            // uniquely identify this exact fetch attempt (and cannot
+            // themselves change after issuance), reconstructing a
+            // fully-stamped token from `token` plus `delivered`'s own
+            // epoch is exactly equivalent to the token that actually
+            // published this result, without this call needing to
+            // itself perform another durable read to do so.
+            var stampedToken = token
+            stampedToken.durableClearEpoch = delivered.durableClearEpoch
+            guard await isAuthoritative(stampedToken, for: cacheKey) else {
+                throw AssetError.staleOperation
+            }
+            return delivered
         } onCancel: {
             // `onCancel` may run synchronously on an arbitrary executor,
             // so this hops back onto the actor rather than touching

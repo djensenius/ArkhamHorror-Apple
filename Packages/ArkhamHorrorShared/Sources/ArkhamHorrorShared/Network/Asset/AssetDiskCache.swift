@@ -295,8 +295,26 @@ actor AssetDiskCache {
         // but only after having already accepted a bogus pointer as if it
         // were a legitimate revalidation. Require a verified regular file
         // before committing the metadata bump.
+        //
+        // Deliberately a distinct, typed case
+        // (``AssetError/entryNoLongerCachedToTouch``) rather than the
+        // generic ``AssetError/cachePersistenceFailed(_:)`` used
+        // elsewhere in this method: a missing payload here is not a mere
+        // I/O hiccup a caller may treat as best-effort/non-fatal — it is
+        // definitive proof that some other, more-recently-concluded
+        // operation for this exact key (a definitive 404 invalidation, a
+        // fresh publish under new content whose own commit already
+        // cleaned up this generation, or a whole-cache clear) already
+        // removed this entry from the *shared* disk cache. A caller
+        // (``AssetCacheService/touch(_:asset:token:)``) that already
+        // wrote this same revalidation into its own *private* in-memory
+        // cache under this same token must retract that write rather
+        // than treat this as recoverable — otherwise memory alone could
+        // go on serving stale bytes the shared disk has already disowned,
+        // indefinitely, regardless of what any other cache instance
+        // sharing this directory has since done.
         guard (try? secureDirectory.attributes(name: payloadName))?.isRegularFile == true else {
-            throw AssetError.cachePersistenceFailed("No cached payload to touch for this key")
+            throw AssetError.entryNoLongerCachedToTouch
         }
         var stamped = metadata
         // See ``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``'s

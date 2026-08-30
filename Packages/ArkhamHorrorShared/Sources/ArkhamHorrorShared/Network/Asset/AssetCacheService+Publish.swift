@@ -98,8 +98,32 @@ extension AssetCacheService {
             await memoryCache.removeIfApplied(cacheKey, token: token)
             return .stale
         }
-        await recordDiskPersistenceResult {
+        let entryGoneFromDisk = await recordDiskPersistenceResult {
             try await diskCache.touch(cacheKey, metadata: asset.metadata, token: token)
+        }
+        guard !entryGoneFromDisk else {
+            // Unlike an ordinary best-effort disk-persistence failure, a
+            // definitive ``AssetError/entryNoLongerCachedToTouch`` is
+            // this cache's own proof that a more-recently-concluded
+            // operation for `cacheKey` (a sibling instance/process
+            // sharing this same disk directory included) already removed
+            // the shared disk entry this touch was refreshing, strictly
+            // *between* this actor's own token authority checks above and
+            // the disk write actually reaching that payload's on-disk
+            // name. Left alone, the memory write already applied moments
+            // ago under this same (still locally "authoritative") token
+            // would keep serving those now-disowned bytes to every future
+            // in-process hit indefinitely, entirely independent of what
+            // the shared disk cache itself has since done — precisely
+            // the cross-instance authority gap a purely in-process token
+            // check alone cannot close. Retract it and report `.stale`,
+            // exactly as if this actor's own authority check had failed,
+            // rather than folding this into `lastDiskPersistenceFailure`
+            // as a soft failure the memory write survives. See
+            // ``AssetError/entryNoLongerCachedToTouch``'s own doc comment.
+            await memoryCache.removeIfApplied(cacheKey, token: token)
+            await diskCache.removeIfApplied(cacheKey, token: token)
+            return .stale
         }
         guard await isAuthoritative(token, for: cacheKey) else {
             await memoryCache.removeIfApplied(cacheKey, token: token)
@@ -129,16 +153,52 @@ extension AssetCacheService {
     /// failure, or cancellation), so a test can deterministically wait
     /// for it rather than racing an unrelated coalesced waiter's own
     /// continuation resuming.
-    private func recordDiskPersistenceResult(_ operation: () async throws -> Void) async {
+    /// Records the outcome of a best-effort disk-persistence `operation`
+    /// into ``AssetCacheService/lastDiskPersistenceFailure``, deliberately
+    /// distinguishing genuine failures from cooperative cancellation: a
+    /// caller's task being cancelled while `operation` was itself
+    /// suspended (for example on ``AssetDiskCache``'s cross-process lock,
+    /// as the last remaining waiter for this exact fetch/revalidation) is
+    /// not a disk-persistence *failure* -- the write was aborted, not
+    /// attempted-and-failed -- so recording it as one would incorrectly
+    /// leave ``AssetCacheService/lastDiskPersistenceFailure`` non-nil
+    /// purely because of a cancellation race, in turn wrongly blocking
+    /// the tombstone-clearing logic gated on it in ``publish(_:asset:token:)``.
+    /// Leaves ``AssetCacheService/lastDiskPersistenceFailure`` exactly as
+    /// it already was for a cancelled attempt, rather than clearing it
+    /// either -- a cancelled attempt proves nothing one way or the other
+    /// about whether disk persistence is currently healthy. Calls
+    /// ``AssetCacheService/testOnlyDiskPersistenceRecordedHook``
+    /// once this bookkeeping is complete, in every case (success, genuine
+    /// failure, or cancellation), so a test can deterministically wait
+    /// for it rather than racing an unrelated coalesced waiter's own
+    /// continuation resuming.
+    ///
+    /// Returns `true` only when `operation` threw
+    /// ``AssetError/entryNoLongerCachedToTouch`` specifically — see that
+    /// case's own doc comment for why ``touch(_:asset:token:)`` alone
+    /// (the only caller that can ever observe it; ``publish(_:asset:token:)``'s
+    /// disk write never throws it) must treat that one outcome as a
+    /// definitive cross-instance staleness signal rather than folding it
+    /// into the same best-effort handling as every other disk failure.
+    @discardableResult
+    private func recordDiskPersistenceResult(_ operation: () async throws -> Void) async -> Bool {
         defer { testOnlyDiskPersistenceRecordedHook?() }
         do {
             try await operation()
             lastDiskPersistenceFailure = nil
+            return false
         } catch is CancellationError {
+            return false
+        } catch AssetError.entryNoLongerCachedToTouch {
+            lastDiskPersistenceFailure = .entryNoLongerCachedToTouch
+            return true
         } catch let error as AssetError {
             lastDiskPersistenceFailure = error
+            return false
         } catch {
             lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
+            return false
         }
     }
 }

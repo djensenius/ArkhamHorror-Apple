@@ -2,7 +2,7 @@ import Compression
 import Foundation
 
 // Exact zlib/DEFLATE inflation validation for a PNG's concatenated `IDAT`
-// payload, beyond `validatePNGStructure(_:)`'s own container-level
+// payload, beyond `validatePNGStructure(_:colorInfo:)`'s own container-level
 // (chunk length/CRC/ordering) checks. Split out of
 // `AssetImageValidator+PNGZlib.swift` (which owns the `IHDR`-derived
 // exact-byte-count math this file's decoder enforces) purely to keep

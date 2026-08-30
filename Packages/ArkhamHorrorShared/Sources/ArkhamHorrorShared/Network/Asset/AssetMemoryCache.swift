@@ -6,6 +6,33 @@ struct CachedAsset: Sendable, Equatable {
     let payload: Data
     var metadata: AssetCacheMetadata
 
+    /// The durable, cross-instance/cross-process clear epoch (see
+    /// `AssetCacheService+Epoch.swift`'s ``AssetCacheService/CacheToken/durableClearEpoch``)
+    /// observed at the moment this exact entry was published or
+    /// successfully revalidated. Plain in-memory bookkeeping only —
+    /// `metadata` is this struct's only `Codable`/persisted member, so
+    /// this field has no on-disk schema of its own and is never written
+    /// to or read from a disk-cache sidecar; a disk-read reconstruction
+    /// (``AssetDiskCache/get(_:)``) always leaves it `nil`, since a
+    /// disk-only hit is never independently trusted for memory-serving
+    /// without first passing back through a fresh publish/touch, which
+    /// alone stamps a real value here.
+    ///
+    /// Never trusted alone — every memory hit compares this stored value
+    /// against a *freshly re-read* current epoch (see
+    /// `AssetCacheService.memoryEntryStillCurrent(_:)`) immediately before
+    /// serving the entry. This closes a gap the snapshot-then-recheck
+    /// pattern used elsewhere in ``AssetCacheService`` cannot: a
+    /// cross-instance/cross-process clear that already completed
+    /// *before* a serving call even began is invisible to a snapshot
+    /// taken (and re-checked) entirely after that clear, since both reads
+    /// trivially agree with each other despite the entry itself having
+    /// been published under a now-superseded epoch. Stamping the epoch
+    /// directly onto the entry at publish time, and comparing it fresh on
+    /// every subsequent hit, closes that window regardless of how long
+    /// the entry has sat in memory since.
+    var durableClearEpoch: Int?
+
     /// This entry's actual payload byte count plus
     /// ``AssetCacheMetadata/metadataOverheadBytes``, computed once here at
     /// construction rather than re-derived on every accounting pass.
@@ -39,9 +66,10 @@ struct CachedAsset: Sendable, Equatable {
     /// changes after construction.
     let accountedByteCount: Int
 
-    init(payload: Data, metadata: AssetCacheMetadata) {
+    init(payload: Data, metadata: AssetCacheMetadata, durableClearEpoch: Int? = nil) {
         self.payload = payload
         self.metadata = metadata
+        self.durableClearEpoch = durableClearEpoch
         accountedByteCount = payload.count + metadata.metadataOverheadBytes
     }
 }

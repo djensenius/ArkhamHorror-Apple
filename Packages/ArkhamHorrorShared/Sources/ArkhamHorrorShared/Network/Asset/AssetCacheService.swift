@@ -103,8 +103,15 @@ actor AssetCacheService {
     /// the precise least-recently-used one, so plain insertion order is
     /// sufficient. Paired with ``trackedAuthorityKeys`` (a `Set` mirror,
     /// so "is this key already tracked" is an O(1) check rather than an
-    /// O(n) scan of this array). See ``noteAuthorityKeyTouched(_:)``.
-    var authorityKeyOrder: [AssetCacheKey] = []
+    /// O(n) scan of this array). Backed by ``AuthorityKeyQueue`` (an
+    /// amortized-O(1)-`append`/`popFirst` FIFO), not a bare `Array`,
+    /// specifically so a sustained all-keys-busy burst at
+    /// ``maxTrackedAuthorityKeys`` capacity — every touch during it
+    /// forced to scan and requeue the same busy keys — costs the same
+    /// constant amortized work per touch it always has, rather than
+    /// `Array.removeFirst()`'s O(n) element shift turning that burst
+    /// quadratic. See ``noteAuthorityKeyTouched(_:)``.
+    var authorityKeyOrder = AuthorityKeyQueue<AssetCacheKey>()
     var trackedAuthorityKeys: Set<AssetCacheKey> = []
 
     /// Keys whose disk entry this actor knows it *intended* to invalidate
@@ -236,8 +243,10 @@ actor AssetCacheService {
         let memorySnapshot = await snapshotAuthority(for: cacheKey)
         let memoryHit = await memoryCache.get(cacheKey)
         var memoryHitIsCurrent = false
-        if memoryHit != nil {
-            memoryHitIsCurrent = await unchanged(since: memorySnapshot, for: cacheKey)
+        if let memoryHit {
+            let stillUnchanged = await unchanged(since: memorySnapshot, for: cacheKey)
+            let stillCurrentEpoch = await memoryEntryStillCurrent(memoryHit.durableClearEpoch)
+            memoryHitIsCurrent = stillUnchanged && stillCurrentEpoch
         }
         endAuthorityWindow(for: cacheKey)
         if let cached = memoryHit, memoryHitIsCurrent {

@@ -50,7 +50,14 @@ extension AssetDiskCache {
                 // place. Either way, zero bytes are stranded.
                 return 0
             }
-            guard attributes.isRegularFile else { return 0 }
+            // A non-regular entry surviving at this name (a directory,
+            // FIFO, device node, or symlink) is not something this
+            // removal attempt above could safely have reclaimed, and its
+            // true size (or, for a directory, its entire recursive
+            // contents) cannot be determined by this single `fstatat`
+            // alone -- fail closed exactly like a stat error, rather than
+            // silently treating it as zero stranded bytes.
+            guard attributes.isRegularFile else { return nil }
             return attributes.size
         } catch {
             return nil

@@ -33,7 +33,7 @@ struct AssetImageValidatorPNGZlibTests {
             colorInfo: colorInfo
         )
         let rowCount = 9
-        let idatPayload = try AssetImageValidator.validatePNGStructure(png)
+        let idatPayload = try AssetImageValidator.validatePNGStructure(png, colorInfo: colorInfo)
         try AssetImageValidator.validateExactPNGInflation(
             idatPayload: idatPayload,
             rowByteCount: rowByteCount,
@@ -107,7 +107,7 @@ struct AssetImageValidatorPNGZlibTests {
             colorInfo: colorInfo
         )
         let rowCount = 4
-        var idatPayload = try AssetImageValidator.validatePNGStructure(png)
+        var idatPayload = try AssetImageValidator.validatePNGStructure(png, colorInfo: colorInfo)
         idatPayload.append(0x00)
 
         #expect(throws: AssetError.self) {
@@ -133,7 +133,7 @@ struct AssetImageValidatorPNGZlibTests {
             colorInfo: colorInfo
         )
         let rowCount = 9
-        let idatPayload = try AssetImageValidator.validatePNGStructure(png)
+        let idatPayload = try AssetImageValidator.validatePNGStructure(png, colorInfo: colorInfo)
 
         #expect(throws: AssetError.self) {
             // Claiming a byte count larger than what this exact, valid
@@ -159,7 +159,7 @@ struct AssetImageValidatorPNGZlibTests {
             colorInfo: colorInfo
         )
         let rowCount = 9
-        let idatPayload = try AssetImageValidator.validatePNGStructure(png)
+        let idatPayload = try AssetImageValidator.validatePNGStructure(png, colorInfo: colorInfo)
 
         #expect(throws: AssetError.self) {
             try AssetImageValidator.validateExactPNGInflation(
@@ -179,7 +179,9 @@ struct AssetImageValidatorPNGZlibTests {
             colorInfo: colorInfo
         )
         let rowCount = 4
-        var idatPayload = try [UInt8](AssetImageValidator.validatePNGStructure(png))
+        var idatPayload = try [UInt8](
+            AssetImageValidator.validatePNGStructure(png, colorInfo: colorInfo)
+        )
         // Corrupt the CM nibble (must be 8 for DEFLATE) without touching
         // the header-checksum bits, so this specifically exercises the
         // "CM != 8" guard rather than the header-checksum guard.
@@ -208,7 +210,9 @@ struct AssetImageValidatorPNGZlibTests {
             colorInfo: colorInfo
         )
         let rowCount = 4
-        var idatPayload = try [UInt8](AssetImageValidator.validatePNGStructure(png))
+        var idatPayload = try [UInt8](
+            AssetImageValidator.validatePNGStructure(png, colorInfo: colorInfo)
+        )
         idatPayload[idatPayload.count - 1] ^= 0xFF
 
         #expect(throws: AssetError.self) {

@@ -1,7 +1,7 @@
 import Foundation
 
 /// `IHDR`-derived exact expected-byte-count math for a PNG's decompressed
-/// (filtered scanline) payload, beyond ``validatePNGStructure(_:)``'s own
+/// (filtered scanline) payload, beyond ``validatePNGStructure(_:colorInfo:)``'s own
 /// container-level (chunk length/CRC/ordering) checks.
 ///
 /// The actual zlib/DEFLATE decompression and exact-byte-count enforcement

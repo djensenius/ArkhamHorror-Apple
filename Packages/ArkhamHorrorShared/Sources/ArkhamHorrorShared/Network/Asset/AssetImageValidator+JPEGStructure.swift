@@ -7,7 +7,7 @@ import Foundation
 /// can still declare a perfectly valid `SOF` segment and even still
 /// successfully produce *a* `CGImage` from ImageIO's lazy, best-effort
 /// decoder for a small enough image — the same unreliable-completeness
-/// problem ``validatePNGStructure(_:)`` documents for PNG. This walks every
+/// problem ``validatePNGStructure(_:colorInfo:)`` documents for PNG. This walks every
 /// marker segment from the `SOI`, requiring: at least one start-of-frame
 /// segment; at least one start-of-scan (`SOS`) segment whose
 /// entropy-coded data (correctly skipping byte-stuffed `FF 00` and

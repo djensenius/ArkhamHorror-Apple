@@ -323,11 +323,18 @@ extension AssetCacheServiceTests {
     func assembleRevalidatedAssetValidatesAgainstThePassedFormat() async throws {
         let fixture = try mismatchedFormatFixture()
         try await withService { service, _ in
-            let asset = try await service.assembleRevalidatedAsset(
+            let token = await service.issueToken(for: fixture.cacheKey)
+            let request = AssetCacheService.RevalidationRequest(
                 cacheKey: fixture.cacheKey,
                 url: fixture.url,
                 expectedFormat: .png,
                 existing: fixture.existing,
+                etag: nil,
+                lastModified: nil,
+                token: token
+            )
+            let asset = try await service.assembleRevalidatedAsset(
+                request: request,
                 response: fixture.response
             )
             #expect(asset.metadata.contentType == "image/png")
@@ -349,12 +356,19 @@ extension AssetCacheServiceTests {
         let fixture = try mismatchedFormatFixture()
         #expect(fixture.key.expectedFormat == .avif)
         try await withService { service, _ in
+            let token = await service.issueToken(for: fixture.cacheKey)
+            let request = AssetCacheService.RevalidationRequest(
+                cacheKey: fixture.cacheKey,
+                url: fixture.url,
+                expectedFormat: fixture.key.expectedFormat,
+                existing: fixture.existing,
+                etag: nil,
+                lastModified: nil,
+                token: token
+            )
             await #expect(throws: (any Error).self) {
                 _ = try await service.assembleRevalidatedAsset(
-                    cacheKey: fixture.cacheKey,
-                    url: fixture.url,
-                    expectedFormat: fixture.key.expectedFormat,
-                    existing: fixture.existing,
+                    request: request,
                     response: fixture.response
                 )
             }
