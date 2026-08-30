@@ -68,6 +68,40 @@ actor AssetCacheService {
     /// for this specific purpose.
     var keyClearGeneration: [AssetCacheKey: Int] = [:]
 
+    /// The maximum number of distinct keys' authority bookkeeping
+    /// (``keyIssuance``/``keyLatestToken``/``keyClearGeneration``) this
+    /// actor retains at once, before pruning the least-recently-touched
+    /// entries — see ``authorityKeyOrder``/``noteAuthorityKeyTouched(_:)``
+    /// in `AssetCacheService+Epoch.swift`. Every one of those three
+    /// dictionaries is keyed by an ``AssetCacheKey`` that (for a
+    /// self-hosted server, or a homebrew card/campaign identifier) is
+    /// ultimately derived from server-controlled or user-supplied input,
+    /// not a small, fixed, first-party enumeration — an unbounded stream
+    /// of distinct never-repeated keys would otherwise grow these three
+    /// dictionaries without limit for the lifetime of the process. A
+    /// pruned key's bookkeeping simply restarts from scratch (issuance 0,
+    /// no recorded latest token) the next time it is genuinely requested
+    /// again — never pruned, however, while any fetch or revalidation is
+    /// actually in flight for it (see `AssetCacheService+Epoch.swift`'s
+    /// pruning loop), so a live operation's own authority can never be
+    /// silently discarded out from under it purely due to unrelated keys'
+    /// churn.
+    static let maxTrackedAuthorityKeys = 4096
+
+    /// First-seen-insertion-order list of every key currently tracked
+    /// across ``keyIssuance``/``keyLatestToken``/``keyClearGeneration`` —
+    /// oldest first. Deliberately *not* re-ordered on every subsequent
+    /// touch of an already-tracked key (an O(1) append on first sight,
+    /// rather than an O(n) linear-scan-and-move-to-the-end on every
+    /// single token issuance): pruning only needs *some* inactive key to
+    /// reclaim, not the precise least-recently-used one, so plain
+    /// insertion order is sufficient. Paired with ``trackedAuthorityKeys``
+    /// (a `Set` mirror, so "is this key already tracked" is an O(1) check
+    /// rather than an O(n) scan of this array). See
+    /// ``noteAuthorityKeyTouched(_:)``.
+    var authorityKeyOrder: [AssetCacheKey] = []
+    var trackedAuthorityKeys: Set<AssetCacheKey> = []
+
     /// Keys whose disk entry this actor knows it *intended* to invalidate
     /// (a definitive 404, a failed re-validation quarantine, or
     /// ``evictAll()``) but where the underlying physical deletion could
@@ -322,6 +356,7 @@ actor AssetCacheService {
         // suspended partway through — see ``snapshotClearState(for:)``'s
         // doc comment for why this is deliberately a distinct counter
         // from ``keyLatestToken``.
+        noteAuthorityKeyTouched(cacheKey)
         keyClearGeneration[cacheKey, default: 0] += 1
         await memoryCache.remove(cacheKey, token: token)
         if let token, !isAuthoritative(token, for: cacheKey) {

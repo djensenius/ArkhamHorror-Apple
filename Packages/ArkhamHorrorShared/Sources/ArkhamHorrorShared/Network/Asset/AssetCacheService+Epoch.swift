@@ -147,11 +147,69 @@ extension AssetCacheService {
     /// exactly once, synchronously, before creating the `Task` that will
     /// eventually mutate state.
     func issueToken(for key: AssetCacheKey) -> CacheToken {
+        noteAuthorityKeyTouched(key)
         let nextIssuance = (keyIssuance[key] ?? 0) + 1
         keyIssuance[key] = nextIssuance
         let token = CacheToken(generation: globalGeneration, issuance: nextIssuance)
         keyLatestToken[key] = token
         return token
+    }
+
+    /// Records `key` in ``AssetCacheService/authorityKeyOrder`` the first
+    /// time it is ever seen by ``issueToken(for:)`` or
+    /// ``invalidate(_:token:)``'s clear-generation bump, then prunes the
+    /// oldest tracked keys' bookkeeping from all three of
+    /// ``AssetCacheService/keyIssuance``/``keyLatestToken``/
+    /// ``keyClearGeneration`` once the number of distinct tracked keys
+    /// exceeds ``AssetCacheService/maxTrackedAuthorityKeys`` — see that
+    /// constant's own doc comment for why this bound exists at all.
+    ///
+    /// A key currently referenced by ``AssetCacheService/inFlight`` or
+    /// ``AssetCacheService/inFlightRevalidation`` is never pruned: doing
+    /// so would delete the very authority state a live operation for that
+    /// exact key is about to check itself against, silently turning a
+    /// perfectly legitimate in-progress fetch/revalidation into one that
+    /// spuriously (and wrongly) finds itself no longer authoritative the
+    /// next time it checks. Such a key is instead put back at the front
+    /// of the queue exactly as it was, and the scan continues over the
+    /// next-oldest entries; the scan itself is bounded to at most one
+    /// full pass over the keys present when this call began, so a
+    /// workload with more distinct keys genuinely in flight at once than
+    /// `maxTrackedAuthorityKeys` simply — and safely — exceeds the
+    /// nominal bound for as long as that burst of concurrency lasts,
+    /// rather than looping forever or discarding live authority state.
+    func noteAuthorityKeyTouched(_ key: AssetCacheKey) {
+        if trackedAuthorityKeys.insert(key).inserted {
+            authorityKeyOrder.append(key)
+        }
+        pruneAuthorityKeysIfNeeded()
+    }
+
+    private func pruneAuthorityKeysIfNeeded() {
+        guard authorityKeyOrder.count > Self.maxTrackedAuthorityKeys else { return }
+        var attemptsRemaining = authorityKeyOrder.count
+        while authorityKeyOrder.count > Self.maxTrackedAuthorityKeys, attemptsRemaining > 0 {
+            attemptsRemaining -= 1
+            let oldest = authorityKeyOrder.removeFirst()
+            guard !isAuthorityKeyBusy(oldest) else {
+                authorityKeyOrder.append(oldest)
+                continue
+            }
+            trackedAuthorityKeys.remove(oldest)
+            keyIssuance[oldest] = nil
+            keyLatestToken[oldest] = nil
+            keyClearGeneration[oldest] = nil
+        }
+    }
+
+    /// `true` if `key` currently has a normal fetch or a revalidation
+    /// actually in flight — see ``noteAuthorityKeyTouched(_:)`` for why
+    /// such a key's authority bookkeeping must never be pruned.
+    private func isAuthorityKeyBusy(_ key: AssetCacheKey) -> Bool {
+        if inFlight[key] != nil {
+            return true
+        }
+        return inFlightRevalidation.keys.contains { $0.cacheKey == key }
     }
 
     /// Captures the durable on-disk write-generation `key` currently has
@@ -221,6 +279,9 @@ extension AssetCacheService {
         globalGeneration += 1
         keyLatestToken.removeAll()
         keyIssuance.removeAll()
+        keyClearGeneration.removeAll()
+        authorityKeyOrder.removeAll()
+        trackedAuthorityKeys.removeAll()
     }
 
     /// A read-only snapshot of `key`'s current authority state, taken
