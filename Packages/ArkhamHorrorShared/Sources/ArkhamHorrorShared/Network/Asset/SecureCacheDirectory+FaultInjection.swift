@@ -25,6 +25,7 @@ final class FaultInjectionState: @unchecked Sendable {
     private var _lastRenamedFinalName: String?
     private var _failAttributesSuffixes: Set<String> = []
     private var _failNextRootFsyncCount = 0
+    private var _failReaddirAfterEntryCount: Int?
 
     var failSuffixes: Set<String> {
         get { lock.withLock { _failSuffixes } }
@@ -157,6 +158,28 @@ final class FaultInjectionState: @unchecked Sendable {
             guard _failNextRootFsyncCount > 0 else { return false }
             _failNextRootFsyncCount -= 1
             return true
+        }
+    }
+
+    /// Simulates ``SecureCacheDirectory/listNames()``'s underlying
+    /// `readdir` loop hitting a genuine I/O error after enumerating
+    /// exactly `count` real entries -- as opposed to
+    /// ``listNamesFailuresRemaining``, which fails the *entire* call
+    /// before it ever opens the directory stream at all. This lets a test
+    /// prove the errno-checked `readdir` loop (see ``listNames()``'s own
+    /// doc comment) actually distinguishes a genuine mid-enumeration
+    /// failure from end-of-directory, rather than merely exercising the
+    /// coarser "the whole call failed" path every other `listNames`
+    /// fault-injection case already covers.
+    var failReaddirAfterEntryCount: Int? {
+        get { lock.withLock { _failReaddirAfterEntryCount } }
+        set { lock.withLock { _failReaddirAfterEntryCount = newValue } }
+    }
+
+    func shouldFailReaddirAfterEntryCount(currentCount: Int) -> Bool {
+        lock.withLock {
+            guard let threshold = _failReaddirAfterEntryCount else { return false }
+            return currentCount >= threshold
         }
     }
 }
