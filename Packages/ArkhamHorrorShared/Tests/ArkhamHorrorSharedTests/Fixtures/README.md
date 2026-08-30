@@ -3,10 +3,10 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@ee6efffa4d7a49f2ac7bf6b9349802d3d7675ae5` (through PR #49),
-schema revision `0.1.21`.
+`djensenius/ArkhamHorror@52c7ee3b730c87129907e26b91acc3933da841cd` (through PR #51),
+schema revision `0.1.22`.
 
-These twenty-one files, and only these twenty-one, live under `Fixtures/Contract/` — a
+These twenty-five files, and only these twenty-five, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -29,13 +29,23 @@ REST/WebSocket envelopes both decoding to the same `PublicGameSnapshot`
 field). `mode-turn-zero.json`, `mode-campaign-only.json`, `mode-campaign-scenario.json`,
 `location-enemy-view.json`, `movement.json`, `act-no-advance-cost.json`,
 `investigator-unhealed-horror-negative.json`, `uuid-entity-map.json`, and
-`card-code-entity-map.json`, the three `question-*.json` files, and
+`card-code-entity-map.json`, the three `question-*choose-one*.json` files, and
 `answer-question.json` are focused, sub-shape fixtures exercising specific governed
 branches (`Data.These` mode sibling-key combinations and turn zero, the disjoint enemy
 location view, an in-progress `Movement`, an act with no `advanceCost`, negative
 ``unhealedHorrorThisRound`, the UUID-/`CardCode`-keyed entity map shapes, and the basic
 choice question/answer shapes) that are not
 otherwise exercised by the single non-empty `get-game.json`/`game-update.json` fixture.
+
+`question-read.json` and `question-read-with-cards.json` are the production
+`setupTheGathering` opening `Read`/`BasicReadChoices` continue prompt (`readCards: null`
+and its sibling non-null `readCards` branch); `question-choose-one-location.json` and
+`question-choose-one-location-multiple.json` are the `startAt` starting-location
+`ChooseOne`/`TargetLabel(LocationTarget)` prompt with, respectively, the single real
+"Study" starting location and three real "The Gathering" locations proving backend choice
+order and zero-based `Answer.choice` index stability. See `basic-choice-question.schema.json`
+in the backend repository for the governed shape these four fixtures exercise.
+
 
 ## token.json / whoami.json
 

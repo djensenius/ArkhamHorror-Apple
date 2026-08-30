@@ -26,6 +26,22 @@ enum BoardDisplayFormatting {
         return trimmed.isEmpty ? fallback : trimmed
     }
 
+    /// A choice's display title. `.chooseLocation` resolves the real starting-location
+    /// label from the authoritative board `projection` (falling back to the location's own
+    /// canonical lowercase-hyphenated UUID text -- never a fabricated or guessed name --
+    /// when the projection doesn't yet carry that location, for example if the prompt
+    /// arrives before that location's own reveal is reflected in the snapshot). Every
+    /// other content kind uses its static per-kind ``BasicChoice/title``, unchanged.
+    static func choiceDisplayTitle(
+        for choice: BasicChoice, in projection: BoardProjection
+    ) -> String {
+        guard let locationID = choice.locationID else { return choice.title }
+        if let node = projection.locations.first(where: { $0.id == locationID }) {
+            return node.displayLabel
+        }
+        return "Location \(locationID.rawValue.uuidString.lowercased())"
+    }
+
     /// `name.subtitle`, trimmed to `nil` if blank (rather than showing an empty subtitle).
     static func safeSubtitle(_ name: CardName) -> String? {
         guard let subtitle = name.subtitle else { return nil }
