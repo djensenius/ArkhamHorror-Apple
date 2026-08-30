@@ -20,7 +20,7 @@ extension AssetCacheService {
             .reduce(0) { $0 + $1.value.waiters.count }
     }
 
-    /// `preIssuedEpoch` is a durable clear epoch the caller already read
+    /// `preIssuedAuthority` is a durable clear epoch the caller already read
     /// (via ``currentDurableClearEpoch()``) at its own synchronous
     /// decision point, immediately before calling this — every caller
     /// (the memory-hit and validated-disk-hit branches of
@@ -34,9 +34,9 @@ extension AssetCacheService {
     /// operation will join already in-flight work or create fresh work,
     /// clobbering whatever token the in-flight fetch it might join is
     /// relying on — see
-    /// ``revalidateExisting(_:key:cacheKey:candidates:preIssuedEpoch:)``'s
+    /// ``revalidateExisting(_:key:cacheKey:candidates:preIssuedAuthority:)``'s
     /// doc comment. Threaded straight through to
-    /// ``resolveRevalidationFetchID(expectedFormat:existing:slot:preIssuedEpoch:)``,
+    /// ``resolveRevalidationFetchID(expectedFormat:existing:slot:preIssuedAuthority:)``,
     /// which mints the actual authoritative token itself, and only on
     /// its own "create fresh work" branch, so a fresh network round trip
     /// started here never mints unrelated, always-immediately-
@@ -47,7 +47,7 @@ extension AssetCacheService {
         url: URL,
         expectedFormat: AssetFormat,
         existing: CachedAsset,
-        preIssuedEpoch: Int?
+        preIssuedAuthority: PreIssuedAuthority?
     ) async throws -> CachedAsset {
         let etag = existing.metadata.etag
         let lastModified = existing.metadata.etag == nil ? existing.metadata.lastModified : nil
@@ -62,7 +62,7 @@ extension AssetCacheService {
             expectedFormat: expectedFormat,
             existing: existing,
             slot: slot,
-            preIssuedEpoch: preIssuedEpoch
+            preIssuedAuthority: preIssuedAuthority
         )
         let fetchID = resolved.id
         let token = resolved.token
@@ -75,7 +75,9 @@ extension AssetCacheService {
                 if inFlightRevalidation[slot]?.id == fetchID {
                     var fetch = inFlightRevalidation[slot]
                     fetch?.waiters[waiterID] = continuation
-                    inFlightRevalidation[slot] = fetch
+                    if let fetch {
+                        setInFlightRevalidation(fetch, for: slot)
+                    }
                 } else {
                     continuation.resume(returning: .failure(CancellationError()))
                 }
@@ -143,13 +145,13 @@ extension AssetCacheService {
             continuation.resume(returning: .failure(CancellationError()))
         }
         if fetch.waiters.isEmpty {
-            inFlightRevalidation[slot] = nil
+            clearInFlightRevalidation(for: slot)
             retireIfCurrent(fetch.token, for: slot.cacheKey)
             fetch.task.cancel()
             await memoryCache.removeIfApplied(slot.cacheKey, token: fetch.token)
             await diskCache.removeIfApplied(slot.cacheKey, token: fetch.token)
         } else {
-            inFlightRevalidation[slot] = fetch
+            setInFlightRevalidation(fetch, for: slot)
         }
     }
 
@@ -159,7 +161,7 @@ extension AssetCacheService {
         result: Result<CachedAsset, Error>
     ) {
         guard let fetch = inFlightRevalidation[slot], fetch.id == fetchID else { return }
-        inFlightRevalidation[slot] = nil
+        clearInFlightRevalidation(for: slot)
         for (_, continuation) in fetch.waiters {
             continuation.resume(returning: result)
         }

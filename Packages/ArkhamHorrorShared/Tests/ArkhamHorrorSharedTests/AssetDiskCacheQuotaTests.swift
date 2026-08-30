@@ -241,21 +241,24 @@ extension AssetDiskCacheTests {
             try await cache.remove(cacheKey)
             let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
-            // Excludes the cache's own reserved cross-process lock file
-            // and durable access-sequence counter file (see the sibling
-            // fixup in `AssetDiskCacheHashIntegrityTests`).
-            // A successful removal leaves nothing else behind: unlike
-            // the now-removed durable per-key tombstone/generation-fence
-            // system, there is no on-disk marker to preserve — every disk
-            // hit (for this key or any other) must independently pass a
-            // fresh online conditional revalidation before
-            // `AssetCacheService` will ever trust or return it, so a
-            // stale in-flight write racing this removal cannot resurrect
-            // anything simply by finding no fence file present.
+            // Excludes the cache's own reserved cross-process lock file,
+            // durable clear-epoch counter, and this exact key's own
+            // durable disk-write-generation counter file (`<hash>.gen`,
+            // see `AssetDiskCache+WriteGeneration.swift`): unlike the
+            // payload/metadata pair a removal is actually responsible for
+            // deleting, that counter is deliberately never removed by an
+            // ordinary per-key `remove(_:token:)` -- see that file's own
+            // doc comment for why letting it survive an ordinary removal
+            // (while still being fully reset by a whole-cache
+            // `removeAll()`) is required to keep a stale, still-in-flight
+            // write for this exact key from being able to resurrect
+            // content after this legitimate removal.
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
                 .filter {
                     $0 != SecureCacheDirectory.lockFileName
                         && $0 != SecureCacheDirectory.accessSequenceFileName
+                        && $0 != SecureCacheDirectory.clearEpochFileName
+                        && $0 != "\(cacheKey.digestHex).gen"
                 }
             #expect(contents.isEmpty)
         }

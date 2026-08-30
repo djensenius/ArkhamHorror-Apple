@@ -151,10 +151,47 @@ extension AssetCacheService {
         if inFlight[key] != nil {
             return true
         }
-        if inFlightRevalidation.keys.contains(where: { $0.cacheKey == key }) {
+        if (revalidationKeyRefCount[key] ?? 0) > 0 {
             return true
         }
         return (openAuthorityWindows[key] ?? 0) > 0
+    }
+
+    /// The sole mutation points for ``inFlightRevalidation``: every insert
+    /// or removal of a slot must go through one of these two functions
+    /// (never write ``inFlightRevalidation`` directly) so that
+    /// ``revalidationKeyRefCount`` — the O(1) per-key "is a revalidation
+    /// in flight for this key" lookup ``isAuthorityKeyBusy(_:)`` relies on
+    /// — never drifts out of sync with the actual contents of
+    /// ``inFlightRevalidation``.
+    func setInFlightRevalidation(_ fetch: RevalidationFetch, for slot: RevalidationSlot) {
+        if inFlightRevalidation.updateValue(fetch, forKey: slot) == nil {
+            revalidationKeyRefCount[slot.cacheKey, default: 0] += 1
+        }
+    }
+
+    @discardableResult
+    func clearInFlightRevalidation(for slot: RevalidationSlot) -> RevalidationFetch? {
+        guard let removed = inFlightRevalidation.removeValue(forKey: slot) else { return nil }
+        let key = slot.cacheKey
+        if let count = revalidationKeyRefCount[key] {
+            if count <= 1 {
+                revalidationKeyRefCount[key] = nil
+            } else {
+                revalidationKeyRefCount[key] = count - 1
+            }
+        }
+        return removed
+    }
+
+    /// Removes every currently in-flight revalidation slot at once (used
+    /// only by ``evictAll()``, which must discard every one regardless of
+    /// key) and resets ``revalidationKeyRefCount`` alongside it in the
+    /// same O(1)-ish sweep, rather than calling
+    /// ``clearInFlightRevalidation(for:)`` once per slot.
+    func removeAllInFlightRevalidation() {
+        inFlightRevalidation.removeAll()
+        revalidationKeyRefCount.removeAll()
     }
 
     /// Opens an "authority window" for `key`: call immediately before

@@ -25,8 +25,16 @@ extension AssetDiskCache {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         recoverOrphansIfNeeded()
-        if let token, !acceptToken(token, for: key) {
-            return
+        let currentEpoch = try secureDirectory.readPersistedClearEpoch()
+        let currentGeneration = try currentWriteGenerationLocked(for: key)
+        if let token {
+            guard acceptToken(
+                token,
+                currentEpoch: currentEpoch,
+                currentGeneration: currentGeneration
+            ) else {
+                return
+            }
         }
         do {
             _ = try secureDirectory.remove(name: metadataFilename(for: key))
@@ -49,6 +57,18 @@ extension AssetDiskCache {
             throw error
         }
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
+        // Removal counts as this key's next durable "write" for CAS
+        // purposes exactly like ``set(_:payload:metadata:token:)``/
+        // ``touch(_:metadata:token:)``: durably advancing past the
+        // generation `token` captured is what lets
+        // ``removeIfApplied(_:token:)`` later recognize this exact
+        // removal as "the last thing this token did" (current == issued
+        // + 1) if it needs to be retracted, and what lets a subsequent
+        // fresh write for this key (which reads the *post*-removal
+        // generation at its own issuance) durably outrank any other
+        // still-in-flight, now-stale operation that captured the
+        // *pre*-removal value.
+        try commitWriteGenerationLocked(currentGeneration, for: key)
     }
 
     /// Removes every entry currently in the cache directory. Never deletes
@@ -115,20 +135,18 @@ extension AssetDiskCache {
         // begins: a caller must never observe "entries are already gone"
         // without the durable epoch having also already advanced.
         try secureDirectory.bumpClearEpoch()
-        // Bumped before any removal work, exactly like
-        // ``AssetMemoryCache/removeAll()``: any `set`/`touch`/`remove`
-        // call bearing a token issued under an older generation is
-        // rejected by ``acceptToken(_:for:)`` from this point on, even
-        // if this actor happens to service it before the corresponding
-        // `AssetCacheService`-level check would have caught it. This
-        // in-process counter remains a useful fast-path optimization
-        // (rejecting a stale write this exact actor instance already
-        // knows is stale, without needing to re-read the durable epoch
-        // file for it) layered on top of — never a substitute for — the
-        // durable epoch bumped above, which is what actually protects a
-        // *different* instance/process sharing this same directory.
-        acceptedGeneration += 1
-        appliedToken.removeAll()
+        // Every per-key durable write-generation counter file (see
+        // `AssetDiskCache+WriteGeneration.swift`) is deliberately *not*
+        // specially reserved here the way the lock/access-sequence/clear-
+        // epoch files are: this clear's own epoch bump above already
+        // durably fences every token issued before it (any such token's
+        // ``AssetCacheService/CacheToken/durableClearEpoch`` can never
+        // again match, regardless of what its ``AssetCacheService/CacheToken/diskWriteGeneration``
+        // says), so letting the removal pass below sweep away every
+        // `.gen` file too is both safe and desirable: it lets every key
+        // restart from a clean generation baseline after a real clear,
+        // rather than accumulating one small counter file per key ever
+        // written for the lifetime of this cache directory.
         let names = try secureDirectory.listNames()
         var failureCount = 0
         for name in names where Self.isRemovableDuringClear(name) {

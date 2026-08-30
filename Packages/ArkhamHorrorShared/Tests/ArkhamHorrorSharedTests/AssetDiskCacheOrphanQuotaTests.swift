@@ -44,9 +44,11 @@ extension AssetDiskCacheTests {
 
     @Test(
         """
-        A persistently unremovable orphan .bin file's bytes are counted toward the disk quota, \
-        forcing eviction of an otherwise still-recent, in-budget tracked entry, rather than \
-        letting stranded bytes silently grow the cache beyond its configured budget
+        A persistently unremovable orphan .bin file's bytes are counted toward the disk quota \
+        *before* any new write is even attempted: the very first set() call against a \
+        directory that already contains one fails closed (disk writes disabled) rather than \
+        succeeding and only being evicted afterward, since accounting for it alone already \
+        exceeds highWaterMarkDiskBytes with zero tracked entries yet published
         """
     )
     func persistentlyUnremovableOrphanBytesCountTowardQuotaAndForceEviction() async throws {
@@ -56,11 +58,13 @@ extension AssetDiskCacheTests {
 
             let cacheKey = try key("01001")
             let payload = Data(count: 100)
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload)
-            )
+            await #expect(throws: AssetError.self) {
+                try await cache.set(
+                    cacheKey,
+                    payload: payload,
+                    metadata: metadata(for: cacheKey, payload: payload)
+                )
+            }
 
             #expect(
                 FileManager.default.fileExists(
@@ -72,9 +76,10 @@ extension AssetDiskCacheTests {
             #expect(
                 fetched == nil,
                 """
-                The freshly-inserted entry must have been evicted immediately: its own bytes \
-                alone are far under highWaterMarkDiskBytes, so eviction can only have triggered \
-                if the persistently-stranded orphan's 2000 bytes were folded into the total
+                The write must never have been accepted at all: proactive locked accounting, \
+                which now runs before every publication rather than only after one, already \
+                found the persistently-stranded orphan's 2000 bytes alone exceed \
+                highWaterMarkDiskBytes and disabled writes before this entry was ever published
                 """
             )
         }
@@ -84,7 +89,7 @@ extension AssetDiskCacheTests {
         """
         Once a previously-unremovable orphan's removal stops failing, the next write retries \
         cleanup and reclaims it, rather than treating the earlier failed attempt as permanently \
-        given up on — and a fresh entry can then survive normally again
+        given up on — and a fresh entry can then succeed and survive normally
         """
     )
     func clearedOrphanFaultIsReclaimedOnNextWrite() async throws {
@@ -93,16 +98,24 @@ extension AssetDiskCacheTests {
             let orphanName = try await writeUnremovableOrphan(in: directory, cache: cache)
             let firstKey = try key("01001")
             let firstPayload = Data(count: 100)
-            try await cache.set(
-                firstKey,
-                payload: firstPayload,
-                metadata: metadata(for: firstKey, payload: firstPayload)
-            )
+            // Proactive locked accounting now runs before this very first
+            // write is even attempted, and the persistently-unremovable
+            // orphan alone already exceeds highWaterMarkDiskBytes with
+            // nothing else published yet -- so this first attempt must
+            // itself fail closed, not merely fail to durably keep the
+            // entry it just published.
+            await #expect(throws: AssetError.self) {
+                try await cache.set(
+                    firstKey,
+                    payload: firstPayload,
+                    metadata: metadata(for: firstKey, payload: firstPayload)
+                )
+            }
 
             // Clearing the fault and writing again must retry cleanup —
             // not treat the earlier failed attempt as permanently given
             // up on — and, once the orphan is actually reclaimed, a fresh
-            // entry must survive normally again.
+            // entry must succeed and survive normally again.
             await cache.directoryAccess.installFaultInjection()
             let secondKey = try key("01002")
             let secondPayload = Data(count: 100)

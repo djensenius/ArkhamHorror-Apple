@@ -28,11 +28,16 @@ extension AssetDiskCacheTests {
             }
 
             // Excludes the cache's own reserved cross-process lock file
-            // (`SecureCacheDirectory.lockFileName`), which is expected to
-            // persist for the cache's entire lifetime regardless of what
-            // entries it holds — it is not itself a cache entry.
+            // (`SecureCacheDirectory.lockFileName`) and durable clear-
+            // epoch counter (`SecureCacheDirectory.clearEpochFileName`),
+            // both of which are expected to persist for the cache's
+            // entire lifetime regardless of what entries it holds --
+            // neither is itself a cache entry.
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-                .filter { $0 != SecureCacheDirectory.lockFileName }
+                .filter {
+                    $0 != SecureCacheDirectory.lockFileName
+                        && $0 != SecureCacheDirectory.clearEpochFileName
+                }
             #expect(contents.isEmpty, "A rejected mismatched hash must write nothing at all")
             let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)

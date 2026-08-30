@@ -67,7 +67,7 @@ extension AssetImageValidator {
             case "PLTE":
                 paletteEntryCount = try handlePLTEChunk(
                     chunk, colorInfo: colorInfo, sawIDAT: sawIDAT,
-                    sawPLTE: paletteEntryCount != nil
+                    sawPLTE: paletteEntryCount != nil, sawTRNS: sawTRNS
                 )
             case "tRNS":
                 try handleTRNSChunk(
@@ -98,12 +98,21 @@ extension AssetImageValidator {
     /// main chunk-walk loop: enforces "before `IDAT`" ordering and
     /// duplicate rejection (both position-dependent on the walk's own
     /// running state, not `validatePLTEChunk`'s own payload-shape checks),
-    /// then delegates the payload itself.
+    /// then delegates the payload itself. Also rejects a `PLTE` chunk
+    /// appearing after a `tRNS` chunk has already been seen: the PNG
+    /// specification requires `tRNS` to always come *after* `PLTE` (when
+    /// both are present) for every color type that permits either, not
+    /// just the indexed (`PLTE`-required) color type -- a truecolor
+    /// (type 2) or truecolor-with-alpha (type 6) image that carries both
+    /// chunks out of order is not spec-conforming, even though neither
+    /// chunk requires the other's presence for those color types the way
+    /// indexed color (type 3) requires `PLTE`.
     private static func handlePLTEChunk(
         _ chunk: PNGChunk,
         colorInfo: PNGColorInfo,
         sawIDAT: Bool,
-        sawPLTE: Bool
+        sawPLTE: Bool,
+        sawTRNS: Bool
     ) throws -> Int {
         // Both `PLTE` and `tRNS` are only ever valid before the `IDAT`
         // run begins -- one appearing during or after it (even between
@@ -112,6 +121,7 @@ extension AssetImageValidator {
         // spec-conforming.
         guard !sawIDAT else { throw AssetError.malformedImageData }
         guard !sawPLTE else { throw AssetError.malformedImageData }
+        guard !sawTRNS else { throw AssetError.malformedImageData }
         return try validatePLTEChunk(dataRange: chunk.dataRange, colorInfo: colorInfo)
     }
 

@@ -56,9 +56,10 @@ extension AssetDiskCacheTests {
     @Test(
         """
         A persistently unremovable invalid metadata sidecar's bytes are counted toward the disk \
-        quota, forcing eviction of an otherwise still-recent, in-budget tracked entry, rather \
-        than letting stranded bytes silently grow the cache beyond its configured budget merely \
-        because they belong to a ".meta.json"-suffixed file
+        quota *before* any new write is even attempted: the very first set() call against a \
+        directory that already contains one fails closed (disk writes disabled) rather than \
+        succeeding and only being evicted afterward, since accounting for it alone already \
+        exceeds highWaterMarkDiskBytes with zero tracked entries yet published
         """
     )
     func persistentlyUnremovableInvalidSidecarBytesCountTowardQuotaAndForceEviction() async throws {
@@ -74,11 +75,13 @@ extension AssetDiskCacheTests {
 
             let cacheKey = try key("01001")
             let payload = Data(count: 100)
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload)
-            )
+            await #expect(throws: AssetError.self) {
+                try await cache.set(
+                    cacheKey,
+                    payload: payload,
+                    metadata: metadata(for: cacheKey, payload: payload)
+                )
+            }
 
             #expect(
                 FileManager.default.fileExists(
@@ -90,10 +93,10 @@ extension AssetDiskCacheTests {
             #expect(
                 fetched == nil,
                 """
-                The freshly-inserted entry must have been evicted immediately: its own bytes \
-                alone are far under highWaterMarkDiskBytes, so eviction can only have triggered \
-                if the persistently-stranded invalid sidecar's 2000 bytes were folded into the \
-                total
+                The write must never have been accepted at all: proactive locked accounting, \
+                which now runs before every publication rather than only after one, already \
+                found the persistently-stranded invalid sidecar's 2000 bytes alone exceed \
+                highWaterMarkDiskBytes and disabled writes before this entry was ever published
                 """
             )
         }
@@ -103,7 +106,7 @@ extension AssetDiskCacheTests {
         """
         Once a previously-unremovable invalid sidecar's removal stops failing, the next write \
         retries cleanup and reclaims it, rather than treating the earlier failed attempt as \
-        permanently given up on -- and a fresh entry can then survive normally again
+        permanently given up on -- and a fresh entry can then succeed and survive normally
         """
     )
     func clearedInvalidSidecarFaultIsReclaimedOnNextWrite() async throws {
@@ -118,11 +121,17 @@ extension AssetDiskCacheTests {
             )
             let firstKey = try key("01001")
             let firstPayload = Data(count: 100)
-            try await cache.set(
-                firstKey,
-                payload: firstPayload,
-                metadata: metadata(for: firstKey, payload: firstPayload)
-            )
+            // The persistently-unremovable invalid sidecar alone already
+            // exceeds highWaterMarkDiskBytes with nothing else published
+            // yet, so this first write attempt must itself fail closed
+            // via proactive locked accounting, before ever being written.
+            await #expect(throws: AssetError.self) {
+                try await cache.set(
+                    firstKey,
+                    payload: firstPayload,
+                    metadata: metadata(for: firstKey, payload: firstPayload)
+                )
+            }
 
             await cache.directoryAccess.installFaultInjection()
             let secondKey = try key("01002")
@@ -155,7 +164,8 @@ extension AssetDiskCacheTests {
         size cannot even be determined (a genuine fstatat failure, not merely "file is gone") \
         disables new disk writes exactly like an unenumerable directory listing -- physical \
         usage is not merely "a bit higher than expected", it is unknown, and must never be \
-        silently treated as zero extra bytes
+        silently treated as zero extra bytes. Detected *before* the very first write is even \
+        attempted, not merely afterward.
         """
     )
     func unremovableInvalidSidecarWithUnreadableSizeDisablesWrites() async throws {
@@ -178,18 +188,20 @@ extension AssetDiskCacheTests {
                 failAttributesSuffixes: [sidecarName]
             )
 
-            // This write's own trailing `evictIfNeeded()` pass is the one
-            // that actually encounters the unreadable stranded sidecar
-            // and marks writes disabled -- the call that triggers it
-            // still succeeds normally (the failure only affects *future*
-            // writes' own pre-write gate).
+            // Proactive locked accounting now runs before every write --
+            // including this very first one -- so an unreadable stranded
+            // sidecar's uncertain size disables writes immediately,
+            // before this entry is ever published, rather than only
+            // affecting some later write.
             let firstKey = try key("01001")
             let firstPayload = Data(count: 100)
-            try await cache.set(
-                firstKey,
-                payload: firstPayload,
-                metadata: metadata(for: firstKey, payload: firstPayload)
-            )
+            await #expect(throws: (any Error).self) {
+                try await cache.set(
+                    firstKey,
+                    payload: firstPayload,
+                    metadata: metadata(for: firstKey, payload: firstPayload)
+                )
+            }
 
             let secondKey = try key("01002")
             let secondPayload = Data(count: 100)

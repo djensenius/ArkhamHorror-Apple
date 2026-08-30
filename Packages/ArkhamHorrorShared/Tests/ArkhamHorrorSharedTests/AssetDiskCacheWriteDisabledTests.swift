@@ -56,18 +56,18 @@ extension AssetDiskCacheTests {
             // for this actor instance.
             await firstCache.directoryAccess.installFaultInjection(listNamesFailuresRemaining: 999)
 
-            // This write's own final `evictIfNeeded()` pass is what
-            // actually encounters the persistent listing failure and
-            // marks writes disabled -- the write itself (payload +
-            // metadata pointer, already durably committed by that point)
-            // still succeeds normally.
+            // Proactive locked accounting now runs before every write, so
+            // this write's own *pre-write* gate hits the persistent
+            // listing failure and is rejected -- not merely a later one.
             let secondKey = try key("01002")
             let secondPayload = Data(count: 100)
-            try await firstCache.set(
-                secondKey,
-                payload: secondPayload,
-                metadata: metadata(for: secondKey, payload: secondPayload)
-            )
+            await #expect(throws: (any Error).self) {
+                try await firstCache.set(
+                    secondKey,
+                    payload: secondPayload,
+                    metadata: metadata(for: secondKey, payload: secondPayload)
+                )
+            }
 
             // The *next* write attempt's own pre-write gate now finds
             // writes already disabled, attempts one recovery pass (which
@@ -131,15 +131,18 @@ extension AssetDiskCacheTests {
             )
 
             await cache.directoryAccess.installFaultInjection(listNamesFailuresRemaining: 999)
-            // Disables writes via this call's own trailing `evictIfNeeded()`
-            // pass; the call itself still succeeds.
+            // Proactive locked accounting runs before this write is even
+            // attempted, so this call itself is now rejected (rather than
+            // succeeding and only disabling some later write).
             let secondKey = try key("01002")
             let secondPayload = Data(count: 100)
-            try await cache.set(
-                secondKey,
-                payload: secondPayload,
-                metadata: metadata(for: secondKey, payload: secondPayload)
-            )
+            await #expect(throws: (any Error).self) {
+                try await cache.set(
+                    secondKey,
+                    payload: secondPayload,
+                    metadata: metadata(for: secondKey, payload: secondPayload)
+                )
+            }
 
             // Confirms writes are indeed disabled at this point.
             let thirdKey = try key("01003")
@@ -205,18 +208,20 @@ extension AssetDiskCacheTests {
                 failAttributesSuffixes: [tombstoneName]
             )
 
-            // This write's own final `evictIfNeeded()` pass is the one
-            // that actually encounters the unreadable stray file and
-            // marks writes disabled -- the call that triggers it still
-            // succeeds normally (the failure only affects *future*
-            // writes' own pre-write gate).
+            // This write's own *pre-write* proactive accounting pass is
+            // the one that actually encounters the unreadable stray file
+            // and marks writes disabled -- the call itself must now be
+            // rejected rather than succeeding and only affecting some
+            // later write.
             let secondKey = try key("01002")
             let secondPayload = Data(count: 100)
-            try await cache.set(
-                secondKey,
-                payload: secondPayload,
-                metadata: metadata(for: secondKey, payload: secondPayload)
-            )
+            await #expect(throws: (any Error).self) {
+                try await cache.set(
+                    secondKey,
+                    payload: secondPayload,
+                    metadata: metadata(for: secondKey, payload: secondPayload)
+                )
+            }
 
             let thirdKey = try key("01003")
             let thirdPayload = Data(count: 100)
@@ -337,17 +342,20 @@ extension AssetDiskCacheTests {
                 failRenameToSuffixes: [AssetDiskCache.diskWritesDisabledMarkerName]
             )
 
-            // This write's own trailing `evictIfNeeded()` pass hits the
-            // unenumerable listing, attempts to durably mark writes
+            // This write's own *pre-write* proactive accounting pass hits
+            // the unenumerable listing, attempts to durably mark writes
             // disabled, and that attempt itself fails -- the write call
-            // still succeeds (identically to every other test here).
+            // must now be rejected, since the in-memory local flag set
+            // before the doomed marker commit is what enforces this.
             let secondKey = try key("01002")
             let secondPayload = Data(count: 100)
-            try await cache.set(
-                secondKey,
-                payload: secondPayload,
-                metadata: metadata(for: secondKey, payload: secondPayload)
-            )
+            await #expect(throws: (any Error).self) {
+                try await cache.set(
+                    secondKey,
+                    payload: secondPayload,
+                    metadata: metadata(for: secondKey, payload: secondPayload)
+                )
+            }
 
             // The durable marker must genuinely be absent from disk --
             // proving any rejection below cannot possibly be coming from

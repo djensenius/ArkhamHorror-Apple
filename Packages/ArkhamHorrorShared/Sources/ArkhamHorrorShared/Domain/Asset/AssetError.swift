@@ -99,6 +99,26 @@ enum AssetError: Error, Sendable {
     /// has already disowned.
     case entryNoLongerCachedToTouch
 
+    /// A cache-wide clear (``AssetCacheService/evictAll()``) could not
+    /// durably commit its cross-instance/cross-process authority fence
+    /// (the durable clear epoch itself, or its own durable per-key write
+    /// generation bookkeeping) — as opposed to merely failing to delete
+    /// every physical entry, which a caller may safely treat as
+    /// non-fatal (see ``AssetDiskCache``'s type-level doc comment: any
+    /// surviving disk-only bytes can never be trusted without first
+    /// passing a fresh online conditional revalidation regardless).
+    /// Failing to durably advance the fence itself is a categorically
+    /// worse outcome: another instance/process sharing this same
+    /// directory, with a fetch or revalidation already in flight when
+    /// this clear was requested, has no way at all to learn a clear
+    /// happened — including a mutation that only ever touches that
+    /// other instance's own private memory cache, which no disk-side
+    /// revalidation requirement can ever reach — so this must never be
+    /// silently folded into the same best-effort/non-fatal bucket as an
+    /// ordinary partial physical-deletion failure. The associated
+    /// `String` is diagnostic only.
+    case clearFenceNotDurable(String)
+
     // MARK: Configuration / packaging
 
     /// A bundled resource this package's own configuration depends on
@@ -134,6 +154,7 @@ extension AssetError: Equatable {
             lhsValue == rhsValue
         case (.transportFailure, .transportFailure),
              (.cachePersistenceFailed, .cachePersistenceFailed),
+             (.clearFenceNotDurable, .clearFenceNotDurable),
              (.configurationFailure, .configurationFailure):
             // Diagnostic strings are informational only; equality ignores them.
             true

@@ -51,127 +51,146 @@ extension AssetCacheService {
         defer { endAuthorityWindow(for: cacheKey) }
         let snapshot = await snapshotAuthority(for: cacheKey)
         let diskHit = try await diskCache.get(cacheKey)
-        if let cached = diskHit, await unchanged(since: snapshot, for: cacheKey) {
-            // This disk-hit branch is never behind a coalescing
-            // dictionary, so there is no "duplicate in-flight work"
-            // hazard to defer this past — see ``issueToken(for:)``.
-            // Stamped with the durable clear epoch immediately after
-            // issuance (see ``stampDurableClearEpoch(_:)``'s doc
-            // comment for why that is safe here specifically: this
-            // branch has no coalescing dictionary to race).
-            let token = await stampDurableClearEpoch(issueToken(for: cacheKey))
-            if let revalidated = try await revalidateDiskHit(
-                cached,
+        guard let cached = diskHit, await unchanged(since: snapshot, for: cacheKey) else {
+            // Either a genuine disk miss, or a disk hit whose read raced
+            // with a more authoritative concurrent operation for this
+            // exact key and so cannot be trusted or promoted -- both fall
+            // through identically to a fresh network fetch below, which
+            // issues (or joins) its own currently-authoritative token.
+            return nil
+        }
+        // This disk-hit branch is never behind a coalescing dictionary,
+        // so there is no "duplicate in-flight work" hazard to defer this
+        // past — see ``issueToken(for:)``. Stamped with both halves of
+        // this key's durable authority (clear epoch and disk write
+        // generation), captured together via ``beginIssuance(for:)``
+        // immediately before issuance — see that method's doc comment
+        // for why this ordering, not a later restamp, is required.
+        let authority = await beginIssuance(for: cacheKey)
+        var token = issueToken(for: cacheKey)
+        token.durableClearEpoch = authority.clearEpoch
+        token.diskWriteGeneration = authority.diskWriteGeneration
+        return try await resolveTrustedDiskHit(
+            cached,
+            key: key,
+            cacheKey: cacheKey,
+            candidates: candidates,
+            token: token
+        )
+    }
+
+    /// Continues ``diskHitIfTrusted(key:cacheKey:candidates:)`` once a
+    /// structurally-plausible disk entry and its already-issued
+    /// authority `token` are in hand: performs the mandatory online
+    /// conditional revalidation and, on a definitive conditional 404,
+    /// resumes the candidate walk at the very next candidate rather than
+    /// treating the whole chain as exhausted. Split out purely to keep
+    /// the caller's own body length within this package's convention;
+    /// behavior and every authority/cancellation check below are
+    /// otherwise unchanged from when this was inlined there directly.
+    private func resolveTrustedDiskHit(
+        _ cached: CachedAsset,
+        key: AssetKey,
+        cacheKey: AssetCacheKey,
+        candidates: [AssetCandidate],
+        token: CacheToken
+    ) async throws -> CachedAsset? {
+        guard let revalidated = try await revalidateDiskHit(
+            cached,
+            key: key,
+            cacheKey: cacheKey,
+            candidates: candidates,
+            token: token
+        ) else {
+            // The persisted entry failed re-validation against the
+            // *current* format/magic/dimension/limits/decode contract
+            // (see ``revalidateDiskHit``): it has already been
+            // quarantined (removed from disk), so fall through to a
+            // fresh network fetch exactly as if nothing had been cached
+            // at all, rather than surfacing the stale/invalid bytes or
+            // poisoning this call permanently. `CancellationError` is
+            // not caught here: `revalidateDiskHit` rethrows it rather
+            // than returning `nil`, propagating straight out instead of
+            // falling through.
+            return nil
+        }
+        // `revalidateDiskHit` suspends (a full platform decode);
+        // re-check this key's authority immediately before doing
+        // anything further — a `evictAll()` or a more-recently-issued
+        // operation for this exact key may already have concluded while
+        // this suspension was in progress, and proceeding to serve (even
+        // after an online revalidation) content this actor's own
+        // bookkeeping already considers superseded would let a caller
+        // observe stale state. If not authoritative, fall through to a
+        // fresh network fetch below exactly like a genuine cache miss.
+        let target = conditionalRevalidationTarget(
+            for: revalidated,
+            key: key,
+            candidates: candidates
+        )
+        guard await isAuthoritative(token, for: cacheKey), let target else {
+            // Either this token already lost authority, or there is no
+            // validator to conditionally revalidate against at all:
+            // neither case may trust this disk-only hit offline, so fall
+            // through to an ordinary unconditional fetch below exactly
+            // as if this had been a clean cache miss.
+            return nil
+        }
+        // Structurally valid *and* a validator exists: require a fresh,
+        // live conditional revalidation against the server before this
+        // disk-only hit may ever be cached in memory or returned — see
+        // this method's own doc comment for why a disk-only hit is never
+        // independently trusted offline. `coalescedRevalidation` itself
+        // performs the actual publish/touch on a successful outcome; a
+        // thrown protocol/transport/cache error propagates straight out
+        // rather than falling back to unverified local bytes. Passes
+        // only `token`'s durable clear-epoch/disk-write-generation
+        // snapshot (never `token` itself) — see `revalidateExisting`'s
+        // doc comment for why forwarding this branch's own
+        // already-issued token (reserved above purely for its own
+        // decode-authority re-check) would clobber whatever token an
+        // already in-flight coalesced revalidation for this key is
+        // relying on.
+        do {
+            return try await coalescedRevalidation(
+                cacheKey: cacheKey,
+                url: target.url,
+                expectedFormat: target.format,
+                existing: revalidated,
+                preIssuedAuthority: PreIssuedAuthority(
+                    clearEpoch: token.durableClearEpoch,
+                    diskWriteGeneration: token.diskWriteGeneration
+                )
+            )
+        } catch AssetError.candidatesExhausted {
+            // `performRevalidation`'s `.notFound` branch only ever
+            // throws `candidatesExhausted` after an authoritative
+            // conditional 404 for this *one* resolved candidate has
+            // already been durably invalidated from both cache layers
+            // (any staleness race there instead surfaces as
+            // `staleOperation`, caught by neither this clause nor
+            // falling through below — it propagates straight out). That
+            // says nothing about this key's *other* candidates (an
+            // English fallback, or an alternate front image): only this
+            // exact candidate was ever requested, so treating its own
+            // removal as if the entire chain were exhausted would
+            // wrongly make whether a still-perfectly-available English
+            // asset gets served depend on unrelated cache history
+            // (whether a *localized* variant happened to be cached
+            // before). Resume an ordinary candidate walk starting
+            // immediately after the now-confirmed-gone one; if it was
+            // already the last candidate, there is nothing left to try
+            // and this rethrows the same error, correctly reporting
+            // genuine exhaustion.
+            let remaining = Array(candidates[(target.candidateIndex + 1)...])
+            guard !remaining.isEmpty else {
+                throw AssetError.candidatesExhausted
+            }
+            return try await coalescedFetch(
                 key: key,
                 cacheKey: cacheKey,
-                candidates: candidates,
-                token: token
-            ) {
-                // `revalidateDiskHit` suspends (a full platform
-                // decode); re-check this key's authority immediately
-                // before doing anything further — a `evictAll()` or a
-                // more-recently-issued operation for this exact key
-                // may already have concluded while this suspension was
-                // in progress, and proceeding to serve (even after an
-                // online revalidation) content this actor's own
-                // bookkeeping already considers superseded would let a
-                // caller observe stale state. If not authoritative,
-                // fall through to a fresh network fetch below exactly
-                // like a genuine cache miss.
-                let target = conditionalRevalidationTarget(
-                    for: revalidated,
-                    key: key,
-                    candidates: candidates
-                )
-                if await isAuthoritative(token, for: cacheKey), let target {
-                    // Structurally valid *and* a validator exists:
-                    // require a fresh, live conditional revalidation
-                    // against the server before this disk-only hit may
-                    // ever be cached in memory or returned — see this
-                    // method's own doc comment for why a disk-only hit
-                    // is never independently trusted offline.
-                    // `coalescedRevalidation` itself performs the
-                    // actual publish/touch on a successful outcome; a
-                    // thrown protocol/transport/cache error propagates
-                    // straight out rather than falling back to
-                    // unverified local bytes. Passes only
-                    // `token.durableClearEpoch` (the epoch value, not
-                    // `token` itself) — see `revalidateExisting`'s doc
-                    // comment for why forwarding this branch's own
-                    // already-issued token (reserved above purely for
-                    // its own decode-authority re-check) would clobber
-                    // whatever token an already in-flight coalesced
-                    // revalidation for this key is relying on.
-                    do {
-                        return try await coalescedRevalidation(
-                            cacheKey: cacheKey,
-                            url: target.url,
-                            expectedFormat: target.format,
-                            existing: revalidated,
-                            preIssuedEpoch: token.durableClearEpoch
-                        )
-                    } catch AssetError.candidatesExhausted {
-                        // `performRevalidation`'s `.notFound` branch
-                        // only ever throws `candidatesExhausted` after
-                        // an authoritative conditional 404 for this
-                        // *one* resolved candidate has already been
-                        // durably invalidated from both cache layers
-                        // (any staleness race there instead surfaces
-                        // as `staleOperation`, caught by neither this
-                        // clause nor falling through below — it
-                        // propagates straight out). That says nothing
-                        // about this key's *other* candidates (an
-                        // English fallback, or an alternate front
-                        // image): only this exact candidate was ever
-                        // requested, so treating its own removal as if
-                        // the entire chain were exhausted would wrongly
-                        // make whether a still-perfectly-available
-                        // English asset gets served depend on unrelated
-                        // cache history (whether a *localized* variant
-                        // happened to be cached before). Resume an
-                        // ordinary candidate walk starting immediately
-                        // after the now-confirmed-gone one; if it was
-                        // already the last candidate, there is nothing
-                        // left to try and this rethrows the same
-                        // error, correctly reporting genuine
-                        // exhaustion.
-                        let remaining = Array(candidates[(target.candidateIndex + 1)...])
-                        guard !remaining.isEmpty else {
-                            throw AssetError.candidatesExhausted
-                        }
-                        return try await coalescedFetch(
-                            key: key,
-                            cacheKey: cacheKey,
-                            candidates: remaining
-                        )
-                    }
-                }
-                // Either this token already lost authority, or there is
-                // no validator to conditionally revalidate against at
-                // all: neither case may trust this disk-only hit
-                // offline, so fall through to an ordinary unconditional
-                // fetch below exactly as if this had been a clean
-                // cache miss.
-            } else {
-                // The persisted entry failed re-validation against the
-                // *current* format/magic/dimension/limits/decode
-                // contract (see ``revalidateDiskHit``): it has already
-                // been quarantined (removed from disk), so fall
-                // through to a fresh network fetch exactly as if
-                // nothing had been cached at all, rather than
-                // surfacing the stale/invalid bytes or poisoning this
-                // call permanently.
-                // `CancellationError` is not caught here:
-                // `revalidateDiskHit` rethrows it rather than
-                // returning `nil`, propagating straight out instead of
-                // falling through.
-            }
+                candidates: remaining
+            )
         }
-        // Either a genuine disk miss, or a disk hit whose read raced
-        // with a more authoritative concurrent operation for this
-        // exact key and so cannot be trusted or promoted -- both fall
-        // through identically to a fresh network fetch below, which
-        // issues (or joins) its own currently-authoritative token.
-        return nil
     }
 }

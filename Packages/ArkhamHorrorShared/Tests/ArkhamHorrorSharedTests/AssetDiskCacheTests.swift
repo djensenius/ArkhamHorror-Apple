@@ -144,7 +144,18 @@ struct AssetDiskCacheTests {
             // fixed lock-file leaf on first access — expected and
             // harmless, and excluded here the same way every other test
             // in this file that asserts "no entry files" already does.
-            #expect(contents.filter { $0 != SecureCacheDirectory.lockFileName }.isEmpty)
+            // The durable clear-epoch counter file is also always present
+            // from the moment ``SecureCacheDirectory`` itself is
+            // constructed (see ``SecureCacheDirectory/ensureClearEpochInitialized()``),
+            // independent of whether any key has ever been read or
+            // written -- likewise excluded here as not itself a cache
+            // entry.
+            #expect(
+                contents.filter {
+                    $0 != SecureCacheDirectory.lockFileName
+                        && $0 != SecureCacheDirectory.clearEpochFileName
+                }.isEmpty
+            )
         }
     }
 

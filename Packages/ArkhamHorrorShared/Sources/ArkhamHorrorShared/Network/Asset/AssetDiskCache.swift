@@ -201,8 +201,24 @@ actor AssetDiskCache {
     ) throws {
         recoverOrphansIfNeeded()
         try requireDiskWritesEnabledLocked()
-        if let token, !acceptToken(token, for: key) {
-            return
+        // Read once, under this already-held lock, and reused both for
+        // ``acceptToken(_:currentEpoch:currentGeneration:)``'s compare
+        // and — on acceptance — as the exact prior value
+        // ``commitWriteGenerationLocked(_:for:)`` durably advances past
+        // below: a second, later re-read here could in principle observe
+        // a value a *different* concurrent writer already changed, which
+        // would defeat the whole point of holding this single exclusive
+        // lock across the entire critical section.
+        let currentEpoch = try secureDirectory.readPersistedClearEpoch()
+        let currentGeneration = try currentWriteGenerationLocked(for: key)
+        if let token {
+            guard acceptToken(
+                token,
+                currentEpoch: currentEpoch,
+                currentGeneration: currentGeneration
+            ) else {
+                return
+            }
         }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
@@ -253,6 +269,10 @@ actor AssetDiskCache {
             payloadName: payloadName,
             payloadAlreadyExisted: payloadAlreadyExisted
         )
+        // Only after both the payload and metadata pointer are durably
+        // committed: this key's durable write generation must never
+        // advance past a mutation that did not itself actually land.
+        try commitWriteGenerationLocked(currentGeneration, for: key)
     }
 
     /// Updates only the metadata sidecar for an already-cached `key` (for
@@ -279,8 +299,16 @@ actor AssetDiskCache {
         token: AssetCacheService.CacheToken?
     ) throws {
         recoverOrphansIfNeeded()
-        if let token, !acceptToken(token, for: key) {
-            return
+        let currentEpoch = try secureDirectory.readPersistedClearEpoch()
+        let currentGeneration = try currentWriteGenerationLocked(for: key)
+        if let token {
+            guard acceptToken(
+                token,
+                currentEpoch: currentEpoch,
+                currentGeneration: currentGeneration
+            ) else {
+                return
+            }
         }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
@@ -332,6 +360,7 @@ actor AssetDiskCache {
         } catch {
             throw AssetError.cachePersistenceFailed(String(describing: error))
         }
+        try commitWriteGenerationLocked(currentGeneration, for: key)
     }
 
     // MARK: - Names

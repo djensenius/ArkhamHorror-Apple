@@ -38,11 +38,14 @@ extension AssetCacheService {
         }
         // This disk-hit branch is never behind any coalescing dictionary,
         // so there is no "duplicate in-flight work" hazard to defer this
-        // past — see ``issueToken(for:)``. Stamped with the durable clear
-        // epoch immediately after issuance, exactly like ``asset(for:)``'s
-        // identical disk-hit branch — see ``stampDurableClearEpoch(_:)``'s
-        // doc comment.
-        let token = await stampDurableClearEpoch(issueToken(for: cacheKey))
+        // past — see ``issueToken(for:)``. Stamped with both halves of
+        // this key's durable authority immediately after issuance,
+        // exactly like ``asset(for:)``'s identical disk-hit branch — see
+        // ``beginIssuance(for:)``'s doc comment.
+        let authority = await beginIssuance(for: cacheKey)
+        var token = issueToken(for: cacheKey)
+        token.durableClearEpoch = authority.clearEpoch
+        token.diskWriteGeneration = authority.diskWriteGeneration
         // A disk-loaded body is never trusted as the basis for a
         // conditional request until it has passed the exact same current
         // format/magic-byte/dimension/limits/decode validation as a disk
@@ -97,24 +100,27 @@ extension AssetCacheService {
         // clear had just removed. `token.durableClearEpoch` — read at the
         // exact same moment this decode was captured and just
         // re-verified under, above — is instead carried straight through
-        // to the network step via `preIssuedEpoch:` below (never the
+        // to the network step via `preIssuedAuthority:` below (never the
         // token itself: see
-        // ``revalidateExisting(_:key:cacheKey:candidates:preIssuedEpoch:)``'s
+        // ``revalidateExisting(_:key:cacheKey:candidates:preIssuedAuthority:)``'s
         // doc comment for why forwarding this branch's own already-issued
         // token would clobber whatever token an already in-flight
         // coalesced revalidation for this key is relying on): if any
-        // invalidation supersedes this epoch at *any* point between here
-        // and that request's eventual terminal outcome (a 304, a 404, or
-        // a fresh 200), ``performRevalidation(_:)``'s own authority check
-        // will correctly reject it as stale rather than resurrecting
-        // these bytes — see
-        // ``resolveRevalidationFetchID(expectedFormat:existing:slot:preIssuedEpoch:)``.
+        // invalidation supersedes this epoch/generation at *any* point
+        // between here and that request's eventual terminal outcome (a
+        // 304, a 404, or a fresh 200), ``performRevalidation(_:)``'s own
+        // authority check will correctly reject it as stale rather than
+        // resurrecting these bytes — see
+        // ``resolveRevalidationFetchID(expectedFormat:existing:slot:preIssuedAuthority:)``.
         return try await revalidateExisting(
             validated,
             key: key,
             cacheKey: cacheKey,
             candidates: candidates,
-            preIssuedEpoch: token.durableClearEpoch
+            preIssuedAuthority: PreIssuedAuthority(
+                clearEpoch: token.durableClearEpoch,
+                diskWriteGeneration: token.diskWriteGeneration
+            )
         )
     }
 }

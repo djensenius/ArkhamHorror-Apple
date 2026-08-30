@@ -74,6 +74,14 @@ extension AssetCacheService {
         let waiterID = UUID()
         let fetchID: UUID
         let token: CacheToken
+        // Read *before* the synchronous join-or-create decision below —
+        // see ``beginIssuance(for:)``'s doc comment for why this specific
+        // ordering (rather than issuing a token first and stamping its
+        // durable authority afterward, inside the `Task` that performs
+        // this fetch's actual suspending work) is required. If this call
+        // ends up joining already in-flight work, this snapshot is simply
+        // discarded below.
+        let authority = await beginIssuance(for: cacheKey)
         if let existing = inFlight[cacheKey] {
             fetchID = existing.id
             // The already-registered fetch's own token, issued when *it*
@@ -87,8 +95,16 @@ extension AssetCacheService {
             // exactly reflects the moment this fresh (never
             // coalesced-into) fetch was issued, per the issuance contract
             // in `AssetCacheService+Epoch.swift`. Every waiter that joins
-            // this exact `inFlight` entry shares this one token.
-            let issued = issueToken(for: cacheKey)
+            // this exact `inFlight` entry shares this one token. Stamped,
+            // synchronously and completely, from `authority` (captured
+            // above): no further `await` occurs between this token's
+            // issuance and the moment it is fully authoritative-ready, so
+            // there is no window during which a cross-instance/cross-
+            // process clear or a competing write for this exact key could
+            // land and never be reflected in this token's own authority.
+            var issued = issueToken(for: cacheKey)
+            issued.durableClearEpoch = authority.clearEpoch
+            issued.diskWriteGeneration = authority.diskWriteGeneration
             token = issued
             let newTask = Task { [weak self] in
                 guard let self else { throw CancellationError() }
@@ -162,28 +178,16 @@ extension AssetCacheService {
             // same staleness — this closes the analogous gap for what
             // this waiter hands back to its caller).
             //
-            // `token` itself (captured above, before this shared fetch's
-            // `Task` was even created) is deliberately never durably
-            // stamped: doing so would require an `await`, which would
-            // reopen the very duplicate-in-flight-work race the
-            // synchronous "check the coalescing dictionary, else create
-            // and insert" section above exists to prevent (see
-            // ``issueToken(for:)``'s doc comment). The actual durable
-            // epoch this fetch was published under only exists once
-            // ``fetchAndValidate(key:cacheKey:candidates:token:)``'s own
-            // body stamps its own local copy — which `delivered` (a
-            // successfully published ``CachedAsset``) now carries
-            // forward as its own ``CachedAsset/durableClearEpoch``. Since
-            // `token`'s `generation`/`issuance`/`clearGeneration` already
-            // uniquely identify this exact fetch attempt (and cannot
-            // themselves change after issuance), reconstructing a
-            // fully-stamped token from `token` plus `delivered`'s own
-            // epoch is exactly equivalent to the token that actually
-            // published this result, without this call needing to
-            // itself perform another durable read to do so.
-            var stampedToken = token
-            stampedToken.durableClearEpoch = delivered.durableClearEpoch
-            guard await isAuthoritative(stampedToken, for: cacheKey) else {
+            // `token` (captured above, before this shared fetch's `Task`
+            // was even created) already carries its own fully-stamped
+            // durable authority — both ``CacheToken/durableClearEpoch``
+            // and ``CacheToken/diskWriteGeneration`` — from the
+            // synchronous ``beginIssuance(for:)`` snapshot taken at
+            // issuance time (see that method's doc comment): unlike a
+            // prior revision of this code, there is no separate,
+            // later-stamped copy to reconstruct here, since issuance
+            // itself never leaves that window open in the first place.
+            guard await isAuthoritative(token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
             return delivered

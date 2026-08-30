@@ -41,19 +41,20 @@ extension AssetDiskCacheTests {
                 withIntermediateDirectories: true
             )
 
-            // The first `set` call's own write still completes -- disk
-            // writes are only durably disabled by this call's own
-            // trailing `evictIfNeeded()` pass, once it has discovered the
-            // rogue directory and could not account for its size -- but
-            // any *subsequent* write must now be rejected until that
-            // uncertainty is resolved.
+            // Proactive locked accounting now runs before every write --
+            // including this very first one -- so the rogue directory's
+            // unaccountable size is discovered and disables writes before
+            // this entry is ever published, rather than only affecting
+            // some later write.
             let firstKey = try key("01001")
             let firstPayload = Data(count: 100)
-            try await cache.set(
-                firstKey,
-                payload: firstPayload,
-                metadata: metadata(for: firstKey, payload: firstPayload)
-            )
+            await #expect(throws: AssetError.self) {
+                try await cache.set(
+                    firstKey,
+                    payload: firstPayload,
+                    metadata: metadata(for: firstKey, payload: firstPayload)
+                )
+            }
 
             let secondKey = try key("01002")
             let secondPayload = Data(count: 100)
@@ -82,13 +83,20 @@ extension AssetDiskCacheTests {
                 withIntermediateDirectories: true
             )
 
+            // Proactive locked accounting now runs before every write --
+            // including this very first one -- so the rogue directory's
+            // unaccountable size is discovered and disables writes before
+            // this entry is ever published, rather than only affecting
+            // some later write.
             let firstKey = try key("01001")
             let firstPayload = Data(count: 100)
-            try await cache.set(
-                firstKey,
-                payload: firstPayload,
-                metadata: metadata(for: firstKey, payload: firstPayload)
-            )
+            await #expect(throws: AssetError.self) {
+                try await cache.set(
+                    firstKey,
+                    payload: firstPayload,
+                    metadata: metadata(for: firstKey, payload: firstPayload)
+                )
+            }
 
             let secondKey = try key("01002")
             let secondPayload = Data(count: 100)
@@ -119,13 +127,20 @@ extension AssetDiskCacheTests {
                 withIntermediateDirectories: true
             )
 
+            // Proactive locked accounting now runs before every write --
+            // including this very first one -- so the rogue directory's
+            // unaccountable size is discovered and disables writes before
+            // this entry is ever published, rather than only affecting
+            // some later write.
             let firstKey = try key("01001")
             let firstPayload = Data(count: 100)
-            try await cache.set(
-                firstKey,
-                payload: firstPayload,
-                metadata: metadata(for: firstKey, payload: firstPayload)
-            )
+            await #expect(throws: AssetError.self) {
+                try await cache.set(
+                    firstKey,
+                    payload: firstPayload,
+                    metadata: metadata(for: firstKey, payload: firstPayload)
+                )
+            }
 
             let secondKey = try key("01002")
             let secondPayload = Data(count: 100)

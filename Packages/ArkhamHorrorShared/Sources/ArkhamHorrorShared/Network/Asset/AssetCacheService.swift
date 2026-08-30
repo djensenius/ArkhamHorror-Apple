@@ -59,6 +59,25 @@ actor AssetCacheService {
     var globalGeneration = 0
     var inFlightRevalidation: [RevalidationSlot: RevalidationFetch] = [:]
 
+    /// Per-``AssetCacheKey`` reference count of currently-registered
+    /// ``inFlightRevalidation`` slots — kept in exact lockstep with every
+    /// insertion/removal of an ``inFlightRevalidation`` entry via
+    /// ``setInFlightRevalidation(_:for:)``/``clearInFlightRevalidation(for:)``
+    /// (the only two mutation points; never write ``inFlightRevalidation``
+    /// directly). This exists purely so ``isAuthorityKeyBusy(_:)`` can
+    /// answer "does this cache key have any revalidation in flight?" as a
+    /// single O(1) dictionary lookup, rather than
+    /// `inFlightRevalidation.keys.contains(where: { $0.cacheKey == key })`
+    /// — an O(m) linear scan of every currently in-flight revalidation
+    /// slot (potentially for entirely unrelated keys, since a
+    /// ``RevalidationSlot`` also carries the URL/validator, not just the
+    /// cache key). Run once per key considered during
+    /// ``pruneAuthorityKeysIfNeeded(protecting:)``'s pass, that O(m) scan
+    /// made a sustained high-cardinality-churn burst (many distinct keys,
+    /// many concurrent revalidations) quadratic overall; this refcount
+    /// makes the whole pass, and every single touch, amortized O(1).
+    var revalidationKeyRefCount: [AssetCacheKey: Int] = [:]
+
     /// Bumped for exactly `key` every time ``invalidate(_:token:)``
     /// actually proceeds to remove it (a definitive 404, a failed
     /// re-validation quarantine, or a URL-mismatch quarantine) — folded

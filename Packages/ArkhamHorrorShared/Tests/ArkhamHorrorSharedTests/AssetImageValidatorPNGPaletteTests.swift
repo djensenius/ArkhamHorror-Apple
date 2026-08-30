@@ -7,9 +7,11 @@ import Testing
 /// (`AssetImageValidator+PNGStructure.swift`'s `validatePLTEChunk`). `tRNS`
 /// coverage lives in the sibling
 /// `AssetImageValidatorPNGTransparencyTests.swift`, split out purely to
-/// stay under SwiftLint's `file_length`; it shares this file's
-/// chunk-splicing/fixture helpers below (widened from `private` so both
-/// files can call them). Every mutation here starts from a genuinely
+/// stay under SwiftLint's `file_length`; both files share this file's
+/// chunk-splicing helpers below (widened from `private` so both files
+/// can call them) and the genuine-PNG fixture builders now split out
+/// into `AssetImageValidatorPNGFixtures.swift`, for the same reason.
+/// Every mutation here starts from a genuinely
 /// ImageIO-produced, otherwise-valid PNG fixture and splices in a
 /// CRC-correct `PLTE` chunk at a specific byte offset -- exercising the
 /// exact same production `AssetImageValidator.validate` entry point every
@@ -158,6 +160,68 @@ extension AssetImageValidatorTests {
         }
     }
 
+    @Test(
+        """
+        A real truecolor (colorType 2, no alpha) PNG -- for which both PLTE and tRNS are \
+        optional and neither requires the other -- with a spliced-in tRNS chunk followed by a \
+        spliced-in PLTE chunk (tRNS, PLTE, IDAT order) is rejected: the specification requires \
+        tRNS to always come after PLTE whenever both are present, for every color type that \
+        permits either, not only indexed color (where PLTE is mandatory rather than optional)
+        """
+    )
+    func pltePlacedAfterTRNSForTruecolorRejectedEvenThoughNeitherIsRequired() throws {
+        let (fixture, colorInfo) = try truecolorFixture(width: 6, height: 6)
+        #expect(colorInfo.colorType == 2)
+        let trns = paletteChunk("tRNS", [0, 0, 0, 0, 0, 0])
+        var mutated = try paletteSplice(trns, before: "IDAT", in: Array(fixture))
+        let plte = paletteChunk("PLTE", [10, 20, 30])
+        mutated = try paletteSplice(plte, before: "IDAT", in: mutated)
+
+        // Prove the mutation is still real, decodable image data -- a
+        // "does ImageIO decode it" check alone would accept this file,
+        // exactly as with the analogous grayscale+alpha/PLTE mutation
+        // above.
+        let source = CGImageSourceCreateWithData(Data(mutated) as CFData, nil)
+        #expect(source != nil)
+        if let source {
+            #expect(CGImageSourceCreateImageAtIndex(source, 0, nil) != nil)
+        }
+
+        #expect(throws: AssetError.malformedImageData) {
+            _ = try AssetImageValidator.validate(
+                data: Data(mutated),
+                declaredContentType: nil,
+                expectedFormat: .png,
+                limits: limits
+            )
+        }
+    }
+
+    @Test(
+        """
+        A real truecolor (colorType 2) PNG with PLTE correctly placed before tRNS still \
+        validates -- proving the tRNS-after-PLTE rejection above is genuinely about ordering, \
+        not about rejecting the PLTE/tRNS combination for this color type outright
+        """
+    )
+    func pltePlacedBeforeTRNSForTruecolorAccepted() throws {
+        let (fixture, colorInfo) = try truecolorFixture(width: 6, height: 6)
+        #expect(colorInfo.colorType == 2)
+        let plte = paletteChunk("PLTE", [10, 20, 30])
+        var mutated = try paletteSplice(plte, before: "IDAT", in: Array(fixture))
+        let trns = paletteChunk("tRNS", [0, 0, 0, 0, 0, 0])
+        mutated = try paletteSplice(trns, before: "IDAT", in: mutated)
+
+        let metadata = try AssetImageValidator.validate(
+            data: Data(mutated),
+            declaredContentType: nil,
+            expectedFormat: .png,
+            limits: limits
+        )
+        #expect(metadata.width == 6)
+        #expect(metadata.height == 6)
+    }
+
     @Test("A real PNG with two spliced-in PLTE chunks (duplicate) is rejected")
     func duplicatePLTERejected() throws {
         let full = [UInt8](AssetImageFixtureBuilder.validPNG(width: 6, height: 6))
@@ -274,75 +338,5 @@ extension AssetImageValidatorTests {
             Data(bytes), colorInfo: colorInfo
         )
         #expect(!idatPayload.isEmpty)
-    }
-
-    // MARK: - Real grayscale fixture builders
-
-    /// A genuine, ImageIO-encoded pure-grayscale (no alpha, `colorType ==
-    /// 0`) PNG, built the same way ``AssetImageFixtureBuilder``'s own
-    /// RGBA fixtures are (a filled `CGContext`, encoded via
-    /// `CGImageDestinationCreateWithData`) but with `CGColorSpaceCreateDeviceGray()`
-    /// and no alpha channel, which ImageIO's PNG encoder emits as
-    /// `colorType == 0`.
-    func grayscaleFixture(
-        width: Int, height: Int
-    ) throws -> (Data, AssetImageValidator.PNGColorInfo) {
-        let data = try AssetImageValidatorPNGPaletteTests.renderGray(
-            width: width, height: height, alpha: false
-        )
-        return try (data, AssetImageValidator.parsePNGColorInfo(data))
-    }
-
-    /// The grayscale+alpha (`colorType == 4`) counterpart of
-    /// ``grayscaleFixture(width:height:)``.
-    func grayscaleAlphaFixture(
-        width: Int, height: Int
-    ) throws -> (Data, AssetImageValidator.PNGColorInfo) {
-        let data = try AssetImageValidatorPNGPaletteTests.renderGray(
-            width: width, height: height, alpha: true
-        )
-        return try (data, AssetImageValidator.parsePNGColorInfo(data))
-    }
-}
-
-/// A free-standing namespace for the grayscale PNG renderer used above --
-/// kept outside the `AssetImageValidatorTests` extension purely so its
-/// `CGContext`/`CGImageDestination` plumbing doesn't need to live inline
-/// in every call site.
-enum AssetImageValidatorPNGPaletteTests {
-    static func renderGray(width: Int, height: Int, alpha: Bool) throws -> Data {
-        let colorSpace = CGColorSpaceCreateDeviceGray()
-        let bitmapInfo = alpha
-            ? CGImageAlphaInfo.premultipliedLast.rawValue
-            : CGImageAlphaInfo.none.rawValue
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo
-        ) else {
-            throw AssetError.malformedImageData
-        }
-        context.setFillColor(CGColor(gray: 0.5, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        guard let cgImage = context.makeImage() else {
-            throw AssetError.malformedImageData
-        }
-        let data = NSMutableData()
-        guard
-            let destination = CGImageDestinationCreateWithData(
-                data, "public.png" as CFString, 1, nil
-            )
-        else {
-            throw AssetError.malformedImageData
-        }
-        CGImageDestinationAddImage(destination, cgImage, nil)
-        guard CGImageDestinationFinalize(destination) else {
-            throw AssetError.malformedImageData
-        }
-        return data as Data
     }
 }

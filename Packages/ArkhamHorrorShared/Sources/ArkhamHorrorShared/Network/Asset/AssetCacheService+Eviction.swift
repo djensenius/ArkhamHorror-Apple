@@ -49,7 +49,7 @@ extension AssetCacheService {
             fetch.task.cancel()
         }
         inFlight.removeAll()
-        inFlightRevalidation.removeAll()
+        removeAllInFlightRevalidation()
         await memoryCache.removeAll()
         do {
             try await diskCache.removeAll()
@@ -162,7 +162,7 @@ extension AssetCacheService {
         let newClearGeneration = (keyClearGeneration[cacheKey] ?? 0) + 1
         keyClearGeneration[cacheKey] = newClearGeneration
         /// `token`'s own ``CacheToken/durableClearEpoch`` (stamped at
-        /// issuance-adjacent time -- see ``stampDurableClearEpoch(_:)``)
+        /// issuance time -- see ``AssetCacheService/beginIssuance(for:)``)
         /// is re-checked against a freshly re-read
         /// ``currentDurableClearEpoch()`` at every one of this method's
         /// own re-checks below, exactly like ``isAuthoritative(_:for:)``

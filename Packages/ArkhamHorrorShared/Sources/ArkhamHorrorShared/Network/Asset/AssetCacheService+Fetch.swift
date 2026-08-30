@@ -18,18 +18,17 @@ extension AssetCacheService {
         key: AssetKey,
         cacheKey: AssetCacheKey,
         candidates: [AssetCandidate],
-        token rawToken: CacheToken
+        token: CacheToken
     ) async throws -> CachedAsset {
-        // Stamped here, as the very first statement inside this async
-        // function body — see ``stampDurableClearEpoch(_:)``'s doc
-        // comment for why this specific point (rather than inline at
+        // `token` arrives already fully stamped (both
+        // ``CacheToken/durableClearEpoch`` and
+        // ``CacheToken/diskWriteGeneration``) by
         // ``coalescedFetch(key:cacheKey:candidates:)``'s own synchronous
-        // ``issueToken(for:)`` call site) is required: this function's
-        // body only starts running once its `Task` is actually
-        // scheduled, strictly after that call site's atomic "check the
-        // coalescing dictionary, else create and insert" section has
-        // already completed.
-        let token = await stampDurableClearEpoch(rawToken)
+        // issuance, from a snapshot ``beginIssuance(for:)`` captured
+        // *before* that call site's atomic "check the coalescing
+        // dictionary, else create and insert" section even began — never
+        // restamped here, after this function's own suspension past that
+        // point (see ``beginIssuance(for:)``'s doc comment for why).
         for candidate in candidates {
             try Task.checkCancellation()
             let url = candidate.url(base: key.source)

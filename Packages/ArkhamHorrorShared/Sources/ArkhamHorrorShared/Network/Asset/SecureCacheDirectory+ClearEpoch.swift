@@ -36,6 +36,28 @@ import Foundation
 /// itself touches disk on this instance — so an instance that never
 /// otherwise learns about another instance's clear still cannot resurrect
 /// or newly publish content across it.
+///
+/// **Durable initialization, not a fold-to-zero default.** A prior
+/// revision of this type defaulted a missing file to epoch `0` ("never
+/// cleared") for *any* `ENOENT`, on the theory that a freshly created
+/// cache root simply has no file yet. That conflated two very different
+/// situations that read identically from a bare existence check alone: a
+/// genuinely pristine root that has never been opened before, and a root
+/// whose durable counter file *existed* (recording one or more real
+/// clears) but was since deleted, lost, or otherwise made unreadable —
+/// silently reusing `0` for the latter would let a resurrection exactly
+/// this file exists to prevent slip through undetected. This type instead
+/// durably creates the counter file — atomically, with its initial value —
+/// as part of ``SecureCacheDirectory/init(directory:fileManager:)`` itself
+/// (see ``ensureClearEpochInitialized()``), strictly before any other
+/// call on this instance can ever read or bump it. From that point on,
+/// for the remaining lifetime of every
+/// ``SecureCacheDirectory``/``AssetDiskCache`` ever constructed against
+/// this directory, the file is guaranteed to already exist — so any
+/// further "does not exist" result is no longer the safe pristine-root
+/// case at all; it is unambiguous evidence the file was lost after
+/// initialization, and is treated as a hard, typed, fail-closed failure
+/// exactly like a corrupt/unparsable one, never as a fresh `0` baseline.
 extension SecureCacheDirectory {
     /// The fixed leaf name of this cache's durable clear-epoch counter
     /// file, inside the verified root directory. Not `private`, for the
@@ -47,34 +69,73 @@ extension SecureCacheDirectory {
     /// guarantee this file exists to provide.
     static let clearEpochFileName = ".arkham-cache.clear-epoch"
 
-    /// Reads the currently persisted clear-epoch value, defaulting to `0`
-    /// only for the one genuinely safe "never cleared" case: the file
-    /// does not exist yet (a freshly created cache root). Throws for
-    /// every other failure -- a read/verification error (wrong type,
-    /// wrong owner, a bounded-read violation, a short read) or a parse
-    /// failure (a corrupt or foreign file somehow planted at this exact
-    /// name) -- rather than silently folding any of those into the same
-    /// `0` baseline. Collapsing a genuine read failure into `0` would be
-    /// actively unsafe, not merely imprecise: it would let this instance
-    /// (wrongly) believe "no clear has ever happened" even though the
-    /// durable counter it could not read might already record one or
-    /// more clears, which is exactly the cross-instance resurrection
-    /// this file exists to prevent. ``currentDurableClearEpoch()``'s
+    /// Fixed-width (20-decimal-digit) encoding width for this file's
+    /// value, mirroring ``AssetAccessSequence/digitWidth``'s identical
+    /// rationale: a fixed serialized size regardless of the specific
+    /// value, and one digit wider than ``AssetAccessSequence`` uses
+    /// purely so `Int.max`'s 19-digit decimal representation always has
+    /// at least one leading zero-pad digit to spare, keeping the exact
+    /// same code path exercised for every value rather than only for
+    /// ones that happen to need fewer digits.
+    static let clearEpochDigitWidth = 20
+
+    /// Idempotently ensures this cache directory's durable clear-epoch
+    /// counter file exists, initializing it to `0` ("never cleared") if
+    /// it does not. Called exactly once, synchronously, as the final step
+    /// of ``SecureCacheDirectory/init(directory:fileManager:)``,
+    /// establishing the "always already exists past this point" invariant
+    /// every later ``readPersistedClearEpoch()`` call relies on to treat
+    /// a subsequent miss as a hard failure rather than a safe default.
+    ///
+    /// Deliberately does **not** require this instance's own
+    /// cross-process ``acquireExclusiveLock()`` (which requires `async`,
+    /// unavailable from a synchronous, throwing `init`): two processes
+    /// racing to construct against the same brand-new directory for the
+    /// first time could both observe "does not exist" and both attempt
+    /// this same initializing write, but since both would write the
+    /// exact identical initial content, and the final `rename` step is
+    /// itself atomic at the filesystem level, this race is harmless
+    /// regardless of which writer's `rename` lands last — there is no
+    /// scenario in which racing initializers disagree on what value to
+    /// initialize to.
+    func ensureClearEpochInitialized() throws {
+        guard try read(name: Self.clearEpochFileName, maxBytes: Self.clearEpochDigitWidth) == nil
+        else {
+            // Already exists (whatever its content) -- never overwritten
+            // here, even if it turns out to be unparsable: silently
+            // resetting a file that already exists on the mere suspicion
+            // it might be corrupt would risk clobbering a genuinely
+            // higher, already-durable epoch this process simply failed to
+            // parse for some unrelated, possibly transient reason.
+            return
+        }
+        try persistClearEpoch(0)
+    }
+
+    /// Reads the currently persisted clear-epoch value. Throws for *any*
+    /// failure, including a clean "does not exist" miss -- see this
+    /// type's own doc comment for why, once
+    /// ``ensureClearEpochInitialized()`` has run (guaranteed by the time
+    /// any ``SecureCacheDirectory`` instance is usable at all), a missing
+    /// file can no longer be the safe "freshly created root" case and
+    /// must instead be treated exactly like a corrupt/unparsable one:
+    /// fail closed rather than silently grant a false "never cleared"
+    /// baseline. ``AssetCacheService/currentDurableClearEpoch()``'s
     /// `try?` turns this throw into `nil`, and every authority check
     /// already treats `nil` as fail-closed ("not authoritative"/
-    /// "changed") -- so a read failure here correctly costs this
-    /// instance its own authority rather than silently granting it a
-    /// false "never cleared" baseline.
+    /// "changed").
     func readPersistedClearEpoch() throws -> Int {
-        guard let data = try read(name: Self.clearEpochFileName, maxBytes: 32) else {
-            // A clean "does not exist yet" miss -- the one case where
-            // baseline `0` is genuinely safe, not merely convenient.
-            return 0
+        guard
+            let data = try read(name: Self.clearEpochFileName, maxBytes: Self.clearEpochDigitWidth)
+        else {
+            throw AssetError.cachePersistenceFailed(
+                "Clear-epoch file '\(Self.clearEpochFileName)' is missing after initialization"
+            )
         }
         guard
             let string = String(data: data, encoding: .utf8),
+            string.utf8.count == Self.clearEpochDigitWidth,
             string.utf8.allSatisfy({ (0x30 ... 0x39).contains($0) }),
-            !string.isEmpty,
             let parsed = Int(string)
         else {
             throw AssetError.cachePersistenceFailed(
@@ -86,12 +147,10 @@ extension SecureCacheDirectory {
 
     /// Commits a strictly higher clear-epoch value than whatever is
     /// currently persisted, durably (write, `fsync`, rename, directory
-    /// `fsync`) — the same crash-consistent write sequence
-    /// ``writeTempAndFsync(tempName:data:)``/``renameAndFsyncDirectory(from:to:)``
-    /// already provide for every other durable pointer in this package —
-    /// and returns the new value. Must only ever be called while the
-    /// caller already holds this instance's ``acquireExclusiveLock()``,
-    /// exactly like ``allocateAccessSequence(atLeastAfter:)``.
+    /// `fsync`), and returns the new value. Must only ever be called
+    /// while the caller already holds this instance's
+    /// ``acquireExclusiveLock()``, exactly like
+    /// ``allocateAccessSequence(atLeastAfter:)``.
     ///
     /// ``AssetDiskCache/removeAll()`` calls this *before* any of its own
     /// destructive removal work begins: a caller must never be able to
@@ -102,16 +161,26 @@ extension SecureCacheDirectory {
     /// would reopen exactly the race this type exists to close if a crash
     /// or failure landed between the two steps.
     ///
-    /// Saturates at `Int.max` rather than wrapping to a negative value on
-    /// overflow, mirroring ``allocateAccessSequence(atLeastAfter:)``'s own
-    /// identical rationale; once saturated, a further call simply returns
-    /// `Int.max` again without rewriting the file (there is nothing higher
-    /// to persist).
+    /// **Terminal saturation, never silent reuse.** Once the persisted
+    /// value is already `Int.max`, this throws rather than returning
+    /// `Int.max` again: a prior revision instead silently re-returned the
+    /// same saturated value forever once reached, which would let *two
+    /// genuinely different* clears -- one whose token capture happened
+    /// before the saturating bump, another happening after -- collapse
+    /// onto the exact same epoch value and become indistinguishable to
+    /// every downstream authority check, letting the earlier clear's own
+    /// resurrection race slip through unnoticed. Failing closed instead
+    /// (a value this many real clears reaching `Int.max` for one
+    /// directory is not achievable in practice) preserves the invariant
+    /// that every two clears this method ever successfully commits are
+    /// always distinguishable.
     @discardableResult
     func bumpClearEpoch() throws -> Int {
         let persisted = try readPersistedClearEpoch()
-        if persisted >= Int.max {
-            return Int.max
+        guard persisted < Int.max else {
+            throw AssetError.cachePersistenceFailed(
+                "Clear-epoch counter is exhausted and cannot be durably distinguished further"
+            )
         }
         let next = persisted + 1
         try persistClearEpoch(next)
@@ -119,9 +188,11 @@ extension SecureCacheDirectory {
     }
 
     private func persistClearEpoch(_ epoch: Int) throws {
+        precondition(epoch >= 0, "Clear epoch must never be negative, got \(epoch)")
         let tempName = Self.clearEpochFileName + ".tmp"
-        let data = Data(String(epoch).utf8)
-        try writeTempAndFsync(tempName: tempName, data: data)
+        let raw = String(epoch)
+        let padded = String(repeating: "0", count: Self.clearEpochDigitWidth - raw.count) + raw
+        try writeTempAndFsync(tempName: tempName, data: Data(padded.utf8))
         try renameAndFsyncDirectory(from: tempName, to: Self.clearEpochFileName)
     }
 }

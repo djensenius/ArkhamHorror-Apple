@@ -141,6 +141,19 @@ final class SecureCacheDirectory: @unchecked Sendable {
         rootFD = descriptor
         rootOwnerUID = rootStat.st_uid
         rootDevice = rootStat.st_dev
+        // Durably establishes "the clear-epoch counter file already
+        // exists" as an invariant that holds for the remaining lifetime
+        // of every instance ever constructed against this directory,
+        // strictly before any other call on this instance (or a sibling
+        // instance sharing this same directory, constructed afterward)
+        // can ever read or bump it — see
+        // `SecureCacheDirectory+ClearEpoch.swift`'s type-level doc
+        // comment for why this matters: without it, a missing file could
+        // mean either "freshly created root" (safe to default to `0`) or
+        // "durable counter lost after real clears already happened"
+        // (unsafe to default at all), and the two are indistinguishable
+        // from a bare existence check taken any later than this.
+        try ensureClearEpochInitialized()
     }
 
     deinit {
