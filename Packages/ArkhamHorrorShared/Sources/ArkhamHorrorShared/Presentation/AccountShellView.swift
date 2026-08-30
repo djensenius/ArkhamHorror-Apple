@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The signed-in landing shell: shows the typed current user and connected server, with
-/// sign-out and switch-server actions.
+/// The signed-in landing shell: an adaptive native games/lobby list, with account
+/// details (typed current user, connected server, switch-server, and sign-out)
+/// reachable from the toolbar rather than displacing the primary games surface.
 ///
 /// Presented for ``AccountRoute/account(profile:compatibility:user:)``.
 struct AccountShellView: View {
@@ -10,6 +11,39 @@ struct AccountShellView: View {
     let compatibility: ServerCompatibility
     let user: CurrentUser
 
+    @State private var isPresentingAccountDetail = false
+
+    var body: some View {
+        GamesListView(model: model)
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        isPresentingAccountDetail = true
+                    } label: {
+                        Label(user.username, systemImage: "person.crop.circle")
+                    }
+                    .accessibilityIdentifier(AccountAccessibilityID.accountDetailButton)
+                }
+            }
+            .sheet(isPresented: $isPresentingAccountDetail) {
+                NavigationStack {
+                    AccountDetailView(
+                        model: model, profile: profile, compatibility: compatibility, user: user
+                    )
+                }
+            }
+    }
+}
+
+/// The account details sheet: typed current user, connected server, switch-server,
+/// and sign-out actions. Presented from ``AccountShellView``'s toolbar.
+struct AccountDetailView: View {
+    let model: AppModel
+    let profile: ServerProfile
+    let compatibility: ServerCompatibility
+    let user: CurrentUser
+
+    @Environment(\.dismiss) private var dismiss
     @State private var isPresentingServerSwitch = false
     @AccessibilityFocusState private var isHeaderFocused: Bool
 
@@ -82,6 +116,11 @@ struct AccountShellView: View {
             .frame(maxWidth: .infinity)
         }
         .onAppear { isHeaderFocused = true }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
         .sheet(isPresented: $isPresentingServerSwitch) {
             NavigationStack {
                 ServerManagementView(model: model)
