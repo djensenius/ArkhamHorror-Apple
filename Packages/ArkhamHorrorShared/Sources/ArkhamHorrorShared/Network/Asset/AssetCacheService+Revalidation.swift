@@ -112,16 +112,27 @@ extension AssetCacheService {
         // exactly the state the concurrent invalidation just cleared the
         // moment a 304 response arrives for it.
         //
-        // Deliberately uses ``snapshotClearState(for:)``/
-        // ``clearStateUnchanged(since:for:)`` here, not the coarser
-        // ``snapshotAuthority(for:)``/``unchanged(since:for:)`` the
-        // disk-hit branch below uses: see that function's doc comment for
-        // why the token-based check would also misfire on a second,
-        // concurrent, perfectly legitimate ``revalidate(for:)`` call for
-        // this exact same key.
-        let clearSnapshot = snapshotClearState(for: cacheKey)
+        // Uses the narrower ``snapshotClearState(for:)``/
+        // ``clearStateUnchanged(since:for:)`` pair rather than the
+        // broader ``snapshotAuthority(for:)``/``unchanged(since:for:)``
+        // one: this branch's own subsequent call below is coalesced
+        // through ``coalescedRevalidation(existing:key:cacheKey:candidates:)``,
+        // so a second, concurrent, otherwise-identical `revalidate(for:)`
+        // call legitimately observes `keyLatestToken` change the instant
+        // the first call's coalesced revalidation issues its shared
+        // token — that is the intended coalescing outcome, not
+        // staleness, and must not defeat this memory hit. See
+        // ``snapshotClearState(for:)``'s doc comment. Wrapped in an
+        // authority window (``beginAuthorityWindow(for:)``) so this key's
+        // bookkeeping cannot be pruned out from under this still-suspended
+        // snapshot purely due to unrelated keys' churn.
+        beginAuthorityWindow(for: cacheKey)
+        let memorySnapshot = snapshotClearState(for: cacheKey)
         let memoryHit = await memoryCache.get(cacheKey)
-        if let existing = memoryHit, clearStateUnchanged(since: clearSnapshot, for: cacheKey) {
+        let memoryHitIsCurrent = memoryHit != nil
+            && clearStateUnchanged(since: memorySnapshot, for: cacheKey)
+        endAuthorityWindow(for: cacheKey)
+        if let existing = memoryHit, memoryHitIsCurrent {
             return try await revalidateExisting(
                 existing,
                 key: key,
@@ -140,6 +151,8 @@ extension AssetCacheService {
         // currently-authoritative cached entry left to revalidate against,
         // so both report the same typed error rather than a stale hit
         // being silently promoted into a conditional request.
+        beginAuthorityWindow(for: cacheKey)
+        defer { endAuthorityWindow(for: cacheKey) }
         let snapshot = snapshotAuthority(for: cacheKey)
         guard
             let onDisk = try await diskCache.get(cacheKey),
@@ -147,7 +160,10 @@ extension AssetCacheService {
         else {
             throw AssetError.staleConditionalResponse
         }
-        let token = await withDiskBaseline(issueToken(for: cacheKey), for: cacheKey)
+        // This disk-hit branch is never behind any coalescing dictionary,
+        // so there is no "duplicate in-flight work" hazard to defer this
+        // past — see ``issueToken(for:)``.
+        let token = issueToken(for: cacheKey)
         // A disk-loaded body is never trusted as the basis for a
         // conditional request until it has passed the exact same current
         // format/magic-byte/dimension/limits/decode validation as a disk
@@ -172,15 +188,73 @@ extension AssetCacheService {
             // risking a 304 paired with content nobody has validated.
             return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
         }
-        if isAuthoritative(token, for: cacheKey) {
-            await memoryCache.set(cacheKey, asset: validated, token: token)
+        // `revalidateDiskHit` suspends (a full platform decode): re-check
+        // authority immediately before doing anything further with
+        // `validated`. Proceeding to `revalidateExisting` regardless would
+        // mint a *fresh* authority token (via
+        // ``resolveRevalidationFetchID(cacheKey:url:expectedFormat:existing:slot:)``)
+        // and issue a real, live network round trip using body bytes whose
+        // own token has already lost authority — for example because a
+        // concurrent, more-recently-issued operation (or `evictAll()`)
+        // already invalidated or superseded this exact key while the
+        // decode above was in flight. That would let a 304 for this stale
+        // conditional request resurrect/overwrite state a newer,
+        // authoritative operation already concluded. Instead, restart
+        // entirely from a fresh lookup: whatever is now current for this
+        // key (freshly published by memory, freshly revalidated from
+        // disk, or a brand fresh fetch) is always the correct answer, and
+        // never once involves the bytes this now-stale token was derived
+        // from.
+        guard isAuthoritative(token, for: cacheKey) else {
+            return try await asset(for: key)
         }
+        await memoryCache.set(cacheKey, asset: validated, token: token)
         return try await revalidateExisting(
             validated,
             key: key,
             cacheKey: cacheKey,
             candidates: candidates
         )
+    }
+
+    /// Resolves the exact `(url, format)` pair to issue a conditional
+    /// revalidation request against for `existing`, cross-checked against
+    /// `candidates`. Shared by ``revalidateExisting(_:key:cacheKey:candidates:)``
+    /// (which treats a missing validator/URL as
+    /// ``AssetError/staleConditionalResponse``, since its caller
+    /// explicitly asked to revalidate) and ``asset(for:)``'s disk-hit
+    /// branch (which instead tolerates a missing validator by falling
+    /// through to an ordinary unconditional fetch, since that API's
+    /// contract is simply "give me a currently valid asset", not
+    /// "revalidate this specific one").
+    ///
+    /// The persisted `resolvedURLString` is untrusted input (on-disk
+    /// metadata could be corrupted or tampered while still decoding and
+    /// passing the hash/size checks in `AssetDiskCache.get`): only ever
+    /// resolves to a URL that exactly matches one of `key`'s own current
+    /// candidates, never whatever URL happens to be recorded, so tampered
+    /// metadata cannot redirect a request to an unexpected host or path.
+    /// Looking up the matching candidate itself (rather than only
+    /// checking membership in a set of URL strings) is also what recovers
+    /// the exact ``AssetFormat`` that candidate resolved to: candidates
+    /// for the same key are not all guaranteed to share one format, so
+    /// `key.expectedFormat` alone is not a safe stand-in for validating a
+    /// fresh revalidation response.
+    func conditionalRevalidationTarget(
+        for existing: CachedAsset,
+        key: AssetKey,
+        candidates: [AssetCandidate]
+    ) -> (url: URL, format: AssetFormat)? {
+        guard
+            let url = URL(string: existing.metadata.resolvedURLString),
+            let matchedCandidate = candidates.first(where: {
+                $0.url(base: key.source).absoluteString == existing.metadata.resolvedURLString
+            }),
+            existing.metadata.etag != nil || existing.metadata.lastModified != nil
+        else {
+            return nil
+        }
+        return (url, matchedCandidate.format)
     }
 
     /// Validates `existing` (already confirmed current/valid by the
@@ -194,39 +268,17 @@ extension AssetCacheService {
         cacheKey: AssetCacheKey,
         candidates: [AssetCandidate]
     ) async throws -> CachedAsset {
-        guard let url = URL(string: existing.metadata.resolvedURLString) else {
+        guard let target = conditionalRevalidationTarget(
+            for: existing,
+            key: key,
+            candidates: candidates
+        ) else {
             throw AssetError.staleConditionalResponse
         }
-        // The persisted `resolvedURLString` is untrusted input (on-disk
-        // metadata could be corrupted or tampered while still decoding and
-        // passing the hash/size checks in `AssetDiskCache.get`): only ever
-        // issue a revalidation request against a URL that exactly matches
-        // one of this key's own current candidates, never whatever URL
-        // happens to be recorded, so tampered metadata cannot redirect a
-        // request to an unexpected host or path. Looking up the matching
-        // candidate itself (rather than only checking membership in a set
-        // of URL strings) is also what recovers the exact ``AssetFormat``
-        // that candidate resolved to: candidates for the same key are not
-        // all guaranteed to share one format, so `key.expectedFormat`
-        // alone is not a safe stand-in for validating a fresh revalidation
-        // response — see ``revalidateDiskHit(_:key:cacheKey:candidates:)``,
-        // which recovers it identically for the disk-hit re-validation
-        // path.
-        guard
-            let matchedCandidate = candidates.first(where: {
-                $0.url(base: key.source).absoluteString == existing.metadata.resolvedURLString
-            })
-        else {
-            throw AssetError.staleConditionalResponse
-        }
-        guard existing.metadata.etag != nil || existing.metadata.lastModified != nil else {
-            throw AssetError.staleConditionalResponse
-        }
-
         return try await coalescedRevalidation(
             cacheKey: cacheKey,
-            url: url,
-            expectedFormat: matchedCandidate.format,
+            url: target.url,
+            expectedFormat: target.format,
             existing: existing
         )
     }

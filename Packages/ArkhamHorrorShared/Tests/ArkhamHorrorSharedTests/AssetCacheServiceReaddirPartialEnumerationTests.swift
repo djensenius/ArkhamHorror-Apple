@@ -9,15 +9,19 @@ import Testing
 /// from a short, fully-listed directory. Before the fix, `readdir`
 /// returning `NULL` was treated unconditionally as end-of-directory,
 /// letting `removeAll()`/`evictAll()` believe every on-disk survivor had
-/// been enumerated (and so was safe to un-tombstone) while entries this
-/// call never actually saw remained physically present and unprotected.
-/// Split out of `AssetCacheServiceEvictAllTombstoneTests.swift` purely to
-/// stay under this package's `file_length` convention.
+/// been enumerated while entries this call never actually saw remained
+/// physically present. Under the mandatory-online-revalidation model
+/// (see ``AssetDiskCache``'s own doc comment), no on-disk survivor is
+/// ever independently trusted regardless of enumeration outcome, but the
+/// failure itself must still be audited rather than silently treated as
+/// a clean, complete success. Split out of
+/// `AssetCacheServiceEvictAllTombstoneTests.swift` purely to stay under
+/// this package's `file_length` convention.
 extension AssetCacheServiceTests {
     @Test(
         """
-        evictAll() escalates to the whole-cache disabled marker -- rather than reporting \
-        success, or tombstoning only a partial survivor snapshot -- when the underlying \
+        evictAll() still leaves every surviving entry subject to mandatory online \
+        revalidation -- never independently trusted from disk again -- when the underlying \
         directory listing fails partway through enumeration (readdir returning NULL with a \
         nonzero errno), exactly as it already does when listing fails outright before ever \
         reading a single entry
@@ -31,8 +35,6 @@ extension AssetCacheServiceTests {
 
             let firstKey = try cardArtKey("01001")
             let secondKey = try cardArtKey("01002")
-            let firstCandidates = AssetLocator.candidates(for: firstKey, digest: FakeDigestLookup())
-            let firstCacheKey = AssetCacheKey(for: firstKey, candidates: firstCandidates)
 
             let firstBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
             let secondBody = AssetImageFixtureBuilder.validAVIF(width: 6, height: 6)
@@ -56,23 +58,36 @@ extension AssetCacheServiceTests {
                 "A partial-enumeration listing failure must be audited, not swallowed as success"
             )
 
-            // The critical assertion: with the pre-fix bug, `listNames()`
-            // would have silently reported only the 1 entry actually read
-            // as if that were the *complete* directory contents, letting
-            // `removeAll()` "succeed" having removed just that one file,
-            // report no failure, and clear tombstones -- while the other
-            // key's still-fully-intact entry remains servable. The fix
-            // must instead disable disk reads for *every* key, including
-            // ones `entryKeyHashes()`'s own retry can no longer identify
-            // individually because that same fault also makes it fail.
-            let firstStillAccessible = try await diskCache.get(firstCacheKey)
+            // The critical assertion, in the mandatory-online-
+            // revalidation model: regardless of whether either surviving
+            // key ended up in the in-process, best-effort `tombstonedKeys`
+            // set (which a severe enough enumeration failure may not be
+            // able to populate at all), neither key may ever be served
+            // again without a fresh, live network round trip — a fresh
+            // `AssetCacheService`/`AssetDiskCache` triple over the same
+            // directory (no shared in-memory state) proves this: both
+            // keys' still-fully-intact entries are refetched from the
+            // network rather than trusted from disk.
+            let restartedLayers = try makeService(directory: directory, limits: limits)
+            let firstFreshBody = AssetImageFixtureBuilder.validAVIF(width: 5, height: 5)
+            let secondFreshBody = AssetImageFixtureBuilder.validAVIF(width: 7, height: 7)
+            await restartedLayers.transport.enqueue(
+                .success(successResult(body: firstFreshBody)),
+                for: candidateURLs(for: firstKey)[0]
+            )
+            await restartedLayers.transport.enqueue(
+                .success(successResult(body: secondFreshBody)),
+                for: candidateURLs(for: secondKey)[0]
+            )
+            let firstAfterRestart = try await restartedLayers.service.asset(for: firstKey)
             #expect(
-                firstStillAccessible == nil,
-                """
-                Every key must be refused after a listing failure this severe: the surviving \
-                entry set could not be determined at all, so no specific key can be safely \
-                un-tombstoned
-                """
+                firstAfterRestart.payload == firstFreshBody,
+                "Every key must be refetched, never trusted from disk after such a failure"
+            )
+            let secondAfterRestart = try await restartedLayers.service.asset(for: secondKey)
+            #expect(
+                secondAfterRestart.payload == secondFreshBody,
+                "Every key must be refetched, never trusted from disk after such a failure"
             )
         }
     }

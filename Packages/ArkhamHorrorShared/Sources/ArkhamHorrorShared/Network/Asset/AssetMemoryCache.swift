@@ -158,7 +158,41 @@ actor AssetMemoryCache {
         if let removed = entries.removeValue(forKey: key) {
             totalAccountedBytes -= removed.accountedByteCount
         }
+        // See ``evictIfNeeded()``'s matching comment: an evicted/removed
+        // key's applied-token bookkeeping must not outlive the entry it
+        // was recorded for, or this dictionary grows without bound across
+        // a high-cardinality (self-hosted/homebrew, effectively
+        // attacker-controlled) key space even as entries themselves are
+        // properly bounded by eviction.
+        appliedToken[key] = nil
         return true
+    }
+
+    /// Removes `key`'s entry only if `token` is *exactly* the applied
+    /// token currently recorded for it. Unlike ``remove(_:token:)``'s
+    /// "reject if a newer token already applied" compare-and-swap
+    /// semantics, this treats "some other token (older *or* newer) is
+    /// currently applied" as "nothing to retract" rather than a failure —
+    /// the caller already knows, from its own outer authority check, that
+    /// `token` itself has already lost authority; it is asking this actor
+    /// to undo specifically the mutation *it* performed under `token`, if
+    /// that mutation is still the one resident. Used by
+    /// ``AssetCacheService/publish(_:asset:token:)``/
+    /// ``AssetCacheService/touch(_:asset:token:)`` to retract a memory
+    /// write that landed successfully (this actor's own
+    /// ``set(_:asset:token:)`` CAS passed) but was only *afterward* -- once
+    /// that call's suspension returned control to ``AssetCacheService`` --
+    /// discovered to already have been superseded by a more-recently
+    /// -issued operation (or a cache-wide ``AssetCacheService/evictAll()``)
+    /// for the same key, closing the exact window `publish`/`touch`
+    /// previously only *detected* (returning ``AssetCacheService/MutationOutcome/stale``)
+    /// without ever reverting the mutation that had already landed.
+    func removeIfApplied(_ key: AssetCacheKey, token: AssetCacheService.CacheToken) {
+        guard appliedToken[key] == token else { return }
+        if let removed = entries.removeValue(forKey: key) {
+            totalAccountedBytes -= removed.accountedByteCount
+        }
+        appliedToken[key] = nil
     }
 
     func removeAll() {
@@ -198,6 +232,17 @@ actor AssetMemoryCache {
             guard totalAccountedBytes > limits.lowWaterMarkMemoryBytes else { break }
             entries.removeValue(forKey: key)
             totalAccountedBytes -= asset.accountedByteCount
+            // An evicted key's applied-token bookkeeping must not
+            // outlive its entry -- see ``remove(_:token:)``'s matching
+            // comment for why clearing this here cannot reintroduce a
+            // stale-write race: the outer `AssetCacheService` authority
+            // check already gates every `set(_:asset:token:)`/
+            // `touch`/`remove` call *before* it ever reaches this actor,
+            // so a genuinely stale (already-superseded) token can never
+            // reach ``acceptToken(_:for:)`` in the first place regardless
+            // of whether this dictionary still remembers an unrelated,
+            // now-evicted prior entry's token.
+            appliedToken[key] = nil
         }
     }
 }

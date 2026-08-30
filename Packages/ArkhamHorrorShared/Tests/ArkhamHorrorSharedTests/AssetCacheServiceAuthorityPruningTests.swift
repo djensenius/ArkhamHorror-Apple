@@ -3,20 +3,24 @@ import Foundation
 import Testing
 
 /// Bounded-growth coverage for ``AssetCacheService``'s per-key authority
-/// bookkeeping (``AssetCacheService/keyIssuance``/``keyLatestToken``/
+/// bookkeeping (``AssetCacheService/keyLatestToken``/
 /// ``keyClearGeneration``, pruned by
 /// ``AssetCacheService/noteAuthorityKeyTouched(_:)`` in
 /// `AssetCacheService+Epoch.swift`).
 ///
-/// Every one of those three dictionaries is keyed by an
+/// Every one of those two dictionaries is keyed by an
 /// ``AssetCacheKey`` ultimately derived from a self-hosted server's or a
 /// homebrew campaign/card's identifier — server-controlled or
 /// user-supplied input, not a small first-party enumeration — so without
 /// pruning, a caller that ever requests enough distinct never-repeated
 /// keys grows every one of these maps without bound for the remaining
-/// lifetime of the process. Split into its own file (rather than folded
-/// into `AssetCacheServiceTests.swift`) purely to stay under SwiftLint's
-/// `type_body_length`, matching this directory's existing convention.
+/// lifetime of the process. (``AssetCacheService/nextGlobalIssuance``
+/// itself is a single, unbounded-but-`O(1)`-space counter shared across
+/// every key -- never per-key -- so it has no growth to bound; only the
+/// per-key maps below need this coverage.) Split into its own file
+/// (rather than folded into `AssetCacheServiceTests.swift`) purely to
+/// stay under SwiftLint's `type_body_length`, matching this directory's
+/// existing convention.
 extension AssetCacheServiceTests {
     /// Issues a fresh authority token directly (bypassing the full
     /// network-fetch pipeline entirely) for a synthetic cache key derived
@@ -34,7 +38,7 @@ extension AssetCacheServiceTests {
     @Test(
         """
         Requesting far more distinct keys than maxTrackedAuthorityKeys keeps every one \
-        of keyIssuance/keyLatestToken/keyClearGeneration bounded, rather than growing \
+        of keyLatestToken/keyClearGeneration bounded, rather than growing \
         without limit for the lifetime of the process
         """
     )
@@ -53,13 +57,11 @@ extension AssetCacheServiceTests {
                 await service.invalidate(cacheKey)
             }
 
-            let issuanceCount = await service.keyIssuance.count
             let latestTokenCount = await service.keyLatestToken.count
             let clearGenerationCount = await service.keyClearGeneration.count
             let orderCount = await service.authorityKeyOrder.count
             let trackedCount = await service.trackedAuthorityKeys.count
 
-            #expect(issuanceCount <= AssetCacheService.maxTrackedAuthorityKeys)
             #expect(latestTokenCount <= AssetCacheService.maxTrackedAuthorityKeys)
             #expect(clearGenerationCount <= AssetCacheService.maxTrackedAuthorityKeys)
             #expect(orderCount <= AssetCacheService.maxTrackedAuthorityKeys)

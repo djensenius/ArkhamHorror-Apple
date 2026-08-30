@@ -45,60 +45,65 @@ actor AssetCacheService {
     /// itself against immediately before ever touching memory/disk state
     /// — see `AssetCacheService+Epoch.swift` for the full ``CacheToken``
     /// issuance/CAS contract.
-    var keyIssuance: [AssetCacheKey: Int] = [:]
+    ///
+    /// `nextGlobalIssuance` is a single counter shared across *every*
+    /// key — deliberately not a per-key counter restarting from zero —
+    /// so that ``pruneAuthorityKeysIfNeeded()`` discarding a key's
+    /// bookkeeping and a later fresh operation for that same key
+    /// restarting it can never mint an `issuance` value that collides
+    /// with one an older, still-suspended snapshot/token for the same
+    /// key (from before the prune) might still be holding — see
+    /// ``issueToken(for:)``.
+    var nextGlobalIssuance = 0
     var keyLatestToken: [AssetCacheKey: CacheToken] = [:]
     var globalGeneration = 0
     var inFlightRevalidation: [RevalidationSlot: RevalidationFetch] = [:]
 
     /// Bumped for exactly `key` every time ``invalidate(_:token:)``
     /// actually proceeds to remove it (a definitive 404, a failed
-    /// re-validation quarantine, or a URL-mismatch quarantine) — a
-    /// narrower, more precise question than "has *any* operation been
-    /// issued for this key since", which ``keyLatestToken`` alone answers
-    /// and which a perfectly legitimate, coalescable sibling
-    /// ``asset(for:)``/``revalidate(for:)`` call for the very same key
-    /// would also (harmlessly) advance. Combined with `globalGeneration`
-    /// (bumped by ``evictAll()``, which affects every key at once without
-    /// calling ``invalidate(_:token:)`` for each one individually), this
-    /// is what ``revalidate(for:)``'s memory-hit branch checks a cached
-    /// snapshot against before ever letting it mint a fresh authority
-    /// token: see ``snapshotClearState(for:)``/``clearStateUnchanged(since:for:)``
-    /// in `AssetCacheService+Epoch.swift`, and that function's doc
-    /// comment for why the coarser `keyLatestToken`-based check is wrong
-    /// for this specific purpose.
+    /// re-validation quarantine, or a URL-mismatch quarantine) — folded
+    /// into every issued ``CacheToken``'s own `clearGeneration` field and
+    /// checked by the single, unified ``isAuthoritative(_:for:)``/
+    /// ``unchanged(since:for:)`` pair every caller already uses (see
+    /// `AssetCacheService+Epoch.swift`), rather than a separate, narrower
+    /// check some callers previously used and others did not.
     var keyClearGeneration: [AssetCacheKey: Int] = [:]
 
+    /// Reference counts of currently-open "authority windows" per key —
+    /// see ``beginAuthorityWindow(for:)``/``endAuthorityWindow(for:)`` in
+    /// `AssetCacheService+Epoch.swift`.
+    var openAuthorityWindows: [AssetCacheKey: Int] = [:]
+
     /// The maximum number of distinct keys' authority bookkeeping
-    /// (``keyIssuance``/``keyLatestToken``/``keyClearGeneration``) this
-    /// actor retains at once, before pruning the least-recently-touched
-    /// entries — see ``authorityKeyOrder``/``noteAuthorityKeyTouched(_:)``
-    /// in `AssetCacheService+Epoch.swift`. Every one of those three
-    /// dictionaries is keyed by an ``AssetCacheKey`` that (for a
-    /// self-hosted server, or a homebrew card/campaign identifier) is
-    /// ultimately derived from server-controlled or user-supplied input,
-    /// not a small, fixed, first-party enumeration — an unbounded stream
-    /// of distinct never-repeated keys would otherwise grow these three
-    /// dictionaries without limit for the lifetime of the process. A
-    /// pruned key's bookkeeping simply restarts from scratch (issuance 0,
-    /// no recorded latest token) the next time it is genuinely requested
-    /// again — never pruned, however, while any fetch or revalidation is
-    /// actually in flight for it (see `AssetCacheService+Epoch.swift`'s
-    /// pruning loop), so a live operation's own authority can never be
-    /// silently discarded out from under it purely due to unrelated keys'
-    /// churn.
+    /// (``keyLatestToken``/``keyClearGeneration``) this actor retains at
+    /// once, before pruning the least-recently-touched entries — see
+    /// ``authorityKeyOrder``/``noteAuthorityKeyTouched(_:)`` in
+    /// `AssetCacheService+Epoch.swift`. Every one of those dictionaries is
+    /// keyed by an ``AssetCacheKey`` that (for a self-hosted server, or a
+    /// homebrew card/campaign identifier) is ultimately derived from
+    /// server-controlled or user-supplied input, not a small, fixed,
+    /// first-party enumeration — an unbounded stream of distinct
+    /// never-repeated keys would otherwise grow these dictionaries
+    /// without limit for the lifetime of the process. A pruned key's
+    /// bookkeeping simply restarts from scratch (no recorded latest
+    /// token, clear generation `0`) the next time it is genuinely
+    /// requested again — never pruned, however, while any fetch,
+    /// revalidation, or other open authority window (see
+    /// ``beginAuthorityWindow(for:)``) is actually live for it, so a live
+    /// operation's own authority can never be silently discarded out from
+    /// under it purely due to unrelated keys' churn.
     static let maxTrackedAuthorityKeys = 4096
 
     /// First-seen-insertion-order list of every key currently tracked
-    /// across ``keyIssuance``/``keyLatestToken``/``keyClearGeneration`` —
-    /// oldest first. Deliberately *not* re-ordered on every subsequent
-    /// touch of an already-tracked key (an O(1) append on first sight,
-    /// rather than an O(n) linear-scan-and-move-to-the-end on every
-    /// single token issuance): pruning only needs *some* inactive key to
-    /// reclaim, not the precise least-recently-used one, so plain
-    /// insertion order is sufficient. Paired with ``trackedAuthorityKeys``
-    /// (a `Set` mirror, so "is this key already tracked" is an O(1) check
-    /// rather than an O(n) scan of this array). See
-    /// ``noteAuthorityKeyTouched(_:)``.
+    /// across ``keyLatestToken``/``keyClearGeneration`` — oldest first.
+    /// Deliberately *not* re-ordered on every subsequent touch of an
+    /// already-tracked key (an O(1) append on first sight, rather than an
+    /// O(n) linear-scan-and-move-to-the-end on every single token
+    /// issuance): pruning only needs *some* inactive key to reclaim, not
+    /// the precise least-recently-used one, so plain insertion order is
+    /// sufficient. Paired with ``trackedAuthorityKeys`` (a `Set` mirror,
+    /// so "is this key already tracked" is an O(1) check rather than an
+    /// O(n) scan of this array). See ``noteAuthorityKeyTouched(_:)``.
     var authorityKeyOrder: [AssetCacheKey] = []
     var trackedAuthorityKeys: Set<AssetCacheKey> = []
 
@@ -145,6 +150,24 @@ actor AssetCacheService {
     /// Resolves `key` to a validated cached asset, serving from memory or
     /// disk when a valid entry already exists and otherwise performing (or
     /// joining an already in-flight) network fetch.
+    ///
+    /// A *memory* hit (already proven fresh earlier in this exact process
+    /// run, and never surviving a restart) is returned immediately. A
+    /// *disk-only* hit is different: this cache does not attempt to
+    /// durably order writes across separate processes/instances sharing
+    /// the same disk directory (see ``AssetDiskCache``'s doc comment), so
+    /// persisted bytes from a possibly-different prior process are never
+    /// independently trusted as still-fresh, offline-authoritative
+    /// content — they are, at best, a conditional-revalidation candidate.
+    /// Every disk-only hit must therefore pass the exact same structural
+    /// re-validation as ``AssetCacheService/revalidateDiskHit(_:key:cacheKey:candidates:token:)``
+    /// already performs, *and* a fresh online conditional
+    /// (`ETag`/`Last-Modified`) revalidation against the live server,
+    /// before it may ever be cached in memory or returned to a caller. If
+    /// no validator is available at all (or the structural check already
+    /// failed, or authority was lost mid-decode), this falls through to
+    /// an ordinary unconditional fetch exactly as if this had been a
+    /// clean cache miss — never silently serving unverified offline bytes.
     func asset(for key: AssetKey) async throws -> CachedAsset {
         let candidates = try resolvedCandidates(for: key)
         let cacheKey = AssetCacheKey(for: key, candidates: candidates)
@@ -158,18 +181,24 @@ actor AssetCacheService {
         // already-in-flight `get` call. Without this check, such a race
         // could still hand back an entry this actor's own bookkeeping
         // already considers superseded, purely because of memory-cache
-        // actor-hop timing luck.
+        // actor-hop timing luck. Wrapped in an authority window so this
+        // key's bookkeeping cannot be pruned while this snapshot is still
+        // suspended awaiting `memoryCache.get`.
+        beginAuthorityWindow(for: cacheKey)
         let memorySnapshot = snapshotAuthority(for: cacheKey)
         let memoryHit = await memoryCache.get(cacheKey)
-        if let cached = memoryHit, unchanged(since: memorySnapshot, for: cacheKey) {
+        let memoryHitIsCurrent = memoryHit != nil && unchanged(since: memorySnapshot, for: cacheKey)
+        endAuthorityWindow(for: cacheKey)
+        if let cached = memoryHit, memoryHitIsCurrent {
             return cached
         }
         // A tombstoned key means this actor already intended to invalidate
         // its disk entry (a 404, a failed re-validation quarantine, or
-        // `evictAll()`) but could not confirm the physical deletion fully
-        // succeeded — never trust a disk read for it, regardless of what
-        // bytes might still physically be present, until a fresh publish
-        // clears the tombstone.
+        // `evictAll()`) — a purely in-process, best-effort optimization to
+        // skip a disk read this actor already expects to be pointless, not
+        // a correctness requirement: even an entry *not* skipped here must
+        // still pass the mandatory online conditional revalidation below
+        // before ever being trusted.
         if !tombstonedKeys.contains(cacheKey) {
             // Snapshotted *before* the disk read itself (not issued as a
             // token yet), so a subsequent mismatch can detect a more
@@ -185,16 +214,20 @@ actor AssetCacheService {
             // number or superseded whatever fetch is legitimately already
             // in flight for this key, merely because a second,
             // ultimately-coalescing caller also passed through this same
-            // code path.
+            // code path. The whole disk-hit branch below (through the
+            // structural revalidation and the authority check that
+            // precedes the online conditional request) is one continuous
+            // authority window: none of this key's bookkeeping may be
+            // pruned while any of it is still suspended.
+            beginAuthorityWindow(for: cacheKey)
+            defer { endAuthorityWindow(for: cacheKey) }
             let snapshot = snapshotAuthority(for: cacheKey)
             let diskHit = try await diskCache.get(cacheKey)
             if let cached = diskHit, unchanged(since: snapshot, for: cacheKey) {
-                // Stamped with this key's durable on-disk generation
-                // immediately after issuance — this disk-hit branch is
-                // never behind a coalescing dictionary, so there is no
-                // "duplicate in-flight work" hazard to defer this past
-                // (see ``withDiskBaseline(_:for:)``'s doc comment).
-                let token = await withDiskBaseline(issueToken(for: cacheKey), for: cacheKey)
+                // This disk-hit branch is never behind a coalescing
+                // dictionary, so there is no "duplicate in-flight work"
+                // hazard to defer this past — see ``issueToken(for:)``.
+                let token = issueToken(for: cacheKey)
                 if let revalidated = try await revalidateDiskHit(
                     cached,
                     key: key,
@@ -204,44 +237,45 @@ actor AssetCacheService {
                 ) {
                     // `revalidateDiskHit` suspends (a full platform
                     // decode); re-check this key's authority immediately
-                    // before caching its result back into memory *and*
-                    // before ever returning it to this call's own caller —
-                    // a `evictAll()` or a more-recently-issued operation
-                    // for this exact key may already have concluded while
-                    // this suspension was in progress, and handing back a
-                    // value this actor's own bookkeeping already considers
-                    // superseded would let a caller observe (and possibly
-                    // display) content the cache layer itself no longer
-                    // considers authoritative. `memoryCache.set`
-                    // independently re-checks the same token itself (see
-                    // its doc comment) and reports whether it actually
-                    // applied — that alone is still not sufficient here:
-                    // its `Bool` result only tells us the write itself
-                    // landed (or lost the race) *inside* the memory
-                    // actor, not whether a newer operation concluded on
-                    // *this* actor during that same suspension. Both
-                    // must hold immediately before returning: a
-                    // strictly newer operation (or `evictAll()`) could
-                    // have concluded for this exact key in the window
-                    // the `await memoryCache.set(...)` call itself
-                    // opens, even when the write it performed was
-                    // accepted by the memory actor's own token check.
-                    if isAuthoritative(token, for: cacheKey) {
-                        let applied = await memoryCache.set(
-                            cacheKey,
-                            asset: revalidated,
-                            token: token
+                    // before doing anything further — a `evictAll()` or a
+                    // more-recently-issued operation for this exact key
+                    // may already have concluded while this suspension was
+                    // in progress, and proceeding to serve (even after an
+                    // online revalidation) content this actor's own
+                    // bookkeeping already considers superseded would let a
+                    // caller observe stale state. If not authoritative,
+                    // fall through to a fresh network fetch below exactly
+                    // like a genuine cache miss.
+                    let target = conditionalRevalidationTarget(
+                        for: revalidated,
+                        key: key,
+                        candidates: candidates
+                    )
+                    if isAuthoritative(token, for: cacheKey), let target {
+                        // Structurally valid *and* a validator exists:
+                        // require a fresh, live conditional revalidation
+                        // against the server before this disk-only hit may
+                        // ever be cached in memory or returned — see this
+                        // method's own doc comment for why a disk-only hit
+                        // is never independently trusted offline.
+                        // `coalescedRevalidation` itself performs the
+                        // actual publish/touch on a successful outcome; a
+                        // thrown protocol/transport/cache error propagates
+                        // straight out rather than falling back to
+                        // unverified local bytes.
+                        return try await coalescedRevalidation(
+                            cacheKey: cacheKey,
+                            url: target.url,
+                            expectedFormat: target.format,
+                            existing: revalidated
                         )
-                        if applied, isAuthoritative(token, for: cacheKey) {
-                            return revalidated
-                        }
                     }
-                    // Falls through to a fresh network fetch below exactly
-                    // like a genuine cache miss: this exact disk-hit read
-                    // is no longer authoritative, so neither promoting it
-                    // into memory nor returning it to this call's caller
-                    // would be consistent with whatever operation
-                    // superseded it.
+                    // Either this token already lost authority, or there is
+                    // no validator to conditionally revalidate against at
+                    // all: neither case may trust this disk-only hit
+                    // offline, so fall through to an ordinary unconditional
+                    // fetch below exactly as if this had been a clean
+                    // cache miss.
                 } else {
                     // The persisted entry failed re-validation against the
                     // *current* format/magic/dimension/limits/decode
@@ -264,91 +298,5 @@ actor AssetCacheService {
             // issues (or joins) its own currently-authoritative token.
         }
         return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
-    }
-
-    /// Publishes a resolved asset into both cache layers, gated by
-    /// `token` at every hop: immediately before the memory-cache write,
-    /// again immediately before the disk-cache write (a disk write is a
-    /// second, independent suspension after the first), and — beyond this
-    /// actor's own re-checks — ``AssetMemoryCache/set(_:asset:token:)``
-    /// and ``AssetDiskCache/set(_:payload:metadata:token:)`` each
-    /// independently re-verify the same token themselves before mutating
-    /// their own state, so a write that loses the race strictly *within*
-    /// one of those actor calls (not merely between this actor's own
-    /// checks) still cannot land. The disk write is deliberately
-    /// best-effort (an in-memory-only asset is still usable for the
-    /// remainder of the process), but that decision is centralized here
-    /// in an explicit `do`/`catch` — rather than a bare `try?` — so a
-    /// persistence failure is captured in ``lastDiskPersistenceFailure``
-    /// for auditing/instrumentation instead of vanishing silently. A
-    /// successful disk write always clears `cacheKey`'s tombstone (see
-    /// ``tombstonedKeys``): a fresh, verified generation on disk
-    /// supersedes whatever an earlier failed deletion was protecting
-    /// against.
-    ///
-    /// Returns ``MutationOutcome/stale`` (without having mutated
-    /// anything further) the moment any of its own re-checks finds a
-    /// more-recently-issued token already authoritative — including one
-    /// retired by ``retireIfCurrent(_:for:)`` when the last waiter for
-    /// this exact work cancelled. Callers that would otherwise return a
-    /// value to their own caller as if this had landed must check this
-    /// result (see `AssetCacheService+Fetch.swift`'s and
-    /// `AssetCacheService+RevalidationCoalescing.swift`'s use of this).
-    @discardableResult
-    func publish(
-        _ cacheKey: AssetCacheKey,
-        asset: CachedAsset,
-        token: CacheToken
-    ) async -> MutationOutcome {
-        guard isAuthoritative(token, for: cacheKey) else { return .stale }
-        await memoryCache.set(cacheKey, asset: asset, token: token)
-        guard isAuthoritative(token, for: cacheKey) else { return .stale }
-        await recordDiskPersistenceResult {
-            try await diskCache.set(
-                cacheKey,
-                payload: asset.payload,
-                metadata: asset.metadata,
-                token: token
-            )
-        }
-        guard isAuthoritative(token, for: cacheKey) else { return .stale }
-        if lastDiskPersistenceFailure == nil {
-            tombstonedKeys.remove(cacheKey)
-        }
-        return .applied
-    }
-
-    /// Refreshes an already-cached asset's metadata only (for example
-    /// bumping ``AssetCacheMetadata/accessSequence`` after a 304
-    /// revalidation), without re-writing the unchanged payload bytes to
-    /// disk. Gated by `token` at each hop exactly like ``publish(_:asset:token:)``.
-    /// Falls back to the same best-effort, audited failure handling.
-    /// Returns ``MutationOutcome/stale`` under the same conditions
-    /// ``publish(_:asset:token:)`` does.
-    @discardableResult
-    func touch(
-        _ cacheKey: AssetCacheKey,
-        asset: CachedAsset,
-        token: CacheToken
-    ) async -> MutationOutcome {
-        guard isAuthoritative(token, for: cacheKey) else { return .stale }
-        await memoryCache.set(cacheKey, asset: asset, token: token)
-        guard isAuthoritative(token, for: cacheKey) else { return .stale }
-        await recordDiskPersistenceResult {
-            try await diskCache.touch(cacheKey, metadata: asset.metadata, token: token)
-        }
-        guard isAuthoritative(token, for: cacheKey) else { return .stale }
-        return .applied
-    }
-
-    private func recordDiskPersistenceResult(_ operation: () async throws -> Void) async {
-        do {
-            try await operation()
-            lastDiskPersistenceFailure = nil
-        } catch let error as AssetError {
-            lastDiskPersistenceFailure = error
-        } catch {
-            lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
-        }
     }
 }

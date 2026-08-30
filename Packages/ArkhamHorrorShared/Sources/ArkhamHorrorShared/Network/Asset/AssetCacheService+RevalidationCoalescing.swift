@@ -116,15 +116,7 @@ extension AssetCacheService {
     /// never win against a newer-issued one that is still in flight.
     func performRevalidation(_ request: RevalidationRequest) async throws -> CachedAsset {
         let cacheKey = request.cacheKey
-        // Stamped here, before this revalidation's own conditional
-        // network round trip, with the durable on-disk generation this
-        // key currently has — see ``withDiskBaseline(_:for:)``'s doc
-        // comment for why this exact call site (inside the already
-        // `inFlightRevalidation`-registered `Task`, never before it) is
-        // where every revalidation must capture this. Every mutation
-        // below (`touch`/`invalidate`/`publish`) uses this stamped
-        // `token`, never `request.token` directly.
-        let token = await withDiskBaseline(request.token, for: cacheKey)
+        let token = request.token
         let httpRequest = AssetHTTPRequest(
             url: request.url,
             ifNoneMatch: request.etag,

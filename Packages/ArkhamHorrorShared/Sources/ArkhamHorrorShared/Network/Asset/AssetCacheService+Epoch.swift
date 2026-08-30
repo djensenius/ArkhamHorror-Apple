@@ -24,9 +24,6 @@ import Foundation
 /// operation was issued last for a given key, full stop, regardless of
 /// completion order.
 ///
-/// - ``AssetCacheService/keyIssuance``: the highest issuance number ever
-///   handed out for one specific key, incremented by every fresh
-///   (never-coalesced) operation at the moment it is issued.
 /// - ``AssetCacheService/keyLatestToken``: the single token recorded as
 ///   authoritative for a key — always the most recently *issued* one,
 ///   never merely the most recently *completed* one.
@@ -55,52 +52,44 @@ import Foundation
 extension AssetCacheService {
     /// A single key's issuance-ordered authority token: `generation`
     /// tracks cache-wide invalidation (``evictAll()``), `issuance` tracks
-    /// this exact key's own strictly-increasing issuance order.
-    /// `Comparable` purely so `(generation, issuance)` tuple comparisons
-    /// read naturally at call sites; two tokens for *different* keys are
-    /// never meaningfully compared to each other.
+    /// this exact key's own strictly-increasing issuance order (drawn
+    /// from a single counter shared across every key — see
+    /// ``issueToken(for:)``). `Comparable` purely so `(generation,
+    /// issuance)` tuple comparisons read naturally at call sites; two
+    /// tokens for *different* keys are never meaningfully compared to
+    /// each other.
     ///
-    /// `diskBaselineGeneration` is a *second*, independent authority this
-    /// token carries: the durable, on-disk write-generation this
-    /// operation observed for its key at (or shortly after) issuance,
-    /// captured via ``withDiskBaseline(_:for:)``. `generation`/`issuance`
-    /// alone are purely in-process counters that start independently from
-    /// zero in every separate process/instance sharing this same disk
-    /// cache directory, so they cannot detect a stale write racing
-    /// against a *different* process's own `AssetCacheService`/
-    /// `AssetDiskCache`. `diskBaselineGeneration` closes that gap:
-    /// ``AssetDiskCache`` compares it against the current on-disk
-    /// generation for the key, inside the same exclusive lock as the
-    /// write itself, immediately before ever publishing/touching/removing
-    /// anything — see that type's own doc comment for the full contract.
-    /// Deliberately excluded from `==`/`<` below (which govern *issuance*
-    /// identity/ordering only, exactly as before this field existed): two
-    /// tokens are still "the same token" for every in-process authority
-    /// check regardless of whether ``withDiskBaseline(_:for:)`` has yet
-    /// filled this field in.
+    /// This cache does not attempt to durably order writes *across*
+    /// separate processes/instances sharing the same disk directory —
+    /// see ``AssetDiskCache``'s own doc comment for why a disk-only hit
+    /// is instead always required to pass a fresh online conditional
+    /// revalidation before being trusted/served, which makes a
+    /// cross-process write-ordering guarantee unnecessary for
+    /// correctness: "last physical writer wins" is an acceptable outcome
+    /// (the same one an ordinary HTTP disk cache offers) as long as nothing
+    /// is ever *served* without independently verifying its freshness
+    /// first.
     struct CacheToken: Equatable, Sendable, Comparable {
         let generation: Int
         let issuance: Int
-        var diskBaselineGeneration: Int = 0
-        /// The durable, cross-process whole-cache *clear epoch* this
-        /// operation observed at (or shortly after) issuance -- captured
-        /// alongside `diskBaselineGeneration` by ``withDiskBaseline(_:for:)``,
-        /// and compared against the current durable epoch by
-        /// ``AssetDiskCache/acceptDurableGeneration(_:for:)`` immediately
-        /// before every write. `diskBaselineGeneration` alone closes the
-        /// stale-write gap only for a key whose *own* durable generation
-        /// changed; a whole-cache ``AssetDiskCache/removeAll()`` (in this
-        /// or another process) durably bumps a single shared counter
-        /// instead of writing a per-key tombstone for every key it
-        /// touched (including keys with nothing on disk to remove at
-        /// all), so a stale write captured with baseline `0` for a key
-        /// that never existed before some *other* key was created then
-        /// cleared could otherwise land after the clear purely because
-        /// that key's own per-key generation reads back as `0` both
-        /// before and after -- a classic ABA race a per-key counter alone
-        /// cannot detect. See `AssetDiskCache+Generation.swift`'s doc
-        /// comment for the full contract.
-        var diskBaselineClearEpoch: Int = 0
+        /// This key's ``AssetCacheService/keyClearGeneration`` value at the
+        /// moment this token was issued (see ``issueToken(for:)``) --
+        /// *not* merely part of `==`/`<`'s identity comparison (two
+        /// copies of the same issued token always agree on this by
+        /// construction) but the value ``isAuthoritative(_:for:)``/
+        /// ``unchanged(since:for:)`` compare against `key`'s *current*
+        /// ``AssetCacheService/keyClearGeneration`` at check time. A
+        /// real, targeted ``invalidate(_:token:)`` (a definitive 404, a
+        /// failed re-validation quarantine) or a cache-wide
+        /// ``evictAll()`` bumps that current value; a token issued
+        /// *before* such a bump can therefore never again satisfy that
+        /// comparison once it has happened, regardless of whether
+        /// `keyLatestToken` itself still names this exact token. Folding
+        /// this into every authority check (rather than only some of
+        /// them, via a separate, narrower "clear state" check) is what
+        /// lets an ordinary memory/disk hit and a revalidation both
+        /// detect the exact same class of invalidation race uniformly.
+        var clearGeneration: Int = 0
 
         static func == (lhs: CacheToken, rhs: CacheToken) -> Bool {
             lhs.generation == rhs.generation && lhs.issuance == rhs.issuance
@@ -167,18 +156,29 @@ extension AssetCacheService {
     /// eventually mutate state.
     func issueToken(for key: AssetCacheKey) -> CacheToken {
         noteAuthorityKeyTouched(key)
-        let nextIssuance = (keyIssuance[key] ?? 0) + 1
-        keyIssuance[key] = nextIssuance
-        let token = CacheToken(generation: globalGeneration, issuance: nextIssuance)
+        // A single global, never-reset counter -- not a per-key one --
+        // so that even after `key`'s own bookkeeping is pruned (see
+        // ``pruneAuthorityKeysIfNeeded()``) and later restarts from
+        // scratch, a freshly issued token for `key` can never carry the
+        // exact same `issuance` value an older, still-suspended
+        // snapshot/token for `key` (from before the prune) might still be
+        // comparing against: issuance numbers are never reused, for any
+        // key, for the lifetime of this actor.
+        nextGlobalIssuance += 1
+        let token = CacheToken(
+            generation: globalGeneration,
+            issuance: nextGlobalIssuance,
+            clearGeneration: keyClearGeneration[key] ?? 0
+        )
         keyLatestToken[key] = token
         return token
     }
 
     /// Records `key` in ``AssetCacheService/authorityKeyOrder`` the first
-    /// time it is ever seen by ``issueToken(for:)`` or
-    /// ``invalidate(_:token:)``'s clear-generation bump, then prunes the
-    /// oldest tracked keys' bookkeeping from all three of
-    /// ``AssetCacheService/keyIssuance``/``keyLatestToken``/
+    /// time it is ever seen by ``issueToken(for:)``,
+    /// ``beginAuthorityWindow(for:)``, or ``invalidate(_:token:)``'s
+    /// clear-generation bump, then prunes the oldest tracked keys'
+    /// bookkeeping from both ``AssetCacheService/keyLatestToken``/
     /// ``keyClearGeneration`` once the number of distinct tracked keys
     /// exceeds ``AssetCacheService/maxTrackedAuthorityKeys`` — see that
     /// constant's own doc comment for why this bound exists at all.
@@ -215,79 +215,84 @@ extension AssetCacheService {
                 continue
             }
             trackedAuthorityKeys.remove(oldest)
-            keyIssuance[oldest] = nil
             keyLatestToken[oldest] = nil
             keyClearGeneration[oldest] = nil
         }
     }
 
     /// `true` if `key` currently has a normal fetch or a revalidation
-    /// actually in flight — see ``noteAuthorityKeyTouched(_:)`` for why
-    /// such a key's authority bookkeeping must never be pruned.
+    /// actually in flight, or currently has any other open "authority
+    /// window" — a snapshot or token captured before a suspension whose
+    /// eventual comparison still depends on this key's bookkeeping
+    /// remaining exactly as it was (see ``beginAuthorityWindow(for:)``) —
+    /// see ``noteAuthorityKeyTouched(_:)`` for why such a key's authority
+    /// bookkeeping must never be pruned.
     private func isAuthorityKeyBusy(_ key: AssetCacheKey) -> Bool {
         if inFlight[key] != nil {
             return true
         }
-        return inFlightRevalidation.keys.contains { $0.cacheKey == key }
+        if inFlightRevalidation.keys.contains(where: { $0.cacheKey == key }) {
+            return true
+        }
+        return (openAuthorityWindows[key] ?? 0) > 0
     }
 
-    /// Captures the durable on-disk write-generation `key` currently has
-    /// (see ``AssetDiskCache/currentWriteGeneration(for:)``) into a copy
-    /// of `token`, and — only if `token` is still exactly the current
-    /// authoritative token for `key` — re-records that stamped copy as
-    /// the authoritative one, so every later
-    /// ``isAuthoritative(_:for:)``/``publish(_:asset:token:)``/
-    /// ``touch(_:asset:token:)``/``invalidate(_:token:)`` call site
-    /// observes the stamped baseline rather than the placeholder
-    /// ``CacheToken/diskBaselineGeneration`` value `issueToken(for:)`
-    /// itself always constructs a token with (0, never meaningfully
-    /// compared until this call fills it in).
+    /// Opens an "authority window" for `key`: call immediately before
+    /// capturing a ``snapshotAuthority(for:)`` result or an
+    /// ``issueToken(for:)`` result that must remain valid across a
+    /// subsequent suspension not otherwise tracked by ``inFlight``/
+    /// ``inFlightRevalidation`` — the disk-hit branches of ``asset(for:)``
+    /// and ``revalidate(for:)``, and their own memory-hit snapshots. Pair
+    /// with a `defer { endAuthorityWindow(for: cacheKey) }` immediately
+    /// after opening, so the window closes exactly once that specific
+    /// snapshot/token's comparison has been fully resolved (a value
+    /// returned, or the branch falls through to a fresh, independently
+    /// tracked fetch/revalidation) — regardless of which exit path is
+    /// taken, including a thrown error.
     ///
-    /// Deliberately never called from inside the same synchronous
-    /// section that decides whether to create a fresh, never
-    /// coalesced-into `Task`/`inFlight`(`Revalidation`) entry — this
-    /// method's own disk read is a genuine suspension, and suspending
-    /// between that decision and actually recording the new work would
-    /// let a second concurrent caller for the same key also observe "no
-    /// existing in-flight work" and start its own separate, duplicate
-    /// fetch, breaking the "coalesce exact identical in-flight work"
-    /// contract. Every call site instead calls this from *inside* the
-    /// already-registered `Task`'s own body — ``fetchAndValidate(key:cacheKey:candidates:token:)``
-    /// and ``performRevalidation(_:)``, whose single call sites are each
-    /// the sole place their respective in-flight work performs any
-    /// network I/O — or, for the two disk-hit revalidation branches
-    /// (`asset(for:)`'s and `revalidate(for:)`'s), immediately after
-    /// `issueToken(for:)` itself, since neither of those two call sites
-    /// is behind any coalescing dictionary at all.
-    ///
-    /// If a more-recently-issued token has already superseded `token`
-    /// while this call was suspended, the stamped copy is still returned
-    /// (so the caller's own subsequent ``isAuthoritative(_:for:)`` checks
-    /// — which ignore this field entirely — behave exactly as if this
-    /// call had never run), but `keyLatestToken` itself is left
-    /// untouched: the newer token's own authority must not be disturbed
-    /// by this now-stale one being re-stamped over it.
-    func withDiskBaseline(_ token: CacheToken, for key: AssetCacheKey) async -> CacheToken {
-        let baseline = await diskCache.currentWriteGeneration(for: key)
-        let clearEpoch = await diskCache.currentClearEpoch()
-        var stamped = token
-        stamped.diskBaselineGeneration = baseline
-        stamped.diskBaselineClearEpoch = clearEpoch
-        if keyLatestToken[key] == token {
-            keyLatestToken[key] = stamped
+    /// Without this, ``pruneAuthorityKeysIfNeeded()`` could discard
+    /// `key`'s bookkeeping while such a window is genuinely still open,
+    /// and a subsequent fresh operation for the same key could then
+    /// restart `key`'s ``keyClearGeneration`` at `0` — the exact value
+    /// the still-suspended snapshot itself captured *before* any real
+    /// invalidation happened — letting it wrongly observe "unchanged"
+    /// after resuming even though a genuine invalidate/clear occurred in
+    /// between (a classic ABA hazard). Tracked as a count (not a flag):
+    /// two overlapping windows for the same key (for example, ordinary
+    /// concurrent callers both taking the disk-hit branch) must not let
+    /// the first to finish prematurely reopen the key to pruning while
+    /// the second is still relying on it.
+    func beginAuthorityWindow(for key: AssetCacheKey) {
+        noteAuthorityKeyTouched(key)
+        openAuthorityWindows[key, default: 0] += 1
+    }
+
+    /// Closes one authority window previously opened by
+    /// ``beginAuthorityWindow(for:)`` for `key`. Safe to call even if no
+    /// window is currently recorded (defensive; should not happen given
+    /// the `defer`-paired call convention above).
+    func endAuthorityWindow(for key: AssetCacheKey) {
+        guard let count = openAuthorityWindows[key] else { return }
+        if count <= 1 {
+            openAuthorityWindows[key] = nil
+        } else {
+            openAuthorityWindows[key] = count - 1
         }
-        return stamped
     }
 
     /// `true` only if `token` is still exactly the single most-recently
-    /// *issued* token for `key`, under the current global generation —
-    /// the compare half of every mutating call site's compare-and-swap.
-    /// An operation issued before another one for the same key can never
-    /// pass this check again once the later one has been issued,
-    /// regardless of which one's network round trip or decode happens to
-    /// finish first.
+    /// *issued* token for `key`, under the current global generation, and
+    /// `key` has not been individually invalidated since `token` was
+    /// issued — the compare half of every mutating call site's
+    /// compare-and-swap. An operation issued before another one for the
+    /// same key can never pass this check again once the later one has
+    /// been issued (nor after `key` is individually invalidated or the
+    /// whole cache is cleared), regardless of which one's network round
+    /// trip or decode happens to finish first.
     func isAuthoritative(_ token: CacheToken, for key: AssetCacheKey) -> Bool {
-        token.generation == globalGeneration && keyLatestToken[key] == token
+        token.generation == globalGeneration
+            && keyLatestToken[key] == token
+            && token.clearGeneration == (keyClearGeneration[key] ?? 0)
     }
 
     /// Invalidates every currently-issued token across every key at once.
@@ -299,84 +304,8 @@ extension AssetCacheService {
     func issueGlobalInvalidation() {
         globalGeneration += 1
         keyLatestToken.removeAll()
-        keyIssuance.removeAll()
         keyClearGeneration.removeAll()
         authorityKeyOrder.removeAll()
         trackedAuthorityKeys.removeAll()
-    }
-
-    /// A read-only snapshot of `key`'s current authority state, taken
-    /// immediately *before* a disk read whose result must not be trusted
-    /// if that authority changes while the read is suspended -- see
-    /// ``unchanged(since:for:)``. Deliberately does **not** call
-    /// ``issueToken(for:)``: a disk-hit lookup that turns out to be a
-    /// miss, or whose read loses the race checked by
-    /// ``unchanged(since:for:)``, must never have consumed an issuance
-    /// number or clobbered whatever fetch is (or is about to be) legitimately
-    /// in flight for this key -- unlike a snapshot, issuing a token is
-    /// never a no-op: it unconditionally supersedes the current
-    /// authoritative token for `key`, which would wrongly invalidate an
-    /// already-in-flight coalesced fetch's own token merely because a
-    /// second, ultimately-coalescing caller also happened to pass through
-    /// this same disk-hit code path.
-    func snapshotAuthority(for key: AssetCacheKey) -> (token: CacheToken?, generation: Int) {
-        (keyLatestToken[key], globalGeneration)
-    }
-
-    /// `true` only if `key`'s authority state is *exactly* what
-    /// ``snapshotAuthority(for:)`` observed it to be, immediately before a
-    /// disk read this call now wants to trust the result of. A mismatch
-    /// means some other operation -- a more-recently-issued fetch or
-    /// revalidation for this exact key, or a cache-wide ``evictAll()`` --
-    /// became authoritative for this key while the read was suspended, so
-    /// the read's result (even if it returned a value) must not be
-    /// promoted into memory or used as the basis for a conditional
-    /// request: see ``asset(for:)``'s and ``revalidate(for:)``'s own
-    /// disk-hit branches.
-    func unchanged(
-        since snapshot: (token: CacheToken?, generation: Int),
-        for key: AssetCacheKey
-    ) -> Bool {
-        keyLatestToken[key] == snapshot.token && globalGeneration == snapshot.generation
-    }
-
-    /// A read-only snapshot of `key`'s current *clear* state — narrower
-    /// than ``snapshotAuthority(for:)``: it only changes when `key` is
-    /// actually invalidated (``invalidate(_:token:)`` performing a real
-    /// removal) or the whole cache is (``evictAll()``'s `globalGeneration`
-    /// bump), never merely because *some* fresh, perfectly legitimate and
-    /// coalescable operation was issued for this same key in the
-    /// meantime.
-    ///
-    /// ``revalidate(for:)``'s memory-hit branch uses this — not
-    /// ``snapshotAuthority(for:)``/``unchanged(since:for:)`` — to decide
-    /// whether a cached value it is about to hand to
-    /// ``revalidateExisting(_:key:cacheKey:candidates:)`` is still safe to
-    /// mint a *fresh* authority token from. The coarser, token-based check
-    /// would also (wrongly) trip whenever a second, concurrent
-    /// ``revalidate(for:)``/``asset(for:)`` call for the exact same key
-    /// happens to have already issued its own token by the time this one
-    /// resumes from its own memory-cache read — a normal, entirely
-    /// coalescable race, not an invalidation — which would otherwise force
-    /// this call down the disk-hit branch purely due to timing, where its
-    /// own *additional* token issuance could needlessly supersede (and so
-    /// break) that sibling's already-appropriate, still-legitimate
-    /// in-flight work. This check answers the narrower and actually
-    /// relevant question instead: "was the specific cached value I just
-    /// read invalidated out from under me", which only a real
-    /// ``invalidate(_:token:)``/``evictAll()`` can make true.
-    func snapshotClearState(for key: AssetCacheKey) -> (clear: Int, generation: Int) {
-        (keyClearGeneration[key] ?? 0, globalGeneration)
-    }
-
-    /// `true` only if `key`'s clear state is exactly what
-    /// ``snapshotClearState(for:)`` observed it to be — see that
-    /// function's doc comment for why this is a deliberately narrower
-    /// check than ``unchanged(since:for:)``.
-    func clearStateUnchanged(
-        since snapshot: (clear: Int, generation: Int),
-        for key: AssetCacheKey
-    ) -> Bool {
-        (keyClearGeneration[key] ?? 0) == snapshot.clear && globalGeneration == snapshot.generation
     }
 }
