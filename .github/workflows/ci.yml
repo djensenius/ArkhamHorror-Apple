@@ -36,14 +36,20 @@ jobs:
   tests:
     name: Foundation tests
     runs-on: macos-26
-    # A documented upstream `swift test`/Xcode 26 "hangs on exit" issue on
-    # `macos-26` runners (SwiftPM apple/swift-package-manager#8394,
-    # actions/runner-images#13143) can leave this job running long after its
-    # actual test work has already finished and passed. This bound is a
-    # defensive resilience measure only -- generous over this job's normal
-    # ~1-2 minute duration -- so a stuck runner fails fast enough to retry
-    # rather than silently consuming the default several-hour job ceiling;
-    # it does not weaken, skip, or shorten the tests themselves.
+    # This job was observed to genuinely stall mid-run (not merely hang on
+    # exit after finishing) on `macos-26` runners: log analysis showed
+    # hundreds of unrelated, independent test cases dispatched ("started")
+    # within the same millisecond by Swift Testing's default parallel
+    # scheduler, then zero further output for many minutes -- consistent
+    # with a documented upstream `swift test`/Xcode 26 scheduling issue on
+    # this runner image (SwiftPM apple/swift-package-manager#8394,
+    # actions/runner-images#13143). `mise run test` now runs with
+    # `--no-parallel` (see `mise.toml`) specifically to remove that
+    # internal scheduling as a variable. This timeout remains as a
+    # defensive resilience measure regardless -- generous over this job's
+    # normal ~1-2 minute duration -- so a stuck runner fails fast enough to
+    # retry rather than silently consuming the default several-hour job
+    # ceiling; it does not weaken, skip, or shorten the tests themselves.
     timeout-minutes: 15
     steps:
       - name: Check out repository
