@@ -37,6 +37,9 @@ extension AppModelLiveGameTests {
         #expect(presentation.ownerID == envelope.playerID)
         #expect(presentation.questionVersion == envelope.game.scenarioSteps)
         #expect(presentation.choices.count == 4)
+
+        model.liveGameParticipantIdentities[gameID] = .participant(BoardTestFixtures.playerID())
+        #expect(model.basicChoicePresentation(for: gameID) == nil)
     }
 
     @Test("Spectator and legacy sessions remain explicitly read-only")

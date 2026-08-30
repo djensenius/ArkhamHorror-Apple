@@ -11,11 +11,7 @@ extension AppModel {
         let identity = liveGameParticipantIdentities[gameID]
         let selected: (PlayerID, BasicChoiceQuestionPayload)? = switch identity {
         case let .participant(playerID):
-            if let ownQuestion = projection.questions[playerID] {
-                (playerID, ownQuestion)
-            } else {
-                firstQuestion(in: projection)
-            }
+            projection.questions[playerID].map { (playerID, $0) }
         case .spectator, .none:
             firstQuestion(in: projection)
         }
