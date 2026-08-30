@@ -243,9 +243,17 @@ extension AssetDiskCacheTests {
             #expect(fetched == nil)
             // Excludes the cache's own reserved cross-process lock file
             // (see the sibling fixup in `AssetDiskCacheHashIntegrityTests`).
+            // A successful removal still leaves exactly this key's own
+            // durable fence-tombstone marker behind (never the payload or
+            // metadata sidecar): see `AssetDiskCache+Generation.swift`'s
+            // doc comment for why this is required (a stale in-flight
+            // write captured before this removal must never be able to
+            // resurrect the just-deleted bytes just because the removal
+            // itself succeeded) and is not an unbounded leak (a later,
+            // genuinely fresh publish for this exact key clears it again).
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
                 .filter { $0 != SecureCacheDirectory.lockFileName }
-            #expect(contents.isEmpty)
+            #expect(contents == ["\(cacheKey.digestHex).tombstone"])
         }
     }
 

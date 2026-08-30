@@ -99,6 +99,15 @@ extension AssetDiskCache {
         } else {
             stamped.accessSequence = accessSequenceAllocator.allocate()
         }
+        // Stamped fresh, exactly like `accessSequence` above: this
+        // actor's own read of the durable generation this key currently
+        // has (unchanged since `setLocked`'s own CAS check moments ago,
+        // since this whole critical section holds the exclusive lock
+        // continuously) is always authoritative for what the *next*
+        // generation must be -- never trusted from whatever value the
+        // caller happened to pass in `metadata.writeGeneration`. See
+        // `AssetDiskCache+Generation.swift` for the full contract.
+        stamped.writeGeneration = currentWriteGenerationLocked(for: key) + 1
         let metadataTempName = metadataName + ".tmp"
         do {
             let data = try JSONEncoder.assetCache().encode(stamped)

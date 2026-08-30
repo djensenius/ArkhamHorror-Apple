@@ -40,20 +40,57 @@ extension AssetDiskCache {
     /// again regardless of what a purely structural read would otherwise
     /// accept.
     func isTombstoned(keyHash: String) -> Bool {
+        tombstoneFenceLocked(keyHash: keyHash) != nil
+    }
+
+    /// Reads `keyHash`'s durable tombstone marker's *fence generation* —
+    /// the write-generation a prior ``AssetDiskCache/Removal/remove(_:token:)``
+    /// durably recorded as having been advanced past (see
+    /// `AssetDiskCache+Generation.swift`'s doc comment for the full write
+    /// compare-and-swap contract this supports). Returns `nil` only when
+    /// no tombstone marker exists at all for this key; `Int.max` — a
+    /// fence no legitimate ``AssetCacheService/CacheToken/diskBaselineGeneration``
+    /// can ever equal — if a marker exists but its content could not be
+    /// read/parsed, or if even checking for its existence failed.
+    ///
+    /// This exact fail-closed shape (present-but-unreadable treated
+    /// identically to present-and-valid, never as "absent") is what
+    /// ``isTombstoned(keyHash:)`` above already relied on before this
+    /// method existed; both a `get(_:)` serve-gate and a durable write
+    /// CAS need the same "an inability to confirm this marker's state is
+    /// itself reason to refuse" behavior, so this single implementation
+    /// backs both.
+    func tombstoneFenceLocked(keyHash: String) -> Int? {
+        let name = tombstoneFilename(keyHash: keyHash)
+        let exists: Bool
         do {
-            return try secureDirectory.attributes(name: tombstoneFilename(keyHash: keyHash)) != nil
+            exists = try secureDirectory.attributes(name: name) != nil
         } catch {
             // `attributes(name:)` throws only for a genuine `fstatat`
             // failure other than "does not exist" (permission, I/O,
             // etc.) — it already returns `nil` (not thrown) for ENOENT.
             // Collapsing that thrown failure into "no tombstone" via
             // `try?` would fail *open*: exactly the outcome this marker
-            // exists to prevent. Since a tombstone's entire purpose is to
-            // durably prevent serving an entry whose invalidation could
-            // not otherwise be confirmed, an inability to even check for
-            // one must be treated the same as finding one present.
-            return true
+            // exists to prevent.
+            return .max
         }
+        guard exists else { return nil }
+        guard
+            let data = try? secureDirectory.read(
+                name: name,
+                maxBytes: AssetDiskCache.maxTombstoneFenceBytes
+            ),
+            let text = String(data: data, encoding: .utf8),
+            let value = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+            value >= 0
+        else {
+            // The marker exists but its content is missing, unreadable,
+            // or not a valid non-negative fence generation -- fail closed
+            // exactly like an `attributes(name:)` failure above, never
+            // treated as "no protection needed here".
+            return .max
+        }
+        return value
     }
 
     /// `true` if this whole cache's disk reads are currently disabled —
@@ -115,25 +152,31 @@ extension AssetDiskCache {
         _ = try? secureDirectory.renameAndFsyncDirectory(from: name + ".tmp", to: name)
     }
 
-    /// Durably marks `keyHash` as invalidated: an empty marker file,
-    /// written/fsynced/renamed/fsynced exactly like any other entry write
-    /// this cache performs, so it survives a crash immediately after this
-    /// call returns exactly as reliably as a payload generation does.
-    /// Must be called from *inside* an already-held
-    /// ``SecureCacheDirectory/withExclusiveLock(_:)`` critical section
-    /// (never acquires the lock itself — `flock` is not reentrant across
-    /// separate opens of the same lock file even within one process).
+    /// Durably marks `keyHash` as invalidated, with `fenceGeneration` as
+    /// its content — written/fsynced/renamed/fsynced exactly like any
+    /// other entry write this cache performs, so it survives a crash
+    /// immediately after this call returns exactly as reliably as a
+    /// payload generation does. Must be called from *inside* an
+    /// already-held ``SecureCacheDirectory/withExclusiveLock(_:)``
+    /// critical section (never acquires the lock itself — `flock` is not
+    /// reentrant across separate opens of the same lock file even within
+    /// one process).
     ///
-    /// This is the mechanism that lets a failed metadata-pointer deletion
-    /// (``AssetDiskCache/Removal/remove(_:token:)``'s catch path) still
-    /// durably prevent ``get(_:)`` from ever serving the
-    /// structurally-valid-looking bytes that deletion failure left
-    /// behind — without it, a subsequent read would have no way to know
-    /// this exact entry was supposed to be gone.
-    func persistTombstoneLocked(keyHash: String) throws {
+    /// This serves two distinct purposes, both required by
+    /// ``AssetDiskCache/Removal/remove(_:token:)``: it lets a failed
+    /// metadata-pointer deletion still durably prevent ``get(_:)`` from
+    /// ever serving the structurally-valid-looking bytes that deletion
+    /// failure left behind, *and* — via `fenceGeneration` — it durably
+    /// records the write-generation this removal advanced past, so a
+    /// stale in-flight write whose captured baseline still matches the
+    /// now-removed generation can never resurrect it even after this
+    /// deletion fully succeeds (see `AssetDiskCache+Generation.swift`'s
+    /// doc comment for the full contract).
+    func persistTombstoneLocked(keyHash: String, fenceGeneration: Int) throws {
         let name = tombstoneFilename(keyHash: keyHash)
         let tempName = name + ".tmp"
-        try secureDirectory.writeTempAndFsync(tempName: tempName, data: Data())
+        let content = Data(String(fenceGeneration).utf8)
+        try secureDirectory.writeTempAndFsync(tempName: tempName, data: content)
         try secureDirectory.renameAndFsyncDirectory(from: tempName, to: name)
     }
 

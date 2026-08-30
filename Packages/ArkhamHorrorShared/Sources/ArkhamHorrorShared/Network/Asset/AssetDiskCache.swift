@@ -157,6 +157,14 @@ actor AssetDiskCache {
         if let token, !acceptToken(token, for: key) {
             return
         }
+        // The durable half of the write CAS (see
+        // `AssetDiskCache+Generation.swift`): rejects this write as a
+        // stale no-op if some other write -- in this process or another
+        // -- has already been durably committed for this key since
+        // `token` captured its baseline.
+        if let token, !acceptDurableGeneration(token, for: key) {
+            return
+        }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
         }
@@ -218,6 +226,15 @@ actor AssetDiskCache {
         if let token, !acceptToken(token, for: key) {
             return
         }
+        // Same durable CAS as ``setLocked(_:payload:metadata:token:)`` --
+        // see that call site's comment and `AssetDiskCache+Generation.swift`.
+        // A touch never itself advances the durable write-generation (it
+        // republishes no new content), so this only ever rejects a touch
+        // whose baseline has been superseded by some other key-changing
+        // write since it was issued.
+        if let token, !acceptDurableGeneration(token, for: key) {
+            return
+        }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
         }
@@ -236,6 +253,15 @@ actor AssetDiskCache {
         }
         var stamped = metadata
         stamped.accessSequence = accessSequenceAllocator.allocate()
+        // Re-stamped from this actor's own fresh read, exactly like
+        // ``accessSequence`` above -- never trusted from whatever value
+        // the caller's `metadata` happened to carry (e.g. a value read
+        // into memory before some intervening disk write). By this point
+        // ``acceptDurableGeneration(_:for:)`` above has already confirmed
+        // this equals `token.diskBaselineGeneration` when a token was
+        // supplied, so this is a same-value re-affirmation in that case,
+        // and the sole source of truth when no token gates this call.
+        stamped.writeGeneration = currentWriteGenerationLocked(for: key)
         do {
             try persistMetadata(stamped, name: metadataFilename(for: key))
         } catch {

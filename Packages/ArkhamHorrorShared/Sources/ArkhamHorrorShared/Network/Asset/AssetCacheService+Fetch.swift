@@ -18,8 +18,15 @@ extension AssetCacheService {
         key: AssetKey,
         cacheKey: AssetCacheKey,
         candidates: [AssetCandidate],
-        token: CacheToken
+        token rawToken: CacheToken
     ) async throws -> CachedAsset {
+        // Stamped here, before this fresh (never coalesced-into) fetch's
+        // very first network call, with the durable on-disk generation
+        // this key currently has — see ``withDiskBaseline(_:for:)``'s doc
+        // comment for why this exact call site (inside the already
+        // `inFlight`-registered `Task`, never before it) is where every
+        // fresh fetch must capture this.
+        let token = await withDiskBaseline(rawToken, for: cacheKey)
         for candidate in candidates {
             try Task.checkCancellation()
             let url = candidate.url(base: key.source)

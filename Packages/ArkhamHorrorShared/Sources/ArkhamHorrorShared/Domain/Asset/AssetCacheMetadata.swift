@@ -46,8 +46,28 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// ``AssetAccessSequence``'s own doc comment for why the encoding is
     /// fixed-width.
     var accessSequence: AssetAccessSequence
+    /// A durable, per-key, monotonically increasing write generation —
+    /// the disk-persisted half of the compare-and-swap that gates every
+    /// publish/touch/removal, alongside ``AssetCacheService/CacheToken``'s
+    /// existing purely in-process issuance ordering. The in-process token
+    /// alone cannot detect a stale write racing against a *different*
+    /// process's `AssetCacheService`/`AssetDiskCache` instance pointed at
+    /// this same directory: two such instances' token/issuance counters
+    /// are neither shared nor even meaningfully comparable to one
+    /// another. This field closes that gap by persisting the ordering
+    /// signal itself, on disk, where every instance/process can read and
+    /// compare it: an operation captures the *current* on-disk generation
+    /// for its key at issuance (before it ever suspends for network I/O),
+    /// and every later write for that key is only accepted if this value
+    /// is still exactly what that operation captured — otherwise some
+    /// other, more-recently-completed write (from this process or
+    /// another) has already superseded it, and this write is a stale
+    /// no-op instead. Stamped fresh by ``AssetDiskCache`` itself on every
+    /// accepted write, exactly like ``accessSequence`` — never trusted
+    /// from whatever value a caller happens to pass in.
+    var writeGeneration: Int
 
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
 
     init(
         cacheKeyHex: String,
@@ -60,7 +80,8 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         lastModified: String?,
         resolvedURLString: String,
         insertedAt: Date,
-        accessSequence: AssetAccessSequence
+        accessSequence: AssetAccessSequence,
+        writeGeneration: Int = 0
     ) {
         schemaVersion = Self.currentSchemaVersion
         self.cacheKeyHex = cacheKeyHex
@@ -74,6 +95,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         self.resolvedURLString = resolvedURLString
         self.insertedAt = insertedAt
         self.accessSequence = accessSequence
+        self.writeGeneration = writeGeneration
     }
 
     /// This metadata value's own real serialized-JSON byte count — the

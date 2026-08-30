@@ -155,7 +155,12 @@ actor AssetCacheService {
             let snapshot = snapshotAuthority(for: cacheKey)
             let diskHit = try await diskCache.get(cacheKey)
             if let cached = diskHit, unchanged(since: snapshot, for: cacheKey) {
-                let token = issueToken(for: cacheKey)
+                // Stamped with this key's durable on-disk generation
+                // immediately after issuance — this disk-hit branch is
+                // never behind a coalescing dictionary, so there is no
+                // "duplicate in-flight work" hazard to defer this past
+                // (see ``withDiskBaseline(_:for:)``'s doc comment).
+                let token = await withDiskBaseline(issueToken(for: cacheKey), for: cacheKey)
                 if let revalidated = try await revalidateDiskHit(
                     cached,
                     key: key,

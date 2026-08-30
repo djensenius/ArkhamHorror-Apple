@@ -28,6 +28,20 @@ extension AssetDiskCache {
         if let token, !acceptToken(token, for: key) {
             return
         }
+        // The durable half of the write CAS (see
+        // `AssetDiskCache+Generation.swift`): a removal whose captured
+        // baseline no longer matches this key's current durable
+        // generation has been superseded by some other write (in this
+        // process or another) since it was issued, and must not delete
+        // bytes that write just published.
+        if let token, !acceptDurableGeneration(token, for: key) {
+            return
+        }
+        // Computed *before* the deletion below, inside this same lock, so
+        // the fence this removal persists always reflects the generation
+        // it is actually advancing past, whether or not the deletion
+        // itself succeeds.
+        let fenceGeneration = currentWriteGenerationLocked(for: key) + 1
         do {
             _ = try secureDirectory.remove(name: metadataFilename(for: key))
             try secureDirectory.fsyncRootDirectory()
@@ -52,16 +66,33 @@ extension AssetDiskCache {
             // ``removeAll()`` clears it, but that is strictly safer
             // than silently resurrecting this one invalidated entry
             // across a restart.
-            if (try? persistTombstoneLocked(keyHash: key.digestHex)) == nil {
+            if (try? persistTombstoneLocked(
+                keyHash: key.digestHex,
+                fenceGeneration: fenceGeneration
+            )) == nil {
                 markDiskReadsDisabledLocked()
             }
             throw error
         }
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
-        // The metadata pointer is now durably confirmed gone: this is
-        // itself the "durable clear" that supersedes any earlier
-        // tombstone for this exact key.
-        clearTombstoneLocked(keyHash: key.digestHex)
+        // The metadata pointer is now durably confirmed gone, but a
+        // fence tombstone is still persisted (never
+        // ``clearTombstoneLocked(keyHash:)``, unlike before this
+        // generation scheme existed): durably recording that this key's
+        // generation has advanced past `fenceGeneration - 1` is exactly
+        // what prevents a stale in-flight write — captured before this
+        // removal, with a baseline matching the now-deleted generation —
+        // from resurrecting these bytes after this call returns. This is
+        // harmless for ``get(_:)`` (there is no metadata left to serve
+        // either way) and is itself cleared the moment a genuinely fresh
+        // generation is next published for this key
+        // (``commitMetadataPointerLocked``'s own final step).
+        if (try? persistTombstoneLocked(
+            keyHash: key.digestHex,
+            fenceGeneration: fenceGeneration
+        )) == nil {
+            markDiskReadsDisabledLocked()
+        }
     }
 
     /// Removes every entry currently in the cache directory. Never deletes

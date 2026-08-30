@@ -116,6 +116,15 @@ extension AssetCacheService {
     /// never win against a newer-issued one that is still in flight.
     func performRevalidation(_ request: RevalidationRequest) async throws -> CachedAsset {
         let cacheKey = request.cacheKey
+        // Stamped here, before this revalidation's own conditional
+        // network round trip, with the durable on-disk generation this
+        // key currently has — see ``withDiskBaseline(_:for:)``'s doc
+        // comment for why this exact call site (inside the already
+        // `inFlightRevalidation`-registered `Task`, never before it) is
+        // where every revalidation must capture this. Every mutation
+        // below (`touch`/`invalidate`/`publish`) uses this stamped
+        // `token`, never `request.token` directly.
+        let token = await withDiskBaseline(request.token, for: cacheKey)
         let httpRequest = AssetHTTPRequest(
             url: request.url,
             ifNoneMatch: request.etag,
@@ -135,7 +144,7 @@ extension AssetCacheService {
             // preconditions). Using the same error for both would make it
             // impossible for a caller/test to tell a normal staleness
             // race apart from a genuine protocol violation.
-            guard isAuthoritative(request.token, for: cacheKey) else {
+            guard isAuthoritative(token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
             var refreshed = request.existing
@@ -144,7 +153,7 @@ extension AssetCacheService {
             // `.success` branch below for why a `.stale` result here must
             // also surface as ``AssetError/staleOperation`` rather than
             // returning `refreshed` as if this 304 had actually landed.
-            guard await touch(cacheKey, asset: refreshed, token: request.token) == .applied else {
+            guard await touch(cacheKey, asset: refreshed, token: token) == .applied else {
                 throw AssetError.staleOperation
             }
             return refreshed
@@ -161,7 +170,7 @@ extension AssetCacheService {
             // is ``AssetError/staleOperation`` (a race), not
             // ``AssetError/staleConditionalResponse`` (a protocol
             // violation).
-            guard isAuthoritative(request.token, for: cacheKey) else {
+            guard isAuthoritative(token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
             // A `.stale` outcome here means a newer operation already
@@ -170,7 +179,7 @@ extension AssetCacheService {
             // wrongly tell this caller the asset is gone when a
             // more-authoritative concurrent operation may since have
             // published (or be about to publish) fresh content for it.
-            guard await invalidate(cacheKey, token: request.token) == .applied else {
+            guard await invalidate(cacheKey, token: token) == .applied else {
                 throw AssetError.staleOperation
             }
             throw AssetError.candidatesExhausted
@@ -182,7 +191,7 @@ extension AssetCacheService {
                 existing: request.existing,
                 response: response
             )
-            guard isAuthoritative(request.token, for: cacheKey) else {
+            guard isAuthoritative(token, for: cacheKey) else {
                 // A more-recently-issued operation (another fetch,
                 // revalidation, or `evictAll()`) has already concluded
                 // while this response was being received/validated/
@@ -193,7 +202,7 @@ extension AssetCacheService {
                 // ``AssetError/staleConditionalResponse``.
                 throw AssetError.staleOperation
             }
-            guard await publish(cacheKey, asset: asset, token: request.token) == .applied else {
+            guard await publish(cacheKey, asset: asset, token: token) == .applied else {
                 throw AssetError.staleOperation
             }
             return asset

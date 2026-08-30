@@ -59,9 +59,33 @@ extension AssetCacheService {
     /// `Comparable` purely so `(generation, issuance)` tuple comparisons
     /// read naturally at call sites; two tokens for *different* keys are
     /// never meaningfully compared to each other.
+    ///
+    /// `diskBaselineGeneration` is a *second*, independent authority this
+    /// token carries: the durable, on-disk write-generation this
+    /// operation observed for its key at (or shortly after) issuance,
+    /// captured via ``withDiskBaseline(_:for:)``. `generation`/`issuance`
+    /// alone are purely in-process counters that start independently from
+    /// zero in every separate process/instance sharing this same disk
+    /// cache directory, so they cannot detect a stale write racing
+    /// against a *different* process's own `AssetCacheService`/
+    /// `AssetDiskCache`. `diskBaselineGeneration` closes that gap:
+    /// ``AssetDiskCache`` compares it against the current on-disk
+    /// generation for the key, inside the same exclusive lock as the
+    /// write itself, immediately before ever publishing/touching/removing
+    /// anything — see that type's own doc comment for the full contract.
+    /// Deliberately excluded from `==`/`<` below (which govern *issuance*
+    /// identity/ordering only, exactly as before this field existed): two
+    /// tokens are still "the same token" for every in-process authority
+    /// check regardless of whether ``withDiskBaseline(_:for:)`` has yet
+    /// filled this field in.
     struct CacheToken: Equatable, Sendable, Comparable {
         let generation: Int
         let issuance: Int
+        var diskBaselineGeneration: Int = 0
+
+        static func == (lhs: CacheToken, rhs: CacheToken) -> Bool {
+            lhs.generation == rhs.generation && lhs.issuance == rhs.issuance
+        }
 
         static func < (lhs: CacheToken, rhs: CacheToken) -> Bool {
             (lhs.generation, lhs.issuance) < (rhs.generation, rhs.issuance)
@@ -128,6 +152,52 @@ extension AssetCacheService {
         let token = CacheToken(generation: globalGeneration, issuance: nextIssuance)
         keyLatestToken[key] = token
         return token
+    }
+
+    /// Captures the durable on-disk write-generation `key` currently has
+    /// (see ``AssetDiskCache/currentWriteGeneration(for:)``) into a copy
+    /// of `token`, and — only if `token` is still exactly the current
+    /// authoritative token for `key` — re-records that stamped copy as
+    /// the authoritative one, so every later
+    /// ``isAuthoritative(_:for:)``/``publish(_:asset:token:)``/
+    /// ``touch(_:asset:token:)``/``invalidate(_:token:)`` call site
+    /// observes the stamped baseline rather than the placeholder
+    /// ``CacheToken/diskBaselineGeneration`` value `issueToken(for:)`
+    /// itself always constructs a token with (0, never meaningfully
+    /// compared until this call fills it in).
+    ///
+    /// Deliberately never called from inside the same synchronous
+    /// section that decides whether to create a fresh, never
+    /// coalesced-into `Task`/`inFlight`(`Revalidation`) entry — this
+    /// method's own disk read is a genuine suspension, and suspending
+    /// between that decision and actually recording the new work would
+    /// let a second concurrent caller for the same key also observe "no
+    /// existing in-flight work" and start its own separate, duplicate
+    /// fetch, breaking the "coalesce exact identical in-flight work"
+    /// contract. Every call site instead calls this from *inside* the
+    /// already-registered `Task`'s own body — ``fetchAndValidate(key:cacheKey:candidates:token:)``
+    /// and ``performRevalidation(_:)``, whose single call sites are each
+    /// the sole place their respective in-flight work performs any
+    /// network I/O — or, for the two disk-hit revalidation branches
+    /// (`asset(for:)`'s and `revalidate(for:)`'s), immediately after
+    /// `issueToken(for:)` itself, since neither of those two call sites
+    /// is behind any coalescing dictionary at all.
+    ///
+    /// If a more-recently-issued token has already superseded `token`
+    /// while this call was suspended, the stamped copy is still returned
+    /// (so the caller's own subsequent ``isAuthoritative(_:for:)`` checks
+    /// — which ignore this field entirely — behave exactly as if this
+    /// call had never run), but `keyLatestToken` itself is left
+    /// untouched: the newer token's own authority must not be disturbed
+    /// by this now-stale one being re-stamped over it.
+    func withDiskBaseline(_ token: CacheToken, for key: AssetCacheKey) async -> CacheToken {
+        let baseline = await diskCache.currentWriteGeneration(for: key)
+        var stamped = token
+        stamped.diskBaselineGeneration = baseline
+        if keyLatestToken[key] == token {
+            keyLatestToken[key] = stamped
+        }
+        return stamped
     }
 
     /// `true` only if `token` is still exactly the single most-recently

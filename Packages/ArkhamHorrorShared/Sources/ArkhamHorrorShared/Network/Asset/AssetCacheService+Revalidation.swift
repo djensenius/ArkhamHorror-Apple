@@ -147,7 +147,7 @@ extension AssetCacheService {
         else {
             throw AssetError.staleConditionalResponse
         }
-        let token = issueToken(for: cacheKey)
+        let token = await withDiskBaseline(issueToken(for: cacheKey), for: cacheKey)
         // A disk-loaded body is never trusted as the basis for a
         // conditional request until it has passed the exact same current
         // format/magic-byte/dimension/limits/decode validation as a disk
