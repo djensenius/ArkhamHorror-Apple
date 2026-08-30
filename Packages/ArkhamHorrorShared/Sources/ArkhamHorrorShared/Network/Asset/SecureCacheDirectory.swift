@@ -75,7 +75,8 @@ final class SecureCacheDirectory: @unchecked Sendable {
         failFsyncAfterRenameSuffixes: Set<String> = [],
         failAttributesSuffixes: Set<String> = [],
         failNextRootFsyncCount: Int = 0,
-        failReaddirAfterEntryCount: Int? = nil
+        failReaddirAfterEntryCount: Int? = nil,
+        failRenameToSuffixes: Set<String> = []
     ) {
         faultState.failSuffixes = failSuffixes
         faultState.failPrefixes = failPrefixes
@@ -86,6 +87,7 @@ final class SecureCacheDirectory: @unchecked Sendable {
         faultState.failAttributesSuffixes = failAttributesSuffixes
         faultState.failNextRootFsyncCount = failNextRootFsyncCount
         faultState.failReaddirAfterEntryCount = failReaddirAfterEntryCount
+        faultState.failRenameToSuffixes = failRenameToSuffixes
     }
 
     /// Test-only. The number of times `listNames()` has actually been

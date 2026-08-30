@@ -18,8 +18,18 @@ extension AssetCacheService {
         key: AssetKey,
         cacheKey: AssetCacheKey,
         candidates: [AssetCandidate],
-        token: CacheToken
+        token rawToken: CacheToken
     ) async throws -> CachedAsset {
+        // Stamped here, as the very first statement inside this async
+        // function body — see ``stampDurableClearEpoch(_:)``'s doc
+        // comment for why this specific point (rather than inline at
+        // ``coalescedFetch(key:cacheKey:candidates:)``'s own synchronous
+        // ``issueToken(for:)`` call site) is required: this function's
+        // body only starts running once its `Task` is actually
+        // scheduled, strictly after that call site's atomic "check the
+        // coalescing dictionary, else create and insert" section has
+        // already completed.
+        let token = await stampDurableClearEpoch(rawToken)
         for candidate in candidates {
             try Task.checkCancellation()
             let url = candidate.url(base: key.source)
@@ -73,7 +83,7 @@ extension AssetCacheService {
             throw AssetError.malformedImageData
         }
         try Task.checkCancellation()
-        guard isAuthoritative(token, for: cacheKey) else {
+        guard await isAuthoritative(token, for: cacheKey) else {
             throw AssetError.staleOperation
         }
         let asset = CachedAsset(
@@ -93,7 +103,7 @@ extension AssetCacheService {
             )
         )
         try Task.checkCancellation()
-        guard isAuthoritative(token, for: cacheKey) else {
+        guard await isAuthoritative(token, for: cacheKey) else {
             throw AssetError.staleOperation
         }
         // `publish` performs its own final authority re-check immediately
@@ -108,6 +118,7 @@ extension AssetCacheService {
         guard await publish(cacheKey, asset: asset, token: token) == .applied else {
             throw AssetError.staleOperation
         }
+        await testOnlyPauseAfterFetchPublishApplied?()
         return asset
     }
 

@@ -60,6 +60,20 @@ actor AssetDiskCache {
     let secureDirectory: SecureCacheDirectory
     var didRecoverOrphans = false
 
+    /// This process's own in-memory fail-closed half of the disk-writes-
+    /// disabled marker (see `AssetDiskCache+Tombstone.swift`'s type-level
+    /// doc comment). Set to `true` *before* ``markDiskWritesDisabledLocked()``
+    /// even attempts its own durable marker write/rename, so a failure to
+    /// commit that marker durably still leaves *this* actor instance
+    /// disabled for the remainder of its lifetime -- a lost marker commit
+    /// must never silently fail open back to "writes enabled" purely
+    /// because the durable write it was attempting itself failed. Cleared
+    /// only by ``clearDiskWritesDisabledLocked()``, and only once *both*
+    /// the durable marker removal and its directory `fsync` have
+    /// themselves succeeded -- never merely because a caller believes
+    /// conditions have improved.
+    var writesDisabledLocal = false
+
     /// This actor's own independent half of the token compare-and-swap
     /// described in `AssetCacheService+Epoch.swift` and mirrored by
     /// ``AssetMemoryCache``'s identical `appliedToken`/`acceptedGeneration`
@@ -77,6 +91,20 @@ actor AssetDiskCache {
     /// operation against it.
     var testOnlyPauseBeforeReturningHit: (() async -> Void)?
 
+    /// Test-only hook invoked by ``set(_:payload:metadata:token:)``
+    /// immediately before *its own* call to
+    /// ``SecureCacheDirectory/acquireExclusiveLock()`` — see that call
+    /// site's doc comment. Always `nil` in production. Deliberately
+    /// separate from ``testOnlyPauseBeforeReturningHit``: a durable-clear-
+    /// epoch read (``AssetCacheService/currentDurableClearEpoch()``) also
+    /// acquires this same directory's exclusive lock, one or more times,
+    /// *before* a fetch ever reaches this write — so a test that wants to
+    /// deterministically race another in-process caller specifically
+    /// against *this* write's own lock acquisition (rather than against
+    /// whichever earlier epoch read happens to contend first) must anchor
+    /// on this hook, not on any earlier read-side one.
+    var testOnlyPauseBeforeAcquiringWriteLock: (() async -> Void)?
+
     init(directory: URL, limits: AssetCacheLimits, fileManager: FileManager = .default) throws {
         self.directory = directory
         self.limits = limits
@@ -90,6 +118,13 @@ actor AssetDiskCache {
     /// ordinary, obviously-`await`-requiring actor call.
     func installTestOnlyPauseBeforeReturningHit(_ pause: @escaping () async -> Void) {
         testOnlyPauseBeforeReturningHit = pause
+    }
+
+    /// Test-only: installs ``testOnlyPauseBeforeAcquiringWriteLock``. See
+    /// ``installTestOnlyPauseBeforeReturningHit(_:)`` for the rationale
+    /// behind exposing this as a method rather than a settable property.
+    func installTestOnlyPauseBeforeAcquiringWriteLock(_ pause: @escaping () async -> Void) {
+        testOnlyPauseBeforeAcquiringWriteLock = pause
     }
 
     /// The default production cache directory: a versioned subdirectory of
@@ -150,6 +185,9 @@ actor AssetDiskCache {
         // own executor after its own `await` — actually applies; see that
         // method's doc comment for why a closure-based API cannot offer
         // the same guarantee.
+        if let pause = testOnlyPauseBeforeAcquiringWriteLock {
+            await pause()
+        }
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try setLocked(key, payload: payload, metadata: metadata, token: token)

@@ -145,6 +145,42 @@ actor AssetCacheService {
     /// happens to resume.
     var testOnlyDiskPersistenceRecordedHook: (() -> Void)?
 
+    /// Test-only hook awaited by ``revalidate(for:)``'s validated-disk-hit
+    /// branch immediately after it has re-verified `token`'s authority
+    /// following the decode in ``revalidateDiskHit(_:key:cacheKey:candidates:token:)``,
+    /// and immediately before carrying that same token through to the
+    /// conditional revalidation network step. Always `nil` in
+    /// production. A test installs a closure here to deterministically
+    /// suspend at that exact point — a point that is otherwise reached
+    /// and left synchronously, with no other genuine suspension in
+    /// between — so a concurrent ``evictAll()``/``invalidate(_:token:)``
+    /// can be driven to completion in between the check and the network
+    /// step in a reproducible regression test, rather than depending on
+    /// incidental actor-scheduling timing.
+    var testOnlyPauseBeforeRevalidationRequest: (() async -> Void)?
+
+    /// Test-only hook awaited immediately after a `publish(_:asset:token:)`
+    /// call has already returned ``MutationOutcome/applied`` — i.e. a
+    /// resolved asset has already genuinely landed in both cache layers
+    /// under `token` — and immediately before the caller returns that
+    /// asset onward: both ``validateAndPublish(candidate:url:cacheKey:token:response:)``
+    /// (a plain cache-miss fetch, in `AssetCacheService+Fetch.swift`) and
+    /// `performRevalidation(_:)`'s own `.success` branch (a conditional
+    /// revalidation's fresh-200 outcome, in
+    /// `AssetCacheService+RevalidationCoalescing.swift`) await this same
+    /// hook at their own identical point, since both are the shared
+    /// `Task` body a coalesced fetch/revalidation's cancellation handling
+    /// must retract an already-applied mutation from, regardless of
+    /// which of the two produced it. Always `nil` in production. A test
+    /// installs a closure here to deterministically force exactly the
+    /// ordering ``cancelWaiter(_:fetchID:waiterID:)``'s (and
+    /// ``cancelRevalidationWaiter(_:fetchID:waiterID:)``'s) doc comments
+    /// describe as previously unprotected: the underlying mutation has
+    /// *already* committed successfully by the time a concurrent
+    /// last-waiter cancellation reaches this actor, rather than racing
+    /// that ordering via incidental scheduling timing.
+    var testOnlyPauseAfterFetchPublishApplied: (() async -> Void)?
+
     init(
         memoryCache: AssetMemoryCache,
         diskCache: AssetDiskCache,
@@ -197,117 +233,22 @@ actor AssetCacheService {
         // key's bookkeeping cannot be pruned while this snapshot is still
         // suspended awaiting `memoryCache.get`.
         beginAuthorityWindow(for: cacheKey)
-        let memorySnapshot = snapshotAuthority(for: cacheKey)
+        let memorySnapshot = await snapshotAuthority(for: cacheKey)
         let memoryHit = await memoryCache.get(cacheKey)
-        let memoryHitIsCurrent = memoryHit != nil && unchanged(since: memorySnapshot, for: cacheKey)
+        var memoryHitIsCurrent = false
+        if memoryHit != nil {
+            memoryHitIsCurrent = await unchanged(since: memorySnapshot, for: cacheKey)
+        }
         endAuthorityWindow(for: cacheKey)
         if let cached = memoryHit, memoryHitIsCurrent {
             return cached
         }
-        // A tombstoned key means this actor already intended to invalidate
-        // its disk entry (a 404, a failed re-validation quarantine, or
-        // `evictAll()`) — a purely in-process, best-effort optimization to
-        // skip a disk read this actor already expects to be pointless, not
-        // a correctness requirement: even an entry *not* skipped here must
-        // still pass the mandatory online conditional revalidation below
-        // before ever being trusted.
-        if !tombstonedKeys.contains(cacheKey) {
-            // Snapshotted *before* the disk read itself (not issued as a
-            // token yet), so a subsequent mismatch can detect a more
-            // -recently-issued operation for this exact key -- or
-            // `evictAll()` -- that became authoritative while this disk
-            // read was still in flight (the disk actor's own serialized
-            // queue can run this `get` either before or after such an
-            // operation's own disk-side effects, independent of the order
-            // the two operations' tokens are issued in on *this* actor).
-            // See ``snapshotAuthority(for:)``'s doc comment for why this
-            // must not itself issue a token: a disk miss (or a hit that
-            // loses this race) must never have consumed an issuance
-            // number or superseded whatever fetch is legitimately already
-            // in flight for this key, merely because a second,
-            // ultimately-coalescing caller also passed through this same
-            // code path. The whole disk-hit branch below (through the
-            // structural revalidation and the authority check that
-            // precedes the online conditional request) is one continuous
-            // authority window: none of this key's bookkeeping may be
-            // pruned while any of it is still suspended.
-            beginAuthorityWindow(for: cacheKey)
-            defer { endAuthorityWindow(for: cacheKey) }
-            let snapshot = snapshotAuthority(for: cacheKey)
-            let diskHit = try await diskCache.get(cacheKey)
-            if let cached = diskHit, unchanged(since: snapshot, for: cacheKey) {
-                // This disk-hit branch is never behind a coalescing
-                // dictionary, so there is no "duplicate in-flight work"
-                // hazard to defer this past — see ``issueToken(for:)``.
-                let token = issueToken(for: cacheKey)
-                if let revalidated = try await revalidateDiskHit(
-                    cached,
-                    key: key,
-                    cacheKey: cacheKey,
-                    candidates: candidates,
-                    token: token
-                ) {
-                    // `revalidateDiskHit` suspends (a full platform
-                    // decode); re-check this key's authority immediately
-                    // before doing anything further — a `evictAll()` or a
-                    // more-recently-issued operation for this exact key
-                    // may already have concluded while this suspension was
-                    // in progress, and proceeding to serve (even after an
-                    // online revalidation) content this actor's own
-                    // bookkeeping already considers superseded would let a
-                    // caller observe stale state. If not authoritative,
-                    // fall through to a fresh network fetch below exactly
-                    // like a genuine cache miss.
-                    let target = conditionalRevalidationTarget(
-                        for: revalidated,
-                        key: key,
-                        candidates: candidates
-                    )
-                    if isAuthoritative(token, for: cacheKey), let target {
-                        // Structurally valid *and* a validator exists:
-                        // require a fresh, live conditional revalidation
-                        // against the server before this disk-only hit may
-                        // ever be cached in memory or returned — see this
-                        // method's own doc comment for why a disk-only hit
-                        // is never independently trusted offline.
-                        // `coalescedRevalidation` itself performs the
-                        // actual publish/touch on a successful outcome; a
-                        // thrown protocol/transport/cache error propagates
-                        // straight out rather than falling back to
-                        // unverified local bytes.
-                        return try await coalescedRevalidation(
-                            cacheKey: cacheKey,
-                            url: target.url,
-                            expectedFormat: target.format,
-                            existing: revalidated
-                        )
-                    }
-                    // Either this token already lost authority, or there is
-                    // no validator to conditionally revalidate against at
-                    // all: neither case may trust this disk-only hit
-                    // offline, so fall through to an ordinary unconditional
-                    // fetch below exactly as if this had been a clean
-                    // cache miss.
-                } else {
-                    // The persisted entry failed re-validation against the
-                    // *current* format/magic/dimension/limits/decode
-                    // contract (see ``revalidateDiskHit``): it has already
-                    // been quarantined (removed from disk), so fall
-                    // through to a fresh network fetch exactly as if
-                    // nothing had been cached at all, rather than
-                    // surfacing the stale/invalid bytes or poisoning this
-                    // call permanently.
-                    // `CancellationError` is not caught here:
-                    // `revalidateDiskHit` rethrows it rather than
-                    // returning `nil`, propagating straight out instead of
-                    // falling through.
-                }
-            }
-            // Either a genuine disk miss, or a disk hit whose read raced
-            // with a more authoritative concurrent operation for this
-            // exact key and so cannot be trusted or promoted -- both fall
-            // through identically to a fresh network fetch below, which
-            // issues (or joins) its own currently-authoritative token.
+        if let diskResult = try await diskHitIfTrusted(
+            key: key,
+            cacheKey: cacheKey,
+            candidates: candidates
+        ) {
+            return diskResult
         }
         return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
     }
@@ -318,5 +259,15 @@ actor AssetCacheService {
     /// reads as an ordinary, obviously-`await`-requiring actor call.
     func installTestOnlyDiskPersistenceRecordedHook(_ hook: @escaping () -> Void) {
         testOnlyDiskPersistenceRecordedHook = hook
+    }
+
+    /// Test-only: installs ``testOnlyPauseBeforeRevalidationRequest``.
+    func installTestOnlyPauseBeforeRevalidationNetworkStep(_ hook: @escaping () async -> Void) {
+        testOnlyPauseBeforeRevalidationRequest = hook
+    }
+
+    /// Test-only: installs ``testOnlyPauseAfterFetchPublishApplied``.
+    func installTestOnlyPauseAfterFetchPublishApplied(_ hook: @escaping () async -> Void) {
+        testOnlyPauseAfterFetchPublishApplied = hook
     }
 }

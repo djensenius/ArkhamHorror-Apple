@@ -127,10 +127,12 @@ extension AssetCacheService {
         // bookkeeping cannot be pruned out from under this still-suspended
         // snapshot purely due to unrelated keys' churn.
         beginAuthorityWindow(for: cacheKey)
-        let memorySnapshot = snapshotClearState(for: cacheKey)
+        let memorySnapshot = await snapshotClearState(for: cacheKey)
         let memoryHit = await memoryCache.get(cacheKey)
-        let memoryHitIsCurrent = memoryHit != nil
-            && clearStateUnchanged(since: memorySnapshot, for: cacheKey)
+        var memoryHitIsCurrent = false
+        if memoryHit != nil {
+            memoryHitIsCurrent = await clearStateUnchanged(since: memorySnapshot, for: cacheKey)
+        }
         endAuthorityWindow(for: cacheKey)
         if let existing = memoryHit, memoryHitIsCurrent {
             return try await revalidateExisting(
@@ -153,17 +155,20 @@ extension AssetCacheService {
         // being silently promoted into a conditional request.
         beginAuthorityWindow(for: cacheKey)
         defer { endAuthorityWindow(for: cacheKey) }
-        let snapshot = snapshotAuthority(for: cacheKey)
+        let snapshot = await snapshotAuthority(for: cacheKey)
         guard
             let onDisk = try await diskCache.get(cacheKey),
-            unchanged(since: snapshot, for: cacheKey)
+            await unchanged(since: snapshot, for: cacheKey)
         else {
             throw AssetError.staleConditionalResponse
         }
         // This disk-hit branch is never behind any coalescing dictionary,
         // so there is no "duplicate in-flight work" hazard to defer this
-        // past — see ``issueToken(for:)``.
-        let token = issueToken(for: cacheKey)
+        // past — see ``issueToken(for:)``. Stamped with the durable clear
+        // epoch immediately after issuance, exactly like ``asset(for:)``'s
+        // identical disk-hit branch — see ``stampDurableClearEpoch(_:)``'s
+        // doc comment.
+        let token = await stampDurableClearEpoch(issueToken(for: cacheKey))
         // A disk-loaded body is never trusted as the basis for a
         // conditional request until it has passed the exact same current
         // format/magic-byte/dimension/limits/decode validation as a disk
@@ -190,30 +195,49 @@ extension AssetCacheService {
         }
         // `revalidateDiskHit` suspends (a full platform decode): re-check
         // authority immediately before doing anything further with
-        // `validated`. Proceeding to `revalidateExisting` regardless would
-        // mint a *fresh* authority token (via
-        // ``resolveRevalidationFetchID(cacheKey:url:expectedFormat:existing:slot:)``)
-        // and issue a real, live network round trip using body bytes whose
-        // own token has already lost authority — for example because a
-        // concurrent, more-recently-issued operation (or `evictAll()`)
-        // already invalidated or superseded this exact key while the
-        // decode above was in flight. That would let a 304 for this stale
-        // conditional request resurrect/overwrite state a newer,
-        // authoritative operation already concluded. Instead, restart
+        // `validated`. A concurrent, more-recently-issued operation (or
+        // `evictAll()`) may already have invalidated or superseded this
+        // exact key while the decode above was in flight; if so, restart
         // entirely from a fresh lookup: whatever is now current for this
         // key (freshly published by memory, freshly revalidated from
         // disk, or a brand fresh fetch) is always the correct answer, and
         // never once involves the bytes this now-stale token was derived
         // from.
-        guard isAuthoritative(token, for: cacheKey) else {
+        guard await isAuthoritative(token, for: cacheKey) else {
             return try await asset(for: key)
         }
-        await memoryCache.set(cacheKey, asset: validated, token: token)
+        await testOnlyPauseBeforeRevalidationRequest?()
+        // Deliberately does *not* insert `validated` into the memory
+        // cache here, before any conditional network round trip has even
+        // been attempted: doing so previously let a concurrent
+        // `evictAll()`/`invalidate()` that completed *after* this
+        // insertion landed, but *before* `revalidateExisting` below ever
+        // issued a token for the network step, still get "crossed" — the
+        // network step used to always mint a brand-new token via
+        // ``issueToken(for:)`` regardless of `token`'s own fate, and a
+        // fresh token is, by construction, always authoritative the
+        // instant it is issued, even one issued moments after a clear.
+        // That let a 304 for a request built from these exact
+        // already-decoded (and, at that point, already-superseded) bytes
+        // sail through the terminal authority check in
+        // ``performRevalidation(_:)`` and republish content the clear had
+        // just removed. `token` — the *same* token this decode was
+        // captured and just re-verified under, above — is instead carried
+        // straight through to the network step via `preIssuedToken:`
+        // below, never re-minted from these captured bytes: if any
+        // invalidation supersedes `token` at *any* point between here and
+        // that request's eventual terminal outcome (a 304, a 404, or a
+        // fresh 200), ``performRevalidation(_:)``'s own authority check
+        // will correctly reject it as stale rather than resurrecting
+        // these bytes — see
+        // ``resolveRevalidationFetchID(cacheKey:url:expectedFormat:existing:
+        // slot:preIssuedToken:)``.
         return try await revalidateExisting(
             validated,
             key: key,
             cacheKey: cacheKey,
-            candidates: candidates
+            candidates: candidates,
+            preIssuedToken: token
         )
     }
 
@@ -240,21 +264,40 @@ extension AssetCacheService {
     /// for the same key are not all guaranteed to share one format, so
     /// `key.expectedFormat` alone is not a safe stand-in for validating a
     /// fresh revalidation response.
+    ///
+    /// Also recovers `candidateIndex` — this candidate's position within
+    /// `candidates` — so a caller (``asset(for:)``'s disk-hit branch) that
+    /// receives an authoritative, successfully-invalidated 404 for
+    /// exactly this resolved candidate can resume an ordinary candidate
+    /// walk starting immediately *after* it, rather than treating a
+    /// single dead candidate as if the entire chain (including any
+    /// English/alternate-front fallback candidates that were never even
+    /// requested) were exhausted.
+    struct ConditionalRevalidationTarget {
+        let url: URL
+        let format: AssetFormat
+        let candidateIndex: Int
+    }
+
     func conditionalRevalidationTarget(
         for existing: CachedAsset,
         key: AssetKey,
         candidates: [AssetCandidate]
-    ) -> (url: URL, format: AssetFormat)? {
+    ) -> ConditionalRevalidationTarget? {
         guard
             let url = URL(string: existing.metadata.resolvedURLString),
-            let matchedCandidate = candidates.first(where: {
+            let matchedIndex = candidates.firstIndex(where: {
                 $0.url(base: key.source).absoluteString == existing.metadata.resolvedURLString
             }),
             existing.metadata.etag != nil || existing.metadata.lastModified != nil
         else {
             return nil
         }
-        return (url, matchedCandidate.format)
+        return ConditionalRevalidationTarget(
+            url: url,
+            format: candidates[matchedIndex].format,
+            candidateIndex: matchedIndex
+        )
     }
 
     /// Validates `existing` (already confirmed current/valid by the
@@ -262,11 +305,26 @@ extension AssetCacheService {
     /// actual conditional revalidation. Split out of ``revalidate(for:)``
     /// purely so that function can share this exact tail between its
     /// memory-hit and validated-disk-hit branches.
+    ///
+    /// `preIssuedToken`, when non-`nil`, is the *same* token the caller
+    /// already issued and verified `existing` against (the validated-
+    /// disk-hit branch's decode-time token); it is carried straight
+    /// through to ``resolveRevalidationFetchID(cacheKey:url:expectedFormat:existing:slot:
+    /// preIssuedToken:)``
+    /// rather than letting that call mint an unrelated fresh one from
+    /// these already-captured bytes — see ``revalidate(for:)``'s doc
+    /// comment on its disk-hit branch for why re-minting here would be
+    /// unsound. The plain memory-hit branch has no such token to carry
+    /// forward (its own memory-cache read is not itself gated by a
+    /// token at all) and passes `nil`, preserving today's "mint fresh
+    /// when this is the first real issuance for this exact revalidation"
+    /// behavior.
     private func revalidateExisting(
         _ existing: CachedAsset,
         key: AssetKey,
         cacheKey: AssetCacheKey,
-        candidates: [AssetCandidate]
+        candidates: [AssetCandidate],
+        preIssuedToken: CacheToken? = nil
     ) async throws -> CachedAsset {
         guard let target = conditionalRevalidationTarget(
             for: existing,
@@ -279,27 +337,40 @@ extension AssetCacheService {
             cacheKey: cacheKey,
             url: target.url,
             expectedFormat: target.format,
-            existing: existing
+            existing: existing,
+            preIssuedToken: preIssuedToken
         )
     }
 
     /// Returns the ID of the in-flight revalidation `slot` should join:
     /// either an already-registered fetch, or a freshly-started one this
     /// call registers itself. Split out of
-    /// ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:)`` purely to
-    /// keep that function's body within this package's
+    /// ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedToken:)``
+    /// purely to keep that function's body within this package's
     /// `function_body_length` limit.
+    ///
+    /// `preIssuedToken`, when non-`nil` and no fetch is already
+    /// registered for `slot`, is used as-is for the fresh
+    /// ``RevalidationRequest`` this call starts, instead of minting a new
+    /// one via ``issueToken(for:)`` — see
+    /// ``revalidateExisting(_:key:cacheKey:candidates:preIssuedToken:)``'s
+    /// doc comment for why authority must never be re-derived from
+    /// already-captured bytes. When a fetch is already registered for
+    /// `slot`, this caller simply joins it (`preIssuedToken` is ignored:
+    /// the in-flight fetch's own token, issued when *it* started, already
+    /// governs this shared operation's authority).
     func resolveRevalidationFetchID(
         cacheKey: AssetCacheKey,
         url: URL,
         expectedFormat: AssetFormat,
         existing: CachedAsset,
-        slot: RevalidationSlot
+        slot: RevalidationSlot,
+        preIssuedToken: CacheToken? = nil
     ) -> UUID {
         if let current = inFlightRevalidation[slot] {
             return current.id
         }
-        let token = issueToken(for: cacheKey)
+        let token = preIssuedToken ?? issueToken(for: cacheKey)
         let revalidationRequest = RevalidationRequest(
             cacheKey: cacheKey,
             url: url,

@@ -39,9 +39,9 @@ extension AssetCacheService {
         asset: CachedAsset,
         token: CacheToken
     ) async -> MutationOutcome {
-        guard isAuthoritative(token, for: cacheKey) else { return .stale }
+        guard await isAuthoritative(token, for: cacheKey) else { return .stale }
         await memoryCache.set(cacheKey, asset: asset, token: token)
-        guard isAuthoritative(token, for: cacheKey) else {
+        guard await isAuthoritative(token, for: cacheKey) else {
             // The memory write above landed (this actor's own token CAS
             // passed inside `memoryCache.set`), but a more-recently-issued
             // operation (or `evictAll()`) has already superseded `token`
@@ -63,7 +63,7 @@ extension AssetCacheService {
                 token: token
             )
         }
-        guard isAuthoritative(token, for: cacheKey) else {
+        guard await isAuthoritative(token, for: cacheKey) else {
             // Same retraction, now for both layers: the disk write may
             // also have landed under `token` before this suspension
             // returned.
@@ -92,16 +92,16 @@ extension AssetCacheService {
         asset: CachedAsset,
         token: CacheToken
     ) async -> MutationOutcome {
-        guard isAuthoritative(token, for: cacheKey) else { return .stale }
+        guard await isAuthoritative(token, for: cacheKey) else { return .stale }
         await memoryCache.set(cacheKey, asset: asset, token: token)
-        guard isAuthoritative(token, for: cacheKey) else {
+        guard await isAuthoritative(token, for: cacheKey) else {
             await memoryCache.removeIfApplied(cacheKey, token: token)
             return .stale
         }
         await recordDiskPersistenceResult {
             try await diskCache.touch(cacheKey, metadata: asset.metadata, token: token)
         }
-        guard isAuthoritative(token, for: cacheKey) else {
+        guard await isAuthoritative(token, for: cacheKey) else {
             await memoryCache.removeIfApplied(cacheKey, token: token)
             await diskCache.removeIfApplied(cacheKey, token: token)
             return .stale

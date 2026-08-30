@@ -132,7 +132,7 @@ extension AssetCacheService {
     /// is non-`nil`: a `nil` token has no authority to lose).
     @discardableResult
     func invalidate(_ cacheKey: AssetCacheKey, token: CacheToken? = nil) async -> MutationOutcome {
-        if let token, !isAuthoritative(token, for: cacheKey) {
+        if let token, await !isAuthoritative(token, for: cacheKey) {
             return .stale
         }
         // Recorded *before* the memory removal itself (the actual
@@ -161,14 +161,33 @@ extension AssetCacheService {
         noteAuthorityKeyTouched(cacheKey)
         let newClearGeneration = (keyClearGeneration[cacheKey] ?? 0) + 1
         keyClearGeneration[cacheKey] = newClearGeneration
-        func stillAuthoritative() -> Bool {
+        /// `token`'s own ``CacheToken/durableClearEpoch`` (stamped at
+        /// issuance-adjacent time -- see ``stampDurableClearEpoch(_:)``)
+        /// is re-checked against a freshly re-read
+        /// ``currentDurableClearEpoch()`` at every one of this method's
+        /// own re-checks below, exactly like ``isAuthoritative(_:for:)``
+        /// itself, so a cross-instance/cross-process clear that lands
+        /// while this call is suspended is caught here too, not only by
+        /// the up-front gate above.
+        func stillAuthoritative() async -> Bool {
             guard let token else { return true }
-            return token.generation == globalGeneration
-                && keyLatestToken[cacheKey] == token
-                && keyClearGeneration[cacheKey] == newClearGeneration
+            guard
+                token.generation == globalGeneration,
+                keyLatestToken[cacheKey] == token,
+                keyClearGeneration[cacheKey] == newClearGeneration
+            else {
+                return false
+            }
+            guard
+                let tokenEpoch = token.durableClearEpoch,
+                let currentEpoch = await currentDurableClearEpoch()
+            else {
+                return false
+            }
+            return tokenEpoch == currentEpoch
         }
         await memoryCache.remove(cacheKey, token: token)
-        guard stillAuthoritative() else {
+        guard await stillAuthoritative() else {
             return .stale
         }
         do {
@@ -181,7 +200,7 @@ extension AssetCacheService {
             tombstonedKeys.insert(cacheKey)
             lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
         }
-        guard stillAuthoritative() else {
+        guard await stillAuthoritative() else {
             return .stale
         }
         return .applied

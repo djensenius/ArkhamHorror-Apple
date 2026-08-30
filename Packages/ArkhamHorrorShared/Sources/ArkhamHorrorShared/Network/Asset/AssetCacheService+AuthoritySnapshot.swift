@@ -13,6 +13,12 @@ extension AssetCacheService {
         let token: CacheToken?
         let generation: Int
         let clearGeneration: Int
+        /// The durable, cross-instance/cross-process
+        /// ``currentDurableClearEpoch()`` value observed at snapshot
+        /// time — see ``unchanged(since:for:)``'s doc comment for why a
+        /// `nil` here (a durable read failure at snapshot time) can never
+        /// later compare equal to anything, including a second `nil`.
+        let durableClearEpoch: Int?
     }
 
     /// A read-only snapshot of `key`'s current authority state, taken
@@ -37,11 +43,26 @@ extension AssetCacheService {
     /// separate, subtly different checks — a design that previously let
     /// some callers miss an intervening invalidation entirely (see
     /// ``isAuthoritative(_:for:)``'s doc comment).
-    func snapshotAuthority(for key: AssetCacheKey) -> AuthoritySnapshot {
-        AuthoritySnapshot(
+    ///
+    /// Also includes ``currentDurableClearEpoch()``, read fresh here:
+    /// without this, an entry already cached in *this* instance's own
+    /// memory before a *different* instance/process sharing this same
+    /// directory ran its own `evictAll()` would still be reported
+    /// "unchanged" by every one of this instance's own in-process
+    /// counters (which that other instance's clear never touches), and
+    /// would go on being served indefinitely — the exact cross-instance
+    /// gap a purely in-process authority model cannot close. `async`
+    /// purely for this one additional durable read; safe to call from
+    /// any context already able to suspend (this is never itself
+    /// performed inside an atomic "check the coalescing dictionary, else
+    /// create and insert" section — see ``issueToken(for:)``'s doc
+    /// comment for the one place that distinction does matter).
+    func snapshotAuthority(for key: AssetCacheKey) async -> AuthoritySnapshot {
+        await AuthoritySnapshot(
             token: keyLatestToken[key],
             generation: globalGeneration,
-            clearGeneration: keyClearGeneration[key] ?? 0
+            clearGeneration: keyClearGeneration[key] ?? 0,
+            durableClearEpoch: currentDurableClearEpoch()
         )
     }
 
@@ -55,18 +76,47 @@ extension AssetCacheService {
     /// promoted into memory or used as the basis for a conditional
     /// request: see ``asset(for:)``'s and ``revalidate(for:)``'s own
     /// disk-hit branches.
+    ///
+    /// Also fails (reports "changed") if either `snapshot.durableClearEpoch`
+    /// or a freshly re-read ``currentDurableClearEpoch()`` is `nil` — a
+    /// durable read failure, at either end, must never be silently
+    /// treated as "no cross-instance clear happened", the same fail-closed
+    /// reasoning ``isAuthoritative(_:for:)`` applies to its own token's
+    /// ``CacheToken/durableClearEpoch``.
     func unchanged(
         since snapshot: AuthoritySnapshot,
         for key: AssetCacheKey
-    ) -> Bool {
-        keyLatestToken[key] == snapshot.token
-            && globalGeneration == snapshot.generation
-            && (keyClearGeneration[key] ?? 0) == snapshot.clearGeneration
+    ) async -> Bool {
+        guard
+            keyLatestToken[key] == snapshot.token,
+            globalGeneration == snapshot.generation,
+            (keyClearGeneration[key] ?? 0) == snapshot.clearGeneration
+        else {
+            return false
+        }
+        guard
+            let snapshotEpoch = snapshot.durableClearEpoch,
+            let currentEpoch = await currentDurableClearEpoch()
+        else {
+            return false
+        }
+        return snapshotEpoch == currentEpoch
+    }
+
+    /// A named, non-tuple result type for ``snapshotClearState(for:)``/
+    /// ``clearStateUnchanged(since:for:)`` — see ``AuthoritySnapshot``'s
+    /// own doc comment for why a plain tuple is avoided here too, now
+    /// that this pair also carries a third (durable-epoch) field.
+    struct ClearStateSnapshot: Equatable {
+        let generation: Int
+        let clearGeneration: Int
+        let durableClearEpoch: Int?
     }
 
     /// A narrower read-only snapshot of `key`'s *invalidation* state only
-    /// — the whole-cache generation plus this key's own clear generation
-    /// — deliberately omitting ``AssetCacheService/keyLatestToken``.
+    /// — the whole-cache generation, this key's own clear generation, and
+    /// the durable cross-instance clear epoch — deliberately omitting
+    /// ``AssetCacheService/keyLatestToken``.
     ///
     /// Used exclusively by ``revalidate(for:)``'s memory-hit branch: that
     /// branch's own subsequent call into ``revalidateExisting(_:key:cacheKey:candidates:)``
@@ -79,27 +129,46 @@ extension AssetCacheService {
     /// not itself defeat the second call's memory hit. What *would*
     /// genuinely invalidate this memory hit is an actual clear: either an
     /// individual ``invalidate(_:token:)`` for this key (bumps
-    /// ``AssetCacheService/keyClearGeneration``) or a cache-wide
-    /// ``evictAll()`` (bumps ``AssetCacheService/globalGeneration``) —
-    /// both of which this narrower pair still observes. Every other
-    /// call site (plain memory/disk hits in ``asset(for:)``, and
-    /// `revalidate(for:)`'s own disk-hit branch, neither of which is
-    /// behind any coalescing dictionary) continues to use the broader
+    /// ``AssetCacheService/keyClearGeneration``), a cache-wide
+    /// ``evictAll()`` (bumps ``AssetCacheService/globalGeneration``), or
+    /// a *different* instance/process's cache-wide clear (bumps only the
+    /// durable epoch this pair also now observes) — all three of which
+    /// this narrower pair still catches. Every other call site (plain
+    /// memory/disk hits in ``asset(for:)``, and `revalidate(for:)`'s own
+    /// disk-hit branch, neither of which is behind any coalescing
+    /// dictionary) continues to use the broader
     /// ``snapshotAuthority(for:)``/``unchanged(since:for:)`` pair.
-    func snapshotClearState(for key: AssetCacheKey) -> (generation: Int, clearGeneration: Int) {
-        (globalGeneration, keyClearGeneration[key] ?? 0)
+    func snapshotClearState(for key: AssetCacheKey) async -> ClearStateSnapshot {
+        await ClearStateSnapshot(
+            generation: globalGeneration,
+            clearGeneration: keyClearGeneration[key] ?? 0,
+            durableClearEpoch: currentDurableClearEpoch()
+        )
     }
 
     /// `true` only if `key`'s *invalidation* state is exactly what
     /// ``snapshotClearState(for:)`` observed it to be — see that method's
     /// doc comment for why this intentionally ignores
     /// ``AssetCacheService/keyLatestToken`` churn from a legitimately
-    /// coalescing concurrent operation for the same key.
+    /// coalescing concurrent operation for the same key, and
+    /// ``unchanged(since:for:)``'s doc comment for why a `nil` durable
+    /// epoch on either side always fails closed here too.
     func clearStateUnchanged(
-        since snapshot: (generation: Int, clearGeneration: Int),
+        since snapshot: ClearStateSnapshot,
         for key: AssetCacheKey
-    ) -> Bool {
-        globalGeneration == snapshot.generation
-            && (keyClearGeneration[key] ?? 0) == snapshot.clearGeneration
+    ) async -> Bool {
+        guard
+            globalGeneration == snapshot.generation,
+            (keyClearGeneration[key] ?? 0) == snapshot.clearGeneration
+        else {
+            return false
+        }
+        guard
+            let snapshotEpoch = snapshot.durableClearEpoch,
+            let currentEpoch = await currentDurableClearEpoch()
+        else {
+            return false
+        }
+        return snapshotEpoch == currentEpoch
     }
 }

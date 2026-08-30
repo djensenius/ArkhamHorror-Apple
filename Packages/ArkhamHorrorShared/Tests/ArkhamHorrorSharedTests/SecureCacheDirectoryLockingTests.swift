@@ -219,21 +219,27 @@ struct SecureCacheDirectoryLockingTests {
 
             let namesAfterClear = try FileManager.default
                 .contentsOfDirectory(atPath: directory.path)
-            // Only the reserved lock file and the durable access-sequence
-            // counter file are expected to survive a `removeAll()` --
-            // every actual cache entry must be gone. This cache no longer
-            // persists a durable, cross-process clear-epoch marker (see
-            // ``AssetDiskCache``'s own doc comment): a fresh disk-only hit
-            // is always required to pass an online conditional
-            // revalidation before being trusted, which makes a durable
-            // clear-epoch marker unnecessary for correctness. The
-            // access-sequence counter, unlike a clear-epoch marker, must
-            // survive: it is what keeps LRU ordering globally monotonic
-            // across a clear, not a correctness-sensitive authority token.
+            // The reserved lock file, the durable access-sequence counter
+            // file, and the durable cross-process clear-epoch counter file
+            // (see `SecureCacheDirectory+ClearEpoch.swift`) are the only
+            // entries expected to survive a `removeAll()` -- every actual
+            // cache entry must be gone. The clear-epoch file must survive
+            // *this exact clear* (rather than merely a later one) because
+            // it durably records the clear that just happened, for any
+            // other instance/process sharing this directory whose
+            // in-flight fetch's authority token was issued before this
+            // clear but whose response only arrives afterward: deleting it
+            // here would silently reset every future reader back to
+            // "never cleared", exactly undoing the guarantee it exists to
+            // provide. The access-sequence counter, similarly, must
+            // survive to keep LRU ordering globally monotonic across a
+            // clear, not because it is itself a correctness-sensitive
+            // authority token.
             #expect(
                 Set(namesAfterClear) == [
                     SecureCacheDirectory.lockFileName,
                     SecureCacheDirectory.accessSequenceFileName,
+                    SecureCacheDirectory.clearEpochFileName,
                 ]
             )
 

@@ -198,70 +198,6 @@ extension AssetDiskCache {
         let payloadBytes: Int
     }
 
-    func entries() -> [Entry] {
-        guard let names = try? directoryAccess.listNames() else { return [] }
-        return entries(names: names)
-    }
-
-    /// Same as ``entries()``, but reuses an already-listed `names` array
-    /// instead of listing the directory itself — see
-    /// ``sweepOrphanFiles(names:referencedPayloadFilenames:)`` for why
-    /// ``evictIfNeeded()`` needs this to avoid a second, redundant (and
-    /// separately fallible) directory listing per write.
-    func entries(names: [String]) -> [Entry] {
-        var result: [Entry] = []
-        for name in names where name.hasSuffix(".meta.json") {
-            let hash = String(name.dropLast(".meta.json".count))
-            guard
-                let data = try? directoryAccess.read(
-                    name: name,
-                    maxBytes: SecureCacheDirectory.maxMetadataBytes
-                ),
-                let metadata = try? JSONDecoder.assetCache().decode(
-                    AssetCacheMetadata.self,
-                    from: data
-                )
-            else {
-                // An unreadable or undecodable sidecar can never be
-                // corrected by itself; quarantining it here (rather than
-                // merely skipping it) prevents it from silently occupying
-                // disk space forever, uncounted against `diskBudgetBytes`
-                // and unevictable, until its exact key happens to be
-                // looked up again via `get(_:)`.
-                _ = try? directoryAccess.remove(name: name)
-                cleanupSupersededPayloads(forKeyHash: hash, keeping: nil)
-                continue
-            }
-            guard metadata.schemaVersion == AssetCacheMetadata.currentSchemaVersion,
-                  metadata.cacheKeyHex == hash,
-                  Self.isValidContentHash(metadata.payloadSHA256Hex)
-            else {
-                _ = try? directoryAccess.remove(name: name)
-                cleanupSupersededPayloads(forKeyHash: hash, keeping: nil)
-                continue
-            }
-            let payloadName = payloadFilename(keyHash: hash, contentHash: metadata.payloadSHA256Hex)
-            guard
-                let attributes = try? directoryAccess.attributes(name: payloadName),
-                attributes.isRegularFile,
-                attributes.size <= limits.maxEncodedBytes
-            else {
-                _ = try? directoryAccess.remove(name: name)
-                cleanupSupersededPayloads(forKeyHash: hash, keeping: nil)
-                continue
-            }
-            result.append(
-                Entry(
-                    hash: hash,
-                    metadata: metadata,
-                    metadataBytes: data.count,
-                    payloadBytes: attributes.size
-                )
-            )
-        }
-        return result
-    }
-
     /// The exact bytes an entry counts against the disk quota: the real
     /// on-disk payload file size plus the real serialized size of its
     /// metadata sidecar file — never a fixed estimate, and never a value
@@ -316,7 +252,16 @@ extension AssetDiskCache {
             markDiskWritesDisabledLocked()
             return
         }
-        var current = entries(names: names)
+        let (entriesResult, strandedSidecarBytes) = entries(names: names)
+        var current = entriesResult
+        guard let strandedSidecarBytes else {
+            // A quarantined invalid metadata sidecar's post-removal size
+            // could not be confirmed -- exactly the same "physical usage
+            // is not fully known" fail-closed reasoning as an unreadable
+            // stray file below, just for a `.meta.json`-suffixed one.
+            markDiskWritesDisabledLocked()
+            return
+        }
         let referencedPayloadFilenames = Set(current.map {
             payloadFilename(keyHash: $0.hash, contentHash: $0.metadata.payloadSHA256Hex)
         })
@@ -333,7 +278,9 @@ extension AssetDiskCache {
             markDiskWritesDisabledLocked()
             return
         }
-        var total = current.reduce(strandedBytes + otherBytes) { $0 + Self.accountedBytes(for: $1) }
+        var total = current.reduce(strandedBytes + otherBytes + strandedSidecarBytes) {
+            $0 + Self.accountedBytes(for: $1)
+        }
         if total > limits.highWaterMarkDiskBytes {
             current.sort {
                 $0.metadata.accessSequence != $1.metadata.accessSequence

@@ -59,16 +59,22 @@ extension AssetCacheService {
     /// tokens for *different* keys are never meaningfully compared to
     /// each other.
     ///
-    /// This cache does not attempt to durably order writes *across*
-    /// separate processes/instances sharing the same disk directory —
-    /// see ``AssetDiskCache``'s own doc comment for why a disk-only hit
-    /// is instead always required to pass a fresh online conditional
-    /// revalidation before being trusted/served, which makes a
-    /// cross-process write-ordering guarantee unnecessary for
-    /// correctness: "last physical writer wins" is an acceptable outcome
-    /// (the same one an ordinary HTTP disk cache offers) as long as nothing
-    /// is ever *served* without independently verifying its freshness
-    /// first.
+    /// This cache does not attempt to durably *order* writes *across*
+    /// separate processes/instances sharing the same disk directory:
+    /// "last physical writer wins" for the actual bytes of a fresh,
+    /// otherwise-legitimate publish is an acceptable outcome (the same
+    /// one an ordinary HTTP disk cache offers), and any disk-only hit
+    /// is always independently required to pass a fresh online
+    /// conditional revalidation before being trusted/served regardless
+    /// (see ``AssetDiskCache``'s own doc comment). What this token *does*
+    /// durably prevent across instances/processes, via
+    /// ``durableClearEpoch``, is a *cleared* cache being resurrected or
+    /// freshly re-populated by an operation whose authority a clear (in
+    /// this or any other instance/process sharing the directory) already
+    /// revoked before that operation's own mutation ran — including a
+    /// mutation that only ever touches this instance's own private
+    /// memory cache, which a disk-side revalidation requirement alone
+    /// can never reach.
     struct CacheToken: Equatable, Sendable, Comparable {
         let generation: Int
         let issuance: Int
@@ -90,6 +96,23 @@ extension AssetCacheService {
         /// lets an ordinary memory/disk hit and a revalidation both
         /// detect the exact same class of invalidation race uniformly.
         var clearGeneration: Int = 0
+        /// The durable, cross-instance/cross-process
+        /// ``SecureCacheDirectory/readPersistedClearEpoch()`` value
+        /// observed at the moment this token was issued (see
+        /// ``issueToken(for:)`` and `SecureCacheDirectory+ClearEpoch.swift`'s
+        /// type-level doc comment) — `nil` only if that durable read
+        /// itself failed at issuance time, which ``isAuthoritative(_:for:)``
+        /// treats as permanently non-authoritative (fail closed) rather
+        /// than silently falling back to `generation`/`clearGeneration`
+        /// alone, since a read failure here means this instance cannot
+        /// prove no other instance/process cleared the cache immediately
+        /// before this token was issued. Deliberately not part of `==`/
+        /// `<`'s identity comparison, for the identical reason
+        /// `clearGeneration` is not: two copies of the same issued token
+        /// always agree on this by construction, and it is compared
+        /// separately, against a *freshly re-read* current value, by
+        /// every authority check.
+        var durableClearEpoch: Int?
 
         static func == (lhs: CacheToken, rhs: CacheToken) -> Bool {
             lhs.generation == rhs.generation && lhs.issuance == rhs.issuance
@@ -153,7 +176,16 @@ extension AssetCacheService {
     /// authoritative, even one belonging to an operation still in flight.
     /// Callers issuing a fresh (never coalesced-into) operation call this
     /// exactly once, synchronously, before creating the `Task` that will
-    /// eventually mutate state.
+    /// eventually mutate state. Never itself durably reads
+    /// ``currentDurableClearEpoch()`` (see that method's doc comment):
+    /// this stays a plain, synchronous, in-memory-only operation
+    /// specifically so it can run inside an atomic "check the coalescing
+    /// dictionary, else create and insert" section (``coalescedFetch(key:cacheKey:candidates:)``,
+    /// ``resolveRevalidationFetchID(cacheKey:url:expectedFormat:existing:slot:preIssuedToken:)``)
+    /// without introducing a suspension point that would let two
+    /// concurrent callers for the same key both observe "nothing in
+    /// flight yet" and each start their own independent, uncoalesced
+    /// fetch/revalidation.
     func issueToken(for key: AssetCacheKey) -> CacheToken {
         noteAuthorityKeyTouched(key)
         // A single global, never-reset counter -- not a per-key one --
@@ -174,110 +206,52 @@ extension AssetCacheService {
         return token
     }
 
-    /// Records `key` in ``AssetCacheService/authorityKeyOrder`` the first
-    /// time it is ever seen by ``issueToken(for:)``,
-    /// ``beginAuthorityWindow(for:)``, or ``invalidate(_:token:)``'s
-    /// clear-generation bump, then prunes the oldest tracked keys'
-    /// bookkeeping from both ``AssetCacheService/keyLatestToken``/
-    /// ``keyClearGeneration`` once the number of distinct tracked keys
-    /// exceeds ``AssetCacheService/maxTrackedAuthorityKeys`` — see that
-    /// constant's own doc comment for why this bound exists at all.
+    /// Reads the current durable, cross-instance/cross-process clear
+    /// epoch for this cache's shared directory (see
+    /// `SecureCacheDirectory+ClearEpoch.swift`'s type-level doc comment),
+    /// or `nil` if that durable read itself failed. `nil` is deliberately
+    /// never treated as "no clear has happened" by any caller —
+    /// ``isAuthoritative(_:for:)`` and ``unchanged(since:for:)``/
+    /// ``clearStateUnchanged(since:for:)`` all fail closed (report "not
+    /// authoritative"/"changed") the instant either the value they
+    /// captured earlier, or the value they freshly re-read now, is `nil`
+    /// — an inability to durably prove no cross-instance clear happened
+    /// must never be silently treated as proof that none did.
+    func currentDurableClearEpoch() async -> Int? {
+        try? await diskCache.currentClearEpoch()
+    }
+
+    /// Returns a copy of `token` with ``CacheToken/durableClearEpoch``
+    /// freshly stamped from ``currentDurableClearEpoch()``. Called
+    /// exactly once, as the very first statement inside the async
+    /// function body that will actually perform this token's suspending
+    /// work — ``fetchAndValidate(key:cacheKey:candidates:token:)`` for a
+    /// fresh coalesced fetch, ``performRevalidation(_:)`` for a coalesced
+    /// revalidation, and immediately after issuance (with no
+    /// intervening suspension of concern) for the two disk-hit branches
+    /// in `AssetCacheService.swift`/`AssetCacheService+Revalidation.swift`
+    /// that are explicitly documented as never sitting behind a
+    /// coalescing dictionary.
     ///
-    /// A key currently referenced by ``AssetCacheService/inFlight`` or
-    /// ``AssetCacheService/inFlightRevalidation`` is never pruned: doing
-    /// so would delete the very authority state a live operation for that
-    /// exact key is about to check itself against, silently turning a
-    /// perfectly legitimate in-progress fetch/revalidation into one that
-    /// spuriously (and wrongly) finds itself no longer authoritative the
-    /// next time it checks. Such a key is instead put back at the front
-    /// of the queue exactly as it was, and the scan continues over the
-    /// next-oldest entries; the scan itself is bounded to at most one
-    /// full pass over the keys present when this call began, so a
-    /// workload with more distinct keys genuinely in flight at once than
-    /// `maxTrackedAuthorityKeys` simply — and safely — exceeds the
-    /// nominal bound for as long as that burst of concurrency lasts,
-    /// rather than looping forever or discarding live authority state.
-    func noteAuthorityKeyTouched(_ key: AssetCacheKey) {
-        if trackedAuthorityKeys.insert(key).inserted {
-            authorityKeyOrder.append(key)
-        }
-        pruneAuthorityKeysIfNeeded()
-    }
-
-    private func pruneAuthorityKeysIfNeeded() {
-        guard authorityKeyOrder.count > Self.maxTrackedAuthorityKeys else { return }
-        var attemptsRemaining = authorityKeyOrder.count
-        while authorityKeyOrder.count > Self.maxTrackedAuthorityKeys, attemptsRemaining > 0 {
-            attemptsRemaining -= 1
-            let oldest = authorityKeyOrder.removeFirst()
-            guard !isAuthorityKeyBusy(oldest) else {
-                authorityKeyOrder.append(oldest)
-                continue
-            }
-            trackedAuthorityKeys.remove(oldest)
-            keyLatestToken[oldest] = nil
-            keyClearGeneration[oldest] = nil
-        }
-    }
-
-    /// `true` if `key` currently has a normal fetch or a revalidation
-    /// actually in flight, or currently has any other open "authority
-    /// window" — a snapshot or token captured before a suspension whose
-    /// eventual comparison still depends on this key's bookkeeping
-    /// remaining exactly as it was (see ``beginAuthorityWindow(for:)``) —
-    /// see ``noteAuthorityKeyTouched(_:)`` for why such a key's authority
-    /// bookkeeping must never be pruned.
-    private func isAuthorityKeyBusy(_ key: AssetCacheKey) -> Bool {
-        if inFlight[key] != nil {
-            return true
-        }
-        if inFlightRevalidation.keys.contains(where: { $0.cacheKey == key }) {
-            return true
-        }
-        return (openAuthorityWindows[key] ?? 0) > 0
-    }
-
-    /// Opens an "authority window" for `key`: call immediately before
-    /// capturing a ``snapshotAuthority(for:)`` result or an
-    /// ``issueToken(for:)`` result that must remain valid across a
-    /// subsequent suspension not otherwise tracked by ``inFlight``/
-    /// ``inFlightRevalidation`` — the disk-hit branches of ``asset(for:)``
-    /// and ``revalidate(for:)``, and their own memory-hit snapshots. Pair
-    /// with a `defer { endAuthorityWindow(for: cacheKey) }` immediately
-    /// after opening, so the window closes exactly once that specific
-    /// snapshot/token's comparison has been fully resolved (a value
-    /// returned, or the branch falls through to a fresh, independently
-    /// tracked fetch/revalidation) — regardless of which exit path is
-    /// taken, including a thrown error.
-    ///
-    /// Without this, ``pruneAuthorityKeysIfNeeded()`` could discard
-    /// `key`'s bookkeeping while such a window is genuinely still open,
-    /// and a subsequent fresh operation for the same key could then
-    /// restart `key`'s ``keyClearGeneration`` at `0` — the exact value
-    /// the still-suspended snapshot itself captured *before* any real
-    /// invalidation happened — letting it wrongly observe "unchanged"
-    /// after resuming even though a genuine invalidate/clear occurred in
-    /// between (a classic ABA hazard). Tracked as a count (not a flag):
-    /// two overlapping windows for the same key (for example, ordinary
-    /// concurrent callers both taking the disk-hit branch) must not let
-    /// the first to finish prematurely reopen the key to pruning while
-    /// the second is still relying on it.
-    func beginAuthorityWindow(for key: AssetCacheKey) {
-        noteAuthorityKeyTouched(key)
-        openAuthorityWindows[key, default: 0] += 1
-    }
-
-    /// Closes one authority window previously opened by
-    /// ``beginAuthorityWindow(for:)`` for `key`. Safe to call even if no
-    /// window is currently recorded (defensive; should not happen given
-    /// the `defer`-paired call convention above).
-    func endAuthorityWindow(for key: AssetCacheKey) {
-        guard let count = openAuthorityWindows[key] else { return }
-        if count <= 1 {
-            openAuthorityWindows[key] = nil
-        } else {
-            openAuthorityWindows[key] = count - 1
-        }
+    /// Deliberately never called inline at a token's own synchronous
+    /// ``issueToken(for:)`` call site while that call site is still
+    /// inside an atomic "check the coalescing dictionary, else create and
+    /// insert" section: doing so would insert a suspension point into
+    /// that section, reopening the exact duplicate-in-flight-work race
+    /// that atomicity exists to prevent (see ``issueToken(for:)``'s own
+    /// doc comment). The short window between a token's true synchronous
+    /// issuance and this call — at most the time until the newly created
+    /// `Task` is first scheduled — is an acceptable, bounded ambiguity:
+    /// any genuine cross-instance clear whose durable commit is not yet
+    /// visible by the time this reads it is, by construction, one whose
+    /// commit had not yet completed at the moment this operation was
+    /// issued in any observable sense; every subsequent re-check still
+    /// independently re-reads the durable epoch fresh, so a clear
+    /// completing at any point after this stamp read is still caught.
+    func stampDurableClearEpoch(_ token: CacheToken) async -> CacheToken {
+        var stamped = token
+        stamped.durableClearEpoch = await currentDurableClearEpoch()
+        return stamped
     }
 
     /// `true` only if `token` is still exactly the single most-recently
@@ -289,10 +263,31 @@ extension AssetCacheService {
     /// been issued (nor after `key` is individually invalidated or the
     /// whole cache is cleared), regardless of which one's network round
     /// trip or decode happens to finish first.
-    func isAuthoritative(_ token: CacheToken, for key: AssetCacheKey) -> Bool {
-        token.generation == globalGeneration
-            && keyLatestToken[key] == token
-            && token.clearGeneration == (keyClearGeneration[key] ?? 0)
+    ///
+    /// Also requires `token`'s ``CacheToken/durableClearEpoch`` (stamped
+    /// by ``stampDurableClearEpoch(_:)``) to still exactly match a
+    /// freshly re-read ``currentDurableClearEpoch()`` — the durable,
+    /// cross-instance/cross-process half of this same compare-and-swap:
+    /// a `nil` on either side (an unstamped token, or a durable read
+    /// failure just now) fails closed rather than silently falling back
+    /// to only this instance's own in-process `generation`/
+    /// `clearGeneration` counters, which another instance/process
+    /// sharing this same directory never bumps.
+    func isAuthoritative(_ token: CacheToken, for key: AssetCacheKey) async -> Bool {
+        guard
+            token.generation == globalGeneration,
+            keyLatestToken[key] == token,
+            token.clearGeneration == (keyClearGeneration[key] ?? 0)
+        else {
+            return false
+        }
+        guard
+            let tokenEpoch = token.durableClearEpoch,
+            let currentEpoch = await currentDurableClearEpoch()
+        else {
+            return false
+        }
+        return tokenEpoch == currentEpoch
     }
 
     /// Invalidates every currently-issued token across every key at once.

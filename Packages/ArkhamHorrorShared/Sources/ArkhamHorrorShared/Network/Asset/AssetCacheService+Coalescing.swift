@@ -164,7 +164,37 @@ extension AssetCacheService {
     /// ``AssetCacheService/invalidate(_:token:)`` call this now-abandoned
     /// task still goes on to make will find no token authoritative for
     /// `key` at all and correctly refuse to mutate shared state.
-    private func cancelWaiter(_ key: AssetCacheKey, fetchID: UUID, waiterID: UUID) {
+    ///
+    /// That protection alone is not sufficient: it only prevents a
+    /// mutation this now-abandoned task has not *yet* performed. The
+    /// shared task's own body may already have run ``publish(_:asset:token:)``
+    /// (or ``touch(_:asset:token:)``) to full completion — including that
+    /// call's own final authority re-check passing, since at that exact
+    /// moment `fetch.token` genuinely was still authoritative — strictly
+    /// *before* this exact cancellation ever reached this actor. Retiring
+    /// `fetch.token` at that point closes the window against *future*
+    /// mutations, but does nothing to the mutation that already landed:
+    /// left alone, that entry would remain fully readable (a subsequent
+    /// memory/disk hit for `key` would serve it, and legitimately so by
+    /// every authority check those hits perform) even though the sole
+    /// caller who asked for this work has already walked away. Per this
+    /// subsystem's cancellation contract ("when the last waiter leaves,
+    /// cancellation may stop the fetch and must leave no partial cache
+    /// entry"), that is not acceptable merely because the underlying
+    /// network round trip happened to race the cancellation and win:
+    /// unconditionally retracting exactly `fetch.token`'s own mutation
+    /// (via ``AssetMemoryCache/removeIfApplied(_:token:)``/
+    /// ``AssetDiskCache/removeIfApplied(_:token:)`` — a no-op if nothing
+    /// was ever actually applied under this exact token, or if a
+    /// still-more-recent token has since superseded it) makes "no
+    /// waiter left to observe it" and "no cache entry survives it"
+    /// hold together deterministically, regardless of exactly how far
+    /// the doomed task's own body had already run by the time this
+    /// cancellation reached the actor. Performed here, synchronously
+    /// with respect to `retireIfCurrent` and before `key` is left in a
+    /// state any other caller could read from, rather than left to the
+    /// doomed task's own (possibly already-passed) cancellation checks.
+    private func cancelWaiter(_ key: AssetCacheKey, fetchID: UUID, waiterID: UUID) async {
         guard var fetch = inFlight[key], fetch.id == fetchID else {
             // Already completed/replaced by the time this cancellation
             // reached the actor; the completion path already resumed (or
@@ -179,6 +209,8 @@ extension AssetCacheService {
             inFlight[key] = nil
             retireIfCurrent(fetch.token, for: key)
             fetch.task.cancel()
+            await memoryCache.removeIfApplied(key, token: fetch.token)
+            await diskCache.removeIfApplied(key, token: fetch.token)
         } else {
             inFlight[key] = fetch
         }

@@ -292,4 +292,101 @@ extension AssetDiskCacheTests {
             }
         }
     }
+
+    @Test(
+        """
+        A write-disable *marker commit itself* failing (the durable temp-write/rename that \
+        persists ".disk-writes-disabled" never actually succeeds, e.g. because the filesystem \
+        is momentarily full or read-only right at that exact moment) must still leave this same \
+        process instance fail-closed for every later write -- the in-memory local flag, set \
+        before that doomed commit is even attempted, is what actually enforces this, since the \
+        durable marker file genuinely does not exist on disk to be checked by a later call
+        """
+    )
+    func failedMarkerCommitStillDisablesWritesInProcess() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: writeDisabledTestLimits())
+            let firstKey = try key("01001")
+            let firstPayload = Data(count: 100)
+            try await cache.set(
+                firstKey,
+                payload: firstPayload,
+                metadata: metadata(for: firstKey, payload: firstPayload)
+            )
+
+            // Forces `evictIfNeeded()`'s fail-closed branch (an
+            // unenumerable directory), *and* separately fails the marker
+            // commit's own publishing rename, so the durable
+            // ".disk-writes-disabled" marker this call attempts to write
+            // never actually lands on disk at all -- simulating exactly
+            // the "marker commit itself failed" scenario this fix
+            // targets, as opposed to every other test in this file where
+            // the marker commit succeeds and only the *budget check*
+            // fails. `failRenameToSuffixes` (rather than `failSuffixes`,
+            // the temp-write fault) is used deliberately: the temp-write
+            // fault path intentionally leaves a stub file behind to model
+            // a torn write, and this cache's `markDiskWritesDisabledLocked()`
+            // unconditionally attempts its rename afterward regardless of
+            // whether the temp write itself reported success -- so a
+            // temp-write-only fault would still let that stub get renamed
+            // into place, leaving a marker file on disk despite the
+            // "failure". Failing the rename itself instead guarantees no
+            // file of any kind ever ends up at the final marker name.
+            await cache.directoryAccess.installFaultInjection(
+                listNamesFailuresRemaining: 999,
+                failRenameToSuffixes: [AssetDiskCache.diskWritesDisabledMarkerName]
+            )
+
+            // This write's own trailing `evictIfNeeded()` pass hits the
+            // unenumerable listing, attempts to durably mark writes
+            // disabled, and that attempt itself fails -- the write call
+            // still succeeds (identically to every other test here).
+            let secondKey = try key("01002")
+            let secondPayload = Data(count: 100)
+            try await cache.set(
+                secondKey,
+                payload: secondPayload,
+                metadata: metadata(for: secondKey, payload: secondPayload)
+            )
+
+            // The durable marker must genuinely be absent from disk --
+            // proving any rejection below cannot possibly be coming from
+            // a successfully-committed durable marker file.
+            let markerExists = try await cache.secureDirectory.attributes(
+                name: AssetDiskCache.diskWritesDisabledMarkerName
+            ) != nil
+            #expect(
+                !markerExists,
+                "The durable marker commit was injected to fail and must not exist on disk"
+            )
+
+            // The underlying listing failure deliberately stays installed
+            // (re-asserted here alongside the marker failure, since
+            // `installFaultInjection` resets every field to its default
+            // on each call): without this fix, `requireDiskWritesEnabledLocked()`'s
+            // *initial* disabled-check would consult only the (absent)
+            // durable marker, find "not disabled", and return immediately
+            // -- skipping its own fresh `evictIfNeeded()` recovery
+            // attempt entirely and silently reopening writes even though
+            // the real underlying problem was never actually resolved.
+            // With this fix, the in-memory local flag correctly makes
+            // that initial check still report "disabled", forcing a
+            // fresh recovery attempt that (correctly) fails identically
+            // and keeps the write rejected.
+            await cache.directoryAccess.installFaultInjection(
+                listNamesFailuresRemaining: 999,
+                failRenameToSuffixes: [AssetDiskCache.diskWritesDisabledMarkerName]
+            )
+
+            let thirdKey = try key("01003")
+            let thirdPayload = Data(count: 100)
+            await #expect(throws: (any Error).self) {
+                try await cache.set(
+                    thirdKey,
+                    payload: thirdPayload,
+                    metadata: metadata(for: thirdKey, payload: thirdPayload)
+                )
+            }
+        }
+    }
 }

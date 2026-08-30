@@ -20,11 +20,22 @@ extension AssetCacheService {
             .reduce(0) { $0 + $1.value.waiters.count }
     }
 
+    /// `preIssuedToken`, when non-`nil`, is a token the caller already
+    /// issued and re-verified `existing` against immediately before
+    /// calling this (currently only the validated-disk-hit branch of
+    /// ``revalidate(for:)``); threaded straight through to
+    /// ``resolveRevalidationFetchID(cacheKey:url:expectedFormat:existing:slot:preIssuedToken:)``
+    /// so a fresh network round trip started here never mints unrelated,
+    /// always-immediately-authoritative new authority from bytes that
+    /// token has already validated — see that function's and
+    /// ``revalidateExisting(_:key:cacheKey:candidates:preIssuedToken:)``'s
+    /// doc comments.
     func coalescedRevalidation(
         cacheKey: AssetCacheKey,
         url: URL,
         expectedFormat: AssetFormat,
-        existing: CachedAsset
+        existing: CachedAsset,
+        preIssuedToken: CacheToken? = nil
     ) async throws -> CachedAsset {
         let etag = existing.metadata.etag
         let lastModified = existing.metadata.etag == nil ? existing.metadata.lastModified : nil
@@ -40,7 +51,8 @@ extension AssetCacheService {
             url: url,
             expectedFormat: expectedFormat,
             existing: existing,
-            slot: slot
+            slot: slot,
+            preIssuedToken: preIssuedToken
         )
 
         return try await withTaskCancellationHandler {
@@ -71,18 +83,25 @@ extension AssetCacheService {
     }
 
     /// Mirrors `AssetCacheService+Coalescing.swift`'s
-    /// ``AssetCacheService/cancelWaiter(_:fetchID:waiterID:)``: when the
-    /// last waiter for this revalidation cancels, retires its token (via
-    /// ``retireIfCurrent(_:for:)``) synchronously before the underlying
-    /// task is cancelled, so a subsequent authority check inside that
-    /// now-doomed task's own `performRevalidation` call — which may not
-    /// yet have observed cooperative cancellation — cannot still publish
-    /// or touch/invalidate shared cache state under this abandoned token.
+    /// ``AssetCacheService/cancelWaiter(_:fetchID:waiterID:)`` — including
+    /// its retraction fix: retiring `fetch.token` (via
+    /// ``retireIfCurrent(_:for:)``) only prevents a *future* mutation
+    /// this now-doomed revalidation might otherwise still attempt; it
+    /// does nothing about a `publish(_:asset:token:)`/`touch(_:asset:token:)`
+    /// call the revalidation's own body already ran to completion,
+    /// strictly before this exact cancellation reached this actor. See
+    /// that method's doc comment for the full reasoning: unconditionally
+    /// retracting exactly `fetch.token`'s own applied mutation from both
+    /// cache layers (a no-op if nothing landed under it, or if a newer
+    /// token has since superseded it) is required to uphold "the last
+    /// waiter leaving must leave no partial cache entry" regardless of
+    /// how far the revalidation's own network round trip had already
+    /// progressed by the time this cancellation arrived.
     func cancelRevalidationWaiter(
         _ slot: RevalidationSlot,
         fetchID: UUID,
         waiterID: UUID
-    ) {
+    ) async {
         guard var fetch = inFlightRevalidation[slot], fetch.id == fetchID else { return }
         if let continuation = fetch.waiters.removeValue(forKey: waiterID) {
             continuation.resume(returning: .failure(CancellationError()))
@@ -91,6 +110,8 @@ extension AssetCacheService {
             inFlightRevalidation[slot] = nil
             retireIfCurrent(fetch.token, for: slot.cacheKey)
             fetch.task.cancel()
+            await memoryCache.removeIfApplied(slot.cacheKey, token: fetch.token)
+            await diskCache.removeIfApplied(slot.cacheKey, token: fetch.token)
         } else {
             inFlightRevalidation[slot] = fetch
         }
@@ -128,7 +149,17 @@ extension AssetCacheService {
     /// never win against a newer-issued one that is still in flight.
     func performRevalidation(_ request: RevalidationRequest) async throws -> CachedAsset {
         let cacheKey = request.cacheKey
-        let token = request.token
+        // Stamped here, as the very first statement inside this async
+        // function body — see ``stampDurableClearEpoch(_:)``'s doc
+        // comment for why this specific point (rather than inline at
+        // ``resolveRevalidationFetchID(cacheKey:url:expectedFormat:existing:
+        // slot:preIssuedToken:)``'s
+        // own synchronous issuance/reuse of `request.token`) is required:
+        // this function's body only starts running once its `Task` is
+        // actually scheduled, strictly after that call site's atomic
+        // "check the coalescing dictionary, else create and insert"
+        // section has already completed.
+        let token = await stampDurableClearEpoch(request.token)
         let httpRequest = AssetHTTPRequest(
             url: request.url,
             ifNoneMatch: request.etag,
@@ -148,7 +179,7 @@ extension AssetCacheService {
             // preconditions). Using the same error for both would make it
             // impossible for a caller/test to tell a normal staleness
             // race apart from a genuine protocol violation.
-            guard isAuthoritative(token, for: cacheKey) else {
+            guard await isAuthoritative(token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
             var refreshed = request.existing
@@ -174,7 +205,7 @@ extension AssetCacheService {
             // is ``AssetError/staleOperation`` (a race), not
             // ``AssetError/staleConditionalResponse`` (a protocol
             // violation).
-            guard isAuthoritative(token, for: cacheKey) else {
+            guard await isAuthoritative(token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
             // A `.stale` outcome here means a newer operation already
@@ -195,7 +226,7 @@ extension AssetCacheService {
                 existing: request.existing,
                 response: response
             )
-            guard isAuthoritative(token, for: cacheKey) else {
+            guard await isAuthoritative(token, for: cacheKey) else {
                 // A more-recently-issued operation (another fetch,
                 // revalidation, or `evictAll()`) has already concluded
                 // while this response was being received/validated/
@@ -209,6 +240,7 @@ extension AssetCacheService {
             guard await publish(cacheKey, asset: asset, token: token) == .applied else {
                 throw AssetError.staleOperation
             }
+            await testOnlyPauseAfterFetchPublishApplied?()
             return asset
         }
     }

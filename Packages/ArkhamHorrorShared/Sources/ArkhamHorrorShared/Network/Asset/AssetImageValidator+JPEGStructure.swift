@@ -138,6 +138,21 @@ extension AssetImageValidator {
         let markerOffset = location.offset
         let segmentEnd = try jpegSegmentEnd(data, markerOffset: markerOffset, end: end)
         if jpegSOFMarkers.contains(marker) {
+            // Only a single frame header is in scope -- exactly the same
+            // "single interleaved scan" contract
+            // ``handleScanMarker(_:markerOffset:segmentEnd:end:state:)``
+            // already enforces for `SOS`. A second `SOF` (of any kind,
+            // not merely a repeat of the first) must be rejected here,
+            // before ever overwriting `state.frame`: a real JPEG with a
+            // duplicated `SOF` still decodes successfully in ImageIO
+            // (which simply uses whichever frame header it encounters
+            // last), so silently overwriting `state.frame` with a
+            // second, possibly different, frame header would let this
+            // validator sign off on dimensions/components ImageIO's own
+            // decoder does not actually end up using.
+            guard !state.sawSOF else {
+                throw AssetError.malformedImageData
+            }
             state.frame = try handleFrameHeaderMarker(
                 data,
                 marker: marker,

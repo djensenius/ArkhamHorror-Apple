@@ -76,36 +76,57 @@ extension AssetDiskCache {
         // call intended to remove, or removes bytes a concurrent `set`
         // just published. This loop's own `where name !=
         // SecureCacheDirectory.lockFileName && name !=
-        // SecureCacheDirectory.accessSequenceFileName` guard is what keeps
-        // both reserved files out of every removal pass here
+        // SecureCacheDirectory.accessSequenceFileName && name !=
+        // SecureCacheDirectory.clearEpochFileName` guard is what keeps
+        // all three reserved files out of every removal pass here
         // (`listNames()`/`remove(name:)` themselves have no special-case
-        // awareness of either): unlinking the lock file while this very
-        // call still holds it open would detach every subsequent
+        // awareness of any of them): unlinking the lock file while this
+        // very call still holds it open would detach every subsequent
         // `openat` of that name onto a fresh inode, silently breaking
         // cross-process mutual exclusion for everyone afterward; deleting
         // the durable access-sequence counter would let a value allocated
         // right after this clear collide with, or sort before, one
         // allocated before it, undoing
         // ``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``'s
-        // whole cross-instance monotonicity guarantee. Acquired and run
-        // directly on this actor's own executor, same as ``remove(_:token:)``.
+        // whole cross-instance monotonicity guarantee; deleting the
+        // durable clear-epoch counter would reset every future reader
+        // back to "never cleared", undoing this very call's own bump
+        // below. Acquired and run directly on this actor's own executor,
+        // same as ``remove(_:token:)``.
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         recoverOrphansIfNeeded()
+        // Committed durably *before* any destructive removal work below,
+        // and before this actor's own in-process generation bump: see
+        // ``SecureCacheDirectory/bumpClearEpoch()``'s doc comment for why
+        // this ordering (epoch first, destruction second) is required for
+        // crash safety, and `SecureCacheDirectory+ClearEpoch.swift`'s
+        // type-level doc comment for why this durable, cross-process
+        // signal is what actually closes the cross-instance/cross-process
+        // authority race a purely in-process generation counter alone
+        // cannot: an independent ``AssetCacheService`` instance (or
+        // process) sharing this same directory, whose fetch was issued
+        // before this clear but whose publish only becomes ready after
+        // it, re-reads this exact durable value (via
+        // ``currentClearEpoch()``) as part of its own authority re-check
+        // before ever publishing — including into its own private memory
+        // cache, which this call has no other way of ever reaching.
+        // A failure here throws immediately, before any removal work
+        // begins: a caller must never observe "entries are already gone"
+        // without the durable epoch having also already advanced.
+        try secureDirectory.bumpClearEpoch()
         // Bumped before any removal work, exactly like
         // ``AssetMemoryCache/removeAll()``: any `set`/`touch`/`remove`
         // call bearing a token issued under an older generation is
         // rejected by ``acceptToken(_:for:)`` from this point on, even
         // if this actor happens to service it before the corresponding
-        // `AssetCacheService`-level check would have caught it. This is
-        // this actor's own in-process generation counter only — no
-        // durable, cross-process clear epoch is persisted anymore (see
-        // ``AssetDiskCache+Tombstone.swift``'s doc comment): a fresh
-        // process reopening this same directory always requires each
-        // disk hit to independently pass online conditional
-        // revalidation before it is trusted, which is what actually
-        // closes the cross-process ABA hazard the old durable clear
-        // epoch existed to prevent.
+        // `AssetCacheService`-level check would have caught it. This
+        // in-process counter remains a useful fast-path optimization
+        // (rejecting a stale write this exact actor instance already
+        // knows is stale, without needing to re-read the durable epoch
+        // file for it) layered on top of — never a substitute for — the
+        // durable epoch bumped above, which is what actually protects a
+        // *different* instance/process sharing this same directory.
         acceptedGeneration += 1
         appliedToken.removeAll()
         let names = try secureDirectory.listNames()
@@ -140,16 +161,34 @@ extension AssetDiskCache {
         }
     }
 
+    /// The current durable, cross-instance/cross-process clear-epoch
+    /// value for this cache directory — see
+    /// `SecureCacheDirectory+ClearEpoch.swift`'s type-level doc comment.
+    /// Acquires this cache's own exclusive lock for the read, exactly like
+    /// every other access to durable shared state in this actor, so it can
+    /// never observe a value `removeAll()` is only partway through
+    /// committing on another instance/process. Cheap: a single small-file
+    /// read under an already-necessary lock acquisition, not a full
+    /// directory listing.
+    func currentClearEpoch() async throws -> Int {
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        return secureDirectory.readPersistedClearEpoch()
+    }
+
     /// `true` for any directory entry `removeAll()` is responsible for
-    /// deleting -- every cache-owned entry except the shared lock file
-    /// and the durable global access-sequence counter file, both of
-    /// which must survive a clear so a fresh process reopening this
-    /// directory afterward still has a working cross-process lock and a
-    /// monotonic counter that can never regress below a value some other
-    /// instance may already have observed.
+    /// deleting -- every cache-owned entry except the shared lock file,
+    /// the durable global access-sequence counter file, and the durable
+    /// clear-epoch counter file, all three of which must survive a clear
+    /// so a fresh process reopening this directory afterward still has a
+    /// working cross-process lock, a monotonic counter that can never
+    /// regress below a value some other instance may already have
+    /// observed, and an intact record of every clear that has ever
+    /// happened.
     private static func isRemovableDuringClear(_ name: String) -> Bool {
         name != SecureCacheDirectory.lockFileName
             && name != SecureCacheDirectory.accessSequenceFileName
+            && name != SecureCacheDirectory.clearEpochFileName
     }
 
     /// The key hash embedded in every entry name currently present in the

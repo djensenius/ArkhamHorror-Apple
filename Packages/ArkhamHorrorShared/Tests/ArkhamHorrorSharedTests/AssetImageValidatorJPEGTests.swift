@@ -158,6 +158,58 @@ extension AssetImageValidatorTests {
     }
 
     @Test(
+        """
+        A JPEG with a duplicated SOF0 segment before its single scan is rejected, even though \
+        ImageIO's own decoder still successfully decodes it (silently preferring whichever \
+        frame header it encounters last)
+        """
+    )
+    func jpegDuplicatedSOFRejected() throws {
+        // Identical in every byte to `jpegSOFSegmentExactMinimumLengthAccepted`'s
+        // own genuinely-valid fixture above, except a second, byte-for-byte
+        // identical SOF0 segment is spliced in immediately after the
+        // first -- exactly the "single frame header" contract this
+        // package's strict JPEG validator must enforce independently of
+        // ImageIO, which happily decodes this: real encoders never emit
+        // two SOF markers before their first (and only, under this
+        // decoder's single-scan contract) SOS, so a second SOF can only
+        // ever be a hostile or corrupt input attempting to smuggle a
+        // frame shape past whichever validation pass a naive
+        // "last SOF wins" implementation would perform.
+        var bytes: [UInt8] = [0xFF, 0xD8] // SOI
+        bytes += [0xFF, 0xDB, 0x00, 0x43, 0x00]
+        bytes += [UInt8](repeating: 0x01, count: 64)
+        let sof0Segment: [UInt8] = [
+            0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x06, 0x00, 0x06, 0x01, 0x01, 0x11, 0x00,
+        ]
+        bytes += sof0Segment // first SOF0
+        bytes += sof0Segment // duplicated SOF0, byte-for-byte identical
+        bytes += [0xFF, 0xC4, 0x00, 0x14, 0x00]
+        bytes += [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        bytes += [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        bytes += [0x00]
+        bytes += [0xFF, 0xC4, 0x00, 0x14, 0x10]
+        bytes += [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        bytes += [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        bytes += [0x00]
+        bytes += [0xFF, 0xDA] // SOS marker
+        bytes += [0x00, 0x08] // SOS header length = 8
+        bytes += [0x01] // Ns = 1 component in this scan
+        bytes += [0x01, 0x00] // component selector, DC/AC table selector
+        bytes += [0x00, 0x3F, 0x00] // Ss, Se, AhAl
+        bytes += [0b0011_1111]
+        bytes += [0xFF, 0xD9] // EOI
+        #expect(throws: AssetError.malformedImageData) {
+            _ = try AssetImageValidator.validate(
+                data: Data(bytes),
+                declaredContentType: nil,
+                expectedFormat: .jpeg,
+                limits: limits
+            )
+        }
+    }
+
+    @Test(
         "A JPEG SOS segment immediately followed by EOI (zero entropy-coded bytes) is rejected"
     )
     func jpegZeroEntropyScanDataRejected() throws {

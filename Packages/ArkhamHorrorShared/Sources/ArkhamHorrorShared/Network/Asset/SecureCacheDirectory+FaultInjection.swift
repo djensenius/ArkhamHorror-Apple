@@ -26,6 +26,7 @@ final class FaultInjectionState: @unchecked Sendable {
     private var _failAttributesSuffixes: Set<String> = []
     private var _failNextRootFsyncCount = 0
     private var _failReaddirAfterEntryCount: Int?
+    private var _failRenameToSuffixes: Set<String> = []
 
     var failSuffixes: Set<String> {
         get { lock.withLock { _failSuffixes } }
@@ -180,6 +181,28 @@ final class FaultInjectionState: @unchecked Sendable {
         lock.withLock {
             guard let threshold = _failReaddirAfterEntryCount else { return false }
             return currentCount >= threshold
+        }
+    }
+
+    /// Matched against the *final* (destination) name passed to
+    /// ``SecureCacheDirectory/rename(from:to:)`` — fails the `renameat`
+    /// syscall itself, before it ever runs, independent of whether a
+    /// temp file exists at the source name. Deliberately distinct from
+    /// ``failFsyncAfterRenameSuffixes`` (which lets the rename itself
+    /// succeed and only fails the *durability* confirmation after it):
+    /// this instead reproduces "the rename that would publish this
+    /// destination name never happens at all", so no file — stub or
+    /// otherwise — ever ends up present at `finalName` on disk, unlike
+    /// ``shouldFailTempWrite(tempName:)``'s injected failure path, which
+    /// deliberately leaves a stub temp file behind to model a torn write.
+    var failRenameToSuffixes: Set<String> {
+        get { lock.withLock { _failRenameToSuffixes } }
+        set { lock.withLock { _failRenameToSuffixes = newValue } }
+    }
+
+    func shouldFailRename(finalName: String) -> Bool {
+        lock.withLock {
+            _failRenameToSuffixes.contains { finalName.hasSuffix($0) }
         }
     }
 }

@@ -84,6 +84,11 @@ extension SecureCacheDirectory {
     /// pointer commit for the one call site where this distinction is
     /// load-bearing.
     func rename(from tempName: String, to finalName: String) throws {
+        if faultState.shouldFailRename(finalName: finalName) {
+            throw AssetError.cachePersistenceFailed(
+                "injected fault: rename '\(tempName)' -> '\(finalName)'"
+            )
+        }
         guard renameat(rootFD, tempName, rootFD, finalName) == 0 else {
             throw AssetError.cachePersistenceFailed(
                 "renameat failed for '\(tempName)' -> '\(finalName)' (errno \(errno))"

@@ -73,7 +73,18 @@ extension AssetCacheServiceTests {
     func prunedKeyRestartsCleanlyOnFreshRequest() async throws {
         try await withService { service, _ in
             let firstKey = try distinctCacheKey("000001")
-            let firstToken = await service.issueToken(for: firstKey)
+            // ``issueToken(for:)`` alone never carries durable-clear-epoch
+            // authority (see its own doc comment): every real caller only
+            // ever checks ``isAuthoritative(_:for:)`` against a token that
+            // has already passed through ``stampDurableClearEpoch(_:)``
+            // first. This test bypasses the full fetch/revalidation
+            // pipeline entirely to exercise pruning in isolation, so it
+            // must stamp both tokens itself to faithfully model real
+            // usage -- otherwise every check below would trivially fail
+            // regardless of pruning, for an unrelated reason.
+            let firstToken = await service.stampDurableClearEpoch(
+                service.issueToken(for: firstKey)
+            )
 
             for index in 0 ..< (AssetCacheService.maxTrackedAuthorityKeys + 50) {
                 let rawCode = String(format: "%06d", index + 100_000)
@@ -90,7 +101,9 @@ extension AssetCacheServiceTests {
             // Requesting the exact same key again must behave exactly
             // like the very first time it was ever seen: a fresh token is
             // issued and is immediately, unconditionally authoritative.
-            let freshToken = await service.issueToken(for: firstKey)
+            let freshToken = await service.stampDurableClearEpoch(
+                service.issueToken(for: firstKey)
+            )
             let freshIsAuthoritative = await service.isAuthoritative(freshToken, for: firstKey)
             #expect(freshIsAuthoritative)
         }

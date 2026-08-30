@@ -31,19 +31,27 @@ extension AssetCacheServiceTests {
             let heldLock = LockFDBox()
             let queuedForWrite = AsyncStream<Void>.makeStream()
 
-            // `asset(for:)`'s own disk-miss check (`diskCache.get`) also
-            // acquires this same cross-process lock, so holding it from
-            // the very start of this test would make *that* read --
-            // rather than the write this test actually targets -- the
-            // one seen queuing. Instead, this hook fires only once that
-            // read has already released its own (uncontended) lock hold
-            // and is about to return its (miss) result: acquiring the
-            // lock for this test *here* guarantees the very next
-            // acquisition attempt -- `publish`'s later `diskCache.set`
-            // call, once the network fetch below resolves -- is the one
-            // that genuinely queues, which is what
-            // `onWaiterPositionEstablished` is installed to observe.
-            await diskCache.installTestOnlyPauseBeforeReturningHit {
+            // `asset(for:)`'s own disk-miss check (`diskCache.get`), every
+            // durable-clear-epoch read `fetchAndValidate`/`validateAndPublish`/
+            // `publish` each perform against this exact same cross-process
+            // lock before ever reaching `publish`'s own `diskCache.set`
+            // call, and `publish`'s own pre-memory-write authority check
+            // all also acquire this same lock -- so holding it from the
+            // very start of this test, or anchoring on any of those
+            // earlier acquisitions, would make one of *them* -- rather
+            // than the write this test actually targets -- the one seen
+            // queuing. Anchoring on `diskCache`'s own dedicated
+            // ``AssetDiskCache/testOnlyPauseBeforeAcquiringWriteLock``
+            // hook instead sidesteps that entirely: it fires only
+            // immediately before `set(_:payload:metadata:token:)`'s own
+            // lock acquisition, strictly after every one of those earlier
+            // reads has already completed (each independently, and
+            // uncontended, since this test has not yet taken the lock at
+            // all by that point) -- so acquiring the lock for this test
+            // *here* guarantees the very next acquisition attempt is
+            // exactly that write, regardless of how many authority
+            // re-checks now precede it.
+            await diskCache.installTestOnlyPauseBeforeAcquiringWriteLock {
                 heldLock.descriptor = try? await secure.acquireExclusiveLock()
                 secure.lockCoordinator.onWaiterPositionEstablished = {
                     queuedForWrite.continuation.yield()
