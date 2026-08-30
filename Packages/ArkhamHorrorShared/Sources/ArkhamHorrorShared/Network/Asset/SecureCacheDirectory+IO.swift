@@ -57,8 +57,8 @@ extension SecureCacheDirectory {
                 totalWritten += writeCount
             }
         }
-        guard fsync(descriptor) == 0 else {
-            throw AssetError.cachePersistenceFailed("fsync failed for '\(tempName)'")
+        try fsyncRetryingOnInterrupt(descriptor) {
+            AssetError.cachePersistenceFailed("fsync failed for '\(tempName)'")
         }
     }
 
@@ -112,8 +112,26 @@ extension SecureCacheDirectory {
         if shouldFail {
             throw AssetError.cachePersistenceFailed("injected fault: cache root directory fsync")
         }
-        guard fsync(rootFD) == 0 else {
-            throw AssetError.cachePersistenceFailed("fsync failed for the cache root directory")
+        try fsyncRetryingOnInterrupt(rootFD) {
+            AssetError.cachePersistenceFailed("fsync failed for the cache root directory")
+        }
+    }
+
+    /// Retries `fsync(2)` on a genuine `EINTR` (signal interruption is not
+    /// a real failure and must not be surfaced as one — mirroring this
+    /// file's existing `write()` retry above), throwing `makeError()` for
+    /// any other nonzero result.
+    private func fsyncRetryingOnInterrupt(
+        _ descriptor: Int32, makeError: () -> AssetError
+    ) throws {
+        while true {
+            if fsync(descriptor) == 0 {
+                return
+            }
+            if errno == EINTR {
+                continue
+            }
+            throw makeError()
         }
     }
 
