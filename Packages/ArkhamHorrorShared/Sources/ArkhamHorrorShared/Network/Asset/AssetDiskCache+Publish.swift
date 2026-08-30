@@ -107,7 +107,7 @@ extension AssetDiskCache {
         // generation must be -- never trusted from whatever value the
         // caller happened to pass in `metadata.writeGeneration`. See
         // `AssetDiskCache+Generation.swift` for the full contract.
-        stamped.writeGeneration = currentWriteGenerationLocked(for: key) + 1
+        stamped.writeGeneration = try nextWriteGenerationLocked(for: key)
         let metadataTempName = metadataName + ".tmp"
         do {
             let data = try JSONEncoder.assetCache().encode(stamped)

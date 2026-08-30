@@ -127,4 +127,31 @@ extension AssetDiskCache {
     ) -> Bool {
         token.diskBaselineGeneration == currentWriteGenerationLocked(for: key)
     }
+
+    /// `currentWriteGenerationLocked(for:) + 1`, computed safely: every
+    /// call site that advances this key's durable generation (a fresh
+    /// publish in ``commitMetadataPointerLocked(_:metadata:payloadName:payloadAlreadyExisted:)``,
+    /// a removal's fence in ``remove(_:token:)``) needs exactly this next
+    /// value, never the bare current one. `currentWriteGenerationLocked(for:)`
+    /// deliberately returns the fail-closed sentinel `Int.max` whenever
+    /// this key's durable state could not be confirmed (an unreadable
+    /// tombstone marker, or one present but unparsable) -- a real,
+    /// reachable outcome of nothing more exotic than a transient
+    /// permission or I/O failure on that one file, not a programming
+    /// error. Blindly adding `1` to that sentinel is undefined-in-intent
+    /// and, in an unchecked build, a genuine `Int` overflow trap: a single
+    /// unreadable tombstone would crash the process instead of merely
+    /// failing this one write. Throws the same typed
+    /// ``AssetError/cachePersistenceFailed(_:)`` every other confirmable
+    /// failure in this cache surfaces as, so the fail-closed sentinel
+    /// keeps failing writes closed rather than crashing them.
+    func nextWriteGenerationLocked(for key: AssetCacheKey) throws -> Int {
+        let current = currentWriteGenerationLocked(for: key)
+        guard current != Int.max else {
+            throw AssetError.cachePersistenceFailed(
+                "key's durable write-generation could not be confirmed"
+            )
+        }
+        return current + 1
+    }
 }

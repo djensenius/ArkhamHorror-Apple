@@ -263,19 +263,38 @@ extension AssetDiskCache {
     /// eviction of everything else.
     ///
     /// Also sweeps orphaned `.bin`/`.tmp` files (see
-    /// ``sweepOrphanFiles(names:referencedPayloadFilenames:)``) on every
-    /// call — not merely once at startup — and folds whatever bytes could
-    /// not actually be reclaimed this pass into `total` before comparing
-    /// against the water marks: a persistently unremovable orphan
-    /// physically occupies disk space regardless of whether any currently
-    /// valid metadata sidecar references it, and must count against the
-    /// same budget a tracked entry would, or a failed deletion could let
-    /// unbounded stray bytes accumulate invisibly to every future quota
-    /// check. Lists the directory exactly once for both purposes, so a
-    /// transient listing failure has one, not two, chances to affect a
-    /// single `set` call.
+    /// ``sweepOrphanFiles(names:referencedPayloadFilenames:)``) and every
+    /// other cache-owned file this directory can contain — durable
+    /// per-key tombstones, the whole-cache disabled markers, and the
+    /// cross-process lock file itself — on every call, not merely once at
+    /// startup, and folds whatever bytes any of those account for into
+    /// `total` before comparing against the water marks: every one of
+    /// those files physically occupies disk space this cache is
+    /// responsible for, regardless of whether any currently valid
+    /// metadata sidecar references it, and omitting any of them would let
+    /// real usage exceed the budget this method is supposed to enforce
+    /// without that ever being visible to it. Lists the directory exactly
+    /// once for every purpose here, so a transient listing failure has
+    /// one, not several, chances to affect a single `set` call.
+    ///
+    /// This is also this cache's sole "prove the budget" recovery path:
+    /// if the directory cannot be listed, if any stray file's size cannot
+    /// be determined, or if accounted usage still exceeds
+    /// ``AssetCacheLimits/highWaterMarkDiskBytes`` even after evicting
+    /// every evictable entry, this durably marks disk *writes* disabled
+    /// (see ``AssetDiskCache/requireDiskWritesEnabledLocked()``) rather
+    /// than merely returning early — a persistently-unknown or
+    /// persistently-over-budget disk state must stop new bytes from
+    /// being accepted at all, not merely fail to reclaim old ones. A
+    /// fully successful pass (enumerable, fully accounted, and within
+    /// budget by the end) clears that marker again, so a transient
+    /// failure never permanently disables writes once conditions
+    /// improve.
     func evictIfNeeded() {
-        guard let names = try? directoryAccess.listNames() else { return }
+        guard let names = try? directoryAccess.listNames() else {
+            markDiskWritesDisabledLocked()
+            return
+        }
         var current = entries(names: names)
         let referencedPayloadFilenames = Set(current.map {
             payloadFilename(keyHash: $0.hash, contentHash: $0.metadata.payloadSHA256Hex)
@@ -284,25 +303,72 @@ extension AssetDiskCache {
             names: names,
             referencedPayloadFilenames: referencedPayloadFilenames
         )
-        var total = current.reduce(strandedBytes) { $0 + Self.accountedBytes(for: $1) }
-        guard total > limits.highWaterMarkDiskBytes else { return }
-        current.sort {
-            $0.metadata.accessSequence != $1.metadata.accessSequence
-                ? $0.metadata.accessSequence < $1.metadata.accessSequence
-                : $0.hash < $1.hash
+        guard let otherBytes = accountedStrayCacheFileBytes(names: names) else {
+            // A stray cache-owned file's size could not be determined
+            // (e.g. a tombstone/marker/lock file whose `fstatat` itself
+            // failed): real physical usage is not fully known, so this
+            // must fail closed exactly like an unenumerable directory
+            // listing, rather than silently under-counting it.
+            markDiskWritesDisabledLocked()
+            return
         }
-        for entry in current {
-            guard total > limits.lowWaterMarkDiskBytes else { break }
-            let payloadName = payloadFilename(
-                keyHash: entry.hash,
-                contentHash: entry.metadata.payloadSHA256Hex
-            )
-            let metadataName = "\(entry.hash).meta.json"
-            let payloadRemoved = (try? directoryAccess.remove(name: payloadName)) ?? false
-            let metadataRemoved = (try? directoryAccess.remove(name: metadataName)) ?? false
-            guard payloadRemoved, metadataRemoved else { continue }
-            total -= Self.accountedBytes(for: entry)
+        var total = current.reduce(strandedBytes + otherBytes) { $0 + Self.accountedBytes(for: $1) }
+        if total > limits.highWaterMarkDiskBytes {
+            current.sort {
+                $0.metadata.accessSequence != $1.metadata.accessSequence
+                    ? $0.metadata.accessSequence < $1.metadata.accessSequence
+                    : $0.hash < $1.hash
+            }
+            for entry in current {
+                guard total > limits.lowWaterMarkDiskBytes else { break }
+                let payloadName = payloadFilename(
+                    keyHash: entry.hash,
+                    contentHash: entry.metadata.payloadSHA256Hex
+                )
+                let metadataName = "\(entry.hash).meta.json"
+                let payloadRemoved = (try? directoryAccess.remove(name: payloadName)) ?? false
+                let metadataRemoved = (try? directoryAccess.remove(name: metadataName)) ?? false
+                guard payloadRemoved, metadataRemoved else { continue }
+                total -= Self.accountedBytes(for: entry)
+            }
         }
-        try? directoryAccess.fsyncRootDirectory()
+        let fsyncSucceeded = (try? directoryAccess.fsyncRootDirectory()) != nil
+        guard fsyncSucceeded, total <= limits.highWaterMarkDiskBytes
+        else {
+            // Either this pass's own cleanup `fsync` could not be
+            // confirmed durable, or accounted usage is still over budget
+            // even after evicting every entry this pass could remove
+            // (e.g. persistent removal failures) — both mean the budget
+            // is not currently provably under control, so writes must
+            // stay (or become) disabled until a future pass proves
+            // otherwise.
+            markDiskWritesDisabledLocked()
+            return
+        }
+        clearDiskWritesDisabledLocked()
+    }
+
+    /// The accounted bytes of every cache-owned regular file in `names`
+    /// that ``entries(names:)``/``sweepOrphanFiles(names:referencedPayloadFilenames:)``
+    /// do not already account for — durable per-key tombstones
+    /// (``AssetDiskCache/tombstoneFilename(keyHash:)``), the whole-cache
+    /// disabled markers, and the cross-process lock file — so
+    /// ``evictIfNeeded()``'s budget accounting is never blind to any file
+    /// this cache itself creates. Returns `nil` (rather than silently
+    /// under-counting) if any such file's actual on-disk size could not
+    /// be determined.
+    private func accountedStrayCacheFileBytes(names: [String]) -> Int? {
+        var total = 0
+        for name in names {
+            let isAlreadyAccountedElsewhere =
+                name.hasSuffix(".meta.json") || name.hasSuffix(".tmp") || name.hasSuffix(".bin")
+            guard !isAlreadyAccountedElsewhere else { continue }
+            guard let attributes = try? directoryAccess.attributes(name: name) else {
+                return nil
+            }
+            guard attributes.isRegularFile else { continue }
+            total += attributes.size
+        }
+        return total
     }
 }

@@ -32,6 +32,20 @@ extension AssetDiskCache {
     /// ``markDiskReadsDisabledLocked()``.
     static let diskReadsDisabledMarkerName = ".disk-reads-disabled"
 
+    /// The single, fixed-name, whole-cache "fail closed for writes"
+    /// marker: present only when ``evictIfNeeded()`` could not durably
+    /// confirm this cache's *total physical on-disk usage* is within
+    /// ``AssetCacheLimits/highWaterMarkDiskBytes`` — either because the
+    /// directory could not even be enumerated/accounted for, or because a
+    /// full eviction pass still could not bring accounted usage back
+    /// under budget (e.g. persistent removal failures). Distinct from
+    /// ``diskReadsDisabledMarkerName``: reads being disabled protects
+    /// against *serving* possibly-invalidated bytes, while writes being
+    /// disabled protects against *accepting new bytes* while this cache's
+    /// disk budget is provably unbounded/unknown — see
+    /// ``AssetDiskCache/requireDiskWritesEnabledLocked()``.
+    static let diskWritesDisabledMarkerName = ".disk-writes-disabled"
+
     /// `true` if `keyHash` has a durable tombstone marker on disk — see
     /// ``persistTombstoneLocked(keyHash:)``. Checked by ``get(_:)`` before
     /// ever trusting a structurally-valid metadata+payload pair for this
@@ -150,6 +164,48 @@ extension AssetDiskCache {
         let name = Self.diskReadsDisabledMarkerName
         _ = try? secureDirectory.writeTempAndFsync(tempName: name + ".tmp", data: Data())
         _ = try? secureDirectory.renameAndFsyncDirectory(from: name + ".tmp", to: name)
+    }
+
+    /// `true` if this whole cache's disk writes are currently disabled —
+    /// see ``markDiskWritesDisabledLocked()``. Checked by
+    /// ``AssetDiskCache/requireDiskWritesEnabledLocked()`` before any new
+    /// payload/metadata write is allowed to proceed.
+    func areDiskWritesDisabledLocked() -> Bool {
+        do {
+            return try secureDirectory.attributes(name: Self.diskWritesDisabledMarkerName) != nil
+        } catch {
+            // Same fail-closed reasoning as ``areDiskReadsDisabled()``: an
+            // inability to even check for this marker must never be
+            // treated as "writes are enabled" — this marker exists
+            // specifically to force the fail-closed path when this
+            // cache's on-disk budget cannot otherwise be trusted.
+            return true
+        }
+    }
+
+    /// Best-effort marks the entire cache's disk *writes* as disabled:
+    /// the fail-closed fallback for when ``evictIfNeeded()`` cannot
+    /// durably confirm this cache's total physical on-disk usage is
+    /// within budget (an unenumerable directory listing, an unreadable
+    /// stray-file size, or a post-eviction total that still exceeds the
+    /// high water mark). Must be called from inside an already-held
+    /// ``SecureCacheDirectory/withExclusiveLock(_:)`` critical section,
+    /// exactly like ``markDiskReadsDisabledLocked()``.
+    func markDiskWritesDisabledLocked() {
+        let name = Self.diskWritesDisabledMarkerName
+        _ = try? secureDirectory.writeTempAndFsync(tempName: name + ".tmp", data: Data())
+        _ = try? secureDirectory.renameAndFsyncDirectory(from: name + ".tmp", to: name)
+    }
+
+    /// Best-effort clears the whole-cache disk-writes-disabled marker —
+    /// called only once ``evictIfNeeded()`` has itself just durably
+    /// confirmed accounted physical usage is within budget again (the one
+    /// event that counts as this cache's own "locked recovery proves
+    /// budget" contract). Must be called from inside an already-held
+    /// lock, exactly like ``markDiskWritesDisabledLocked()``.
+    func clearDiskWritesDisabledLocked() {
+        _ = try? secureDirectory.remove(name: Self.diskWritesDisabledMarkerName)
+        try? secureDirectory.fsyncRootDirectory()
     }
 
     /// Durably marks `keyHash` as invalidated, with `fenceGeneration` as

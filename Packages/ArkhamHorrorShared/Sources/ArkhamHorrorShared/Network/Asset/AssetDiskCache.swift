@@ -154,6 +154,7 @@ actor AssetDiskCache {
         token: AssetCacheService.CacheToken?
     ) throws {
         recoverOrphansIfNeeded()
+        try requireDiskWritesEnabledLocked()
         if let token, !acceptToken(token, for: key) {
             return
         }
@@ -289,6 +290,28 @@ actor AssetDiskCache {
     }
 
     // MARK: - Token CAS
+
+    /// Refuses to accept a new payload write while this cache's on-disk
+    /// budget is not currently provably under control — see
+    /// ``AssetDiskCache/Tombstone/markDiskWritesDisabledLocked()``'s doc
+    /// comment for exactly what durably sets/clears that state. Attempts
+    /// one fresh ``evictIfNeeded()`` recovery pass first: a marker left
+    /// over from a now-resolved transient failure (a filesystem that was
+    /// briefly full or read-only, for example) must not permanently block
+    /// every future write once conditions have actually improved, but a
+    /// marker that persists even after this fresh attempt means physical
+    /// usage genuinely cannot be confirmed or brought under budget right
+    /// now, and this call's own new payload must not be allowed to make
+    /// that unknown/over-budget state larger still.
+    func requireDiskWritesEnabledLocked() throws {
+        guard areDiskWritesDisabledLocked() else { return }
+        evictIfNeeded()
+        guard !areDiskWritesDisabledLocked() else {
+            throw AssetError.cachePersistenceFailed(
+                "Disk writes are disabled: on-disk cache budget could not be confirmed"
+            )
+        }
+    }
 
     /// only if its generation is not older than the generation this actor
     /// currently accepts writes under, and it is strictly newer than

@@ -41,7 +41,7 @@ extension AssetDiskCache {
         // the fence this removal persists always reflects the generation
         // it is actually advancing past, whether or not the deletion
         // itself succeeds.
-        let fenceGeneration = currentWriteGenerationLocked(for: key) + 1
+        let fenceGeneration = try nextWriteGenerationLocked(for: key)
         do {
             _ = try secureDirectory.remove(name: metadataFilename(for: key))
             try secureDirectory.fsyncRootDirectory()
