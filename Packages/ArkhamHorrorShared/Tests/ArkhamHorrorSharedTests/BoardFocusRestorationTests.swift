@@ -127,4 +127,47 @@ struct BoardFocusRestorationTests {
         controller.applySnapshot(twoLocationProjection())
         #expect(controller.coordinator.currentFocus == focusBefore)
     }
+
+    @Test(
+        """
+        reconcileOnAppear leaves an open inspector untouched when the reappearing view's \
+        projection is unchanged from what the controller already holds
+        """
+    )
+    func reconcileOnAppearNoOpWhenProjectionUnchanged() {
+        let controller = BoardCommandController(projection: twoLocationProjection())
+        #expect(controller.handle(.command(.inspect)))
+        #expect(controller.coordinator.isModalPresented)
+
+        // A freshly-rebuilt but content-equal projection: exercises `Equatable`, not
+        // identity, matching how a re-rendered `BoardView` would receive its `let
+        // projection` parameter again unchanged.
+        controller.reconcileOnAppear(with: twoLocationProjection())
+
+        // Genuinely unchanged relative to what's held: the open inspector must survive a
+        // stale-view reappearance, unlike a real `applySnapshot` replacement (see
+        // `inspectorClosesAutomaticallyOnSnapshotReplacement` above).
+        #expect(controller.coordinator.isModalPresented)
+        #expect(controller.inspectedID != nil)
+    }
+
+    @Test(
+        """
+        reconcileOnAppear applies a missed replacement snapshot that arrived while the \
+        view was off-screen, exactly as applySnapshot would
+        """
+    )
+    func reconcileOnAppearAppliesMissedSnapshot() {
+        let controller = BoardCommandController(projection: twoLocationProjection())
+        let firstLocationID = controller.projection.locations[0].id
+        #expect(controller.coordinator.currentFocus == BoardFocusID.scenarioHeader)
+
+        // A projection missing the previously-focused-adjacent location entirely,
+        // standing in for an update the view's `.onChange` never observed while hidden.
+        let replacement = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        controller.reconcileOnAppear(with: replacement)
+
+        #expect(controller.projection == replacement)
+        #expect(controller.coordinator.currentFocus != BoardFocusID.location(firstLocationID))
+    }
 }

@@ -65,6 +65,18 @@ final class BoardCommandController {
         coordinator.applySnapshot(newGraph)
     }
 
+    /// Reconciles this already-existing controller against the projection its owning
+    /// ``BoardView`` was just handed on re-appearance. `.onChange(of: projection)` only
+    /// fires while a view is part of the rendered tree, so a replacement snapshot that
+    /// arrived while the view was off-screen (for example behind an inactive tab) could
+    /// otherwise be missed entirely. Applies ``applySnapshot(_:)`` only when the
+    /// projection genuinely changed, so an unchanged reappearance never spuriously
+    /// dismisses an already-open inspector or perturbs zoom/pan state.
+    func reconcileOnAppear(with latestProjection: BoardProjection) {
+        guard projection != latestProjection else { return }
+        applySnapshot(latestProjection)
+    }
+
     /// The single dispatch entry point every input adapter feeds through, matching
     /// ``SemanticInputHarnessModel``'s own seam.
     @discardableResult

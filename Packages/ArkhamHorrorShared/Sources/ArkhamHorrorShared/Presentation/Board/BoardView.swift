@@ -39,6 +39,11 @@ struct BoardView: View {
             let activeController: BoardCommandController
             if let controller {
                 activeController = controller
+                // Catches a replacement snapshot that arrived while this view was
+                // off-screen and `.onChange(of: projection)` therefore couldn't fire; see
+                // `reconcileOnAppear`'s doc comment for why this is guarded rather than
+                // unconditional.
+                activeController.reconcileOnAppear(with: projection)
             } else {
                 let newController = BoardCommandController(projection: projection)
                 controller = newController
