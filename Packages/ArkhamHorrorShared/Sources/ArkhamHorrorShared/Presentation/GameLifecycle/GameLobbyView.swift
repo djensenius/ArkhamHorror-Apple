@@ -121,8 +121,30 @@ struct GameLobbyView: View {
     private var openSeatsContent: some View {
         if let openSeats = model.gameOpenSeats[gameID] {
             if openSeats.isEmpty {
-                Text("No open seats remain.")
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("No open seats remain.")
+                        .foregroundStyle(.secondary)
+                    // A stale/racy empty result (or a transient backend issue) must
+                    // never leave this lobby permanently non-retryable while
+                    // `hasOpenSeats` might still legitimately be true -- this reuses
+                    // the exact same action as the initial "View Open Seats" button
+                    // below, so it is never a distinct, second concurrent load.
+                    Button {
+                        model.loadOpenSeats(for: gameID)
+                    } label: {
+                        HStack {
+                            Text("Refresh")
+                            if action == .loadingOpenSeats {
+                                Spacer()
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                    }
+                    .disabled(action != nil)
+                    .accessibilityIdentifier(
+                        AccountAccessibilityID.gameOpenSeatsButton(for: gameID.rawValue)
+                    )
+                }
             } else {
                 ForEach(openSeats, id: \.rawValue) { seat in
                     Button {
