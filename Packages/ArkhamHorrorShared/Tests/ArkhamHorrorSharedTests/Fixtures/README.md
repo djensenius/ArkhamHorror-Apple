@@ -29,7 +29,8 @@ REST/WebSocket envelopes both decoding to the same `PublicGameSnapshot`
 field). `mode-turn-zero.json`, `mode-campaign-only.json`, `mode-campaign-scenario.json`,
 `location-enemy-view.json`, `movement.json`, `act-no-advance-cost.json`,
 `investigator-unhealed-horror-negative.json`, `uuid-entity-map.json`, and
-`card-code-entity-map.json`, the three `question-*choose-one*.json` files, and
+`card-code-entity-map.json`, `question-choose-one.json`,
+`question-player-window-choose-one.json`, `question-window-choose-one.json`, and
 `answer-question.json` are focused, sub-shape fixtures exercising specific governed
 branches (`Data.These` mode sibling-key combinations and turn zero, the disjoint enemy
 location view, an in-progress `Movement`, an act with no `advanceCost`, negative
