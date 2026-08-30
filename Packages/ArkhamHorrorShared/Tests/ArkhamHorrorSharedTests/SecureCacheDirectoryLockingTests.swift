@@ -170,4 +170,64 @@ struct SecureCacheDirectoryLockingTests {
             #expect(ranAfterClear)
         }
     }
+
+    @Test(
+        "withExclusiveLock refuses to lock a non-regular-file planted at the lock file's name"
+    )
+    func withExclusiveLockRefusesNonRegularLockFile() async throws {
+        try await withScratchDirectory { directory in
+            // Construct once to create the verified root directory itself,
+            // then close it again before planting the FIFO: this type
+            // never re-resolves the lock file's name outside
+            // `withExclusiveLock`, so nothing else needs to be holding it
+            // open at this point.
+            _ = try SecureCacheDirectory(directory: directory, fileManager: .default)
+
+            let lockPath = directory.appendingPathComponent(SecureCacheDirectory.lockFileName)
+            #expect(mkfifo(lockPath.path, 0o600) == 0)
+
+            let secure = try SecureCacheDirectory(directory: directory, fileManager: .default)
+            #expect(throws: AssetError.self) {
+                try secure.withExclusiveLock {
+                    Issue.record("body must never run against a non-regular-file lock name")
+                }
+            }
+        }
+    }
+
+    @Test(
+        """
+        withExclusiveLock refuses to lock an external hardlink planted at the lock file's exact \
+        name, even though it is a regular file `flock` itself would happily lock
+        """
+    )
+    func withExclusiveLockRefusesHardlinkedLockFile() async throws {
+        try await withScratchDirectory { directory in
+            _ = try SecureCacheDirectory(directory: directory, fileManager: .default)
+
+            let lockPath = directory.appendingPathComponent(SecureCacheDirectory.lockFileName)
+            // Remove the real (freshly created, single-link) lock file
+            // first, then hardlink in a *different* regular file: `flock`
+            // itself has no objection to locking an ordinary regular
+            // file, no matter its link count or origin, so this is
+            // exactly the case a bare "did `openat`/`flock` succeed?"
+            // check cannot catch, and only an explicit link-count/type
+            // verification (mirroring every other entry this cache reads
+            // through ``SecureCacheDirectory/requireVerifiedRegularFile(descriptor:name:)``)
+            // can.
+            _ = try? FileManager.default.removeItem(at: lockPath)
+            let externalFile = directory.deletingLastPathComponent()
+                .appendingPathComponent("external-\(UUID().uuidString)")
+            try Data("not this cache's own lock file".utf8).write(to: externalFile)
+            defer { try? FileManager.default.removeItem(at: externalFile) }
+            #expect(link(externalFile.path, lockPath.path) == 0)
+
+            let secure = try SecureCacheDirectory(directory: directory, fileManager: .default)
+            #expect(throws: AssetError.self) {
+                try secure.withExclusiveLock {
+                    Issue.record("body must never run against a hardlinked lock file")
+                }
+            }
+        }
+    }
 }

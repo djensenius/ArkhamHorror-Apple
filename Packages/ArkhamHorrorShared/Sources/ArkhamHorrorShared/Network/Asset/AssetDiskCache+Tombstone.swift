@@ -40,7 +40,20 @@ extension AssetDiskCache {
     /// again regardless of what a purely structural read would otherwise
     /// accept.
     func isTombstoned(keyHash: String) -> Bool {
-        (try? secureDirectory.attributes(name: tombstoneFilename(keyHash: keyHash))) != nil
+        do {
+            return try secureDirectory.attributes(name: tombstoneFilename(keyHash: keyHash)) != nil
+        } catch {
+            // `attributes(name:)` throws only for a genuine `fstatat`
+            // failure other than "does not exist" (permission, I/O,
+            // etc.) — it already returns `nil` (not thrown) for ENOENT.
+            // Collapsing that thrown failure into "no tombstone" via
+            // `try?` would fail *open*: exactly the outcome this marker
+            // exists to prevent. Since a tombstone's entire purpose is to
+            // durably prevent serving an entry whose invalidation could
+            // not otherwise be confirmed, an inability to even check for
+            // one must be treated the same as finding one present.
+            return true
+        }
     }
 
     /// `true` if this whole cache's disk reads are currently disabled —
@@ -48,7 +61,17 @@ extension AssetDiskCache {
     /// any other work, ahead of even the per-key ``isTombstoned(keyHash:)``
     /// check.
     func areDiskReadsDisabled() -> Bool {
-        (try? secureDirectory.attributes(name: Self.diskReadsDisabledMarkerName)) != nil
+        do {
+            return try secureDirectory.attributes(name: Self.diskReadsDisabledMarkerName) != nil
+        } catch {
+            // Same fail-closed reasoning as ``isTombstoned(keyHash:)``: a
+            // genuine `fstatat` failure (not "marker absent") must never
+            // be treated as "disk reads are enabled" — this marker exists
+            // specifically to force the fail-closed path when this
+            // cache's state cannot otherwise be trusted, so an inability
+            // to even check for it is itself a reason to stay disabled.
+            return true
+        }
     }
 
     /// Best-effort marks the *entire* cache's disk reads as disabled: the

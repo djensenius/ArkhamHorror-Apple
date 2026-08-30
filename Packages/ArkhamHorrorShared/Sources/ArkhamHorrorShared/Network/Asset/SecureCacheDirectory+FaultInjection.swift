@@ -23,6 +23,8 @@ final class FaultInjectionState: @unchecked Sendable {
     private var _listNamesCallCount = 0
     private var _failFsyncAfterRenameSuffixes: Set<String> = []
     private var _lastRenamedFinalName: String?
+    private var _failAttributesSuffixes: Set<String> = []
+    private var _failNextRootFsyncCount = 0
 
     var failSuffixes: Set<String> {
         get { lock.withLock { _failSuffixes } }
@@ -115,6 +117,46 @@ final class FaultInjectionState: @unchecked Sendable {
             defer { _lastRenamedFinalName = nil }
             guard let name = _lastRenamedFinalName else { return false }
             return _failFsyncAfterRenameSuffixes.contains { name.hasSuffix($0) }
+        }
+    }
+
+    /// Matched against the exact name passed to
+    /// ``SecureCacheDirectory/attributes(name:)`` — simulates a genuine
+    /// `fstatat` failure (permission/I/O/etc, as opposed to the file
+    /// simply not existing) for a specific entry name, so a test can
+    /// prove ``AssetDiskCache/isTombstoned(keyHash:)`` and
+    /// ``AssetDiskCache/areDiskReadsDisabled()`` fail *closed* (treat an
+    /// unconfirmable check the same as "marker present") rather than
+    /// silently collapsing the failure into "marker absent".
+    var failAttributesSuffixes: Set<String> {
+        get { lock.withLock { _failAttributesSuffixes } }
+        set { lock.withLock { _failAttributesSuffixes = newValue } }
+    }
+
+    func shouldFailAttributes(name: String) -> Bool {
+        lock.withLock {
+            _failAttributesSuffixes.contains { name.hasSuffix($0) }
+        }
+    }
+
+    /// Unconditionally fails the next `N` calls to
+    /// ``SecureCacheDirectory/fsyncRootDirectory()``, regardless of
+    /// whether any rename preceded them — independent of
+    /// ``failFsyncAfterRenameSuffixes``, which only fires when attributed
+    /// to a specific just-renamed name. Lets a test fail a root `fsync`
+    /// that follows plain `remove(name:)` calls (e.g.
+    /// ``AssetDiskCache/removeAll()``'s own final directory `fsync`),
+    /// which never goes through `rename` at all.
+    var failNextRootFsyncCount: Int {
+        get { lock.withLock { _failNextRootFsyncCount } }
+        set { lock.withLock { _failNextRootFsyncCount = newValue } }
+    }
+
+    func shouldFailRootFsyncUnconditionally() -> Bool {
+        lock.withLock {
+            guard _failNextRootFsyncCount > 0 else { return false }
+            _failNextRootFsyncCount -= 1
+            return true
         }
     }
 }

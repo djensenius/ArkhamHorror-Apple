@@ -58,7 +58,8 @@ extension AssetDiskCache {
     /// individually. Collects (rather than stopping at) the first failure,
     /// so one unremovable entry can never mask every other entry that
     /// could be removed; throws a single aggregated failure if any
-    /// removal failed, so the caller can still tombstone accordingly.
+    /// removal (or the final directory `fsync`) failed, so the caller can
+    /// still tombstone accordingly.
     ///
     /// A failure to even list the directory is itself surfaced (never
     /// swallowed into an empty list): treating a transient listing I/O
@@ -72,12 +73,14 @@ extension AssetDiskCache {
         // `remove` (in this or another process/instance) can never
         // interleave with a clear in a way that resurrects an entry this
         // call intended to remove, or removes bytes a concurrent `set`
-        // just published. `listNames()`/`remove(name:)` explicitly skip
-        // ``SecureCacheDirectory/lockFileName`` itself — unlinking the
-        // lock file while this very call still holds it open would detach
-        // every subsequent `openat` of that name onto a fresh inode,
-        // silently breaking cross-process mutual exclusion for everyone
-        // afterward.
+        // just published. This loop's own `where name !=
+        // SecureCacheDirectory.lockFileName` guard is what keeps the lock
+        // file itself out of every removal pass here (`listNames()`/
+        // `remove(name:)` themselves have no special-case awareness of
+        // it) — unlinking the lock file while this very call still holds
+        // it open would detach every subsequent `openat` of that name
+        // onto a fresh inode, silently breaking cross-process mutual
+        // exclusion for everyone afterward.
         try secureDirectory.withExclusiveLock {
             recoverOrphansIfNeeded()
             // Bumped before any removal work, exactly like
@@ -97,10 +100,25 @@ extension AssetDiskCache {
                     failureCount += 1
                 }
             }
-            try? secureDirectory.fsyncRootDirectory()
+            // A failed directory `fsync` here means the removals above
+            // are not durably confirmed even though they already took
+            // effect in this running process: counting it toward
+            // `failureCount` (rather than swallowing it via `try?`) is
+            // required so this method's own "clear cache" contract can
+            // never silently report success while durability was not
+            // actually achieved — and so callers like
+            // ``AssetCacheService/evictAll()`` reliably take their own
+            // failure/tombstoning path instead of clearing their
+            // in-memory bookkeeping as if this had fully succeeded.
+            do {
+                try secureDirectory.fsyncRootDirectory()
+            } catch {
+                failureCount += 1
+            }
             guard failureCount == 0 else {
                 throw AssetError.cachePersistenceFailed(
-                    "\(failureCount) cache entries could not be removed"
+                    "\(failureCount) cache entries could not be removed, " +
+                        "or the directory fsync failed"
                 )
             }
         }

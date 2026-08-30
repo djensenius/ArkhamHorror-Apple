@@ -243,4 +243,39 @@ extension AssetDiskCacheTests {
             )
         }
     }
+
+    @Test(
+        """
+        removeAll() surfaces a failed final directory fsync as a failure, even when every \
+        individual entry removal itself succeeded -- a caller must never believe a clear is \
+        durably confirmed when the directory-entry updates behind it were not
+        """
+    )
+    func removeAllSurfacesFsyncFailureEvenWhenEveryRemovalSucceeded() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            let payload = Data([1, 2, 3])
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: metadata(for: cacheKey, payload: payload)
+            )
+
+            // No `remove(name:)` call is made to fail here at all: every
+            // individual removal succeeds. Only the directory's own final
+            // `fsync` -- confirming those removals are durable -- fails.
+            await cache.directoryAccess.installFaultInjection(failNextRootFsyncCount: 1)
+
+            await #expect(
+                throws: AssetError.self,
+                """
+                A failed final directory fsync must be surfaced, never silently reported as a \
+                fully successful, durable clear
+                """
+            ) {
+                try await cache.removeAll()
+            }
+        }
+    }
 }

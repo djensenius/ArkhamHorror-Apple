@@ -66,7 +66,9 @@ final class SecureCacheDirectory: @unchecked Sendable {
         failRemoveSuffixes: Set<String> = [],
         failRemovePrefixes: Set<String> = [],
         listNamesFailuresRemaining: Int = 0,
-        failFsyncAfterRenameSuffixes: Set<String> = []
+        failFsyncAfterRenameSuffixes: Set<String> = [],
+        failAttributesSuffixes: Set<String> = [],
+        failNextRootFsyncCount: Int = 0
     ) {
         faultState.failSuffixes = failSuffixes
         faultState.failPrefixes = failPrefixes
@@ -74,6 +76,8 @@ final class SecureCacheDirectory: @unchecked Sendable {
         faultState.failRemovePrefixes = failRemovePrefixes
         faultState.listNamesFailuresRemaining = listNamesFailuresRemaining
         faultState.failFsyncAfterRenameSuffixes = failFsyncAfterRenameSuffixes
+        faultState.failAttributesSuffixes = failAttributesSuffixes
+        faultState.failNextRootFsyncCount = failNextRootFsyncCount
     }
 
     /// Test-only. The number of times `listNames()` has actually been
@@ -178,6 +182,9 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// `name`, without reading its contents. Returns `nil` for a clean
     /// miss.
     func attributes(name: String) throws -> (size: Int, isRegularFile: Bool)? {
+        if faultState.shouldFailAttributes(name: name) {
+            throw AssetError.cachePersistenceFailed("injected fault: attributes('\(name)')")
+        }
         var info = stat()
         guard fstatat(rootFD, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
             if errno == ENOENT {
@@ -242,7 +249,7 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// ``writeTempAndFsync(tempName:data:)``) and only ever renamed, never
     /// linked, so a legitimate cache-owned file can never have a link
     /// count greater than one.
-    private func requireVerifiedRegularFile(descriptor: Int32, name: String) throws {
+    func requireVerifiedRegularFile(descriptor: Int32, name: String) throws {
         var info = stat()
         guard fstat(descriptor, &info) == 0 else {
             throw AssetError.cachePersistenceFailed("fstat failed for '\(name)'")

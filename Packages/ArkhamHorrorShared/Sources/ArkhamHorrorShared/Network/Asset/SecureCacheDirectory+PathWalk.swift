@@ -28,13 +28,26 @@ extension SecureCacheDirectory {
             )
         }
         for component in components {
-            let nextFD = try openVerifiedComponent(
-                parentFD: currentFD,
-                name: component,
-                createIfMissing: true
-            )
-            close(currentFD)
-            currentFD = nextFD
+            do {
+                let nextFD = try openVerifiedComponent(
+                    parentFD: currentFD,
+                    name: component,
+                    createIfMissing: true
+                )
+                close(currentFD)
+                currentFD = nextFD
+            } catch {
+                // `openVerifiedComponent` failing mid-walk must not leak
+                // the parent descriptor this iteration was about to
+                // replace: without this, a failure at any component
+                // deeper than the first (e.g. a non-directory occupying
+                // an intermediate path segment) would leave `currentFD`
+                // open with nothing left holding a reference to ever
+                // close it, since the walk never reaches the `return`
+                // that would otherwise hand ownership to the caller.
+                close(currentFD)
+                throw error
+            }
         }
         return currentFD
     }

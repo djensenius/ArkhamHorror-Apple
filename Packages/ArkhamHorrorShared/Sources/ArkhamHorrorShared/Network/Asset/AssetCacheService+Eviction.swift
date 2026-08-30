@@ -67,8 +67,21 @@ extension AssetCacheService {
             // the directory now instead reflects exactly what survived
             // this exact attempt (correctly excluding whatever
             // `removeAll()` did manage to remove before failing).
+            //
+            // `entryKeyHashes()` deliberately returns every raw filename
+            // prefix it finds, including one from a corrupt/tampered/
+            // attacker-controlled entry that would never actually decode
+            // as a real key hash. Filter to only the 64-lowercase-hex
+            // shape a genuine key hash always has (the same shape
+            // ``AssetDiskCache/isValidContentHash(_:)`` already enforces
+            // for content hashes) before ever constructing an
+            // ``AssetCacheKey`` from it or growing `tombstonedKeys` with
+            // it — an unfiltered, arbitrarily-many, arbitrarily-long
+            // directory entry name must never be able to inflate this
+            // in-memory set without bound.
             do {
                 let survivingKeys = try await diskCache.entryKeyHashes()
+                    .filter { AssetDiskCache.isValidContentHash($0) }
                     .map { AssetCacheKey(digestHex: $0) }
                 tombstonedKeys.formUnion(survivingKeys)
             } catch {

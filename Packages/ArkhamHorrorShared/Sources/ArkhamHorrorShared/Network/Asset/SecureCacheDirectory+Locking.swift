@@ -54,6 +54,17 @@ extension SecureCacheDirectory {
             )
         }
         defer { close(lockFD) }
+        // `O_NOFOLLOW` alone only refuses a *symlink* planted at this
+        // name; it does not rule out the lock name having been replaced
+        // with a FIFO, device node, or other non-regular-file type (which
+        // still opens successfully, but can make `flock` behave
+        // unpredictably or block forever on some special file types), nor
+        // an external hardlink to another user's file on a shared
+        // filesystem. Reuse the exact same verification every other entry
+        // this cache reads/writes already requires — regular file, same
+        // owner, same device as the verified root, exactly one hardlink —
+        // before ever calling `flock` on it.
+        try requireVerifiedRegularFile(descriptor: lockFD, name: Self.lockFileName)
         while true {
             if flock(lockFD, LOCK_EX) == 0 {
                 break

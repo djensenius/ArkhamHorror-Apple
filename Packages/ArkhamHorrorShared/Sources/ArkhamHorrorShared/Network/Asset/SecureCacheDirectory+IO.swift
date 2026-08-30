@@ -103,7 +103,9 @@ extension SecureCacheDirectory {
     /// ``AssetDiskCache`` calls this immediately after any directory-entry
     /// mutation it needs to survive a crash.
     func fsyncRootDirectory() throws {
-        if faultState.shouldFailNextDirectoryFsync() {
+        let shouldFail = faultState.shouldFailNextDirectoryFsync()
+            || faultState.shouldFailRootFsyncUnconditionally()
+        if shouldFail {
             throw AssetError.cachePersistenceFailed("injected fault: cache root directory fsync")
         }
         guard fsync(rootFD) == 0 else {

@@ -107,6 +107,53 @@ extension AssetCacheServiceTests {
 
     @Test(
         """
+        evictAll()'s survivor snapshot after a partially-failed removeAll() filters out \
+        any raw directory entry name that is not a genuine 64-lowercase-hex key hash \
+        before ever tombstoning it, so a corrupt/attacker-planted file name can never \
+        inflate tombstonedKeys with a bogus AssetCacheKey
+        """
+    )
+    func evictAllFiltersNonHexSurvivorNamesBeforeTombstoning() async throws {
+        try await withScratchDirectory { directory in
+            let limits = standardLimits()
+            let diskCache = try AssetDiskCache(directory: directory, limits: limits)
+            let layers = makeService(diskCache: diskCache, limits: limits)
+
+            let firstKey = try cardArtKey("01001")
+            let firstCandidates = AssetLocator.candidates(for: firstKey, digest: FakeDigestLookup())
+            let firstCacheKey = AssetCacheKey(for: firstKey, candidates: firstCandidates)
+            let firstOriginalBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+            try await publishAsset(firstKey, body: firstOriginalBody, via: layers)
+
+            // A raw file planted directly on disk (bypassing every cache
+            // API), whose name is not a genuine key hash at all -- the
+            // same shape `entryKeyHashes()` deliberately still surfaces
+            // (a corrupt/undecodable/attacker-controlled entry), which
+            // must never be handed straight to `AssetCacheKey(digestHex:)`.
+            let bogusName = "not-a-real-hex-key-hash.bin"
+            try Data("bogus payload".utf8).write(to: directory.appendingPathComponent(bogusName))
+
+            // Both the real key's entry *and* the bogus file must survive
+            // `removeAll()` intact, so both are present in the post-
+            // failure survivor snapshot `evictAll()` takes.
+            await diskCache.directoryAccess.installFaultInjection(
+                failRemovePrefixes: ["\(firstCacheKey.digestHex).", "not-a-real-hex-key-hash"]
+            )
+            await layers.service.evictAll()
+
+            let failure = await layers.service.lastDiskPersistenceFailure
+            #expect(failure != nil, "A partially-failed removeAll() must be audited")
+
+            let tombstoned = await layers.service.tombstonedKeys
+            #expect(
+                tombstoned == [firstCacheKey],
+                "Only the genuine hex-shaped survivor may be tombstoned, never the bogus name"
+            )
+        }
+    }
+
+    @Test(
+        """
         evictAll() still tombstones every on-disk key when removeAll()'s own directory \
         listing itself fails (never removing anything), rather than treating an \
         unenumerable disk as if it held no keys at all
