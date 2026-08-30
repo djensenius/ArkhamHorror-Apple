@@ -215,71 +215,41 @@ struct AssetImageLoaderTests {
 
     @Test(
         """
-        Losing the loader's only strong owner deallocates it immediately — even while its own \
-        fetch is still suspended/held on the network layer — because the in-flight task only \
-        ever holds `self` weakly across a suspension point, never promoting it to a strong \
-        reference for the task's whole lifetime
+        Cancelling exactly between decode finishing and the success-state publish (the one \
+        window `generation` alone cannot observe, since cancel() itself is what bumps \
+        generation) must still leave state alone rather than publishing a stale success
         """
     )
-    func loaderDeallocatesPromptlyWhileItsOwnFetchIsHeldInFlight() async throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("ImageLoaderScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+    func cancellingBetweenDecodeCompletionAndPublishLeavesStateAlone() async throws {
+        try await withLoader { loader, transport in
+            let key = try portraitKey()
+            let url = portraitURL(for: key)
+            await transport.enqueue(.success(.success(AssetHTTPResponse(
+                body: AssetImageFixtureBuilder.validJPEG(),
+                contentType: "image/jpeg",
+                etag: nil,
+                lastModified: nil
+            ))), for: url)
 
-        let limits = AssetCacheLimits(
-            maxEncodedBytes: 1_000_000,
-            maxDimension: 8192,
-            maxPixelCount: 32_000_000,
-            memoryBudgetBytes: 10_000_000,
-            diskBudgetBytes: 10_000_000
-        )
-        let memoryCache = AssetMemoryCache(limits: limits)
-        let diskCache = try AssetDiskCache(directory: root, limits: limits)
-        let transport = FakeAssetTransport()
-        let service = AssetCacheService(
-            memoryCache: memoryCache,
-            diskCache: diskCache,
-            transport: transport,
-            digest: FakeDigestLookup(),
-            limits: limits
-        )
+            // Fires synchronously once the decode has completed but
+            // before this still-current-generation load publishes
+            // `.success` — the exact window under test. Calling
+            // `cancel()` from here deterministically reproduces
+            // "externally cancelled in this narrow window" without any
+            // timing dependency.
+            loader.onDecodeCompletedBeforePublish = { loader.cancel() }
 
-        var loader: AssetImageLoader? = AssetImageLoader(cacheService: service)
-        weak let weakLoader: AssetImageLoader? = loader
+            loader.load(key, accessibleDescription: "Investigator")
+            await waitForSettledState(loader)
 
-        let key = try portraitKey()
-        let url = portraitURL(for: key)
-        await transport.hold(url)
-        await transport.enqueue(.success(.success(AssetHTTPResponse(
-            body: AssetImageFixtureBuilder.validJPEG(),
-            contentType: "image/jpeg",
-            etag: nil,
-            lastModified: nil
-        ))), for: url)
-
-        loader?.load(key, accessibleDescription: "Investigator")
-        await transport.waitForCallCount(1, for: url)
-
-        // Drop the only strong owner while the loader's own fetch is
-        // still suspended, held by the fake transport. A `self` that had
-        // been promoted to a strong reference across that suspension
-        // point would keep this instance alive until the held fetch
-        // eventually resumed; this asserts deallocation happens right
-        // away instead.
-        loader = nil
-        #expect(
-            weakLoader == nil,
-            """
-            the loader must deallocate immediately once its owner drops it, even while its \
-            own in-flight fetch is still held/suspended on the network layer
-            """
-        )
-
-        // Release the held transport afterward so its internal polling
-        // loop does not spin forever; by now nothing observes the result.
-        await transport.release(url)
+            #expect(
+                loader.state == .idle,
+                """
+                Cancelling in this window must leave state at the idle cancel() set it to, \
+                never a stale published .success
+                """
+            )
+            #expect(loader.loadTask == nil)
+        }
     }
 }

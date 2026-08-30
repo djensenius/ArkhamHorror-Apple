@@ -30,6 +30,14 @@ final class AssetImageLoader {
     /// `AssetImageLoaderTests`), never read or written by anything outside
     /// this type in production code.
     @ObservationIgnored private(set) var loadTask: Task<Void, Never>?
+    /// Test-only observability/injection hook, fired synchronously with
+    /// the decoded image exactly once decode has finished but before this
+    /// load's still-current-generation success is published — the one
+    /// window a production caller cannot otherwise observe or influence.
+    /// `nil` in production; see `AssetImageLoaderTests` for the
+    /// cancel-during-this-window regression this exists to make
+    /// deterministic rather than timing-dependent.
+    @ObservationIgnored var onDecodeCompletedBeforePublish: (() -> Void)?
 
     init(cacheService: AssetCacheService) {
         self.cacheService = cacheService
@@ -110,6 +118,22 @@ final class AssetImageLoader {
                     return decoded
                 }
                 guard let self, generation == requestedGeneration else { return }
+                onDecodeCompletedBeforePublish?()
+                // Belt-and-suspenders alongside the generation check above
+                // (which already catches every production path that can
+                // invalidate this load: a newer `load()` call or
+                // `cancel()`, both of which bump `generation` before this
+                // task can resume): also honor the task's own cancellation
+                // flag directly, so a cancelled-but-still-current-
+                // generation task can never publish `.success` in this
+                // narrow window between the decode finishing and the
+                // state mutation below — matching the same "leave state
+                // alone" contract the `catch is CancellationError` branch
+                // below already documents.
+                guard !Task.isCancelled else {
+                    loadTask = nil
+                    return
+                }
                 state = .success(image, accessibleDescription: accessibleDescription)
                 loadTask = nil
             } catch is CancellationError {
