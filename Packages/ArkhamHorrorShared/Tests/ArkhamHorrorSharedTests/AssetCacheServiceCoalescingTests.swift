@@ -50,12 +50,16 @@ extension AssetCacheServiceTests {
             let firstTask = Task { try await service.asset(for: key) }
             let secondTask = Task { try await service.asset(for: key) }
             await transport.waitForCallCount(1, for: urls[0])
-            try await Task.sleep(nanoseconds: 20_000_000)
+            // Waits for both waiters to have genuinely joined the same
+            // coalesced fetch, rather than a fixed `Task.sleep` guess --
+            // real internal state, immune to scheduler jitter under load.
+            try await waitForInFlightWaiterCount(2, for: key, on: service)
 
             firstTask.cancel()
-            // Give the cancellation handler a moment to run and decrement
-            // the waiter count before releasing the held fetch.
-            try await Task.sleep(nanoseconds: 20_000_000)
+            // Waits for the cancellation handler to actually finish
+            // (removing firstTask's waiter, leaving only secondTask's)
+            // before releasing the held fetch, for the same reason.
+            try await waitForInFlightWaiterCount(1, for: key, on: service)
             await transport.release(urls[0])
 
             let firstResult = await firstTask.result
@@ -101,7 +105,15 @@ extension AssetCacheServiceTests {
             let canceledTask = Task { try await service.asset(for: key) }
             let survivingTask = Task { try await service.asset(for: key) }
             await transport.waitForCallCount(1, for: urls[0])
-            try await Task.sleep(nanoseconds: 20_000_000)
+            // Waits for both waiters to have genuinely joined before
+            // racing the cancellation below -- see
+            // `oneWaiterCancellingDoesNotAffectOthers()` for why this
+            // must not be a fixed `Task.sleep` guess. Deliberately does
+            // *not* also wait for the cancellation handler itself to
+            // finish afterward: this test's whole point is to exercise
+            // both possible orderings of that cleanup racing the shared
+            // fetch's own completion.
+            try await waitForInFlightWaiterCount(2, for: key, on: service)
 
             canceledTask.cancel()
             await transport.release(urls[0])

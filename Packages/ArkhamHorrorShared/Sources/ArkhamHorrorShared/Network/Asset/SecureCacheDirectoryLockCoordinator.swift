@@ -69,6 +69,18 @@ final class SecureCacheDirectoryLockCoordinator: @unchecked Sendable {
     private var waiters: [QueuedWaiter] = []
     private var nextWaiterID = 0
 
+    /// Test-only observability seam: invoked synchronously, exactly once
+    /// per call to ``waitForLocalTurn()``, immediately after this
+    /// caller's position in the FIFO ordering has been durably
+    /// established (either granted immediately or appended to
+    /// ``waiters``) -- never before, and never based on timing. Nil in
+    /// production (zero behavioral effect); tests use it to serialize
+    /// their own submission order deterministically, since Swift's
+    /// `Task.sleep`-based staggering only guarantees a *minimum* delay,
+    /// not an upper bound, and so cannot by itself prove real call order
+    /// under scheduler contention.
+    var onWaiterPositionEstablished: (() -> Void)?
+
     /// A dedicated GCD queue used only to host the blocking `flock(2)`
     /// acquire *poll* below, kept entirely off Swift concurrency's
     /// fixed-size cooperative thread pool -- see
@@ -198,6 +210,7 @@ final class SecureCacheDirectoryLockCoordinator: @unchecked Sendable {
                     isLocallyHeld = true
                     os_unfair_lock_unlock(&unfairLock)
                     continuation.resume()
+                    onWaiterPositionEstablished?()
                     return
                 }
                 guard waiters.count < Self.maxQueuedWaiters else {
@@ -207,10 +220,12 @@ final class SecureCacheDirectoryLockCoordinator: @unchecked Sendable {
                             "Too many concurrent cache-lock waiters"
                         )
                     )
+                    onWaiterPositionEstablished?()
                     return
                 }
                 waiters.append(QueuedWaiter(id: id, continuation: continuation))
                 os_unfair_lock_unlock(&unfairLock)
+                onWaiterPositionEstablished?()
             }
         } onCancel: { [weak self] in
             self?.cancelQueuedWaiter(id: id)

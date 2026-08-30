@@ -8,6 +8,18 @@ import Foundation
 /// each file within this package's file/type-length conventions; still
 /// part of the single `AssetCacheService` actor's isolated state.
 extension AssetCacheService {
+    /// Test-only observability accessor: mirrors
+    /// ``inFlightWaiterCount(for:)`` for coalesced revalidations --
+    /// summed across every currently in-flight revalidation slot for
+    /// `cacheKey` (there is normally at most one at a time in the
+    /// scenarios that need this). Lets tests synchronize on real
+    /// actor-isolated state instead of a `Task.sleep` guess.
+    func inFlightRevalidationWaiterCount(forCacheKey cacheKey: AssetCacheKey) -> Int {
+        inFlightRevalidation
+            .filter { $0.key.cacheKey == cacheKey }
+            .reduce(0) { $0 + $1.value.waiters.count }
+    }
+
     func coalescedRevalidation(
         cacheKey: AssetCacheKey,
         url: URL,

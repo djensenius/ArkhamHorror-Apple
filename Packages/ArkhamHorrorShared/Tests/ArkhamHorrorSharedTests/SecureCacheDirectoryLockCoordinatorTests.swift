@@ -109,32 +109,37 @@ struct SecureCacheDirectoryLockCoordinatorTests {
             let waiterCount = 12
 
             // Hold the lock up front so every waiter below genuinely
-            // queues (rather than racing to be granted immediately), and
-            // release only after every waiter has had a deterministic
-            // chance to enqueue in submission order.
+            // queues rather than racing to be granted immediately.
             let blockerFD = try await secure.acquireExclusiveLock()
+
+            // Rather than approximating submission order with a
+            // `Task.sleep`-based stagger -- which only guarantees a
+            // *minimum* delay, not an upper bound, and so can be
+            // reordered by ordinary scheduler jitter under load (as
+            // observed on constrained CI runners) -- this drives real,
+            // provable call order: it spawns waiter `index + 1` only
+            // after observing (via
+            // ``SecureCacheDirectoryLockCoordinator/onWaiterPositionEstablished``)
+            // that waiter `index`'s own call has already reached and
+            // recorded its position in the real FIFO queue. This makes
+            // submission order below identical to actual enqueue order,
+            // with no dependency on timing whatsoever.
+            let positionEstablished = AsyncStream<Void> { continuation in
+                secure.lockCoordinator.onWaiterPositionEstablished = {
+                    continuation.yield()
+                }
+            }
+            var iterator = positionEstablished.makeAsyncIterator()
 
             try await withThrowingTaskGroup(of: Void.self) { group in
                 for index in 0 ..< waiterCount {
                     group.addTask {
-                        // A small, strictly increasing head start per
-                        // index makes submission order (and therefore,
-                        // given the lock is already held, enqueue order)
-                        // deterministic rather than racing `waiterCount`
-                        // tasks to start simultaneously.
-                        try await Task.sleep(nanoseconds: UInt64(index) * 5_000_000)
                         try await secure.withExclusiveLock {
                             recorder.record(index)
                         }
                     }
+                    _ = await iterator.next()
                 }
-                // Give every waiter task above ample time to reach and
-                // complete its own enqueue call before releasing the
-                // lock -- releasing too early would let early waiters
-                // start being granted turns before later ones have even
-                // enqueued, which would no longer test FIFO ordering of
-                // a genuinely fully-queued set.
-                try await Task.sleep(nanoseconds: UInt64(waiterCount) * 5_000_000 + 100_000_000)
                 secure.releaseExclusiveLock(blockerFD)
                 try await group.waitForAll()
             }
@@ -157,28 +162,35 @@ struct SecureCacheDirectoryLockCoordinatorTests {
 
             let blockerFD = try await secure.acquireExclusiveLock()
 
+            // As in ``waitersAreGrantedStrictFIFOOrder()`` above, real
+            // enqueue order is driven by observing each waiter's own
+            // durably-established queue position -- never by a
+            // `Task.sleep` stagger, which cannot itself prove order
+            // under scheduler contention.
+            let positionEstablished = AsyncStream<Void> { continuation in
+                secure.lockCoordinator.onWaiterPositionEstablished = {
+                    continuation.yield()
+                }
+            }
+            var iterator = positionEstablished.makeAsyncIterator()
+
             // Two ordinary waiters bracketing one that will be cancelled
             // while still genuinely queued.
             let firstWaiter = Task {
-                try await Task.sleep(nanoseconds: 10_000_000)
                 try await secure.withExclusiveLock { recorder.record(0) }
             }
+            _ = await iterator.next()
             let toCancel = Task {
-                try await Task.sleep(nanoseconds: 20_000_000)
                 _ = try await secure.withExclusiveLock {
                     Issue.record("A cancelled queued waiter must never run its critical section")
                 }
             }
+            _ = await iterator.next()
             let lastWaiter = Task {
-                try await Task.sleep(nanoseconds: 30_000_000)
                 try await secure.withExclusiveLock { recorder.record(1) }
             }
+            _ = await iterator.next()
 
-            // Let every task above reach and complete its own enqueue
-            // call (the lock is still held, so all three are genuinely
-            // queued, in submission order) before cancelling the middle
-            // one.
-            try await Task.sleep(nanoseconds: 150_000_000)
             toCancel.cancel()
 
             var caughtCancellation = false
@@ -226,6 +238,19 @@ struct SecureCacheDirectoryLockCoordinatorTests {
             let successCount = Counter()
             let failureCount = Counter()
 
+            // As above: wait for exactly `totalContenders` real enqueue
+            // attempts to be durably recorded (success or immediate
+            // over-capacity rejection, both of which fire the hook)
+            // before releasing, rather than guessing a fixed sleep is
+            // "long enough" for all of them to have even started under
+            // load.
+            let positionEstablished = AsyncStream<Void> { continuation in
+                secure.lockCoordinator.onWaiterPositionEstablished = {
+                    continuation.yield()
+                }
+            }
+            var iterator = positionEstablished.makeAsyncIterator()
+
             try await withThrowingTaskGroup(of: Void.self) { group in
                 for _ in 0 ..< totalContenders {
                     group.addTask {
@@ -237,11 +262,9 @@ struct SecureCacheDirectoryLockCoordinatorTests {
                         }
                     }
                 }
-                // Give every contender ample time to attempt its own
-                // enqueue call while the lock is still held, so the
-                // queue genuinely fills to (and past) capacity before
-                // any of them are released.
-                try await Task.sleep(nanoseconds: 200_000_000)
+                for _ in 0 ..< totalContenders {
+                    _ = await iterator.next()
+                }
                 secure.releaseExclusiveLock(blockerFD)
                 try await group.waitForAll()
             }

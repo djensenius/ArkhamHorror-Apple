@@ -68,11 +68,11 @@ extension AssetCacheServiceTests {
             // both callers: the initial fetch (1) plus this single shared
             // revalidation fetch (2) — never a third.
             await transport.waitForCallCount(2, for: urls[0])
-            // Both calls have now started; give the (deliberately
-            // non-deterministic) second registration a moment to land
-            // before releasing, so both are provably waiting on the same
-            // shared fetch rather than one having already raced ahead.
-            try await Task.sleep(nanoseconds: 20_000_000)
+            // Waits for both callers to have genuinely registered as
+            // waiters on the same shared revalidation, rather than a
+            // fixed `Task.sleep` guess -- real internal state, immune to
+            // scheduler jitter under load.
+            try await waitForInFlightRevalidationWaiterCount(2, for: key, on: service)
             await transport.release(urls[0])
 
             let (firstResult, secondResult) = try await (first, second)

@@ -45,6 +45,22 @@ extension AssetCacheService {
         var waiters: [UUID: AssetContinuation] = [:]
     }
 
+    /// Test-only observability accessor: the number of still-registered
+    /// waiters for the coalesced in-flight fetch (if any) currently
+    /// tracked for `key`, re-deriving the exact same ``AssetCacheKey``
+    /// ``asset(for:)`` itself computes. Exists purely so tests can
+    /// synchronize on real actor-isolated state -- e.g. "a second waiter
+    /// has genuinely joined this fetch" or "a cancelled waiter's cleanup
+    /// has actually run" -- deterministically, rather than approximating
+    /// either with a `Task.sleep` guess that scheduler jitter under load
+    /// (observed in practice on constrained CI runners) can make wrong.
+    /// Read-only and side-effect-free; harmless in a release build.
+    func inFlightWaiterCount(for key: AssetKey) throws -> Int {
+        let candidates = try resolvedCandidates(for: key)
+        let cacheKey = AssetCacheKey(for: key, candidates: candidates)
+        return inFlight[cacheKey]?.waiters.count ?? 0
+    }
+
     /// Not `private`: also called from
     /// `AssetCacheService+Revalidation.swift`'s ``revalidate(for:)``, which
     /// falls through to an ordinary unconditional fetch when a disk-loaded
