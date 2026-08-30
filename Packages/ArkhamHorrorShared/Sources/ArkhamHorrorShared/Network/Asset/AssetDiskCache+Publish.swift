@@ -79,8 +79,26 @@ extension AssetDiskCache {
         payloadAlreadyExisted: Bool
     ) throws {
         var stamped = metadata
-        stamped.accessSequence = accessSequenceAllocator.allocate()
         let metadataName = metadataFilename(for: key)
+        // A best-effort read of whatever metadata sidecar currently
+        // occupies this exact name (if any): seeds
+        // ``AssetAccessSequenceAllocator/allocate(atLeastAfter:)`` so this
+        // write can never stamp a *lower* sequence than a different actor
+        // instance (another concurrent ``AssetDiskCache`` in this
+        // process, or a genuinely separate process/instance) already
+        // persisted for this exact key since this actor's own allocator
+        // was last seeded — see ``getLocked(_:)``'s identical use of this
+        // pattern for its LRU-touch path. Any failure to read/decode the
+        // existing sidecar (including "does not exist yet") is treated
+        // identically to "no prior value": this is a monotonicity
+        // refinement, not a correctness precondition for the write itself.
+        if let existing = existingAccessSequence(metadataName: metadataName) {
+            stamped.accessSequence = accessSequenceAllocator.allocate(
+                atLeastAfter: existing
+            )
+        } else {
+            stamped.accessSequence = accessSequenceAllocator.allocate()
+        }
         let metadataTempName = metadataName + ".tmp"
         do {
             let data = try JSONEncoder.assetCache().encode(stamped)
@@ -113,5 +131,25 @@ extension AssetDiskCache {
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: metadata.payloadSHA256Hex)
         clearTombstoneLocked(keyHash: key.digestHex)
         try? secureDirectory.fsyncRootDirectory()
+    }
+
+    /// Best-effort read of the `accessSequence` currently stamped on
+    /// whatever metadata sidecar occupies `metadataName` right now, or
+    /// `nil` if none exists or it cannot be read/decoded. Only ever used
+    /// to seed ``AssetAccessSequenceAllocator/allocate(atLeastAfter:)``,
+    /// never as a correctness precondition, so any failure here
+    /// (including a genuine "does not exist yet" miss) is deliberately
+    /// folded into a single `nil` case rather than surfaced.
+    private func existingAccessSequence(metadataName: String) -> AssetAccessSequence? {
+        guard let existingData = try? secureDirectory.read(
+            name: metadataName,
+            maxBytes: SecureCacheDirectory.maxMetadataBytes
+        ) else {
+            return nil
+        }
+        return try? JSONDecoder.assetCache().decode(
+            AssetCacheMetadata.self,
+            from: existingData
+        ).accessSequence
     }
 }

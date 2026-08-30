@@ -95,4 +95,26 @@ struct AssetAccessSequenceAllocator {
         }
         return AssetAccessSequence(next)
     }
+
+    /// Same as ``allocate()``, but first bumps `next` up to strictly after
+    /// `existing` if `existing` is not already strictly less than `next` —
+    /// closing the gap a purely in-memory allocator otherwise has once
+    /// more than one actor instance (in this process or another) can
+    /// persist a value for the exact same logical counter: this instance's
+    /// own `next` only ever reflects what *it* has personally allocated
+    /// (or was seeded with at its own construction), never what some other
+    /// concurrent instance already wrote to disk since then. Callers that
+    /// have just read `existing` back from disk under the same lock this
+    /// allocation itself will be persisted under (see
+    /// ``AssetDiskCache/getLocked(_:)``/``AssetDiskCache/setLocked(_:payload:metadata:token:)``)
+    /// can use this to guarantee the freshly allocated value is always
+    /// strictly greater than the last value actually persisted for this
+    /// exact entry, regardless of which actor instance persisted it.
+    mutating func allocate(atLeastAfter existing: AssetAccessSequence) -> AssetAccessSequence {
+        if existing.value != Int.max, next <= existing.value {
+            let (incremented, overflowed) = existing.value.addingReportingOverflow(1)
+            next = overflowed ? Int.max : incremented
+        }
+        return allocate()
+    }
 }

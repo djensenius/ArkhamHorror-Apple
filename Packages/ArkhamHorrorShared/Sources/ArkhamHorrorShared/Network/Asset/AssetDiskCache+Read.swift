@@ -17,6 +17,38 @@ extension AssetDiskCache {
     /// deletion failure, since those are the paths where the caller must
     /// track a tombstone.
     func get(_ key: AssetCacheKey) async -> CachedAsset? {
+        // Same single-top-level-lock convention as
+        // ``set(_:payload:metadata:token:)``/``touch(_:metadata:token:)``/
+        // ``remove(_:token:)``: a read that examined this key's metadata
+        // and payload without holding this cache's cross-process lock
+        // could observe an inconsistent pair mid-write by a concurrent
+        // writer (this or another process) — for example a freshly
+        // committed metadata pointer paired with a payload generation
+        // whose own write has not yet reached disk, or a payload file a
+        // concurrent cleanup pass deletes between this read validating
+        // the metadata and opening the payload — and then wrongly
+        // *quarantine* (delete) that other writer's perfectly valid,
+        // just-published entry purely because of the interleaving, not
+        // because anything was actually wrong with it. The lock is
+        // released again before the test-only pause/return below: the
+        // race that pause exists to reproduce is at the
+        // ``AssetCacheService`` token-authority layer (a purely in-memory,
+        // per-process concern already handled by
+        // ``AssetCacheService/unchanged(since:for:)``), not a disk-file-
+        // consistency concern this lock protects, so holding it any
+        // longer than the actual file I/O below would serve no purpose.
+        guard let lockFD = try? await secureDirectory.acquireExclusiveLock() else {
+            return nil
+        }
+        let result = getLocked(key)
+        secureDirectory.releaseExclusiveLock(lockFD)
+        if let pause = testOnlyPauseBeforeReturningHit {
+            await pause()
+        }
+        return result
+    }
+
+    private func getLocked(_ key: AssetCacheKey) -> CachedAsset? {
         recoverOrphansIfNeeded()
         // Fail-closed checks first, before any other work: a whole-cache
         // "disk reads disabled" marker (an unenumerable `removeAll()`
@@ -36,19 +68,24 @@ extension AssetDiskCache {
             return nil
         }
 
-        metadata.accessSequence = accessSequenceAllocator.allocate()
+        // Bumped up to strictly after whatever value this exact entry was
+        // already last persisted with, before allocating: this actor's own
+        // in-memory ``AssetDiskCache/accessSequenceAllocator`` is only ever
+        // seeded once, at this process's own startup recovery (see
+        // ``AssetDiskCache/seedAccessSequenceAllocator(resumingAfter:)``),
+        // so a different actor instance — another concurrent
+        // ``AssetDiskCache`` in this same process, or a genuinely separate
+        // process/instance sharing this same cache directory — can have
+        // persisted a strictly greater sequence for this exact entry since
+        // this actor last observed it. Comparing against the value just
+        // read back from disk (the freshest on-disk truth available,
+        // obtained under the same exclusive lock this whole read holds)
+        // closes that gap without requiring a full-directory rescan on
+        // every single touch.
+        metadata.accessSequence = accessSequenceAllocator.allocate(
+            atLeastAfter: metadata.accessSequence
+        )
         try? persistMetadata(metadata, name: metadataName)
-        // Test-only: lets a test deterministically interleave another
-        // operation (e.g. `AssetCacheService.evictAll()`) between this
-        // read having already validated a hit in-memory and this call
-        // actually returning it to the caller — reproducing the exact
-        // race `AssetCacheService.unchanged(since:for:)` exists to reject,
-        // without depending on incidental actor-scheduling order. `nil` in
-        // every production path and every test that does not explicitly
-        // install it.
-        if let pause = testOnlyPauseBeforeReturningHit {
-            await pause()
-        }
         return CachedAsset(payload: payload, metadata: metadata)
     }
 

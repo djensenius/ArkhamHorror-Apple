@@ -128,7 +128,7 @@ struct AssetDiskCacheTests {
         }
     }
 
-    @Test("A missing key returns nil, without creating any file")
+    @Test("A missing key returns nil, without creating any cache-entry file")
     func missingKeyReturnsNilAndCreatesNoFiles() async throws {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
@@ -136,7 +136,15 @@ struct AssetDiskCacheTests {
             let fetched = await cache.get(cacheKey)
             #expect(fetched == nil)
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            #expect(contents.isEmpty)
+            // `get(_:)` now acquires this cache's cross-process advisory
+            // lock for the duration of its read (see that function's own
+            // doc comment for why: a read that never holds the lock could
+            // otherwise quarantine a concurrent writer's just-published
+            // entry purely due to interleaving), which lazily creates the
+            // fixed lock-file leaf on first access — expected and
+            // harmless, and excluded here the same way every other test
+            // in this file that asserts "no entry files" already does.
+            #expect(contents.filter { $0 != SecureCacheDirectory.lockFileName }.isEmpty)
         }
     }
 
