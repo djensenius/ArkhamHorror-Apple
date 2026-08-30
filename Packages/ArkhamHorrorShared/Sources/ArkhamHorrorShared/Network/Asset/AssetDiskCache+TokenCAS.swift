@@ -29,6 +29,7 @@ extension AssetDiskCache {
         }
     }
 
+    /// The compare half of this actor's own token CAS: accepts `token`
     /// only if its generation is not older than the generation this actor
     /// currently accepts writes under, and it is strictly newer than
     /// whatever token this actor last recorded as applied for `key` (a
