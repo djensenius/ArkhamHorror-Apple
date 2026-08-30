@@ -1,5 +1,23 @@
 import Foundation
 
+private extension AssetDiskCache {
+    /// Preserves an already-typed ``AssetError`` as-is (so a caller sees
+    /// the real underlying failure, e.g. a corrupt-entry or configuration
+    /// error surfaced by `SecureCacheDirectory`) and only wraps a foreign
+    /// error type in ``AssetError/cachePersistenceFailed(_:)``. Wrapping
+    /// unconditionally would re-wrap an already-`.cachePersistenceFailed`
+    /// error inside another one, producing a nested, less useful
+    /// diagnostic string (`cachePersistenceFailed("cachePersistenceFailed(...)")`)
+    /// and discarding whichever more specific `AssetError` case the
+    /// original failure actually was.
+    static func asCachePersistenceFailure(_ error: Error) -> AssetError {
+        if let assetError = error as? AssetError {
+            return assetError
+        }
+        return .cachePersistenceFailed(String(describing: error))
+    }
+}
+
 /// The crash-durable two-phase payload-write and metadata-pointer-commit
 /// steps behind ``AssetDiskCache/setLocked(_:payload:metadata:token:)``.
 /// Split out of the main actor file purely to stay under this package's
@@ -23,7 +41,7 @@ extension AssetDiskCache {
             try secureDirectory.renameAndFsyncDirectory(from: payloadName + ".tmp", to: payloadName)
         } catch {
             _ = try? secureDirectory.remove(name: payloadName + ".tmp")
-            throw AssetError.cachePersistenceFailed(String(describing: error))
+            throw Self.asCachePersistenceFailure(error)
         }
     }
 
@@ -73,7 +91,7 @@ extension AssetDiskCache {
             if !payloadAlreadyExisted {
                 _ = try? secureDirectory.remove(name: payloadName)
             }
-            throw AssetError.cachePersistenceFailed(String(describing: error))
+            throw Self.asCachePersistenceFailure(error)
         }
         do {
             try secureDirectory.fsyncRootDirectory()

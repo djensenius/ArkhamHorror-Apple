@@ -123,8 +123,13 @@ struct AssetSourceNamespaceBasePathTests {
         #expect(namespace.canonicalOrigin.port == 9443)
     }
 
-    @Test("An explicit default port (443 for https) is folded away, not preserved verbatim")
-    func explicitDefaultPortFolded() throws {
+    @Test(
+        """
+        An explicit default port (443 for https) is preserved verbatim in canonicalOrigin, \
+        but folded away when comparing canonicalIdentity against the implicit-port form
+        """
+    )
+    func explicitDefaultPortFoldedOnlyInCanonicalIdentity() throws {
         let namespace = try AssetSourceNamespace(
             rawAssetBase: "https://assets.example.com:443/cdn"
         )
