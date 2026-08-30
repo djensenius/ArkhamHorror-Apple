@@ -219,19 +219,21 @@ struct SecureCacheDirectoryLockingTests {
 
             let namesAfterClear = try FileManager.default
                 .contentsOfDirectory(atPath: directory.path)
-            // Only the reserved lock file and the durable whole-cache
-            // clear-epoch marker (`AssetDiskCache+Generation.swift`) are
-            // expected to survive a `removeAll()` -- every actual cache
-            // entry must be gone, but the clear-epoch marker's entire
-            // purpose is to durably persist *across* this exact call
-            // (see ``AssetCacheService/CacheToken/diskBaselineClearEpoch``'s
-            // doc comment), so its continued presence here is the
-            // correct, intended outcome rather than a leftover the sweep
-            // missed.
+            // Only the reserved lock file and the durable access-sequence
+            // counter file are expected to survive a `removeAll()` --
+            // every actual cache entry must be gone. This cache no longer
+            // persists a durable, cross-process clear-epoch marker (see
+            // ``AssetDiskCache``'s own doc comment): a fresh disk-only hit
+            // is always required to pass an online conditional
+            // revalidation before being trusted, which makes a durable
+            // clear-epoch marker unnecessary for correctness. The
+            // access-sequence counter, unlike a clear-epoch marker, must
+            // survive: it is what keeps LRU ordering globally monotonic
+            // across a clear, not a correctness-sensitive authority token.
             #expect(
                 Set(namesAfterClear) == [
                     SecureCacheDirectory.lockFileName,
-                    AssetDiskCache.clearEpochMarkerName,
+                    SecureCacheDirectory.accessSequenceFileName,
                 ]
             )
 

@@ -44,6 +44,12 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// even though `O_NOFOLLOW` alone would not by itself distinguish it
     /// from a same-device file.
     private let rootDevice: dev_t
+    /// This instance's single, in-process lock coordinator — see
+    /// ``SecureCacheDirectoryLockCoordinator``'s own doc comment. Opens
+    /// its lock file descriptor lazily (on first
+    /// ``acquireExclusiveLock()`` call), reuses it for this instance's
+    /// entire lifetime, and closes it in its own `deinit`.
+    let lockCoordinator = SecureCacheDirectoryLockCoordinator()
     let faultState = FaultInjectionState()
 
     /// Test-only deterministic fault injection, installed via `@testable

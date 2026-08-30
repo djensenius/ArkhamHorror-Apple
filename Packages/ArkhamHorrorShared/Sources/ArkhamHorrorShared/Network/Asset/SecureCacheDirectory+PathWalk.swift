@@ -20,25 +20,29 @@ extension SecureCacheDirectory {
     /// point on).
     ///
     /// Every component -- not merely the final leaf -- is additionally
-    /// required to stay on the exact same device as the filesystem root
-    /// (rejecting a bind mount, a different volume, or any other
-    /// cross-device substitution planted anywhere along the walk, not
-    /// only at the end) and to be owned either by `root` (tolerating
+    /// required to stay on a single consistent device, tolerating **at
+    /// most one** transition anywhere along the walk (rejecting a bind
+    /// mount, a different volume, or any other cross-device substitution
+    /// beyond that single tolerated transition -- see
+    /// ``DeviceTransitionPolicy``'s own doc comment for why exactly one
+    /// transition, not zero, must be tolerated on real iOS-family
+    /// hardware), and to be owned either by `root` (tolerating
     /// pre-existing, OS-managed ancestors such as `/` or `/Users` itself)
     /// or by this process's own real user ID (this cache's own,
     /// self-created subtree) -- never any other, third-party owner. A
     /// world-writable directory anywhere in the chain is rejected
     /// outright regardless of its owner: on a real, single-user macOS
-    /// installation neither condition legitimately occurs at any depth
-    /// from `/` down to a per-user cache directory (verified directly
-    /// against this machine's own `/`, `/Users`, `$HOME`,
-    /// `$HOME/Library`, `$HOME/Library/Caches` -- all report the
-    /// identical `st_dev`, thanks to APFS firmlinks presenting the System
-    /// and Data volumes as one unified path namespace), so this policy
-    /// costs nothing in the common case while closing off an entire class
-    /// of mount-point/ownership substitution attacks against every
-    /// intermediate component, not merely the leaf ``SecureCacheDirectory``
-    /// itself already fully verifies.
+    /// installation this walk never observes more than zero device
+    /// transitions at all (verified directly against this machine's own
+    /// `/`, `/Users`, `$HOME`, `$HOME/Library`, `$HOME/Library/Caches` --
+    /// all report the identical `st_dev`, thanks to APFS firmlinks
+    /// presenting the System and Data volumes as one unified path
+    /// namespace), and on real iOS-family hardware it observes at most
+    /// the one legitimate System/Data transition, so this policy costs
+    /// nothing in the common case while closing off an entire class of
+    /// mount-point/ownership substitution attacks against every
+    /// intermediate component, not merely the leaf
+    /// ``SecureCacheDirectory`` itself already fully verifies.
     static func openOrCreateVerifiedDirectory(at directory: URL) throws -> Int32 {
         let standardized = directory.standardizedFileURL
         var components = standardized.pathComponents.filter { $0 != "/" }
@@ -108,7 +112,7 @@ extension SecureCacheDirectory {
             close(currentFD)
             throw error
         }
-        let expectedDevice = rootInfo.st_dev
+        let devicePolicy = DeviceTransitionPolicy(rootDevice: rootInfo.st_dev)
         let trustedOwnerUID = getuid()
         for component in components {
             do {
@@ -116,7 +120,7 @@ extension SecureCacheDirectory {
                     parentFD: currentFD,
                     name: component,
                     createIfMissing: true,
-                    expectedDevice: expectedDevice,
+                    devicePolicy: devicePolicy,
                     trustedOwnerUID: trustedOwnerUID
                 )
                 close(currentFD)
@@ -167,17 +171,29 @@ extension SecureCacheDirectory {
     /// regardless of which component in the overall walk this is),
     /// creating it via `mkdirat` first if `createIfMissing` is `true` and
     /// it does not yet exist, and verifying the opened descriptor is
-    /// actually a directory -- on the exact same device as the walk's
-    /// root, owned by either `root` or `trustedOwnerUID`, and not
-    /// world-writable -- before returning it. A symlink, a regular file,
-    /// any other non-directory entry, or a directory that fails any of
-    /// those checks occupying `name` fails closed here rather than being
+    /// actually a directory -- on the expected device (either a fixed
+    /// `expectedDevice`, for a single standalone call, or `devicePolicy`'s
+    /// own tolerant-of-one-transition policy, for a call that is part of
+    /// ``openOrCreateVerifiedDirectory(at:)``'s own walk), owned by
+    /// either `root` or `trustedOwnerUID`, and not world-writable --
+    /// before returning it. A symlink, a regular file, any other
+    /// non-directory entry, or a directory that fails any of those
+    /// checks occupying `name` fails closed here rather than being
     /// silently traversed, trusted, or replaced.
+    ///
+    /// `expectedDevice` and `devicePolicy` are mutually exclusive in
+    /// practice (never both non-`nil` from any real call site): the
+    /// former is used only by tests exercising this function in
+    /// isolation against a single, fixed expected device; the latter is
+    /// used only by the walk itself, which must tolerate the single
+    /// legitimate device transition a real device can produce (see
+    /// ``DeviceTransitionPolicy``'s own doc comment).
     static func openVerifiedComponent(
         parentFD: Int32,
         name: String,
         createIfMissing: Bool,
         expectedDevice: dev_t? = nil,
+        devicePolicy: DeviceTransitionPolicy? = nil,
         trustedOwnerUID: uid_t? = nil
     ) throws -> Int32 {
         var descriptor = openat(parentFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
@@ -209,6 +225,12 @@ extension SecureCacheDirectory {
             close(descriptor)
             throw AssetError.cachePersistenceFailed(
                 "Directory component '\(name)' is not on the expected device"
+            )
+        }
+        if let devicePolicy, !devicePolicy.accepts(info.st_dev) {
+            close(descriptor)
+            throw AssetError.cachePersistenceFailed(
+                "Directory component '\(name)' is a second, unexpected device transition"
             )
         }
         if let trustedOwnerUID {
@@ -258,5 +280,68 @@ extension SecureCacheDirectory {
         let target = buffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
         guard target == "private/\(name)" else { return nil }
         return ["private", name]
+    }
+}
+
+/// A device-identity policy for a single call to
+/// ``SecureCacheDirectory/openOrCreateVerifiedDirectory(at:)``: requires
+/// every path component to stay on one consistent device, while
+/// tolerating **at most one** transition to a second device partway
+/// through the walk.
+///
+/// That one tolerated transition is the sole legitimate case a real
+/// device produces: on the iOS family, `/` (the read-only System volume)
+/// and `/var` (reached only via the fixed `/var` -> `/private/var`
+/// compatibility symlink, physically on the separate, writable Data
+/// volume) are two different APFS volumes that Darwin's own volume-group
+/// firmlink mechanism presents as one unified path namespace -- so a real
+/// container path such as
+/// `/var/mobile/Containers/Data/Application/<UUID>/Library/Caches/...`
+/// genuinely, legitimately changes `st_dev` exactly once, at the `/` ->
+/// `private` boundary, never again below that. Requiring every single
+/// component to share the filesystem root's own device (this type's
+/// predecessor) rejected every such path outright on real iOS-family
+/// hardware, even though it is the OS's own normal, unremarkable
+/// directory layout. A *second* transition, anywhere else in the walk,
+/// still indicates a genuine bind-mount or volume substitution planted
+/// inside what should otherwise be a single, coherent subtree, and is
+/// rejected exactly as strictly as a same-device build would reject any
+/// mismatch.
+///
+/// A plain reference type (rather than plumbing `inout` through every
+/// `openVerifiedComponent(...)` call in the walk's loop) purely so its
+/// mutable "has a transition already been spent" state threads through
+/// an ordinary value-returning helper function without changing that
+/// function's calling convention.
+///
+/// Deliberately a small, pure, filesystem-independent type: `accepts(_:)`
+/// needs no I/O of its own, so a test can exercise every same-device /
+/// one-transition / second-transition sequence directly, with entirely
+/// synthetic `dev_t` values, proving this policy's actual decision logic
+/// without needing a real, second mounted physical volume -- unavailable
+/// in a hosted CI/test environment, and the actual reason the review that
+/// flagged this required an "injectable production-anchor" test seam
+/// rather than a real-hardware-only regression.
+final class DeviceTransitionPolicy {
+    private(set) var currentDevice: dev_t
+    private(set) var hasTransitioned = false
+
+    init(rootDevice: dev_t) {
+        currentDevice = rootDevice
+    }
+
+    /// Validates `candidateDevice` against the current device, updating
+    /// state to accept a legitimate single transition. Returns `false`
+    /// if `candidateDevice` differs from `currentDevice` and a
+    /// transition has already been spent earlier in this same walk.
+    @discardableResult
+    func accepts(_ candidateDevice: dev_t) -> Bool {
+        if candidateDevice == currentDevice {
+            return true
+        }
+        guard !hasTransitioned else { return false }
+        hasTransitioned = true
+        currentDevice = candidateDevice
+        return true
     }
 }

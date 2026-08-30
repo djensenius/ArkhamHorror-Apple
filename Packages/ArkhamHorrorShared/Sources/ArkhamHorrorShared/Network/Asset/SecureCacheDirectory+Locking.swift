@@ -15,65 +15,40 @@ extension SecureCacheDirectory {
     /// concurrent holder still referencing the old (now-unlinked) file.
     static let lockFileName = ".arkham-cache.lock"
 
-    /// A dedicated, unbounded-growth GCD queue used only to host the
-    /// blocking `flock(2)` *acquire* wait below, kept entirely off Swift
-    /// concurrency's fixed-size cooperative thread pool.
-    ///
-    /// `LOCK_EX` blocks for as long as another holder keeps the lock —
-    /// potentially the full duration of that holder's own critical
-    /// section. Every caller of this lock is an actor-isolated method, so
-    /// calling `flock(LOCK_EX)` directly from that method's own execution
-    /// would occupy one of Swift's limited cooperative-pool worker threads
-    /// for the entire wait. On a host with few cores (few pool threads)
-    /// and enough concurrent contention for this same lock, every pool
-    /// thread can end up parked inside that blocking wait simultaneously —
-    /// including threads waiting on a holder task that itself can never be
-    /// *scheduled* because no pool thread is free to run it, deadlocking
-    /// the whole process rather than merely serializing it. GCD's global
-    /// concurrent queues are, by design, independent of and can grow
-    /// beyond that fixed pool specifically to accommodate blocked work
-    /// like this, so contention here can never starve Swift's task
-    /// scheduler.
-    private static let lockAcquireQueue = DispatchQueue.global(qos: .utility)
-
-    /// Opens (creating if needed), verifies, and acquires an exclusive
-    /// `flock(2)` hold on this cache's dedicated lock file — the one
-    /// primitive in this type that serializes callers against every other
-    /// concurrent caller *in this process or any other process* pointed at
-    /// the same cache directory, since actor isolation alone only
-    /// serializes calls made through one specific `AssetDiskCache`
+    /// Opens (creating and verifying if needed), and acquires an
+    /// exclusive `flock(2)` hold on this cache's dedicated lock file — the
+    /// one primitive in this type that serializes callers against every
+    /// other concurrent caller *in this process or any other process*
+    /// pointed at the same cache directory, since actor isolation alone
+    /// only serializes calls made through one specific `AssetDiskCache`
     /// *instance*. Returns the held, verified file descriptor; the caller
     /// owns it and must release it via ``releaseExclusiveLock(_:)``.
     ///
-    /// Only the genuinely unbounded step — the `LOCK_EX` acquire wait — is
-    /// offloaded to ``lockAcquireQueue``; opening and verifying the lock
-    /// file happen directly on the caller's own executor first, exactly as
-    /// before. **Every actor-isolated caller must call this as its own
-    /// direct `await`, immediately followed by its synchronous critical
-    /// section and a `defer`-scheduled ``releaseExclusiveLock(_:)`` —
-    /// never route the returned descriptor, or the critical section that
-    /// uses it, through a closure passed into some *other* type's async
-    /// function.** Swift only guarantees an actor-isolated method resumes
-    /// back on that actor's own executor after *that method's own* await
-    /// point; a closure handed to a plain (non-actor) async function like
-    /// this one has no such guarantee once its continuation is resumed
-    /// from an arbitrary thread (here, ``lockAcquireQueue``), so running
-    /// actor-isolated work from inside such a closure would silently touch
-    /// actor state off its own executor.
+    /// Every call funnels through ``lockCoordinator``, which owns the one
+    /// lock file descriptor this instance will ever open (opened once, on
+    /// first use, and reused for this instance's entire lifetime) and
+    /// serializes every in-process caller through its own FIFO queue, so
+    /// that regardless of how many `Task`s concurrently call this method,
+    /// at most one of them is ever actually polling the real `flock` (see
+    /// ``SecureCacheDirectoryLockCoordinator``'s own doc comment for why
+    /// this matters and how it is enforced). **Every actor-isolated
+    /// caller must call this as its own direct `await`, immediately
+    /// followed by its synchronous critical section and a
+    /// `defer`-scheduled ``releaseExclusiveLock(_:)`` — never route the
+    /// returned descriptor, or the critical section that uses it, through
+    /// a closure passed into some *other* type's async function.** Swift
+    /// only guarantees an actor-isolated method resumes back on that
+    /// actor's own executor after *that method's own* await point; a
+    /// closure handed to a plain (non-actor) async function like this one
+    /// has no such guarantee once its continuation is resumed from an
+    /// arbitrary thread, so running actor-isolated work from inside such a
+    /// closure would silently touch actor state off its own executor.
     ///
     /// `flock` calls interrupted by a signal (`EINTR`) are retried rather
     /// than surfaced as a spurious failure, matching this type's existing
     /// `read`/`write` retry convention.
     func acquireExclusiveLock() async throws -> Int32 {
-        let lockFD = openat(
-            rootFD, Self.lockFileName, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600
-        )
-        guard lockFD >= 0 else {
-            throw AssetError.cachePersistenceFailed(
-                "Could not open cache lock file (errno \(errno))"
-            )
-        }
-        do {
+        try await lockCoordinator.acquire(rootFD: rootFD) { [weak self] descriptor in
             // `O_NOFOLLOW` alone only refuses a *symlink* planted at this
             // name; it does not rule out the lock name having been
             // replaced with a FIFO, device node, or other non-regular-file
@@ -84,35 +59,21 @@ extension SecureCacheDirectory {
             // other entry this cache reads/writes already requires —
             // regular file, same owner, same device as the verified root,
             // exactly one hardlink — before ever calling `flock` on it.
-            try requireVerifiedRegularFile(descriptor: lockFD, name: Self.lockFileName)
-            try await Self.blockingAcquire(lockFD)
-            // The wait above can only return successfully with the lock
-            // genuinely held (a cancellation mid-wait instead throws
-            // `CancellationError` from inside `blockingAcquire` itself,
-            // never resuming with a silently-still-held lock) — but a
-            // cancellation delivered in the narrow window *after* that
-            // resume and *before* this line runs would otherwise let a
-            // cancelled caller still walk away with a held lock and
-            // proceed to mutate. Checking here, before ever returning the
-            // descriptor to the caller, closes that window: on
-            // cancellation the lock is released right here rather than by
-            // some caller that may never reach its own `defer`.
-            try Task.checkCancellation()
-        } catch {
-            flock(lockFD, LOCK_UN)
-            close(lockFD)
-            throw error
+            guard let self else { return }
+            try requireVerifiedRegularFile(descriptor: descriptor, name: Self.lockFileName)
         }
-        return lockFD
     }
 
-    /// Releases and closes a descriptor obtained from
-    /// ``acquireExclusiveLock()``. `LOCK_UN` is documented as never
-    /// blocking, so this stays a plain synchronous call — safe to invoke
-    /// directly from a `defer` on the caller's own executor.
+    /// Releases the `flock` hold obtained from ``acquireExclusiveLock()``
+    /// (never closing the shared descriptor -- ``lockCoordinator`` reuses
+    /// it for this instance's entire lifetime) and, if another in-process
+    /// caller is queued waiting, hands it local ownership. `lockFD` is
+    /// accepted (and ignored beyond a sanity check) purely to keep this
+    /// method's call sites -- written against the descriptor
+    /// ``acquireExclusiveLock()`` returned -- unchanged; the coordinator
+    /// already knows its own single descriptor internally.
     func releaseExclusiveLock(_ lockFD: Int32) {
-        flock(lockFD, LOCK_UN)
-        close(lockFD)
+        lockCoordinator.release(expectedFD: lockFD)
     }
 
     /// Convenience wrapper for callers whose critical section does not
@@ -124,119 +85,5 @@ extension SecureCacheDirectory {
         let lockFD = try await acquireExclusiveLock()
         defer { releaseExclusiveLock(lockFD) }
         return try body()
-    }
-
-    /// A small, lock-guarded flag shared between a
-    /// ``withTaskCancellationHandler(operation:onCancel:)`` cancellation
-    /// callback (which can fire on an arbitrary thread, at any time,
-    /// including concurrently with the poll loop below reading it) and
-    /// ``blockingAcquire(_:)``'s own poll loop — never a Swift actor,
-    /// since the poll loop itself must stay entirely synchronous
-    /// (non-`async`) to keep spinning at a tight, predictable interval on
-    /// its dedicated GCD queue.
-    private final class CancellationFlag: @unchecked Sendable {
-        private var unfairLock = os_unfair_lock()
-        private var isCancelled = false
-
-        func markCancelled() {
-            os_unfair_lock_lock(&unfairLock)
-            isCancelled = true
-            os_unfair_lock_unlock(&unfairLock)
-        }
-
-        func checkCancelled() -> Bool {
-            os_unfair_lock_lock(&unfairLock)
-            defer { os_unfair_lock_unlock(&unfairLock) }
-            return isCancelled
-        }
-    }
-
-    /// How long each failed non-blocking acquire attempt sleeps before
-    /// retrying — short enough that a waiting caller's own cancellation is
-    /// observed promptly (bounding how long a cancelled `Task` can still
-    /// occupy a ``lockAcquireQueue`` worker/fd after cancellation), long
-    /// enough that busy-waiting many concurrent waiters does not
-    /// meaningfully burn CPU while a lock is held for its normal, brief
-    /// critical-section duration.
-    private static let pollIntervalMicroseconds: UInt32 = 2000
-
-    /// Performs the `flock(lockFD, LOCK_EX | LOCK_NB)` acquire as a
-    /// cancellation-aware, non-blocking poll loop on ``lockAcquireQueue``
-    /// rather than the calling task's own executor, and rather than a
-    /// single indefinite blocking `LOCK_EX` wait. `lockFD` is a plain,
-    /// `Sendable` file-descriptor integer, still owned (and closed) by the
-    /// caller; this only ever reads/waits on it.
-    ///
-    /// A plain blocking `flock(LOCK_EX)` wait, as this previously used,
-    /// cannot observe Swift `Task` cancellation at all: a caller whose
-    /// surrounding `Task` was cancelled while still waiting for a lock
-    /// held by another (possibly very slow, or even hung) holder would
-    /// leak its ``lockAcquireQueue`` worker thread and this open `lockFD`
-    /// for as long as that other holder kept the lock — potentially
-    /// forever, unbounded by anything this caller itself does. Polling
-    /// with `LOCK_NB` at ``pollIntervalMicroseconds`` and checking a
-    /// shared ``CancellationFlag`` (set by
-    /// `withTaskCancellationHandler`'s `onCancel` callback, which can fire
-    /// from any thread at any time) every iteration bounds that leak to at
-    /// most one poll interval, and lets a cancelled waiter's continuation
-    /// resume with `CancellationError` instead of silently, and
-    /// incorrectly, resuming as if the lock had been genuinely acquired.
-    private static func blockingAcquire(_ lockFD: Int32) async throws {
-        let flag = CancellationFlag()
-        try await withTaskCancellationHandler(operation: {
-            try await pollUntilAcquiredOrCancelled(lockFD, flag: flag)
-        }, onCancel: {
-            flag.markCancelled()
-        })
-    }
-
-    /// The actual `LOCK_NB` poll loop, factored out of
-    /// ``blockingAcquire(_:)`` purely so its
-    /// `withCheckedThrowingContinuation` closure's parameter can stay on
-    /// the same line as its opening brace (this package's
-    /// `closure_parameter_position` convention) without also exceeding the
-    /// line-length limit once combined with `withTaskCancellationHandler`'s
-    /// own trailing closures.
-    /// A shorthand for the specific continuation type
-    /// ``pollUntilAcquiredOrCancelled(_:flag:)`` resumes, existing purely
-    /// so that closure's parameter type annotation (needed to work around
-    /// a Swift compiler crash — "failed to produce diagnostic for
-    /// expression" — reproducibly hit when the fully-general
-    /// `CheckedContinuation<Void, Error>` spelling is inferred implicitly
-    /// here) fits on the same line as the closure's opening brace within
-    /// this package's line-length limit.
-    private typealias LockAcquireContinuation = CheckedContinuation<Void, Error>
-
-    private static func pollUntilAcquiredOrCancelled(
-        _ lockFD: Int32,
-        flag: CancellationFlag
-    ) async throws {
-        try await withCheckedThrowingContinuation { (continuation: LockAcquireContinuation) in
-            lockAcquireQueue.async {
-                while true {
-                    if flag.checkCancelled() {
-                        continuation.resume(throwing: CancellationError())
-                        return
-                    }
-                    if flock(lockFD, LOCK_EX | LOCK_NB) == 0 {
-                        continuation.resume()
-                        return
-                    }
-                    if errno == EINTR {
-                        continue
-                    }
-                    if errno == EWOULDBLOCK {
-                        usleep(pollIntervalMicroseconds)
-                        continue
-                    }
-                    continuation.resume(
-                        throwing: AssetError.cachePersistenceFailed(
-                            "flock failed to acquire (errno \(errno))"
-                        )
-                    )
-                    return
-                }
-            }
-        }
     }
 }

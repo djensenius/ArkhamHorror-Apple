@@ -125,10 +125,10 @@ final class FaultInjectionState: @unchecked Sendable {
     /// ``SecureCacheDirectory/attributes(name:)`` — simulates a genuine
     /// `fstatat` failure (permission/I/O/etc, as opposed to the file
     /// simply not existing) for a specific entry name, so a test can
-    /// prove ``AssetDiskCache/isTombstoned(keyHash:)`` and
-    /// ``AssetDiskCache/areDiskReadsDisabled()`` fail *closed* (treat an
-    /// unconfirmable check the same as "marker present") rather than
-    /// silently collapsing the failure into "marker absent".
+    /// prove ``AssetDiskCache/areDiskWritesDisabledLocked()`` fails
+    /// *closed* (treats an unconfirmable check the same as "marker
+    /// present") rather than silently collapsing the failure into
+    /// "marker absent".
     var failAttributesSuffixes: Set<String> {
         get { lock.withLock { _failAttributesSuffixes } }
         set { lock.withLock { _failAttributesSuffixes = newValue } }
