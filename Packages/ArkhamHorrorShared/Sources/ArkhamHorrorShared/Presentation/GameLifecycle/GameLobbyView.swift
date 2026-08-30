@@ -50,6 +50,9 @@ struct GameLobbyView: View {
                 Button("Done") { dismiss() }
             }
         }
+        .navigationDestination(for: GameID.self) { gameID in
+            LiveGameView(model: model, gameID: gameID)
+        }
     }
 
     private func lobbyContent(for game: GameSummary) -> some View {
@@ -71,6 +74,17 @@ struct GameLobbyView: View {
             if case .pending = game.gameState {
                 Section {
                     joinButton
+                }
+            }
+
+            if case .active = game.gameState {
+                Section {
+                    NavigationLink(value: gameID) {
+                        Label("Enter Game", systemImage: "arrow.right.circle.fill")
+                    }
+                    .accessibilityIdentifier(
+                        AccountAccessibilityID.liveGameEnterButton(for: gameID.rawValue)
+                    )
                 }
             }
 

@@ -156,4 +156,21 @@ enum AccountAccessibilityID {
     static func serverRemoveButton(for profileID: UUID) -> String {
         "account.server.remove.\(profileID.uuidString)"
     }
+
+    // MARK: - Live game
+
+    static let liveGameRetryButton = "account.games.live.retry"
+    static let liveGameDismissButton = "account.games.live.dismiss"
+    static let liveGameLoadingText = "account.games.live.loading"
+    static let liveGameReconnectingText = "account.games.live.reconnecting"
+    static let liveGameOfflineText = "account.games.live.offline"
+    static let liveGameIncompatiblePayloadText = "account.games.live.incompatiblePayload"
+    static let liveGameAuthenticationExpiredText = "account.games.live.authenticationExpired"
+    static let liveGameTerminalFailureText = "account.games.live.terminalFailure"
+
+    /// A per-game "enter the live board" navigation identifier, distinct for every
+    /// active game row/lobby.
+    static func liveGameEnterButton(for gameID: UUID) -> String {
+        "account.games.live.enter.\(gameID.uuidString)"
+    }
 }

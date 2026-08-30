@@ -4,10 +4,10 @@ import SwiftUI
 /// presentation of a decoded ``PublicGameSnapshot`` (via ``BoardProjection``), adaptive
 /// across compact iPhone, iPad, resizable macOS, tvOS, and visionOS.
 ///
-/// Deliberately **not** `public`: this issue is a fixture-backed presentation slice with
-/// no lifecycle/root integration. `ArkhamHorrorSharedTests`'s `@testable import` already
-/// gives the internal fixture gallery/harness (and every test) full access; a future PR
-/// that wires this into the app's root navigation can widen access then.
+/// Rendered both by this package's fixture gallery/harness and by ``LiveGameView``,
+/// which drives it from a live, backend-synchronized ``BoardProjection`` instead of a
+/// static fixture. Deliberately **not** `public`: this remains an internal
+/// implementation type of this package's own root navigation.
 ///
 /// Each `BoardView` value owns its own ``BoardCommandController`` instance (created once,
 /// in `onAppear`), so two simultaneously-visible `BoardView`s (for example two visionOS
