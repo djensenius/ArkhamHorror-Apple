@@ -10,6 +10,7 @@ enum BoardFocusZone {
     static let enemyLocations: SemanticFocusZone = "board.enemyLocations"
     static let investigators: SemanticFocusZone = "board.investigators"
     static let chaosBag: SemanticFocusZone = "board.chaosBag"
+    static let prompt: SemanticFocusZone = "board.prompt"
     /// The inspector modal's own zone. Deliberately **not** a member of ``cycleOrder``:
     /// `cycleZone` must never land here, since this zone only ever exists to hold the
     /// inspector's single Close control while a modal is presented.
@@ -20,7 +21,7 @@ enum BoardFocusZone {
     /// own order is insertion order across every zone interleaved, not a meaningful
     /// zone-level sequence).
     static let cycleOrder: [SemanticFocusZone] = [
-        scenario, actAgenda, locations, enemyLocations, investigators, chaosBag,
+        scenario, prompt, actAgenda, locations, enemyLocations, investigators, chaosBag,
     ]
 }
 
@@ -38,6 +39,11 @@ enum BoardFocusID {
     /// replacement/removal/reorder can never make presenting the inspector a no-op change
     /// that a SwiftUI `.onChange` fails to observe.
     static let inspectorClose: SemanticFocusID = "board.inspector.close"
+    static let promptRetry: SemanticFocusID = "board.prompt.retry"
+
+    static func promptChoice(_ index: Int) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.prompt.choice.\(index)")
+    }
 
     static func act(_ id: ActID) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.act.\(id.description)")
@@ -66,12 +72,30 @@ enum BoardFocusID {
 /// zone (every other zone); ``FocusWrapPolicy/wrapWithinZone`` guarantees every entity
 /// stays reachable by directional movement even where an explicit edge is absent.
 enum BoardFocusGraphBuilder {
-    static func makeGraph(projection: BoardProjection, layout: BoardLayout) -> FocusGraph {
+    static func makeGraph(
+        projection: BoardProjection,
+        layout: BoardLayout,
+        prompt: BasicChoicePromptPresentation? = nil
+    ) -> FocusGraph {
         var nodes: [FocusNode] = []
         var zoneEntryPoints: [SemanticFocusZone: SemanticFocusID] = [:]
 
         nodes.append(FocusNode(id: BoardFocusID.scenarioHeader, zone: BoardFocusZone.scenario))
         zoneEntryPoints[BoardFocusZone.scenario] = BoardFocusID.scenarioHeader
+
+        let promptChoices: [SemanticFocusID] = if prompt?.canSubmit == true {
+            prompt?.choices
+                .filter(\.isSupported)
+                .map { BoardFocusID.promptChoice($0.index) } ?? []
+        } else if prompt?.canRetry == true {
+            [BoardFocusID.promptRetry]
+        } else {
+            []
+        }
+        appendVerticalChain(
+            promptChoices, zone: BoardFocusZone.prompt,
+            nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
+        )
 
         // Ordered agendas-then-acts to match `BoardActAgendaColumnView`'s own rendering
         // order (agenda tiles above act tiles), so the zone's entry point and up/down
@@ -118,8 +142,18 @@ enum BoardFocusGraphBuilder {
     /// ``BoardFocusZone/cycleOrder``, for ``BoardCommandController``'s zone cycling. An
     /// empty optional zone (for example no acts/agendas at all) is simply skipped rather
     /// than cycled into and left with nothing to focus.
-    static func nonEmptyZonesInCycleOrder(projection: BoardProjection) -> [SemanticFocusZone] {
+    static func nonEmptyZonesInCycleOrder(
+        projection: BoardProjection, prompt: BasicChoicePromptPresentation? = nil
+    ) -> [SemanticFocusZone] {
         var populated: Set<SemanticFocusZone> = [BoardFocusZone.scenario, BoardFocusZone.chaosBag]
+        let hasPromptFocus = prompt?.canRetry == true
+            || (
+                prompt?.canSubmit == true
+                    && prompt?.choices.contains(where: \.isSupported) == true
+            )
+        if hasPromptFocus {
+            populated.insert(BoardFocusZone.prompt)
+        }
         if !projection.acts.isEmpty || !projection.agendas.isEmpty {
             populated.insert(BoardFocusZone.actAgenda)
         }

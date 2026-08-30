@@ -80,16 +80,15 @@ struct BoardSnapshotAdversarialTests {
 
     // MARK: - Unknown tags
 
-    @Test("An unknown ServerMessage tag decodes as a typed unsupported message, never fatal")
-    func unknownServerMessageTagIsUnsupported() throws {
+    @Test("GameError decodes as the typed rejection frame")
+    func gameErrorIsRecognized() throws {
         let bytes = Data(#"{"tag": "GameError", "contents": "boom"}"#.utf8)
         let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
-        guard case let .unsupportedMessage(tag, rawContents) = update else {
-            Issue.record("Expected .unsupportedMessage")
+        guard case let .gameError(rawMessage) = update else {
+            Issue.record("Expected .gameError")
             return
         }
-        #expect(tag == "GameError")
-        #expect(rawContents == .string("boom"))
+        #expect(rawMessage == "boom")
     }
 
     @Test("A genuinely unknown ServerMessage tag also decodes as unsupported, not a crash")

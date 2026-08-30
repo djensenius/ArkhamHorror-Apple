@@ -142,11 +142,12 @@ extension AppModel {
     ///
     /// A `.snapshot` frame decodes through the exact same ``BoardProjectionBuilder``
     /// a REST fetch's ``PublicGameSnapshot`` does, publishing
-    /// ``LiveGameState/live(_:)``. An `.unsupportedMessage` frame (any
-    /// `ServerMessage` tag besides `GameUpdate`; see ``BoardSnapshotUpdate``'s own
-    /// documentation) is silently ignored -- normal, expected, out-of-scope traffic
-    /// this contract slice does not decode further, never treated as an
-    /// incompatibility. Only an actual ``ContractJSON`` decode throw (malformed
+    /// ``LiveGameState/live(_:)``. A room-wide `.gameError` is surfaced as generic
+    /// feedback and can make a same-transport answer outcome uncertain, but is never
+    /// treated as correlated rejection. An `.unsupportedMessage` frame is silently
+    /// ignored -- normal, expected, out-of-scope traffic this contract slice does not
+    /// decode further, never treated as an incompatibility. Only an actual
+    /// ``ContractJSON`` decode throw (malformed
     /// bytes/schema drift in what was supposed to be a `GameUpdate`) publishes
     /// ``LiveGameState/incompatiblePayload(lastKnown:)`` and returns
     /// ``LiveGameSocketConsumeOutcome/stopped`` (never retried by reconnecting: a
@@ -154,11 +155,12 @@ extension AppModel {
     func consumeLiveGameSocket(
         _ attempt: LiveGameSessionAttempt,
         connection: any GameSocketConnection,
+        connectionID: UUID? = nil,
         projection initialProjection: BoardProjection
     ) async -> LiveGameSocketConsumeOutcome {
         var projection = initialProjection
         while true {
-            guard isCurrentLiveGameSession(attempt) else {
+            guard isCurrentLiveGameConnection(attempt, connectionID: connectionID) else {
                 connection.close(code: .goingAway, reason: nil)
                 return .stopped
             }
@@ -182,7 +184,10 @@ extension AppModel {
                 // throughout this package's REST clients -- ensures a
                 // cancelled/superseded session is always reported as `.stopped`,
                 // never misreported as a reconnectable `.lost`.
-                if Task.isCancelled || !isCurrentLiveGameSession(attempt) {
+                let isStale = !isCurrentLiveGameConnection(
+                    attempt, connectionID: connectionID
+                )
+                if Task.isCancelled || isStale {
                     connection.close(code: .goingAway, reason: nil)
                     return .stopped
                 }
@@ -190,32 +195,69 @@ extension AppModel {
                 return .lost(projection)
             }
 
-            guard isCurrentLiveGameSession(attempt) else {
+            guard isCurrentLiveGameConnection(attempt, connectionID: connectionID) else {
                 connection.close(code: .goingAway, reason: nil)
                 return .stopped
             }
 
             switch event {
             case let .message(data):
-                let update: BoardSnapshotUpdate
-                do {
-                    update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: data)
-                } catch {
-                    liveGameStates[attempt.gameID] = .incompatiblePayload(lastKnown: projection)
-                    connection.close(code: .goingAway, reason: nil)
+                guard applyLiveGameMessage(
+                    data,
+                    attempt: attempt,
+                    connection: connection,
+                    connectionID: connectionID,
+                    projection: &projection
+                ) else {
                     return .stopped
-                }
-                switch update {
-                case let .snapshot(snapshot):
-                    projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-                    liveGameStates[attempt.gameID] = .live(projection)
-                case .unsupportedMessage:
-                    continue
                 }
             case .closed:
                 connection.close(code: .goingAway, reason: nil)
                 return .lost(projection)
             }
         }
+    }
+
+    private func applyLiveGameMessage(
+        _ data: Data,
+        attempt: LiveGameSessionAttempt,
+        connection: any GameSocketConnection,
+        connectionID: UUID?,
+        projection: inout BoardProjection
+    ) -> Bool {
+        let update: BoardSnapshotUpdate
+        do {
+            update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: data)
+        } catch {
+            liveGameStates[attempt.gameID] = .incompatiblePayload(lastKnown: projection)
+            connection.close(code: .goingAway, reason: nil)
+            return false
+        }
+        switch update {
+        case let .snapshot(snapshot):
+            projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+            basicChoiceServerFeedback[attempt.gameID] = nil
+            reconcileBasicChoice(
+                gameID: attempt.gameID, projection: projection, isRESTSnapshot: false
+            )
+            liveGameStates[attempt.gameID] = .live(projection)
+        case .gameError:
+            handleUncorrelatedBasicChoiceGameError(
+                gameID: attempt.gameID,
+                sessionAttemptID: attempt.attemptID,
+                connectionID: connectionID
+            )
+        case .unsupportedMessage:
+            break
+        }
+        return true
+    }
+
+    private func isCurrentLiveGameConnection(
+        _ attempt: LiveGameSessionAttempt, connectionID: UUID?
+    ) -> Bool {
+        guard isCurrentLiveGameSession(attempt) else { return false }
+        guard let connectionID else { return true }
+        return liveGameConnections[attempt.gameID]?.connectionID == connectionID
     }
 }

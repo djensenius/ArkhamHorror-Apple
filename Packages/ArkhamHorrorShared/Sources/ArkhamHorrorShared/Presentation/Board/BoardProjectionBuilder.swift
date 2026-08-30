@@ -32,7 +32,8 @@ enum BoardProjectionBuilder {
             otherInvestigatorCount: snapshot.otherInvestigators.count,
             killedInvestigatorCount: snapshot.killedInvestigators.count,
             chaosBag: makeChaosBag(from: snapshot.mode),
-            counters: makeCounters(from: snapshot)
+            counters: makeCounters(from: snapshot),
+            questions: snapshot.question
         )
     }
 
