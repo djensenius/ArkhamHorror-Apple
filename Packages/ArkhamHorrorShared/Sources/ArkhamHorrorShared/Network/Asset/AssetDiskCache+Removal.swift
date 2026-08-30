@@ -173,7 +173,7 @@ extension AssetDiskCache {
     func currentClearEpoch() async throws -> Int {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
-        return secureDirectory.readPersistedClearEpoch()
+        return try secureDirectory.readPersistedClearEpoch()
     }
 
     /// `true` for any directory entry `removeAll()` is responsible for

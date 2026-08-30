@@ -48,23 +48,38 @@ extension SecureCacheDirectory {
     static let clearEpochFileName = ".arkham-cache.clear-epoch"
 
     /// Reads the currently persisted clear-epoch value, defaulting to `0`
-    /// if the file does not exist yet (a freshly created cache root, which
-    /// has never been cleared) or cannot be parsed as a valid, non-negative
-    /// integer (a corrupt or foreign file somehow planted at this exact
-    /// name) — both folded into the same "never cleared" baseline, which
-    /// is always safe: a token issued while the persisted file is missing
-    /// or corrupt captures `0`, and any later, successfully-committed
-    /// ``bumpClearEpoch()`` still strictly exceeds it, so a genuine clear
-    /// is never missed merely because the counter file itself was once
-    /// unreadable.
-    func readPersistedClearEpoch() -> Int {
-        guard let data = try? read(name: Self.clearEpochFileName, maxBytes: 32),
-              let string = String(data: data, encoding: .utf8),
-              string.utf8.allSatisfy({ (0x30 ... 0x39).contains($0) }),
-              !string.isEmpty,
-              let parsed = Int(string)
-        else {
+    /// only for the one genuinely safe "never cleared" case: the file
+    /// does not exist yet (a freshly created cache root). Throws for
+    /// every other failure -- a read/verification error (wrong type,
+    /// wrong owner, a bounded-read violation, a short read) or a parse
+    /// failure (a corrupt or foreign file somehow planted at this exact
+    /// name) -- rather than silently folding any of those into the same
+    /// `0` baseline. Collapsing a genuine read failure into `0` would be
+    /// actively unsafe, not merely imprecise: it would let this instance
+    /// (wrongly) believe "no clear has ever happened" even though the
+    /// durable counter it could not read might already record one or
+    /// more clears, which is exactly the cross-instance resurrection
+    /// this file exists to prevent. ``currentDurableClearEpoch()``'s
+    /// `try?` turns this throw into `nil`, and every authority check
+    /// already treats `nil` as fail-closed ("not authoritative"/
+    /// "changed") -- so a read failure here correctly costs this
+    /// instance its own authority rather than silently granting it a
+    /// false "never cleared" baseline.
+    func readPersistedClearEpoch() throws -> Int {
+        guard let data = try read(name: Self.clearEpochFileName, maxBytes: 32) else {
+            // A clean "does not exist yet" miss -- the one case where
+            // baseline `0` is genuinely safe, not merely convenient.
             return 0
+        }
+        guard
+            let string = String(data: data, encoding: .utf8),
+            string.utf8.allSatisfy({ (0x30 ... 0x39).contains($0) }),
+            !string.isEmpty,
+            let parsed = Int(string)
+        else {
+            throw AssetError.cachePersistenceFailed(
+                "Clear-epoch file '\(Self.clearEpochFileName)' is corrupt or unparsable"
+            )
         }
         return parsed
     }
@@ -94,7 +109,7 @@ extension SecureCacheDirectory {
     /// to persist).
     @discardableResult
     func bumpClearEpoch() throws -> Int {
-        let persisted = readPersistedClearEpoch()
+        let persisted = try readPersistedClearEpoch()
         if persisted >= Int.max {
             return Int.max
         }
