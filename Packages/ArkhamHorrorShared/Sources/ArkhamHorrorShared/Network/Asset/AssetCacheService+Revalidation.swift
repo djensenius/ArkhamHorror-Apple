@@ -101,7 +101,27 @@ extension AssetCacheService {
         let candidates = try resolvedCandidates(for: key)
         let cacheKey = AssetCacheKey(for: key, candidates: candidates)
 
-        if let existing = await memoryCache.get(cacheKey) {
+        // Snapshotted *before* the memory-cache read itself: without
+        // this, a memory hit whose bytes were already superseded by a
+        // concurrent `invalidate`/`evictAll` (which can run to completion
+        // on *this* actor while this call is suspended inside
+        // `memoryCache.get`, since that is a genuine hop to a different
+        // actor) would still be handed to `revalidateExisting` below,
+        // which unconditionally mints a *fresh* authoritative token for
+        // this key from those already-superseded bytes — resurrecting
+        // exactly the state the concurrent invalidation just cleared the
+        // moment a 304 response arrives for it.
+        //
+        // Deliberately uses ``snapshotClearState(for:)``/
+        // ``clearStateUnchanged(since:for:)`` here, not the coarser
+        // ``snapshotAuthority(for:)``/``unchanged(since:for:)`` the
+        // disk-hit branch below uses: see that function's doc comment for
+        // why the token-based check would also misfire on a second,
+        // concurrent, perfectly legitimate ``revalidate(for:)`` call for
+        // this exact same key.
+        let clearSnapshot = snapshotClearState(for: cacheKey)
+        let memoryHit = await memoryCache.get(cacheKey)
+        if let existing = memoryHit, clearStateUnchanged(since: clearSnapshot, for: cacheKey) {
             return try await revalidateExisting(
                 existing,
                 key: key,
@@ -239,7 +259,7 @@ extension AssetCacheService {
             guard let self else { throw CancellationError() }
             return try await performRevalidation(revalidationRequest)
         }
-        let newFetch = RevalidationFetch(task: newTask)
+        let newFetch = RevalidationFetch(task: newTask, token: token)
         inFlightRevalidation[slot] = newFetch
         let fetchID = newFetch.id
         Task { [weak self] in

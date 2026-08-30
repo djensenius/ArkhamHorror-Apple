@@ -96,7 +96,18 @@ extension AssetCacheService {
         guard isAuthoritative(token, for: cacheKey) else {
             throw AssetError.staleOperation
         }
-        await publish(cacheKey, asset: asset, token: token)
+        // `publish` performs its own final authority re-check immediately
+        // before returning (see ``MutationOutcome``'s doc comment): a
+        // `.stale` outcome here means a more-recently-issued operation for
+        // this exact key (or `evictAll()`) already superseded this fetch
+        // — including one retired by ``retireIfCurrent(_:for:)`` when the
+        // last waiter for this exact work cancelled — while `publish`
+        // itself was suspended, so this caller must not hand back `asset`
+        // as if it were still the resolved, cache-consistent answer for
+        // this key.
+        guard await publish(cacheKey, asset: asset, token: token) == .applied else {
+            throw AssetError.staleOperation
+        }
         return asset
     }
 

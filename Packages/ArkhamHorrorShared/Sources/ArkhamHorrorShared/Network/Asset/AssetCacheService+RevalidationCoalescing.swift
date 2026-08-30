@@ -58,6 +58,14 @@ extension AssetCacheService {
         }
     }
 
+    /// Mirrors `AssetCacheService+Coalescing.swift`'s
+    /// ``AssetCacheService/cancelWaiter(_:fetchID:waiterID:)``: when the
+    /// last waiter for this revalidation cancels, retires its token (via
+    /// ``retireIfCurrent(_:for:)``) synchronously before the underlying
+    /// task is cancelled, so a subsequent authority check inside that
+    /// now-doomed task's own `performRevalidation` call — which may not
+    /// yet have observed cooperative cancellation — cannot still publish
+    /// or touch/invalidate shared cache state under this abandoned token.
     func cancelRevalidationWaiter(
         _ slot: RevalidationSlot,
         fetchID: UUID,
@@ -69,6 +77,7 @@ extension AssetCacheService {
         }
         if fetch.waiters.isEmpty {
             inFlightRevalidation[slot] = nil
+            retireIfCurrent(fetch.token, for: slot.cacheKey)
             fetch.task.cancel()
         } else {
             inFlightRevalidation[slot] = fetch
@@ -131,7 +140,13 @@ extension AssetCacheService {
             }
             var refreshed = request.existing
             refreshed.metadata.accessSequence = AssetAccessSequence(0)
-            await touch(cacheKey, asset: refreshed, token: request.token)
+            // See the identical final ``MutationOutcome`` re-check on the
+            // `.success` branch below for why a `.stale` result here must
+            // also surface as ``AssetError/staleOperation`` rather than
+            // returning `refreshed` as if this 304 had actually landed.
+            guard await touch(cacheKey, asset: refreshed, token: request.token) == .applied else {
+                throw AssetError.staleOperation
+            }
             return refreshed
         case .notFound:
             // The previously cached resource no longer exists at its exact
@@ -149,7 +164,15 @@ extension AssetCacheService {
             guard isAuthoritative(request.token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
-            await invalidate(cacheKey, token: request.token)
+            // A `.stale` outcome here means a newer operation already
+            // superseded this 404 before the invalidation itself could
+            // land; reporting `candidatesExhausted` in that case would
+            // wrongly tell this caller the asset is gone when a
+            // more-authoritative concurrent operation may since have
+            // published (or be about to publish) fresh content for it.
+            guard await invalidate(cacheKey, token: request.token) == .applied else {
+                throw AssetError.staleOperation
+            }
             throw AssetError.candidatesExhausted
         case let .success(response):
             let asset = try await assembleRevalidatedAsset(
@@ -170,7 +193,9 @@ extension AssetCacheService {
                 // ``AssetError/staleConditionalResponse``.
                 throw AssetError.staleOperation
             }
-            await publish(cacheKey, asset: asset, token: request.token)
+            guard await publish(cacheKey, asset: asset, token: request.token) == .applied else {
+                throw AssetError.staleOperation
+            }
             return asset
         }
     }

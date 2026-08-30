@@ -50,6 +50,24 @@ actor AssetCacheService {
     var globalGeneration = 0
     var inFlightRevalidation: [RevalidationSlot: RevalidationFetch] = [:]
 
+    /// Bumped for exactly `key` every time ``invalidate(_:token:)``
+    /// actually proceeds to remove it (a definitive 404, a failed
+    /// re-validation quarantine, or a URL-mismatch quarantine) — a
+    /// narrower, more precise question than "has *any* operation been
+    /// issued for this key since", which ``keyLatestToken`` alone answers
+    /// and which a perfectly legitimate, coalescable sibling
+    /// ``asset(for:)``/``revalidate(for:)`` call for the very same key
+    /// would also (harmlessly) advance. Combined with `globalGeneration`
+    /// (bumped by ``evictAll()``, which affects every key at once without
+    /// calling ``invalidate(_:token:)`` for each one individually), this
+    /// is what ``revalidate(for:)``'s memory-hit branch checks a cached
+    /// snapshot against before ever letting it mint a fresh authority
+    /// token: see ``snapshotClearState(for:)``/``clearStateUnchanged(since:for:)``
+    /// in `AssetCacheService+Epoch.swift`, and that function's doc
+    /// comment for why the coarser `keyLatestToken`-based check is wrong
+    /// for this specific purpose.
+    var keyClearGeneration: [AssetCacheKey: Int] = [:]
+
     /// Keys whose disk entry this actor knows it *intended* to invalidate
     /// (a definitive 404, a failed re-validation quarantine, or
     /// ``evictAll()``) but where the underlying physical deletion could
@@ -97,7 +115,19 @@ actor AssetCacheService {
         let candidates = try resolvedCandidates(for: key)
         let cacheKey = AssetCacheKey(for: key, candidates: candidates)
 
-        if let cached = await memoryCache.get(cacheKey) {
+        // Snapshotted *before* the memory-cache read itself, mirroring the
+        // disk-hit snapshot immediately below: `memoryCache.get` suspends
+        // (a genuine hop to a different actor), during which a
+        // more-recently-issued operation for this exact key — or a
+        // cache-wide `evictAll()` — can become authoritative on *this*
+        // actor without that having any effect on `memoryCache`'s own
+        // already-in-flight `get` call. Without this check, such a race
+        // could still hand back an entry this actor's own bookkeeping
+        // already considers superseded, purely because of memory-cache
+        // actor-hop timing luck.
+        let memorySnapshot = snapshotAuthority(for: cacheKey)
+        let memoryHit = await memoryCache.get(cacheKey)
+        if let cached = memoryHit, unchanged(since: memorySnapshot, for: cacheKey) {
             return cached
         }
         // A tombstoned key means this actor already intended to invalidate
@@ -135,30 +165,45 @@ actor AssetCacheService {
                 ) {
                     // `revalidateDiskHit` suspends (a full platform
                     // decode); re-check this key's authority immediately
-                    // before caching its result back into memory, so a
-                    // concurrent `evictAll()` or a more-recently-issued
-                    // operation for this exact key that already concluded
-                    // while this suspension was in progress can never be
-                    // resurrected by this now-stale read. `memoryCache.set`
+                    // before caching its result back into memory *and*
+                    // before ever returning it to this call's own caller —
+                    // a `evictAll()` or a more-recently-issued operation
+                    // for this exact key may already have concluded while
+                    // this suspension was in progress, and handing back a
+                    // value this actor's own bookkeeping already considers
+                    // superseded would let a caller observe (and possibly
+                    // display) content the cache layer itself no longer
+                    // considers authoritative. `memoryCache.set`
                     // independently re-checks the same token itself (see
-                    // its doc comment), so this is deliberately
+                    // its doc comment), so that call is deliberately
                     // defense-in-depth, not this check's only enforcement
-                    // point.
+                    // point — this outer check is what protects the
+                    // *return value*, which `memoryCache.set`'s own
+                    // internal check cannot do.
                     if isAuthoritative(token, for: cacheKey) {
                         await memoryCache.set(cacheKey, asset: revalidated, token: token)
+                        return revalidated
                     }
-                    return revalidated
+                    // Falls through to a fresh network fetch below exactly
+                    // like a genuine cache miss: this exact disk-hit read
+                    // is no longer authoritative, so neither promoting it
+                    // into memory nor returning it to this call's caller
+                    // would be consistent with whatever operation
+                    // superseded it.
+                } else {
+                    // The persisted entry failed re-validation against the
+                    // *current* format/magic/dimension/limits/decode
+                    // contract (see ``revalidateDiskHit``): it has already
+                    // been quarantined (removed from disk), so fall
+                    // through to a fresh network fetch exactly as if
+                    // nothing had been cached at all, rather than
+                    // surfacing the stale/invalid bytes or poisoning this
+                    // call permanently.
+                    // `CancellationError` is not caught here:
+                    // `revalidateDiskHit` rethrows it rather than
+                    // returning `nil`, propagating straight out instead of
+                    // falling through.
                 }
-                // The persisted entry failed re-validation against the
-                // *current* format/magic/dimension/limits/decode contract
-                // (see ``revalidateDiskHit``): it has already been
-                // quarantined (removed from disk), so fall through to a
-                // fresh network fetch exactly as if nothing had been
-                // cached at all, rather than surfacing the stale/invalid
-                // bytes or poisoning this call permanently.
-                // `CancellationError` is not caught here: `revalidateDiskHit`
-                // rethrows it rather than returning `nil`, propagating
-                // straight out instead of falling through.
             }
             // Either a genuine disk miss, or a disk hit whose read raced
             // with a more authoritative concurrent operation for this
@@ -188,10 +233,24 @@ actor AssetCacheService {
     /// ``tombstonedKeys``): a fresh, verified generation on disk
     /// supersedes whatever an earlier failed deletion was protecting
     /// against.
-    func publish(_ cacheKey: AssetCacheKey, asset: CachedAsset, token: CacheToken) async {
-        guard isAuthoritative(token, for: cacheKey) else { return }
+    ///
+    /// Returns ``MutationOutcome/stale`` (without having mutated
+    /// anything further) the moment any of its own re-checks finds a
+    /// more-recently-issued token already authoritative — including one
+    /// retired by ``retireIfCurrent(_:for:)`` when the last waiter for
+    /// this exact work cancelled. Callers that would otherwise return a
+    /// value to their own caller as if this had landed must check this
+    /// result (see `AssetCacheService+Fetch.swift`'s and
+    /// `AssetCacheService+RevalidationCoalescing.swift`'s use of this).
+    @discardableResult
+    func publish(
+        _ cacheKey: AssetCacheKey,
+        asset: CachedAsset,
+        token: CacheToken
+    ) async -> MutationOutcome {
+        guard isAuthoritative(token, for: cacheKey) else { return .stale }
         await memoryCache.set(cacheKey, asset: asset, token: token)
-        guard isAuthoritative(token, for: cacheKey) else { return }
+        guard isAuthoritative(token, for: cacheKey) else { return .stale }
         await recordDiskPersistenceResult {
             try await diskCache.set(
                 cacheKey,
@@ -200,9 +259,11 @@ actor AssetCacheService {
                 token: token
             )
         }
+        guard isAuthoritative(token, for: cacheKey) else { return .stale }
         if lastDiskPersistenceFailure == nil {
             tombstonedKeys.remove(cacheKey)
         }
+        return .applied
     }
 
     /// Refreshes an already-cached asset's metadata only (for example
@@ -210,13 +271,22 @@ actor AssetCacheService {
     /// revalidation), without re-writing the unchanged payload bytes to
     /// disk. Gated by `token` at each hop exactly like ``publish(_:asset:token:)``.
     /// Falls back to the same best-effort, audited failure handling.
-    func touch(_ cacheKey: AssetCacheKey, asset: CachedAsset, token: CacheToken) async {
-        guard isAuthoritative(token, for: cacheKey) else { return }
+    /// Returns ``MutationOutcome/stale`` under the same conditions
+    /// ``publish(_:asset:token:)`` does.
+    @discardableResult
+    func touch(
+        _ cacheKey: AssetCacheKey,
+        asset: CachedAsset,
+        token: CacheToken
+    ) async -> MutationOutcome {
+        guard isAuthoritative(token, for: cacheKey) else { return .stale }
         await memoryCache.set(cacheKey, asset: asset, token: token)
-        guard isAuthoritative(token, for: cacheKey) else { return }
+        guard isAuthoritative(token, for: cacheKey) else { return .stale }
         await recordDiskPersistenceResult {
             try await diskCache.touch(cacheKey, metadata: asset.metadata, token: token)
         }
+        guard isAuthoritative(token, for: cacheKey) else { return .stale }
+        return .applied
     }
 
     /// Removes `cacheKey` from both cache layers, tombstoning it if the
@@ -232,19 +302,35 @@ actor AssetCacheService {
     /// every other mutation, but this is also called with no token at all
     /// from contexts that are not part of any issuance race (there is no
     /// prior in-flight operation whose authority could be superseded).
-    func invalidate(_ cacheKey: AssetCacheKey, token: CacheToken? = nil) async {
+    /// Returns ``MutationOutcome/stale`` under the same conditions
+    /// ``publish(_:asset:token:)`` does (only ever possible when `token`
+    /// is non-`nil`: a `nil` token has no authority to lose).
+    @discardableResult
+    func invalidate(_ cacheKey: AssetCacheKey, token: CacheToken? = nil) async -> MutationOutcome {
         if let token, !isAuthoritative(token, for: cacheKey) {
-            return
+            return .stale
         }
+        // Recorded *before* the memory removal itself (the actual
+        // suspension below), so a concurrent reader that snapshotted
+        // ``keyClearGeneration`` before this call started will correctly
+        // observe a change even if it resumes while this call is still
+        // suspended partway through — see ``snapshotClearState(for:)``'s
+        // doc comment for why this is deliberately a distinct counter
+        // from ``keyLatestToken``.
+        keyClearGeneration[cacheKey, default: 0] += 1
         await memoryCache.remove(cacheKey, token: token)
         if let token, !isAuthoritative(token, for: cacheKey) {
-            return
+            return .stale
         }
         do {
             try await diskCache.remove(cacheKey, token: token)
         } catch {
             tombstonedKeys.insert(cacheKey)
         }
+        if let token, !isAuthoritative(token, for: cacheKey) {
+            return .stale
+        }
+        return .applied
     }
 
     private func recordDiskPersistenceResult(_ operation: () async throws -> Void) async {

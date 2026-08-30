@@ -36,6 +36,12 @@ extension AssetCacheService {
         /// reference type comparable by identity.
         let id = UUID()
         let task: Task<CachedAsset, Error>
+        /// The authority token this exact fetch was issued under —
+        /// retained so ``cancelWaiter(_:fetchID:waiterID:)`` can retire it
+        /// (via ``retireIfCurrent(_:for:)``) the moment the last waiter
+        /// for this fetch cancels, without needing to re-derive or
+        /// re-look-up which token belongs to this specific attempt.
+        let token: CacheToken
         var waiters: [UUID: AssetContinuation] = [:]
     }
 
@@ -70,7 +76,7 @@ extension AssetCacheService {
                     token: token
                 )
             }
-            let newFetch = InFlightFetch(task: newTask)
+            let newFetch = InFlightFetch(task: newTask, token: token)
             inFlight[cacheKey] = newFetch
             fetchID = newFetch.id
             Task { [weak self] in
@@ -128,7 +134,20 @@ extension AssetCacheService {
     /// actor-isolated call, before the underlying transport is ever told
     /// to cancel) removes the entry from `inFlight` so a caller arriving
     /// immediately afterward can never join a fetch that is already being
-    /// torn down — it instead starts fresh work.
+    /// torn down — it instead starts fresh work. That same zero-waiter
+    /// case also retires `fetch.token` (via ``retireIfCurrent(_:for:)``)
+    /// immediately before the task is cancelled: this shared task is a
+    /// single continuous body of code, and Swift's cooperative task
+    /// cancellation only takes effect at that task's *own* next
+    /// suspension point / cancellation check, which may not have been
+    /// reached yet at the exact moment this method runs. Retiring the
+    /// token here closes that window synchronously and immediately,
+    /// rather than relying solely on the doomed task eventually observing
+    /// `Task.isCancelled` on its own: any ``AssetCacheService/publish(_:asset:token:)``/
+    /// ``AssetCacheService/touch(_:asset:token:)``/
+    /// ``AssetCacheService/invalidate(_:token:)`` call this now-abandoned
+    /// task still goes on to make will find no token authoritative for
+    /// `key` at all and correctly refuse to mutate shared state.
     private func cancelWaiter(_ key: AssetCacheKey, fetchID: UUID, waiterID: UUID) {
         guard var fetch = inFlight[key], fetch.id == fetchID else {
             // Already completed/replaced by the time this cancellation
@@ -142,6 +161,7 @@ extension AssetCacheService {
         }
         if fetch.waiters.isEmpty {
             inFlight[key] = nil
+            retireIfCurrent(fetch.token, for: key)
             fetch.task.cancel()
         } else {
             inFlight[key] = fetch

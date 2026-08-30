@@ -68,6 +68,53 @@ extension AssetCacheService {
         }
     }
 
+    /// The outcome of a single authority-gated cache mutation
+    /// (``publish(_:asset:token:)``, ``touch(_:asset:token:)``,
+    /// ``invalidate(_:token:)``): `.applied` only if every one of that
+    /// mutation's own internal authority re-checks passed and its write
+    /// actually reached the requested layer(s); `.stale` if any of them
+    /// found a more-recently-issued token (or a cache-wide
+    /// ``evictAll()``) already authoritative by the time that check ran,
+    /// in which case the mutation is a deliberate no-op. Callers that
+    /// otherwise would have returned a value to their own caller as if a
+    /// mutation had landed (see `AssetCacheService+Fetch.swift`'s and
+    /// `AssetCacheService+RevalidationCoalescing.swift`'s use of this)
+    /// must check this result rather than assuming `Void` success, so a
+    /// caller never hands back a result whose own cache-side effects the
+    /// system already knows were discarded as stale.
+    enum MutationOutcome: Equatable, Sendable {
+        case applied
+        case stale
+    }
+
+    /// Retires `token` as the authoritative token for `key`, but only if
+    /// it is still exactly the current one — never clobbering a
+    /// more-recently-issued token that has already superseded it (nothing
+    /// to do in that case: the newer token's own authority is already
+    /// intact and must not be disturbed).
+    ///
+    /// Called when the last waiter for a coalesced fetch/revalidation
+    /// cancels (see `AssetCacheService+Coalescing.swift`'s
+    /// ``AssetCacheService/cancelWaiter(_:fetchID:waiterID:)`` and
+    /// `AssetCacheService+RevalidationCoalescing.swift`'s
+    /// ``AssetCacheService/cancelRevalidationWaiter(_:fetchID:waiterID:)``):
+    /// the underlying work is about to be told to cancel, and — beyond
+    /// cooperative `Task` cancellation, which the shared task may not
+    /// observe until its next suspension point — nothing should be able
+    /// to publish under this now-abandoned token afterward. Retiring the
+    /// token here, synchronously and before the task is actually told to
+    /// cancel, closes that window immediately rather than relying solely
+    /// on cooperative cancellation checks: every subsequent
+    /// ``isAuthoritative(_:for:)`` check the now-doomed task performs
+    /// (inside ``publish(_:asset:token:)``/``touch(_:asset:token:)``/
+    /// ``invalidate(_:token:)``, or in its own body before calling any of
+    /// them) will find no token authoritative for `key` at all, and
+    /// therefore correctly refuse to mutate shared state.
+    func retireIfCurrent(_ token: CacheToken, for key: AssetCacheKey) {
+        guard keyLatestToken[key] == token else { return }
+        keyLatestToken[key] = nil
+    }
+
     /// Issues a fresh, strictly-increasing authority token for `key`, and
     /// immediately records it as the sole currently-authoritative token
     /// for that key — superseding whatever token (if any) was previously
@@ -139,5 +186,45 @@ extension AssetCacheService {
         for key: AssetCacheKey
     ) -> Bool {
         keyLatestToken[key] == snapshot.token && globalGeneration == snapshot.generation
+    }
+
+    /// A read-only snapshot of `key`'s current *clear* state — narrower
+    /// than ``snapshotAuthority(for:)``: it only changes when `key` is
+    /// actually invalidated (``invalidate(_:token:)`` performing a real
+    /// removal) or the whole cache is (``evictAll()``'s `globalGeneration`
+    /// bump), never merely because *some* fresh, perfectly legitimate and
+    /// coalescable operation was issued for this same key in the
+    /// meantime.
+    ///
+    /// ``revalidate(for:)``'s memory-hit branch uses this — not
+    /// ``snapshotAuthority(for:)``/``unchanged(since:for:)`` — to decide
+    /// whether a cached value it is about to hand to
+    /// ``revalidateExisting(_:key:cacheKey:candidates:)`` is still safe to
+    /// mint a *fresh* authority token from. The coarser, token-based check
+    /// would also (wrongly) trip whenever a second, concurrent
+    /// ``revalidate(for:)``/``asset(for:)`` call for the exact same key
+    /// happens to have already issued its own token by the time this one
+    /// resumes from its own memory-cache read — a normal, entirely
+    /// coalescable race, not an invalidation — which would otherwise force
+    /// this call down the disk-hit branch purely due to timing, where its
+    /// own *additional* token issuance could needlessly supersede (and so
+    /// break) that sibling's already-appropriate, still-legitimate
+    /// in-flight work. This check answers the narrower and actually
+    /// relevant question instead: "was the specific cached value I just
+    /// read invalidated out from under me", which only a real
+    /// ``invalidate(_:token:)``/``evictAll()`` can make true.
+    func snapshotClearState(for key: AssetCacheKey) -> (clear: Int, generation: Int) {
+        (keyClearGeneration[key] ?? 0, globalGeneration)
+    }
+
+    /// `true` only if `key`'s clear state is exactly what
+    /// ``snapshotClearState(for:)`` observed it to be — see that
+    /// function's doc comment for why this is a deliberately narrower
+    /// check than ``unchanged(since:for:)``.
+    func clearStateUnchanged(
+        since snapshot: (clear: Int, generation: Int),
+        for key: AssetCacheKey
+    ) -> Bool {
+        (keyClearGeneration[key] ?? 0) == snapshot.clear && globalGeneration == snapshot.generation
     }
 }

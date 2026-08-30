@@ -92,14 +92,34 @@ actor AssetMemoryCache {
     /// approximation.
     private(set) var totalAccountedBytes = 0
 
+    /// Test-only: when installed, awaited at the end of `get(_:)` — after
+    /// the entry lookup and access-sequence bump, immediately before
+    /// returning a captured hit — so a test can force a deterministic
+    /// suspension point between capturing a hit's bytes and that hit
+    /// actually reaching its caller, mirroring
+    /// ``AssetDiskCache/testOnlyPauseBeforeReturningHit``.
+    var testOnlyPauseBeforeReturningHit: (() async -> Void)?
+
     init(limits: AssetCacheLimits) {
         self.limits = limits
     }
 
-    func get(_ key: AssetCacheKey) -> CachedAsset? {
+    /// Test-only: installs ``testOnlyPauseBeforeReturningHit``. A plain
+    /// actor-isolated method (rather than exposing the stored property for
+    /// direct external assignment) so a test's call site reads as an
+    /// ordinary, obviously-`await`-requiring actor call, matching
+    /// ``AssetDiskCache/installTestOnlyPauseBeforeReturningHit(_:)``.
+    func installTestOnlyPauseBeforeReturningHit(_ pause: @escaping () async -> Void) {
+        testOnlyPauseBeforeReturningHit = pause
+    }
+
+    func get(_ key: AssetCacheKey) async -> CachedAsset? {
         guard var entry = entries[key] else { return nil }
         entry.metadata.accessSequence = accessSequence.allocate()
         entries[key] = entry
+        if let pause = testOnlyPauseBeforeReturningHit {
+            await pause()
+        }
         return entry
     }
 

@@ -33,6 +33,11 @@ extension AssetCacheService {
     struct RevalidationFetch {
         let id = UUID()
         let task: Task<CachedAsset, Error>
+        /// Mirrors ``InFlightFetch/token``: retained so
+        /// ``AssetCacheService/cancelRevalidationWaiter(_:fetchID:waiterID:)``
+        /// can retire it the moment the last waiter for this revalidation
+        /// cancels.
+        let token: CacheToken
         var waiters: [UUID: AssetContinuation] = [:]
     }
 
