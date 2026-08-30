@@ -112,7 +112,8 @@ enum BoardAccessibility {
         }
         parts.append(
             "Investigators \(location.investigatorIDs.count), enemies \(location.enemyCount), "
-                + "assets \(location.assetCount), treacheries \(location.treacheryCount)"
+                + "assets \(location.assetCount), events \(location.eventCount), "
+                + "treacheries \(location.treacheryCount)"
         )
         if location.concealedCount > 0 {
             parts.append("Concealed cards \(location.concealedCount)")
@@ -136,8 +137,12 @@ enum BoardAccessibility {
         }
         parts.append(
             "Investigators \(location.investigatorIDs.count), enemies \(location.enemyCount), "
-                + "assets \(location.assetCount), treacheries \(location.treacheryCount)"
+                + "assets \(location.assetCount), events \(location.eventCount), "
+                + "treacheries \(location.treacheryCount)"
         )
+        if location.concealedCount > 0 {
+            parts.append("Concealed cards \(location.concealedCount)")
+        }
         return parts.joined(separator: ". ")
     }
 
