@@ -58,7 +58,8 @@ enum BoardAccessibility {
         parts.append(
             "Enemies \(entities.enemies), assets \(entities.assets), "
                 + "treacheries \(entities.treacheries), events \(entities.events), "
-                + "skills \(entities.skills), concealed \(entities.concealed)"
+                + "skills \(entities.skills), concealed \(entities.concealed), "
+                + "cards \(entities.cards)"
         )
         return parts.joined(separator: ". ")
     }

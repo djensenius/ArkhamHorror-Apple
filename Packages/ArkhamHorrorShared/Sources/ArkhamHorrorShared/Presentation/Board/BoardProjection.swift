@@ -254,9 +254,9 @@ struct BoardProjection: Sendable, Equatable {
     /// requires a future update" placeholder rather than silently omitting it.
     let hasCampaignContext: Bool
     let scenario: BoardScenarioSummary?
-    /// Ordered by `(deckID, sequence.step, id)` for full determinism.
+    /// Ordered by `(deckID, sequence.step, sequence.side, id)` for full determinism.
     let acts: [BoardActNode]
-    /// Ordered by `(deckID, sequence.step, id)` for full determinism.
+    /// Ordered by `(deckID, sequence.step, sequence.side, id)` for full determinism.
     let agendas: [BoardAgendaNode]
     /// Ordered by raw UUID text for full determinism, independent of any layout.
     let locations: [BoardLocationNode]

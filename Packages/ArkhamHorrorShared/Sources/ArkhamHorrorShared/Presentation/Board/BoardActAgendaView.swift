@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The act/agenda deck column — the board's single "board.actAgenda" zone, one tile per
-/// act/agenda in ``BoardProjectionBuilder``'s deterministic `(deckID, sequence.step, id)`
-/// order.
+/// act/agenda in ``BoardProjectionBuilder``'s deterministic
+/// `(deckID, sequence.step, sequence.side, id)` order.
 struct BoardActAgendaColumnView: View {
     let acts: [BoardActNode]
     let agendas: [BoardAgendaNode]
