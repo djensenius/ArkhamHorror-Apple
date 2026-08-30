@@ -253,15 +253,12 @@ struct WebSocketHandshakeGateTests {
         let resolver = WebSocketConnectResolver()
         let firstWaiter = Task { try await resolver.awaitConnected() }
 
-        // This resolver is a fresh, single-attempt-per-connection production
-        // actor with no gate/waiter-count hook exposed for tests (deliberately --
-        // this defensive branch is unreachable via its own single real production
-        // call site in `URLSessionGameSocketFactory.connect(to:)`, so no
-        // permanent test-only synchronization surface was added to it). A short
-        // real sleep gives the first call's actor hop time to reach its
-        // suspension point inside `withCheckedThrowingContinuation` before the
-        // second call below is issued.
-        try await Task.sleep(for: .milliseconds(50))
+        // Deterministically wait until the first call has actually registered its
+        // continuation (not merely been scheduled) before issuing the second --
+        // see `waitUntilAwaitConnectedIsPendingForTesting()`'s own documentation
+        // for why this is a gate on real state, not a `Task.yield()`-count guess or
+        // real-time sleep.
+        await resolver.waitUntilAwaitConnectedIsPendingForTesting()
 
         await #expect(throws: WebSocketConnectResolverMisuseError.self) {
             try await resolver.awaitConnected()

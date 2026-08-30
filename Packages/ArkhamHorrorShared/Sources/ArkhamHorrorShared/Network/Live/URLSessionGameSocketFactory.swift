@@ -53,6 +53,24 @@ actor WebSocketConnectResolver {
         continuation?.resume(throwing: error)
         continuation = nil
     }
+
+    /// Suspends until a first waiter is currently registered inside
+    /// ``awaitConnected()`` (or returns immediately once this attempt is already
+    /// resolved). `internal` (not `private`), exposed solely so `@testable import`
+    /// tests can deterministically drive the "second concurrent `awaitConnected()`
+    /// call" scenario that method's own documentation describes -- proving the
+    /// misuse guard fires -- without any real-time sleep or `Task.yield()`-count
+    /// guess. Actor reentrancy guarantees `await Task.yield()` here only resumes
+    /// after giving every other job already enqueued on this same actor (including
+    /// a racing first `awaitConnected()` call) a chance to run, so this loop always
+    /// re-observes true state and can never report "pending" prematurely; it has no
+    /// fixed timeout because none is needed; it terminates as soon as the awaited
+    /// condition actually holds.
+    func waitUntilAwaitConnectedIsPendingForTesting() async {
+        while continuation == nil, !isResolved {
+            await Task.yield()
+        }
+    }
 }
 
 /// Thrown by ``WebSocketConnectResolver/awaitConnected()`` when a second call
