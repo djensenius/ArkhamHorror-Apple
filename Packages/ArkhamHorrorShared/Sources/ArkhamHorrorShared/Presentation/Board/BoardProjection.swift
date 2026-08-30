@@ -270,4 +270,37 @@ struct BoardProjection: Sendable, Equatable {
     let counters: BoardCounters
     /// Exact player-keyed prompts. Choice arrays retain their authoritative wire order.
     let questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>
+
+    /// Whether `choice` can actually be claimed/answered right now against this
+    /// authoritative projection.
+    ///
+    /// This is deliberately a presentation/action-authority concern, distinct from
+    /// ``BasicChoice/isSupported`` (which only reflects whether the wire shape itself
+    /// parsed as a known, well-formed constructor):
+    /// - A `.chooseLocation` choice can parse as fully supported yet still reference a
+    ///   `LocationTarget` this projection doesn't (yet, or no longer) carry -- for example
+    ///   if the prompt arrives before that location's own reveal is reflected in the
+    ///   snapshot, or a later snapshot stops carrying it.
+    /// - A `.continueReading` choice can parse as fully supported yet still belong to a
+    ///   `Read` question whose flavor text this client cannot lawfully resolve into
+    ///   human-readable narrative (see ``StoryNarrativeLocalization``) -- `story` must be
+    ///   supplied by the caller (from the same question the choice belongs to) whenever
+    ///   the choice being checked might be a `.continueReading` choice; omitting it makes
+    ///   any such choice fail closed rather than silently defaulting to actionable.
+    ///
+    /// Such a choice stays visible at its exact original index (never filtered/reindexed)
+    /// but cannot be actioned until it is authoritatively resolvable. Recomputed fresh
+    /// from the current projection (and, for `.continueReading`, the current question's
+    /// story) on every call -- never cached or baked into the wire parser, which stays
+    /// entirely projection-agnostic -- so a stale rendered choice is always revalidated
+    /// immediately before it could be claimed or sent.
+    func isChoiceActionable(_ choice: BasicChoice, story: ReadStoryContent? = nil) -> Bool {
+        guard choice.isSupported else { return false }
+        if case .continueReading = choice.content {
+            guard let story else { return false }
+            return StoryNarrativeLocalization.resolvedStory(for: story.flavorText) != nil
+        }
+        guard let locationID = choice.locationID else { return true }
+        return locations.contains { $0.id == locationID }
+    }
 }

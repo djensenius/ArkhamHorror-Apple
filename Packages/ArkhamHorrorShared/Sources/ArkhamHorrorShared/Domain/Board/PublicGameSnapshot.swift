@@ -29,8 +29,8 @@ enum PublicGameSnapshotError: Error, Equatable, Sendable {
 
 /// The top-level authoritative game snapshot published over REST (`GetGame.game`) and
 /// WebSocket (`GameUpdate.contents`) (`Arkham.Types.Game.PublicGame`, backend PR #45).
-/// Pinned byte-for-byte to backend commit `ee6efffa4d7a49f2ac7bf6b9349802d3d7675ae5`,
-/// schema revision `0.1.21`. Read-only: this type is never submitted back to the server.
+/// Pinned byte-for-byte to backend commit `52c7ee3b730c87129907e26b91acc3933da841cd`,
+/// schema revision `0.1.22`. Read-only: this type is never submitted back to the server.
 struct PublicGameSnapshot: Sendable {
     let name: String
     let id: GameID

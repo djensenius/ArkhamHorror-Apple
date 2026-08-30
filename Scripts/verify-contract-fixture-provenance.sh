@@ -106,6 +106,10 @@ question-choose-one.json:contracts/fixtures/question-choose-one.json
 question-player-window-choose-one.json:contracts/fixtures/question-player-window-choose-one.json
 question-window-choose-one.json:contracts/fixtures/question-window-choose-one.json
 answer-question.json:contracts/fixtures/answer-question.json
+question-read.json:contracts/fixtures/question-read.json
+question-read-with-cards.json:contracts/fixtures/question-read-with-cards.json
+question-choose-one-location.json:contracts/fixtures/question-choose-one-location.json
+question-choose-one-location-multiple.json:contracts/fixtures/question-choose-one-location-multiple.json
 "
 
 # Rejects an absolute path or any `..` path-traversal component in a (script-controlled,
