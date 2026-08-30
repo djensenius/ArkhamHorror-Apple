@@ -187,6 +187,37 @@ struct BoardCommandControllerTests {
         #expect(!controller.handle(.command(.toggleArrangeMode)))
     }
 
+    // MARK: - Modal focus isolation
+
+    @Test("cycleZone is a no-op while the inspector modal is presented")
+    func cycleZoneNoOpWhileModalPresented() {
+        let controller = BoardCommandController(projection: twoLocationProjection())
+        #expect(controller.handle(.command(.inspect)))
+        #expect(!controller.handle(.command(.cycleZone(.next))))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.inspectorClose)
+        #expect(controller.coordinator.isModalPresented)
+    }
+
+    @Test("jumpToActivePrompt is a no-op while the inspector modal is presented, even if pending")
+    func jumpToActivePromptNoOpWhileModalPresented() {
+        let snapshot = BoardTestFixtures.snapshot(questionCount: 1)
+        let controller = BoardCommandController(
+            projection: BoardProjectionBuilder.makeProjection(from: snapshot)
+        )
+        #expect(controller.handle(.command(.inspect)))
+        #expect(!controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.inspectorClose)
+    }
+
+    @Test("selectZone is a no-op while the inspector modal is presented")
+    func selectZoneNoOpWhileModalPresented() {
+        let controller = BoardCommandController(projection: twoLocationProjection())
+        #expect(controller.handle(.command(.inspect)))
+        controller.selectZone(BoardFocusZone.locations)
+        #expect(controller.coordinator.currentFocus == BoardFocusID.inspectorClose)
+        #expect(controller.coordinator.isModalPresented)
+    }
+
     // MARK: - Command routing through production semantic helpers
 
     @Test("Routing a real keyboard arrow-key event through SemanticInputRouter moves focus")

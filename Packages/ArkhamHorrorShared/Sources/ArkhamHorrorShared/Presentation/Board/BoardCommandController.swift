@@ -156,7 +156,14 @@ final class BoardCommandController {
     /// Moves focus to the next/previous zone's declared entry point, skipping any zone
     /// with no navigable node (see
     /// ``BoardFocusGraphBuilder/nonEmptyZonesInCycleOrder(projection:)``).
+    ///
+    /// A no-op (reported unconsumed) while the inspector modal is presented: the modal
+    /// has exactly one focusable control (its own Close button), and moving focus onto an
+    /// underlying board zone's node would break modal focus isolation — that node sits
+    /// behind the board content this same state already marks `disabled`/
+    /// `accessibilityHidden`.
     private func cycleZone(_ direction: CycleDirection) -> Bool {
+        guard !coordinator.isModalPresented else { return false }
         let zones = BoardFocusGraphBuilder.nonEmptyZonesInCycleOrder(projection: projection)
         guard !zones.isEmpty else { return false }
         let current = focusedZone ?? zones[0]
@@ -172,9 +179,12 @@ final class BoardCommandController {
     /// `BoardCounters.pendingPromptCount` — the closest read-only equivalent this
     /// contract slice supports to "whatever currently holds an active prompt", since the
     /// actual `question` payload stays a broad, out-of-scope map. A no-op (reported as
-    /// unconsumed) when no prompt is pending.
+    /// unconsumed) when no prompt is pending, or while the inspector modal is presented
+    /// (see ``cycleZone(_:)``'s identical modal-isolation rationale).
     private func jumpToActivePrompt() -> Bool {
-        guard projection.counters.pendingPromptCount > 0 else { return false }
+        guard !coordinator.isModalPresented, projection.counters.pendingPromptCount > 0 else {
+            return false
+        }
         coordinator.syncExternalFocus(BoardFocusID.scenarioHeader)
         return true
     }
@@ -192,9 +202,16 @@ final class BoardCommandController {
     /// Moves focus directly to `zone`'s declared entry point — for a native
     /// platform-driven selection (for example a compact-width zone switcher's segmented
     /// control), not a ``SemanticCommand``. A safe no-op if `zone` currently has no
-    /// navigable node.
+    /// navigable node, or if the inspector modal is presented: the board content this
+    /// selection would target is already `disabled`/`accessibilityHidden` behind the
+    /// modal, and even a defensive guard here (rather than relying solely on that
+    /// `disabled` state) keeps a future refactor or a direct programmatic call from ever
+    /// breaking modal focus isolation.
     func selectZone(_ zone: SemanticFocusZone) {
-        guard let entry = coordinator.graph.zoneEntryPoints[zone] else { return }
+        guard !coordinator.isModalPresented, let entry = coordinator.graph.zoneEntryPoints[zone]
+        else {
+            return
+        }
         coordinator.syncExternalFocus(entry)
     }
 }
