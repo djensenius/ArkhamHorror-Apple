@@ -122,7 +122,13 @@ enum BoardLayoutBuilder {
             idsByColumn[columnOf[id] ?? 0, default: []].append(id)
         }
         var positions: [LocationID: BoardGridPosition] = [:]
-        for (column, ids) in idsByColumn {
+        // Iterates columns in sorted (not `Dictionary`-default) order: each column's own
+        // row assignment below is already independent of this outer traversal order, but
+        // sorting here keeps that determinism intent explicit rather than incidental, so a
+        // future change to this loop's body cannot silently introduce order-dependent
+        // behavior without also touching a visibly order-sensitive line.
+        for column in idsByColumn.keys.sorted() {
+            let ids = idsByColumn[column] ?? []
             for (row, id) in ids.sorted(by: { $0.description < $1.description }).enumerated() {
                 positions[id] = BoardGridPosition(column: column, row: row)
             }

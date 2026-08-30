@@ -27,19 +27,31 @@ struct BoardInvestigatorRowView: View {
                 }
             }
             if otherInvestigatorCount > 0 || killedInvestigatorCount > 0 {
-                let otherPhrase = BoardDisplayFormatting.pluralized(
-                    otherInvestigatorCount, singular: "other investigator",
-                    plural: "other investigators"
-                )
-                let killedPhrase = BoardDisplayFormatting.pluralized(
-                    killedInvestigatorCount, singular: "killed investigator",
-                    plural: "killed investigators"
-                )
-                Text("\(otherPhrase), \(killedPhrase)")
+                Text(otherAndKilledInvestigatorSummary)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Builds the "other/killed investigator" footer from only the categories that are
+    /// actually non-zero, so it never announces a "0 other investigators"/"0 killed
+    /// investigators" phrase alongside a genuinely populated category.
+    private var otherAndKilledInvestigatorSummary: String {
+        var phrases: [String] = []
+        if otherInvestigatorCount > 0 {
+            phrases.append(BoardDisplayFormatting.pluralized(
+                otherInvestigatorCount, singular: "other investigator",
+                plural: "other investigators"
+            ))
+        }
+        if killedInvestigatorCount > 0 {
+            phrases.append(BoardDisplayFormatting.pluralized(
+                killedInvestigatorCount, singular: "killed investigator",
+                plural: "killed investigators"
+            ))
+        }
+        return phrases.joined(separator: ", ")
     }
 
     private func tile(_ investigator: BoardInvestigatorNode) -> some View {
