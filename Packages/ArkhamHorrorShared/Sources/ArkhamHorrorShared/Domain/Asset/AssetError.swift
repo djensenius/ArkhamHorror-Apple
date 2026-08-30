@@ -3,14 +3,23 @@
 ///
 /// This single flat enum spans the whole feature (mirroring the style of
 /// ``CapabilityProbeError``) so callers can pattern-match without knowing
-/// which internal stage produced the failure. Cases that wrap diagnostic
-/// text are for logging only; equality ignores that payload.
+/// which internal stage produced the failure. Cases that wrap free-form
+/// diagnostic text (a raw transport/configuration/persistence-failure
+/// message) are for logging only; equality ignores that payload.
+/// ``invalidIdentifier(field:)`` is the one exception: its associated
+/// `String` is a fixed, semantically meaningful field name rather than
+/// free-form diagnostic text, so it participates in equality (see below).
 enum AssetError: Error, Sendable {
     // MARK: Identifier / URL validation
 
     /// A category-specific identifier grammar rejected the supplied raw value.
     ///
-    /// The associated `String` names the field (e.g. `"cardCode"`) for logging.
+    /// The associated `String` names the field (e.g. `"cardCode"`) that
+    /// failed validation. Unlike the free-form diagnostic strings on other
+    /// cases in this enum, this field name is a fixed, semantically
+    /// meaningful discriminator — rejecting a `"cardCode"` and rejecting a
+    /// `"locale"` are logically different errors — so it participates in
+    /// equality rather than being ignored.
     case invalidIdentifier(field: String)
     /// The supplied asset base URL failed strict validation (unsupported
     /// scheme, cleartext on a non-loopback host, credentials, query,
