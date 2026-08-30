@@ -33,6 +33,17 @@ struct BasicChoiceFocusTests {
         )
     }
 
+    private func retryablePrompt() throws -> BasicChoicePromptPresentation {
+        let prompt = try actionablePrompt()
+        return BasicChoicePromptPresentation(
+            identity: prompt.identity,
+            question: prompt.question,
+            readOnlyReason: nil,
+            actionPhase: .retryable(.outcomeUncertain),
+            actionChoiceIndex: 0
+        )
+    }
+
     @Test("Jump targets the first actionable choice and primary action preserves its exact index")
     func promptJumpAndPrimaryAction() throws {
         var submitted: [Int] = []
@@ -78,5 +89,21 @@ struct BasicChoiceFocusTests {
         #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
         #expect(controller.handle(.command(.togglePromptSurface)))
         #expect(controller.coordinator.currentFocus == BoardFocusID.scenarioHeader)
+    }
+
+    @Test("Retry state has deterministic semantic focus and controller activation")
+    func retryFocusAndActivation() throws {
+        var retries = 0
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let controller = try BoardCommandController(
+            projection: projection,
+            prompt: retryablePrompt(),
+            onRetry: { retries += 1 }
+        )
+
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptRetry)
+        #expect(controller.handle(.command(.primaryAction)))
+        #expect(retries == 1)
     }
 }

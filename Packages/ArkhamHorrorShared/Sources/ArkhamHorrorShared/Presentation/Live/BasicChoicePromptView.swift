@@ -5,7 +5,6 @@ struct BasicChoicePromptView: View {
     let controller: BoardCommandController
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let isCompact: Bool
-    let onRetry: () -> Void
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -35,10 +34,16 @@ struct BasicChoicePromptView: View {
             }
 
             if presentation.canRetry {
-                Button("Retry choice", action: onRetry)
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityHint("Sends the same choice again with version checking.")
-                    .accessibilityIdentifier("liveGame.prompt.retry")
+                SemanticActionControl(
+                    accessibilityLabel: Text("Retry choice"),
+                    semanticFocusID: BoardFocusID.promptRetry,
+                    onOutcome: { controller.handle(focusID: $0, $1) },
+                    label: { Text("Retry choice") }
+                )
+                .buttonStyle(.borderedProminent)
+                .focused(focusBinding, equals: BoardFocusID.promptRetry)
+                .accessibilityHint("Sends the same choice again with version checking.")
+                .accessibilityIdentifier("liveGame.prompt.retry")
             }
         }
         .padding(isCompact ? 14 : 18)
@@ -52,25 +57,29 @@ struct BasicChoicePromptView: View {
     private var choices: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(presentation.choices) { choice in
-                Button {
-                    controller.activatePromptChoice(choice.index)
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: choice.systemImage)
-                            .frame(width: 22)
-                        Text(choice.title)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        let isSendingChoice = presentation.actionChoiceIndex == choice.index
-                            && presentation.actionPhase == .sending
-                        if isSendingChoice {
-                            ProgressView()
-                                .controlSize(.small)
+                let focusID = BoardFocusID.promptChoice(choice.index)
+                SemanticActionControl(
+                    accessibilityLabel: Text(choice.title),
+                    semanticFocusID: focusID,
+                    onOutcome: { controller.handle(focusID: $0, $1) },
+                    label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: choice.systemImage)
+                                .frame(width: 22)
+                            Text(choice.title)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            let isSendingChoice = presentation.actionChoiceIndex == choice.index
+                                && presentation.actionPhase == .sending
+                            if isSendingChoice {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
                         }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
-                }
+                )
                 .buttonStyle(.bordered)
-                .focused(focusBinding, equals: BoardFocusID.promptChoice(choice.index))
+                .focused(focusBinding, equals: focusID)
                 .disabled(!choice.isSupported || !presentation.canSubmit)
                 .accessibilityLabel(choice.title)
                 .accessibilityHint(accessibilityHint(for: choice))

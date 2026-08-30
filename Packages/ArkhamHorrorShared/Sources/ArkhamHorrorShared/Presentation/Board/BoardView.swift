@@ -50,6 +50,7 @@ struct BoardView: View {
             let activeController: BoardCommandController
             if let controller {
                 controller.updateChoiceHandler(onChoice)
+                controller.updateRetryHandler(onRetryChoice)
                 activeController = controller
                 // Catches a replacement snapshot that arrived while this view was
                 // off-screen and `.onChange(of: projection)` therefore couldn't fire; see
@@ -58,7 +59,10 @@ struct BoardView: View {
                 activeController.reconcileOnAppear(with: projection, prompt: prompt)
             } else {
                 let newController = BoardCommandController(
-                    projection: projection, prompt: prompt, onChoice: onChoice
+                    projection: projection,
+                    prompt: prompt,
+                    onChoice: onChoice,
+                    onRetry: onRetryChoice
                 )
                 controller = newController
                 activeController = newController
@@ -73,10 +77,12 @@ struct BoardView: View {
         }
         .onChange(of: projection) { _, newValue in
             controller?.updateChoiceHandler(onChoice)
+            controller?.updateRetryHandler(onRetryChoice)
             controller?.applySnapshot(newValue, prompt: prompt)
         }
         .onChange(of: prompt) { _, newValue in
             controller?.updateChoiceHandler(onChoice)
+            controller?.updateRetryHandler(onRetryChoice)
             controller?.applyPrompt(newValue)
         }
     }
@@ -153,8 +159,7 @@ struct BoardView: View {
                 presentation: prompt,
                 controller: controller,
                 focusBinding: $focusedID,
-                isCompact: isCompact,
-                onRetry: onRetryChoice
+                isCompact: isCompact
             )
         }
     }

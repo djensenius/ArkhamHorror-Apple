@@ -36,6 +36,7 @@ final class BoardCommandController {
     /// The most recently dispatched command, for on-screen/test verification.
     private(set) var lastCommand: SemanticCommand?
     private var onChoice: (Int) -> Void
+    private var onRetry: () -> Void
 
     static let zoomRange: ClosedRange<CGFloat> = 0.5 ... 3
     private static let zoomStep: CGFloat = 0.25
@@ -43,11 +44,13 @@ final class BoardCommandController {
     init(
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
-        onChoice: @escaping (Int) -> Void = { _ in }
+        onChoice: @escaping (Int) -> Void = { _ in },
+        onRetry: @escaping () -> Void = {}
     ) {
         self.projection = projection
         self.prompt = prompt
         self.onChoice = onChoice
+        self.onRetry = onRetry
         let layout = BoardLayoutBuilder.makeLayout(
             locations: projection.locations,
             preferredRootID: Self.activeLocationID(in: projection)
@@ -98,6 +101,10 @@ final class BoardCommandController {
 
     func updateChoiceHandler(_ handler: @escaping (Int) -> Void) {
         onChoice = handler
+    }
+
+    func updateRetryHandler(_ handler: @escaping () -> Void) {
+        onRetry = handler
     }
 
     /// Reconciles this already-existing controller against the projection its owning
@@ -173,6 +180,9 @@ final class BoardCommandController {
     private func applyPromptCommand(_ command: SemanticCommand) -> Bool {
         switch command {
         case .primaryAction:
+            if coordinator.currentFocus == BoardFocusID.promptRetry {
+                return activatePromptRetry()
+            }
             if let index = focusedPromptChoiceIndex {
                 return activatePromptChoice(index)
             }
@@ -264,6 +274,10 @@ final class BoardCommandController {
             coordinator.syncExternalFocus(BoardFocusID.scenarioHeader)
             return true
         }
+        if prompt?.canRetry == true {
+            coordinator.syncExternalFocus(BoardFocusID.promptRetry)
+            return true
+        }
         guard prompt?.canSubmit == true,
               let choice = prompt?.choices.first(where: \.isSupported)
         else { return false }
@@ -277,6 +291,13 @@ final class BoardCommandController {
               prompt?.choices.first(where: { $0.index == index })?.isSupported == true
         else { return false }
         onChoice(index)
+        return true
+    }
+
+    @discardableResult
+    func activatePromptRetry() -> Bool {
+        guard prompt?.canRetry == true else { return false }
+        onRetry()
         return true
     }
 

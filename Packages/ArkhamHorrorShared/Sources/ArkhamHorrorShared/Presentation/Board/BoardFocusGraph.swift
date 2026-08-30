@@ -39,6 +39,7 @@ enum BoardFocusID {
     /// replacement/removal/reorder can never make presenting the inspector a no-op change
     /// that a SwiftUI `.onChange` fails to observe.
     static let inspectorClose: SemanticFocusID = "board.inspector.close"
+    static let promptRetry: SemanticFocusID = "board.prompt.retry"
 
     static func promptChoice(_ index: Int) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.prompt.choice.\(index)")
@@ -86,6 +87,8 @@ enum BoardFocusGraphBuilder {
             prompt?.choices
                 .filter(\.isSupported)
                 .map { BoardFocusID.promptChoice($0.index) } ?? []
+        } else if prompt?.canRetry == true {
+            [BoardFocusID.promptRetry]
         } else {
             []
         }
@@ -143,7 +146,12 @@ enum BoardFocusGraphBuilder {
         projection: BoardProjection, prompt: BasicChoicePromptPresentation? = nil
     ) -> [SemanticFocusZone] {
         var populated: Set<SemanticFocusZone> = [BoardFocusZone.scenario, BoardFocusZone.chaosBag]
-        if prompt?.canSubmit == true, prompt?.choices.contains(where: \.isSupported) == true {
+        let hasPromptFocus = prompt?.canRetry == true
+            || (
+                prompt?.canSubmit == true
+                    && prompt?.choices.contains(where: \.isSupported) == true
+            )
+        if hasPromptFocus {
             populated.insert(BoardFocusZone.prompt)
         }
         if !projection.acts.isEmpty || !projection.agendas.isEmpty {
