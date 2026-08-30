@@ -1,10 +1,10 @@
 import CoreGraphics
 import Observation
 
-/// The `@MainActor` owner of one board's live focus graph, local zoom/pan presentation
-/// state, and inspector selection — one instance per ``BoardView`` instance, so multiple
+/// The `@MainActor` owner of one board's live focus graph, local zoom presentation state,
+/// and inspector selection — one instance per ``BoardView`` instance, so multiple
 /// simultaneous board windows/instances (for example two visionOS windows, or a gallery
-/// showing more than one fixture) never share mutable focus or camera state.
+/// showing more than one fixture) never share mutable focus or zoom state.
 ///
 /// Every mutation here is local presentation-only state or a pure re-derivation from the
 /// current ``BoardProjection``; nothing here ever mutates backend topology or sends a
@@ -20,7 +20,6 @@ final class BoardCommandController {
     /// Local zoom scale, clamped to ``zoomRange``. Never mutates backend topology; purely
     /// this presentation instance's own camera-equivalent state.
     private(set) var zoomScale: CGFloat = 1
-    private(set) var panOffset: CGSize = .zero
     /// The entity currently shown in the focused inspector, or `nil` when no inspector is
     /// presented. Mirrors (but is distinct from) ``FocusCoordinator/isModalPresented``,
     /// which this type always keeps in lockstep with a non-`nil` value here.
@@ -112,7 +111,6 @@ final class BoardCommandController {
             return true
         case .resetCamera:
             zoomScale = 1
-            panOffset = .zero
             return true
         case .jumpToActivePrompt:
             return jumpToActivePrompt()
