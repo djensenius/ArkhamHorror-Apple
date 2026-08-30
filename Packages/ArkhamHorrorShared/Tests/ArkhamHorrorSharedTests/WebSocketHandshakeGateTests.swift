@@ -64,13 +64,14 @@ struct WebSocketHandshakeGateTests {
     // MARK: - GameSocketConnectDelegate (production seam, driven directly)
 
     /// A `URLSessionTask` these tests can pass to `didCompleteWithError`, created
-    /// via a real (never-resumed) `URLSession`/`URLSessionWebSocketTask` so its
+    /// via a real (never-resumed) `URLSessionWebSocketTask` from the caller's own
+    /// `URLSession` (so a single ephemeral session per test is invalidated exactly
+    /// once, rather than a second, separate one silently leaking) so its
     /// `.response` reads exactly as the production delegate expects (`nil`, since
     /// no real request/response ever occurred) without ever performing any actual
     /// network I/O.
-    private func makeNeverResumedTask() -> URLSessionWebSocketTask {
-        let session = URLSession(configuration: .ephemeral)
-        return session.webSocketTask(with: URL(string: "wss://example.invalid/socket")!)
+    private func makeNeverResumedTask(session: URLSession) -> URLSessionWebSocketTask {
+        session.webSocketTask(with: URL(string: "wss://example.invalid/socket")!)
     }
 
     @Test("Open observed, then complete: resolves connected, never failed")
@@ -78,7 +79,8 @@ struct WebSocketHandshakeGateTests {
         let resolver = WebSocketConnectResolver()
         let delegate = GameSocketConnectDelegate(resolver: resolver)
         let session = URLSession(configuration: .ephemeral)
-        let task = makeNeverResumedTask()
+        defer { session.invalidateAndCancel() }
+        let task = makeNeverResumedTask(session: session)
 
         delegate.urlSession(session, webSocketTask: task, didOpenWithProtocol: nil)
         delegate.urlSession(session, task: task, didCompleteWithError: nil)
@@ -94,7 +96,8 @@ struct WebSocketHandshakeGateTests {
         let resolver = WebSocketConnectResolver()
         let delegate = GameSocketConnectDelegate(resolver: resolver)
         let session = URLSession(configuration: .ephemeral)
-        let task = makeNeverResumedTask()
+        defer { session.invalidateAndCancel() }
+        let task = makeNeverResumedTask(session: session)
 
         delegate.urlSession(session, task: task, didCompleteWithError: nil)
 
@@ -112,7 +115,8 @@ struct WebSocketHandshakeGateTests {
         let resolver = WebSocketConnectResolver()
         let delegate = GameSocketConnectDelegate(resolver: resolver)
         let session = URLSession(configuration: .ephemeral)
-        let task = makeNeverResumedTask()
+        defer { session.invalidateAndCancel() }
+        let task = makeNeverResumedTask(session: session)
 
         // Deliberately reversed: complete fires, and only *afterward* does this
         // test simulate what would have been a (never-actually-arriving in this
@@ -131,7 +135,8 @@ struct WebSocketHandshakeGateTests {
         let resolver = WebSocketConnectResolver()
         let delegate = GameSocketConnectDelegate(resolver: resolver)
         let session = URLSession(configuration: .ephemeral)
-        let task = makeNeverResumedTask()
+        defer { session.invalidateAndCancel() }
+        let task = makeNeverResumedTask(session: session)
 
         delegate.urlSession(session, task: task, didCompleteWithError: URLError(.cancelled))
 
@@ -145,7 +150,8 @@ struct WebSocketHandshakeGateTests {
         let resolver = WebSocketConnectResolver()
         let delegate = GameSocketConnectDelegate(resolver: resolver)
         let session = URLSession(configuration: .ephemeral)
-        let task = makeNeverResumedTask()
+        defer { session.invalidateAndCancel() }
+        let task = makeNeverResumedTask(session: session)
 
         delegate.urlSession(session, webSocketTask: task, didOpenWithProtocol: nil)
         delegate.urlSession(session, task: task, didCompleteWithError: nil)
@@ -169,7 +175,8 @@ struct WebSocketHandshakeGateTests {
                     let resolver = WebSocketConnectResolver()
                     let delegate = GameSocketConnectDelegate(resolver: resolver)
                     let session = URLSession(configuration: .ephemeral)
-                    let task = makeNeverResumedTask()
+                    defer { session.invalidateAndCancel() }
+                    let task = makeNeverResumedTask(session: session)
                     // Sequential within this one instance -- matching exactly what
                     // `URLSession`'s own serial delegate queue guarantees for a
                     // connection that opened before it was later closed -- while

@@ -233,6 +233,32 @@ extension AppModelLiveGameTests {
     }
 
     @Test("""
+    An unexpected (non-GameSocketConnectError, non-cancellation) socket connect \
+    failure still publishes a terminal state rather than silently leaving the UI \
+    stuck loading/reconnecting
+    """)
+    func connectFailureUnexpectedErrorTypePublishesTerminalFailure() async {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        let gameID = GameID(UUID())
+        await fakes.socketFactory.enqueueConnectResult(.failure(TestFailure()))
+
+        let token = model.subscribeToLiveGame(gameID)
+        await model.liveGameSessions[gameID]?.task.value
+        // The state machine stays total: a defensive `GameSocketFactory`
+        // implementation throwing something no documented case covers still
+        // reaches an explicit, typed terminal state -- never a permanently
+        // stuck `.loading`/`.reconnecting`.
+        #expect(
+            model.liveGameState(for: gameID) == .terminalFailure(
+                .transportFailure("Unexpected live-game socket connect failure."),
+                lastKnown: nil
+            )
+        )
+        model.unsubscribeFromLiveGame(token)
+    }
+
+    @Test("""
     Intermediary proxy statuses 502/503/504 publish reconnecting and are retried with \
     backoff, never treated as a permanent terminal rejection
     """)

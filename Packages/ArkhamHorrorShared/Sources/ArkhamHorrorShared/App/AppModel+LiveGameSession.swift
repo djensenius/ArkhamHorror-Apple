@@ -231,9 +231,22 @@ extension AppModel {
                     attempt, error: connectError, reconnectAttempt: &reconnectAttempt
                 ) else { return nil }
             } catch {
-                // Unreachable: `GameSocketFactory.connect(to:)` only ever throws
-                // `GameSocketConnectError` or rethrows `CancellationError` (see its
-                // documentation); handled defensively rather than force-cast.
+                // Defensive, not truly unreachable: `GameSocketFactory.connect(to:)`
+                // is documented to only ever throw `GameSocketConnectError` or
+                // rethrow `CancellationError`, but a third-party/future conforming
+                // implementation throwing anything else must still leave this state
+                // machine total rather than silently stranding the UI in
+                // `.loading`/`.reconnecting` forever -- the exact same
+                // catch-all-publishes-a-safe-terminal-state idiom already used
+                // throughout this package (see `AppModel+Authentication.swift`,
+                // `AppModel+Compatibility.swift`, `AppModel+GameLifecycle.swift`,
+                // and this file's own `fetchLiveGameProjection(_:)`).
+                guard isCurrentLiveGameSession(attempt) else { return nil }
+                let lastKnown = liveGameStates[attempt.gameID]?.lastKnownProjection
+                liveGameStates[attempt.gameID] = .terminalFailure(
+                    .transportFailure("Unexpected live-game socket connect failure."),
+                    lastKnown: lastKnown
+                )
                 return nil
             }
         }
