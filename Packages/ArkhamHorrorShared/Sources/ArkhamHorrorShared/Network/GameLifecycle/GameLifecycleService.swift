@@ -89,6 +89,23 @@ struct GameLifecycleService: Sendable {
         try await performNoContent(request)
     }
 
+    /// Fetches the current authoritative full game snapshot for `id`: the same
+    /// `GET /arkham/games/{id}` route this backend also upgrades to a WebSocket for
+    /// (see ``LiveGameEndpoint``), decoded through ``ContractJSON``/``GetGameEnvelope``.
+    /// A WebSocket `GameUpdate` frame's snapshot payload decodes through the
+    /// equivalent ``ContractJSON``/``BoardSnapshotUpdate`` boundary instead, but both
+    /// ultimately produce the same ``PublicGameSnapshot`` domain type, so a REST
+    /// fetch and a socket frame for the same game state are guaranteed to produce an
+    /// equal ``PublicGameSnapshot`` (see `PublicGameSnapshotFixtureTests` and
+    /// `LiveGameContractFixtureTests`).
+    func getGame(
+        _ id: GameID, on profile: ServerProfile, token: String
+    ) async throws -> GetGameEnvelope {
+        let url = try gameURL(id, on: profile)
+        let request = makeRequest(url: url, method: "GET", token: token)
+        return try await perform(request, decoding: GetGameEnvelope.self)
+    }
+
     // MARK: - Lobby
 
     func peekLobby(
@@ -155,14 +172,21 @@ struct GameLifecycleService: Sendable {
     /// ``Identifier/encode(to:)``) exactly, so a game ID containing a hex letter is
     /// never rendered with different casing here than everywhere else it appears on
     /// the wire.
-    private func gameURL(
-        _ id: GameID, suffix: String = "", on profile: ServerProfile
+    ///
+    /// `static` (not `private`) and taking `pin` explicitly so ``LiveGameEndpoint``
+    /// can reuse this exact same single-game URL construction -- including the same
+    /// percent-encoding -- for its WebSocket upgrade URL, which the backend serves
+    /// from this identical route (see ``LiveGameEndpoint`` for why). This keeps game
+    /// URL construction in exactly one place rather than duplicating it for the
+    /// live-session code path.
+    static func gameURL(
+        _ id: GameID, suffix: String = "", on profile: ServerProfile, pin: ContractPin
     ) throws -> URL {
         let base = profile.endpointURL(path: "/arkham/games", pin: pin)
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             throw GameLifecycleError.invalidPathSegment
         }
-        guard let segment = Self.percentEncodedGameIDSegment(
+        guard let segment = percentEncodedGameIDSegment(
             id.rawValue.uuidString.lowercased()
         ) else {
             throw GameLifecycleError.invalidPathSegment
@@ -172,6 +196,12 @@ struct GameLifecycleService: Sendable {
             throw GameLifecycleError.invalidPathSegment
         }
         return url
+    }
+
+    private func gameURL(
+        _ id: GameID, suffix: String = "", on profile: ServerProfile
+    ) throws -> URL {
+        try Self.gameURL(id, suffix: suffix, on: profile, pin: pin)
     }
 
     // MARK: - Request construction

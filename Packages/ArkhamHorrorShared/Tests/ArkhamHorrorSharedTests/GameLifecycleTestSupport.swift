@@ -2,73 +2,6 @@
 import Foundation
 import Testing
 
-// MARK: - HTTPTransport fakes shared by GameLifecycleService test files
-
-/// Records the last request/body and returns a canned response.
-actor GameLifecycleRecordingTransport: HTTPTransport {
-    private(set) var capturedRequest: URLRequest?
-    private(set) var capturedBody: Data?
-    private let stubData: Data
-    private let stubResponse: URLResponse
-
-    init(data: Data, response: URLResponse) {
-        stubData = data
-        stubResponse = response
-    }
-
-    nonisolated func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        await record(request)
-        return (stubData, stubResponse)
-    }
-
-    private func record(_ request: URLRequest) {
-        capturedRequest = request
-        capturedBody = request.httpBody
-    }
-}
-
-struct GameLifecycleFailingTransport: HTTPTransport {
-    let error: any Error & Sendable
-    func data(for _: URLRequest) async throws -> (Data, URLResponse) {
-        throw error
-    }
-}
-
-struct GameLifecycleTransportFailure: Error, Sendable {}
-
-typealias GameLifecycleGateContinuation = CheckedContinuation<(Data, URLResponse), any Error>
-typealias GameLifecycleVoidContinuation = CheckedContinuation<Void, any Error>
-
-/// Blocks `data(for:)` until the caller releases the gate, so a task is guaranteed
-/// mid-flight before cancellation is injected.
-actor GameLifecycleGatedTransport: HTTPTransport {
-    private var pendingGate: GameLifecycleGateContinuation?
-    private var gateWaiter: CheckedContinuation<GameLifecycleGateContinuation, Never>?
-
-    func awaitGate() async -> GameLifecycleGateContinuation {
-        if let gate = pendingGate {
-            pendingGate = nil
-            return gate
-        }
-        return await withCheckedContinuation { gateWaiter = $0 }
-    }
-
-    private func deliverGate(_ gate: GameLifecycleGateContinuation) {
-        if let waiter = gateWaiter {
-            waiter.resume(returning: gate)
-            gateWaiter = nil
-        } else {
-            pendingGate = gate
-        }
-    }
-
-    nonisolated func data(for _: URLRequest) async throws -> (Data, URLResponse) {
-        try await withCheckedThrowingContinuation { gate in
-            Task { await self.deliverGate(gate) }
-        }
-    }
-}
-
 /// A ``GameLifecycleServicing`` fake whose per-endpoint results are queued
 /// (consumed FIFO, one per call) so a test can script an exact sequence of
 /// successes/failures without a silent, success-shaped default: an endpoint called
@@ -90,6 +23,7 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private var listGamesQueue: [Result<GameList, any Error>] = []
     private var createGameQueue: [Result<GameLifecycleEnvelope, any Error>] = []
     private var deleteGameQueue: [Result<Void, any Error>] = []
+    private var getGameQueue: [Result<GetGameEnvelope, any Error>] = []
     private var peekLobbyQueue: [Result<GameLifecycleEnvelope, any Error>] = []
     private var joinGameQueue: [Result<GameLifecycleEnvelope, any Error>] = []
     private var openSeatsQueue: [Result<OpenSeats, any Error>] = []
@@ -108,6 +42,14 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         (threshold: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
 
+    private var isGetGameGated = false
+    private var getGameContinuations: [CheckedContinuation<GetGameEnvelope, any Error>] = []
+    private var getGamePendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
+    private(set) var lastGetGameGameID: GameID?
+
     // MARK: - Scripting
 
     func enqueueListGamesResult(_ result: Result<GameList, any Error>) {
@@ -120,6 +62,10 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
 
     func enqueueDeleteGameResult(_ result: Result<Void, any Error>) {
         deleteGameQueue.append(result)
+    }
+
+    func enqueueGetGameResult(_ result: Result<GetGameEnvelope, any Error>) {
+        getGameQueue.append(result)
     }
 
     func enqueuePeekLobbyResult(_ result: Result<GameLifecycleEnvelope, any Error>) {
@@ -148,6 +94,10 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
 
     func setDeleteGameGated(_ gated: Bool) {
         isDeleteGameGated = gated
+    }
+
+    func setGetGameGated(_ gated: Bool) {
+        isGetGameGated = gated
     }
 
     /// Suspends until at least `count` `listGames` calls are simultaneously pending.
@@ -188,6 +138,34 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         }
     }
 
+    /// Suspends until at least `count` `getGame` calls are simultaneously pending.
+    func waitUntilGetGamePending(_ count: Int) async {
+        if getGameContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { getGamePendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `getGame` call.
+    func resumeOldestGetGame(with result: Result<GetGameEnvelope, any Error>) {
+        guard !getGameContinuations.isEmpty else { return }
+        let continuation = getGameContinuations.removeFirst()
+        switch result {
+        case let .success(value): continuation.resume(returning: value)
+        case let .failure(error): continuation.resume(throwing: error)
+        }
+    }
+
+    /// Resumes the newest (most-recently-issued) still-pending `getGame` call.
+    func resumeNewestGetGame(with result: Result<GetGameEnvelope, any Error>) {
+        guard !getGameContinuations.isEmpty else { return }
+        let continuation = getGameContinuations.removeLast()
+        switch result {
+        case let .success(value): continuation.resume(returning: value)
+        case let .failure(error): continuation.resume(throwing: error)
+        }
+    }
+
     private func resume(
         _ continuation: CheckedContinuation<GameList, any Error>,
         with result: Result<GameList, any Error>
@@ -209,6 +187,14 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private func notifyDeleteGameWaiters() {
         deleteGamePendingWaiters.removeAll { entry in
             guard deleteGameContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func notifyGetGameWaiters() {
+        getGamePendingWaiters.removeAll { entry in
+            guard getGameContinuations.count >= entry.threshold else { return false }
             entry.continuation.resume()
             return true
         }
@@ -266,6 +252,22 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
             return
         }
         try consume(&deleteGameQueue)
+    }
+
+    func getGame(
+        _ id: GameID, on profile: ServerProfile, token: String
+    ) async throws -> GetGameEnvelope {
+        callOrder.append("getGame")
+        lastToken = token
+        lastProfileID = profile.id
+        lastGetGameGameID = id
+        if isGetGameGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                getGameContinuations.append(continuation)
+                notifyGetGameWaiters()
+            }
+        }
+        return try consume(&getGameQueue)
     }
 
     func peekLobby(

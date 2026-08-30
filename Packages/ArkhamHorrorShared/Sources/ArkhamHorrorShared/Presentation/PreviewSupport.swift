@@ -123,6 +123,15 @@ import Foundation
 
         func deleteGame(_: GameID, on _: ServerProfile, token _: String) async throws {}
 
+        func getGame(
+            _: GameID, on _: ServerProfile, token _: String
+        ) async throws -> GetGameEnvelope {
+            // Not exercised by any current preview provider; the live-game screen's
+            // preview provider (if one is later added) should inject its own fixture
+            // rather than have this shared preview stub fabricate a `PublicGameSnapshot`.
+            throw GameLifecycleError.unexpectedStatus(501)
+        }
+
         func peekLobby(
             _: GameID, on _: ServerProfile, token _: String
         ) async throws -> GameLifecycleEnvelope {

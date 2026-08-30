@@ -61,6 +61,13 @@ protocol GameLifecycleServicing: Sendable {
     /// Deletes an owned game via `DELETE /arkham/games/:id`.
     func deleteGame(_ id: GameID, on profile: ServerProfile, token: String) async throws
 
+    /// Fetches the current authoritative full game snapshot via
+    /// `GET /arkham/games/:id` -- the same route this backend also upgrades to a
+    /// WebSocket for (see ``LiveGameEndpoint``).
+    func getGame(
+        _ id: GameID, on profile: ServerProfile, token: String
+    ) async throws -> GetGameEnvelope
+
     /// Previews a pending game's lobby via `GET /arkham/games/:id/join`, without
     /// joining it.
     func peekLobby(
