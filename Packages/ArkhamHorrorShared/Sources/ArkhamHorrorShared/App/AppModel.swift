@@ -1,72 +1,6 @@
 import Foundation
 import Observation
 
-struct TokenAccessTail {
-    let id: UUID
-    let task: Task<Void, Never>
-}
-
-/// A service-wide credential-reset barrier: while active, every per-profile token
-/// operation awaits `task` before proceeding. See ``AppModel/serviceResetBarrier``.
-struct ServiceResetBarrier {
-    let id: UUID
-    let task: Task<Void, Never>
-}
-
-/// A cancellation-cleanup deletion's tracked, awaitable outcome for a profile, keyed
-/// by profile ID, so a later caller (``AppModel/resolvePendingCleanup(for:)``) can
-/// await the *same* in-flight cleanup rather than racing a second, redundant delete
-/// for the same profile. Pruned (via an identity check against `id`) once its task
-/// completes, exactly like ``TokenAccessTail``.
-struct CleanupPendingTask {
-    let id: UUID
-    let task: Task<TokenStoreFailure?, Never>
-}
-
-/// A cancellation-cleanup deletion that ultimately failed after being durably
-/// reserved (see ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)``), tagged
-/// with the exact cleanup-attempt identity that produced it. See
-/// ``AppModel/pendingCleanupFailures``.
-struct PendingCleanupFailure: Equatable, Sendable {
-    let attemptID: UUID
-    let failure: TokenStoreFailure
-}
-
-/// A ``SessionOperationFailure`` tagged with the exact sign-in/registration attempt
-/// (see ``AppModel/currentAuthAttemptID``) that produced it. See
-/// ``AppModel/authFailure``.
-struct AttemptScopedAuthFailure: Equatable, Sendable {
-    let attemptID: UUID
-    let failure: SessionOperationFailure
-}
-
-/// The generation and credential/global epoch snapshot captured at the start of an
-/// operation that may reach a durable token mutation, threaded through as a single
-/// value so the functions that recheck it immediately before touching the token
-/// store do not need a separate parameter for each field. See
-/// ``AppModel/serializedTokenAccess(for:epoch:globalEpoch:_:)`` and
-/// ``AppModel/isCurrent(_:)``.
-struct CredentialOperationContext: Sendable {
-    let generation: Int
-    let credentialEpoch: Int
-    let globalEpoch: Int
-}
-
-/// The operation generation captured at the start of a profile edit that may need to
-/// delete an existing token as the precondition for an endpoint change, threaded
-/// through as a single value for the same reason as ``CredentialOperationContext``.
-/// `cleanupTask` is `nil` exactly when the edit does not change the profile's
-/// endpoint (so no token deletion is needed); when present, it is the durable
-/// cancellation-cleanup reservation's task returned by
-/// ``AppModel/enqueueCancellationCleanup(for:globalEpoch:)`` — the same durable
-/// mark-then-admit primitive an explicit auth cancellation uses — so an
-/// endpoint-changing edit gets the identical crash-durable tombstone and
-/// synchronous-admission guarantees rather than a separate, ad hoc delete path.
-struct ProfileUpdateEpochContext: Sendable {
-    let cleanupTask: Task<TokenStoreFailure?, Never>?
-    let operationGeneration: Int
-}
-
 /// The shared, `@MainActor` session coordinator for every Arkham Horror platform target.
 ///
 /// On launch, `AppModel` loads persisted server profiles, seeds the canonical hosted
@@ -188,6 +122,14 @@ final class AppModel {
     /// The injectable authenticated game-lifecycle/lobby client. See
     /// `AppModel+GameLifecycle.swift`.
     @ObservationIgnored let gameLifecycleService: any GameLifecycleServicing
+    /// The injectable live-game WebSocket connection factory. See
+    /// `AppModel+LiveGameSession.swift`.
+    @ObservationIgnored let liveGameSocketFactory: any GameSocketFactory
+    /// The injectable reconnect-backoff sleep primitive. See
+    /// ``LiveGameReconnectPolicy``.
+    @ObservationIgnored let liveGameClock: any LiveGameClock
+    /// The injectable reconnect-backoff jitter source. See ``LiveGameReconnectPolicy``.
+    @ObservationIgnored let liveGameRandomSource: any LiveGameRandomSource
 
     @ObservationIgnored var selectedProfile: ServerProfile = .hosted
     @ObservationIgnored var generation = 0
@@ -319,13 +261,36 @@ final class AppModel {
     /// The in-flight task for each ``GameID``'s current action, if any.
     @ObservationIgnored var gameLifecycleActionTasks: [GameID: Task<Void, Never>] = [:]
 
+    // MARK: - Live-game state (see `AppModel+LiveGame.swift`/`AppModel+LiveGameSession.swift`)
+
+    /// Every subscribed game's typed live-session presentation state, keyed by
+    /// ``GameID``. Absent (rather than ``LiveGameState/idle``) exactly when no
+    /// subscription/session has ever been created for that game; see
+    /// ``AppModel/liveGameState(for:)``.
+    var liveGameStates: [GameID: LiveGameState] = [:]
+    /// The set of live subscription identities currently viewing each game, keyed by
+    /// ``GameID`` -- a `Set` (rather than a bare count) so an accidental
+    /// double-``unsubscribeFromLiveGame(_:)`` of the same token is naturally
+    /// idempotent instead of ever under/overflowing a counter. One game's live
+    /// session (``liveGameSessions``) exists exactly while its entry here is
+    /// non-empty; multiple scenes/views subscribed to the *same* game share that one
+    /// session, and only the last one unsubscribing actually tears it down. See
+    /// ``AppModel/subscribeToLiveGame(_:)``.
+    @ObservationIgnored var liveGameViewers: [GameID: Set<UUID>] = [:]
+    /// The in-flight live-session runner task and current attempt identity for each
+    /// subscribed ``GameID``. See ``AppModel/startLiveGameSession(_:)``.
+    @ObservationIgnored var liveGameSessions: [GameID: LiveGameSessionHandle] = [:]
+
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),
         tokenStore: any TokenStore = KeychainTokenStore(),
         capabilityProbe: any CapabilityProbing = CapabilityProbe(),
         authenticationSession: any AppAuthenticating = AuthenticationSession(),
         cleanupPendingStore: any TokenCleanupPendingStore = KeychainTokenCleanupPendingStore(),
-        gameLifecycleService: any GameLifecycleServicing = GameLifecycleService()
+        gameLifecycleService: any GameLifecycleServicing = GameLifecycleService(),
+        liveGameSocketFactory: any GameSocketFactory = URLSessionGameSocketFactory(),
+        liveGameClock: any LiveGameClock = SystemLiveGameClock(),
+        liveGameRandomSource: any LiveGameRandomSource = SystemLiveGameRandomSource()
     ) {
         self.profileStore = profileStore
         self.tokenStore = tokenStore
@@ -333,6 +298,9 @@ final class AppModel {
         self.authenticationSession = authenticationSession
         self.cleanupPendingStore = cleanupPendingStore
         self.gameLifecycleService = gameLifecycleService
+        self.liveGameSocketFactory = liveGameSocketFactory
+        self.liveGameClock = liveGameClock
+        self.liveGameRandomSource = liveGameRandomSource
         startLaunchFlow()
     }
 }
