@@ -113,7 +113,13 @@ final class URLSessionGameSocketConnection: GameSocketConnection, @unchecked Sen
         case let .string(string):
             return .message(Data(string.utf8))
         @unknown default:
-            return .message(Data())
+            // A wire-message kind this OS version's `URLSessionWebSocketTask` API
+            // doesn't yet expose to us -- a transport-level surprise, not a
+            // malformed contract payload. Route it through the same transport
+            // failure/retry-with-backoff path as any other `receive()` failure,
+            // rather than fabricating fake message bytes that would masquerade as
+            // a genuine (and always-failing) contract decode issue.
+            throw GameSocketTransportError()
         }
     }
 

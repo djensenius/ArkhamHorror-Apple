@@ -91,11 +91,13 @@ struct GameLifecycleService: Sendable {
 
     /// Fetches the current authoritative full game snapshot for `id`: the same
     /// `GET /arkham/games/{id}` route this backend also upgrades to a WebSocket for
-    /// (see ``LiveGameEndpoint``), decoded through the exact same ``ContractJSON`` /
-    /// ``GetGameEnvelope`` boundary a WebSocket `GameUpdate` frame's snapshot payload
-    /// also decodes through, so a REST fetch and a socket frame for the same game
-    /// state are guaranteed to produce an equal ``PublicGameSnapshot`` (see
-    /// `PublicGameSnapshotFixtureTests`).
+    /// (see ``LiveGameEndpoint``), decoded through ``ContractJSON``/``GetGameEnvelope``.
+    /// A WebSocket `GameUpdate` frame's snapshot payload decodes through the
+    /// equivalent ``ContractJSON``/``BoardSnapshotUpdate`` boundary instead, but both
+    /// ultimately produce the same ``PublicGameSnapshot`` domain type, so a REST
+    /// fetch and a socket frame for the same game state are guaranteed to produce an
+    /// equal ``PublicGameSnapshot`` (see `PublicGameSnapshotFixtureTests` and
+    /// `LiveGameContractFixtureTests`).
     func getGame(
         _ id: GameID, on profile: ServerProfile, token: String
     ) async throws -> GetGameEnvelope {

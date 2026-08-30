@@ -31,7 +31,8 @@ extension AppModelLiveGameTests {
         let connection = FakeGameSocketConnection()
         let envelope = try loadGetGame()
         let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
-        try await connection.enqueue(.event(.message(loadGameUpdateData())))
+        let queuedUpdate = try loadGameUpdateData()
+        await connection.enqueue(.event(.message(queuedUpdate)))
 
         let outcome = await model.consumeLiveGameSocket(
             staleAttempt, connection: connection, projection: projection
@@ -74,7 +75,8 @@ extension AppModelLiveGameTests {
         // Only now resolve the gated connect -- with a connection that already has
         // a decodable frame waiting, so any accidental consumption would be visible.
         let staleConnection = FakeGameSocketConnection()
-        try await staleConnection.enqueue(.event(.message(loadGameUpdateData())))
+        let queuedUpdate = try loadGameUpdateData()
+        await staleConnection.enqueue(.event(.message(queuedUpdate)))
         await fakes.socketFactory.resumeOldestConnect(with: .success(staleConnection))
 
         await task.value
