@@ -228,7 +228,12 @@ extension AppModel {
     /// concurrent event already invalidated this read while the profile may still
     /// be signed in, so `gameListState` must revert out of `.loading` rather than
     /// stay stuck, and no error is ever synthesized for a condition the backend
-    /// never reported.
+    /// never reported. A missing token (`.noToken`) means some concurrent event
+    /// already invalidated the session's token durably while `sessionState` had not
+    /// yet observed it -- routed through
+    /// ``handleGameLifecycleSessionExpired(profile:generation:credentialEpoch:globalEpoch:)``
+    /// exactly like an explicit 401, so the app never stays on the signed-in route
+    /// with a token it can no longer actually use.
     private func resolveGameListToken(_ attempt: GameListLoadAttempt) async -> String? {
         do {
             return try await currentGameLifecycleToken(for: attempt.profile)
@@ -242,6 +247,12 @@ extension AppModel {
                 revertGameListStateAfterCancellation(attempt)
             case .noToken:
                 gameListState = .failed(.sessionExpired, previous: gameListState.games)
+                await handleGameLifecycleSessionExpired(
+                    profile: attempt.profile,
+                    generation: attempt.sessionGeneration,
+                    credentialEpoch: attempt.credentialEpoch,
+                    globalEpoch: attempt.globalEpoch
+                )
             case .tokenStore:
                 gameListState = .failed(.tokenUnavailable, previous: gameListState.games)
             }

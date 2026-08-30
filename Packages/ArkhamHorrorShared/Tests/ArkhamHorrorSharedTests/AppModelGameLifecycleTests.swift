@@ -198,6 +198,40 @@ struct AppModelGameLifecycleTests {
         #expect(remainingToken == nil)
     }
 
+    @Test(
+        """
+        A missing token for a still-current refresh routes through session-expiry \
+        and signs out, rather than leaving the app on the signed-in route with no \
+        usable token
+        """
+    )
+    func noTokenFromListGamesSignsOut() async throws {
+        let service = ScriptedGameLifecycleService()
+        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "token"])
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            gameLifecycleService: service
+        )
+        await model.flowTask?.value
+        #expect(
+            model.sessionState == .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        )
+
+        // Simulates a concurrent event (e.g. a sign-out or storage reset) having
+        // already durably deleted the token before `sessionState` observed it.
+        try await tokenStore.deleteToken(for: ServerProfile.hosted.id)
+
+        model.refreshGames()
+        await model.gameListTask?.value
+
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(model.gameListState == .idle)
+    }
+
     @Test("Switching profiles clears the previous profile's loaded games list")
     func profileSwitchClearsGameLifecycleState() async {
         let service = ScriptedGameLifecycleService()

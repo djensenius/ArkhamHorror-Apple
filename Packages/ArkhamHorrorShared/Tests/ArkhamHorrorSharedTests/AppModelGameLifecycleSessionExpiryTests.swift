@@ -105,6 +105,41 @@ struct AppModelGameLifecycleSessionExpiryTests {
 
     @Test(
         """
+        A missing token for a still-current action routes through session-expiry \
+        and signs out, rather than leaving the app on the signed-in route with no \
+        usable token
+        """
+    )
+    func noTokenForCurrentActionSignsOut() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "token"])
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            gameLifecycleService: service
+        )
+        await model.flowTask?.value
+        #expect(
+            model.sessionState == .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        )
+
+        // Simulates a concurrent event (e.g. a sign-out or storage reset) having
+        // already durably deleted the token before `sessionState` observed it.
+        try await tokenStore.deleteToken(for: ServerProfile.hosted.id)
+
+        model.deleteGame(gameID)
+        await model.gameLifecycleActionTasks[gameID]?.value
+
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(model.gameListState == .idle)
+    }
+
+    @Test(
+        """
         Cancellation observed after the response is in flight is never recorded as a \
         failure, but does clear the in-flight marker so the row is never stuck
         """

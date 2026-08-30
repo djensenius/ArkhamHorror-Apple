@@ -81,7 +81,12 @@ extension AppModel {
     /// invalidated this read while the profile may still be signed in, exactly like
     /// this file's own session-expiry handling treats it elsewhere -- so the row is
     /// never left stuck disabled with no way to retry, and no error is ever
-    /// synthesized for a condition the backend never reported.
+    /// synthesized for a condition the backend never reported. A missing token
+    /// (`.noToken`) means the session's token was already durably invalidated by
+    /// some concurrent event while `sessionState` had not yet observed it -- routed
+    /// through this file's session-expiry handling exactly like an explicit 401
+    /// (guarded by the same currency check), so the app never stays on the
+    /// signed-in route with a token it can no longer actually use.
     private func resolveGameActionToken(
         _ id: GameID, kind: GameLifecycleAction, attempt: GameActionAttempt
     ) async -> String? {
@@ -96,6 +101,14 @@ extension AppModel {
                 clearGameActionMarkerIfCurrent(id, attempt)
             case .noToken:
                 recordGameActionFailure(id, attempt: attempt, kind: kind, error: .sessionExpired)
+                if isCurrentGameAction(id, attempt) {
+                    await handleGameLifecycleSessionExpired(
+                        profile: attempt.profile,
+                        generation: attempt.sessionGeneration,
+                        credentialEpoch: attempt.credentialEpoch,
+                        globalEpoch: attempt.globalEpoch
+                    )
+                }
             case .tokenStore:
                 recordGameActionFailure(id, attempt: attempt, kind: kind, error: .tokenUnavailable)
             }
