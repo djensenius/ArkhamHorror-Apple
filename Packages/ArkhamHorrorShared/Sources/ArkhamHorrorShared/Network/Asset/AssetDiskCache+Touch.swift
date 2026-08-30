@@ -31,14 +31,13 @@ extension AssetDiskCache {
         token: AssetCacheService.CacheToken?
     ) throws -> AssetCacheService.MutationOutcome {
         try ensureRootAuthorityInitializedLocked()
-        recoverOrphansIfNeeded()
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentApplied = try currentAppliedTicketLocked(for: key)
+        let currentIssued = try currentIssuedTicketLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
                 currentEpoch: currentEpoch,
-                currentApplied: currentApplied
+                currentIssued: currentIssued
             ) else {
                 return .stale
             }

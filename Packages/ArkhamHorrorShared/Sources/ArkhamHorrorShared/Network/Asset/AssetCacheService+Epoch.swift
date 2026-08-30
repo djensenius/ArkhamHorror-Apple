@@ -119,19 +119,47 @@ extension AssetCacheService {
         /// ``AssetDiskCache/beginIssuance(for:)`` and
         /// `AssetDiskCache+WriteGeneration.swift`'s type-level doc
         /// comment) — `nil` only if that durable reservation itself
-        /// failed at issuance time, which ``AssetDiskCache/acceptToken(_:for:)``
+        /// failed at issuance time, which
+        /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``
         /// treats as permanently unacceptable (fail closed), never a
         /// silent "no other write has ever happened for this key"
         /// default. This is the disk-durable, cross-process half of the
         /// per-key compare-and-swap: unlike `generation`/`clearGeneration`
         /// /`durableClearEpoch` (all whole-cache concerns),
         /// `AssetDiskCache` compares this globally-ordered issuance
-        /// ticket against the *currently applied* on-disk ticket for this
-        /// exact key (``AssetDiskCache/currentAppliedTicketLocked(for:)``),
+        /// ticket against the *currently issued* (not merely currently
+        /// *applied*) on-disk ticket for this exact key
+        /// (``AssetDiskCache/currentIssuedTicketLocked(for:)``),
         /// independent of and in addition to any other instance/process's
         /// own in-memory bookkeeping, which is what actually makes two
         /// independently wired instances/processes sharing one disk
-        /// directory agree on write ordering for the same key.
+        /// directory agree on write ordering for the same key: the
+        /// instant *any* newer ticket for this key is reserved — whether
+        /// or not that newer operation has actually applied its write
+        /// yet — this token is fenced, so an older, still-in-flight
+        /// operation can never win a race against a newer one merely by
+        /// finishing its own work first.
+        ///
+        /// A revalidation of an existing memory/disk hit still always
+        /// reserves its own freshly-issued ticket here, exactly like a
+        /// genuinely new fetch (via
+        /// ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``)
+        /// — never the hit's own historical stamp verbatim: a token
+        /// whose ticket merely repeats whatever is already the currently
+        /// -applied value is indistinguishable, to
+        /// ``AssetDiskCache/removeIfApplied(_:token:)``'s exact-match
+        /// cancellation-retraction contract, from "this exact operation's
+        /// own mutation is what is currently applied" — even when this
+        /// operation itself never applied anything at all, which would
+        /// let cancelling an in-flight revalidation incorrectly retract a
+        /// perfectly valid, unrelated entry. The hit's own historical
+        /// stamp (``AssetCacheMetadata/writeGenerationAtPublication``/
+        /// ``AssetMemoryCache/CachedAsset/writeGeneration``) is instead
+        /// only ever used to *validate*, atomically alongside this fresh
+        /// reservation, that current durable reality still agrees with
+        /// this entry's own true, possibly-long-superseded provenance
+        /// before a fresh ticket is reserved at all — see that method's
+        /// doc comment for the full reasoning.
         /// Deliberately not part of `==`/`<`'s identity comparison, for
         /// the identical reason `clearGeneration`/`durableClearEpoch` are
         /// not.
@@ -204,7 +232,7 @@ extension AssetCacheService {
     /// this stays a plain, synchronous, in-memory-only operation
     /// specifically so it can run inside an atomic "check the coalescing
     /// dictionary, else create and insert" section (``coalescedFetch(key:cacheKey:candidates:)``,
-    /// ``resolveRevalidationFetchID(expectedFormat:existing:slot:preIssuedAuthority:)``)
+    /// ``resolveOrIssueRevalidation(expectedFormat:existing:slot:)``)
     /// without introducing a suspension point that would let two
     /// concurrent callers for the same key both observe "nothing in
     /// flight yet" and each start their own independent, uncoalesced
@@ -242,125 +270,5 @@ extension AssetCacheService {
     struct PreIssuedAuthority: Sendable {
         let clearEpoch: Int?
         let diskWriteGeneration: Int?
-    }
-
-    /// Reads the current durable, cross-instance/cross-process clear
-    /// epoch for this cache's shared directory (see
-    /// `SecureCacheDirectory+ClearEpoch.swift`'s type-level doc comment),
-    /// or `nil` if that durable read itself failed. `nil` is deliberately
-    /// never treated as "no clear has happened" by any caller —
-    /// ``isAuthoritative(_:for:)`` and ``unchanged(since:for:)``/
-    /// ``clearStateUnchanged(since:for:)`` all fail closed (report "not
-    /// authoritative"/"changed") the instant either the value they
-    /// captured earlier, or the value they freshly re-read now, is `nil`
-    /// — an inability to durably prove no cross-instance clear happened
-    /// must never be silently treated as proof that none did.
-    ///
-    /// This method alone (unlike ``beginIssuance(for:)`` below) is safe
-    /// to call repeatedly, at any point, purely to *re-check* a
-    /// previously captured value — it is what every post-suspension
-    /// authority re-check (``isAuthoritative(_:for:)``,
-    /// ``unchanged(since:for:)``, ``memoryEntryStillCurrent(_:)``, and
-    /// friends) uses. It must never itself be used to *capture* the
-    /// value a fresh token is stamped with at issuance time; use
-    /// ``beginIssuance(for:)`` for that instead (see its own doc comment
-    /// for why the two are not interchangeable).
-    func currentDurableClearEpoch() async -> Int? {
-        try? await diskCache.currentClearEpoch()
-    }
-
-    /// Captures both halves of a fresh token's durable authority — the
-    /// cross-instance clear epoch and this key's own durable disk write
-    /// generation — together, in one disk-cache round trip, and returns
-    /// `nil` for either field the underlying read failed to confirm.
-    ///
-    /// Called exactly once, as the very first step of issuing a fresh
-    /// (never coalesced-into) fetch/revalidation/disk-hit operation,
-    /// *before* the synchronous "check the coalescing dictionary, else
-    /// create and issue" decision that follows it
-    /// (``coalescedFetch(key:cacheKey:candidates:)``,
-    /// ``resolveRevalidationFetchID(expectedFormat:existing:slot:preIssuedAuthority:)``,
-    /// and the two disk-hit branches that are not behind any coalescing
-    /// dictionary at all) — never afterward, and never restamped later
-    /// from a value re-read after some unrelated suspension. This is
-    /// exactly the fix for a prior review's "durable epoch captured
-    /// after operation issuance" finding: previously, a token was issued
-    /// synchronously first and only stamped with its durable epoch
-    /// afterward, inside the `Task` that would go on to perform the
-    /// operation's actual suspending work — a window during which a
-    /// cross-instance clear (or a competing write for the same key)
-    /// could land and never be observed as having preceded this
-    /// operation's own issuance. Reading this snapshot *before* the
-    /// join-or-create decision closes that window entirely: if this call
-    /// ends up *joining* already in-flight work, the freshly captured
-    /// snapshot here is simply discarded (the in-flight work's own token,
-    /// captured when *it* was issued, already governs); if it *creates*
-    /// fresh work, the snapshot is stamped onto the new token
-    /// synchronously, with no further `await` between "decide to create"
-    /// and "token is fully stamped" — see ``issueToken(for:)``'s own doc
-    /// comment for why that synchronous atomicity matters.
-    ///
-    /// Never itself called from inside that atomic join-or-create
-    /// section (it is `async` and must complete before that section
-    /// begins), and never used merely to *re-check* an already-issued
-    /// token's continued validity — see ``currentDurableClearEpoch()``'s
-    /// doc comment for that distinction.
-    func beginIssuance(for key: AssetCacheKey) async -> PreIssuedAuthority {
-        guard let snapshot = try? await diskCache.beginIssuance(for: key) else {
-            return PreIssuedAuthority(clearEpoch: nil, diskWriteGeneration: nil)
-        }
-        return PreIssuedAuthority(
-            clearEpoch: snapshot.clearEpoch,
-            diskWriteGeneration: snapshot.writeGeneration
-        )
-    }
-
-    /// *issued* token for `key`, under the current global generation, and
-    /// `key` has not been individually invalidated since `token` was
-    /// issued — the compare half of every mutating call site's
-    /// compare-and-swap. An operation issued before another one for the
-    /// same key can never pass this check again once the later one has
-    /// been issued (nor after `key` is individually invalidated or the
-    /// whole cache is cleared), regardless of which one's network round
-    /// trip or decode happens to finish first.
-    ///
-    /// Also requires `token`'s ``CacheToken/durableClearEpoch`` (stamped
-    /// by ``beginIssuance(for:)`` at issuance time) to still exactly match a
-    /// freshly re-read ``currentDurableClearEpoch()`` — the durable,
-    /// cross-instance/cross-process half of this same compare-and-swap:
-    /// a `nil` on either side (an unstamped token, or a durable read
-    /// failure just now) fails closed rather than silently falling back
-    /// to only this instance's own in-process `generation`/
-    /// `clearGeneration` counters, which another instance/process
-    /// sharing this same directory never bumps.
-    func isAuthoritative(_ token: CacheToken, for key: AssetCacheKey) async -> Bool {
-        guard
-            token.generation == globalGeneration,
-            keyLatestToken[key] == token,
-            token.clearGeneration == (keyClearGeneration[key] ?? 0)
-        else {
-            return false
-        }
-        guard
-            let tokenEpoch = token.durableClearEpoch,
-            let currentEpoch = await currentDurableClearEpoch()
-        else {
-            return false
-        }
-        return tokenEpoch == currentEpoch
-    }
-
-    /// Invalidates every currently-issued token across every key at once.
-    /// Called exactly by ``evictAll()``: every operation already in
-    /// flight for any key captured its token under the generation this
-    /// bumps past, so every one of them will find ``isAuthoritative(_:for:)``
-    /// `false` from this point on without this needing to enumerate a
-    /// single key.
-    func issueGlobalInvalidation() {
-        globalGeneration += 1
-        keyLatestToken.removeAll()
-        keyClearGeneration.removeAll()
-        authorityKeyOrder.removeAll()
-        trackedAuthorityKeys.removeAll()
     }
 }

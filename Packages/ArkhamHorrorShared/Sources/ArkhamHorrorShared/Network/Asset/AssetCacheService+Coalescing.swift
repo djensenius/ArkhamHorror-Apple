@@ -72,57 +72,11 @@ extension AssetCacheService {
         candidates: [AssetCandidate]
     ) async throws -> CachedAsset {
         let waiterID = UUID()
-        let fetchID: UUID
-        let token: CacheToken
-        // Read *before* the synchronous join-or-create decision below —
-        // see ``beginIssuance(for:)``'s doc comment for why this specific
-        // ordering (rather than issuing a token first and stamping its
-        // durable authority afterward, inside the `Task` that performs
-        // this fetch's actual suspending work) is required. If this call
-        // ends up joining already in-flight work, this snapshot is simply
-        // discarded below.
-        let authority = await beginIssuance(for: cacheKey)
-        if let existing = inFlight[cacheKey] {
-            fetchID = existing.id
-            // The already-registered fetch's own token, issued when *it*
-            // started — governs every one of its waiters uniformly, this
-            // one included, never a freshly-derived token for this join
-            // alone.
-            token = existing.token
-        } else {
-            // Issued synchronously here — before the `Task` below is even
-            // created, let alone runs — so this token's issuance order
-            // exactly reflects the moment this fresh (never
-            // coalesced-into) fetch was issued, per the issuance contract
-            // in `AssetCacheService+Epoch.swift`. Every waiter that joins
-            // this exact `inFlight` entry shares this one token. Stamped,
-            // synchronously and completely, from `authority` (captured
-            // above): no further `await` occurs between this token's
-            // issuance and the moment it is fully authoritative-ready, so
-            // there is no window during which a cross-instance/cross-
-            // process clear or a competing write for this exact key could
-            // land and never be reflected in this token's own authority.
-            var issued = issueToken(for: cacheKey)
-            issued.durableClearEpoch = authority.clearEpoch
-            issued.diskWriteGeneration = authority.diskWriteGeneration
-            token = issued
-            let newTask = Task { [weak self] in
-                guard let self else { throw CancellationError() }
-                return try await fetchAndValidate(
-                    key: key,
-                    cacheKey: cacheKey,
-                    candidates: candidates,
-                    token: issued
-                )
-            }
-            let newFetch = InFlightFetch(task: newTask, token: issued)
-            inFlight[cacheKey] = newFetch
-            fetchID = newFetch.id
-            Task { [weak self] in
-                let result = await newTask.result
-                await self?.completeFetch(cacheKey, fetchID: fetchID, result: result)
-            }
-        }
+        let (fetchID, token) = await resolveOrCreateInFlightFetch(
+            key: key,
+            cacheKey: cacheKey,
+            candidates: candidates
+        )
 
         return try await withTaskCancellationHandler {
             let result = await withCheckedContinuation { (continuation: AssetContinuation) in
@@ -190,6 +144,19 @@ extension AssetCacheService {
             guard await isAuthoritative(token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
+            // A second, terminal `Task.isCancelled` check, immediately
+            // before this exact success-shaped value is handed back --
+            // mirrors `AssetCacheService+RevalidationCoalescing.swift`'s
+            // ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``.
+            // ``isAuthoritative(_:for:)`` above itself suspends (a
+            // durable epoch read), and the very first `Task.isCancelled`
+            // check above only covers the window up to the
+            // continuation's own resumption -- it cannot observe a
+            // cancellation landing *during* `isAuthoritative`'s own
+            // suspension.
+            if Task.isCancelled {
+                throw CancellationError()
+            }
             return delivered
         } onCancel: {
             // `onCancel` may run synchronously on an arbitrary executor,
@@ -250,6 +217,89 @@ extension AssetCacheService {
     /// with respect to `retireIfCurrent` and before `key` is left in a
     /// state any other caller could read from, rather than left to the
     /// doomed task's own (possibly already-passed) cancellation checks.
+    /// The join-or-create decision for a normal (non-revalidation) cache
+    /// miss, split out of ``coalescedFetch(key:cacheKey:candidates:)``
+    /// purely to keep that function's body within this package's
+    /// `function_body_length` limit. The entire decision below —
+    /// including ``beginIssuance(for:)``'s durable disk-authority
+    /// reservation, when this call ends up starting fresh work — runs
+    /// under this key's decision lock (see
+    /// `AssetCacheService+IssuanceDecisionLock.swift`'s type-level doc
+    /// comment for exactly what hazard that closes): without it,
+    /// ``beginIssuance(for:)``'s own suspension would let two concurrent
+    /// calls for this same key each reserve a distinct disk ticket even
+    /// though only one of them ever ends up actually used. Held only
+    /// around this decision, never around the wait for the fetch's
+    /// eventual result performed by the caller.
+    private func resolveOrCreateInFlightFetch(
+        key: AssetKey,
+        cacheKey: AssetCacheKey,
+        candidates: [AssetCandidate]
+    ) async -> (fetchID: UUID, token: CacheToken) {
+        let fetchID: UUID
+        let token: CacheToken
+        await acquireIssuanceDecisionLock(for: cacheKey)
+        if let existing = inFlight[cacheKey] {
+            fetchID = existing.id
+            // The already-registered fetch's own token, issued when *it*
+            // started — governs every one of its waiters uniformly, this
+            // one included, never a freshly-derived token for this join
+            // alone. Nothing was reserved for this join at all: no
+            // `beginIssuance(for:)` call is made on this branch.
+            token = existing.token
+            releaseIssuanceDecisionLock(for: cacheKey)
+        } else {
+            // Read *before* this fresh fetch's token is issued — see
+            // ``beginIssuance(for:)``'s doc comment for why this specific
+            // ordering (rather than issuing a token first and stamping
+            // its durable authority afterward, inside the `Task` that
+            // performs this fetch's actual suspending work) is required.
+            // Safe to call here (unlike a prior revision of this code)
+            // because this key's decision lock, acquired above, is still
+            // held: no other concurrent caller for this exact key can be
+            // inside this same decision section to also call it and waste
+            // a reservation.
+            let authority = await beginIssuance(for: cacheKey)
+            // Issued synchronously here — before the `Task` below is even
+            // created, let alone runs — so this token's issuance order
+            // exactly reflects the moment this fresh (never
+            // coalesced-into) fetch was issued, per the issuance contract
+            // in `AssetCacheService+Epoch.swift`. Every waiter that joins
+            // this exact `inFlight` entry shares this one token. Stamped,
+            // synchronously and completely, from `authority` (captured
+            // above): no further `await` occurs between this token's
+            // issuance and the moment it is fully authoritative-ready, so
+            // there is no window during which a cross-instance/cross-
+            // process clear or a competing write for this exact key could
+            // land and never be reflected in this token's own authority.
+            var issued = issueToken(for: cacheKey)
+            issued.durableClearEpoch = authority.clearEpoch
+            issued.diskWriteGeneration = authority.diskWriteGeneration
+            token = issued
+            let newTask = Task { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await fetchAndValidate(
+                    key: key,
+                    cacheKey: cacheKey,
+                    candidates: candidates,
+                    token: issued
+                )
+            }
+            let newFetch = InFlightFetch(task: newTask, token: issued)
+            inFlight[cacheKey] = newFetch
+            fetchID = newFetch.id
+            // Registered into `inFlight` before releasing the lock, so a
+            // later caller for this same key that acquires the lock next
+            // is guaranteed to find this entry already present.
+            releaseIssuanceDecisionLock(for: cacheKey)
+            Task { [weak self] in
+                let result = await newTask.result
+                await self?.completeFetch(cacheKey, fetchID: fetchID, result: result)
+            }
+        }
+        return (fetchID, token)
+    }
+
     private func cancelWaiter(_ key: AssetCacheKey, fetchID: UUID, waiterID: UUID) async {
         guard var fetch = inFlight[key], fetch.id == fetchID else {
             // Already completed/replaced by the time this cancellation

@@ -14,7 +14,8 @@ extension AssetCacheService {
     /// cached entry has since changed, e.g. after another revalidation's
     /// own completion, must never be silently folded into a fetch
     /// conditioned on a validator it no longer holds — see
-    /// ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:)``). Keying only
+    /// ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``).
+    /// Keying only
     /// by `cacheKey` would let a second, independent fetch's registration
     /// overwrite the first's dictionary entry, orphaning the first
     /// fetch's own waiters (their completion/cancellation lookups by

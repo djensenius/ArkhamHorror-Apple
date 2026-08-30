@@ -20,48 +20,66 @@ extension AssetCacheService {
             .reduce(0) { $0 + $1.value.waiters.count }
     }
 
-    /// `preIssuedAuthority` is a durable clear epoch the caller already read
-    /// (via ``currentDurableClearEpoch()``) at its own synchronous
-    /// decision point, immediately before calling this — every caller
-    /// (the memory-hit and validated-disk-hit branches of
-    /// ``revalidate(for:)``, and ``asset(for:)``'s disk-hit branch
-    /// calling this directly) now reads its own epoch immediately at
-    /// that decision point, rather than only some of them doing so and
-    /// this call reading one later itself for the rest. Never a full
-    /// pre-issued ``CacheToken``: threading a token (rather than a bare
-    /// epoch value) through here would force every caller to call
-    /// ``issueToken(for:)`` unconditionally before knowing whether this
-    /// operation will join already in-flight work or create fresh work,
-    /// clobbering whatever token the in-flight fetch it might join is
-    /// relying on — see
-    /// ``revalidateExisting(_:key:cacheKey:candidates:preIssuedAuthority:)``'s
-    /// doc comment. Threaded straight through to
-    /// ``resolveRevalidationFetchID(expectedFormat:existing:slot:preIssuedAuthority:)``,
-    /// which mints the actual authoritative token itself, and only on
-    /// its own "create fresh work" branch, so a fresh network round trip
-    /// started here never mints unrelated, always-immediately-
-    /// authoritative new authority from bytes that epoch has already
-    /// validated.
+    /// `existing`'s own historical publication stamp
+    /// (``AssetMemoryCache/CachedAsset/durableClearEpoch``/
+    /// ``AssetMemoryCache/CachedAsset/writeGeneration``) is the source of
+    /// provenance to validate and, if it still checks out, reserve fresh
+    /// authority from whenever `preIssuedAuthority` is `nil` — via
+    /// ``resolveOrIssueRevalidation(expectedFormat:existing:slot:preIssuedAuthority:)``,
+    /// called under this exact key's decision lock (see
+    /// `AssetCacheService+IssuanceDecisionLock.swift`) so that check and
+    /// reservation, and the join-or-create decision they gate, all happen
+    /// as one atomic unit no other concurrent caller for this same key
+    /// can interleave with. The bare memory-hit branch of
+    /// ``revalidate(for:)`` calls this way: it holds no authority of its
+    /// own at all before calling this (a prior revision of this code had
+    /// it read/reserve authority unconditionally *before* calling this,
+    /// discarding the result whenever this call ended up joining
+    /// already-in-flight work instead — exactly the wasteful,
+    /// occasionally-fencing duplicate reservation this lock now closes
+    /// for that specific caller).
+    ///
+    /// `preIssuedAuthority`, when non-`nil`, is instead a durable
+    /// clear-epoch/disk-write-generation snapshot the caller has *already*
+    /// validated and reserved itself, at its own earlier synchronous
+    /// decision point, for its own independent purpose — the
+    /// validated-disk-hit branches of ``revalidate(for:)``
+    /// (`AssetCacheService+DiskHit.swift`/`+RevalidationDiskFetch.swift`)
+    /// each already hold their own separately-issued token, reserved
+    /// purely for their own decode-authority re-check, *before* this is
+    /// ever called, and deliberately carried straight through here
+    /// unchanged rather than re-derived from `existing` a second time:
+    /// those two callers pause (for a caller-installed test hook) between
+    /// that reservation and this call, and re-deriving fresh authority
+    /// here would move this operation's own issuance moment to *after*
+    /// that pause, letting a clear/invalidate injected during it be
+    /// missed by this check while still correctly caught by
+    /// ``performRevalidation(_:)``'s own terminal authority check later —
+    /// changing which typed error a race exactly there produces. Passed
+    /// straight through to
+    /// ``resolveOrIssueRevalidation(expectedFormat:existing:slot:preIssuedAuthority:)``,
+    /// used only on its own "create fresh work" branch, exactly as before.
+    ///
+    /// Throws ``AssetError/revalidationProvenanceUnavailable`` (an
+    /// internal-only signal — see its own doc comment) when
+    /// `preIssuedAuthority` is `nil` and `existing`'s historical stamp is
+    /// missing or no longer matches durable reality; every caller that
+    /// can reach that branch (only the bare memory-hit branch) catches
+    /// this case and falls back to its own uncached disk/fetch path
+    /// exactly as if this had been a plain cache miss.
     func coalescedRevalidation(
         cacheKey: AssetCacheKey,
         url: URL,
         expectedFormat: AssetFormat,
         existing: CachedAsset,
-        preIssuedAuthority: PreIssuedAuthority?
+        preIssuedAuthority: PreIssuedAuthority? = nil
     ) async throws -> CachedAsset {
-        let etag = existing.metadata.etag
-        let lastModified = existing.metadata.etag == nil ? existing.metadata.lastModified : nil
-        let slot = RevalidationSlot(
+        let waiterID = UUID()
+        let (slot, resolved) = try await resolveRevalidationFetch(
             cacheKey: cacheKey,
             url: url,
-            etag: etag,
-            lastModified: lastModified
-        )
-        let waiterID = UUID()
-        let resolved = resolveRevalidationFetchID(
             expectedFormat: expectedFormat,
             existing: existing,
-            slot: slot,
             preIssuedAuthority: preIssuedAuthority
         )
         let fetchID = resolved.id
@@ -112,12 +130,68 @@ extension AssetCacheService {
             guard await isAuthoritative(token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
+            // A second, terminal `Task.isCancelled` check, immediately
+            // before this exact success-shaped value is handed back:
+            // ``isAuthoritative(_:for:)`` above itself suspends (a
+            // durable epoch read), and the very first `Task.isCancelled`
+            // check above this method only covers the window up to the
+            // continuation's own resumption -- it cannot observe a
+            // cancellation that lands *during* `isAuthoritative`'s own
+            // suspension. Without this second check, a waiter whose task
+            // was told to cancel in exactly that window could still
+            // return `delivered` as if nothing had happened, even though
+            // its caller has already stopped listening.
+            if Task.isCancelled {
+                throw CancellationError()
+            }
             return delivered
         } onCancel: {
             Task {
                 await self.cancelRevalidationWaiter(slot, fetchID: fetchID, waiterID: waiterID)
             }
         }
+    }
+
+    /// The join-or-issue decision for a revalidation, split out of
+    /// ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``
+    /// purely to keep that function's body within this package's
+    /// `function_body_length` limit: derives `slot`, acquires this key's
+    /// decision lock (see
+    /// `AssetCacheService+IssuanceDecisionLock.swift`'s type-level doc
+    /// comment for exactly what hazard that closes) around
+    /// ``resolveOrIssueRevalidation(expectedFormat:existing:slot:preIssuedAuthority:)``,
+    /// and releases it — on every path, including a thrown error — before
+    /// returning.
+    private func resolveRevalidationFetch(
+        cacheKey: AssetCacheKey,
+        url: URL,
+        expectedFormat: AssetFormat,
+        existing: CachedAsset,
+        preIssuedAuthority: PreIssuedAuthority?
+    ) async throws -> (slot: RevalidationSlot, resolved: ResolvedRevalidationFetch) {
+        let etag = existing.metadata.etag
+        let lastModified = existing.metadata.etag == nil ? existing.metadata.lastModified : nil
+        let slot = RevalidationSlot(
+            cacheKey: cacheKey,
+            url: url,
+            etag: etag,
+            lastModified: lastModified
+        )
+        await acquireIssuanceDecisionLock(for: cacheKey)
+        let resolved: ResolvedRevalidationFetch
+        do {
+            resolved = try await resolveOrIssueRevalidation(
+                expectedFormat: expectedFormat,
+                existing: existing,
+                slot: slot,
+                preIssuedAuthority: preIssuedAuthority
+            )
+        } catch {
+            releaseIssuanceDecisionLock(for: cacheKey)
+            throw error
+        }
+        releaseIssuanceDecisionLock(for: cacheKey)
+        return (slot, resolved)
     }
 
     /// Mirrors `AssetCacheService+Coalescing.swift`'s
@@ -227,16 +301,24 @@ extension AssetCacheService {
             }
             var refreshed = request.existing
             refreshed.metadata.accessSequence = AssetAccessSequence(0)
-            // Re-stamped with *this* revalidation's own token's durable
-            // epoch rather than left carrying whatever epoch
-            // `request.existing` happened to be stamped with: a memory
-            // hit's own entry can be arbitrarily old, and blindly forward
-            // -carrying its epoch here would let a memory entry that
-            // ``memoryEntryStillCurrent(_:)`` would otherwise correctly
-            // reject on a subsequent hit instead keep re-validating this
-            // exact same stale epoch value forever, immune to that check
-            // entirely.
-            refreshed.durableClearEpoch = token.durableClearEpoch
+            // Deliberately *not* re-stamped from `token` here: `token`'s
+            // own durable clear epoch/disk write generation are now
+            // always derived from `request.existing`'s own historical
+            // publication stamp at the moment this revalidation was
+            // issued (see every caller of
+            // ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``
+            // in `AssetCacheService+Revalidation.swift`/`+DiskHit.swift`/
+            // `+RevalidationDiskFetch.swift`), so `refreshed` -- an
+            // unmodified copy of `request.existing` -- already carries
+            // the exact correct values by construction. A prior revision
+            // instead force-overwrote them with whatever `token` says
+            // here: that was the literal "restamping" defect a review
+            // flagged -- it silently replaced an entry's own true,
+            // possibly-long-superseded provenance with a fresh-looking
+            // stamp the instant a 304 merely confirmed the bytes were
+            // still unchanged, letting a clear that happened *before* this
+            // exact 304 (but after the original publish) go permanently
+            // undetected on every subsequent hit.
             // See the identical final ``MutationOutcome`` re-check on the
             // `.success` branch below for why a `.stale` result here must
             // also surface as ``AssetError/staleOperation`` rather than
@@ -293,65 +375,5 @@ extension AssetCacheService {
             await testOnlyPauseAfterFetchPublishApplied?()
             return asset
         }
-    }
-
-    /// Validates a fresh (non-304) revalidation response and assembles the
-    /// replacement cache entry (preserving the original `insertedAt`),
-    /// without publishing it — the caller (``performRevalidation``) alone
-    /// decides whether this result is still eligible to publish, after
-    /// re-checking the generation it was started under.
-    ///
-    /// Validates against `expectedFormat` — the exact resolved candidate's
-    /// format recovered by ``revalidate(for:)`` — rather than
-    /// `key.expectedFormat`: candidates for the same key are not all
-    /// guaranteed to share one format, so using the key's own default
-    /// alone could validate against the wrong magic bytes/MIME
-    /// expectations if the candidate chain ever includes mixed formats
-    /// (see ``revalidateDiskHit(_:key:cacheKey:candidates:)``, which
-    /// recovers it identically for the disk-hit re-validation path).
-    func assembleRevalidatedAsset(
-        request: RevalidationRequest,
-        response: AssetHTTPResponse
-    ) async throws -> CachedAsset {
-        let validated = try AssetImageValidator.validate(
-            data: response.body,
-            declaredContentType: response.contentType,
-            expectedFormat: request.expectedFormat,
-            limits: limits
-        )
-        try Task.checkCancellation()
-        // A full platform decode, not just the pure metadata/dimension
-        // parse above, is required before this payload is ever eligible
-        // for cache publication: `validate` deliberately only parses
-        // enough of a format's structure to safely read declared
-        // dimensions without a full decode, so it alone cannot detect an
-        // otherwise well-formed header describing a coded image that is
-        // truncated, missing, or corrupt (for example a PNG with only an
-        // `IHDR` chunk, a JPEG `SOF` with no scan data/EOI, or an AVIF
-        // `meta` shell with no backing `mdat`). Cross-checking the
-        // decoded image's own dimensions against the validator's parsed
-        // dimensions also catches a mismatched/ambiguous primary item.
-        let decoded = try await decodeImageOffActor(response.body)
-        guard decoded.width == validated.width, decoded.height == validated.height else {
-            throw AssetError.malformedImageData
-        }
-        try Task.checkCancellation()
-        return CachedAsset(
-            payload: response.body,
-            metadata: AssetCacheMetadata(
-                cacheKeyHex: request.cacheKey.digestHex,
-                contentType: response.contentType ?? validated.format.mimeType,
-                encodedByteCount: response.body.count,
-                width: validated.width,
-                height: validated.height,
-                payloadSHA256Hex: Self.sha256Hex(response.body),
-                etag: response.etag,
-                lastModified: response.lastModified,
-                resolvedURLString: request.url.absoluteString,
-                insertedAt: request.existing.metadata.insertedAt,
-                accessSequence: AssetAccessSequence(0)
-            ),
-            durableClearEpoch: request.token.durableClearEpoch
-        )
     }
 }

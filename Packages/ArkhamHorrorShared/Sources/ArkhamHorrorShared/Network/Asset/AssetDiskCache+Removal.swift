@@ -31,14 +31,13 @@ extension AssetDiskCache {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
-        recoverOrphansIfNeeded()
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentApplied = try currentAppliedTicketLocked(for: key)
+        let currentIssued = try currentIssuedTicketLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
                 currentEpoch: currentEpoch,
-                currentApplied: currentApplied
+                currentIssued: currentIssued
             ) else {
                 return .stale
             }
@@ -126,9 +125,46 @@ extension AssetDiskCache {
         // root again (see ``SecureCacheDirectory/ensureRootAuthorityInitializedLocked()``).
         // Acquired and run directly on this actor's own executor,
         // same as ``remove(_:token:)``.
-        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        //
+        // Every failure between this point and the durable clear-epoch
+        // bump below (lock acquisition itself, root-authority
+        // initialization, or -- via ``ensureRootAuthorityInitializedLocked()``'s
+        // own internal wrapping -- any read failure encountered while
+        // determining that root's state) is normalized to
+        // ``AssetError/clearFenceNotDurable(_:)`` rather than left as
+        // whatever raw error type happened to surface, *except* a genuine
+        // `CancellationError`, which is rethrown completely unchanged: a
+        // cancelled clear is not a persistence failure at all, and must
+        // never be misreported as one to ``AssetCacheService/evictAll()``,
+        // which treats `clearFenceNotDurable` as proof a fence attempt was
+        // actually made and failed. This closes the exact "pre-fence
+        // failures are swallowed" gap a prior review flagged: previously,
+        // a lock-acquisition failure (or a root-authority read failure not
+        // already typed as `clearFenceNotDurable`) here would propagate as
+        // a generic error that ``evictAll()``'s own catch-all clause
+        // treated as a best-effort, non-fatal outcome -- silently leaving
+        // this instance's in-memory bookkeeping cleared while the durable
+        // fence was never actually bumped at all.
+        let lockFD: Int32
+        do {
+            lockFD = try await secureDirectory.acquireExclusiveLock()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw AssetError.clearFenceNotDurable(
+                "Could not acquire the cross-process lock before the clear fence: \(error)"
+            )
+        }
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
-        try ensureRootAuthorityInitializedLocked()
+        do {
+            try ensureRootAuthorityInitializedLocked()
+        } catch let error as AssetError {
+            throw error
+        } catch {
+            throw AssetError.clearFenceNotDurable(
+                "Root-authority initialization failed before the clear fence: \(error)"
+            )
+        }
         recoverOrphansIfNeeded()
         // Committed durably *before* any destructive removal work below,
         // and before this actor's own in-process generation bump: see

@@ -47,7 +47,45 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// fixed-width.
     var accessSequence: AssetAccessSequence
 
-    static let currentSchemaVersion = 3
+    /// The durable, cross-instance/cross-process clear epoch (see
+    /// `AssetCacheService+Epoch.swift`'s
+    /// ``AssetCacheService/CacheToken/durableClearEpoch``) and this key's
+    /// own durable disk write generation (see
+    /// ``AssetDiskCache/beginIssuance(for:)``) that were current at the
+    /// moment this exact payload was durably confirmed fresh from origin
+    /// — a genuine full publish, or a successful conditional
+    /// revalidation whose response body is these exact bytes. **Never**
+    /// updated by an ordinary `304`-driven metadata-only touch (which
+    /// only refreshes ``accessSequence``/validators): these two fields
+    /// are this entry's own permanent, immutable provenance stamp for as
+    /// long as its payload bytes remain unchanged.
+    ///
+    /// This is what actually closes a review finding: a disk (or memory)
+    /// hit's own authority must never be re-derived from whatever epoch/
+    /// ticket happens to be *current* at the moment the hit is read —
+    /// doing so lets bytes published under an old, already-superseded
+    /// epoch be silently "relaundered" with a fresh-looking stamp the
+    /// instant they are merely read back, entirely independent of
+    /// whether a cross-instance/cross-process clear (or a newer write
+    /// for this exact key) happened in between. Every revalidation path
+    /// instead validates these two fields — this entry's own historical
+    /// stamp — against a freshly re-read *current* value, atomically
+    /// under one disk-cache lock hold, alongside reserving that
+    /// operation's own fresh ticket
+    /// (``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``);
+    /// a mismatch fails closed (falls through to a full, uncached fetch)
+    /// rather than ever revalidating bytes whose own provenance no
+    /// longer matches durable reality. This historical stamp is
+    /// deliberately never threaded through *verbatim* as the operation's
+    /// own token authority: doing so would make that token's ticket
+    /// indistinguishable, to ``AssetDiskCache/removeIfApplied(_:token:)``'s
+    /// exact-match cancellation-retraction contract, from "this exact
+    /// operation's own mutation is what is currently applied" even when
+    /// this operation itself never applied anything.
+    let clearEpochAtPublication: Int
+    let writeGenerationAtPublication: Int
+
+    static let currentSchemaVersion = 4
 
     init(
         cacheKeyHex: String,
@@ -60,7 +98,9 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         lastModified: String?,
         resolvedURLString: String,
         insertedAt: Date,
-        accessSequence: AssetAccessSequence
+        accessSequence: AssetAccessSequence,
+        clearEpochAtPublication: Int = 0,
+        writeGenerationAtPublication: Int = 0
     ) {
         schemaVersion = Self.currentSchemaVersion
         self.cacheKeyHex = cacheKeyHex
@@ -74,6 +114,8 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         self.resolvedURLString = resolvedURLString
         self.insertedAt = insertedAt
         self.accessSequence = accessSequence
+        self.clearEpochAtPublication = clearEpochAtPublication
+        self.writeGenerationAtPublication = writeGenerationAtPublication
     }
 
     /// This metadata value's own real serialized-JSON byte count — the

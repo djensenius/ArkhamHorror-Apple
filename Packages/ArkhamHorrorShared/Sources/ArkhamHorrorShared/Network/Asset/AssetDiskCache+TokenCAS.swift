@@ -51,9 +51,9 @@ extension AssetDiskCache {
     /// read (under the same already-held exclusive lock) via
     /// ``SecureCacheDirectory/readPersistedClearEpoch()``, **and** its own
     /// issued ticket (``AssetCacheService/CacheToken/diskWriteGeneration``)
-    /// is still `>=` the highest ticket any mutation for this key has
-    /// actually applied so far (`currentApplied`, read via
-    /// ``currentAppliedTicketLocked(for:)``) — never against any
+    /// is still `>=` the highest ticket *ever reserved* for this key so
+    /// far (`currentIssued`, read via
+    /// ``currentIssuedTicketLocked(for:)``) — never against any
     /// actor-local, in-memory bookkeeping, and never re-read internally
     /// here (the caller reads both exactly once, so it can reuse the same
     /// values to durably commit the next applied ticket immediately after
@@ -61,29 +61,35 @@ extension AssetDiskCache {
     /// read). A `nil` on either half of `token` (a durable read failure at
     /// issuance time) always rejects; there is no in-memory fallback.
     ///
-    /// **Deliberately `>=`, not `==`.** An earlier revision compared
-    /// `token`'s captured generation for *exact* equality against the
-    /// current value — completion-ordered, not issuance-ordered: two
-    /// operations issued concurrently for the same key, before either has
-    /// published, could capture the *identical* snapshot, and whichever
-    /// one's write merely *completed* first would "win" that equality
-    /// check, wrongly rejecting a genuinely later-issued operation that
-    /// simply took longer to reach this point. Comparing `>=` against the
-    /// highest *applied* ticket instead only ever rejects a token whose
-    /// own issued ticket has already been superseded by some other
-    /// mutation's — regardless of which one's network round trip or
-    /// decode happened to finish first — and this file's own
-    /// ``reserveAndCommitMutationTicketLocked(for:)`` (invoked by every
-    /// successful mutation immediately before it takes effect) guarantees
-    /// every successfully applied ticket is itself always strictly higher
-    /// than whatever was applied before it, so a stale token's own ticket
-    /// can never again satisfy `>=` once any later ticket has applied.
+    /// **Deliberately compared against the highest *issued* ticket, not
+    /// merely the highest *applied* one.** An earlier revision compared
+    /// against ``currentAppliedTicketLocked(for:)`` instead — but two
+    /// operations for the same key can be issued (each reserving its own
+    /// ticket) in one order while completing, and therefore *applying*,
+    /// in a different order: an older-issued operation A and a
+    /// newer-issued operation B can both reserve their tickets before
+    /// either applies, and if A's own (slower) work happens to finish and
+    /// apply *before* B's, comparing only against "highest applied" would
+    /// let A's own subsequent re-checks keep succeeding even after B has
+    /// already been issued — a stale-but-not-yet-detected authority
+    /// window. Comparing against the highest *issued* ticket instead
+    /// fences A the instant B is issued, regardless of which one's
+    /// network round trip or decode happens to complete, or apply, first.
+    /// Since every ticket is reserved by a single, strictly-increasing,
+    /// durable counter (``reserveAndCommitMutationTicketLocked(for:)``/
+    /// ``issueTicketLocked(for:)``) and a token's own ticket can never
+    /// itself exceed whatever is currently the highest-issued one, this
+    /// check is in effect an *exact* match against "the single most
+    /// recently issued ticket for this key, right now" — the strictest
+    /// safe comparison, and exactly what a genuinely-current operation's
+    /// own just-reserved ticket will always still satisfy.
     ///
     /// This is what actually makes two independently wired instances/
     /// processes sharing this same on-disk directory agree on write
     /// ordering for the same key: an older instance's delayed publish/
     /// touch/removal can never overwrite or remove state a newer
-    /// instance already concluded, regardless of which instance's own
+    /// instance already *issued* (whether or not that newer instance's
+    /// own mutation has applied yet), regardless of which instance's own
     /// in-process bookkeeping thinks is current.
     ///
     /// Must only ever be called while the caller already holds this
@@ -94,7 +100,7 @@ extension AssetDiskCache {
     func acceptToken(
         _ token: AssetCacheService.CacheToken,
         currentEpoch: Int,
-        currentApplied: Int
+        currentIssued: Int
     ) -> Bool {
         guard
             let expectedEpoch = token.durableClearEpoch,
@@ -102,7 +108,7 @@ extension AssetDiskCache {
         else {
             return false
         }
-        return currentEpoch == expectedEpoch && issuedTicket >= currentApplied
+        return currentEpoch == expectedEpoch && issuedTicket >= currentIssued
     }
 
     /// Removes `key`'s on-disk entry only if `token` is *exactly* the

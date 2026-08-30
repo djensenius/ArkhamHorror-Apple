@@ -51,6 +51,24 @@ enum AssetError: Error, Sendable {
     /// A 304 response arrived but no currently valid cached payload exists to
     /// pair it with.
     case staleConditionalResponse
+    /// Internal signal only, never expected to escape
+    /// `AssetCacheService+Revalidation.swift`'s own three call sites into
+    /// ``AssetCacheService/coalescedRevalidation(cacheKey:url:expectedFormat:existing:)``:
+    /// that method's own atomic, per-key-locked provenance check (folding
+    /// together validating a cached entry's historical publication stamp
+    /// against current durable reality *and* reserving this operation's
+    /// fresh disk authority, so no other concurrent caller for the same
+    /// key can wastefully reserve its own authority in between) found no
+    /// currently-trustworthy basis to revalidate `existing` at all — its
+    /// historical stamp is missing, or no longer matches durable reality.
+    /// Every caller catches this specific case and falls back to its own
+    /// pre-refactor behavior (an uncached disk read or fetch) exactly as
+    /// if this had been a plain cache miss; it must never be confused
+    /// with ``staleConditionalResponse`` (a distinct, caller-facing
+    /// protocol precondition — "no validator to condition a request on"
+    /// — that a top-level `revalidate(for:)` caller legitimately expects
+    /// to observe directly).
+    case revalidationProvenanceUnavailable
     /// This operation's result is no longer eligible to mutate the cache:
     /// a more authoritative, logically newer operation for the same key
     /// (another completed fetch/revalidation, or an `evictAll()`) already
@@ -139,6 +157,7 @@ extension AssetError: Equatable {
              (.nonHTTPResponse, .nonHTTPResponse),
              (.responseTooLarge, .responseTooLarge),
              (.staleConditionalResponse, .staleConditionalResponse),
+             (.revalidationProvenanceUnavailable, .revalidationProvenanceUnavailable),
              (.staleOperation, .staleOperation),
              (.contentTypeMismatch, .contentTypeMismatch),
              (.signatureMismatch, .signatureMismatch),

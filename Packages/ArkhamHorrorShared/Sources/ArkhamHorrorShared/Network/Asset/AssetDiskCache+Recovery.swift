@@ -127,6 +127,15 @@ extension AssetDiskCache {
         }
         _ = sweepOrphanFiles(names: names, referencedPayloadFilenames: referencedPayloadFilenames)
         reconcileAccessSequenceFloor(highestAccessSequence)
+        // Recorded *after* the classification loop above (which already
+        // quarantines every corrupt/dangling sidecar it finds) but
+        // *before* the orphan sweep, since neither affects which names
+        // ended up genuinely referenced -- see
+        // ``foundGenuineExistingEntryDuringRecovery``'s own doc comment
+        // for why only a genuinely-referenced entry surviving this pass,
+        // never mere reclaimable debris, may block treating an otherwise
+        // pristine root as fresh.
+        foundGenuineExistingEntryDuringRecovery = !referencedPayloadFilenames.isEmpty
     }
 
     /// Attempts to remove every leftover `.tmp` file and every `.bin`

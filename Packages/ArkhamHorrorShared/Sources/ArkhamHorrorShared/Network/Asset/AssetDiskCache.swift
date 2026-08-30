@@ -72,6 +72,30 @@ actor AssetDiskCache {
     /// entry point for the remainder of this instance's lifetime).
     var didEnsureRootAuthorityInitialized = false
 
+    /// Set once, by ``recoverOrphansIfNeeded()`` itself, the first time
+    /// that pass successfully completes: `true` only if it found at least
+    /// one currently-valid, schema-matching, hash-valid metadata sidecar
+    /// whose referenced payload also exists as a verified regular file --
+    /// i.e. genuine, still-servable prior cache content, never merely
+    /// reclaimable debris (a stray `.tmp`, an unreferenced `.bin`, a
+    /// corrupt/undecodable `.meta.json`, a symlink, or any other
+    /// non-regular entry, every one of which recovery already attempts to
+    /// reclaim on this exact same pass regardless of whether that attempt
+    /// actually succeeds).
+    ///
+    /// ``ensureRootAuthorityInitializedLocked()`` (`AssetDiskCache+RootAuthority.swift`)
+    /// consults this immediately after invoking recovery, and *only* this
+    /// flag, to decide whether a directory with a missing clear-epoch
+    /// counter and missing root-init marker may still be treated as a
+    /// genuinely pristine root: reclaimable debris that recovery could not
+    /// physically remove (e.g. because its removal is transiently or
+    /// persistently faulted) must never by itself block that decision --
+    /// it is fully accounted for and retried by the entirely separate
+    /// disk-quota/writes-disabled machinery instead -- while even a single
+    /// surviving *genuine* entry is definitive proof this is not a fresh
+    /// root and must fail closed exactly like a lost/corrupted epoch would.
+    var foundGenuineExistingEntryDuringRecovery = false
+
     /// This process's own in-memory fail-closed half of the disk-writes-
     /// disabled marker (see `AssetDiskCache+Tombstone.swift`'s type-level
     /// doc comment). Set to `true` *before* ``markDiskWritesDisabledLocked()``
@@ -222,10 +246,9 @@ actor AssetDiskCache {
         token: AssetCacheService.CacheToken?
     ) throws -> AssetCacheService.MutationOutcome {
         try ensureRootAuthorityInitializedLocked()
-        recoverOrphansIfNeeded()
         try requireDiskWritesEnabledLocked()
         // Read once, under this already-held lock, and reused for
-        // ``acceptToken(_:currentEpoch:currentApplied:)``'s compare: a
+        // ``acceptToken(_:currentEpoch:currentIssued:)``'s compare: a
         // second, later re-read here could in principle observe a value a
         // *different* concurrent writer already changed, which would
         // defeat the whole point of holding this single exclusive lock
@@ -236,12 +259,12 @@ actor AssetDiskCache {
         // method's own doc comment for why that is what makes it always
         // strictly greater than whatever was read here.
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentApplied = try currentAppliedTicketLocked(for: key)
+        let currentIssued = try currentIssuedTicketLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
                 currentEpoch: currentEpoch,
-                currentApplied: currentApplied
+                currentIssued: currentIssued
             ) else {
                 return .stale
             }

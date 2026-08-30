@@ -136,58 +136,71 @@ extension SecureCacheDirectory {
     /// read of the durable epoch — see
     /// `AssetDiskCache+RootAuthority.swift`'s call sites.
     ///
-    /// Three cases, distinguished by the marker and counter's independent
-    /// presence:
+    /// The marker and counter's presence are checked **independently**,
+    /// not as a single combined branch, and the two durable writes below
+    /// are committed in a deliberate order (**counter first, marker
+    /// second**) chosen specifically so that every possible crash point
+    /// in this transaction is safely, automatically repairable the very
+    /// next time this method runs, on any instance/process:
     ///
-    /// - **Counter already exists.** Already initialized (by this
-    ///   instance or any prior instance/process sharing this directory,
-    ///   at any point in the past) — nothing to do, regardless of the
-    ///   marker's own state. This is the overwhelmingly common case for
-    ///   every call after the very first one against a given directory.
+    /// - **Counter exists.** Always authoritative once present, and
+    ///   never rewritten here regardless of the marker's own state. If
+    ///   the marker happens to also be missing — a root that predates
+    ///   this marker's introduction, or one whose own marker-install step
+    ///   crashed immediately after the counter write below durably
+    ///   landed but before the marker did — this call installs the
+    ///   marker now, without touching the already-durable counter, so
+    ///   this root converges on the fully-marked state on its very next
+    ///   open rather than silently never acquiring one. Returns either
+    ///   way.
     /// - **Counter missing, marker exists.** This root was *definitely*
-    ///   initialized before (the marker is only ever created together
-    ///   with the counter's very first value, in the branch below, and
-    ///   is never subsequently removed by anything) — so the counter's
-    ///   current absence is definite evidence it was lost, deleted, or
-    ///   corrupted away *after* initialization, never a safe "pristine
-    ///   root" case. Fails closed with a typed, hard failure rather than
-    ///   silently resetting authority back to `0` and potentially
-    ///   resurrecting content a clear already durably revoked.
-    /// - **Counter missing, marker missing.** As far as this locked
-    ///   transaction can ever prove — no other process can be
+    ///   initialized before (the marker is only ever installed together
+    ///   with, and after, the counter's very first value — see below) —
+    ///   so the counter's current absence is definite evidence it was
+    ///   lost, deleted, or corrupted away *after* initialization, never a
+    ///   safe "pristine root" case. Fails closed with a typed, hard
+    ///   failure rather than silently resetting authority back to `0`
+    ///   and potentially resurrecting content a clear already durably
+    ///   revoked.
+    /// - **Counter missing, marker missing.** Only provable, as far as
+    ///   this locked transaction can ever tell (no other process can be
     ///   concurrently inside this same method for this same directory
-    ///   while this one holds the lock — this is genuinely the very first
-    ///   time any process has ever initialized this root. Commits the
-    ///   marker first, then the counter, both durably (write, `fsync`,
-    ///   rename, directory `fsync`) before returning. A crash strictly
-    ///   between the two leaves the marker installed and the counter
-    ///   still missing, which the branch above then correctly refuses to
-    ///   silently repair on any future open — requiring explicit,
-    ///   deliberate intervention rather than an automatic, unaudited
-    ///   reset of a root whose true prior history a crash mid-transaction
-    ///   leaves genuinely unknowable.
-    func ensureRootAuthorityInitializedLocked() throws {
-        guard try read(name: Self.clearEpochFileName, maxBytes: Self.clearEpochDigitWidth) == nil
-        else {
-            // Already exists (whatever its content) -- never overwritten
-            // here, even if it turns out to be unparsable: silently
-            // resetting a file that already exists on the mere suspicion
-            // it might be corrupt would risk clobbering a genuinely
-            // higher, already-durable epoch this process simply failed to
-            // parse for some unrelated, possibly transient reason.
-            return
-        }
-        guard try read(name: Self.rootInitMarkerFileName, maxBytes: 1) == nil else {
-            throw AssetError.clearFenceNotDurable(
-                "Clear-epoch counter is missing on a previously initialized cache root; " +
-                    "refusing to silently reinitialize its authority"
-            )
-        }
+    ///   while this one holds the lock), to be a genuinely fresh root if
+    ///   ``rejectSurvivingEntriesForPristineRootLocked(isSurvivingEntryAcceptable:)``
+    ///   also finds no entry the caller's own `isSurvivingEntryAcceptable`
+    ///   closure does not vouch for — any other name here (a
+    ///   `.meta.json`/`.bin`/`.gen`/`.applied`/`.tmp`, or even a durable
+    ///   access-sequence counter with no clear-epoch counter beside it)
+    ///   that closure does not explicitly accept is definite evidence of
+    ///   prior real use whose true clear history this transaction cannot
+    ///   recover, and is rejected the same way the "marker exists, counter
+    ///   missing" branch above is. Only once that check passes does this
+    ///   commit the counter (value `0`)
+    ///   *first*, then the marker *second* — the reverse of a prior
+    ///   revision's marker-first ordering, which left a crash landing
+    ///   strictly between the two steps permanently unrecoverable (marker
+    ///   installed, counter missing matches the hard-failure branch above
+    ///   forever, bricking the root). Committing the counter first instead
+    ///   means that exact same crash window instead lands in the
+    ///   self-healing "counter exists, marker missing" branch above on
+    ///   the very next call.
+    ///
+    /// - Parameter isSurvivingEntryAcceptable: Consulted, once per
+    ///   surviving non-lock-file entry, only in the "both missing" branch
+    ///   above, to decide whether that entry may be tolerated as
+    ///   reclaimable debris rather than definite proof of prior real use.
+    ///   Defaults to rejecting *every* survivor unconditionally (this
+    ///   type's own generic, domain-agnostic policy, exercised directly by
+    ///   this type's own unit tests); ``AssetDiskCache`` — the only
+    ///   production caller — supplies a domain-aware closure instead (see
+    ///   `AssetDiskCache+RootAuthority.swift`).
+    func ensureRootAuthorityInitializedLocked(
+        isSurvivingEntryAcceptable: (String) throws -> Bool = { _ in false }
+    ) throws {
         do {
-            let markerTempName = Self.rootInitMarkerFileName + ".tmp"
-            try writeTempAndFsync(tempName: markerTempName, data: Data([0x01]))
-            try renameAndFsyncDirectory(from: markerTempName, to: Self.rootInitMarkerFileName)
-            try persistClearEpoch(0)
+            try ensureRootAuthorityInitializedLockedUnwrapped(
+                isSurvivingEntryAcceptable: isSurvivingEntryAcceptable
+            )
         } catch let error as AssetError {
             if case .clearFenceNotDurable = error {
                 throw error
@@ -198,111 +211,103 @@ extension SecureCacheDirectory {
         }
     }
 
-    /// Reads the currently persisted clear-epoch value. Throws for *any*
-    /// failure, including a clean "does not exist" miss -- see this
-    /// type's own doc comment for why, once
-    /// ``ensureClearEpochInitialized()`` has run (guaranteed by the time
-    /// any ``SecureCacheDirectory`` instance is usable at all), a missing
-    /// file can no longer be the safe "freshly created root" case and
-    /// must instead be treated exactly like a corrupt/unparsable one:
-    /// fail closed rather than silently grant a false "never cleared"
-    /// baseline. ``AssetCacheService/currentDurableClearEpoch()``'s
-    /// `try?` turns this throw into `nil`, and every authority check
-    /// already treats `nil` as fail-closed ("not authoritative"/
-    /// "changed").
-    func readPersistedClearEpoch() throws -> Int {
-        guard
-            let data = try read(name: Self.clearEpochFileName, maxBytes: Self.clearEpochDigitWidth)
-        else {
-            throw AssetError.cachePersistenceFailed(
-                "Clear-epoch file '\(Self.clearEpochFileName)' is missing after initialization"
+    private func ensureRootAuthorityInitializedLockedUnwrapped(
+        isSurvivingEntryAcceptable: (String) throws -> Bool
+    ) throws {
+        let epochExists =
+            try read(name: Self.clearEpochFileName, maxBytes: Self.clearEpochDigitWidth) != nil
+        let markerExists = try read(name: Self.rootInitMarkerFileName, maxBytes: 1) != nil
+
+        if epochExists {
+            // Already durably initialized (by this instance or any prior
+            // instance/process sharing this directory, at any point in
+            // the past, or by a pre-marker version of this package) --
+            // the counter itself is never rewritten here. Only the
+            // marker -- which carries no authority of its own and is
+            // purely a "has this root ever been through this
+            // transaction" witness -- may still need installing, so a
+            // migrated or partially-crashed root converges on the fully
+            // marked state without ever disturbing already-durable
+            // authority.
+            if !markerExists {
+                try installRootInitMarkerLocked()
+            }
+            return
+        }
+        guard !markerExists else {
+            throw AssetError.clearFenceNotDurable(
+                "Clear-epoch counter is missing on a previously initialized cache root; " +
+                    "refusing to silently reinitialize its authority"
             )
         }
-        guard
-            let string = String(data: data, encoding: .utf8),
-            string.utf8.count == Self.clearEpochDigitWidth,
-            string.utf8.allSatisfy({ (0x30 ... 0x39).contains($0) }),
-            let parsed = Int(string)
-        else {
-            throw AssetError.cachePersistenceFailed(
-                "Clear-epoch file '\(Self.clearEpochFileName)' is corrupt or unparsable"
-            )
-        }
-        return parsed
+        try rejectSurvivingEntriesForPristineRootLocked(
+            isSurvivingEntryAcceptable: isSurvivingEntryAcceptable
+        )
+        // Counter first, marker second -- see this method's own doc
+        // comment for why this exact order is what makes a crash
+        // strictly between the two steps land in the self-healing
+        // "counter exists, marker missing" branch above on the very next
+        // call, rather than the permanently-fail-closed "marker exists,
+        // counter missing" branch.
+        try persistClearEpoch(0)
+        try installRootInitMarkerLocked()
     }
 
-    /// Commits a strictly higher clear-epoch value than whatever is
-    /// currently persisted, durably (write, `fsync`, rename, directory
-    /// `fsync`), and returns the new value. Must only ever be called
-    /// while the caller already holds this instance's
-    /// ``acquireExclusiveLock()``, exactly like
-    /// ``allocateAccessSequence(atLeastAfter:)``.
+    /// Durably commits the permanent root-init marker file (write,
+    /// `fsync`, rename, directory `fsync`) — idempotent to call again if
+    /// it already exists (a plain overwrite-with-identical-content), so
+    /// callers never need to re-check existence immediately beforehand
+    /// themselves.
+    private func installRootInitMarkerLocked() throws {
+        let markerTempName = Self.rootInitMarkerFileName + ".tmp"
+        try writeTempAndFsync(tempName: markerTempName, data: Data([0x01]))
+        try renameAndFsyncDirectory(from: markerTempName, to: Self.rootInitMarkerFileName)
+    }
+
+    /// Refuses to treat this directory as a genuinely pristine,
+    /// never-before-used root unless the *only* entry it currently
+    /// contains is the shared cross-process lock file
+    /// (``SecureCacheDirectory/lockFileName``) — which, by every call
+    /// site's own convention, always already exists by the time this
+    /// runs, since ``acquireExclusiveLock()`` lazily creates it and every
+    /// caller of ``ensureRootAuthorityInitializedLocked()`` has always
+    /// already acquired that lock first.
     ///
-    /// ``AssetDiskCache/removeAll()`` calls this *before* any of its own
-    /// destructive removal work begins: a caller must never be able to
-    /// observe "the cache directory's entries are already gone" without
-    /// also being able to observe "the durable clear epoch has already
-    /// advanced past whatever any in-flight operation captured at
-    /// issuance" — the reverse ordering (removal first, epoch bump second)
-    /// would reopen exactly the race this type exists to close if a crash
-    /// or failure landed between the two steps.
+    /// Closes a gap a bare "counter and marker are both absent" check
+    /// alone cannot: a directory that already holds real cache entries
+    /// (payload files, metadata sidecars, per-key write-generation
+    /// tickets, or even an orphaned `.tmp`) from some prior use — most
+    /// plausibly a version of this package that predates *both* the
+    /// counter and the marker entirely, and therefore never durably
+    /// recorded whatever clears may have happened under it — is definite
+    /// evidence this is not actually a fresh root, even though neither
+    /// authority file happens to be present. Silently treating that case
+    /// as pristine and starting the epoch at `0` cannot be proven safe
+    /// the way it can for a directory with genuinely nothing else in it;
+    /// this throws the identical typed, fail-closed failure the
+    /// "previously initialized root, counter lost" branch above does,
+    /// rather than attempt to guess.
     ///
-    /// **Terminal saturation, never silent reuse.** Once the persisted
-    /// value is already `Int.max`, this throws rather than returning
-    /// `Int.max` again: a prior revision instead silently re-returned the
-    /// same saturated value forever once reached, which would let *two
-    /// genuinely different* clears -- one whose token capture happened
-    /// before the saturating bump, another happening after -- collapse
-    /// onto the exact same epoch value and become indistinguishable to
-    /// every downstream authority check, letting the earlier clear's own
-    /// resurrection race slip through unnoticed. Failing closed instead
-    /// (a value this many real clears reaching `Int.max` for one
-    /// directory is not achievable in practice) preserves the invariant
-    /// that every two clears this method ever successfully commits are
-    /// always distinguishable.
-    ///
-    /// Every failure here — reading the current value, saturation, or
-    /// the write/rename/`fsync` durably committing the new one — is
-    /// surfaced as ``AssetError/clearFenceNotDurable(_:)`` specifically,
-    /// never the generic ``AssetError/cachePersistenceFailed(_:)`` an
-    /// ordinary best-effort disk I/O failure elsewhere in this package
-    /// produces: see that case's own doc comment for why
-    /// ``AssetDiskCache/removeAll()``'s caller
-    /// (``AssetCacheService/evictAll()``) must be able to tell "the
-    /// cross-instance/cross-process authority fence itself never
-    /// durably advanced" apart from "the fence advanced fine, but some
-    /// physical entry afterward could not be deleted" — the two demand
-    /// entirely different handling, and folding both into the same
-    /// error case would make that distinction unrecoverable by the time
-    /// it reaches that caller.
-    @discardableResult
-    func bumpClearEpoch() throws -> Int {
-        do {
-            let persisted = try readPersistedClearEpoch()
-            guard persisted < Int.max else {
+    /// `isSurvivingEntryAcceptable` is consulted for every surviving
+    /// non-lock-file entry — never for the lock file itself, which every
+    /// caller's own convention already guarantees is present by the time
+    /// this runs — so a caller with domain knowledge of what its own
+    /// entries look like (``AssetDiskCache``, the only production caller)
+    /// can distinguish debris its own recovery pass already attempted (and
+    /// may or may not have succeeded) to reclaim from genuine surviving
+    /// cache content, without this generic type needing any awareness of
+    /// that distinction itself.
+    private func rejectSurvivingEntriesForPristineRootLocked(
+        isSurvivingEntryAcceptable: (String) throws -> Bool
+    ) throws {
+        let names = try listNames()
+        for name in names where name != Self.lockFileName {
+            guard try isSurvivingEntryAcceptable(name) else {
                 throw AssetError.clearFenceNotDurable(
-                    "Clear-epoch counter is exhausted and cannot be durably distinguished further"
+                    "Cache root has surviving entries despite missing clear-epoch authority; " +
+                        "refusing to treat it as a pristine root"
                 )
             }
-            let next = persisted + 1
-            try persistClearEpoch(next)
-            return next
-        } catch let error as AssetError {
-            if case .clearFenceNotDurable = error {
-                throw error
-            }
-            throw AssetError.clearFenceNotDurable(
-                "Durable clear-epoch bump failed: \(error)"
-            )
         }
-    }
-
-    private func persistClearEpoch(_ epoch: Int) throws {
-        precondition(epoch >= 0, "Clear epoch must never be negative, got \(epoch)")
-        let tempName = Self.clearEpochFileName + ".tmp"
-        let raw = String(epoch)
-        let padded = String(repeating: "0", count: Self.clearEpochDigitWidth - raw.count) + raw
-        try writeTempAndFsync(tempName: tempName, data: Data(padded.utf8))
-        try renameAndFsyncDirectory(from: tempName, to: Self.clearEpochFileName)
     }
 }

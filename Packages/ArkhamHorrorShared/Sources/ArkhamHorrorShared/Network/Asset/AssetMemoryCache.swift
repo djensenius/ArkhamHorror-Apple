@@ -33,6 +33,19 @@ struct CachedAsset: Sendable, Equatable {
     /// the entry has sat in memory since.
     var durableClearEpoch: Int?
 
+    /// This entry's own historical disk write generation (see
+    /// ``AssetCacheMetadata/writeGenerationAtPublication``), mirroring
+    /// ``durableClearEpoch``'s exact same in-memory-only, never-persisted
+    /// treatment above -- read together with it wherever a revalidation
+    /// path threads this entry's own historical authority through as an
+    /// operation's token, rather than re-deriving a fresh one at hit
+    /// time. A disk-read reconstruction populates this from
+    /// ``AssetCacheMetadata/writeGenerationAtPublication`` (that field's
+    /// own persisted, atomic-with-the-payload source of truth); a memory
+    /// hit already carries whatever value this struct itself was
+    /// constructed with at publish/touch time.
+    var writeGeneration: Int?
+
     /// This entry's actual payload byte count plus
     /// ``AssetCacheMetadata/metadataOverheadBytes``, computed once here at
     /// construction rather than re-derived on every accounting pass.
@@ -66,10 +79,16 @@ struct CachedAsset: Sendable, Equatable {
     /// changes after construction.
     let accountedByteCount: Int
 
-    init(payload: Data, metadata: AssetCacheMetadata, durableClearEpoch: Int? = nil) {
+    init(
+        payload: Data,
+        metadata: AssetCacheMetadata,
+        durableClearEpoch: Int? = nil,
+        writeGeneration: Int? = nil
+    ) {
         self.payload = payload
         self.metadata = metadata
         self.durableClearEpoch = durableClearEpoch
+        self.writeGeneration = writeGeneration
         accountedByteCount = payload.count + metadata.metadataOverheadBytes
     }
 }

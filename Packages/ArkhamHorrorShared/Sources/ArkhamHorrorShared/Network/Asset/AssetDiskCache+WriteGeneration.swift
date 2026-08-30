@@ -130,8 +130,91 @@ extension AssetDiskCache {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
-        recoverOrphansIfNeeded()
         let epoch = try secureDirectory.readPersistedClearEpoch()
+        let ticket = try issueTicketLocked(for: key)
+        return IssuanceSnapshot(clearEpoch: epoch, writeGeneration: ticket)
+    }
+
+    /// The revalidation counterpart to ``beginIssuance(for:)``, used
+    /// whenever the operation being issued is re-validating an *already
+    /// cached* entry (rather than starting a brand-new, no-prior-bytes
+    /// fetch) — the memory-hit/disk-hit branches of
+    /// `AssetCacheService+Revalidation.swift`/`+DiskHit.swift`/
+    /// `+RevalidationDiskFetch.swift`.
+    ///
+    /// Two genuinely different concerns are resolved atomically, under
+    /// one lock hold, rather than being conflated into one value:
+    ///
+    /// 1. **Provenance validation.** `expectedClearEpoch`/
+    ///    `expectedAppliedTicket` are the cached entry's own *historical*
+    ///    publication stamp (``AssetCacheMetadata/clearEpochAtPublication``/
+    ///    ``AssetCacheMetadata/writeGenerationAtPublication``, threaded
+    ///    through from ``AssetMemoryCache/CachedAsset/durableClearEpoch``/
+    ///    ``AssetMemoryCache/CachedAsset/writeGeneration``) — fixed at the
+    ///    moment those exact bytes were last confirmed good. Compared,
+    ///    under this same lock, against the *current* durable epoch and
+    ///    this key's *currently applied* ticket
+    ///    (``currentAppliedTicketLocked(for:)``, not
+    ///    ``currentIssuedTicketLocked(for:)`` — provenance cares whether
+    ///    a mutation has actually *landed* for this key since, not
+    ///    merely whether some other operation has been issued but not yet
+    ///    applied). A mismatch on either half means this exact cached
+    ///    entry is no longer the durable state of record — a
+    ///    cross-instance clear, or a competing write for this same key,
+    ///    landed at some point after these bytes were last confirmed
+    ///    good — and this returns `nil` rather than any snapshot at all:
+    ///    the caller must treat that identically to "no trustworthy
+    ///    cached entry" and fall through to a full, uncached fetch,
+    ///    never attempt to revalidate (pair a conditional request/304
+    ///    with) bytes whose own provenance no longer matches durable
+    ///    reality.
+    ///
+    ///    Performed in the *same* lock acquisition, immediately before
+    ///    reserving a fresh ticket below, specifically so there is no
+    ///    separate suspending round trip between "confirm this entry's
+    ///    provenance still matches current durable state" and "reserve
+    ///    this operation's own fresh authority" for a cross-instance
+    ///    clear or competing write to land invisibly inside. A prior
+    ///    revision instead threaded the entry's *own* historical stamp
+    ///    through directly as the new operation's token authority — that
+    ///    closed the provenance-laundering gap this method closes, but at
+    ///    the cost of a different, more severe defect: a revalidation
+    ///    that reuses a stale, already-applied ticket verbatim as its own
+    ///    "freshly issued" authority is, by definition, *not* a value
+    ///    uniquely reserved for this operation, and ``removeIfApplied(_:token:)``'s
+    ///    exact-match cancellation-retraction contract silently breaks —
+    ///    it can no longer distinguish "this exact cancelled operation's
+    ///    own applied mutation" from "the entry's already-correct,
+    ///    untouched applied state," and would incorrectly retract a
+    ///    perfectly valid, unrelated entry the instant an in-flight
+    ///    revalidation that never itself wrote anything is cancelled.
+    ///
+    /// 2. **Fresh per-operation authority.** Once provenance is confirmed
+    ///    unchanged, this reserves a genuinely fresh, strictly-increasing,
+    ///    never-reused ticket for `key` (``issueTicketLocked(for:)``) —
+    ///    identical in kind to ``beginIssuance(for:)``'s own reservation
+    ///    — so this operation's own token is always uniquely its own,
+    ///    never coincidentally equal to whatever is already the applied
+    ///    ticket, preserving every other CAS/cancellation-retraction
+    ///    invariant this file's type-level doc comment describes.
+    ///
+    /// Throws (fail closed, exactly like ``beginIssuance(for:)``) on any
+    /// durable read/write failure; returns `nil` (a distinct, non-throwing
+    /// "safe to fall through, nothing durably wrong happened" outcome)
+    /// only for a genuine provenance mismatch.
+    func beginRevalidationIssuance(
+        for key: AssetCacheKey,
+        expectedClearEpoch: Int,
+        expectedAppliedTicket: Int
+    ) async throws -> IssuanceSnapshot? {
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try ensureRootAuthorityInitializedLocked()
+        let epoch = try secureDirectory.readPersistedClearEpoch()
+        let appliedTicket = try currentAppliedTicketLocked(for: key)
+        guard epoch == expectedClearEpoch, appliedTicket == expectedAppliedTicket else {
+            return nil
+        }
         let ticket = try issueTicketLocked(for: key)
         return IssuanceSnapshot(clearEpoch: epoch, writeGeneration: ticket)
     }

@@ -148,6 +148,18 @@ actor AssetCacheService {
     /// whatever the tombstone was protecting against.
     var tombstonedKeys: Set<AssetCacheKey> = []
 
+    /// Per-``AssetCacheKey`` FIFO mutex backing store for
+    /// ``acquireIssuanceDecisionLock(for:)``/``releaseIssuanceDecisionLock(for:)``
+    /// in `AssetCacheService+IssuanceDecisionLock.swift`: `true` (present
+    /// in this set) while some caller currently holds `key`'s lock, and
+    /// the paired dictionary of still-queued waiters (in arrival order)
+    /// for it. See that file's type-level doc comment for why this
+    /// exists at all — it closes a wasteful, and in one case actively
+    /// fencing, duplicate disk-ticket-reservation hazard that plain
+    /// actor reentrancy alone otherwise allows.
+    var issuanceDecisionLocked: Set<AssetCacheKey> = []
+    var issuanceDecisionWaiters: [AssetCacheKey: [CheckedContinuation<Void, Never>]] = [:]
+
     /// The most recent disk-cache persistence failure from ``publish``, if
     /// any, retained so a best-effort (non-fatal) disk write failure is
     /// still auditable rather than silently swallowed — a resolved asset

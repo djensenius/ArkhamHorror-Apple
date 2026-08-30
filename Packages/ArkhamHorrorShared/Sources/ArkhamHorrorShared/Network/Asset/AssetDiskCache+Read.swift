@@ -98,7 +98,20 @@ extension AssetDiskCache {
             metadata.accessSequence = allocated
         }
         try? persistMetadata(metadata, name: metadataName)
-        return CachedAsset(payload: payload, metadata: metadata)
+        // Reconstructs this entry's own historical publication authority
+        // directly from `metadata` -- read together with `payload` under
+        // this exact locked call, never re-derived from whatever epoch/
+        // ticket happens to be current *now* -- so a revalidation of this
+        // exact hit can thread this entry's own historical stamp through
+        // as its operation's token authority, rather than a freshly
+        // re-read "current" one. See
+        // ``AssetCacheMetadata/clearEpochAtPublication``'s doc comment.
+        return CachedAsset(
+            payload: payload,
+            metadata: metadata,
+            durableClearEpoch: metadata.clearEpochAtPublication,
+            writeGeneration: metadata.writeGenerationAtPublication
+        )
     }
 
     /// Reads, decodes, and validates the metadata sidecar for `key`,

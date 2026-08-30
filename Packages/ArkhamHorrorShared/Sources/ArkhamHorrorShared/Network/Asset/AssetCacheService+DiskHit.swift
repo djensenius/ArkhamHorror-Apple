@@ -61,15 +61,43 @@ extension AssetCacheService {
         }
         // This disk-hit branch is never behind a coalescing dictionary,
         // so there is no "duplicate in-flight work" hazard to defer this
-        // past — see ``issueToken(for:)``. Stamped with both halves of
-        // this key's durable authority (clear epoch and disk write
-        // generation), captured together via ``beginIssuance(for:)``
-        // immediately before issuance — see that method's doc comment
-        // for why this ordering, not a later restamp, is required.
-        let authority = await beginIssuance(for: cacheKey)
+        // past — see ``issueToken(for:)``. This exact entry's own
+        // *historical* clear-epoch/disk-write-generation provenance
+        // (``AssetMemoryCache/CachedAsset/durableClearEpoch``/
+        // ``AssetMemoryCache/CachedAsset/writeGeneration``, populated by
+        // ``AssetDiskCache/get(_:)`` from
+        // ``AssetCacheMetadata/clearEpochAtPublication``/
+        // ``AssetCacheMetadata/writeGenerationAtPublication`` -- read
+        // together with the payload under one locked disk-cache call) is
+        // validated -- atomically, under one disk-cache lock hold,
+        // alongside reserving this operation's own fresh authority -- via
+        // ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``,
+        // never threaded through directly as this operation's own token
+        // (see that method's doc comment for why: doing so would break
+        // ``AssetDiskCache/removeIfApplied(_:token:)``'s exact-match
+        // cancellation-retraction contract). This ties this hit's own
+        // eventual authority back to the moment its bytes were actually
+        // confirmed fresh from origin, not to whatever epoch/ticket
+        // merely happens to be current the instant it is read back.
+        guard
+            let historicalEpoch = cached.durableClearEpoch,
+            let historicalGeneration = cached.writeGeneration,
+            let preIssuedAuthority = await beginRevalidationIssuance(
+                for: cacheKey,
+                historicalClearEpoch: historicalEpoch,
+                historicalWriteGeneration: historicalGeneration
+            )
+        else {
+            // No historical provenance at all, a durable read failure, or
+            // this entry's own historical stamp no longer matching
+            // current durable reality: fail closed exactly like a
+            // genuine disk miss, never fall back to a freshly-minted
+            // "current" stamp.
+            return nil
+        }
         var token = issueToken(for: cacheKey)
-        token.durableClearEpoch = authority.clearEpoch
-        token.diskWriteGeneration = authority.diskWriteGeneration
+        token.durableClearEpoch = preIssuedAuthority.clearEpoch
+        token.diskWriteGeneration = preIssuedAuthority.diskWriteGeneration
         return try await resolveTrustedDiskHit(
             cached,
             key: key,
@@ -145,12 +173,18 @@ extension AssetCacheService {
         // thrown protocol/transport/cache error propagates straight out
         // rather than falling back to unverified local bytes. Passes
         // only `token`'s durable clear-epoch/disk-write-generation
-        // snapshot (never `token` itself) — see `revalidateExisting`'s
+        // snapshot (never `token` itself) — see
+        // ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``'s
         // doc comment for why forwarding this branch's own
         // already-issued token (reserved above purely for its own
         // decode-authority re-check) would clobber whatever token an
         // already in-flight coalesced revalidation for this key is
-        // relying on.
+        // relying on, and why this authority must be carried straight
+        // through unchanged rather than re-derived from `revalidated` a
+        // second time later (that would move this operation's own
+        // issuance moment past whatever caller-installed pause a test
+        // might inject between here and the eventual network step,
+        // changing which typed error a race exactly there produces).
         do {
             return try await coalescedRevalidation(
                 cacheKey: cacheKey,
