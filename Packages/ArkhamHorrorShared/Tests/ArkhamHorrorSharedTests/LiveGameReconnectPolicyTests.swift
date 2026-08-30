@@ -69,6 +69,20 @@ struct LiveGameReconnectPolicyTests {
         )
     }
 
+    @Test("""
+    A non-finite unit interval (NaN, +infinity, -infinity) is sanitized to the safe \
+    minimum (zero delay) rather than propagating into a non-finite Duration -- \
+    min/max alone do not clamp NaN, so this must be handled explicitly
+    """)
+    func nonFiniteUnitIntervalIsSanitizedToZero() {
+        for nonFinite in [Double.nan, .infinity, -.infinity] {
+            let delay = LiveGameReconnectPolicy.jitteredDelay(
+                forAttempt: 3, unitInterval: nonFinite
+            )
+            #expect(delay == .zero)
+        }
+    }
+
     @Test("Every jittered delay for any attempt/unitInterval pair stays within [0, ceiling]")
     func everyJitteredDelayStaysWithinBounds() {
         for attempt in 0 ... 8 {

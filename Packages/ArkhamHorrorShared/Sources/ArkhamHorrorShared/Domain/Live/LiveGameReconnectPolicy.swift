@@ -131,10 +131,16 @@ enum LiveGameReconnectPolicy {
     /// reconnect: a uniformly random duration in `[0, delayCeiling(forAttempt:)]`,
     /// using the supplied `unitInterval` (expected to be in `[0, 1)`; a value outside
     /// that range is clamped rather than trusted, so a misbehaving injected random
-    /// source can never produce a negative or unbounded delay).
+    /// source can never produce a negative or unbounded delay). Non-finite input
+    /// (`.nan`, `.infinity`, `-.infinity`) is sanitized to `0` *before* clamping --
+    /// `min`/`max` alone do not clamp `NaN` (IEEE 754 comparisons against `NaN` are
+    /// always `false`, so it would otherwise propagate straight through into a
+    /// non-finite `Duration`) -- so even a `NaN`-producing random source falls back
+    /// to the safe minimum (no jitter) rather than an unbounded/undefined delay.
     static func jitteredDelay(forAttempt attempt: Int, unitInterval: Double) -> Duration {
         let ceiling = delayCeiling(forAttempt: attempt)
-        let clampedUnitInterval = min(max(unitInterval, 0), 1)
+        let sanitizedUnitInterval = unitInterval.isFinite ? unitInterval : 0
+        let clampedUnitInterval = min(max(sanitizedUnitInterval, 0), 1)
         let components = ceiling.components
         let ceilingSeconds = Double(components.seconds)
             + Double(components.attoseconds) / 1e18

@@ -134,6 +134,7 @@ struct LiveGameView: View {
             } else {
                 ProgressView("Loading game…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier(AccountAccessibilityID.liveGameLoadingText)
             }
             Label("Reconnecting…", systemImage: "arrow.triangle.2.circlepath")
                 .font(.footnote)
