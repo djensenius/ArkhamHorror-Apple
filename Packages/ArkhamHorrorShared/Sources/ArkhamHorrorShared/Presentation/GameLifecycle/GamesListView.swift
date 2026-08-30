@@ -171,24 +171,37 @@ struct GamesListView: View {
             // triggering delete then would silently supersede and cancel that other
             // action rather than confirming an explicit, intentional delete.
             let actionInFlight = model.gameLifecycleActions[summary.id] != nil
-            rowButton(for: summary)
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(AccountAccessibilityID.gameRow(for: summary.id.rawValue))
-                .modifier(GameRowSwipeActions(
-                    gameID: summary.id, isDeleteDisabled: actionInFlight,
-                    onDelete: { pendingDeletion = summary.id }
-                ))
-                .contextMenu {
-                    Button(role: .destructive) {
-                        pendingDeletion = summary.id
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                    .disabled(actionInFlight)
-                    .accessibilityIdentifier(
-                        AccountAccessibilityID.gameDeleteButton(for: summary.id.rawValue)
-                    )
+            // `rowButton(for:)` already applies `liveGameEnterButton` to an active
+            // game's own `NavigationLink`; a later `.accessibilityIdentifier` on the
+            // same node would silently override it, making that identifier
+            // unreachable, so only the non-active (lobby-sheet button) case is
+            // stamped with `gameRow` here.
+            Group {
+                if case .active = summary.gameState {
+                    rowButton(for: summary)
+                } else {
+                    rowButton(for: summary)
+                        .accessibilityIdentifier(
+                            AccountAccessibilityID.gameRow(for: summary.id.rawValue)
+                        )
                 }
+            }
+            .buttonStyle(.plain)
+            .modifier(GameRowSwipeActions(
+                gameID: summary.id, isDeleteDisabled: actionInFlight,
+                onDelete: { pendingDeletion = summary.id }
+            ))
+            .contextMenu {
+                Button(role: .destructive) {
+                    pendingDeletion = summary.id
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .disabled(actionInFlight)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.gameDeleteButton(for: summary.id.rawValue)
+                )
+            }
         case let .failed(failedEntry):
             Label(failedEntry.error, systemImage: "exclamationmark.triangle")
                 .font(.footnote)

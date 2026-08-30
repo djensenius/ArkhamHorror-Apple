@@ -30,6 +30,8 @@ actor FakeGameSocketConnection: GameSocketConnection {
     private var pendingContinuation: CheckedContinuation<GameSocketEvent, any Error>?
     private var awaitingWaiters: [CheckedContinuation<Void, Never>] = []
     private var isClosed = false
+    private var lastCloseCode: URLSessionWebSocketTask.CloseCode = .normalClosure
+    private var lastCloseReason: Data?
     private(set) var closeCallCount = 0
     private(set) var closeCodes: [URLSessionWebSocketTask.CloseCode] = []
     private var closeWaiters: [
@@ -78,6 +80,8 @@ actor FakeGameSocketConnection: GameSocketConnection {
         notifyCloseWaiters()
         guard !isClosed else { return }
         isClosed = true
+        lastCloseCode = code
+        lastCloseReason = reason
         if let continuation = pendingContinuation {
             pendingContinuation = nil
             continuation.resume(returning: .closed(code: code, reason: reason))
@@ -90,7 +94,10 @@ actor FakeGameSocketConnection: GameSocketConnection {
             return try resolve(outcome)
         }
         if isClosed {
-            throw GameSocketTransportError()
+            // Matches `GameSocketConnection`'s contract: once locally closed, a
+            // later `nextEvent()` call reports the clean closure it already
+            // recorded, never a fabricated unclean transport loss.
+            return .closed(code: lastCloseCode, reason: lastCloseReason)
         }
         return try await withCheckedThrowingContinuation { continuation in
             pendingContinuation = continuation
