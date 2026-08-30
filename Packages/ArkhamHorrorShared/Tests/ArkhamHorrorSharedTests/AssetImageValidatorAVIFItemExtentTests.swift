@@ -67,6 +67,24 @@ struct AssetImageValidatorAVIFItemExtentTests {
         throw TestError.mdatNotFound
     }
 
+    /// Locates a nested box's header start (`size32` field offset) by a
+    /// raw byte-pattern search for its 4-character ASCII type tag,
+    /// immediately preceded by that box's own `size32` field -- sufficient
+    /// for `iloc`, which is nested inside `meta` rather than a top-level
+    /// box `findMdatHeaderOffset`'s own top-level walk would ever reach.
+    private func findNestedBoxHeaderOffset(type: String, in data: Data) throws -> Int {
+        let typeBytes = Array(type.utf8)
+        precondition(typeBytes.count == 4)
+        var index = data.startIndex
+        while index + 4 <= data.endIndex {
+            if Array(data[index ..< (index + 4)]) == typeBytes {
+                return index - 4
+            }
+            index += 1
+        }
+        throw TestError.mdatNotFound
+    }
+
     private enum TestError: Error {
         case mdatNotFound
     }
@@ -163,6 +181,85 @@ struct AssetImageValidatorAVIFItemExtentTests {
         // mismatch rather than silently clamping to whatever bytes remain.
         data.removeLast()
         #expect(readUInt64BE(data, at: mdatOffset + 8) == originalSize)
+
+        #expect(throws: AssetError.malformedImageData) {
+            _ = try AssetImageValidator.validate(
+                data: data,
+                declaredContentType: nil,
+                expectedFormat: .avif,
+                limits: limits
+            )
+        }
+    }
+
+    @Test(
+        """
+        An `iloc` box whose declared item_count wildly exceeds what its own remaining bytes \
+        could possibly describe (an attacker-controlled 32-bit field, up to ~4 billion) is \
+        rejected outright rather than allowed to drive a many-gigabyte `reserveCapacity` \
+        allocation before parsing ever discovers the box is too short to actually contain \
+        that many items
+        """
+    )
+    func ilocItemCountExceedingRemainingBytesRejected() throws {
+        var data = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+        let ilocOffset = try findNestedBoxHeaderOffset(type: "iloc", in: data)
+        let version = Int(data[ilocOffset + 8])
+        // item_count immediately follows: version+flags(4) +
+        // size-nibbles(2) = offset 6 into the FullBox payload, i.e.
+        // `ilocOffset + 8 + 6`; 2 bytes for version < 2, 4 bytes for
+        // version >= 2 (this fixture is expected to use version 0, but
+        // this handles either encoding).
+        let itemCountOffset = ilocOffset + 8 + 6
+        if version < 2 {
+            data.replaceSubrange(
+                itemCountOffset ..< itemCountOffset + 2,
+                with: [0xFF, 0xFF]
+            )
+        } else {
+            data.replaceSubrange(
+                itemCountOffset ..< itemCountOffset + 4,
+                with: [0xFF, 0xFF, 0xFF, 0xFF]
+            )
+        }
+
+        #expect(throws: AssetError.malformedImageData) {
+            _ = try AssetImageValidator.validate(
+                data: data,
+                declaredContentType: nil,
+                expectedFormat: .avif,
+                limits: limits
+            )
+        }
+    }
+
+    @Test(
+        """
+        An `iloc` item entry whose data_reference_index is nonzero (referencing an external \
+        `dref` entry this parser never resolves) is rejected rather than silently trusted as \
+        if it referenced this same file's own mdat bytes
+        """
+    )
+    func ilocNonzeroDataReferenceIndexRejected() throws {
+        var data = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+        let ilocOffset = try findNestedBoxHeaderOffset(type: "iloc", in: data)
+        let version = Int(data[ilocOffset + 8])
+        // Layout from the FullBox header (offset ilocOffset + 8) onward:
+        // size-nibbles(2) + item_count(2 or 4) + item_ID(2 or 4) +
+        // [construction_method word(2) if version 1/2] +
+        // data_reference_index(2). Computed explicitly (rather than
+        // reusing production parsing code) so this test exercises the
+        // real on-disk byte layout independently.
+        let itemCountFieldBytes = version < 2 ? 2 : 4
+        let itemIDFieldBytes = version < 2 ? 2 : 4
+        let constructionMethodFieldBytes = (version == 1 || version == 2) ? 2 : 0
+        let dataReferenceIndexOffset = ilocOffset + 8 + 4 + 2 + itemCountFieldBytes
+            + itemIDFieldBytes + constructionMethodFieldBytes
+        #expect(AssetImageValidator.readUInt16BE(data, at: dataReferenceIndexOffset) == 0)
+        data.replaceSubrange(
+            dataReferenceIndexOffset ..< dataReferenceIndexOffset + 2,
+            with: [0x00, 0x01]
+        )
 
         #expect(throws: AssetError.malformedImageData) {
             _ = try AssetImageValidator.validate(

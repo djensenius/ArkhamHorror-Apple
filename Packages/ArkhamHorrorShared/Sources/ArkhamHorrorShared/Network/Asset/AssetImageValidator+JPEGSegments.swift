@@ -32,6 +32,41 @@ extension AssetImageValidator {
         let componentCount = Int(data[componentCountOffset])
         guard componentCount >= 1, componentCount <= 4 else { throw AssetError.malformedImageData }
 
+        let components = try parseJPEGFrameComponents(
+            data,
+            componentCountOffset: componentCountOffset,
+            componentCount: componentCount,
+            segmentEnd: segmentEnd
+        )
+        // Every real encoder assigns each frame component a distinct ID
+        // (it is how `SOS` selects which Huffman/quant tables and
+        // sampling factors apply to which component); a frame that
+        // instead declares the same ID more than once would let a scan
+        // selector matching that ID resolve ambiguously to whichever
+        // duplicate happens to be found first, silently leaving the
+        // other duplicate(s) entirely unscanned/undecoded by any scan
+        // selector at all -- reject outright rather than accept an
+        // encoding no real encoder (and no test fixture) could ever
+        // produce.
+        guard Set(components.map(\.id)).count == components.count else {
+            throw AssetError.malformedImageData
+        }
+
+        return JPEGFrameInfo(width: Int(width), height: Int(height), components: components)
+    }
+
+    /// Parses exactly `componentCount` per-component sampling/quant-table
+    /// descriptors starting at `componentCountOffset + 1`, and confirms
+    /// they exactly fill the segment (no trailing bytes, no overrun).
+    /// Split out of ``parseJPEGFrameHeader(_:markerOffset:segmentEnd:)``
+    /// purely to keep that function's cyclomatic complexity under this
+    /// package's lint convention.
+    private static func parseJPEGFrameComponents(
+        _ data: Data,
+        componentCountOffset: Int,
+        componentCount: Int,
+        segmentEnd: Int
+    ) throws -> [JPEGComponent] {
         var components: [JPEGComponent] = []
         components.reserveCapacity(componentCount)
         var componentOffset = componentCountOffset + 1
@@ -59,8 +94,7 @@ extension AssetImageValidator {
             componentOffset += 3
         }
         guard componentOffset == segmentEnd else { throw AssetError.malformedImageData }
-
-        return JPEGFrameInfo(width: Int(width), height: Int(height), components: components)
+        return components
     }
 
     /// Parses every Huffman table definition within a single `DHT`

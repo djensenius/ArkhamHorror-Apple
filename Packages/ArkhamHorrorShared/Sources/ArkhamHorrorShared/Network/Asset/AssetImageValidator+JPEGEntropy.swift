@@ -226,6 +226,24 @@ extension AssetImageValidator {
             // ImageIO and is rejected as unsupported.
             throw AssetError.malformedImageData
         }
+        // Beyond a matching *count*, the scan's own selector *set* must
+        // be exactly the frame's component ID set: with both this and
+        // ``parseJPEGFrameHeader``'s own frame-component-ID uniqueness
+        // guard already established, an equal-size selector set that
+        // also equals the frame's ID set is the only way every frame
+        // component is scanned exactly once. Without this, a scan
+        // selector list with a duplicate (e.g. `[1, 1, 1]` against a
+        // 3-component frame `[1, 2, 3]`) would still pass the count
+        // check, decode successfully by repeatedly resolving component 1
+        // three times, and leave components 2 and 3 completely
+        // undecoded/unverified by this coverage proof despite reporting
+        // success for the whole image.
+        guard
+            Set(scan.scanComponents.map(\.componentSelector))
+            == Set(scan.frame.components.map(\.id))
+        else {
+            throw AssetError.malformedImageData
+        }
 
         let tables = try buildHuffmanTables(scan.huffmanTables)
         let resolved = try resolveScanComponents(
