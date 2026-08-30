@@ -34,7 +34,7 @@ extension SecureCacheDirectory {
                 "Refusing to use the filesystem root as a cache directory"
             )
         }
-        var currentFD = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        var currentFD = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard currentFD >= 0 else {
             throw AssetError.cachePersistenceFailed(
                 "Could not open filesystem root (errno \(errno))"
@@ -78,14 +78,14 @@ extension SecureCacheDirectory {
         name: String,
         createIfMissing: Bool
     ) throws -> Int32 {
-        var descriptor = openat(parentFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        var descriptor = openat(parentFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         if descriptor < 0, errno == ENOENT, createIfMissing {
             guard mkdirat(parentFD, name, 0o700) == 0 || errno == EEXIST else {
                 throw AssetError.cachePersistenceFailed(
                     "Could not create directory component '\(name)' (errno \(errno))"
                 )
             }
-            descriptor = openat(parentFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            descriptor = openat(parentFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         }
         guard descriptor >= 0 else {
             throw AssetError.cachePersistenceFailed(

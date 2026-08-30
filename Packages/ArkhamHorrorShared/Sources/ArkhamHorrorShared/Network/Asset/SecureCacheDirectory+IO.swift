@@ -10,7 +10,9 @@ extension SecureCacheDirectory {
     func writeTempAndFsync(tempName: String, data: Data) throws {
         if faultState.shouldFailTempWrite(tempName: tempName) {
             _ = unlinkat(rootFD, tempName, 0)
-            let stubFD = openat(rootFD, tempName, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+            let stubFD = openat(
+                rootFD, tempName, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600
+            )
             if stubFD >= 0 {
                 var stubByte: UInt8 = 0xFF
                 _ = withUnsafeBytes(of: &stubByte) { Darwin.write(stubFD, $0.baseAddress, 1) }
@@ -19,7 +21,9 @@ extension SecureCacheDirectory {
             throw AssetError.cachePersistenceFailed("injected fault: writeTemp '\(tempName)'")
         }
         _ = unlinkat(rootFD, tempName, 0)
-        let descriptor = openat(rootFD, tempName, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        let descriptor = openat(
+            rootFD, tempName, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600
+        )
         guard descriptor >= 0 else {
             throw AssetError.cachePersistenceFailed(
                 "Could not create temp file '\(tempName)' (errno \(errno))"

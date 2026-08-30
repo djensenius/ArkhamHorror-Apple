@@ -66,7 +66,7 @@ extension SecureCacheDirectory {
     /// `read`/`write` retry convention.
     func acquireExclusiveLock() async throws -> Int32 {
         let lockFD = openat(
-            rootFD, Self.lockFileName, O_RDWR | O_CREAT | O_NOFOLLOW, 0o600
+            rootFD, Self.lockFileName, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600
         )
         guard lockFD >= 0 else {
             throw AssetError.cachePersistenceFailed(

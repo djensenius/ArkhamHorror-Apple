@@ -132,7 +132,7 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// miss; throws for any other failure (wrong type, wrong owner, over
     /// bound, short read).
     func read(name: String, maxBytes: Int) throws -> Data? {
-        let descriptor = openat(rootFD, name, O_RDONLY | O_NOFOLLOW)
+        let descriptor = openat(rootFD, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else {
             if errno == ENOENT {
                 return nil
