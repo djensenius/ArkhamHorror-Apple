@@ -64,6 +64,9 @@ extension AppModel {
         guard isCurrent(generation) else { return }
         operation = .idle
         operationFailure = nil
+        // The signed-out session must never leave a previous profile's game-lifecycle/
+        // lobby content active.
+        resetGameLifecycleState()
         sessionState = .signedOut(profile: profile, compatibility: compatibility)
     }
 }

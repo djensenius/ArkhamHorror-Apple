@@ -122,6 +122,11 @@ extension AppModel {
     /// an in-place edit or removal of the currently selected profile forces the same
     /// restart, without duplicating the probe/restore wiring.
     func restartFlow(for profile: ServerProfile, generation: Int) {
+        // Every caller of this restart (profile switch, retry, in-place profile edit
+        // reload) is leaving whatever session was previously active, signed in or
+        // not; any game-lifecycle/lobby content it had loaded must not survive into
+        // the fresh flow this starts. A no-op when already empty.
+        resetGameLifecycleState()
         sessionState = .checkingCompatibility(profile: profile)
         flowTask = Task { [weak self] in
             await self?.probeAndRestore(profile: profile, generation: generation)

@@ -85,6 +85,56 @@ enum AccountAccessibilityID {
     static let serverRemoveConfirmButton = "account.server.removeConfirm"
     static let operationFailureText = "account.operationFailure"
     static let profileManagementFailureText = "account.profileManagementFailure"
+    static let accountDetailButton = "account.detail"
+
+    // MARK: - Games list/lobby
+
+    // These stay under the same "account." namespace as every identifier above --
+    // nested one level deeper as "account.games.*" -- rather than a bare "games."
+    // prefix, so every identifier in this enum remains globally unique and
+    // discoverable under one consistent root for UI automation.
+    static let gamesRefreshButton = "account.games.refresh"
+    static let gamesRetryButton = "account.games.retry"
+    static let gameDeleteConfirmButton = "account.games.delete.confirm"
+    static let gameListFailureText = "account.games.list.failure"
+
+    /// A per-game row identifier, distinct for every game in the list.
+    static func gameRow(for gameID: UUID) -> String {
+        "account.games.row.\(gameID.uuidString)"
+    }
+
+    /// A per-game delete-action identifier, distinct for every game row.
+    static func gameDeleteButton(for gameID: UUID) -> String {
+        "account.games.delete.\(gameID.uuidString)"
+    }
+
+    /// A per-game join-lobby-action identifier, distinct for every game row.
+    static func gameJoinButton(for gameID: UUID) -> String {
+        "account.games.join.\(gameID.uuidString)"
+    }
+
+    /// A per-game open-seats-action identifier, distinct for every game row.
+    static func gameOpenSeatsButton(for gameID: UUID) -> String {
+        "account.games.openSeats.\(gameID.uuidString)"
+    }
+
+    /// A per-game, per-seat claim-action identifier, distinct for every open seat in
+    /// every game's lobby.
+    static func gameClaimSeatButton(for gameID: UUID, seat: String) -> String {
+        "account.games.claimSeat.\(gameID.uuidString).\(seat)"
+    }
+
+    /// A per-game, per-investigator continue-without-upgrading identifier, distinct
+    /// for every investigator awaiting a deck choice in every game's lobby.
+    static func gameContinueDeckButton(for gameID: UUID, investigatorId: String) -> String {
+        "account.games.continueDeck.\(gameID.uuidString).\(investigatorId)"
+    }
+
+    /// A per-game action-failure text identifier, distinct for every game that
+    /// currently has one (see ``AppModel/gameLifecycleActionFailures``).
+    static func gameActionFailureText(for gameID: UUID) -> String {
+        "account.games.actionFailure.\(gameID.uuidString)"
+    }
 
     /// A per-profile pending-cleanup-failure text identifier, distinct for every
     /// profile that currently has one (see ``AppModel/pendingCleanupFailures``).
