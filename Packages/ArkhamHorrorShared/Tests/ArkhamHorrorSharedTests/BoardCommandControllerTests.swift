@@ -68,20 +68,47 @@ struct BoardCommandControllerTests {
         #expect(controller.inspectedID == BoardFocusID.scenarioHeader)
     }
 
-    @Test("A repeated inspect while an inspector is already open never stacks a second modal")
-    func repeatedInspectNeverStacksModal() {
+    @Test(
+        """
+        Presenting the inspector actually transitions currentFocus to its own node, and \
+        dismissal actually transitions it back
+        """
+    )
+    func inspectorPresentationActuallyTransitionsCurrentFocus() {
         let controller = BoardCommandController(projection: twoLocationProjection())
+        controller.selectZone(BoardFocusZone.locations)
+        let locationFocus = controller.coordinator.currentFocus
+        #expect(locationFocus != nil)
+        #expect(controller.handle(.command(.inspect)))
+        // A genuine transition (never the same node reused as its own modal entry, which
+        // would leave `currentFocus` unchanged and silently fail to notify anything
+        // observing it — for example `BoardView`'s `@FocusState` sync via `.onChange`).
+        #expect(controller.coordinator.currentFocus == BoardFocusID.inspectorClose)
+        #expect(controller.coordinator.currentFocus != locationFocus)
+        #expect(controller.handle(.command(.secondaryAction)))
+        #expect(controller.coordinator.currentFocus == locationFocus)
+    }
+
+    @Test("A repeated inspect/primaryAction while already open closes it, never stacking a modal")
+    func repeatedInspectClosesRatherThanStackingModal() {
+        let controller = BoardCommandController(projection: twoLocationProjection())
+        let focusBeforeInspect = controller.coordinator.currentFocus
         #expect(controller.handle(.command(.inspect)))
         #expect(controller.coordinator.isModalPresented)
-        // Reports itself unconsumed: this second call must be a pure no-op, never a
-        // second nested `presentModal(entry:)` call.
-        #expect(!controller.handle(.command(.inspect)))
-        #expect(controller.coordinator.isModalPresented)
-        // A single close must fully dismiss the inspector — proving no second modal was
-        // ever stacked underneath it.
-        #expect(controller.handle(.command(.secondaryAction)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.inspectorClose)
+        // A second `.inspect`/`.primaryAction` (for example the inspector's own Close
+        // control dispatching a tap as `.primaryAction`) must close the already-open
+        // inspector — never attempt a second, nested `presentModal(entry:)` call, which
+        // would otherwise require two dismissals to fully close and could strand
+        // `isModalPresented == true` with no inspector content visible.
+        #expect(controller.handle(.command(.inspect)))
         #expect(!controller.coordinator.isModalPresented)
         #expect(controller.inspectedID == nil)
+        #expect(controller.coordinator.currentFocus == focusBeforeInspect)
+        // Proves the modal stack itself was never corrupted by the toggle: opening again
+        // afterward still works exactly like the first time.
+        #expect(controller.handle(.command(.inspect)))
+        #expect(controller.coordinator.isModalPresented)
     }
 
     @Test("secondaryAction closes an open inspector and restores the prior focus")
@@ -102,12 +129,21 @@ struct BoardCommandControllerTests {
         #expect(!controller.handle(.reservedBack))
     }
 
-    @Test("reservedBack with an inspector open dismisses it, reporting itself consumed")
-    func reservedBackWithInspectorOpenDismissesIt() {
+    @Test(
+        """
+        reservedBack (for example the tvOS Siri Remote Menu button) with an inspector open \
+        dismisses it, reporting itself consumed, and restores the prior focus
+        """
+    )
+    func reservedBackWithInspectorOpenDismissesItAndRestoresFocus() {
         let controller = BoardCommandController(projection: twoLocationProjection())
+        controller.selectZone(BoardFocusZone.investigators)
+        let focusBeforeInspect = controller.coordinator.currentFocus
         #expect(controller.handle(.command(.inspect)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.inspectorClose)
         #expect(controller.handle(.reservedBack))
         #expect(!controller.coordinator.isModalPresented)
+        #expect(controller.coordinator.currentFocus == focusBeforeInspect)
     }
 
     @Test("zoomIn/zoomOut clamp to the declared zoom range and resetCamera restores default")
@@ -149,45 +185,6 @@ struct BoardCommandControllerTests {
     func unimplementedCommandReportsUnconsumed() {
         let controller = BoardCommandController(projection: twoLocationProjection())
         #expect(!controller.handle(.command(.toggleArrangeMode)))
-    }
-
-    // MARK: - Focus restoration across snapshot replacement
-
-    @Test("Focus on a removed location falls back deterministically after applySnapshot")
-    func focusOnRemovedLocationFallsBackAfterSnapshot() {
-        let controller = BoardCommandController(projection: twoLocationProjection())
-        controller.selectZone(BoardFocusZone.locations)
-        let firstLocationID = controller.projection.locations[0].id
-        #expect(controller.coordinator.currentFocus == BoardFocusID.location(firstLocationID))
-
-        // Replace with a snapshot that no longer includes that location at all.
-        let replacement = BoardTestFixtures.snapshot()
-        controller.applySnapshot(BoardProjectionBuilder.makeProjection(from: replacement))
-        // The locations zone no longer exists at all; focus must fall back to some
-        // remaining node, never a dangling reference to the removed location.
-        #expect(controller.coordinator.currentFocus != BoardFocusID.location(firstLocationID))
-        #expect(controller.coordinator.currentFocus != nil)
-    }
-
-    @Test("An open inspector is closed automatically when applySnapshot replaces the graph")
-    func inspectorClosesAutomaticallyOnSnapshotReplacement() {
-        let controller = BoardCommandController(projection: twoLocationProjection())
-        #expect(controller.handle(.command(.inspect)))
-        #expect(controller.coordinator.isModalPresented)
-        controller.applySnapshot(twoLocationProjection())
-        #expect(!controller.coordinator.isModalPresented)
-        #expect(controller.inspectedID == nil)
-    }
-
-    @Test("Focus on an unaffected node survives applySnapshot with reordered entities")
-    func focusSurvivesReorderedEntities() {
-        let controller = BoardCommandController(projection: twoLocationProjection())
-        controller.selectZone(BoardFocusZone.investigators)
-        let focusBefore = controller.coordinator.currentFocus
-        // Rebuild the identical projection (a no-op "reorder"): entity identities are
-        // unchanged, so focus must remain exactly where it was.
-        controller.applySnapshot(twoLocationProjection())
-        #expect(controller.coordinator.currentFocus == focusBefore)
     }
 
     // MARK: - Command routing through production semantic helpers

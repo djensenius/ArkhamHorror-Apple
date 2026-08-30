@@ -210,48 +210,4 @@ struct BoardProjectionEdgeCaseTests {
                 .contains(BoardDisplayFormatting.unsupportedContentNotice)
         )
     }
-
-    // MARK: - Chaos bag emptiness
-
-    @Test("A chaos bag with only set-aside tokens is not misreported as unsupported/empty")
-    func chaosBagWithOnlySetAsideTokensIsNotEmpty() {
-        let snapshot = BoardTestFixtures.snapshot(
-            mode: .scenarioOnly(BoardTestFixtures.scenario(
-                chaosBag: BoardTestFixtures.chaosBag(
-                    setAsideChaosTokens: [BoardTestFixtures.chaosToken(.skull)]
-                )
-            ))
-        )
-        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-        #expect(!projection.chaosBag.isEntirelyEmpty)
-        #expect(projection.chaosBag.setAsideCounts.map(\.face) == [.skull])
-        let summary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
-        #expect(!summary.contains(BoardDisplayFormatting.unsupportedContentNotice))
-        #expect(summary.contains("Set aside"))
-    }
-
-    @Test("A chaos bag with only a forced-draw face is not misreported as unsupported/empty")
-    func chaosBagWithOnlyForceDrawIsNotEmpty() {
-        let snapshot = BoardTestFixtures.snapshot(
-            mode: .scenarioOnly(BoardTestFixtures.scenario(
-                chaosBag: BoardTestFixtures.chaosBag(forceDraw: .elderSign)
-            ))
-        )
-        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-        #expect(!projection.chaosBag.isEntirelyEmpty)
-        let summary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
-        #expect(!summary.contains(BoardDisplayFormatting.unsupportedContentNotice))
-        #expect(summary.contains("Forced draw"))
-    }
-
-    @Test("A chaos bag with no tokens, no forced draw, and no pending choice is entirely empty")
-    func chaosBagWithNothingAtAllIsEntirelyEmpty() {
-        let snapshot = BoardTestFixtures.snapshot(
-            mode: .scenarioOnly(BoardTestFixtures.scenario(chaosBag: BoardTestFixtures.chaosBag()))
-        )
-        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-        #expect(projection.chaosBag.isEntirelyEmpty)
-        let summary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
-        #expect(summary.contains(BoardDisplayFormatting.unsupportedContentNotice))
-    }
 }

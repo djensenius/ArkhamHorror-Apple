@@ -75,7 +75,7 @@ struct BoardScenarioHeaderView: View {
 
 /// The scenario's chaos bag summary — the board's single "board.chaosBag" zone entity.
 struct BoardChaosBagView: View {
-    let chaosBag: BoardChaosBagSummary
+    let chaosBag: BoardChaosBagState
     let isFocused: Bool
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
@@ -90,34 +90,44 @@ struct BoardChaosBagView: View {
         ) {
             VStack(alignment: .leading, spacing: 6) {
                 BoardSectionHeading(title: "Chaos bag")
-                if chaosBag.isEntirelyEmpty {
-                    Text(BoardDisplayFormatting.unsupportedContentNotice)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    if !chaosBag.poolCounts.isEmpty {
-                        faceCountsRow(chaosBag.poolCounts)
-                    }
-                    if !chaosBag.revealedCounts.isEmpty {
-                        Text("Revealed").font(.caption2).foregroundStyle(.secondary)
-                        faceCountsRow(chaosBag.revealedCounts)
-                    }
-                    if !chaosBag.setAsideCounts.isEmpty {
-                        Text("Set aside").font(.caption2).foregroundStyle(.secondary)
-                        faceCountsRow(chaosBag.setAsideCounts)
-                    }
-                    if let forceDrawFace = chaosBag.forceDrawFace {
-                        Text("Forced draw: \(forceDrawFace.rawValue)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    if chaosBag.hasPendingChoice {
-                        Text("Pending chaos bag resolution")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                chaosBagContent
             }
+        }
+    }
+
+    @ViewBuilder private var chaosBagContent: some View {
+        switch chaosBag.displayState {
+        case .noActiveScenario:
+            Text("No active scenario").font(.footnote).foregroundStyle(.secondary)
+        case .empty:
+            Text("Empty").font(.footnote).foregroundStyle(.secondary)
+        case let .populated(summary):
+            populatedChaosBagContent(summary)
+        }
+    }
+
+    @ViewBuilder
+    private func populatedChaosBagContent(_ summary: BoardChaosBagSummary) -> some View {
+        if !summary.poolCounts.isEmpty {
+            faceCountsRow(summary.poolCounts)
+        }
+        if !summary.revealedCounts.isEmpty {
+            Text("Revealed").font(.caption2).foregroundStyle(.secondary)
+            faceCountsRow(summary.revealedCounts)
+        }
+        if !summary.setAsideCounts.isEmpty {
+            Text("Set aside").font(.caption2).foregroundStyle(.secondary)
+            faceCountsRow(summary.setAsideCounts)
+        }
+        if let forceDrawFace = summary.forceDrawFace {
+            Text("Forced draw: \(forceDrawFace.rawValue)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        if summary.hasPendingChoice {
+            Text("Pending chaos bag resolution")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 

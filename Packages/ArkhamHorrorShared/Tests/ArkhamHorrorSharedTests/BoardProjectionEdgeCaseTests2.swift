@@ -62,4 +62,93 @@ struct BoardProjectionEdgeCaseTests2 {
         let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
         #expect(projection.investigators[0].currentLocationID == nil)
     }
+
+    // MARK: - Chaos bag: no active scenario / empty / populated
+
+    @Test("No active scenario projects .noActiveScenario, announced as such, never unsupported")
+    func chaosBagWithNoActiveScenarioAnnouncesNoActiveScenario() {
+        let snapshot = BoardTestFixtures.snapshot(
+            mode: .campaignOnly(.object(["tag": .string("Campaign")]))
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+        #expect(projection.chaosBag == .noActiveScenario)
+        #expect(projection.chaosBag.displayState == .noActiveScenario)
+        let summary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
+        #expect(summary.contains("No active scenario"))
+        #expect(!summary.contains(BoardDisplayFormatting.unsupportedContentNotice))
+    }
+
+    @Test(
+        """
+        A fully decoded, genuinely empty scenario chaos bag displays/announces neutral \
+        emptiness, never the unsupported-content notice
+        """
+    )
+    func chaosBagFullyEmptyAnnouncesNeutralEmptyNeverUnsupported() {
+        let snapshot = BoardTestFixtures.snapshot(
+            mode: .scenarioOnly(BoardTestFixtures.scenario(chaosBag: BoardTestFixtures.chaosBag()))
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+        #expect(projection.chaosBag.displayState == .empty)
+        let summary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
+        #expect(summary.contains("Empty"))
+        #expect(!summary.contains(BoardDisplayFormatting.unsupportedContentNotice))
+        #expect(!summary.contains("No active scenario"))
+    }
+
+    @Test("A chaos bag with only set-aside tokens displays/announces as populated, not empty")
+    func chaosBagWithOnlySetAsideTokensIsPopulated() {
+        let snapshot = BoardTestFixtures.snapshot(
+            mode: .scenarioOnly(BoardTestFixtures.scenario(
+                chaosBag: BoardTestFixtures.chaosBag(
+                    setAsideChaosTokens: [BoardTestFixtures.chaosToken(.skull)]
+                )
+            ))
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+        guard case let .populated(summary) = projection.chaosBag.displayState else {
+            Issue.record("Expected .populated")
+            return
+        }
+        #expect(summary.setAsideCounts.map(\.face) == [.skull])
+        let accessibilitySummary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
+        #expect(!accessibilitySummary.contains(BoardDisplayFormatting.unsupportedContentNotice))
+        #expect(!accessibilitySummary.contains("Empty"))
+        #expect(accessibilitySummary.contains("Set aside"))
+    }
+
+    @Test("A chaos bag with only a forced-draw face displays/announces as populated, not empty")
+    func chaosBagWithOnlyForceDrawIsPopulated() {
+        let snapshot = BoardTestFixtures.snapshot(
+            mode: .scenarioOnly(BoardTestFixtures.scenario(
+                chaosBag: BoardTestFixtures.chaosBag(forceDraw: .elderSign)
+            ))
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+        guard case .populated = projection.chaosBag.displayState else {
+            Issue.record("Expected .populated")
+            return
+        }
+        let summary = BoardAccessibility.summary(chaosBag: projection.chaosBag)
+        #expect(!summary.contains(BoardDisplayFormatting.unsupportedContentNotice))
+        #expect(!summary.contains("Empty"))
+        #expect(summary.contains("Forced draw"))
+    }
+
+    @Test("A campaign+scenario mode reads the typed scenario's own chaos bag, not the campaign")
+    func campaignAndScenarioModeReadsTypedScenarioChaosBag() {
+        let snapshot = BoardTestFixtures.snapshot(
+            mode: .campaignAndScenario(
+                campaign: .object(["tag": .string("Campaign")]),
+                scenario: BoardTestFixtures.scenario(chaosBag: BoardTestFixtures.chaosBag())
+            )
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+        // Must resolve through the typed `Scenario.chaosBag` this mode still carries —
+        // never fall back to `.noActiveScenario` just because a `This` campaign package
+        // is also present, and never substitute anything derived from that campaign's
+        // own broad, unrelated JSONValue payload.
+        #expect(projection.chaosBag.displayState == .empty)
+        #expect(projection.hasCampaignContext)
+    }
 }

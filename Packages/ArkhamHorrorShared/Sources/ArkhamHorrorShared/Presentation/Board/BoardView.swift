@@ -55,9 +55,11 @@ struct BoardView: View {
                 .disabled(controller.coordinator.isModalPresented)
                 .accessibilityHidden(controller.coordinator.isModalPresented)
             if let inspectorContent = resolvedInspectorContent(controller) {
-                BoardInspectorView(content: inspectorContent) {
-                    controller.handle(.command(.secondaryAction))
-                }
+                BoardInspectorView(
+                    content: inspectorContent,
+                    focusBinding: $focusedID,
+                    onOutcome: { controller.handle(focusID: $0, $1) }
+                )
             }
         }
         .semanticKeyboardInput { controller.handle($0) }

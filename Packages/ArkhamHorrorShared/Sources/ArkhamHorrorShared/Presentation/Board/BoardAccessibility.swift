@@ -175,10 +175,21 @@ enum BoardAccessibility {
         return parts.joined(separator: ". ")
     }
 
-    static func summary(chaosBag: BoardChaosBagSummary) -> String {
-        guard !chaosBag.isEntirelyEmpty else {
-            return "Chaos bag. \(BoardDisplayFormatting.unsupportedContentNotice)."
+    /// Announces exactly the same three-way categorization ``BoardChaosBagView`` renders
+    /// on screen (see ``BoardChaosBagState/displayState``): no active scenario, a
+    /// legitimately empty bag (never "unsupported"), or a populated bag's detailed counts.
+    static func summary(chaosBag: BoardChaosBagState) -> String {
+        switch chaosBag.displayState {
+        case .noActiveScenario:
+            "Chaos bag. No active scenario."
+        case .empty:
+            "Chaos bag. Empty."
+        case let .populated(bagSummary):
+            populatedChaosBagSummary(bagSummary)
         }
+    }
+
+    private static func populatedChaosBagSummary(_ chaosBag: BoardChaosBagSummary) -> String {
         var parts = ["Chaos bag"]
         if !chaosBag.poolCounts.isEmpty {
             parts.append("In bag: " + faceCountsSummary(chaosBag.poolCounts))

@@ -68,26 +68,23 @@ enum BoardProjectionBuilder {
         )
     }
 
-    private static func makeChaosBag(from mode: GameMode) -> BoardChaosBagSummary {
+    private static func makeChaosBag(from mode: GameMode) -> BoardChaosBagState {
         let scenario: Scenario? = switch mode {
         case .campaignOnly: nil
         case let .scenarioOnly(scenario): scenario
         case let .campaignAndScenario(_, scenario): scenario
         }
         guard let scenario else {
-            return BoardChaosBagSummary(
-                poolCounts: [], revealedCounts: [], setAsideCounts: [], forceDrawFace: nil,
-                hasPendingChoice: false
-            )
+            return .noActiveScenario
         }
         let bag = scenario.chaosBag
-        return BoardChaosBagSummary(
+        return .scenario(BoardChaosBagSummary(
             poolCounts: BoardDisplayFormatting.groupChaosFaceCounts(bag.chaosTokens),
             revealedCounts: BoardDisplayFormatting.groupChaosFaceCounts(bag.revealedChaosTokens),
             setAsideCounts: BoardDisplayFormatting.groupChaosFaceCounts(bag.setAsideChaosTokens),
             forceDrawFace: bag.forceDraw,
             hasPendingChoice: bag.choice != nil
-        )
+        ))
     }
 
     // MARK: - Counters

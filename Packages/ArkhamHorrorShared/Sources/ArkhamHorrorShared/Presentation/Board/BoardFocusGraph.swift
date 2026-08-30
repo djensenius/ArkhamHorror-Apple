@@ -10,6 +10,10 @@ enum BoardFocusZone {
     static let enemyLocations: SemanticFocusZone = "board.enemyLocations"
     static let investigators: SemanticFocusZone = "board.investigators"
     static let chaosBag: SemanticFocusZone = "board.chaosBag"
+    /// The inspector modal's own zone. Deliberately **not** a member of ``cycleOrder``:
+    /// `cycleZone` must never land here, since this zone only ever exists to hold the
+    /// inspector's single Close control while a modal is presented.
+    static let inspector: SemanticFocusZone = "board.inspector"
 
     /// The fixed cycling order every ``BoardCommandController/cycleZone(_:)`` call walks,
     /// deliberately declared once here rather than derived from `FocusGraph.order` (whose
@@ -26,6 +30,14 @@ enum BoardFocusZone {
 enum BoardFocusID {
     static let scenarioHeader: SemanticFocusID = "board.scenario.header"
     static let chaosBagSummary: SemanticFocusID = "board.chaosBag.summary"
+    /// The inspector modal's own Close control. A single, permanent, board-instance-local
+    /// node (declared fresh in every ``BoardFocusGraphBuilder/makeGraph(projection:layout:)``
+    /// call, so it never collides across separate ``BoardView``/``BoardCommandController``
+    /// instances) that `presentModal(entry:)` actually transitions ``FocusCoordinator/
+    /// currentFocus`` to — never the same node that was already focused, so a snapshot
+    /// replacement/removal/reorder can never make presenting the inspector a no-op change
+    /// that a SwiftUI `.onChange` fails to observe.
+    static let inspectorClose: SemanticFocusID = "board.inspector.close"
 
     static func act(_ id: ActID) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.act.\(id.description)")
@@ -89,6 +101,13 @@ enum BoardFocusGraphBuilder {
 
         nodes.append(FocusNode(id: BoardFocusID.chaosBagSummary, zone: BoardFocusZone.chaosBag))
         zoneEntryPoints[BoardFocusZone.chaosBag] = BoardFocusID.chaosBagSummary
+
+        // Always present (independent of any projection content) so `presentModal(entry:)`
+        // always has a real, distinct node to transition `currentFocus` to — see
+        // `BoardFocusID.inspectorClose`'s own documentation. Excluded from `cycleOrder`,
+        // so normal zone cycling never lands here.
+        nodes.append(FocusNode(id: BoardFocusID.inspectorClose, zone: BoardFocusZone.inspector))
+        zoneEntryPoints[BoardFocusZone.inspector] = BoardFocusID.inspectorClose
 
         return FocusGraph(
             nodes: nodes, zoneEntryPoints: zoneEntryPoints, wrapPolicy: .wrapWithinZone

@@ -6,7 +6,7 @@ import SwiftUI
 /// unstable view-generated identity.
 enum BoardInspectorContent {
     case scenario
-    case chaosBag(BoardChaosBagSummary)
+    case chaosBag(BoardChaosBagState)
     case act(BoardActNode)
     case agenda(BoardAgendaNode)
     case location(BoardLocationNode)
@@ -50,9 +50,16 @@ enum BoardInspectorContent {
 /// The focused-entity inspector, presented as an overlay modal over the board (matching
 /// ``SemanticInputHarnessView``'s own modal convention) rather than a separate navigation
 /// push, so dismissal always returns to exactly the entity that was inspected.
+///
+/// The Close control is wired exactly like every other board tile — a
+/// ``SemanticActionControl`` bound to the permanent ``BoardFocusID/inspectorClose`` node
+/// via `focusBinding` — so platform focus (keyboard Full Keyboard Access, the tvOS focus
+/// engine, VoiceOver) actually lands on it the moment the modal presents, rather than
+/// staying stranded on whatever was focused on the now-disabled board underneath.
 struct BoardInspectorView: View {
     let content: BoardInspectorContent
-    let onClose: () -> Void
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
 
     var body: some View {
         ZStack {
@@ -67,9 +74,7 @@ struct BoardInspectorView: View {
                     Text(detailText)
                         .font(.body)
                         .foregroundStyle(ArkhamTheme.bone.opacity(0.85))
-                    Button("Close", action: onClose)
-                        .buttonStyle(.borderedProminent)
-                        .tint(ArkhamTheme.accent)
+                    closeButton
                 }
             }
             .frame(maxWidth: 420)
@@ -78,6 +83,22 @@ struct BoardInspectorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
+    }
+
+    private var closeButton: some View {
+        SemanticActionControl(
+            accessibilityLabel: Text("Close"),
+            semanticFocusID: BoardFocusID.inspectorClose,
+            onOutcome: onOutcome,
+            label: {
+                Text("Close")
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            }
+        )
+        .buttonStyle(.borderedProminent)
+        .tint(ArkhamTheme.accent)
+        .focused(focusBinding, equals: BoardFocusID.inspectorClose)
     }
 
     private var title: String {

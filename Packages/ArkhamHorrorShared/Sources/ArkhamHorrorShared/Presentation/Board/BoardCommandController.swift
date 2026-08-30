@@ -94,7 +94,12 @@ final class BoardCommandController {
             coordinator.move(direction)
             return true
         case .primaryAction, .inspect:
-            return openInspector()
+            // While the inspector is already presented, its only interactive content is
+            // the Close control itself (see `BoardInspectorView`): treat activating it
+            // (a tap, Enter, or controller A-button primaryAction) as closing, exactly
+            // like `.secondaryAction`, rather than re-attempting `openInspector()` (which
+            // would otherwise just no-op against its own already-presented guard).
+            return coordinator.isModalPresented ? closeInspector() : openInspector()
         case .secondaryAction:
             return closeInspector()
         case let .cycleZone(direction):
@@ -116,9 +121,16 @@ final class BoardCommandController {
         }
     }
 
-    /// Presents the inspector for whatever is currently focused, reusing that same node
-    /// as the modal's own focus entry (see ``FocusCoordinator/presentModal(entry:)``) so
-    /// dismissal trivially restores focus to the entity that was already focused.
+    /// Presents the inspector for whatever is currently focused, recording it in
+    /// ``inspectedID`` for content resolution and transitioning
+    /// ``FocusCoordinator/currentFocus`` to the inspector's own permanent
+    /// ``BoardFocusID/inspectorClose`` node (see ``FocusCoordinator/presentModal(entry:)``)
+    /// — never reusing the same node that was already focused, which would otherwise
+    /// leave `currentFocus` unchanged and silently fail to notify a bound `@FocusState`
+    /// via SwiftUI's `.onChange`, stranding platform focus on the now-`disabled`/
+    /// `accessibilityHidden` board underneath the modal. Dismissal (`closeInspector()`)
+    /// still restores focus to exactly this entity afterward, since `presentModal(entry:)`
+    /// itself remembers the pre-modal focus as the return target.
     ///
     /// A no-op (reported unconsumed) when an inspector is already presented: without this
     /// guard, a repeated `.inspect`/`.primaryAction` would stack a second modal via
@@ -130,7 +142,7 @@ final class BoardCommandController {
             return false
         }
         inspectedID = focused
-        coordinator.presentModal(entry: focused)
+        coordinator.presentModal(entry: BoardFocusID.inspectorClose)
         return true
     }
 
