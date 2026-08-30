@@ -179,8 +179,10 @@ final class BoardCommandController {
             return coordinator.isModalPresented ? closeInspector() : openInspector()
         case .secondaryAction:
             return coordinator.isModalPresented ? closeInspector() : leavePrompt()
-        case .jumpToActivePrompt, .togglePromptSurface:
+        case .jumpToActivePrompt:
             return jumpToActivePrompt()
+        case .togglePromptSurface:
+            return focusedZone == BoardFocusZone.prompt ? leavePrompt() : jumpToActivePrompt()
         default:
             return false
         }

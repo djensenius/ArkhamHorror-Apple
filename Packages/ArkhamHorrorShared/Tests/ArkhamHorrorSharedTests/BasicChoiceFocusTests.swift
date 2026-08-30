@@ -67,4 +67,16 @@ struct BasicChoiceFocusTests {
         controller.applyPrompt(nil)
         #expect(controller.coordinator.currentFocus == BoardFocusID.scenarioHeader)
     }
+
+    @Test("Toggle prompt surface enters and leaves the actionable prompt")
+    func togglePromptSurface() throws {
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let controller = try BoardCommandController(
+            projection: projection, prompt: actionablePrompt()
+        )
+        #expect(controller.handle(.command(.togglePromptSurface)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
+        #expect(controller.handle(.command(.togglePromptSurface)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.scenarioHeader)
+    }
 }

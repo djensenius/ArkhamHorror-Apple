@@ -231,11 +231,13 @@ enum BasicChoiceParser {
     }
 
     private static func isCanonicalInteger(_ value: JSONValue?) -> Bool {
-        guard case let .number(number)? = value, let token = number.rawToken else { return false }
-        let magnitude = token.first == "-" ? token.dropFirst() : Substring(token)
-        return !magnitude.isEmpty
-            && magnitude.allSatisfy(\.isASCIIWholeNumber)
-            && (magnitude == "0" || magnitude.first != "0")
+        guard case let .number(number)? = value,
+              number.sign == .plus,
+              let token = number.rawToken
+        else { return false }
+        return !token.isEmpty
+            && token.allSatisfy(\.isASCIIWholeNumber)
+            && (token == "0" || token.first != "0")
             && Int64(token) != nil
     }
 }

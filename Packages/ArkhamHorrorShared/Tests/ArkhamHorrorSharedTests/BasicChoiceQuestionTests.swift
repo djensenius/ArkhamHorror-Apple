@@ -71,6 +71,8 @@ struct BasicChoiceQuestionTests {
             #"{"tag":"ComponentLabel","investigatorId":"c01001","messages":[]}"#,
             #"{"tag":"ComponentLabel","component":{"tag":"InvestigatorComponent","investigatorId":"c01001","tokenType":"ClueToken"},"messages":[]}"#,
             #"{"tag":"AbilityLabel","investigatorId":"c01001","ability":{"source":{},"cardCode":"c01111","index":103,"type":{"tag":"ActionAbility","actions":{"tag":"SingleAction","contents":"Fight"}}},"windows":[],"before":[],"messages":[]}"#,
+            #"{"tag":"AbilityLabel","investigatorId":"c01001","ability":{"source":{},"cardCode":"c01111","index":-1,"type":{"tag":"ActionAbility","actions":{"tag":"SingleAction","contents":"Investigate"}}},"windows":[],"before":[],"messages":[]}"#,
+            #"{"tag":"AbilityLabel","investigatorId":"c01001","ability":{"source":{},"cardCode":"c01111","index":-0,"type":{"tag":"ActionAbility","actions":{"tag":"SingleAction","contents":"Investigate"}}},"windows":[],"before":[],"messages":[]}"#,
             #"{"tag":"FutureChoice","messages":[{"tag":"DoSomething"}]}"#,
         ]
     )
