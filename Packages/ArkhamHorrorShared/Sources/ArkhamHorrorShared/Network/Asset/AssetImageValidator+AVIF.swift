@@ -26,8 +26,20 @@ extension AssetImageValidator {
     /// Not `private`: called from the main format dispatch in
     /// `AssetImageValidator.swift`.
     static func parseAVIFDimensions(_ data: Data) throws -> (width: Int, height: Int) {
-        let boxes = try readBoxes(data, range: data.startIndex ..< data.endIndex, limit: 4096)
+        let boxes = try readAVIFTopLevelBoxes(
+            data,
+            range: data.startIndex ..< data.endIndex,
+            limit: 4096
+        )
         try validateFtypBrand(data, boxes: boxes)
+        // Proven *before* resolving dimensions: ImageIO only ever looks at
+        // the bytes each item's own `iloc` extents reference, so it has no
+        // way to notice (and would not reject) extra bytes an attacker
+        // appends inside an `mdat` box's own declared span, outside every
+        // item's referenced extent. See
+        // ``validateAVIFItemExtentCoverage(_:boxes:)`` for the full
+        // rationale.
+        try validateAVIFItemExtentCoverage(data, boxes: boxes)
         return try avifPrimaryItemDimensions(data)
     }
 
@@ -83,7 +95,7 @@ extension AssetImageValidator {
 
     /// Validates the top-level `ftyp` box's major/compatible brands include
     /// `avif` or `avis`.
-    private static func validateFtypBrand(_ data: Data, boxes: [ISOBox]) throws {
+    private static func validateFtypBrand(_ data: Data, boxes: [AVIFTopLevelBox]) throws {
         guard let ftyp = boxes.first(where: { $0.type == "ftyp" }) else {
             throw AssetError.signatureMismatch
         }
@@ -107,7 +119,9 @@ extension AssetImageValidator {
         }
     }
 
-    private struct ISOBox {
+    /// Not `private`: shared with
+    /// `AssetImageValidator+AVIFItemExtents.swift`'s item-extent coverage proof.
+    struct AVIFTopLevelBox {
         let type: String
         /// The byte range of this box's *payload* (after its header).
         let range: Range<Data.Index>
@@ -119,7 +133,7 @@ extension AssetImageValidator {
     /// Resolves a single box's header length and total size (including
     /// that header) from its 32-bit size field, handling the `size32 == 1`
     /// (64-bit extended size) and `size32 == 0` (extends to end of
-    /// `range`) special cases. Split out of ``readBoxes(_:range:limit:)``
+    /// `range`) special cases. Split out of ``readAVIFTopLevelBoxes(_:range:limit:)``
     /// purely to keep that function's cyclomatic complexity within this
     /// package's limit; carries no state of its own.
     private static func boxHeaderAndSize(
@@ -151,12 +165,15 @@ extension AssetImageValidator {
         return (8, Int(size32))
     }
 
-    private static func readBoxes(
+    /// Not `private`: shared with
+    /// `AssetImageValidator+AVIFItemExtents.swift`'s item-extent coverage proof
+    /// (which also uses it to walk `meta`'s own child box list).
+    static func readAVIFTopLevelBoxes(
         _ data: Data,
         range: Range<Data.Index>,
         limit: Int
-    ) throws -> [ISOBox] {
-        var boxes: [ISOBox] = []
+    ) throws -> [AVIFTopLevelBox] {
+        var boxes: [AVIFTopLevelBox] = []
         var offset = range.lowerBound
         var iterations = 0
         while offset + 8 <= range.upperBound {
@@ -189,7 +206,7 @@ extension AssetImageValidator {
                 throw AssetError.malformedImageData
             }
             let payloadRange = (offset + headerSize) ..< boxEnd
-            boxes.append(ISOBox(type: type, range: payloadRange))
+            boxes.append(AVIFTopLevelBox(type: type, range: payloadRange))
             offset = boxEnd
         }
         // Every byte of `range` must belong to some complete, fully-parsed

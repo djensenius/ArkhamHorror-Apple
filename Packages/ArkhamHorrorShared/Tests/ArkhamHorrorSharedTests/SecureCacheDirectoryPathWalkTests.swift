@@ -162,4 +162,72 @@ struct SecureCacheDirectoryPathWalkTests {
             _ = try SecureCacheDirectory.openOrCreateVerifiedDirectory(at: root)
         }
     }
+
+    /// A review finding flagged that the strict, per-component
+    /// `O_NOFOLLOW` walk would incorrectly *reject* every real-world
+    /// cache directory rooted at Darwin's `/var` compatibility symlink
+    /// (`/var` -> `/private/var`) -- exactly the form every iOS
+    /// container path (`/var/mobile/Containers/.../Library/Caches/...`)
+    /// and every `NSTemporaryDirectory()`/`.cachesDirectory` result on
+    /// both macOS and iOS-family systems actually uses, never the
+    /// `/private/var/...` physical form. This proves the fix: a genuine,
+    /// real (not simulated) path under the OS's own compatibility form is
+    /// accepted and produces a fully usable, verified directory.
+    @Test(
+        """
+        A real cache-style path under the OS's own `/var` compatibility symlink form (as \
+        `NSTemporaryDirectory()` itself always returns on Darwin, never its `/private/var/...` \
+        physical form) is accepted and produces a genuinely usable, fully-verified directory -- \
+        the exact "iOS-family /var path" scenario a review flagged as being incorrectly rejected
+        """
+    )
+    func acceptsRealWorldVarCompatibilitySymlinkPath() throws {
+        let temporaryDirectory = NSTemporaryDirectory()
+        // `NSTemporaryDirectory()` is documented to always return a path
+        // rooted at exactly this compatibility form on every real Darwin
+        // system (macOS and iOS-family alike); if some future OS ever
+        // changed this, this precondition failing loudly is far better
+        // than this test silently exercising an unintended code path.
+        try #require(temporaryDirectory.hasPrefix("/var/"))
+        let target = URL(fileURLWithPath: temporaryDirectory)
+            .appendingPathComponent(
+                "ArkhamHorrorAssetCachePathWalkTest-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: target) }
+
+        let descriptor = try SecureCacheDirectory.openOrCreateVerifiedDirectory(at: target)
+        defer { close(descriptor) }
+        #expect(descriptor >= 0)
+
+        var info = stat()
+        #expect(fstat(descriptor, &info) == 0)
+        #expect((info.st_mode & S_IFMT) == S_IFDIR)
+    }
+
+    /// A symlink planted at any position *other* than the exact,
+    /// well-known top-level `/tmp`/`/var`/`/etc` compatibility names must
+    /// still be rejected exactly as strictly as before this fix -- the
+    /// fix's narrowness (only ever firing for the first path component,
+    /// only for this fixed three-name set) must not have accidentally
+    /// broadened into "silently follow any symlink component".
+    @Test(
+        "A non-well-known symlink planted at an intermediate path component is still rejected"
+    )
+    func stillRejectsArbitraryIntermediateSymlink() throws {
+        try withScratchDirectory { base in
+            let realDirectory = base.appendingPathComponent("real-target", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: realDirectory, withIntermediateDirectories: true
+            )
+            let symlinkPath = base.appendingPathComponent("not-a-well-known-name")
+            try FileManager.default.createSymbolicLink(
+                at: symlinkPath, withDestinationURL: realDirectory
+            )
+            let target = symlinkPath.appendingPathComponent("cache", isDirectory: true)
+            #expect(throws: AssetError.self) {
+                _ = try SecureCacheDirectory.openOrCreateVerifiedDirectory(at: target)
+            }
+        }
+    }
 }

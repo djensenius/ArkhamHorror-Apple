@@ -33,6 +33,16 @@ extension AssetImageValidator {
         let values: [UInt8]
     }
 
+    /// A single parsed quantization table definition from a `DQT`
+    /// segment. Not `private`: shared with
+    /// `AssetImageValidator+JPEGSegments.swift`'s
+    /// `parseJPEGQuantizationTables`.
+    struct JPEGQuantizationTableDefinition {
+        let destination: Int
+        let precision: Int
+        let values: [Int]
+    }
+
     /// Mutable marker-walk state threaded through
     /// ``validateJPEGStructure(_:expectedWidth:expectedHeight:)``, bundled
     /// into a single struct purely to keep that function's own (and its
@@ -43,6 +53,7 @@ extension AssetImageValidator {
         var sawSOS = false
         var frame: JPEGFrameInfo?
         var huffmanTables: [JPEGHuffmanTableDefinition] = []
+        var quantizationTableDestinations: Set<Int> = []
         var restartInterval = 0
     }
 
@@ -136,7 +147,7 @@ extension AssetImageValidator {
             )
             state.sawSOF = true
         }
-        if marker == 0xC4 || marker == 0xDD {
+        if marker == 0xC4 || marker == 0xDD || marker == 0xDB {
             try handleTableDefinitionMarker(
                 data,
                 marker: marker,
@@ -157,9 +168,10 @@ extension AssetImageValidator {
         return segmentEnd
     }
 
-    /// Handles a `DHT` (Huffman table definitions) or `DRI` (restart
-    /// interval) marker reached by the main marker walk, merging both
-    /// already-parsed results into `state`. Factored out of
+    /// Handles a `DHT` (Huffman table definitions), `DQT` (quantization
+    /// table definitions), or `DRI` (restart interval) marker reached by
+    /// the main marker walk, merging every already-parsed result into
+    /// `state`. Factored out of
     /// ``validateJPEGStructure(_:expectedWidth:expectedHeight:)`` purely
     /// to keep that function's own body length within this package's
     /// convention.
@@ -177,6 +189,15 @@ extension AssetImageValidator {
                 segmentEnd: segmentEnd
             )
             state.huffmanTables.append(contentsOf: tables)
+        } else if marker == 0xDB {
+            let tables = try parseJPEGQuantizationTables(
+                data,
+                markerOffset: markerOffset,
+                segmentEnd: segmentEnd
+            )
+            for table in tables {
+                state.quantizationTableDestinations.insert(table.destination)
+            }
         } else {
             state.restartInterval = try parseJPEGRestartInterval(
                 data,
@@ -268,6 +289,19 @@ extension AssetImageValidator {
         state: JPEGParserState
     ) throws -> Int {
         guard let frame = state.frame else { throw AssetError.malformedImageData }
+        // Every frame component's own quantization-table selector
+        // (parsed and range-checked when the `SOF` header itself was
+        // read) must actually resolve to a table a `DQT` segment
+        // defined somewhere before this scan begins -- a selector with
+        // no corresponding definition can never be legitimately produced
+        // by a real encoder and would otherwise silently dequantize
+        // using whatever undefined/zeroed table state ImageIO's own
+        // decoder happens to substitute.
+        for component in frame.components {
+            guard state.quantizationTableDestinations.contains(component.quantTableSelector) else {
+                throw AssetError.malformedImageData
+            }
+        }
         let scanComponents = try parseJPEGScanHeader(
             data,
             markerOffset: markerOffset,

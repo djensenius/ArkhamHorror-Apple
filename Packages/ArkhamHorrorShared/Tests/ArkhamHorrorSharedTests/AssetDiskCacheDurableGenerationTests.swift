@@ -22,11 +22,17 @@ extension AssetDiskCacheTests {
     /// fresh (`acceptedGeneration == 0`, empty `appliedToken`) for every
     /// freshly-constructed ``AssetDiskCache`` instance and so never
     /// rejects a lone call in these tests on that basis alone.
-    func token(issuance: Int, diskBaselineGeneration: Int) -> AssetCacheService.CacheToken {
+    func token(
+        issuance: Int,
+        diskBaselineGeneration: Int,
+        diskBaselineClearEpoch: Int = 0,
+        generation: Int = 0
+    ) -> AssetCacheService.CacheToken {
         AssetCacheService.CacheToken(
-            generation: 0,
+            generation: generation,
             issuance: issuance,
-            diskBaselineGeneration: diskBaselineGeneration
+            diskBaselineGeneration: diskBaselineGeneration,
+            diskBaselineClearEpoch: diskBaselineClearEpoch
         )
     }
 

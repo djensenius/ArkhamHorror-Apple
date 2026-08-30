@@ -28,15 +28,16 @@ struct AssetImageValidatorPNGZlibTests {
     func realPNGInflatesExactly() throws {
         let png = AssetImageFixtureBuilder.validPNG(width: 6, height: 9)
         let colorInfo = try AssetImageValidator.parsePNGColorInfo(png)
-        let expected = try AssetImageValidator.expectedPNGScanlineByteCount(
+        let rowByteCount = try AssetImageValidator.pngRowByteCount(
             width: 6,
-            height: 9,
             colorInfo: colorInfo
         )
+        let rowCount = 9
         let idatPayload = try AssetImageValidator.validatePNGStructure(png)
         try AssetImageValidator.validateExactPNGInflation(
             idatPayload: idatPayload,
-            expectedByteCount: expected
+            rowByteCount: rowByteCount,
+            rowCount: rowCount
         )
     }
 
@@ -101,18 +102,19 @@ struct AssetImageValidatorPNGZlibTests {
     func trailingGarbageAfterValidZlibStreamRejected() throws {
         let png = AssetImageFixtureBuilder.validPNG(width: 4, height: 4)
         let colorInfo = try AssetImageValidator.parsePNGColorInfo(png)
-        let expected = try AssetImageValidator.expectedPNGScanlineByteCount(
+        let rowByteCount = try AssetImageValidator.pngRowByteCount(
             width: 4,
-            height: 4,
             colorInfo: colorInfo
         )
+        let rowCount = 4
         var idatPayload = try AssetImageValidator.validatePNGStructure(png)
         idatPayload.append(0x00)
 
         #expect(throws: AssetError.self) {
             try AssetImageValidator.validateExactPNGInflation(
                 idatPayload: idatPayload,
-                expectedByteCount: expected
+                rowByteCount: rowByteCount,
+                rowCount: rowCount
             )
         }
     }
@@ -126,11 +128,11 @@ struct AssetImageValidatorPNGZlibTests {
     func shortDecompressedOutputRejected() throws {
         let png = AssetImageFixtureBuilder.validPNG(width: 6, height: 9)
         let colorInfo = try AssetImageValidator.parsePNGColorInfo(png)
-        let expected = try AssetImageValidator.expectedPNGScanlineByteCount(
+        let rowByteCount = try AssetImageValidator.pngRowByteCount(
             width: 6,
-            height: 9,
             colorInfo: colorInfo
         )
+        let rowCount = 9
         let idatPayload = try AssetImageValidator.validatePNGStructure(png)
 
         #expect(throws: AssetError.self) {
@@ -142,7 +144,8 @@ struct AssetImageValidatorPNGZlibTests {
             // (falsely) expected.
             try AssetImageValidator.validateExactPNGInflation(
                 idatPayload: idatPayload,
-                expectedByteCount: expected + 1
+                rowByteCount: rowByteCount,
+                rowCount: rowCount + 1
             )
         }
     }
@@ -151,17 +154,18 @@ struct AssetImageValidatorPNGZlibTests {
     func longDecompressedOutputRejected() throws {
         let png = AssetImageFixtureBuilder.validPNG(width: 6, height: 9)
         let colorInfo = try AssetImageValidator.parsePNGColorInfo(png)
-        let expected = try AssetImageValidator.expectedPNGScanlineByteCount(
+        let rowByteCount = try AssetImageValidator.pngRowByteCount(
             width: 6,
-            height: 9,
             colorInfo: colorInfo
         )
+        let rowCount = 9
         let idatPayload = try AssetImageValidator.validatePNGStructure(png)
 
         #expect(throws: AssetError.self) {
             try AssetImageValidator.validateExactPNGInflation(
                 idatPayload: idatPayload,
-                expectedByteCount: expected - 1
+                rowByteCount: rowByteCount,
+                rowCount: rowCount - 1
             )
         }
     }
@@ -170,11 +174,11 @@ struct AssetImageValidatorPNGZlibTests {
     func corruptedZlibHeaderRejected() throws {
         let png = AssetImageFixtureBuilder.validPNG(width: 4, height: 4)
         let colorInfo = try AssetImageValidator.parsePNGColorInfo(png)
-        let expected = try AssetImageValidator.expectedPNGScanlineByteCount(
+        let rowByteCount = try AssetImageValidator.pngRowByteCount(
             width: 4,
-            height: 4,
             colorInfo: colorInfo
         )
+        let rowCount = 4
         var idatPayload = try [UInt8](AssetImageValidator.validatePNGStructure(png))
         // Corrupt the CM nibble (must be 8 for DEFLATE) without touching
         // the header-checksum bits, so this specifically exercises the
@@ -184,7 +188,8 @@ struct AssetImageValidatorPNGZlibTests {
         #expect(throws: AssetError.self) {
             try AssetImageValidator.validateExactPNGInflation(
                 idatPayload: Data(idatPayload),
-                expectedByteCount: expected
+                rowByteCount: rowByteCount,
+                rowCount: rowCount
             )
         }
     }
@@ -198,18 +203,19 @@ struct AssetImageValidatorPNGZlibTests {
     func corruptedAdler32TrailerRejected() throws {
         let png = AssetImageFixtureBuilder.validPNG(width: 4, height: 4)
         let colorInfo = try AssetImageValidator.parsePNGColorInfo(png)
-        let expected = try AssetImageValidator.expectedPNGScanlineByteCount(
+        let rowByteCount = try AssetImageValidator.pngRowByteCount(
             width: 4,
-            height: 4,
             colorInfo: colorInfo
         )
+        let rowCount = 4
         var idatPayload = try [UInt8](AssetImageValidator.validatePNGStructure(png))
         idatPayload[idatPayload.count - 1] ^= 0xFF
 
         #expect(throws: AssetError.self) {
             try AssetImageValidator.validateExactPNGInflation(
                 idatPayload: Data(idatPayload),
-                expectedByteCount: expected
+                rowByteCount: rowByteCount,
+                rowCount: rowCount
             )
         }
     }

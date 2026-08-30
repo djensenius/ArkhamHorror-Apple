@@ -115,9 +115,13 @@ extension AssetDiskCache {
     /// The durable half of the write compare-and-swap: `true` only if
     /// `token.diskBaselineGeneration` still matches `key`'s current
     /// durable on-disk write-generation, read fresh inside this already-
-    /// held lock. A mismatch means some other write — in this process or
-    /// a different one — has already been durably committed for this key
-    /// since `token` captured its baseline, so the caller must treat this
+    /// held lock, **and** `token.diskBaselineClearEpoch` still matches
+    /// this whole cache's current durable clear epoch (see
+    /// ``currentClearEpochLocked()``'s doc comment for why the per-key
+    /// check alone is not sufficient). A mismatch of either means some
+    /// other write — in this process or a different one — has already
+    /// been durably committed (or this whole cache durably cleared) since
+    /// `token` captured its baseline, so the caller must treat this
     /// exactly like an ``acceptToken(_:for:)`` rejection: a silent no-op,
     /// never a thrown error (a lost race is an ordinary, expected
     /// outcome, not a malfunction).
@@ -126,6 +130,7 @@ extension AssetDiskCache {
         for key: AssetCacheKey
     ) -> Bool {
         token.diskBaselineGeneration == currentWriteGenerationLocked(for: key)
+            && token.diskBaselineClearEpoch == currentClearEpochLocked()
     }
 
     /// `currentWriteGenerationLocked(for:) + 1`, computed safely: every
@@ -150,6 +155,126 @@ extension AssetDiskCache {
         guard current != Int.max else {
             throw AssetError.cachePersistenceFailed(
                 "key's durable write-generation could not be confirmed"
+            )
+        }
+        return current + 1
+    }
+
+    /// The single, fixed-name, whole-cache durable *clear epoch* marker's
+    /// filename. Present with content `"0"` only after this cache's very
+    /// first successful ``AssetDiskCache/Removal/removeAll()``; absent
+    /// beforehand (in which case ``currentClearEpochLocked()`` reports
+    /// epoch `0`, exactly as if the marker existed with that content —
+    /// a cache that has never been cleared is indistinguishable, for
+    /// this purpose, from one cleared at epoch `0`).
+    static let clearEpochMarkerName = ".clear-epoch"
+
+    /// The maximum size ever expected for the clear-epoch marker's
+    /// content — a small, fixed-width decimal integer, never unbounded
+    /// input. Bounds the read the same way every other on-disk read in
+    /// this cache is bounded.
+    static let maxClearEpochBytes = 32
+
+    /// Reads this whole cache's current durable clear epoch — bumped by
+    /// every successful ``AssetDiskCache/Removal/removeAll()`` call, in
+    /// *any* process/instance sharing this cache directory. See
+    /// ``AssetCacheService/CacheToken/diskBaselineClearEpoch``'s doc
+    /// comment for the ABA race this closes that a per-key durable
+    /// generation alone cannot: `removeAll()` durably invalidates every
+    /// key at once, including ones with nothing on disk to physically
+    /// remove (and therefore no per-key tombstone fence recording the
+    /// clear), so a stale write whose captured per-key baseline happens
+    /// to still read back as "unchanged" after an intervening
+    /// create-then-clear cycle must still be rejected by this separate,
+    /// whole-cache check.
+    ///
+    /// Returns the fail-closed sentinel `Int.max` if the marker is
+    /// present but its content could not be read/parsed (the exact same
+    /// shape as ``tombstoneFenceLocked(keyHash:)``'s own fail-closed
+    /// read): a corrupt clear-epoch marker must never be silently
+    /// treated as epoch `0`, which would let a write issued *before* an
+    /// otherwise-successful clear masquerade as one issued after it.
+    /// Once corrupt, this consistently returns the same sentinel on every
+    /// subsequent read (until the marker is repaired or a fresh
+    /// ``AssetDiskCache/Removal/removeAll()`` rewrites it), so an
+    /// operation's own captured baseline and every later accept-time
+    /// check observe the identical value — a pre-corruption baseline can
+    /// never match it, while a post-corruption operation's own freshly
+    /// captured baseline (also the sentinel) still can, keeping this
+    /// cache usable rather than wedging every future write shut forever.
+    func currentClearEpochLocked() -> Int {
+        let data: Data?
+        do {
+            data = try secureDirectory.read(
+                name: Self.clearEpochMarkerName,
+                maxBytes: Self.maxClearEpochBytes
+            )
+        } catch {
+            // A genuine read failure (not "marker absent" -- `read(name:maxBytes:)`
+            // itself already returns `nil`, not a thrown error, for that
+            // case) must never be treated as epoch `0`: fail closed
+            // exactly like ``tombstoneFenceLocked(keyHash:)``'s own
+            // existence-check failure.
+            return .max
+        }
+        guard let data else { return 0 }
+        guard
+            let text = String(data: data, encoding: .utf8),
+            let value = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+            value >= 0
+        else {
+            return .max
+        }
+        return value
+    }
+
+    /// Same read as ``currentClearEpochLocked()``, but acquires this
+    /// cache's own exclusive lock itself — the function
+    /// ``AssetCacheService/withDiskBaseline(_:for:)`` calls to capture a
+    /// fresh operation's clear-epoch baseline alongside its per-key
+    /// durable-generation baseline.
+    func currentClearEpoch() async -> Int {
+        guard let lockFD = try? await secureDirectory.acquireExclusiveLock() else {
+            // Same fail-safe reasoning as ``currentWriteGeneration(for:)``:
+            // a baseline this operation could not even read is safest
+            // treated as "unknown, definitely not stale" (0) rather than
+            // blocking the caller entirely -- ``acceptDurableGeneration(_:for:)``
+            // still independently protects the eventual write itself,
+            // since it performs its own fresh read under a lock it *does*
+            // successfully hold.
+            return 0
+        }
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        recoverOrphansIfNeeded()
+        return currentClearEpochLocked()
+    }
+
+    /// Durably persists `epoch` as this whole cache's current clear
+    /// epoch — written/fsynced/renamed/fsynced exactly like any other
+    /// entry write this cache performs, so it survives a crash
+    /// immediately after this call returns exactly as reliably as a
+    /// payload generation does. Must be called from *inside* an
+    /// already-held ``SecureCacheDirectory/withExclusiveLock(_:)``
+    /// critical section, exactly like ``persistTombstoneLocked(keyHash:fenceGeneration:)``.
+    func persistClearEpochLocked(_ epoch: Int) throws {
+        let tempName = Self.clearEpochMarkerName + ".tmp"
+        let content = Data(String(epoch).utf8)
+        try secureDirectory.writeTempAndFsync(tempName: tempName, data: content)
+        try secureDirectory.renameAndFsyncDirectory(from: tempName, to: Self.clearEpochMarkerName)
+    }
+
+    /// `currentClearEpochLocked() + 1`, computed safely — the overflow/
+    /// corruption guard mirrors ``nextWriteGenerationLocked(for:)``
+    /// exactly: a corrupt marker reads back as the fail-closed sentinel
+    /// `Int.max`, and blindly adding `1` to that would either be
+    /// undefined-in-intent or, in an unchecked build, a genuine `Int`
+    /// overflow trap that would crash the process instead of merely
+    /// failing this one ``AssetDiskCache/Removal/removeAll()`` call.
+    func nextClearEpochLocked() throws -> Int {
+        let current = currentClearEpochLocked()
+        guard current != Int.max else {
+            throw AssetError.cachePersistenceFailed(
+                "cache's durable clear epoch could not be confirmed"
             )
         }
         return current + 1

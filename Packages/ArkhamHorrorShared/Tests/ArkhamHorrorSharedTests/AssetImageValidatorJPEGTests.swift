@@ -101,6 +101,14 @@ extension AssetImageValidatorTests {
     )
     func jpegSOFSegmentExactMinimumLengthAccepted() throws {
         var bytes: [UInt8] = [0xFF, 0xD8] // SOI
+        // A minimal, genuinely valid quantization table (destination 0,
+        // 8-bit precision, all-1 coefficients -- legal since every
+        // coefficient must be nonzero, and the exact dequantized value
+        // does not matter for this structural/entropy-coverage test):
+        // needed so the component descriptor's own quant-table selector
+        // below resolves to an actually-defined table.
+        bytes += [0xFF, 0xDB, 0x00, 0x43, 0x00]
+        bytes += [UInt8](repeating: 0x01, count: 64)
         bytes += [0xFF, 0xC0] // SOF0 marker
         // A declared segment length of 11: length field (2) + precision
         // (1) + height (2) + width (2) + component count (1) + exactly

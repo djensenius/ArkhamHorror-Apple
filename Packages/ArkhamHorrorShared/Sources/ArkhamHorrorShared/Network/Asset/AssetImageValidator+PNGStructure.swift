@@ -23,7 +23,7 @@ extension AssetImageValidator {
     /// order, excluding each chunk's length/type/CRC framing) -- the
     /// single RFC 1950 zlib datastream the PNG specification requires
     /// their concatenation to form, which
-    /// ``validateExactPNGInflation(idatPayload:expectedByteCount:)`` then
+    /// ``validateExactPNGInflation(idatPayload:rowByteCount:rowCount:)`` then
     /// decompresses and checks for an exact byte-count match.
     @discardableResult
     static func validatePNGStructure(_ data: Data) throws -> Data {
@@ -58,6 +58,14 @@ extension AssetImageValidator {
                 // somewhere before other, ignored trailing data.
                 guard chunk.chunkEnd == data.endIndex else { throw AssetError.malformedImageData }
                 guard sawIDAT else { throw AssetError.malformedImageData }
+                // The PNG specification mandates a zero-byte `IEND`
+                // payload. A structurally-invalid file that gives `IEND`
+                // a nonempty payload (while still keeping its CRC
+                // internally consistent with that payload) can still
+                // report a CRC match and reach EOF here, yet ImageIO may
+                // still lazily decode *something* from the surrounding
+                // stream — never treat that leniency as validation.
+                guard chunk.dataRange.isEmpty else { throw AssetError.malformedImageData }
                 return idatPayload
             }
             offset = chunk.chunkEnd

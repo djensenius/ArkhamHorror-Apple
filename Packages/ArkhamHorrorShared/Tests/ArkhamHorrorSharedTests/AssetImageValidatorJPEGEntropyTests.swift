@@ -255,6 +255,8 @@ struct AssetImageValidatorJPEGEntropyTests {
     @Test("A correctly-placed restart marker between two MCUs is accepted")
     func correctRestartMarkerAccepted() throws {
         var bytes: [UInt8] = [0xFF, 0xD8] // SOI
+        bytes += [0xFF, 0xDB, 0x00, 0x43, 0x00]
+        bytes += [UInt8](repeating: 0x01, count: 64)
         bytes += [0xFF, 0xC0] // SOF0
         bytes += [0x00, 0x0B]
         bytes += [0x08]

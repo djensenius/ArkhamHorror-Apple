@@ -219,7 +219,21 @@ struct SecureCacheDirectoryLockingTests {
 
             let namesAfterClear = try FileManager.default
                 .contentsOfDirectory(atPath: directory.path)
-            #expect(namesAfterClear == [SecureCacheDirectory.lockFileName])
+            // Only the reserved lock file and the durable whole-cache
+            // clear-epoch marker (`AssetDiskCache+Generation.swift`) are
+            // expected to survive a `removeAll()` -- every actual cache
+            // entry must be gone, but the clear-epoch marker's entire
+            // purpose is to durably persist *across* this exact call
+            // (see ``AssetCacheService/CacheToken/diskBaselineClearEpoch``'s
+            // doc comment), so its continued presence here is the
+            // correct, intended outcome rather than a leftover the sweep
+            // missed.
+            #expect(
+                Set(namesAfterClear) == [
+                    SecureCacheDirectory.lockFileName,
+                    AssetDiskCache.clearEpochMarkerName,
+                ]
+            )
 
             // The lock must still be fully usable (same underlying inode
             // continuously locked/unlocked, never resurrected as a fresh,

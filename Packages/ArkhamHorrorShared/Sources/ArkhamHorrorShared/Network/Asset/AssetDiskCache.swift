@@ -62,6 +62,20 @@ actor AssetDiskCache {
     var appliedToken: [AssetCacheKey: AssetCacheService.CacheToken] = [:]
     var acceptedGeneration = 0
 
+    /// This process's own last-resort fallback for
+    /// ``areDiskReadsDisabled()`` when even the durable, on-disk
+    /// disabled-reads marker could not be confirmed written -- see
+    /// ``markDiskReadsDisabledLocked()``'s doc comment for the full
+    /// "propagate typed failure AND permanently fail-close disk reads
+    /// in-process" contract this exists to uphold whenever durability
+    /// itself is genuinely impossible (e.g. a persistently full or
+    /// read-only disk). Cleared only by a fully successful
+    /// ``AssetDiskCache/Removal/removeAll()``, mirroring the on-disk
+    /// marker's own clear semantics -- never by any other path, since
+    /// nothing short of a full, confirmed clear may relax this
+    /// protection once it has been forced.
+    var diskReadsForceDisabledInProcess = false
+
     /// Test-only hook invoked by ``get(_:)`` immediately before it returns
     /// a successfully-validated hit — see that call site's doc comment.
     /// Always `nil` in production; a test installs a closure here to pause

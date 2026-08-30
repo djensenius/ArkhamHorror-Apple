@@ -41,7 +41,7 @@ extension SecureCacheDirectory {
     /// itself already fully verifies.
     static func openOrCreateVerifiedDirectory(at directory: URL) throws -> Int32 {
         let standardized = directory.standardizedFileURL
-        let components = standardized.pathComponents.filter { $0 != "/" }
+        var components = standardized.pathComponents.filter { $0 != "/" }
         // A `directory` that standardizes to the filesystem root itself
         // (`/`) has zero path components, so the walk below would never
         // execute and would hand back an open descriptor to `/` as though
@@ -54,6 +54,42 @@ extension SecureCacheDirectory {
             throw AssetError.cachePersistenceFailed(
                 "Refusing to use the filesystem root as a cache directory"
             )
+        }
+        // Well-known, immutable Darwin compatibility symlinks at the
+        // very top level of the filesystem (`/tmp`, `/var`, `/etc`, each
+        // a fixed symlink to `/private/<name>`) are transparently
+        // rewritten to their real target *before* the strict walk below
+        // ever runs, rather than being rejected by it: `openat` with
+        // `O_NOFOLLOW` fails with `ELOOP` on any symlink, and nearly
+        // every real-world cache directory this initializer is ever
+        // asked to open — iOS container paths under
+        // `/var/mobile/Containers/...`, and macOS/iOS sandboxed apps'
+        // own `NSTemporaryDirectory()`/`.cachesDirectory` results under
+        // `/var/folders/...` — is expressed through exactly this
+        // compatibility form, never the `/private/...` physical form.
+        // Rejecting them outright would make this cache unusable on
+        // essentially every real device.
+        //
+        // This rewrite only ever fires for the *first* path component,
+        // and only for this exact, fixed three-name set: it never
+        // applies anywhere else in the path. Critically, it is purely
+        // advisory — it only decides *which literal path string* the
+        // walk below attempts — and is not itself relied on for any
+        // security property: the strict, unchanged per-component walk
+        // (`O_NOFOLLOW`, ownership, device checks, all via
+        // ``openVerifiedComponent(parentFD:name:createIfMissing:expectedDevice:trustedOwnerUID:)``)
+        // still fully, independently re-verifies `private`, then
+        // `tmp`/`var`/`etc`, exactly as it would any other component.
+        // A `TOCTOU` race that somehow altered `/tmp`/`/var`/`/etc`
+        // between this check and the walk below changes at most
+        // *which* literal path gets attempted; it can never cause the
+        // walk itself to trust an unverified symlink, since every
+        // resulting component is still opened with `O_NOFOLLOW` and
+        // checked for device/ownership by that same unmodified walk.
+        if let first = components.first, ["tmp", "var", "etc"].contains(first) {
+            if let resolved = resolvedWellKnownTopLevelCompatibilitySymlink(name: first) {
+                components.replaceSubrange(0 ... 0, with: resolved)
+            }
         }
         var currentFD = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard currentFD >= 0 else {
@@ -188,5 +224,39 @@ extension SecureCacheDirectory {
             }
         }
         return descriptor
+    }
+
+    /// If `/name` (`name` one of `"tmp"`, `"var"`, `"etc"`) is currently a
+    /// symbolic link whose target is exactly `private/name` — the fixed
+    /// Darwin compatibility form for these three well-known top-level
+    /// symlinks — returns the replacement path components
+    /// (`["private", name]`) that should be walked instead. Returns
+    /// `nil` for anything else at all: `/name` not existing, not being a
+    /// symlink, or being a symlink to any other target (an attacker- or
+    /// misconfiguration-planted symlink at this exact position must
+    /// never be silently substituted for anything, so this check is
+    /// deliberately narrow and exact rather than "resolve whatever this
+    /// happens to point to").
+    ///
+    /// Uses a plain, unverified `lstat`/`readlink` pair rather than the
+    /// descriptor-relative, verified primitives used elsewhere in this
+    /// file: this result is never trusted on its own (see
+    /// ``openOrCreateVerifiedDirectory(at:)``'s doc comment for why a
+    /// race here is harmless — the actual walk independently re-verifies
+    /// every resulting component with `O_NOFOLLOW`/ownership/device
+    /// checks regardless of what this function returns).
+    private static func resolvedWellKnownTopLevelCompatibilitySymlink(
+        name: String
+    ) -> [String]? {
+        var linkInfo = stat()
+        guard lstat("/\(name)", &linkInfo) == 0 else { return nil }
+        guard (linkInfo.st_mode & S_IFMT) == S_IFLNK else { return nil }
+        var buffer = [Int8](repeating: 0, count: Int(PATH_MAX) + 1)
+        let length = readlink("/\(name)", &buffer, buffer.count - 1)
+        guard length > 0 else { return nil }
+        buffer[length] = 0
+        let target = buffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
+        guard target == "private/\(name)" else { return nil }
+        return ["private", name]
     }
 }

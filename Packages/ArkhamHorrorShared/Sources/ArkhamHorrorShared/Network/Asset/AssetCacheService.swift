@@ -214,14 +214,27 @@ actor AssetCacheService {
                     // display) content the cache layer itself no longer
                     // considers authoritative. `memoryCache.set`
                     // independently re-checks the same token itself (see
-                    // its doc comment), so that call is deliberately
-                    // defense-in-depth, not this check's only enforcement
-                    // point — this outer check is what protects the
-                    // *return value*, which `memoryCache.set`'s own
-                    // internal check cannot do.
+                    // its doc comment) and reports whether it actually
+                    // applied — that alone is still not sufficient here:
+                    // its `Bool` result only tells us the write itself
+                    // landed (or lost the race) *inside* the memory
+                    // actor, not whether a newer operation concluded on
+                    // *this* actor during that same suspension. Both
+                    // must hold immediately before returning: a
+                    // strictly newer operation (or `evictAll()`) could
+                    // have concluded for this exact key in the window
+                    // the `await memoryCache.set(...)` call itself
+                    // opens, even when the write it performed was
+                    // accepted by the memory actor's own token check.
                     if isAuthoritative(token, for: cacheKey) {
-                        await memoryCache.set(cacheKey, asset: revalidated, token: token)
-                        return revalidated
+                        let applied = await memoryCache.set(
+                            cacheKey,
+                            asset: revalidated,
+                            token: token
+                        )
+                        if applied, isAuthoritative(token, for: cacheKey) {
+                            return revalidated
+                        }
                     }
                     // Falls through to a fresh network fetch below exactly
                     // like a genuine cache miss: this exact disk-hit read
@@ -325,56 +338,6 @@ actor AssetCacheService {
             try await diskCache.touch(cacheKey, metadata: asset.metadata, token: token)
         }
         guard isAuthoritative(token, for: cacheKey) else { return .stale }
-        return .applied
-    }
-
-    /// Removes `cacheKey` from both cache layers, tombstoning it if the
-    /// disk deletion could not be confirmed to fully succeed (see
-    /// ``tombstonedKeys``). Centralizes every disk-invalidating call site
-    /// (a definitive 404, a failed re-validation quarantine) so none of
-    /// them can accidentally swallow a deletion failure the way a bare
-    /// `try?`/best-effort `remove` used to.
-    ///
-    /// `token` is optional: a re-validation quarantine
-    /// (``revalidateDiskHit(_:key:cacheKey:candidates:token:)``'s own
-    /// `catch`) still passes its caller's token so this stays gated like
-    /// every other mutation, but this is also called with no token at all
-    /// from contexts that are not part of any issuance race (there is no
-    /// prior in-flight operation whose authority could be superseded).
-    /// Returns ``MutationOutcome/stale`` under the same conditions
-    /// ``publish(_:asset:token:)`` does (only ever possible when `token`
-    /// is non-`nil`: a `nil` token has no authority to lose).
-    @discardableResult
-    func invalidate(_ cacheKey: AssetCacheKey, token: CacheToken? = nil) async -> MutationOutcome {
-        if let token, !isAuthoritative(token, for: cacheKey) {
-            return .stale
-        }
-        // Recorded *before* the memory removal itself (the actual
-        // suspension below), so a concurrent reader that snapshotted
-        // ``keyClearGeneration`` before this call started will correctly
-        // observe a change even if it resumes while this call is still
-        // suspended partway through — see ``snapshotClearState(for:)``'s
-        // doc comment for why this is deliberately a distinct counter
-        // from ``keyLatestToken``.
-        noteAuthorityKeyTouched(cacheKey)
-        keyClearGeneration[cacheKey, default: 0] += 1
-        await memoryCache.remove(cacheKey, token: token)
-        if let token, !isAuthoritative(token, for: cacheKey) {
-            return .stale
-        }
-        do {
-            try await diskCache.remove(cacheKey, token: token)
-            lastDiskPersistenceFailure = nil
-        } catch let error as AssetError {
-            tombstonedKeys.insert(cacheKey)
-            lastDiskPersistenceFailure = error
-        } catch {
-            tombstonedKeys.insert(cacheKey)
-            lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
-        }
-        if let token, !isAuthoritative(token, for: cacheKey) {
-            return .stale
-        }
         return .applied
     }
 

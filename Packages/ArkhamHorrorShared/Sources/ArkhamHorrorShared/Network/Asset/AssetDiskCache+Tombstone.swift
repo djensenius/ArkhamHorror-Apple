@@ -112,6 +112,9 @@ extension AssetDiskCache {
     /// any other work, ahead of even the per-key ``isTombstoned(keyHash:)``
     /// check.
     func areDiskReadsDisabled() -> Bool {
+        if diskReadsForceDisabledInProcess {
+            return true
+        }
         do {
             return try secureDirectory.attributes(name: Self.diskReadsDisabledMarkerName) != nil
         } catch {
@@ -160,10 +163,38 @@ extension AssetDiskCache {
     /// all, so the whole-cache fail-closed marker is the only remaining
     /// option), alongside the locked/unlocked pair convention established
     /// by ``persistTombstoneLocked(keyHash:)``/``clearTombstoneLocked(keyHash:)``.
-    func markDiskReadsDisabledLocked() {
+    ///
+    /// Retries a small, strictly bounded number of times (never an
+    /// unbounded/blocking loop — a review finding specifically flagged
+    /// unbounded retry workers as their own hazard): a transient write
+    /// failure (e.g. a momentary `ENOSPC` freed up moments later by a
+    /// concurrent eviction) may genuinely succeed on a second attempt,
+    /// since each attempt is a plain synchronous syscall already
+    /// performed inside this held exclusive lock, not a separate blocking
+    /// wait that could itself accumulate workers. If every attempt still
+    /// fails, this marker's own durability cannot be established at
+    /// all — the last remaining fallback, ``diskReadsForceDisabledInProcess``,
+    /// closes the review's exact "if commit impossible ... permanently
+    /// fail-close disk reads in-process" requirement for the one case
+    /// nothing durable can protect: this *process* still refuses to serve
+    /// anything for the rest of its own lifetime, even though a
+    /// completely fresh process (after an eventual restart, once
+    /// whatever disk condition caused every attempt above to fail has
+    /// cleared) cannot itself inherit that in-memory-only protection.
+    @discardableResult
+    func markDiskReadsDisabledLocked() -> Bool {
         let name = Self.diskReadsDisabledMarkerName
-        _ = try? secureDirectory.writeTempAndFsync(tempName: name + ".tmp", data: Data())
-        _ = try? secureDirectory.renameAndFsyncDirectory(from: name + ".tmp", to: name)
+        let tempName = name + ".tmp"
+        for _ in 0 ..< 3 {
+            guard (try? secureDirectory.writeTempAndFsync(tempName: tempName, data: Data())) != nil
+            else { continue }
+            guard
+                (try? secureDirectory.renameAndFsyncDirectory(from: tempName, to: name)) != nil
+            else { continue }
+            return true
+        }
+        diskReadsForceDisabledInProcess = true
+        return false
     }
 
     /// `true` if this whole cache's disk writes are currently disabled —
@@ -234,6 +265,36 @@ extension AssetDiskCache {
         let content = Data(String(fenceGeneration).utf8)
         try secureDirectory.writeTempAndFsync(tempName: tempName, data: content)
         try secureDirectory.renameAndFsyncDirectory(from: tempName, to: name)
+    }
+
+    /// Durably protects `keyHash` after some other operation could not
+    /// otherwise confirm it was safe to leave unprotected — the single
+    /// entry point ``AssetDiskCache/Removal/remove(_:token:)`` uses for
+    /// both of its own ``persistTombstoneLocked(keyHash:fenceGeneration:)``
+    /// call sites, so this exact "retry, then escalate" fallback sequence
+    /// only needs to be written and reasoned about once.
+    ///
+    /// Retries the tombstone write itself a small, strictly bounded
+    /// number of times before falling back to
+    /// ``markDiskReadsDisabledLocked()`` (which itself retries, then
+    /// falls back to ``diskReadsForceDisabledInProcess`` as an absolute
+    /// last resort) — never an unbounded loop, matching
+    /// ``markDiskReadsDisabledLocked()``'s own bound. This closes the
+    /// review's "double `try?` failure" gap: previously, a single failed
+    /// attempt at *each* of the tombstone write and the disabled-marker
+    /// fallback write left this key with no durable protection at all
+    /// and no in-process fallback either, silently risking a stale
+    /// resurrection of exactly the bytes this call exists to invalidate.
+    /// Must be called from inside an already-held exclusive lock, exactly
+    /// like ``persistTombstoneLocked(keyHash:fenceGeneration:)``.
+    func protectKeyAfterFailedDeletionLocked(keyHash: String, fenceGeneration: Int) {
+        for _ in 0 ..< 3 where (try? persistTombstoneLocked(
+            keyHash: keyHash,
+            fenceGeneration: fenceGeneration
+        )) != nil {
+            return
+        }
+        markDiskReadsDisabledLocked()
     }
 
     /// Best-effort removes `keyHash`'s durable tombstone marker (if any).

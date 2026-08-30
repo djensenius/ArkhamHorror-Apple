@@ -133,4 +133,88 @@ struct AssetDiskCacheTombstoneEscalationTests {
             #expect(try await restarted.get(freshKey)?.payload == freshPayload)
         }
     }
+
+    @Test(
+        """
+        When the metadata-pointer removal, the per-key tombstone write, AND the whole-cache \
+        disabled-reads marker write itself all fail, remove(_:token:) still throws and this \
+        process's own in-process fallback (diskReadsForceDisabledInProcess) refuses every read \
+        for the remainder of its lifetime, even though no durable on-disk marker exists at all -- \
+        the residual gap a completely-broken disk cannot avoid (a genuinely fresh restart, once \
+        the disk condition has cleared, cannot inherit an in-memory-only flag; this is the one \
+        limit no purely-durable mechanism can close, since nothing can be durably written at all)
+        """
+    )
+    func tripleFailureFallsBackToInProcessFlagAndNeverSilentlyLosesProtection() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: limits())
+            let cacheKey = try key("01001")
+            let otherKey = try key("01002")
+            let payload = Data([1, 2, 3, 4, 5])
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: metadata(for: cacheKey, payload: payload)
+            )
+            try await cache.set(
+                otherKey,
+                payload: payload,
+                metadata: metadata(for: otherKey, payload: payload)
+            )
+            #expect(try await cache.get(cacheKey) != nil)
+            #expect(try await cache.get(otherKey) != nil)
+
+            // Fail the metadata-pointer removal, the per-key tombstone
+            // write, AND the whole-cache disabled-reads marker write --
+            // every durable protection layer at once, forcing the last
+            // remaining in-process-only fallback.
+            await cache.directoryAccess.installFaultInjection(
+                failSuffixes: [".tombstone", AssetDiskCache.diskReadsDisabledMarkerName],
+                failRemoveSuffixes: [".meta.json"]
+            )
+
+            await #expect(throws: (any Error).self) {
+                try await cache.remove(cacheKey)
+            }
+
+            // Clear the fault injection before probing further -- what
+            // must now be keeping every key unservable is this process's
+            // own in-memory flag, not any injected fault still active.
+            await cache.directoryAccess.installFaultInjection()
+
+            // No durable marker was ever successfully written (every
+            // attempt was injected to fail), yet this same process still
+            // refuses every read -- proving the in-process fallback,
+            // not a disk marker, is what is providing protection here.
+            let markerExists = try await cache.directoryAccess.attributes(
+                name: AssetDiskCache.diskReadsDisabledMarkerName
+            ) != nil
+            #expect(!markerExists)
+            #expect(try await cache.get(cacheKey) == nil)
+            #expect(try await cache.get(otherKey) == nil)
+
+            // The documented residual limit: a brand-new instance
+            // (standing in for a restart after the disk condition that
+            // caused every write above to fail has since cleared) has no
+            // durable marker to observe and so is not itself protected --
+            // this is the one gap that cannot be closed without
+            // something durable to write at all, and is called out
+            // explicitly rather than silently assumed away.
+            let restarted = try AssetDiskCache(directory: directory, limits: limits())
+            #expect(try await restarted.get(cacheKey) != nil)
+
+            // But a fully successful removeAll() on the *original*
+            // instance still durably clears its own in-process flag,
+            // exactly like the on-disk marker's own clear semantics.
+            try await cache.removeAll()
+            let freshKey = try key("01003")
+            let freshPayload = Data([9, 9, 9])
+            try await cache.set(
+                freshKey,
+                payload: freshPayload,
+                metadata: metadata(for: freshKey, payload: freshPayload)
+            )
+            #expect(try await cache.get(freshKey)?.payload == freshPayload)
+        }
+    }
 }

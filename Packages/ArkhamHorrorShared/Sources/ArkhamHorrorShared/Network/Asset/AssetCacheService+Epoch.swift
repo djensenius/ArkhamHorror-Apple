@@ -82,6 +82,25 @@ extension AssetCacheService {
         let generation: Int
         let issuance: Int
         var diskBaselineGeneration: Int = 0
+        /// The durable, cross-process whole-cache *clear epoch* this
+        /// operation observed at (or shortly after) issuance -- captured
+        /// alongside `diskBaselineGeneration` by ``withDiskBaseline(_:for:)``,
+        /// and compared against the current durable epoch by
+        /// ``AssetDiskCache/acceptDurableGeneration(_:for:)`` immediately
+        /// before every write. `diskBaselineGeneration` alone closes the
+        /// stale-write gap only for a key whose *own* durable generation
+        /// changed; a whole-cache ``AssetDiskCache/removeAll()`` (in this
+        /// or another process) durably bumps a single shared counter
+        /// instead of writing a per-key tombstone for every key it
+        /// touched (including keys with nothing on disk to remove at
+        /// all), so a stale write captured with baseline `0` for a key
+        /// that never existed before some *other* key was created then
+        /// cleared could otherwise land after the clear purely because
+        /// that key's own per-key generation reads back as `0` both
+        /// before and after -- a classic ABA race a per-key counter alone
+        /// cannot detect. See `AssetDiskCache+Generation.swift`'s doc
+        /// comment for the full contract.
+        var diskBaselineClearEpoch: Int = 0
 
         static func == (lhs: CacheToken, rhs: CacheToken) -> Bool {
             lhs.generation == rhs.generation && lhs.issuance == rhs.issuance
@@ -250,8 +269,10 @@ extension AssetCacheService {
     /// by this now-stale one being re-stamped over it.
     func withDiskBaseline(_ token: CacheToken, for key: AssetCacheKey) async -> CacheToken {
         let baseline = await diskCache.currentWriteGeneration(for: key)
+        let clearEpoch = await diskCache.currentClearEpoch()
         var stamped = token
         stamped.diskBaselineGeneration = baseline
+        stamped.diskBaselineClearEpoch = clearEpoch
         if keyLatestToken[key] == token {
             keyLatestToken[key] = stamped
         }

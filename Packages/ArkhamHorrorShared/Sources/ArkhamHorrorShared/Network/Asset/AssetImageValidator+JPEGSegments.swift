@@ -129,6 +129,69 @@ extension AssetImageValidator {
         return Int(interval)
     }
 
+    /// Parses every quantization-table definition within a single `DQT`
+    /// segment (which, like `DHT`, may concatenate more than one
+    /// destination table back to back): each table's own precision
+    /// (`Pq`, 0 for 8-bit or 1 for 16-bit coefficients) and destination
+    /// (`Tq`, 0-3), followed by exactly 64 coefficients (1 byte each for
+    /// `Pq == 0`, 2 big-endian bytes each for `Pq == 1`). Per the JPEG
+    /// specification (and every real encoder, including ImageIO's), a
+    /// quantization coefficient of exactly zero is illegal -- it would
+    /// make dequantization multiply by zero and permanently destroy that
+    /// coefficient -- so this rejects any table containing one rather
+    /// than silently accepting whatever ImageIO's own decoder happens to
+    /// repair it into.
+    static func parseJPEGQuantizationTables(
+        _ data: Data,
+        markerOffset: Int,
+        segmentEnd: Int
+    ) throws -> [JPEGQuantizationTableDefinition] {
+        var tables: [JPEGQuantizationTableDefinition] = []
+        var offset = markerOffset + 3 // past marker + 2-byte length
+        while offset < segmentEnd {
+            guard offset + 1 <= segmentEnd else { throw AssetError.malformedImageData }
+            let precisionAndDestination = data[offset]
+            let precision = Int(precisionAndDestination >> 4)
+            guard precision == 0 || precision == 1 else { throw AssetError.malformedImageData }
+            let destination = Int(precisionAndDestination & 0x0F)
+            guard destination <= 3 else { throw AssetError.malformedImageData }
+
+            let coefficientByteWidth = precision == 0 ? 1 : 2
+            let coefficientsStart = offset + 1
+            let coefficientsEnd = coefficientsStart + 64 * coefficientByteWidth
+            guard coefficientsEnd <= segmentEnd else { throw AssetError.malformedImageData }
+
+            var values: [Int] = []
+            values.reserveCapacity(64)
+            var coefficientOffset = coefficientsStart
+            for _ in 0 ..< 64 {
+                let value: Int
+                if precision == 0 {
+                    value = Int(data[coefficientOffset])
+                } else {
+                    guard let wide = readUInt16BE(data, at: coefficientOffset) else {
+                        throw AssetError.malformedImageData
+                    }
+                    value = Int(wide)
+                }
+                guard value != 0 else { throw AssetError.malformedImageData }
+                values.append(value)
+                coefficientOffset += coefficientByteWidth
+            }
+
+            tables.append(
+                JPEGQuantizationTableDefinition(
+                    destination: destination,
+                    precision: precision,
+                    values: values
+                )
+            )
+            offset = coefficientsEnd
+        }
+        guard offset == segmentEnd else { throw AssetError.malformedImageData }
+        return tables
+    }
+
     /// Parses a `SOS` segment header's per-component DC/AC table
     /// selectors and requires baseline-sequential-only spectral
     /// selection (full range, no successive approximation) -- always

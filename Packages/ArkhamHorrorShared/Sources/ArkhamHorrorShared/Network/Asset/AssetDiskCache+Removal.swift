@@ -50,28 +50,17 @@ extension AssetDiskCache {
             // without a durable marker, ``get(_:)`` could still serve
             // this structurally-valid-looking, but supposedly
             // invalidated, entry — including across a restart, since
-            // an in-memory-only tombstone does not survive one. Best-
-            // effort persist the marker (itself inside this same held
-            // lock) before rethrowing.
-            //
-            // If *that* write also fails, this key's own durable
-            // protection cannot be established at all — falling back
-            // silently to only ``AssetCacheService``'s in-memory
-            // `tombstonedKeys` would leave the entry fully servable
-            // again the moment this process restarts, exactly the gap
-            // a tombstone exists to close. Escalating to the whole-
-            // cache ``markDiskReadsDisabledLocked()`` marker in that
-            // case is the only remaining fail-closed option: it costs
-            // every other key's disk reads until a fully successful
-            // ``removeAll()`` clears it, but that is strictly safer
-            // than silently resurrecting this one invalidated entry
-            // across a restart.
-            if (try? persistTombstoneLocked(
+            // an in-memory-only tombstone does not survive one.
+            // ``protectKeyAfterFailedDeletionLocked(keyHash:fenceGeneration:)``
+            // retries the tombstone write itself before escalating to
+            // the whole-cache disabled-reads marker (which itself
+            // retries, then falls back to this process's own in-memory
+            // fail-closed flag) — never silently swallowing a single
+            // failed attempt at each layer the way a lone `try?` would.
+            protectKeyAfterFailedDeletionLocked(
                 keyHash: key.digestHex,
                 fenceGeneration: fenceGeneration
-            )) == nil {
-                markDiskReadsDisabledLocked()
-            }
+            )
             throw error
         }
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
@@ -87,12 +76,10 @@ extension AssetDiskCache {
         // either way) and is itself cleared the moment a genuinely fresh
         // generation is next published for this key
         // (``commitMetadataPointerLocked``'s own final step).
-        if (try? persistTombstoneLocked(
+        protectKeyAfterFailedDeletionLocked(
             keyHash: key.digestHex,
             fenceGeneration: fenceGeneration
-        )) == nil {
-            markDiskReadsDisabledLocked()
-        }
+        )
     }
 
     /// Removes every entry currently in the cache directory. Never deletes
@@ -130,6 +117,16 @@ extension AssetDiskCache {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         recoverOrphansIfNeeded()
+        // Computed *before* the removal loop below deletes every regular
+        // file in the directory, including this clear epoch's own
+        // previous marker (whose name does not end in
+        // `.meta.json`/`.tmp`/`.bin`, so it has no special exclusion from
+        // that generic sweep): reading the marker's prior value can only
+        // happen now, before it is unlinked out from under us, and the
+        // freshly-computed next value is durably persisted again only
+        // after the loop has finished removing everything (including the
+        // stale marker) below.
+        let nextClearEpoch = try nextClearEpochLocked()
         // Bumped before any removal work, exactly like
         // ``AssetMemoryCache/removeAll()``: any `set`/`touch`/`remove`
         // call bearing a token issued under an older generation is
@@ -162,12 +159,37 @@ extension AssetDiskCache {
         } catch {
             failureCount += 1
         }
+        // Durably re-establishes the whole-cache clear epoch marker at
+        // `nextClearEpoch` (computed above, before this very removal loop
+        // deleted the previous marker) -- performed after every entry has
+        // already been removed, never before. See
+        // ``AssetCacheService/CacheToken/diskBaselineClearEpoch``'s doc
+        // comment for the ABA race this closes that a per-key durable
+        // generation alone cannot: without this, a stale write captured
+        // with baseline `0` for a key that never existed before some
+        // *other* key was created then cleared by this very call could
+        // otherwise land after this clear purely because that key's own
+        // per-key generation reads back as `0` both before and after.
+        do {
+            try persistClearEpochLocked(nextClearEpoch)
+        } catch {
+            failureCount += 1
+        }
         guard failureCount == 0 else {
             throw AssetError.cachePersistenceFailed(
                 "\(failureCount) cache entries could not be removed, " +
                     "or the directory fsync failed"
             )
         }
+        // The one event ``diskReadsForceDisabledInProcess``'s own doc
+        // comment names as its sole clear condition: every removal above
+        // (including the on-disk disabled-reads marker itself, which the
+        // removal loop's own generic sweep already deleted like any
+        // other regular file) and the directory `fsync` all durably
+        // succeeded, so any prior in-process-only fail-closed protection
+        // this process may have been relying on is now itself superseded
+        // by a confirmed, durable clean slate.
+        diskReadsForceDisabledInProcess = false
     }
 
     /// The key hash embedded in every entry name currently present in the

@@ -70,14 +70,11 @@ enum AssetImageValidator {
         case .png:
             let idatPayload = try validatePNGStructure(data)
             let colorInfo = try parsePNGColorInfo(data)
-            let expectedByteCount = try expectedPNGScanlineByteCount(
-                width: dimensions.width,
-                height: dimensions.height,
-                colorInfo: colorInfo
-            )
+            let rowByteCount = try pngRowByteCount(width: dimensions.width, colorInfo: colorInfo)
             try validateExactPNGInflation(
                 idatPayload: idatPayload,
-                expectedByteCount: expectedByteCount
+                rowByteCount: rowByteCount,
+                rowCount: dimensions.height
             )
         case .jpeg:
             try validateJPEGStructure(

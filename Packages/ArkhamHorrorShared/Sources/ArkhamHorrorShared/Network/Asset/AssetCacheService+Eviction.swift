@@ -98,4 +98,54 @@ extension AssetCacheService {
                 ?? .cachePersistenceFailed(String(describing: error))
         }
     }
+
+    /// Removes `cacheKey` from both cache layers, tombstoning it if the
+    /// disk deletion could not be confirmed to fully succeed (see
+    /// ``tombstonedKeys``). Centralizes every disk-invalidating call site
+    /// (a definitive 404, a failed re-validation quarantine) so none of
+    /// them can accidentally swallow a deletion failure the way a bare
+    /// `try?`/best-effort `remove` used to.
+    ///
+    /// `token` is optional: a re-validation quarantine
+    /// (``revalidateDiskHit(_:key:cacheKey:candidates:token:)``'s own
+    /// `catch`) still passes its caller's token so this stays gated like
+    /// every other mutation, but this is also called with no token at all
+    /// from contexts that are not part of any issuance race (there is no
+    /// prior in-flight operation whose authority could be superseded).
+    /// Returns ``MutationOutcome/stale`` under the same conditions
+    /// ``publish(_:asset:token:)`` does (only ever possible when `token`
+    /// is non-`nil`: a `nil` token has no authority to lose).
+    @discardableResult
+    func invalidate(_ cacheKey: AssetCacheKey, token: CacheToken? = nil) async -> MutationOutcome {
+        if let token, !isAuthoritative(token, for: cacheKey) {
+            return .stale
+        }
+        // Recorded *before* the memory removal itself (the actual
+        // suspension below), so a concurrent reader that snapshotted
+        // ``keyClearGeneration`` before this call started will correctly
+        // observe a change even if it resumes while this call is still
+        // suspended partway through — see ``snapshotClearState(for:)``'s
+        // doc comment for why this is deliberately a distinct counter
+        // from ``keyLatestToken``.
+        noteAuthorityKeyTouched(cacheKey)
+        keyClearGeneration[cacheKey, default: 0] += 1
+        await memoryCache.remove(cacheKey, token: token)
+        if let token, !isAuthoritative(token, for: cacheKey) {
+            return .stale
+        }
+        do {
+            try await diskCache.remove(cacheKey, token: token)
+            lastDiskPersistenceFailure = nil
+        } catch let error as AssetError {
+            tombstonedKeys.insert(cacheKey)
+            lastDiskPersistenceFailure = error
+        } catch {
+            tombstonedKeys.insert(cacheKey)
+            lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
+        }
+        if let token, !isAuthoritative(token, for: cacheKey) {
+            return .stale
+        }
+        return .applied
+    }
 }
