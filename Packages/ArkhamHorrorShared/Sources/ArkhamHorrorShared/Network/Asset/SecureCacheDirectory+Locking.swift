@@ -86,7 +86,20 @@ extension SecureCacheDirectory {
             // exactly one hardlink — before ever calling `flock` on it.
             try requireVerifiedRegularFile(descriptor: lockFD, name: Self.lockFileName)
             try await Self.blockingAcquire(lockFD)
+            // The wait above can only return successfully with the lock
+            // genuinely held (a cancellation mid-wait instead throws
+            // `CancellationError` from inside `blockingAcquire` itself,
+            // never resuming with a silently-still-held lock) — but a
+            // cancellation delivered in the narrow window *after* that
+            // resume and *before* this line runs would otherwise let a
+            // cancelled caller still walk away with a held lock and
+            // proceed to mutate. Checking here, before ever returning the
+            // descriptor to the caller, closes that window: on
+            // cancellation the lock is released right here rather than by
+            // some caller that may never reach its own `defer`.
+            try Task.checkCancellation()
         } catch {
+            flock(lockFD, LOCK_UN)
             close(lockFD)
             throw error
         }
@@ -113,19 +126,107 @@ extension SecureCacheDirectory {
         return try body()
     }
 
-    /// Performs the blocking `flock(lockFD, LOCK_EX)` acquire wait on
-    /// ``lockAcquireQueue`` rather than the calling task's own executor.
-    /// `lockFD` is a plain, `Sendable` file-descriptor integer, still owned
-    /// (and closed) by the caller; this only ever reads/waits on it.
+    /// A small, lock-guarded flag shared between a
+    /// ``withTaskCancellationHandler(operation:onCancel:)`` cancellation
+    /// callback (which can fire on an arbitrary thread, at any time,
+    /// including concurrently with the poll loop below reading it) and
+    /// ``blockingAcquire(_:)``'s own poll loop — never a Swift actor,
+    /// since the poll loop itself must stay entirely synchronous
+    /// (non-`async`) to keep spinning at a tight, predictable interval on
+    /// its dedicated GCD queue.
+    private final class CancellationFlag: @unchecked Sendable {
+        private var unfairLock = os_unfair_lock()
+        private var isCancelled = false
+
+        func markCancelled() {
+            os_unfair_lock_lock(&unfairLock)
+            isCancelled = true
+            os_unfair_lock_unlock(&unfairLock)
+        }
+
+        func checkCancelled() -> Bool {
+            os_unfair_lock_lock(&unfairLock)
+            defer { os_unfair_lock_unlock(&unfairLock) }
+            return isCancelled
+        }
+    }
+
+    /// How long each failed non-blocking acquire attempt sleeps before
+    /// retrying — short enough that a waiting caller's own cancellation is
+    /// observed promptly (bounding how long a cancelled `Task` can still
+    /// occupy a ``lockAcquireQueue`` worker/fd after cancellation), long
+    /// enough that busy-waiting many concurrent waiters does not
+    /// meaningfully burn CPU while a lock is held for its normal, brief
+    /// critical-section duration.
+    private static let pollIntervalMicroseconds: UInt32 = 2000
+
+    /// Performs the `flock(lockFD, LOCK_EX | LOCK_NB)` acquire as a
+    /// cancellation-aware, non-blocking poll loop on ``lockAcquireQueue``
+    /// rather than the calling task's own executor, and rather than a
+    /// single indefinite blocking `LOCK_EX` wait. `lockFD` is a plain,
+    /// `Sendable` file-descriptor integer, still owned (and closed) by the
+    /// caller; this only ever reads/waits on it.
+    ///
+    /// A plain blocking `flock(LOCK_EX)` wait, as this previously used,
+    /// cannot observe Swift `Task` cancellation at all: a caller whose
+    /// surrounding `Task` was cancelled while still waiting for a lock
+    /// held by another (possibly very slow, or even hung) holder would
+    /// leak its ``lockAcquireQueue`` worker thread and this open `lockFD`
+    /// for as long as that other holder kept the lock — potentially
+    /// forever, unbounded by anything this caller itself does. Polling
+    /// with `LOCK_NB` at ``pollIntervalMicroseconds`` and checking a
+    /// shared ``CancellationFlag`` (set by
+    /// `withTaskCancellationHandler`'s `onCancel` callback, which can fire
+    /// from any thread at any time) every iteration bounds that leak to at
+    /// most one poll interval, and lets a cancelled waiter's continuation
+    /// resume with `CancellationError` instead of silently, and
+    /// incorrectly, resuming as if the lock had been genuinely acquired.
     private static func blockingAcquire(_ lockFD: Int32) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        let flag = CancellationFlag()
+        try await withTaskCancellationHandler(operation: {
+            try await pollUntilAcquiredOrCancelled(lockFD, flag: flag)
+        }, onCancel: {
+            flag.markCancelled()
+        })
+    }
+
+    /// The actual `LOCK_NB` poll loop, factored out of
+    /// ``blockingAcquire(_:)`` purely so its
+    /// `withCheckedThrowingContinuation` closure's parameter can stay on
+    /// the same line as its opening brace (this package's
+    /// `closure_parameter_position` convention) without also exceeding the
+    /// line-length limit once combined with `withTaskCancellationHandler`'s
+    /// own trailing closures.
+    /// A shorthand for the specific continuation type
+    /// ``pollUntilAcquiredOrCancelled(_:flag:)`` resumes, existing purely
+    /// so that closure's parameter type annotation (needed to work around
+    /// a Swift compiler crash — "failed to produce diagnostic for
+    /// expression" — reproducibly hit when the fully-general
+    /// `CheckedContinuation<Void, Error>` spelling is inferred implicitly
+    /// here) fits on the same line as the closure's opening brace within
+    /// this package's line-length limit.
+    private typealias LockAcquireContinuation = CheckedContinuation<Void, Error>
+
+    private static func pollUntilAcquiredOrCancelled(
+        _ lockFD: Int32,
+        flag: CancellationFlag
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: LockAcquireContinuation) in
             lockAcquireQueue.async {
                 while true {
-                    if flock(lockFD, LOCK_EX) == 0 {
+                    if flag.checkCancelled() {
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+                    if flock(lockFD, LOCK_EX | LOCK_NB) == 0 {
                         continuation.resume()
                         return
                     }
                     if errno == EINTR {
+                        continue
+                    }
+                    if errno == EWOULDBLOCK {
+                        usleep(pollIntervalMicroseconds)
                         continue
                     }
                     continuation.resume(

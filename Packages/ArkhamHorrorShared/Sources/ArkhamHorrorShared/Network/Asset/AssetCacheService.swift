@@ -153,7 +153,7 @@ actor AssetCacheService {
             // ultimately-coalescing caller also passed through this same
             // code path.
             let snapshot = snapshotAuthority(for: cacheKey)
-            let diskHit = await diskCache.get(cacheKey)
+            let diskHit = try await diskCache.get(cacheKey)
             if let cached = diskHit, unchanged(since: snapshot, for: cacheKey) {
                 let token = issueToken(for: cacheKey)
                 if let revalidated = try await revalidateDiskHit(

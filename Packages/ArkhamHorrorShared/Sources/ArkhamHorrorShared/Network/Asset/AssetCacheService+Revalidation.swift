@@ -141,7 +141,9 @@ extension AssetCacheService {
         // so both report the same typed error rather than a stale hit
         // being silently promoted into a conditional request.
         let snapshot = snapshotAuthority(for: cacheKey)
-        guard let onDisk = await diskCache.get(cacheKey), unchanged(since: snapshot, for: cacheKey)
+        guard
+            let onDisk = try await diskCache.get(cacheKey),
+            unchanged(since: snapshot, for: cacheKey)
         else {
             throw AssetError.staleConditionalResponse
         }

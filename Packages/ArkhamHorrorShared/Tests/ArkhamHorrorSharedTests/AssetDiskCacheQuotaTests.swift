@@ -49,16 +49,16 @@ extension AssetDiskCacheTests {
                 metadata: metadata(for: keyB, payload: payloadB, at: Date().addingTimeInterval(-5))
             )
             // Re-access A so it is more-recently-used than B at the moment C is inserted.
-            _ = await cache.get(keyA)
+            _ = try await cache.get(keyA)
             try await cache.set(
                 keyC,
                 payload: payloadC,
                 metadata: metadata(for: keyC, payload: payloadC)
             )
 
-            let entryA = await cache.get(keyA)
-            let entryB = await cache.get(keyB)
-            let entryC = await cache.get(keyC)
+            let entryA = try await cache.get(keyA)
+            let entryB = try await cache.get(keyB)
+            let entryC = try await cache.get(keyC)
             #expect(entryB == nil, "B was least-recently-used and should have been evicted")
             #expect(entryA != nil, "A was re-accessed before C's insertion and must survive")
             #expect(entryC != nil, "C was just inserted and must survive eviction")
@@ -239,7 +239,7 @@ extension AssetDiskCacheTests {
             )
 
             try await cache.remove(cacheKey)
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
             // Excludes the cache's own reserved cross-process lock file
             // (see the sibling fixup in `AssetDiskCacheHashIntegrityTests`).

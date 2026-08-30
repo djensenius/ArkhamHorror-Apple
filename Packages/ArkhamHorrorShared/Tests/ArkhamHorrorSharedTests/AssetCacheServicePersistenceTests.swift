@@ -364,7 +364,7 @@ extension AssetCacheServiceTests {
                 try await task.value
             }
 
-            let stillCached = await diskCache.get(cacheKey)
+            let stillCached = try await diskCache.get(cacheKey)
             #expect(
                 stillCached?.payload == payload,
                 "Cancelling the caller must never quarantine an otherwise-valid disk entry"

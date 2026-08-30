@@ -68,7 +68,7 @@ extension AssetCacheServiceTests {
             // Confirms the fault injection really did leave the first
             // key's full entry (metadata + payload) intact on disk,
             // independent of the service-level tombstone under test.
-            let stillOnDisk = await diskCache.get(firstCacheKey)
+            let stillOnDisk = try await diskCache.get(firstCacheKey)
             #expect(
                 stillOnDisk?.payload == firstOriginalBody,
                 "This test must exercise a full-entry removal failure, not a half-deleted one"
@@ -279,7 +279,7 @@ extension AssetCacheServiceTests {
             let restarted = try AssetDiskCache(directory: directory, limits: limits)
             let candidates = AssetLocator.candidates(for: key, digest: FakeDigestLookup())
             let cacheKey = AssetCacheKey(for: key, candidates: candidates)
-            let servedAfterRestart = await restarted.get(cacheKey)
+            let servedAfterRestart = try await restarted.get(cacheKey)
             #expect(
                 servedAfterRestart == nil,
                 "A fresh instance must inherit the durable fail-closed marker from disk"
@@ -292,7 +292,7 @@ extension AssetCacheServiceTests {
             let freshBody = AssetImageFixtureBuilder.validAVIF(width: 5, height: 5)
             let freshMetadata = avifMetadata(for: cacheKey, body: freshBody, width: 5, height: 5)
             try await restarted.set(cacheKey, payload: freshBody, metadata: freshMetadata)
-            let servedAfterClear = await restarted.get(cacheKey)
+            let servedAfterClear = try await restarted.get(cacheKey)
             #expect(servedAfterClear?.payload == freshBody)
         }
     }
@@ -329,7 +329,7 @@ extension AssetCacheServiceTests {
             await #expect(throws: AssetError.self) {
                 try await firstInstance.remove(cacheKey)
             }
-            let stillReadableInSameInstance = await firstInstance.get(cacheKey)
+            let stillReadableInSameInstance = try await firstInstance.get(cacheKey)
             #expect(
                 stillReadableInSameInstance == nil,
                 "The durable tombstone must block reads immediately, in the same instance"
@@ -338,14 +338,14 @@ extension AssetCacheServiceTests {
             // A brand-new instance over the same directory (no shared
             // in-memory state at all) must still refuse to serve it.
             let restarted = try AssetDiskCache(directory: directory, limits: limits)
-            #expect(await restarted.get(cacheKey) == nil)
+            #expect(try await restarted.get(cacheKey) == nil)
 
             // A later, definitively fresh publish for this exact key
             // clears the durable tombstone and becomes servable again.
             let freshBody = AssetImageFixtureBuilder.validAVIF(width: 6, height: 6)
             let freshMetadata = avifMetadata(for: cacheKey, body: freshBody, width: 6, height: 6)
             try await restarted.set(cacheKey, payload: freshBody, metadata: freshMetadata)
-            let servedAfterFreshPublish = await restarted.get(cacheKey)
+            let servedAfterFreshPublish = try await restarted.get(cacheKey)
             #expect(servedAfterFreshPublish?.payload == freshBody)
         }
     }

@@ -22,14 +22,14 @@ extension AssetDiskCacheTests {
             // one-time `recoverOrphansIfNeeded()` startup sweep, which
             // legitimately lists the (here, empty) directory once; that
             // one call is not what this test is asserting against.
-            let firstMiss = await cache.get(missingKey)
+            let firstMiss = try await cache.get(missingKey)
             #expect(firstMiss == nil)
             let callsAfterStartupSweep = await cache.directoryAccess.listNamesCallCount
             #expect(callsAfterStartupSweep >= 1)
 
             // A second clean miss, now that the one-time sweep has
             // already run: must not list the directory again at all.
-            let secondMiss = await cache.get(missingKey)
+            let secondMiss = try await cache.get(missingKey)
             #expect(secondMiss == nil)
             let callsAfterSecondMiss = await cache.directoryAccess.listNamesCallCount
             #expect(callsAfterSecondMiss == callsAfterStartupSweep)
@@ -42,7 +42,7 @@ extension AssetDiskCacheTests {
                 "\(corruptKey.digestHex).meta.json"
             )
             try Data("not json".utf8).write(to: metadataURL)
-            let corruptMiss = await cache.get(corruptKey)
+            let corruptMiss = try await cache.get(corruptKey)
             #expect(corruptMiss == nil)
             let callsAfterCorruptMiss = await cache.directoryAccess.listNamesCallCount
             #expect(callsAfterCorruptMiss > callsAfterStartupSweep)
@@ -74,7 +74,7 @@ extension AssetDiskCacheTests {
             let tampered = try JSONSerialization.data(withJSONObject: json)
             try tampered.write(to: metadataURL)
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
         }
     }
@@ -106,7 +106,7 @@ extension AssetDiskCacheTests {
             let tampered = try JSONSerialization.data(withJSONObject: json)
             try tampered.write(to: metadataURL)
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
         }
     }
@@ -140,7 +140,7 @@ extension AssetDiskCacheTests {
             let oversized = Data(repeating: 0xFF, count: limits.maxEncodedBytes + 1)
             try oversized.write(to: payloadURL)
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
         }
     }

@@ -68,7 +68,7 @@ extension AssetDiskCacheTests {
                 ),
                 "The orphan's removal was fault-injected to fail and must still be present"
             )
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(
                 fetched == nil,
                 """
@@ -117,7 +117,7 @@ extension AssetDiskCacheTests {
                 ),
                 "A retried sweep must reclaim the orphan once its removal no longer fails"
             )
-            let secondFetched = await cache.get(secondKey)
+            let secondFetched = try await cache.get(secondKey)
             #expect(
                 secondFetched != nil,
                 "Once the stranded orphan is actually reclaimed, a fresh entry must survive"

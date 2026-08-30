@@ -100,7 +100,7 @@ struct AssetDiskCacheCrossInstanceLockingTests {
             // already returned), so this `get(_:)` call is guaranteed to
             // begin contending for the lock while it is genuinely held --
             // never racing to start before the hold even began.
-            let result = await cache.get(cacheKey)
+            let result = try await cache.get(cacheKey)
             let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds
 
             _ = try await releaseTask.value
@@ -157,7 +157,7 @@ struct AssetDiskCacheCrossInstanceLockingTests {
             for iteration in 0 ..< 8 {
                 let cache = iteration.isMultiple(of: 2) ? first : second
                 let hit = try #require(
-                    await cache.get(cacheKey),
+                    try await cache.get(cacheKey),
                     "Expected a hit on every alternating read of a freshly seeded entry"
                 )
                 observedSequences.append(hit.metadata.accessSequence.value)
@@ -171,6 +171,68 @@ struct AssetDiskCacheCrossInstanceLockingTests {
                 Cross-instance accessSequence values must never repeat or regress: \
                 \(observedSequences)
                 """
+            )
+        }
+    }
+
+    @Test(
+        """
+        get(_:) rethrows CancellationError -- rather than folding it into a plain nil miss -- \
+        for a caller cancelled while genuinely still waiting on the cross-process lock, and \
+        never quarantines or otherwise disturbs the entry it never got to read: a later, \
+        uncancelled get(_:) for the same key still returns the exact same valid payload
+        """
+    )
+    func getPropagatesCancellationRatherThanReportingAMissWhileLockContended() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: AssetCacheLimits(
+                maxEncodedBytes: 1_000_000,
+                maxDimension: 8192,
+                maxPixelCount: 32_000_000,
+                memoryBudgetBytes: 10_000_000,
+                diskBudgetBytes: 10_000_000
+            ))
+            let cacheKey = try key("01001")
+            let payload = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: metadata(for: cacheKey, payload: payload)
+            )
+
+            // Same independent-holder setup as
+            // `getBlocksOnLockHeldByIndependentInstance` above, but this
+            // time the lock is held for far longer than this test cares
+            // to wait: the `get(_:)` task below is cancelled while it is
+            // still genuinely polling for the lock, never once it has
+            // acquired it.
+            let independentHolder = try SecureCacheDirectory(
+                directory: directory,
+                fileManager: .default
+            )
+            let holderLockFD = try await independentHolder.acquireExclusiveLock()
+
+            let getTask = Task<CachedAsset?, Error> {
+                try await cache.get(cacheKey)
+            }
+            // A short, fixed delay rather than a synchronization
+            // primitive: `getTask` only needs to have reached its first
+            // `LOCK_NB` poll attempt (and observed it fail, since the
+            // lock above is already held) before cancellation -- any
+            // scheduling delay before that first poll only makes this
+            // assertion stronger, never weaker.
+            try await Task.sleep(nanoseconds: 20_000_000)
+            getTask.cancel()
+
+            await #expect(throws: CancellationError.self) {
+                try await getTask.value
+            }
+
+            independentHolder.releaseExclusiveLock(holderLockFD)
+            let stillCached = try await cache.get(cacheKey)
+            #expect(
+                stillCached?.payload == payload,
+                "A cancelled get(_:) must never quarantine an entry it never actually read"
             )
         }
     }

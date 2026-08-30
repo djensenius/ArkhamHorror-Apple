@@ -16,7 +16,21 @@ extension AssetDiskCache {
     /// ``AssetDiskCache/Recovery``, and eviction that need a typed
     /// deletion failure, since those are the paths where the caller must
     /// track a tombstone.
-    func get(_ key: AssetCacheKey) async -> CachedAsset? {
+    ///
+    /// A `CancellationError` from acquiring the cross-process lock is
+    /// rethrown rather than folded into a plain `nil` miss: a caller whose
+    /// task was cancelled while merely *waiting* for this lock has learned
+    /// nothing about whether the entry exists, and treating that as a
+    /// miss would incorrectly send ``AssetCacheService`` on to a fresh
+    /// (and pointless, since nobody is still listening) network fetch
+    /// instead of letting the cancellation propagate -- exactly the same
+    /// contract
+    /// ``AssetCacheService/revalidateDiskHit(_:key:cacheKey:candidates:token:)``
+    /// already upholds for cancellation encountered *after* a disk hit.
+    /// Every other lock-acquisition failure (a genuine I/O error, a
+    /// tampered lock file, and so on) still reports as an ordinary miss,
+    /// exactly as before.
+    func get(_ key: AssetCacheKey) async throws -> CachedAsset? {
         // Same single-top-level-lock convention as
         // ``set(_:payload:metadata:token:)``/``touch(_:metadata:token:)``/
         // ``remove(_:token:)``: a read that examined this key's metadata
@@ -37,7 +51,12 @@ extension AssetDiskCache {
         // ``AssetCacheService/unchanged(since:for:)``), not a disk-file-
         // consistency concern this lock protects, so holding it any
         // longer than the actual file I/O below would serve no purpose.
-        guard let lockFD = try? await secureDirectory.acquireExclusiveLock() else {
+        let lockFD: Int32
+        do {
+            lockFD = try await secureDirectory.acquireExclusiveLock()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
             return nil
         }
         let result = getLocked(key)

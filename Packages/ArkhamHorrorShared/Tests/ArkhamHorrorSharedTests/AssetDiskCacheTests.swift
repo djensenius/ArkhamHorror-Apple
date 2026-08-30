@@ -81,7 +81,7 @@ struct AssetDiskCacheTests {
                 metadata: metadata(for: cacheKey, payload: payload)
             )
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched?.payload == payload)
             #expect(fetched?.metadata.payloadSHA256Hex == AssetPayloadHasher.sha256Hex(payload))
         }
@@ -123,7 +123,7 @@ struct AssetDiskCacheTests {
             )
 
             #expect(try Data(contentsOf: payloadURL) == payload)
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched?.payload == payload)
         }
     }
@@ -133,7 +133,7 @@ struct AssetDiskCacheTests {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
             let cacheKey = try key("01001")
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
             // `get(_:)` now acquires this cache's cross-process advisory
@@ -172,7 +172,7 @@ struct AssetDiskCacheTests {
             )
             try Data([9, 9, 9]).write(to: payloadURL)
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
             #expect(
                 !FileManager.default.fileExists(atPath: payloadURL.path),
@@ -204,7 +204,7 @@ struct AssetDiskCacheTests {
             let tampered = try JSONSerialization.data(withJSONObject: json)
             try tampered.write(to: metadataURL)
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
         }
     }
@@ -224,7 +224,7 @@ struct AssetDiskCacheTests {
             try payload.write(to: payloadURL)
             try Data("not json".utf8).write(to: metadataURL)
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
             #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
             #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
@@ -272,7 +272,7 @@ struct AssetDiskCacheTests {
             let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
             try Data("not json".utf8).write(to: metadataURL)
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
             #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
             #expect(

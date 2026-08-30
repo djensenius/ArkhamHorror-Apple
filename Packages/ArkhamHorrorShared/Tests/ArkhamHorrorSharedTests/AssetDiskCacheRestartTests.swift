@@ -62,7 +62,7 @@ extension AssetDiskCacheTests {
                 )
             }
             let secondInstance = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let fetched = await secondInstance.get(cacheKey)
+            let fetched = try await secondInstance.get(cacheKey)
             #expect(fetched?.payload == payload)
         }
     }

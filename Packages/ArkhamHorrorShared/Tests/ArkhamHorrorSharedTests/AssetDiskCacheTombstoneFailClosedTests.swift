@@ -79,12 +79,12 @@ struct AssetDiskCacheTombstoneFailClosedTests {
             )
             // A genuinely valid, structurally-clean entry: without any
             // fault injection this would be served normally.
-            #expect(await cache.get(cacheKey) != nil)
+            #expect(try await cache.get(cacheKey) != nil)
 
             await cache.directoryAccess.installFaultInjection(
                 failAttributesSuffixes: [".tombstone"]
             )
-            #expect(await cache.get(cacheKey) == nil)
+            #expect(try await cache.get(cacheKey) == nil)
         }
     }
 
@@ -104,12 +104,12 @@ struct AssetDiskCacheTombstoneFailClosedTests {
                 payload: payload,
                 metadata: metadata(for: cacheKey, payload: payload)
             )
-            #expect(await cache.get(cacheKey) != nil)
+            #expect(try await cache.get(cacheKey) != nil)
 
             await cache.directoryAccess.installFaultInjection(
                 failAttributesSuffixes: [AssetDiskCache.diskReadsDisabledMarkerName]
             )
-            #expect(await cache.get(cacheKey) == nil)
+            #expect(try await cache.get(cacheKey) == nil)
         }
     }
 }

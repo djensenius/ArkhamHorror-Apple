@@ -34,7 +34,7 @@ extension AssetDiskCacheTests {
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
                 .filter { $0 != SecureCacheDirectory.lockFileName }
             #expect(contents.isEmpty, "A rejected mismatched hash must write nothing at all")
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
         }
     }
@@ -69,7 +69,7 @@ extension AssetDiskCacheTests {
                 try await cache.set(cacheKey, payload: otherPayload, metadata: collidingMetadata)
             }
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched?.payload == genuinePayload)
         }
     }

@@ -105,6 +105,69 @@ struct SecureCacheDirectoryLockingTests {
         }
     }
 
+    @Test(
+        """
+        Cancelling a Task that is waiting to acquire a lock held by another instance \
+        releases its wait promptly (bounded by the poll interval, not by however long the \
+        holder keeps the lock), and never resumes as though the lock had been acquired
+        """
+    )
+    func acquireExclusiveLockIsCancellationAware() async throws {
+        try await withScratchDirectory { directory in
+            let holderInstance = try SecureCacheDirectory(
+                directory: directory,
+                fileManager: .default
+            )
+            let waiterInstance = try SecureCacheDirectory(
+                directory: directory,
+                fileManager: .default
+            )
+
+            let holderLockFD = try await holderInstance.acquireExclusiveLock()
+            // Held for far longer than any reasonable poll interval, so a
+            // waiter that actually blocked until acquisition (rather than
+            // observing its own cancellation) would only resume at or
+            // after this deadline -- making a resume well before it an
+            // unambiguous proof of cancellation, not a lucky race.
+            let holdDuration: UInt64 = 2_000_000_000
+
+            let waiterTask = Task {
+                try await waiterInstance.acquireExclusiveLock()
+            }
+            // A short, deterministic head start so `waiterTask` is
+            // reliably already inside its poll loop, genuinely contending
+            // for the held lock, before being cancelled.
+            try await Task.sleep(nanoseconds: 50_000_000)
+            let cancelStart = DispatchTime.now()
+            waiterTask.cancel()
+
+            var caughtCancellation = false
+            do {
+                _ = try await waiterTask.value
+            } catch is CancellationError {
+                caughtCancellation = true
+            } catch {
+                Issue.record("Expected CancellationError, got \(error)")
+            }
+            let elapsedSinceCancel = DispatchTime.now().uptimeNanoseconds
+                - cancelStart.uptimeNanoseconds
+
+            #expect(caughtCancellation)
+            #expect(
+                elapsedSinceCancel < holdDuration,
+                "A cancelled waiter must release well before the holder's own hold duration"
+            )
+
+            holderInstance.releaseExclusiveLock(holderLockFD)
+
+            // The lock itself must be left in a clean, reacquirable state
+            // -- the cancelled waiter must not have left any stray hold,
+            // partial state, or leaked descriptor behind.
+            let freshLockFD = try await waiterInstance.acquireExclusiveLock()
+            waiterInstance.releaseExclusiveLock(freshLockFD)
+        }
+    }
+
     @Test("withExclusiveLock always releases the lock even when its body throws")
     func withExclusiveLockReleasesOnThrow() async throws {
         try await withScratchDirectory { directory in

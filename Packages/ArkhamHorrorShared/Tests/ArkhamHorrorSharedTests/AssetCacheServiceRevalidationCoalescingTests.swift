@@ -145,7 +145,7 @@ extension AssetCacheServiceTests {
             // entry op B's 404 evicted stays evicted in both layers.
             let memoryAfter = await memoryCache.get(cacheKey)
             #expect(memoryAfter == nil)
-            let diskAfter = await diskCache.get(cacheKey)
+            let diskAfter = try await diskCache.get(cacheKey)
             #expect(diskAfter == nil)
         }
     }
@@ -207,7 +207,7 @@ extension AssetCacheServiceTests {
             // overwritten op B's newer, already-published result.
             let memoryAfter = await memoryCache.get(cacheKey)
             #expect(memoryAfter?.payload == newBody)
-            let diskAfter = await diskCache.get(cacheKey)
+            let diskAfter = try await diskCache.get(cacheKey)
             #expect(diskAfter?.payload == newBody)
         }
     }
@@ -287,7 +287,7 @@ extension AssetCacheServiceTests {
             // slower-but-newer response is what both cache layers hold.
             let memoryAfter = await memoryCache.get(cacheKey)
             #expect(memoryAfter?.payload == newerBody)
-            let diskAfter = await diskCache.get(cacheKey)
+            let diskAfter = try await diskCache.get(cacheKey)
             #expect(diskAfter?.payload == newerBody)
         }
     }

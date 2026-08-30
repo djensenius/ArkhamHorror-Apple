@@ -152,7 +152,7 @@ extension AssetDiskCacheTests {
             // consistent generation -- proving the failure was purely a
             // durability-confirmation gap, not a state-corrupting one.
             let reopened = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let recovered = try #require(await reopened.get(cacheKey))
+            let recovered = try #require(try await reopened.get(cacheKey))
             #expect(recovered.payload == payload)
         }
     }
@@ -222,7 +222,7 @@ extension AssetDiskCacheTests {
                 "A new generation's payload must not be orphaned if metadata never commits"
             )
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched?.payload == firstPayload, "The prior generation must still be servable")
         }
     }
@@ -257,7 +257,7 @@ extension AssetDiskCacheTests {
                 !FileManager.default.fileExists(atPath: firstPayloadURL.path),
                 "The superseded generation's payload must be cleaned up after a successful replace"
             )
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched?.payload == secondPayload)
         }
     }
@@ -293,7 +293,7 @@ extension AssetDiskCacheTests {
             try orphanedPayload.write(to: orphanedURL)
 
             let secondInstance = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let fetched = await secondInstance.get(cacheKey)
+            let fetched = try await secondInstance.get(cacheKey)
             #expect(fetched?.payload == currentPayload, "The referenced generation must survive")
             #expect(
                 !FileManager.default.fileExists(atPath: orphanedURL.path),

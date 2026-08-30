@@ -143,7 +143,7 @@ extension AssetDiskCacheTests {
             // servable: a caller that silently accepted "empty" success
             // here would wrongly believe the cache had actually been
             // cleared.
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
             #expect(fetched?.payload == payload)
         }
     }
@@ -179,7 +179,7 @@ extension AssetDiskCacheTests {
             // A fresh actor over the same directory triggers the one-time
             // startup orphan sweep on its first call.
             let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
 
             #expect(fetched == nil)
             #expect(
@@ -202,7 +202,7 @@ extension AssetDiskCacheTests {
             let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
             try plantSymlink(named: metadataURL.lastPathComponent, in: directory)
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
 
             #expect(fetched == nil)
             #expect(
@@ -230,7 +230,7 @@ extension AssetDiskCacheTests {
             let oversized = Data(repeating: 0x41, count: SecureCacheDirectory.maxMetadataBytes + 1)
             try oversized.write(to: metadataURL)
 
-            let fetched = await cache.get(cacheKey)
+            let fetched = try await cache.get(cacheKey)
 
             #expect(fetched == nil)
             #expect(

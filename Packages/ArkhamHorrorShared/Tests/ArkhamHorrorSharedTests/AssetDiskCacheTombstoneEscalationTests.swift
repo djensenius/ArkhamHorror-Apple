@@ -81,8 +81,8 @@ struct AssetDiskCacheTombstoneEscalationTests {
                 payload: payload,
                 metadata: metadata(for: otherKey, payload: payload)
             )
-            #expect(await cache.get(cacheKey) != nil)
-            #expect(await cache.get(otherKey) != nil)
+            #expect(try await cache.get(cacheKey) != nil)
+            #expect(try await cache.get(otherKey) != nil)
 
             // Fail both the metadata-pointer's own removal *and* the
             // fallback tombstone write for this exact key, in one shot:
@@ -106,15 +106,15 @@ struct AssetDiskCacheTombstoneEscalationTests {
             // The whole-cache marker refuses *every* key, not just the
             // one whose deletion failed -- including a key that was
             // never touched by this failure at all.
-            #expect(await cache.get(cacheKey) == nil)
-            #expect(await cache.get(otherKey) == nil)
+            #expect(try await cache.get(cacheKey) == nil)
+            #expect(try await cache.get(otherKey) == nil)
 
             // A brand-new instance over the same directory (standing in
             // for a process restart) must still see the durable marker
             // on disk and refuse to serve anything.
             let restarted = try AssetDiskCache(directory: directory, limits: limits())
-            #expect(await restarted.get(cacheKey) == nil)
-            #expect(await restarted.get(otherKey) == nil)
+            #expect(try await restarted.get(cacheKey) == nil)
+            #expect(try await restarted.get(otherKey) == nil)
 
             // Only a fully successful removeAll() is treated as the
             // durable "clear/replacement" event that lifts the marker.
@@ -130,7 +130,7 @@ struct AssetDiskCacheTombstoneEscalationTests {
                 payload: freshPayload,
                 metadata: metadata(for: freshKey, payload: freshPayload)
             )
-            #expect(await restarted.get(freshKey)?.payload == freshPayload)
+            #expect(try await restarted.get(freshKey)?.payload == freshPayload)
         }
     }
 }
