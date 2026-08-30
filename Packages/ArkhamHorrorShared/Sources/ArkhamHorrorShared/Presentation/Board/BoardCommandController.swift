@@ -15,6 +15,7 @@ import Observation
 @Observable
 final class BoardCommandController {
     private(set) var projection: BoardProjection
+    private(set) var prompt: BasicChoicePromptPresentation?
     private(set) var layout: BoardLayout
     private(set) var coordinator: FocusCoordinator
     /// Local zoom scale, clamped to ``zoomRange``. Never mutates backend topology; purely
@@ -34,18 +35,30 @@ final class BoardCommandController {
     private(set) var preModalZone: SemanticFocusZone?
     /// The most recently dispatched command, for on-screen/test verification.
     private(set) var lastCommand: SemanticCommand?
+    private var onChoice: (Int) -> Void
+    private var onRetry: () -> Void
 
     static let zoomRange: ClosedRange<CGFloat> = 0.5 ... 3
     private static let zoomStep: CGFloat = 0.25
 
-    init(projection: BoardProjection) {
+    init(
+        projection: BoardProjection,
+        prompt: BasicChoicePromptPresentation? = nil,
+        onChoice: @escaping (Int) -> Void = { _ in },
+        onRetry: @escaping () -> Void = {}
+    ) {
         self.projection = projection
+        self.prompt = prompt
+        self.onChoice = onChoice
+        self.onRetry = onRetry
         let layout = BoardLayoutBuilder.makeLayout(
             locations: projection.locations,
             preferredRootID: Self.activeLocationID(in: projection)
         )
         self.layout = layout
-        let graph = BoardFocusGraphBuilder.makeGraph(projection: projection, layout: layout)
+        let graph = BoardFocusGraphBuilder.makeGraph(
+            projection: projection, layout: layout, prompt: prompt
+        )
         coordinator = FocusCoordinator(graph: graph, initialFocus: graph.order.first)
     }
 
@@ -59,17 +72,39 @@ final class BoardCommandController {
     /// a replacement snapshot can never leave a dangling inspector open over an entity
     /// that may no longer exist. Zoom/pan presentation state is deliberately left
     /// untouched: a snapshot replacement is not a user-initiated "reset view".
-    func applySnapshot(_ newProjection: BoardProjection) {
+    func applySnapshot(
+        _ newProjection: BoardProjection, prompt newPrompt: BasicChoicePromptPresentation? = nil
+    ) {
         if coordinator.isModalPresented {
             dismissModal()
         }
         projection = newProjection
+        prompt = newPrompt
         layout = BoardLayoutBuilder.makeLayout(
             locations: newProjection.locations,
             preferredRootID: Self.activeLocationID(in: newProjection)
         )
-        let newGraph = BoardFocusGraphBuilder.makeGraph(projection: newProjection, layout: layout)
+        let newGraph = BoardFocusGraphBuilder.makeGraph(
+            projection: newProjection, layout: layout, prompt: newPrompt
+        )
         coordinator.applySnapshot(newGraph)
+    }
+
+    func applyPrompt(_ newPrompt: BasicChoicePromptPresentation?) {
+        guard prompt != newPrompt else { return }
+        prompt = newPrompt
+        let graph = BoardFocusGraphBuilder.makeGraph(
+            projection: projection, layout: layout, prompt: newPrompt
+        )
+        coordinator.applySnapshot(graph)
+    }
+
+    func updateChoiceHandler(_ handler: @escaping (Int) -> Void) {
+        onChoice = handler
+    }
+
+    func updateRetryHandler(_ handler: @escaping () -> Void) {
+        onRetry = handler
     }
 
     /// Reconciles this already-existing controller against the projection its owning
@@ -79,9 +114,12 @@ final class BoardCommandController {
     /// otherwise be missed entirely. Applies ``applySnapshot(_:)`` only when the
     /// projection genuinely changed, so an unchanged reappearance never spuriously
     /// dismisses an already-open inspector or perturbs zoom/pan state.
-    func reconcileOnAppear(with latestProjection: BoardProjection) {
-        guard projection != latestProjection else { return }
-        applySnapshot(latestProjection)
+    func reconcileOnAppear(
+        with latestProjection: BoardProjection,
+        prompt latestPrompt: BasicChoicePromptPresentation? = nil
+    ) {
+        guard projection != latestProjection || prompt != latestPrompt else { return }
+        applySnapshot(latestProjection, prompt: latestPrompt)
     }
 
     /// The single dispatch entry point every input adapter feeds through, matching
@@ -96,13 +134,17 @@ final class BoardCommandController {
         coordinator.syncExternalFocus(focusID)
         switch outcome {
         case .reservedBack:
-            guard coordinator.isModalPresented else { return false }
-            dismissModal()
-            return true
+            return handleBack()
         case let .command(command):
             lastCommand = command
             return apply(command)
         }
+    }
+
+    private func handleBack() -> Bool {
+        guard coordinator.isModalPresented else { return leavePrompt() }
+        dismissModal()
+        return true
     }
 
     private func apply(_ command: SemanticCommand) -> Bool {
@@ -110,15 +152,13 @@ final class BoardCommandController {
         case let .focusMove(direction):
             coordinator.move(direction)
             return true
-        case .primaryAction, .inspect:
+        case .inspect:
             // While the inspector is already presented, its only interactive content is
             // the Close control itself (see `BoardInspectorView`): treat activating it
             // (a tap, Enter, or controller A-button primaryAction) as closing, exactly
             // like `.secondaryAction`, rather than re-attempting `openInspector()` (which
             // would otherwise just no-op against its own already-presented guard).
             return coordinator.isModalPresented ? closeInspector() : openInspector()
-        case .secondaryAction:
-            return closeInspector()
         case let .cycleZone(direction):
             return cycleZone(direction)
         case .zoomIn:
@@ -130,8 +170,29 @@ final class BoardCommandController {
         case .resetCamera:
             zoomScale = 1
             return true
+        case .primaryAction, .secondaryAction, .jumpToActivePrompt, .togglePromptSurface:
+            return applyPromptCommand(command)
+        default:
+            return false
+        }
+    }
+
+    private func applyPromptCommand(_ command: SemanticCommand) -> Bool {
+        switch command {
+        case .primaryAction:
+            if coordinator.currentFocus == BoardFocusID.promptRetry {
+                return activatePromptRetry()
+            }
+            if let index = focusedPromptChoiceIndex {
+                return activatePromptChoice(index)
+            }
+            return coordinator.isModalPresented ? closeInspector() : openInspector()
+        case .secondaryAction:
+            return coordinator.isModalPresented ? closeInspector() : leavePrompt()
         case .jumpToActivePrompt:
             return jumpToActivePrompt()
+        case .togglePromptSurface:
+            return focusedZone == BoardFocusZone.prompt ? leavePrompt() : jumpToActivePrompt()
         default:
             return false
         }
@@ -193,7 +254,9 @@ final class BoardCommandController {
     /// `accessibilityHidden`.
     private func cycleZone(_ direction: CycleDirection) -> Bool {
         guard !coordinator.isModalPresented else { return false }
-        let zones = BoardFocusGraphBuilder.nonEmptyZonesInCycleOrder(projection: projection)
+        let zones = BoardFocusGraphBuilder.nonEmptyZonesInCycleOrder(
+            projection: projection, prompt: prompt
+        )
         guard !zones.isEmpty else { return false }
         let current = focusedZone ?? zones[0]
         let currentIndex = zones.firstIndex(of: current) ?? 0
@@ -204,16 +267,49 @@ final class BoardCommandController {
         return true
     }
 
-    /// Jumps directly to the scenario header, which surfaces
-    /// `BoardCounters.pendingPromptCount` — the closest read-only equivalent this
-    /// contract slice supports to "whatever currently holds an active prompt", since the
-    /// actual `question` payload stays a broad, out-of-scope map. A no-op (reported as
-    /// unconsumed) when no prompt is pending, or while the inspector modal is presented
-    /// (see ``cycleZone(_:)``'s identical modal-isolation rationale).
+    /// Jumps to retry when recovery is required, then the first supported authorized
+    /// choice, or the scenario header for an otherwise unsupported pending prompt.
     private func jumpToActivePrompt() -> Bool {
-        guard !coordinator.isModalPresented, projection.counters.pendingPromptCount > 0 else {
-            return false
+        guard !coordinator.isModalPresented else { return false }
+        if prompt == nil, projection.counters.pendingPromptCount > 0 {
+            coordinator.syncExternalFocus(BoardFocusID.scenarioHeader)
+            return true
         }
+        if prompt?.canRetry == true {
+            coordinator.syncExternalFocus(BoardFocusID.promptRetry)
+            return true
+        }
+        guard prompt?.canSubmit == true,
+              let choice = prompt?.choices.first(where: \.isSupported)
+        else { return false }
+        coordinator.syncExternalFocus(BoardFocusID.promptChoice(choice.index))
+        return true
+    }
+
+    @discardableResult
+    func activatePromptChoice(_ index: Int) -> Bool {
+        guard prompt?.canSubmit == true,
+              prompt?.choices.first(where: { $0.index == index })?.isSupported == true
+        else { return false }
+        onChoice(index)
+        return true
+    }
+
+    @discardableResult
+    func activatePromptRetry() -> Bool {
+        guard prompt?.canRetry == true else { return false }
+        onRetry()
+        return true
+    }
+
+    private var focusedPromptChoiceIndex: Int? {
+        prompt?.choices.first {
+            BoardFocusID.promptChoice($0.index) == coordinator.currentFocus
+        }?.index
+    }
+
+    private func leavePrompt() -> Bool {
+        guard focusedZone == BoardFocusZone.prompt else { return false }
         coordinator.syncExternalFocus(BoardFocusID.scenarioHeader)
         return true
     }

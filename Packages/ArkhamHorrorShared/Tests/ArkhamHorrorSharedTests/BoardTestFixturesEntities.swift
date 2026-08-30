@@ -154,11 +154,28 @@ extension BoardTestFixtures {
             phaseStep: phaseStep, inAction: false, skillTest: nil, skillTestChaosTokens: [],
             focusedCards: [], highlightedCards: [], focusedTarotCards: [], foundCards: .null,
             focusedChaosTokens: [], activeCard: nil, removedFromPlay: [], gameState: gameState,
-            inSetup: false, skillTestResults: nil, question: entityMap(count: questionCount),
+            inSetup: false, skillTestResults: nil,
+            question: basicChoiceQuestions(count: questionCount),
             cards: entityMap(count: cardCount), totalDoom: totalDoom, totalClues: totalClues,
             scenarioSteps: 0, undoActionStep: nil, undoTurnStep: nil, undoPhaseStep: nil,
             undoRoundStep: nil, roundHistory: [:], phaseHistory: [:], turnHistory: [:],
             enemyAttackTargets: []
         )
+    }
+
+    private static func basicChoiceQuestions(
+        count: Int
+    ) -> UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload> {
+        var map = UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>()
+        for _ in 0 ..< count {
+            let raw: JSONValue = .object([
+                "tag": .string("FutureQuestion"),
+                "choices": .array([]),
+            ])
+            map[PlayerID(UUID())] = BasicChoiceQuestionPayload(
+                rawValue: raw, state: .updateRequired(tag: "FutureQuestion")
+            )
+        }
+        return map
     }
 }

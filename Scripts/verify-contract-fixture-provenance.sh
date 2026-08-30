@@ -102,6 +102,10 @@ act-no-advance-cost.json:contracts/fixtures/act-no-advance-cost.json
 investigator-unhealed-horror-negative.json:contracts/fixtures/investigator-unhealed-horror-negative.json
 uuid-entity-map.json:contracts/fixtures/uuid-entity-map.json
 card-code-entity-map.json:contracts/fixtures/card-code-entity-map.json
+question-choose-one.json:contracts/fixtures/question-choose-one.json
+question-player-window-choose-one.json:contracts/fixtures/question-player-window-choose-one.json
+question-window-choose-one.json:contracts/fixtures/question-window-choose-one.json
+answer-question.json:contracts/fixtures/answer-question.json
 "
 
 # Rejects an absolute path or any `..` path-traversal component in a (script-controlled,

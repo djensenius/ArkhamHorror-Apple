@@ -226,6 +226,7 @@ final class URLSessionGameSocketConnection: GameSocketConnection, @unchecked Sen
             if task.closeCode != .invalid {
                 return .closed(code: task.closeCode, reason: task.closeReason)
             }
+
             throw GameSocketTransportError()
         }
         switch message {
@@ -242,6 +243,16 @@ final class URLSessionGameSocketConnection: GameSocketConnection, @unchecked Sen
             // a genuine (and always-failing) contract decode issue.
             throw GameSocketTransportError()
         }
+    }
+
+    func send(_ data: Data) async throws {
+        do {
+            try await task.send(.data(data))
+        } catch {
+            try Task.checkCancellation()
+            throw GameSocketTransportError()
+        }
+        try Task.checkCancellation()
     }
 
     func close(code: URLSessionWebSocketTask.CloseCode, reason: Data?) {

@@ -15,6 +15,9 @@ import SwiftUI
 /// state.
 struct BoardView: View {
     let projection: BoardProjection
+    let prompt: BasicChoicePromptPresentation?
+    let onChoice: (Int) -> Void
+    let onRetryChoice: () -> Void
 
     @State private var controller: BoardCommandController?
     @FocusState private var focusedID: SemanticFocusID?
@@ -23,8 +26,16 @@ struct BoardView: View {
         @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
 
-    init(projection: BoardProjection) {
+    init(
+        projection: BoardProjection,
+        prompt: BasicChoicePromptPresentation? = nil,
+        onChoice: @escaping (Int) -> Void = { _ in },
+        onRetryChoice: @escaping () -> Void = {}
+    ) {
         self.projection = projection
+        self.prompt = prompt
+        self.onChoice = onChoice
+        self.onRetryChoice = onRetryChoice
     }
 
     var body: some View {
@@ -38,14 +49,21 @@ struct BoardView: View {
         .onAppear {
             let activeController: BoardCommandController
             if let controller {
+                controller.updateChoiceHandler(onChoice)
+                controller.updateRetryHandler(onRetryChoice)
                 activeController = controller
                 // Catches a replacement snapshot that arrived while this view was
                 // off-screen and `.onChange(of: projection)` therefore couldn't fire; see
                 // `reconcileOnAppear`'s doc comment for why this is guarded rather than
                 // unconditional.
-                activeController.reconcileOnAppear(with: projection)
+                activeController.reconcileOnAppear(with: projection, prompt: prompt)
             } else {
-                let newController = BoardCommandController(projection: projection)
+                let newController = BoardCommandController(
+                    projection: projection,
+                    prompt: prompt,
+                    onChoice: onChoice,
+                    onRetry: onRetryChoice
+                )
                 controller = newController
                 activeController = newController
             }
@@ -58,7 +76,14 @@ struct BoardView: View {
             focusedID = activeController.coordinator.currentFocus
         }
         .onChange(of: projection) { _, newValue in
-            controller?.applySnapshot(newValue)
+            controller?.updateChoiceHandler(onChoice)
+            controller?.updateRetryHandler(onRetryChoice)
+            controller?.applySnapshot(newValue, prompt: prompt)
+        }
+        .onChange(of: prompt) { _, newValue in
+            controller?.updateChoiceHandler(onChoice)
+            controller?.updateRetryHandler(onRetryChoice)
+            controller?.applyPrompt(newValue)
         }
     }
 
@@ -66,7 +91,7 @@ struct BoardView: View {
     private func boardBody(_ controller: BoardCommandController) -> some View {
         ZStack {
             ArkhamTheme.backgroundGradient.ignoresSafeArea()
-            content(controller)
+            contentWithPrompt(controller)
                 .disabled(controller.coordinator.isModalPresented)
                 .accessibilityHidden(controller.coordinator.isModalPresented)
             if let inspectorContent = resolvedInspectorContent(controller) {
@@ -97,16 +122,46 @@ struct BoardView: View {
     }
 
     @ViewBuilder
-    private func content(_ controller: BoardCommandController) -> some View {
+    private func contentWithPrompt(_ controller: BoardCommandController) -> some View {
         #if os(iOS) || os(visionOS)
             if BoardLayoutDecision.usesCompactLayout(horizontalSizeClass: horizontalSizeClass) {
                 BoardCompactLayoutView(controller: controller, focusBinding: $focusedID)
+                    .safeAreaInset(edge: .bottom) {
+                        promptSurface(controller, isCompact: true)
+                            .padding(.horizontal, 10)
+                            .padding(.bottom, 6)
+                    }
             } else {
-                BoardRegularLayoutView(controller: controller, focusBinding: $focusedID)
+                regularContent(controller)
             }
         #else
-            BoardRegularLayoutView(controller: controller, focusBinding: $focusedID)
+            regularContent(controller)
         #endif
+    }
+
+    private func regularContent(_ controller: BoardCommandController) -> some View {
+        HStack(spacing: 0) {
+            BoardRegularLayoutView(controller: controller, focusBinding: $focusedID)
+            if prompt != nil {
+                Divider()
+                promptSurface(controller, isCompact: false)
+                    .padding(16)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func promptSurface(
+        _ controller: BoardCommandController, isCompact: Bool
+    ) -> some View {
+        if let prompt {
+            BasicChoicePromptView(
+                presentation: prompt,
+                controller: controller,
+                focusBinding: $focusedID,
+                isCompact: isCompact
+            )
+        }
     }
 
     /// Resolves the entity content for the currently-inspected node, or `nil` when no

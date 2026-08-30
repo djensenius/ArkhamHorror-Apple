@@ -60,6 +60,10 @@ protocol GameSocketConnection: Sendable {
     ///   to interrupt an in-flight receive promptly).
     func nextEvent() async throws -> GameSocketEvent
 
+    /// Sends one complete client frame. Implementations must sanitize transport
+    /// failures because the underlying request URL contains the session token.
+    func send(_ data: Data) async throws
+
     /// Closes this connection, if it is not already closed. Synchronous (never
     /// `async`) so it may be called directly from a non-async `onCancel` closure.
     /// Idempotent: safe to call more than once, and safe to call after the

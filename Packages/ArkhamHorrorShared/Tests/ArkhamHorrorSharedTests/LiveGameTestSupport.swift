@@ -44,6 +44,13 @@ actor FakeGameSocketConnection: GameSocketConnection {
     private var closeWaiters: [
         (threshold: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
+    private var sendQueue: [Result<Void, any Error>] = []
+    private var isSendGated = false
+    private var sendContinuations: [CheckedContinuation<Void, any Error>] = []
+    private var sendWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+    private(set) var sentData: [Data] = []
 
     /// Enqueues an outcome for a future ``nextEvent()`` call (FIFO), or immediately
     /// resumes an already in-flight ``nextEvent()`` call if one is currently
@@ -74,7 +81,28 @@ actor FakeGameSocketConnection: GameSocketConnection {
         if closeCallCount >= count {
             return
         }
+
         await withCheckedContinuation { closeWaiters.append((count, $0)) }
+    }
+
+    func enqueueSendResult(_ result: Result<Void, any Error>) {
+        sendQueue.append(result)
+    }
+
+    func setSendGated(_ gated: Bool) {
+        isSendGated = gated
+    }
+
+    func waitUntilSendPending(_ count: Int) async {
+        if sendContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { sendWaiters.append((count, $0)) }
+    }
+
+    func resumeOldestSend(with result: Result<Void, any Error>) {
+        guard !sendContinuations.isEmpty else { return }
+        resume(sendContinuations.removeFirst(), with: result)
     }
 
     nonisolated func close(code: URLSessionWebSocketTask.CloseCode, reason: Data?) {
@@ -100,6 +128,7 @@ actor FakeGameSocketConnection: GameSocketConnection {
             let outcome = queue.removeFirst()
             return try resolve(outcome)
         }
+
         if isClosed {
             // Matches `GameSocketConnection`'s contract: once locally closed, a
             // later `nextEvent()` call reports the clean closure it already
@@ -114,6 +143,19 @@ actor FakeGameSocketConnection: GameSocketConnection {
                 waiter.resume()
             }
         }
+    }
+
+    func send(_ data: Data) async throws {
+        sentData.append(data)
+        if isSendGated {
+            try await withCheckedThrowingContinuation { continuation in
+                sendContinuations.append(continuation)
+                notifySendWaiters()
+            }
+            return
+        }
+        guard !sendQueue.isEmpty else { throw TestFailure() }
+        try sendQueue.removeFirst().get()
     }
 
     private func resolve(_ outcome: FakeGameSocketEventOutcome) throws -> GameSocketEvent {
@@ -136,6 +178,24 @@ actor FakeGameSocketConnection: GameSocketConnection {
     private func notifyCloseWaiters() {
         closeWaiters.removeAll { entry in
             guard closeCallCount >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func resume(
+        _ continuation: CheckedContinuation<Void, any Error>,
+        with result: Result<Void, any Error>
+    ) {
+        switch result {
+        case .success: continuation.resume()
+        case let .failure(error): continuation.resume(throwing: error)
+        }
+    }
+
+    private func notifySendWaiters() {
+        sendWaiters.removeAll { entry in
+            guard sendContinuations.count >= entry.threshold else { return false }
             entry.continuation.resume()
             return true
         }
