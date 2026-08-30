@@ -15,7 +15,9 @@ struct BoardCompactLayoutView: View {
     }
 
     private var selectedZone: SemanticFocusZone {
-        controller.focusedZone ?? zones.first ?? BoardFocusZone.scenario
+        BoardFocusGraphBuilder.resolveCompactSelectedZone(
+            focusedZone: controller.focusedZone, zones: zones
+        )
     }
 
     var body: some View {

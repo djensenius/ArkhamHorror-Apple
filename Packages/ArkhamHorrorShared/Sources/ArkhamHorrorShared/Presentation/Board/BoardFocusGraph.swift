@@ -135,6 +135,21 @@ enum BoardFocusGraphBuilder {
         return BoardFocusZone.cycleOrder.filter { populated.contains($0) }
     }
 
+    /// Resolves the compact-width zone switcher's selected zone: `focusedZone` if it is
+    /// one of `zones` (the switcher's own tags), else the first of `zones`. Falls back
+    /// rather than passing `focusedZone` straight through, most notably when it is
+    /// ``BoardFocusZone/inspector`` while the inspector modal is presented — a zone never
+    /// listed in ``nonEmptyZonesInCycleOrder(projection:)`` — since binding a `Picker`'s
+    /// `selection` to a value with no matching tag leaves it in an undefined visual state.
+    static func resolveCompactSelectedZone(
+        focusedZone: SemanticFocusZone?, zones: [SemanticFocusZone]
+    ) -> SemanticFocusZone {
+        if let focusedZone, zones.contains(focusedZone) {
+            return focusedZone
+        }
+        return zones.first ?? BoardFocusZone.scenario
+    }
+
     private static func appendVerticalChain(
         _ ids: [SemanticFocusID], zone: SemanticFocusZone,
         nodes: inout [FocusNode], zoneEntryPoints: inout [SemanticFocusZone: SemanticFocusID]
