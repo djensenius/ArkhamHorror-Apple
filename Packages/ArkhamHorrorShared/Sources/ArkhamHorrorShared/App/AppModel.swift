@@ -286,6 +286,8 @@ final class AppModel {
     @ObservationIgnored var liveGameConnections: [GameID: LiveGameConnectionHandle] = [:]
     /// Process-global answer authority: at most one claimed answer per game.
     var basicChoiceActions: [GameID: BasicChoiceActionRecord] = [:]
+    /// Sanitized room-wide feedback, never treated as correlated answer rejection.
+    var basicChoiceServerFeedback: [GameID: String] = [:]
 
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),

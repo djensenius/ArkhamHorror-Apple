@@ -138,5 +138,6 @@ extension AppModel {
         liveGameStates = [:]
         liveGameParticipantIdentities = [:]
         basicChoiceActions = [:]
+        basicChoiceServerFeedback = [:]
     }
 }

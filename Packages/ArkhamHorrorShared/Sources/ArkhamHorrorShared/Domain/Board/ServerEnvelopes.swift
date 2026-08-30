@@ -48,10 +48,11 @@ extension GetGameEnvelope: Codable {
 
 /// A WebSocket server-to-client envelope this contract slice recognizes
 /// (`contracts/schemas/server-message.schema.json`'s `GameUpdate` variant). Every other
-/// `ServerMessage` tag (`GameMessage`, `GameError`, `GameCard`, ...) belongs to a later
-/// contract slice; this type only ever discriminates far enough to either decode a
-/// `GameUpdate`'s `PublicGame` payload into the same ``PublicGameSnapshot`` the REST
-/// envelope produces, or report an explicit, typed, non-fatal
+/// `GameError` is recognized only as uncorrelated, room-wide feedback: the backend
+/// supplies no player/question/request correlation, so it can never establish that
+/// this client's answer was rejected. Every other `ServerMessage` tag belongs to a
+/// later contract slice; this type only discriminates far enough to decode a
+/// `GameUpdate` or `GameError`, or report an explicit, typed, non-fatal
 /// ``unsupportedMessage(tag:rawContents:)`` for anything else — never a silent no-op.
 enum BoardSnapshotUpdate: Sendable {
     case snapshot(PublicGameSnapshot)

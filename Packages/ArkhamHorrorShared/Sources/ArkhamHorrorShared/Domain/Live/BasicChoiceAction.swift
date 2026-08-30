@@ -12,6 +12,23 @@ struct BasicChoicePromptIdentity: Sendable, Equatable, Hashable {
     let rawQuestion: JSONValue
     let sessionAttemptID: UUID?
     let connectionID: UUID?
+
+    var promptKey: BasicChoicePromptKey {
+        BasicChoicePromptKey(
+            gameID: gameID,
+            ownerID: ownerID,
+            questionVersion: questionVersion,
+            rawQuestion: rawQuestion
+        )
+    }
+}
+
+/// Authoritative prompt identity, deliberately excluding replaceable transport identity.
+struct BasicChoicePromptKey: Sendable, Equatable, Hashable {
+    let gameID: GameID
+    let ownerID: PlayerID
+    let questionVersion: Int
+    let rawQuestion: JSONValue
 }
 
 enum BasicChoiceReadOnlyReason: Sendable, Equatable {
@@ -33,7 +50,6 @@ enum BasicChoiceActionPhase: Sendable, Equatable {
     case awaitingSnapshot
     case uncertain
     case retryable(BasicChoiceRetryReason)
-    case accepted
 }
 
 struct BasicChoicePromptPresentation: Sendable, Equatable {
@@ -42,6 +58,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     let readOnlyReason: BasicChoiceReadOnlyReason?
     let actionPhase: BasicChoiceActionPhase?
     let actionChoiceIndex: Int?
+    let serverFeedback: String?
 
     var ownerID: PlayerID {
         identity.ownerID
@@ -64,7 +81,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         switch actionPhase {
         case .sending, .awaitingSnapshot, .uncertain:
             return false
-        case .accepted, .none:
+        case nil:
             return true
         case .retryable:
             return false
@@ -85,8 +102,6 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             return "The server rejected this choice. Try again."
         case .retryable(.outcomeUncertain):
             return "The outcome is uncertain. Review the prompt, then retry manually."
-        case .accepted:
-            return "Choice accepted."
         case nil:
             break
         }

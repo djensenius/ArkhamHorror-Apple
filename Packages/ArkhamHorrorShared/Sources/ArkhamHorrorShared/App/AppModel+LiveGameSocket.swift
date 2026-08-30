@@ -142,11 +142,12 @@ extension AppModel {
     ///
     /// A `.snapshot` frame decodes through the exact same ``BoardProjectionBuilder``
     /// a REST fetch's ``PublicGameSnapshot`` does, publishing
-    /// ``LiveGameState/live(_:)``. An `.unsupportedMessage` frame (any
-    /// `ServerMessage` tag besides `GameUpdate`; see ``BoardSnapshotUpdate``'s own
-    /// documentation) is silently ignored -- normal, expected, out-of-scope traffic
-    /// this contract slice does not decode further, never treated as an
-    /// incompatibility. Only an actual ``ContractJSON`` decode throw (malformed
+    /// ``LiveGameState/live(_:)``. A room-wide `.gameError` is surfaced as generic
+    /// feedback and can make a same-transport answer outcome uncertain, but is never
+    /// treated as correlated rejection. An `.unsupportedMessage` frame is silently
+    /// ignored -- normal, expected, out-of-scope traffic this contract slice does not
+    /// decode further, never treated as an incompatibility. Only an actual
+    /// ``ContractJSON`` decode throw (malformed
     /// bytes/schema drift in what was supposed to be a `GameUpdate`) publishes
     /// ``LiveGameState/incompatiblePayload(lastKnown:)`` and returns
     /// ``LiveGameSocketConsumeOutcome/stopped`` (never retried by reconnecting: a
@@ -205,6 +206,7 @@ extension AppModel {
                     data,
                     attempt: attempt,
                     connection: connection,
+                    connectionID: connectionID,
                     projection: &projection
                 ) else {
                     return .stopped
@@ -220,6 +222,7 @@ extension AppModel {
         _ data: Data,
         attempt: LiveGameSessionAttempt,
         connection: any GameSocketConnection,
+        connectionID: UUID?,
         projection: inout BoardProjection
     ) -> Bool {
         let update: BoardSnapshotUpdate
@@ -232,16 +235,18 @@ extension AppModel {
         }
         switch update {
         case let .snapshot(snapshot):
-            guard snapshot.scenarioSteps >= projection.counters.scenarioSteps else {
-                return true
-            }
             projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+            basicChoiceServerFeedback[attempt.gameID] = nil
             reconcileBasicChoice(
                 gameID: attempt.gameID, projection: projection, isRESTSnapshot: false
             )
             liveGameStates[attempt.gameID] = .live(projection)
         case .gameError:
-            handleBasicChoiceGameError(gameID: attempt.gameID, projection: projection)
+            handleUncorrelatedBasicChoiceGameError(
+                gameID: attempt.gameID,
+                sessionAttemptID: attempt.attemptID,
+                connectionID: connectionID
+            )
         case .unsupportedMessage:
             break
         }

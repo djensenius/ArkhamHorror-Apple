@@ -3,13 +3,13 @@ import Foundation
 import Testing
 
 extension AppModelLiveGameTests {
-    private func makeModern(_ model: AppModel) {
+    func makeModern(_ model: AppModel) {
         model.sessionState = .signedIn(
             profile: .hosted, compatibility: .modern(capabilities: []), user: .sample
         )
     }
 
-    private func startChoiceSession(
+    func startChoiceSession(
         model: AppModel, fakes: Fakes, envelope: GetGameEnvelope,
         connection: FakeGameSocketConnection
     ) async -> GameID {
@@ -104,8 +104,8 @@ extension AppModelLiveGameTests {
             == .retryable(.transportFailure))
     }
 
-    @Test("GameError releases the same authoritative prompt for explicit retry")
-    func gameErrorRestoresPrompt() async throws {
+    @Test("An uncorrelated room GameError makes our outcome uncertain, never rejected")
+    func gameErrorIsUncorrelated() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -123,12 +123,23 @@ extension AppModelLiveGameTests {
         ))))
         await connection.waitUntilAwaitingNextEvent()
         #expect(model.basicChoicePresentation(for: gameID)?.actionPhase
-            == .retryable(.serverRejected))
-        #expect(model.basicChoicePresentation(for: gameID)?.statusMessage
-            == "The server rejected this choice. Try again.")
+            == .retryable(.outcomeUncertain))
+        #expect(model.basicChoicePresentation(for: gameID)?.serverFeedback
+            == "The server reported a game error that could not be tied to your choice.")
+        #expect(!(
+            model.basicChoicePresentation(for: gameID)?.serverFeedback?.contains("secret")
+                ?? true
+        ))
+
+        await connection.enqueueSendResult(.success(()))
+        let currentIdentity = try #require(
+            model.basicChoicePresentation(for: gameID)?.identity
+        )
+        #expect(await model.retryBasicChoice(currentIdentity) == .sentAwaitingSnapshot)
+        #expect(await connection.sentData.count == 2)
     }
 
-    @Test("A newer sequential question resolves accepted and is immediately actionable")
+    @Test("A newer sequential question clears the resolved claim and is immediately actionable")
     func sequentialQuestionBecomesActionable() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
@@ -150,7 +161,94 @@ extension AppModelLiveGameTests {
         let next = try #require(model.basicChoicePresentation(for: gameID))
         #expect(next.questionVersion == envelope.game.scenarioSteps + 1)
         #expect(next.canSubmit)
-        #expect(next.actionPhase == .accepted)
+        #expect(next.actionPhase == nil)
+        #expect(model.basicChoiceActions[gameID] == nil)
+    }
+
+    @Test("Authoritative socket snapshots apply undo and reset-to-zero step decreases")
+    func lowerStepSnapshotsApply() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try loadGetGame()
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+
+        let undo = try snapshotUpdate(from: envelope, scenarioSteps: 2)
+        try await connection.enqueue(.event(.message(ContractJSON.encode(undo))))
+        await connection.waitUntilAwaitingNextEvent()
+        #expect(model.liveGameState(for: gameID).lastKnownProjection?.counters.scenarioSteps == 2)
+
+        let newScenario = try snapshotUpdate(from: envelope, scenarioSteps: 0)
+        try await connection.enqueue(.event(.message(ContractJSON.encode(newScenario))))
+        await connection.waitUntilAwaitingNextEvent()
+        #expect(model.liveGameState(for: gameID).lastKnownProjection?.counters.scenarioSteps == 0)
+    }
+
+    @Test("A lower-step authoritative snapshot resolves pending and enables its current prompt")
+    func lowerStepSnapshotReconcilesPending() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try loadGetGame()
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let original = try #require(model.basicChoicePresentation(for: gameID)?.identity)
+        #expect(await model.submitBasicChoice(original, choiceIndex: 0) == .sentAwaitingSnapshot)
+
+        let undo = try snapshotUpdate(from: envelope, scenarioSteps: 2)
+        try await connection.enqueue(.event(.message(ContractJSON.encode(undo))))
+        await connection.waitUntilAwaitingNextEvent()
+
+        let current = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(current.questionVersion == 2)
+        #expect(current.actionPhase == nil)
+        #expect(current.canSubmit)
+        #expect(model.basicChoiceActions[gameID] == nil)
+        await connection.enqueueSendResult(.success(()))
+        #expect(
+            await model.submitBasicChoice(current.identity, choiceIndex: 1)
+                == .sentAwaitingSnapshot
+        )
+        #expect(await connection.sentData.count == 2)
+    }
+
+    @Test("A same-version replacement prompt discards the old claim and submits once")
+    func changedRawPromptReplacesPending() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try loadGetGame()
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let original = try #require(model.basicChoicePresentation(for: gameID)?.identity)
+        #expect(await model.submitBasicChoice(original, choiceIndex: 0) == .sentAwaitingSnapshot)
+
+        let replacement = try snapshotUpdate(
+            from: envelope,
+            scenarioSteps: envelope.game.scenarioSteps,
+            mutateRawQuestion: true
+        )
+        try await connection.enqueue(.event(.message(ContractJSON.encode(replacement))))
+        await connection.waitUntilAwaitingNextEvent()
+        let current = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(current.identity.promptKey != original.promptKey)
+        #expect(current.actionPhase == nil)
+
+        await connection.enqueueSendResult(.success(()))
+        #expect(
+            await model.submitBasicChoice(current.identity, choiceIndex: 0)
+                == .sentAwaitingSnapshot
+        )
+        #expect(await connection.sentData.count == 2)
     }
 
     @Test("Connection loss never resends; REST reconciliation requires a manual retry")
@@ -251,13 +349,44 @@ extension AppModelLiveGameTests {
         #expect(model.liveGameParticipantIdentities[gameID] == nil)
     }
 
-    private func snapshotUpdate(
-        from envelope: GetGameEnvelope, scenarioSteps: Int
+    func snapshotUpdate(
+        from envelope: GetGameEnvelope,
+        scenarioSteps: Int,
+        mutateRawQuestion: Bool = false,
+        questionTag: String? = nil
     ) throws -> BoardSnapshotUpdate {
         let data = try ContractJSON.encode(envelope.game)
         var value = try ContractJSON.decode(JSONValue.self, from: data)
         guard case var .object(object) = value else { throw TestFailure() }
         object["scenarioSteps"] = .number(.integer(Int64(scenarioSteps)))
+        if mutateRawQuestion {
+            guard case var .object(questions)? = object["question"] else {
+                throw TestFailure()
+            }
+            let owner = try #require(questions.keys.first)
+            guard case var .object(question)? = questions[owner] else { throw TestFailure() }
+            guard case var .array(choices)? = question["choices"] else { throw TestFailure() }
+            guard case var .object(firstChoice) = choices.first else { throw TestFailure() }
+            guard case var .array(messages)? = firstChoice["messages"] else {
+                throw TestFailure()
+            }
+            messages.append(.object(["tag": .string("FutureNestedMessage")]))
+            firstChoice["messages"] = .array(messages)
+            choices[0] = .object(firstChoice)
+            question["choices"] = .array(choices)
+            questions[owner] = .object(question)
+            object["question"] = .object(questions)
+        }
+        if let questionTag {
+            guard case var .object(questions)? = object["question"] else {
+                throw TestFailure()
+            }
+            let owner = try #require(questions.keys.first)
+            guard case var .object(question)? = questions[owner] else { throw TestFailure() }
+            question["tag"] = .string(questionTag)
+            questions[owner] = .object(question)
+            object["question"] = .object(questions)
+        }
         value = .object(object)
         let snapshot = try ContractJSON.decode(
             PublicGameSnapshot.self, from: ContractJSON.encode(value)

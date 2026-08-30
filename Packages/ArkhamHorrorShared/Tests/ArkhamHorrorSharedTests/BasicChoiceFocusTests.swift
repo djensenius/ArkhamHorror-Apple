@@ -29,7 +29,8 @@ struct BasicChoiceFocusTests {
             question: payload.state,
             readOnlyReason: nil,
             actionPhase: nil,
-            actionChoiceIndex: nil
+            actionChoiceIndex: nil,
+            serverFeedback: nil
         )
     }
 
@@ -40,7 +41,8 @@ struct BasicChoiceFocusTests {
             question: prompt.question,
             readOnlyReason: nil,
             actionPhase: .retryable(.outcomeUncertain),
-            actionChoiceIndex: 0
+            actionChoiceIndex: 0,
+            serverFeedback: nil
         )
     }
 

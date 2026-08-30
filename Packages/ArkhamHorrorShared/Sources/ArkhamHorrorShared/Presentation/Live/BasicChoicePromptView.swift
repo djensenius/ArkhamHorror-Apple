@@ -33,6 +33,13 @@ struct BasicChoicePromptView: View {
                     .accessibilityIdentifier("liveGame.prompt.status")
             }
 
+            if let feedback = presentation.serverFeedback {
+                Label(feedback, systemImage: "exclamationmark.bubble")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("liveGame.prompt.serverFeedback")
+            }
+
             if presentation.canRetry {
                 SemanticActionControl(
                     accessibilityLabel: Text("Retry choice"),

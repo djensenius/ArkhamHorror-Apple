@@ -38,10 +38,14 @@ extension AppModel {
         let readOnlyReason = readOnlyReason(
             gameID: gameID, ownerID: ownerID, question: payload.state
         )
-        let phase: BasicChoiceActionPhase? = if record?.identity == promptIdentity {
-            record?.phase
-        } else if record?.phase == .accepted {
-            .accepted
+        let isSamePrompt = record?.identity.promptKey == promptIdentity.promptKey
+        let isCurrentTransport = record?.identity == promptIdentity
+        let phase: BasicChoiceActionPhase? = if isSamePrompt {
+            if isCurrentTransport {
+                record?.phase
+            } else {
+                .uncertain
+            }
         } else {
             nil
         }
@@ -50,7 +54,8 @@ extension AppModel {
             question: payload.state,
             readOnlyReason: readOnlyReason,
             actionPhase: phase,
-            actionChoiceIndex: record?.identity == promptIdentity ? record?.choiceIndex : nil
+            actionChoiceIndex: isSamePrompt ? record?.choiceIndex : nil,
+            serverFeedback: basicChoiceServerFeedback[gameID]
         )
     }
 
@@ -121,13 +126,17 @@ extension AppModel {
               presentation.identity == identity
         else { return .reject(.staleQuestion) }
         if let action = basicChoiceActions[identity.gameID] {
-            switch action.phase {
-            case .sending, .awaitingSnapshot, .uncertain:
-                return .reject(.alreadyPending)
-            case .retryable where !isRetry:
-                return .reject(.alreadyPending)
-            case .retryable, .accepted:
-                break
+            if action.identity.promptKey != identity.promptKey {
+                basicChoiceActions[identity.gameID] = nil
+            } else {
+                switch action.phase {
+                case .sending, .awaitingSnapshot, .uncertain:
+                    return .reject(.alreadyPending)
+                case .retryable where !isRetry:
+                    return .reject(.alreadyPending)
+                case .retryable:
+                    break
+                }
             }
         }
         guard isRetry ? presentation.readOnlyReason == nil : presentation.canSubmit else {
@@ -222,7 +231,7 @@ extension AppModel {
         switch action.phase {
         case .sending, .awaitingSnapshot:
             basicChoiceActions[gameID]?.phase = .uncertain
-        case .uncertain, .retryable, .accepted:
+        case .uncertain, .retryable:
             break
         }
     }
@@ -231,12 +240,18 @@ extension AppModel {
         gameID: GameID, projection: BoardProjection, isRESTSnapshot: Bool
     ) {
         guard let action = basicChoiceActions[gameID] else { return }
+        guard case let .participant(playerID) = liveGameParticipantIdentities[gameID],
+              playerID == action.identity.ownerID
+        else {
+            basicChoiceActions[gameID] = nil
+            return
+        }
         let current = projection.questions[action.identity.ownerID]
         let samePrompt = projection.counters.scenarioSteps == action.identity.questionVersion
             && current?.rawValue == action.identity.rawQuestion
         if !samePrompt {
-            basicChoiceActions[gameID]?.phase = .accepted
-        } else if isRESTSnapshot, action.phase == .uncertain {
+            basicChoiceActions[gameID] = nil
+        } else if isRESTSnapshot {
             basicChoiceActions[gameID]?.identity = BasicChoicePromptIdentity(
                 gameID: gameID,
                 ownerID: action.identity.ownerID,
@@ -245,20 +260,28 @@ extension AppModel {
                 sessionAttemptID: liveGameSessions[gameID]?.attemptID,
                 connectionID: liveGameConnections[gameID]?.connectionID
             )
-            basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
+            if action.phase == .uncertain {
+                basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
+            }
         }
     }
 
-    func handleBasicChoiceGameError(gameID: GameID, projection: BoardProjection) {
+    /// `GameError` is broadcast room-wide and carries no player, question, or request
+    /// correlation. It therefore cannot prove this client's answer was rejected.
+    /// Definitive rejection requires a future backend correlation field.
+    func handleUncorrelatedBasicChoiceGameError(
+        gameID: GameID, sessionAttemptID: UUID, connectionID: UUID?
+    ) {
+        basicChoiceServerFeedback[gameID] =
+            "The server reported a game error that could not be tied to your choice."
         guard let action = basicChoiceActions[gameID],
-              projection.counters.scenarioSteps == action.identity.questionVersion,
-              projection.questions[action.identity.ownerID]?.rawValue
-              == action.identity.rawQuestion
+              action.identity.sessionAttemptID == sessionAttemptID,
+              action.connectionID == connectionID
         else { return }
         switch action.phase {
-        case .sending, .awaitingSnapshot, .uncertain:
-            basicChoiceActions[gameID]?.phase = .retryable(.serverRejected)
-        case .retryable, .accepted:
+        case .sending, .awaitingSnapshot:
+            basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
+        case .uncertain, .retryable:
             break
         }
     }

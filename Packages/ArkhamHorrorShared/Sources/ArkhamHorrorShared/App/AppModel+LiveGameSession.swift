@@ -325,12 +325,7 @@ extension AppModel {
     /// socket has already connected, never before) -- through
     /// ``BoardProjectionBuilder``, publishing ``LiveGameState/live(_:)`` on success.
     ///
-    /// Returns the published projection on success, or `nil` on any failure,
-    /// staleness, or cancellation (having already published whatever typed state --
-    /// ``LiveGameState/authenticationExpired``, ``LiveGameState/offline(lastKnown:)``,
-    /// ``LiveGameState/incompatiblePayload(lastKnown:)``, or
-    /// ``LiveGameState/terminalFailure(_:lastKnown:)`` -- that failure warrants, if
-    /// this attempt is still current).
+    /// Returns the projection, or `nil` after current-attempt failure handling.
     private func fetchLiveGameProjection(
         _ attempt: LiveGameSessionAttempt
     ) async -> BoardProjection? {
@@ -344,6 +339,7 @@ extension AppModel {
             guard isCurrentLiveGameSession(attempt) else { return nil }
             liveGameParticipantIdentities[attempt.gameID] = envelope.playerID
                 .map(LiveGameParticipantIdentity.participant) ?? .spectator
+            basicChoiceServerFeedback[attempt.gameID] = nil
             reconcileBasicChoice(
                 gameID: attempt.gameID, projection: projection, isRESTSnapshot: true
             )
