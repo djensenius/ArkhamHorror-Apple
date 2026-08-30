@@ -118,6 +118,18 @@ final class SecureCacheDirectory: @unchecked Sendable {
             close(descriptor)
             throw AssetError.cachePersistenceFailed("Cache root is not a verified directory")
         }
+        // Every ancestor up to and including this leaf directory already
+        // passed ``SecureCacheDirectory/requireTrustedAncestor(info:name:trustedOwnerUID:)``'s
+        // "root or this process's own uid" policy during the walk above
+        // (see `SecureCacheDirectory+PathWalk.swift`), tolerating a
+        // pre-existing, OS-managed ancestor this cache does not itself
+        // own. But the leaf *is* this cache's own directory -- the one
+        // thing it fully controls the creation of -- so it alone is held
+        // to the stricter policy of never legitimately being root-owned.
+        guard rootStat.st_uid == getuid() else {
+            close(descriptor)
+            throw AssetError.cachePersistenceFailed("Cache root has an unexpected owner")
+        }
         rootFD = descriptor
         rootOwnerUID = rootStat.st_uid
         rootDevice = rootStat.st_dev
@@ -182,7 +194,14 @@ final class SecureCacheDirectory: @unchecked Sendable {
 
     /// The exact on-disk size and regular-file/ownership verification for
     /// `name`, without reading its contents. Returns `nil` for a clean
-    /// miss.
+    /// miss. Applies the identical regular-file/owner/device/link-count
+    /// policy ``requireVerifiedRegularFile(descriptor:name:)`` enforces
+    /// for an opened descriptor -- a hardlinked file sharing another
+    /// entry's inode, or one substituted from a different device/volume
+    /// at this exact name, must never be treated as "this cache's own
+    /// verified regular file" merely because it happens to answer `stat`
+    /// as one; both entry points share the same underlying check so
+    /// neither can silently drift from the other.
     func attributes(name: String) throws -> (size: Int, isRegularFile: Bool)? {
         if faultState.shouldFailAttributes(name: name) {
             throw AssetError.cachePersistenceFailed("injected fault: attributes('\(name)')")
@@ -194,7 +213,7 @@ final class SecureCacheDirectory: @unchecked Sendable {
             }
             throw AssetError.cachePersistenceFailed("fstatat failed for '\(name)' (errno \(errno))")
         }
-        let isRegular = (info.st_mode & S_IFMT) == S_IFREG && info.st_uid == rootOwnerUID
+        let isRegular = isVerifiedRegularFile(info: info)
         return (size: Int(info.st_size), isRegularFile: isRegular)
     }
 
@@ -265,6 +284,17 @@ final class SecureCacheDirectory: @unchecked Sendable {
             names.append(name)
         }
         return names
+    }
+
+    /// The shared regular-file/owner/device/link-count predicate behind
+    /// both ``attributes(name:)`` and ``requireVerifiedRegularFile(descriptor:name:)``
+    /// -- see that method's doc comment for why every one of these four
+    /// checks matters.
+    private func isVerifiedRegularFile(info: stat) -> Bool {
+        (info.st_mode & S_IFMT) == S_IFREG
+            && info.st_uid == rootOwnerUID
+            && info.st_dev == rootDevice
+            && info.st_nlink == 1
     }
 
     /// Verifies an already-opened descriptor resolves to a regular file
