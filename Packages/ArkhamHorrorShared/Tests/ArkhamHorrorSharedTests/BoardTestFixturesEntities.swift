@@ -120,6 +120,23 @@ extension BoardTestFixtures {
             locationMap[id] = location
         }
 
+        // Resolves to an investigator actually present in `investigators` whenever the
+        // caller's (possibly just-defaulted) activeInvestigatorID/leadInvestigatorID does
+        // not already name one — so a caller that supplies `investigators` without also
+        // overriding these can never accidentally build an internally-inconsistent
+        // snapshot the real contract fixtures would never emit. Falls back to the
+        // caller-supplied value verbatim only when `investigators` is empty (there is
+        // nothing to resolve to), preserving every existing explicit-override call site's
+        // exact behavior.
+        let sortedInvestigatorIDs = investigators.keys
+            .sorted { $0.rawValue.rawValue < $1.rawValue.rawValue }
+        let resolvedActiveInvestigatorID = investigators[activeInvestigatorID] != nil
+            ? activeInvestigatorID
+            : (sortedInvestigatorIDs.first ?? activeInvestigatorID)
+        let resolvedLeadInvestigatorID = investigators[leadInvestigatorID] != nil
+            ? leadInvestigatorID
+            : (sortedInvestigatorIDs.first ?? leadInvestigatorID)
+
         return PublicGameSnapshot(
             name: name, id: BoardTestFixtures.gameID(), log: [], git: "test",
             settings: gameSettings(), gameSettings: gameSettings(), mode: mode, modifiers: [],
@@ -129,10 +146,11 @@ extension BoardTestFixtures {
             acts: acts, agendas: agendas, treacheries: entityMap(count: treacheryCount),
             events: entityMap(count: eventCount), concealed: entityMap(count: concealedCount),
             skills: entityMap(count: skillCount), stories: [:], scarletKeys: [:],
-            playerCount: max(investigators.count, 1), activeInvestigatorID: activeInvestigatorID,
+            playerCount: max(investigators.count, 1),
+            activeInvestigatorID: resolvedActiveInvestigatorID,
             activePlayerID: BoardTestFixtures.playerID(),
             turnPlayerInvestigatorID: turnPlayerInvestigatorID,
-            leadInvestigatorID: leadInvestigatorID, playerOrder: playerOrder, phase: phase,
+            leadInvestigatorID: resolvedLeadInvestigatorID, playerOrder: playerOrder, phase: phase,
             phaseStep: phaseStep, inAction: false, skillTest: nil, skillTestChaosTokens: [],
             focusedCards: [], highlightedCards: [], focusedTarotCards: [], foundCards: .null,
             focusedChaosTokens: [], activeCard: nil, removedFromPlay: [], gameState: gameState,
