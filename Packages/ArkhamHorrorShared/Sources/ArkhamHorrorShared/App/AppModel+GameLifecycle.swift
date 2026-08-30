@@ -115,7 +115,10 @@ extension AppModel {
     }
 
     /// Clears every game-lifecycle/lobby state property back to its initial, empty
-    /// value and cancels every in-flight list/action task.
+    /// value and cancels every in-flight list/action task -- and, via
+    /// ``resetLiveGameState()``, tears down every live-game session too (see
+    /// `AppModel+LiveGame.swift`), regardless of how many scenes were still viewing
+    /// one.
     ///
     /// Called at every point a signed-in session ends or is superseded (sign-out,
     /// profile switch/retry/in-place profile edit restart, and 401 session expiry),
@@ -135,6 +138,7 @@ extension AppModel {
         gameLifecycleActionAttempts = [:]
         gameLifecycleActionTasks = [:]
         gameListGeneration += 1
+        resetLiveGameState()
     }
 
     // MARK: - Games list
