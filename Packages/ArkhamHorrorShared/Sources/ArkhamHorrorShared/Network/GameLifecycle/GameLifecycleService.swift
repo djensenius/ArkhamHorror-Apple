@@ -148,7 +148,13 @@ struct GameLifecycleService: Sendable {
     /// Builds `<profile>/arkham/games/<id>[<suffix>]`, independently percent-encoding
     /// `id`'s wire text (see ``percentEncodedGameIDSegment(_:)``) and appending it via
     /// `percentEncodedPath`, which treats the base path's own encoding and this
-    /// segment's encoding as already-final and never re-escapes either.
+    /// segment's encoding as already-final and never re-escapes either. Uses `id`'s
+    /// explicit lowercased UUID string -- not ``Identifier/description``, which
+    /// delegates to `UUID.uuidString` and is therefore uppercase -- matching the
+    /// backend's own canonical lowercase-hyphenated rendering (see
+    /// ``Identifier/encode(to:)``) exactly, so a game ID containing a hex letter is
+    /// never rendered with different casing here than everywhere else it appears on
+    /// the wire.
     private func gameURL(
         _ id: GameID, suffix: String = "", on profile: ServerProfile
     ) throws -> URL {
@@ -156,7 +162,9 @@ struct GameLifecycleService: Sendable {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
             throw GameLifecycleError.invalidPathSegment
         }
-        guard let segment = Self.percentEncodedGameIDSegment(id.description) else {
+        guard let segment = Self.percentEncodedGameIDSegment(
+            id.rawValue.uuidString.lowercased()
+        ) else {
             throw GameLifecycleError.invalidPathSegment
         }
         components.percentEncodedPath += "/\(segment)\(suffix)"
