@@ -62,6 +62,8 @@ jobs:
         run: mise run test
       - name: Self-test contract fixture provenance script (offline)
         run: mise run contract-provenance-selftest
+      - name: Self-test locale-digest provenance script (offline)
+        run: mise run locale-digest-provenance-selftest
 
   contract-provenance:
     name: Contract fixture provenance
