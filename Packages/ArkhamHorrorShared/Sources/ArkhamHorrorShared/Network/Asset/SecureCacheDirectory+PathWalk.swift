@@ -21,6 +21,19 @@ extension SecureCacheDirectory {
     static func openOrCreateVerifiedDirectory(at directory: URL) throws -> Int32 {
         let standardized = directory.standardizedFileURL
         let components = standardized.pathComponents.filter { $0 != "/" }
+        // A `directory` that standardizes to the filesystem root itself
+        // (`/`) has zero path components, so the walk below would never
+        // execute and would hand back an open descriptor to `/` as though
+        // it were a verified, cache-owned directory. Reject this before
+        // opening anything: even though no caller in this package passes
+        // such a path today, silently treating `/` as the cache root
+        // would turn every subsequent create/remove/enumerate operation
+        // into an operation against the entire filesystem root.
+        guard !components.isEmpty else {
+            throw AssetError.cachePersistenceFailed(
+                "Refusing to use the filesystem root as a cache directory"
+            )
+        }
         var currentFD = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard currentFD >= 0 else {
             throw AssetError.cachePersistenceFailed(

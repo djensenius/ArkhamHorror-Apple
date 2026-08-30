@@ -94,4 +94,21 @@ struct SecureCacheDirectoryPathWalkTests {
             )
         }
     }
+
+    /// A `directory` whose standardized, absolute path is exactly the
+    /// filesystem root (`/`) has zero non-root path components, so the
+    /// walk's `for component in components` loop never executes. Before
+    /// the fix under test, this fell straight through to `return
+    /// currentFD`, handing back an open descriptor to `/` itself as
+    /// though it were a verified, cache-owned directory -- which would
+    /// turn every later create/remove/enumerate call this package makes
+    /// through that descriptor into an operation against the entire
+    /// filesystem root. This must be rejected before opening anything.
+    @Test("Opening the filesystem root itself as a cache directory is rejected")
+    func rejectsFilesystemRootAsCacheDirectory() {
+        let root = URL(fileURLWithPath: "/")
+        #expect(throws: AssetError.self) {
+            _ = try SecureCacheDirectory.openOrCreateVerifiedDirectory(at: root)
+        }
+    }
 }
