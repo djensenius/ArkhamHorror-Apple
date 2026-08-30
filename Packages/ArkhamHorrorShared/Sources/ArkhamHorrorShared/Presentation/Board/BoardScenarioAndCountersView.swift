@@ -120,7 +120,7 @@ struct BoardChaosBagView: View {
             faceCountsRow(summary.setAsideCounts)
         }
         if let forceDrawFace = summary.forceDrawFace {
-            Text("Forced draw: \(forceDrawFace.rawValue)")
+            Text("Forced draw: \(BoardDisplayFormatting.humanizeTag(forceDrawFace.rawValue))")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -137,7 +137,8 @@ struct BoardChaosBagView: View {
                 ForEach(counts, id: \.face) { count in
                     BoardStatBadge(
                         systemImage: "circle.hexagongrid.fill",
-                        value: "\(count.face.rawValue) ×\(count.count)"
+                        value: "\(BoardDisplayFormatting.humanizeTag(count.face.rawValue)) "
+                            + "×\(count.count)"
                     )
                 }
             }

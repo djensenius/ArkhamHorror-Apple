@@ -115,6 +115,9 @@ enum BoardAccessibility {
                 + "assets \(location.assetCount), events \(location.eventCount), "
                 + "treacheries \(location.treacheryCount)"
         )
+        if !location.otherTokenCounts.isEmpty {
+            parts.append(tokenCountsSummary(location.otherTokenCounts))
+        }
         if location.concealedCount > 0 {
             parts.append("Concealed cards \(location.concealedCount)")
         }
@@ -140,6 +143,9 @@ enum BoardAccessibility {
                 + "assets \(location.assetCount), events \(location.eventCount), "
                 + "treacheries \(location.treacheryCount)"
         )
+        if !location.tokenCounts.isEmpty {
+            parts.append(tokenCountsSummary(location.tokenCounts))
+        }
         if location.concealedCount > 0 {
             parts.append("Concealed cards \(location.concealedCount)")
         }
@@ -207,7 +213,8 @@ enum BoardAccessibility {
             parts.append("Set aside: " + faceCountsSummary(chaosBag.setAsideCounts))
         }
         if let forceDrawFace = chaosBag.forceDrawFace {
-            parts.append("Forced draw: \(forceDrawFace.rawValue)")
+            let humanized = BoardDisplayFormatting.humanizeTag(forceDrawFace.rawValue)
+            parts.append("Forced draw: \(humanized)")
         }
         if chaosBag.hasPendingChoice {
             parts.append("Pending chaos bag resolution")
@@ -220,6 +227,8 @@ enum BoardAccessibility {
     }
 
     private static func faceCountsSummary(_ counts: [BoardChaosFaceCount]) -> String {
-        counts.map { "\($0.face.rawValue) \($0.count)" }.joined(separator: ", ")
+        counts
+            .map { "\(BoardDisplayFormatting.humanizeTag($0.face.rawValue)) \($0.count)" }
+            .joined(separator: ", ")
     }
 }
