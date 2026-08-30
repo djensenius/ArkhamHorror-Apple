@@ -78,6 +78,29 @@ extension AppModelLiveGameTests {
         #expect(model.liveGameSessions[gameID] == nil)
     }
 
+    @Test("""
+    retryLiveGame is a no-op for incompatiblePayload even with an active viewer, since \
+    reconnecting/refetching cannot fix a genuine contract mismatch
+    """)
+    func retryIsANoOpForIncompatiblePayloadEvenWithAnActiveViewer() async {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        let gameID = GameID(UUID())
+        await fakes.socketFactory.setGated(true)
+        let token = model.subscribeToLiveGame(gameID)
+        await fakes.socketFactory.waitUntilConnectPending(1)
+        model.liveGameStates[gameID] = .incompatiblePayload(lastKnown: nil)
+        #expect(!model.liveGameState(for: gameID).isRetryable)
+
+        let sessionBeforeRetry = model.liveGameSessions[gameID]?.attemptID
+        model.retryLiveGame(gameID)
+        // No-op: a viewer is present, but the state itself is not retryable, so no
+        // fresh attempt is installed.
+        #expect(model.liveGameSessions[gameID]?.attemptID == sessionBeforeRetry)
+        #expect(model.liveGameState(for: gameID) == .incompatiblePayload(lastKnown: nil))
+        model.unsubscribeFromLiveGame(token)
+    }
+
     // MARK: - Sign-out / profile-switch cancel every session
 
     @Test("Signing out cancels every live-game session and clears all published state")

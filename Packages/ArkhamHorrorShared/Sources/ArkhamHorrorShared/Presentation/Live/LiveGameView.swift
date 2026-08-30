@@ -6,9 +6,13 @@ import SwiftUI
 /// accessible presentation -- loading, the live ``BoardView``, a non-blocking
 /// reconnecting banner over the last known board, and dedicated
 /// offline/incompatible-payload/authentication-expired/terminal-failure states with
-/// a Retry (or Dismiss, for authentication expiry, which requires signing in again
-/// rather than merely retrying the same rejected token) action -- never a
-/// success-shaped fallback.
+/// a Retry action for the two states retrying could actually help
+/// (``LiveGameState/offline(lastKnown:)``, ``LiveGameState/terminalFailure(_:lastKnown:)``)
+/// or a Dismiss action for the two
+/// it cannot (authentication expiry requires signing in again rather than merely
+/// retrying the same rejected token; an incompatible payload is a genuine contract
+/// mismatch reconnecting cannot fix) -- never a success-shaped fallback, and never a
+/// Retry action offered where ``LiveGameState/isRetryable`` reports `false`.
 ///
 /// ## Subscription ownership
 ///
@@ -82,11 +86,17 @@ struct LiveGameView: View {
             retryableFailureContent(
                 title: "Connection Lost",
                 systemImage: "wifi.slash",
-                message: "Automatic reconnect attempts were unsuccessful.",
+                message: "Unable to reach the server. Check your connection and try again.",
                 accessibilityID: AccountAccessibilityID.liveGameOfflineText
             )
         case .incompatiblePayload:
-            retryableFailureContent(
+            // Deliberately a Dismiss action, never `retryableFailureContent`'s Retry:
+            // this is a genuine contract mismatch (see
+            // ``LiveGameState/incompatiblePayload(lastKnown:)``'s own documentation)
+            // that reconnecting/refetching cannot fix, so retrying would only
+            // reproduce the same failure -- matching ``LiveGameState/isRetryable``,
+            // which excludes this case for the same reason.
+            dismissibleFailureContent(
                 title: "Update Required",
                 systemImage: "arrow.triangle.2.circlepath.circle",
                 message: "This game's data isn't compatible with this app version. "
@@ -94,15 +104,12 @@ struct LiveGameView: View {
                 accessibilityID: AccountAccessibilityID.liveGameIncompatiblePayloadText
             )
         case .authenticationExpired:
-            ContentUnavailableView {
-                Label("Sign-In Required", systemImage: "person.crop.circle.badge.exclamationmark")
-            } description: {
-                Text("Your session has expired. Sign in again to continue.")
-            } actions: {
-                Button("Dismiss") { dismiss() }
-                    .accessibilityIdentifier(AccountAccessibilityID.liveGameDismissButton)
-            }
-            .accessibilityIdentifier(AccountAccessibilityID.liveGameAuthenticationExpiredText)
+            dismissibleFailureContent(
+                title: "Sign-In Required",
+                systemImage: "person.crop.circle.badge.exclamationmark",
+                message: "Your session has expired. Sign in again to continue.",
+                accessibilityID: AccountAccessibilityID.liveGameAuthenticationExpiredText
+            )
         case let .terminalFailure(error, _):
             retryableFailureContent(
                 title: "Couldn't Load Game",
@@ -138,11 +145,13 @@ struct LiveGameView: View {
 
     /// A retryable failure state: a full ``ContentUnavailableView`` -- deliberately
     /// never the last known board (unlike ``reconnectingContent(lastKnown:)``) --
-    /// since each of these states means automatic recovery has already given up (or
-    /// cannot succeed at all, for an incompatible payload); presenting the stale
-    /// board here would suggest it is still live rather than clearly communicating
-    /// that it is not. Always exposes an accessible, explicit Retry action wired to
-    /// ``AppModel/retryLiveGame(_:)``.
+    /// since each of these states means automatic recovery has already given up;
+    /// presenting the stale board here would suggest it is still live rather than
+    /// clearly communicating that it is not. Always exposes an accessible, explicit
+    /// Retry action wired to ``AppModel/retryLiveGame(_:)``. Only used for states
+    /// ``LiveGameState/isRetryable`` reports `true` for (see
+    /// ``dismissibleFailureContent(title:systemImage:message:accessibilityID:)`` for
+    /// the non-retryable counterpart).
     private func retryableFailureContent(
         title: String,
         systemImage: String,
@@ -156,6 +165,31 @@ struct LiveGameView: View {
         } actions: {
             Button("Retry") { model.retryLiveGame(gameID) }
                 .accessibilityIdentifier(AccountAccessibilityID.liveGameRetryButton)
+        }
+        .accessibilityIdentifier(accessibilityID)
+    }
+
+    /// A non-retryable failure state: the same full-screen
+    /// ``ContentUnavailableView`` presentation as
+    /// ``retryableFailureContent(title:systemImage:message:accessibilityID:)``, but
+    /// with a Dismiss action instead of Retry -- for states where retrying could
+    /// not possibly change the outcome (``LiveGameState/authenticationExpired``
+    /// requires signing in again; ``LiveGameState/incompatiblePayload(lastKnown:)``
+    /// is a genuine contract mismatch reconnecting cannot fix), matching
+    /// ``LiveGameState/isRetryable`` reporting `false` for both.
+    private func dismissibleFailureContent(
+        title: String,
+        systemImage: String,
+        message: String,
+        accessibilityID: String
+    ) -> some View {
+        ContentUnavailableView {
+            Label(title, systemImage: systemImage)
+        } description: {
+            Text(message)
+        } actions: {
+            Button("Dismiss") { dismiss() }
+                .accessibilityIdentifier(AccountAccessibilityID.liveGameDismissButton)
         }
         .accessibilityIdentifier(accessibilityID)
     }

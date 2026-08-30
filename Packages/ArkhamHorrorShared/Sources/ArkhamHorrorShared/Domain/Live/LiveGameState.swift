@@ -74,12 +74,17 @@ extension LiveGameState {
     /// Whether ``AppModel/retryLiveGame(_:)`` is a meaningful action from this state.
     /// `authenticationExpired` is deliberately excluded: retrying would immediately
     /// repeat the same rejected token round-trip rather than accomplish anything: the
-    /// user must sign in again first.
+    /// user must sign in again first. `incompatiblePayload` is also deliberately
+    /// excluded: per this case's own documentation, a decode failure is a genuine
+    /// contract mismatch that reconnecting/refetching cannot fix (retrying would
+    /// only reproduce the same failure against the same still-incompatible payload
+    /// shape), so the only meaningful action from here is dismissing until the app
+    /// is updated.
     var isRetryable: Bool {
         switch self {
-        case .offline, .incompatiblePayload, .terminalFailure:
+        case .offline, .terminalFailure:
             true
-        case .idle, .loading, .live, .reconnecting, .authenticationExpired:
+        case .idle, .loading, .live, .reconnecting, .incompatiblePayload, .authenticationExpired:
             false
         }
     }

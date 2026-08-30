@@ -30,6 +30,12 @@ extension AppModelLiveGameTests {
         await connection.waitUntilClosed()
         let closeCount = await connection.closeCallCount
         #expect(closeCount == 1)
+        // A genuine contract mismatch is never retryable: reconnecting/refetching
+        // cannot possibly change the outcome against the same still-incompatible
+        // payload shape, so `LiveGameView` must never offer a Retry action here
+        // (see ``AppModelLiveGameRetryTests`` for `retryLiveGame`'s own no-op proof
+        // against every non-retryable state).
+        #expect(!model.liveGameState(for: gameID).isRetryable)
     }
 
     @Test("An unsupported ServerMessage tag is ignored, never treated as an incompatibility")
