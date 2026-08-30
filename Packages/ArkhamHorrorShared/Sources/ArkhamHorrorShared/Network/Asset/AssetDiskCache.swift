@@ -41,16 +41,24 @@ import Foundation
 /// A deletion that fails partway (e.g. a permission error) throws a typed
 /// ``AssetError/cachePersistenceFailed(_:)`` rather than being silently
 /// swallowed: the caller (``AssetCacheService``) maintains its own
-/// in-memory tombstone for a key whose disk deletion could not be
-/// confirmed, so a failed physical deletion can never let a subsequent
-/// read resurrect the bytes it was supposed to invalidate.
+/// in-memory, best-effort tombstone for a key whose disk deletion could
+/// not be confirmed. That in-process tombstone is purely an optimization
+/// (skip a disk read this process already expects to be pointless), never
+/// a durable, cross-process, or cross-restart correctness guarantee: any
+/// disk-only hit — from this cache or a fresh instance in a different
+/// process/restart — is only ever trusted by ``AssetCacheService`` after
+/// it independently passes a fresh online conditional (`ETag`/
+/// `Last-Modified`) revalidation against the live server. That single
+/// requirement is what actually prevents a failed local deletion (or any
+/// other cross-process disk-state race) from ever resurrecting content
+/// the origin itself considers gone or changed — not a durable per-key
+/// tombstone or whole-cache "reads disabled" marker file.
 actor AssetDiskCache {
     let directory: URL
     let limits: AssetCacheLimits
     let fileManager: FileManager
     let secureDirectory: SecureCacheDirectory
     var didRecoverOrphans = false
-    var accessSequenceAllocator = AssetAccessSequenceAllocator()
 
     /// This actor's own independent half of the token compare-and-swap
     /// described in `AssetCacheService+Epoch.swift` and mirrored by
@@ -61,20 +69,6 @@ actor AssetDiskCache {
     /// issuance order).
     var appliedToken: [AssetCacheKey: AssetCacheService.CacheToken] = [:]
     var acceptedGeneration = 0
-
-    /// This process's own last-resort fallback for
-    /// ``areDiskReadsDisabled()`` when even the durable, on-disk
-    /// disabled-reads marker could not be confirmed written -- see
-    /// ``markDiskReadsDisabledLocked()``'s doc comment for the full
-    /// "propagate typed failure AND permanently fail-close disk reads
-    /// in-process" contract this exists to uphold whenever durability
-    /// itself is genuinely impossible (e.g. a persistently full or
-    /// read-only disk). Cleared only by a fully successful
-    /// ``AssetDiskCache/Removal/removeAll()``, mirroring the on-disk
-    /// marker's own clear semantics -- never by any other path, since
-    /// nothing short of a full, confirmed clear may relax this
-    /// protection once it has been forced.
-    var diskReadsForceDisabledInProcess = false
 
     /// Test-only hook invoked by ``get(_:)`` immediately before it returns
     /// a successfully-validated hit — see that call site's doc comment.
@@ -172,14 +166,6 @@ actor AssetDiskCache {
         if let token, !acceptToken(token, for: key) {
             return
         }
-        // The durable half of the write CAS (see
-        // `AssetDiskCache+Generation.swift`): rejects this write as a
-        // stale no-op if some other write -- in this process or another
-        // -- has already been durably committed for this key since
-        // `token` captured its baseline.
-        if let token, !acceptDurableGeneration(token, for: key) {
-            return
-        }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
         }
@@ -204,6 +190,24 @@ actor AssetDiskCache {
         let payloadAlreadyExisted =
             (try? secureDirectory.attributes(name: payloadName))?.isRegularFile == true
 
+        // `evictIfNeeded()` is this cache's sole "prove the budget" pass:
+        // it re-lists the directory, sweeps every orphan/stray byte it
+        // can find, and durably disables further writes if usage cannot
+        // be proven within budget. It must run after *every* attempted
+        // publish here — not only a fully successful one — because a
+        // failure partway through `writePayloadGenerationLocked` or
+        // `commitMetadataPointerLocked` (for example, a rolled-back
+        // payload whose own best-effort removal itself fails) can leave
+        // stray bytes on disk that this call itself just created. Without
+        // this `defer`, those bytes would sit completely unaccounted
+        // against the quota — and any over-budget condition they cause
+        // completely unenforced — until some unrelated *future*
+        // successful `set` happened to run eviction again. Running it
+        // unconditionally here means a failed publish's own mess is
+        // priced in and, if it pushes usage out of bounds, immediately
+        // fail-closes further writes rather than leaving that window
+        // open indefinitely.
+        defer { evictIfNeeded() }
         try writePayloadGenerationLocked(payloadName: payloadName, payload: payload)
         try commitMetadataPointerLocked(
             key,
@@ -211,7 +215,6 @@ actor AssetDiskCache {
             payloadName: payloadName,
             payloadAlreadyExisted: payloadAlreadyExisted
         )
-        evictIfNeeded()
     }
 
     /// Updates only the metadata sidecar for an already-cached `key` (for
@@ -241,15 +244,6 @@ actor AssetDiskCache {
         if let token, !acceptToken(token, for: key) {
             return
         }
-        // Same durable CAS as ``setLocked(_:payload:metadata:token:)`` --
-        // see that call site's comment and `AssetDiskCache+Generation.swift`.
-        // A touch never itself advances the durable write-generation (it
-        // republishes no new content), so this only ever rejects a touch
-        // whose baseline has been superseded by some other key-changing
-        // write since it was issued.
-        if let token, !acceptDurableGeneration(token, for: key) {
-            return
-        }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
         }
@@ -267,16 +261,16 @@ actor AssetDiskCache {
             throw AssetError.cachePersistenceFailed("No cached payload to touch for this key")
         }
         var stamped = metadata
-        stamped.accessSequence = accessSequenceAllocator.allocate()
-        // Re-stamped from this actor's own fresh read, exactly like
-        // ``accessSequence`` above -- never trusted from whatever value
-        // the caller's `metadata` happened to carry (e.g. a value read
-        // into memory before some intervening disk write). By this point
-        // ``acceptDurableGeneration(_:for:)`` above has already confirmed
-        // this equals `token.diskBaselineGeneration` when a token was
-        // supplied, so this is a same-value re-affirmation in that case,
-        // and the sole source of truth when no token gates this call.
-        stamped.writeGeneration = currentWriteGenerationLocked(for: key)
+        // See ``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``'s
+        // doc comment: `metadata.accessSequence` here is this exact
+        // entry's own previously-known value (as most recently observed
+        // by whichever caller is now touching it), folded in purely as an
+        // extra floor for a freshly created cache root whose durable
+        // counter file does not exist yet — the counter file itself is
+        // always authoritative once it exists.
+        stamped.accessSequence = try secureDirectory.allocateAccessSequence(
+            atLeastAfter: metadata.accessSequence
+        )
         do {
             try persistMetadata(stamped, name: metadataFilename(for: key))
         } catch {
@@ -301,91 +295,5 @@ actor AssetDiskCache {
 
     func metadataFilename(for key: AssetCacheKey) -> String {
         "\(key.digestHex).meta.json"
-    }
-
-    // MARK: - Token CAS
-
-    /// Refuses to accept a new payload write while this cache's on-disk
-    /// budget is not currently provably under control — see
-    /// ``AssetDiskCache/Tombstone/markDiskWritesDisabledLocked()``'s doc
-    /// comment for exactly what durably sets/clears that state. Attempts
-    /// one fresh ``evictIfNeeded()`` recovery pass first: a marker left
-    /// over from a now-resolved transient failure (a filesystem that was
-    /// briefly full or read-only, for example) must not permanently block
-    /// every future write once conditions have actually improved, but a
-    /// marker that persists even after this fresh attempt means physical
-    /// usage genuinely cannot be confirmed or brought under budget right
-    /// now, and this call's own new payload must not be allowed to make
-    /// that unknown/over-budget state larger still.
-    func requireDiskWritesEnabledLocked() throws {
-        guard areDiskWritesDisabledLocked() else { return }
-        evictIfNeeded()
-        guard !areDiskWritesDisabledLocked() else {
-            throw AssetError.cachePersistenceFailed(
-                "Disk writes are disabled: on-disk cache budget could not be confirmed"
-            )
-        }
-    }
-
-    /// only if its generation is not older than the generation this actor
-    /// currently accepts writes under, and it is strictly newer than
-    /// whatever token this actor last recorded as applied for `key` (a
-    /// `nil` prior value always accepts). Records `token` as the new
-    /// applied value on acceptance so a subsequent, older-issued token for
-    /// the same key can never later overwrite it. Mirrors
-    /// ``AssetMemoryCache``'s identical private helper of the same name.
-    /// Not `private`: also called from `AssetDiskCache+Removal.swift`'s
-    /// `remove(_:token:)`/`removeAll()`, in the same file-length budget
-    /// as this type.
-    func acceptToken(
-        _ token: AssetCacheService.CacheToken,
-        for key: AssetCacheKey
-    ) -> Bool {
-        guard token.generation >= acceptedGeneration else { return false }
-        if let applied = appliedToken[key], applied >= token {
-            return false
-        }
-        appliedToken[key] = token
-        return true
-    }
-
-    /// `true` only for a string that is exactly 64 lowercase ASCII hex
-    /// characters — the shape of a real SHA-256 hex digest, and the only
-    /// shape ever safe to interpolate into a filesystem path derived from
-    /// otherwise-untrusted on-disk metadata. In particular this rejects
-    /// `/`, `..`, and any other path-traversal or delimiter-injection
-    /// attempt a tampered metadata sidecar's `payloadSHA256Hex` field could
-    /// otherwise smuggle into ``payloadFilename(keyHash:contentHash:)``.
-    static func isValidContentHash(_ value: String) -> Bool {
-        guard value.utf8.count == 64 else { return false }
-        return value.utf8.allSatisfy { byte in
-            (0x30 ... 0x39).contains(byte) || (0x61 ... 0x66).contains(byte)
-        }
-    }
-}
-
-/// Not `private`: `AssetDiskCache+Recovery.swift` also decodes metadata
-/// sidecars with this exact configuration during startup recovery.
-///
-/// A fresh instance per call, rather than a shared singleton, since
-/// `JSONEncoder`/`JSONDecoder` are not documented as thread-safe for
-/// concurrent `encode`/`decode` calls: multiple `AssetDiskCache` actor
-/// instances (or concurrently running tests) could otherwise race on one
-/// shared encoder/decoder's internal state. Constructing one is cheap
-/// (only setting a date strategy), so this costs nothing meaningful per
-/// call.
-extension JSONEncoder {
-    static func assetCache() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        return encoder
-    }
-}
-
-extension JSONDecoder {
-    static func assetCache() -> JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
     }
 }

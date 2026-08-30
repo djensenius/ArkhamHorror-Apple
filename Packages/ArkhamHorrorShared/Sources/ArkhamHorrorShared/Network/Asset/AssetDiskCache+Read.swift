@@ -69,16 +69,6 @@ extension AssetDiskCache {
 
     private func getLocked(_ key: AssetCacheKey) -> CachedAsset? {
         recoverOrphansIfNeeded()
-        // Fail-closed checks first, before any other work: a whole-cache
-        // "disk reads disabled" marker (an unenumerable `removeAll()`
-        // survivor listing previously left this cache unable to durably
-        // tombstone specific keys) or this exact key's own durable
-        // tombstone (a previously failed metadata-pointer deletion) both
-        // mean "never serve this" regardless of what a purely structural
-        // read of the metadata+payload pair would otherwise accept.
-        guard !areDiskReadsDisabled(), !isTombstoned(keyHash: key.digestHex) else {
-            return nil
-        }
         let metadataName = metadataFilename(for: key)
         guard var metadata = readValidatedMetadata(for: key, metadataName: metadataName) else {
             return nil
@@ -87,23 +77,26 @@ extension AssetDiskCache {
             return nil
         }
 
-        // Bumped up to strictly after whatever value this exact entry was
-        // already last persisted with, before allocating: this actor's own
-        // in-memory ``AssetDiskCache/accessSequenceAllocator`` is only ever
-        // seeded once, at this process's own startup recovery (see
-        // ``AssetDiskCache/seedAccessSequenceAllocator(resumingAfter:)``),
-        // so a different actor instance — another concurrent
-        // ``AssetDiskCache`` in this same process, or a genuinely separate
-        // process/instance sharing this same cache directory — can have
-        // persisted a strictly greater sequence for this exact entry since
-        // this actor last observed it. Comparing against the value just
-        // read back from disk (the freshest on-disk truth available,
-        // obtained under the same exclusive lock this whole read holds)
-        // closes that gap without requiring a full-directory rescan on
-        // every single touch.
-        metadata.accessSequence = accessSequenceAllocator.allocate(
+        // Bumped to the next durable, globally monotonic value via
+        // ``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``,
+        // seeded with whatever value this exact entry was already last
+        // persisted with (the freshest on-disk truth available, obtained
+        // under the same exclusive lock this whole read holds) purely as
+        // an extra floor for a freshly created cache root whose durable
+        // counter file does not exist yet — see that type's own doc
+        // comment for why a purely local, per-actor-instance counter is
+        // not sufficient to prevent two different actor instances from
+        // assigning colliding or out-of-order sequences to two different
+        // keys. A failure to durably persist the bumped value here is
+        // best-effort only (this is an LRU-touch refresh, not a
+        // correctness precondition for the read itself): the entry's own
+        // previously-persisted sequence is kept unchanged rather than
+        // failing the whole read.
+        if let allocated = try? secureDirectory.allocateAccessSequence(
             atLeastAfter: metadata.accessSequence
-        )
+        ) {
+            metadata.accessSequence = allocated
+        }
         try? persistMetadata(metadata, name: metadataName)
         return CachedAsset(payload: payload, metadata: metadata)
     }

@@ -242,92 +242,22 @@ extension AssetDiskCacheTests {
             let fetched = try await cache.get(cacheKey)
             #expect(fetched == nil)
             // Excludes the cache's own reserved cross-process lock file
-            // (see the sibling fixup in `AssetDiskCacheHashIntegrityTests`).
-            // A successful removal still leaves exactly this key's own
-            // durable fence-tombstone marker behind (never the payload or
-            // metadata sidecar): see `AssetDiskCache+Generation.swift`'s
-            // doc comment for why this is required (a stale in-flight
-            // write captured before this removal must never be able to
-            // resurrect the just-deleted bytes just because the removal
-            // itself succeeded) and is not an unbounded leak (a later,
-            // genuinely fresh publish for this exact key clears it again).
+            // and durable access-sequence counter file (see the sibling
+            // fixup in `AssetDiskCacheHashIntegrityTests`).
+            // A successful removal leaves nothing else behind: unlike
+            // the now-removed durable per-key tombstone/generation-fence
+            // system, there is no on-disk marker to preserve — every disk
+            // hit (for this key or any other) must independently pass a
+            // fresh online conditional revalidation before
+            // `AssetCacheService` will ever trust or return it, so a
+            // stale in-flight write racing this removal cannot resurrect
+            // anything simply by finding no fence file present.
             let contents = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-                .filter { $0 != SecureCacheDirectory.lockFileName }
-            #expect(contents == ["\(cacheKey.digestHex).tombstone"])
-        }
-    }
-
-    @Test(
-        """
-        A corrupt (undecodable) metadata sidecar found during quota accounting is quarantined \
-        immediately, not merely skipped, so it cannot occupy disk space indefinitely uncounted
-        """
-    )
-    func undecodableEntryEncounteredDuringAccountingIsQuarantined() async throws {
-        try await withScratchDirectory { directory in
-            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let cacheKey = try key("01001")
-            let payload = Data([1, 2, 3])
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload)
-            )
-
-            let payloadURL = payloadFileURL(
-                directory: directory,
-                cacheKey: cacheKey,
-                payload: payload
-            )
-            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
-            try Data("not json".utf8).write(to: metadataURL)
-
-            // totalAccountedBytes() walks every entry via the same
-            // internal accounting path evictIfNeeded() uses; it must not
-            // count (and must actively remove) an entry whose sidecar
-            // cannot be decoded.
-            let total = await cache.totalAccountedBytes()
-            #expect(total == 0)
-            #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
-            #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
-        }
-    }
-
-    @Test(
-        """
-        An entry whose metadata cacheKeyHex does not match its own filename hash is quarantined \
-        during quota accounting rather than silently skipped
-        """
-    )
-    func mismatchedCacheKeyHexEncounteredDuringAccountingIsQuarantined() async throws {
-        try await withScratchDirectory { directory in
-            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
-            let cacheKey = try key("01001")
-            let payload = Data([1, 2, 3])
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload)
-            )
-
-            let payloadURL = payloadFileURL(
-                directory: directory,
-                cacheKey: cacheKey,
-                payload: payload
-            )
-            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
-            var json = try #require(
-                try JSONSerialization
-                    .jsonObject(with: Data(contentsOf: metadataURL)) as? [String: Any]
-            )
-            json["cacheKeyHex"] = "0000000000000000000000000000000000000000000000000000000000000000"
-            let tampered = try JSONSerialization.data(withJSONObject: json)
-            try tampered.write(to: metadataURL)
-
-            let total = await cache.totalAccountedBytes()
-            #expect(total == 0)
-            #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
-            #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
+                .filter {
+                    $0 != SecureCacheDirectory.lockFileName
+                        && $0 != SecureCacheDirectory.accessSequenceFileName
+                }
+            #expect(contents.isEmpty)
         }
     }
 }

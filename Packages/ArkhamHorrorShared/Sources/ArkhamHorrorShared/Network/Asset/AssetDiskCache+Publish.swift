@@ -47,8 +47,8 @@ extension AssetDiskCache {
 
     /// Steps 2 and 3 of ``setLocked(_:payload:metadata:token:)``: commits
     /// the metadata pointer, then — only once that commit is durably
-    /// confirmed — removes any now-superseded prior payload generation and
-    /// clears this key's durable tombstone (if any). The pointer rename
+    /// confirmed — removes any now-superseded prior payload generation.
+    /// The pointer rename
     /// and the subsequent directory `fsync` are deliberately two
     /// separately-throwing calls (not the composite
     /// ``SecureCacheDirectory/renameAndFsyncDirectory(from:to:)`` helper
@@ -81,33 +81,19 @@ extension AssetDiskCache {
         var stamped = metadata
         let metadataName = metadataFilename(for: key)
         // A best-effort read of whatever metadata sidecar currently
-        // occupies this exact name (if any): seeds
-        // ``AssetAccessSequenceAllocator/allocate(atLeastAfter:)`` so this
-        // write can never stamp a *lower* sequence than a different actor
-        // instance (another concurrent ``AssetDiskCache`` in this
-        // process, or a genuinely separate process/instance) already
-        // persisted for this exact key since this actor's own allocator
-        // was last seeded — see ``getLocked(_:)``'s identical use of this
-        // pattern for its LRU-touch path. Any failure to read/decode the
-        // existing sidecar (including "does not exist yet") is treated
-        // identically to "no prior value": this is a monotonicity
-        // refinement, not a correctness precondition for the write itself.
-        if let existing = existingAccessSequence(metadataName: metadataName) {
-            stamped.accessSequence = accessSequenceAllocator.allocate(
-                atLeastAfter: existing
-            )
-        } else {
-            stamped.accessSequence = accessSequenceAllocator.allocate()
-        }
-        // Stamped fresh, exactly like `accessSequence` above: this
-        // actor's own read of the durable generation this key currently
-        // has (unchanged since `setLocked`'s own CAS check moments ago,
-        // since this whole critical section holds the exclusive lock
-        // continuously) is always authoritative for what the *next*
-        // generation must be -- never trusted from whatever value the
-        // caller happened to pass in `metadata.writeGeneration`. See
-        // `AssetDiskCache+Generation.swift` for the full contract.
-        stamped.writeGeneration = try nextWriteGenerationLocked(for: key)
+        // occupies this exact name (if any): folded into
+        // ``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``'s
+        // own durable, cross-instance/cross-process global counter (see
+        // that type's doc comment for why a purely local, per-actor
+        // counter is not sufficient on its own) purely as an extra floor
+        // for a freshly created cache root whose counter file does not
+        // exist yet. Any failure to read/decode the existing sidecar
+        // (including "does not exist yet") is treated identically to "no
+        // prior value": this is a monotonicity refinement, not a
+        // correctness precondition for the write itself.
+        stamped.accessSequence = try secureDirectory.allocateAccessSequence(
+            atLeastAfter: existingAccessSequence(metadataName: metadataName)
+        )
         let metadataTempName = metadataName + ".tmp"
         do {
             let data = try JSONEncoder.assetCache().encode(stamped)
@@ -132,13 +118,8 @@ extension AssetDiskCache {
         // any other, now-superseded payload generation for this key —
         // including one left behind by an earlier crash between a prior
         // payload write and its own metadata pointer commit — then fsync
-        // once more so that cleanup itself is durable. Also clears any
-        // earlier durable tombstone for this exact key (see
-        // ``persistTombstoneLocked(keyHash:)``): a fresh, verified
-        // generation that just durably committed is itself the "durable
-        // clear" a prior failed deletion was protecting against.
+        // once more so that cleanup itself is durable.
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: metadata.payloadSHA256Hex)
-        clearTombstoneLocked(keyHash: key.digestHex)
         try? secureDirectory.fsyncRootDirectory()
     }
 

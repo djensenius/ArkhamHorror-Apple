@@ -28,58 +28,27 @@ extension AssetDiskCache {
         if let token, !acceptToken(token, for: key) {
             return
         }
-        // The durable half of the write CAS (see
-        // `AssetDiskCache+Generation.swift`): a removal whose captured
-        // baseline no longer matches this key's current durable
-        // generation has been superseded by some other write (in this
-        // process or another) since it was issued, and must not delete
-        // bytes that write just published.
-        if let token, !acceptDurableGeneration(token, for: key) {
-            return
-        }
-        // Computed *before* the deletion below, inside this same lock, so
-        // the fence this removal persists always reflects the generation
-        // it is actually advancing past, whether or not the deletion
-        // itself succeeds.
-        let fenceGeneration = try nextWriteGenerationLocked(for: key)
         do {
             _ = try secureDirectory.remove(name: metadataFilename(for: key))
             try secureDirectory.fsyncRootDirectory()
         } catch {
-            // The metadata pointer's deletion could not be confirmed:
-            // without a durable marker, ``get(_:)`` could still serve
-            // this structurally-valid-looking, but supposedly
-            // invalidated, entry — including across a restart, since
-            // an in-memory-only tombstone does not survive one.
-            // ``protectKeyAfterFailedDeletionLocked(keyHash:fenceGeneration:)``
-            // retries the tombstone write itself before escalating to
-            // the whole-cache disabled-reads marker (which itself
-            // retries, then falls back to this process's own in-memory
-            // fail-closed flag) — never silently swallowing a single
-            // failed attempt at each layer the way a lone `try?` would.
-            protectKeyAfterFailedDeletionLocked(
-                keyHash: key.digestHex,
-                fenceGeneration: fenceGeneration
-            )
+            // The metadata pointer's deletion could not be confirmed: a
+            // structurally-valid-looking entry may still be servable by
+            // ``get(_:)`` afterward. This is no longer escalated to a
+            // durable per-key tombstone or whole-cache disabled-reads
+            // marker — see ``AssetDiskCache+Tombstone.swift``'s doc
+            // comment for why that is no longer required: any such
+            // residual bytes can never be trusted or served by
+            // ``AssetCacheService`` without first passing a fresh online
+            // conditional revalidation, so a failed local deletion can
+            // never resurrect content the origin itself no longer serves.
+            // The typed error thrown here still lets the caller maintain
+            // its own in-process, best-effort tombstone
+            // (``AssetCacheService/tombstonedKeys``) for the remainder of
+            // this process's lifetime.
             throw error
         }
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
-        // The metadata pointer is now durably confirmed gone, but a
-        // fence tombstone is still persisted (never
-        // ``clearTombstoneLocked(keyHash:)``, unlike before this
-        // generation scheme existed): durably recording that this key's
-        // generation has advanced past `fenceGeneration - 1` is exactly
-        // what prevents a stale in-flight write — captured before this
-        // removal, with a baseline matching the now-deleted generation —
-        // from resurrecting these bytes after this call returns. This is
-        // harmless for ``get(_:)`` (there is no metadata left to serve
-        // either way) and is itself cleared the moment a genuinely fresh
-        // generation is next published for this key
-        // (``commitMetadataPointerLocked``'s own final step).
-        protectKeyAfterFailedDeletionLocked(
-            keyHash: key.digestHex,
-            fenceGeneration: fenceGeneration
-        )
     }
 
     /// Removes every entry currently in the cache directory. Never deletes
@@ -106,38 +75,42 @@ extension AssetDiskCache {
         // interleave with a clear in a way that resurrects an entry this
         // call intended to remove, or removes bytes a concurrent `set`
         // just published. This loop's own `where name !=
-        // SecureCacheDirectory.lockFileName` guard is what keeps the lock
-        // file itself out of every removal pass here (`listNames()`/
-        // `remove(name:)` themselves have no special-case awareness of
-        // it) — unlinking the lock file while this very call still holds
-        // it open would detach every subsequent `openat` of that name
-        // onto a fresh inode, silently breaking cross-process mutual
-        // exclusion for everyone afterward. Acquired and run directly on
-        // this actor's own executor, same as ``remove(_:token:)``.
+        // SecureCacheDirectory.lockFileName && name !=
+        // SecureCacheDirectory.accessSequenceFileName` guard is what keeps
+        // both reserved files out of every removal pass here
+        // (`listNames()`/`remove(name:)` themselves have no special-case
+        // awareness of either): unlinking the lock file while this very
+        // call still holds it open would detach every subsequent
+        // `openat` of that name onto a fresh inode, silently breaking
+        // cross-process mutual exclusion for everyone afterward; deleting
+        // the durable access-sequence counter would let a value allocated
+        // right after this clear collide with, or sort before, one
+        // allocated before it, undoing
+        // ``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``'s
+        // whole cross-instance monotonicity guarantee. Acquired and run
+        // directly on this actor's own executor, same as ``remove(_:token:)``.
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         recoverOrphansIfNeeded()
-        // Computed *before* the removal loop below deletes every regular
-        // file in the directory, including this clear epoch's own
-        // previous marker (whose name does not end in
-        // `.meta.json`/`.tmp`/`.bin`, so it has no special exclusion from
-        // that generic sweep): reading the marker's prior value can only
-        // happen now, before it is unlinked out from under us, and the
-        // freshly-computed next value is durably persisted again only
-        // after the loop has finished removing everything (including the
-        // stale marker) below.
-        let nextClearEpoch = try nextClearEpochLocked()
         // Bumped before any removal work, exactly like
         // ``AssetMemoryCache/removeAll()``: any `set`/`touch`/`remove`
         // call bearing a token issued under an older generation is
         // rejected by ``acceptToken(_:for:)`` from this point on, even
         // if this actor happens to service it before the corresponding
-        // `AssetCacheService`-level check would have caught it.
+        // `AssetCacheService`-level check would have caught it. This is
+        // this actor's own in-process generation counter only — no
+        // durable, cross-process clear epoch is persisted anymore (see
+        // ``AssetDiskCache+Tombstone.swift``'s doc comment): a fresh
+        // process reopening this same directory always requires each
+        // disk hit to independently pass online conditional
+        // revalidation before it is trusted, which is what actually
+        // closes the cross-process ABA hazard the old durable clear
+        // epoch existed to prevent.
         acceptedGeneration += 1
         appliedToken.removeAll()
         let names = try secureDirectory.listNames()
         var failureCount = 0
-        for name in names where name != SecureCacheDirectory.lockFileName {
+        for name in names where Self.isRemovableDuringClear(name) {
             do {
                 _ = try secureDirectory.remove(name: name)
             } catch {
@@ -159,37 +132,24 @@ extension AssetDiskCache {
         } catch {
             failureCount += 1
         }
-        // Durably re-establishes the whole-cache clear epoch marker at
-        // `nextClearEpoch` (computed above, before this very removal loop
-        // deleted the previous marker) -- performed after every entry has
-        // already been removed, never before. See
-        // ``AssetCacheService/CacheToken/diskBaselineClearEpoch``'s doc
-        // comment for the ABA race this closes that a per-key durable
-        // generation alone cannot: without this, a stale write captured
-        // with baseline `0` for a key that never existed before some
-        // *other* key was created then cleared by this very call could
-        // otherwise land after this clear purely because that key's own
-        // per-key generation reads back as `0` both before and after.
-        do {
-            try persistClearEpochLocked(nextClearEpoch)
-        } catch {
-            failureCount += 1
-        }
         guard failureCount == 0 else {
             throw AssetError.cachePersistenceFailed(
                 "\(failureCount) cache entries could not be removed, " +
                     "or the directory fsync failed"
             )
         }
-        // The one event ``diskReadsForceDisabledInProcess``'s own doc
-        // comment names as its sole clear condition: every removal above
-        // (including the on-disk disabled-reads marker itself, which the
-        // removal loop's own generic sweep already deleted like any
-        // other regular file) and the directory `fsync` all durably
-        // succeeded, so any prior in-process-only fail-closed protection
-        // this process may have been relying on is now itself superseded
-        // by a confirmed, durable clean slate.
-        diskReadsForceDisabledInProcess = false
+    }
+
+    /// `true` for any directory entry `removeAll()` is responsible for
+    /// deleting -- every cache-owned entry except the shared lock file
+    /// and the durable global access-sequence counter file, both of
+    /// which must survive a clear so a fresh process reopening this
+    /// directory afterward still has a working cross-process lock and a
+    /// monotonic counter that can never regress below a value some other
+    /// instance may already have observed.
+    private static func isRemovableDuringClear(_ name: String) -> Bool {
+        name != SecureCacheDirectory.lockFileName
+            && name != SecureCacheDirectory.accessSequenceFileName
     }
 
     /// The key hash embedded in every entry name currently present in the

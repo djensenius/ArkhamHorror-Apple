@@ -28,12 +28,20 @@ extension AssetDiskCache {
         secureDirectory
     }
 
-    /// Exposed so `AssetDiskCache+Recovery.swift` can seed
-    /// ``accessSequenceAllocator`` with the highest sequence value found
-    /// among currently valid persisted entries during startup recovery, so
-    /// every freshly allocated value afterward is guaranteed greater than
-    /// every value that already exists on disk.
-    func seedAccessSequenceAllocator(resumingAfter highestKnownValue: Int?) {
-        accessSequenceAllocator = AssetAccessSequenceAllocator(resumingAfter: highestKnownValue)
+    /// Exposed so `AssetDiskCache+Recovery.swift` can reconcile this
+    /// cache directory's durable, cross-instance/cross-process
+    /// access-sequence counter (``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``)
+    /// with the highest sequence value found among currently valid
+    /// persisted entries during startup recovery, so every freshly
+    /// allocated value afterward is guaranteed greater than every value
+    /// that already exists on disk — see
+    /// ``SecureCacheDirectory/floorAccessSequence(atLeast:)``'s own doc
+    /// comment for why this full-directory-scan-derived floor is still
+    /// needed even with a durable counter file. Best-effort: a failure
+    /// here does not abort recovery (each individual write's own
+    /// `atLeastAfter` floor, and the durable counter file once it exists,
+    /// remain the correctness backstop).
+    func reconcileAccessSequenceFloor(_ highestKnownValue: Int?) {
+        _ = try? secureDirectory.floorAccessSequence(atLeast: highestKnownValue)
     }
 }

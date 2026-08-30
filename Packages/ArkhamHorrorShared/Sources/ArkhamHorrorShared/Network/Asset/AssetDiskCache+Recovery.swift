@@ -40,20 +40,41 @@ extension AssetDiskCache {
     /// leftover `.tmp` file from an interrupted write, any metadata sidecar
     /// that fails to decode or validate, and any payload file not named
     /// for the exact content hash a currently valid metadata sidecar
-    /// references. Also seeds ``AssetDiskCache``'s access-sequence
-    /// allocator to resume strictly after the highest
-    /// ``AssetCacheMetadata/accessSequence`` found among every currently
-    /// valid persisted entry, so every value this process allocates
-    /// afterward is guaranteed greater than every value already on disk —
+    /// references. Also reconciles the durable, cross-instance/cross-process
+    /// access-sequence counter (``SecureCacheDirectory/floorAccessSequence(atLeast:)``)
+    /// to be at least the highest ``AssetCacheMetadata/accessSequence``
+    /// found among every currently valid persisted entry, so every value
+    /// allocated afterward — by this instance, another concurrent
+    /// instance, or a genuinely separate process — is guaranteed greater
+    /// than every value already on disk at the moment of this scan,
     /// required for LRU order to survive a restart correctly.
     func recoverOrphansIfNeeded() {
         guard !didRecoverOrphans else { return }
         // Only mark recovery as done once the directory listing actually
         // succeeds. If listing fails (e.g. a transient I/O error),
-        // `didRecoverOrphans` must stay `false` so the very next `set`
+        // `didRecoverOrphans` must stay `false` so the very next call
         // retries orphan/tmp cleanup instead of it being silently,
         // permanently disabled for the lifetime of this cache instance.
-        guard let names = try? directoryAccess.listNames() else { return }
+        //
+        // Crucially, a failed listing here must *also* durably disable
+        // disk writes before returning. This is the recovery pass that
+        // runs before ``AssetDiskCache/requireDiskWritesEnabledLocked()``
+        // is even consulted by `set` — if it silently no-ops on an
+        // unenumerable directory instead, the very first `set` call ever
+        // made against a directory whose listing happens to fail at that
+        // exact instant would sail straight through
+        // `requireDiskWritesEnabledLocked()` (which only re-verifies the
+        // budget when the disabled marker is *already* set) and publish
+        // a new payload despite physical on-disk usage being completely
+        // unknown at that moment. Marking writes disabled here — the same
+        // durable marker ``evictIfNeeded()`` uses — closes that window:
+        // "uncertainty synchronously disables writes until fully
+        // recovered," not merely "until the next successful `set`
+        // happens to also fail before writing."
+        guard let names = try? directoryAccess.listNames() else {
+            markDiskWritesDisabledLocked()
+            return
+        }
         didRecoverOrphans = true
 
         var referencedPayloadFilenames: Set<String> = []
@@ -105,7 +126,7 @@ extension AssetDiskCache {
             )
         }
         _ = sweepOrphanFiles(names: names, referencedPayloadFilenames: referencedPayloadFilenames)
-        seedAccessSequenceAllocator(resumingAfter: highestAccessSequence)
+        reconcileAccessSequenceFloor(highestAccessSequence)
     }
 
     /// Attempts to remove every leftover `.tmp` file and every `.bin`
@@ -350,13 +371,11 @@ extension AssetDiskCache {
 
     /// The accounted bytes of every cache-owned regular file in `names`
     /// that ``entries(names:)``/``sweepOrphanFiles(names:referencedPayloadFilenames:)``
-    /// do not already account for — durable per-key tombstones
-    /// (``AssetDiskCache/tombstoneFilename(keyHash:)``), the whole-cache
-    /// disabled markers, and the cross-process lock file — so
-    /// ``evictIfNeeded()``'s budget accounting is never blind to any file
-    /// this cache itself creates. Returns `nil` (rather than silently
-    /// under-counting) if any such file's actual on-disk size could not
-    /// be determined.
+    /// do not already account for — the whole-cache disabled-writes
+    /// marker and the cross-process lock file — so ``evictIfNeeded()``'s
+    /// budget accounting is never blind to any file this cache itself
+    /// creates. Returns `nil` (rather than silently under-counting) if
+    /// any such file's actual on-disk size could not be determined.
     private func accountedStrayCacheFileBytes(names: [String]) -> Int? {
         var total = 0
         for name in names {
