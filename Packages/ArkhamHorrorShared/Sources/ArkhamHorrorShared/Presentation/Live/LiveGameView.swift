@@ -2,7 +2,10 @@ import SwiftUI
 
 /// The native, read-only live-game screen: subscribes to `gameID`'s live session
 /// (``AppModel/subscribeToLiveGame(_:)``) for as long as this screen is visible and
-/// its scene is active, and renders every ``LiveGameState`` case with an explicit,
+/// its scene is not backgrounded (``LiveGameSubscriptionPolicy`` deliberately keeps
+/// a subscription through `.inactive` too -- only an actually invisible view or an
+/// actually `.background`-phased scene withdraws it; see that policy's own
+/// documentation for why), and renders every ``LiveGameState`` case with an explicit,
 /// accessible presentation -- loading, the live ``BoardView``, a non-blocking
 /// reconnecting banner over the last known board, and dedicated
 /// offline/incompatible-payload/authentication-expired/terminal-failure states with
@@ -51,7 +54,7 @@ struct LiveGameView: View {
                 isViewVisible = false
                 syncSubscription()
             }
-            .onChange(of: scenePhase) {
+            .onChange(of: scenePhase) { _, _ in
                 syncSubscription()
             }
     }

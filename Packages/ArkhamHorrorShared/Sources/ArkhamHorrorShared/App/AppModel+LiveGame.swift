@@ -96,14 +96,17 @@ extension AppModel {
         }
     }
 
-    /// Explicitly restarts `id`'s live session from ``LiveGameState/loading`` after
-    /// automatic reconnect was exhausted, a contract-incompatible payload was
-    /// received, or a non-authentication terminal failure occurred -- the three
+    /// Explicitly restarts `id`'s live session (into ``LiveGameState/loading``, or
+    /// ``LiveGameState/reconnecting(lastKnown:)`` if a projection was preserved; see
+    /// ``AppModel/startLiveGameSession(_:)``) after automatic reconnect was
+    /// exhausted or a non-authentication terminal failure occurred -- the two
     /// states ``LiveGameState/isRetryable`` reports `true` for. A no-op for any
-    /// other state (including ``LiveGameState/authenticationExpired``, which
-    /// requires signing in again rather than merely retrying the same rejected
-    /// token) or when `id` currently has no viewer at all (defensive; the only
-    /// caller is a subscribed `LiveGameView`'s own retry action).
+    /// other state -- including ``LiveGameState/incompatiblePayload(lastKnown:)``
+    /// (a genuine contract mismatch retrying cannot fix; the user must update the
+    /// app) and ``LiveGameState/authenticationExpired`` (requires signing in again
+    /// rather than merely retrying the same rejected token) -- or when `id`
+    /// currently has no viewer at all (defensive; the only caller is a subscribed
+    /// `LiveGameView`'s own retry action).
     func retryLiveGame(_ id: GameID) {
         guard liveGameState(for: id).isRetryable else { return }
         guard let viewers = liveGameViewers[id], !viewers.isEmpty else { return }
