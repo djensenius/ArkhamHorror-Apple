@@ -36,6 +36,15 @@ jobs:
   tests:
     name: Foundation tests
     runs-on: macos-26
+    # A documented upstream `swift test`/Xcode 26 "hangs on exit" issue on
+    # `macos-26` runners (SwiftPM apple/swift-package-manager#8394,
+    # actions/runner-images#13143) can leave this job running long after its
+    # actual test work has already finished and passed. This bound is a
+    # defensive resilience measure only -- generous over this job's normal
+    # ~1-2 minute duration -- so a stuck runner fails fast enough to retry
+    # rather than silently consuming the default several-hour job ceiling;
+    # it does not weaken, skip, or shorten the tests themselves.
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
