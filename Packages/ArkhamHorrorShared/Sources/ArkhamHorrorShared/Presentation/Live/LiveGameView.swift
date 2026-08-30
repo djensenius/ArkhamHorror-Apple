@@ -152,15 +152,16 @@ struct LiveGameView: View {
     }
 
     private func board(_ projection: BoardProjection) -> some View {
-        BoardView(
+        let renderedPrompt = prompt
+        return BoardView(
             projection: projection,
-            prompt: prompt,
+            prompt: renderedPrompt,
             onChoice: { index in
-                guard let identity = prompt?.identity else { return }
+                guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.submitBasicChoice(identity, choiceIndex: index) }
             },
             onRetryChoice: {
-                guard let identity = prompt?.identity else { return }
+                guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.retryBasicChoice(identity) }
             }
         )
