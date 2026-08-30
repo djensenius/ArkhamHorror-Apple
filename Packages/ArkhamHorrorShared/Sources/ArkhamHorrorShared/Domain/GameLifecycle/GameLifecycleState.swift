@@ -129,8 +129,24 @@ extension GameSummary {
         if let difficulty = scenario?.difficulty ?? campaign?.difficulty {
             parts.append(difficulty.description)
         }
-        parts.append(multiplayerVariant == .withFriends ? "With Friends" : "Solo")
+        parts.append(multiplayerVariantLabel)
         return parts.joined(separator: " · ")
+    }
+
+    /// A user-facing label for ``GameSummary/multiplayerVariant``. Since
+    /// `MultiplayerVariant` is an ``OpenStringEnum``, an unrecognized future wire
+    /// value falls back to its raw value verbatim rather than being misrendered as
+    /// "Solo" -- this is a purely decorative label, never gates a control's
+    /// legality, so surfacing the raw contract string is sufficient forward
+    /// compatibility without a dedicated unsupported-state UI.
+    private var multiplayerVariantLabel: String {
+        if multiplayerVariant == .solo {
+            "Solo"
+        } else if multiplayerVariant == .withFriends {
+            "With Friends"
+        } else {
+            multiplayerVariant.rawValue
+        }
     }
 }
 

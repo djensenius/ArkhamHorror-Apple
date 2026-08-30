@@ -162,6 +162,12 @@ struct GamesListView: View {
     private func row(for entry: GameListEntry) -> some View {
         switch entry {
         case let .game(summary):
+            // Neither the swipe nor the context-menu delete action is legal while
+            // another lifecycle action (join/open-seats/claim-seat/choose-deck, or
+            // an already-in-flight delete) is running for this exact game --
+            // triggering delete then would silently supersede and cancel that other
+            // action rather than confirming an explicit, intentional delete.
+            let actionInFlight = model.gameLifecycleActions[summary.id] != nil
             Button {
                 presentedGameID = summary.id
             } label: {
@@ -170,7 +176,8 @@ struct GamesListView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier(AccountAccessibilityID.gameRow(for: summary.id.rawValue))
             .modifier(GameRowSwipeActions(
-                gameID: summary.id, onDelete: { pendingDeletion = summary.id }
+                gameID: summary.id, isDeleteDisabled: actionInFlight,
+                onDelete: { pendingDeletion = summary.id }
             ))
             .contextMenu {
                 Button(role: .destructive) {
@@ -178,6 +185,7 @@ struct GamesListView: View {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
+                .disabled(actionInFlight)
                 .accessibilityIdentifier(
                     AccountAccessibilityID.gameDeleteButton(for: summary.id.rawValue)
                 )
@@ -202,6 +210,7 @@ struct IdentifiedGameListEntry: Identifiable {
 /// (already attached alongside this modifier) is the native, focus-driven path.
 private struct GameRowSwipeActions: ViewModifier {
     let gameID: GameID
+    let isDeleteDisabled: Bool
     let onDelete: () -> Void
 
     func body(content: Content) -> some View {
@@ -212,6 +221,7 @@ private struct GameRowSwipeActions: ViewModifier {
                 Button(role: .destructive, action: onDelete) {
                     Label("Delete", systemImage: "trash")
                 }
+                .disabled(isDeleteDisabled)
                 .accessibilityIdentifier(
                     AccountAccessibilityID.gameDeleteButton(for: gameID.rawValue)
                 )

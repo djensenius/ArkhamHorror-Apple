@@ -150,6 +150,22 @@ struct GameLifecycleDomainTests {
         #expect(summary.displaySubtitle.contains("With Friends"))
     }
 
+    @Test(
+        """
+        displaySubtitle falls back to the raw wire value for an unrecognized \
+        multiplayerVariant, rather than misrendering it as "Solo"
+        """
+    )
+    func displaySubtitleFallsBackToRawValueForUnknownMultiplayerVariant() {
+        let summary = GameSummary(
+            id: GameID(UUID()), scenario: nil, campaign: nil, gameState: .active, name: "x",
+            investigators: [], otherInvestigators: [],
+            multiplayerVariant: MultiplayerVariant("FutureVariant"), hasOpenSeats: false
+        )
+        #expect(summary.displaySubtitle == "FutureVariant")
+        #expect(!summary.displaySubtitle.contains("Solo"))
+    }
+
     // MARK: - InvestigatorCode(openSeat:)
 
     @Test("InvestigatorCode(openSeat:) forwards the open-seat CardCode's exact wire text")

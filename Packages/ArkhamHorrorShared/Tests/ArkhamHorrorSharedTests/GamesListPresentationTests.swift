@@ -77,6 +77,21 @@ struct GamesListPresentationTests {
         _ = view.body
     }
 
+    @Test(
+        """
+        GamesListView's body evaluates without crashing for a row whose per-game \
+        lifecycle action is in flight (its swipe/context-menu delete must disable, \
+        never trigger a second, superseding action)
+        """
+    )
+    func gamesListViewRowWithActionInFlight() async {
+        let game = sampleGame()
+        let model = await model(gameListState: .loaded([.game(game)]))
+        model.gameLifecycleActions[game.id] = .joining
+        let view = GamesListView(model: model)
+        _ = view.body
+    }
+
     @Test("GamesListView's body evaluates for .failed with no previous content without crashing")
     func gamesListViewFailedNoPrevious() async {
         let model = await model(gameListState: .failed(.transportFailure("x"), previous: nil))
