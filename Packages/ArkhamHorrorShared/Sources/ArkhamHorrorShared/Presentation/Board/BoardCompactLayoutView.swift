@@ -21,7 +21,11 @@ struct BoardCompactLayoutView: View {
     var body: some View {
         VStack(spacing: 12) {
             zoneSwitcher
-            ScrollView {
+            // Both axes: the Locations zone's `BoardLocationBoardView` can be wider than
+            // a compact-width screen (a multi-column grid), which a vertical-only
+            // ScrollView would otherwise clip with no way to reach the remaining
+            // columns.
+            ScrollView([.horizontal, .vertical]) {
                 zoneContent(selectedZone)
                     .padding()
             }
