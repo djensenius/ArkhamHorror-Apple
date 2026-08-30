@@ -14,9 +14,11 @@ struct LocalizedDigestCompactorDriftTests {
 
     /// `BundledLocalizedDigestProvider.init` eagerly loads and validates every
     /// shipped locale digest, so constructing it once per parameterized case
-    /// would repeat that work needlessly. `Result` memoizes the (fallible)
-    /// construction the first time any test case touches it and shares the
-    /// same provider instance across the whole parameterized run.
+    /// would repeat that work needlessly. This `static let`'s one-time
+    /// lazy initialization runs the (fallible) construction only the first
+    /// time any test case touches it, storing its outcome in a `Result` so
+    /// every subsequent case shares that same outcome/provider instance
+    /// across the whole parameterized run without re-running `init`.
     private static let sharedProvider = Result { try BundledLocalizedDigestProvider() }
 
     @Test(

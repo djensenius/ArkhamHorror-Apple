@@ -75,8 +75,8 @@ struct LocaleDigestFixtureProvenanceTests {
         )
     }
 
-    @Test("The registry has no duplicate basename")
-    func registryHasNoDuplicateBasename() {
+    @Test("The registry has no duplicate basenames")
+    func registryHasNoDuplicateBasenames() {
         let names = LocaleDigestFixtureDigests.all.map(\.fileName)
         #expect(names.count == Set(names).count, "Duplicate basename found in \(names)")
     }

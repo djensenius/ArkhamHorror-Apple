@@ -107,7 +107,7 @@ struct AssetByteCapReaderTests {
         try await Task.sleep(nanoseconds: 5_000_000)
         readTask.cancel()
         let result = await readTask.result
-        #expect(throws: (any Error).self) {
+        #expect(throws: CancellationError.self) {
             try result.get()
         }
     }
