@@ -24,7 +24,21 @@ extension AppModelLiveGameTests {
         guard case var .object(object) = value else { throw TestFailure() }
         object["scenarioSteps"] = .number(.integer(Int64(scenarioSteps)))
         guard case var .object(questions)? = object["question"] else { throw TestFailure() }
-        let owner = try #require(questions.keys.first)
+        // Prefer the answering player's own map key (matching `Identifier`'s canonical
+        // lowercase-hyphenated `codingKey`, see `BoardIdentifiers.swift`) so a fixture that
+        // ever carries more than one `question` entry can't have the wrong player's
+        // question mutated. Only a spectator envelope (`playerID == nil`) falls back to
+        // `.first`, since there is then no answering player to key off of.
+        let owner: String
+        if let playerID = envelope.playerID {
+            let expectedKey = playerID.rawValue.uuidString.lowercased()
+            owner = try #require(
+                questions.keys.first { $0 == expectedKey },
+                "expected a question entry for answering player \(expectedKey)"
+            )
+        } else {
+            owner = try #require(questions.keys.first)
+        }
         questions[owner] = rawQuestion
         object["question"] = .object(questions)
         value = .object(object)

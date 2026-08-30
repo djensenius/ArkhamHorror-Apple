@@ -142,7 +142,8 @@ struct BasicChoicePromptView: View {
                 .buttonStyle(.bordered)
                 .focused(focusBinding, equals: focusID)
                 .disabled(!choice.isSupported || !presentation.canSubmit)
-                .accessibilityLabel(title)
+                // `SemanticActionControl` already applies `accessibilityLabel: Text(title)`
+                // internally; an outer override here would risk silently diverging from it.
                 .accessibilityHint(accessibilityHint(for: choice))
                 .accessibilityIdentifier("liveGame.prompt.choice.\(choice.index)")
             }
