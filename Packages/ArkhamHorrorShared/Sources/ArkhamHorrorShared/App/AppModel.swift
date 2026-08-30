@@ -185,6 +185,9 @@ final class AppModel {
     /// See ``resolvePendingCleanup(for:)`` and
     /// ``enqueueCancellationCleanup(for:globalEpoch:)``.
     @ObservationIgnored let cleanupPendingStore: any TokenCleanupPendingStore
+    /// The injectable authenticated game-lifecycle/lobby client. See
+    /// `AppModel+GameLifecycle.swift`.
+    @ObservationIgnored let gameLifecycleService: any GameLifecycleServicing
 
     @ObservationIgnored var selectedProfile: ServerProfile = .hosted
     @ObservationIgnored var generation = 0
@@ -282,18 +285,54 @@ final class AppModel {
     /// call reaching this point).
     @ObservationIgnored var tokenAccessAdmissionHook: (@Sendable (UUID) -> Void)?
 
+    // MARK: - Game lifecycle/lobby state (see `AppModel+GameLifecycle.swift`)
+
+    /// The authenticated games list's load state. Reset to ``GameListLoadState/idle``
+    /// whenever the signed-in session it belongs to ends (sign-out, profile switch, or
+    /// 401 session expiry) so stale content is never left active for a different
+    /// profile/session.
+    var gameListState: GameListLoadState = .idle
+    /// The in-flight per-game action, if any, keyed by ``GameID``.
+    var gameLifecycleActions: [GameID: GameLifecycleAction] = [:]
+    /// The most recent per-game action failure, keyed by ``GameID``, cleared at the
+    /// start of that game's next action.
+    var gameLifecycleActionFailures: [GameID: GameLifecycleActionFailure] = [:]
+    /// The most recently loaded open-seat list per game, populated by
+    /// ``loadOpenSeats(for:)``.
+    var gameOpenSeats: [GameID: OpenSeats] = [:]
+
+    /// A monotonically increasing counter guarding stale games-list load/refresh
+    /// completions against a *newer* load/refresh — independent of ``generation``,
+    /// since starting a new refresh does not itself need to cancel or be cancelled by
+    /// the launch/auth flow (only a newer refresh, or a session-level invalidation via
+    /// ``generation``, ever discards an in-flight one's result).
+    @ObservationIgnored var gameListGeneration = 0
+    /// The in-flight games list load/refresh task, if any.
+    @ObservationIgnored var gameListTask: Task<Void, Never>?
+    /// The identity of the currently in-flight action for each ``GameID``, so a
+    /// superseded action's stale completion (started, then superseded by a newer
+    /// action on the very same game) can never mutate ``gameLifecycleActions``/
+    /// ``gameLifecycleActionFailures``/``gameOpenSeats`` after a newer action for that
+    /// same game has already started. Mirrors ``currentProfileSubmissionID``'s
+    /// per-identity staleness check, scoped per-``GameID`` instead of process-wide.
+    @ObservationIgnored var gameLifecycleActionAttempts: [GameID: UUID] = [:]
+    /// The in-flight task for each ``GameID``'s current action, if any.
+    @ObservationIgnored var gameLifecycleActionTasks: [GameID: Task<Void, Never>] = [:]
+
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),
         tokenStore: any TokenStore = KeychainTokenStore(),
         capabilityProbe: any CapabilityProbing = CapabilityProbe(),
         authenticationSession: any AppAuthenticating = AuthenticationSession(),
-        cleanupPendingStore: any TokenCleanupPendingStore = KeychainTokenCleanupPendingStore()
+        cleanupPendingStore: any TokenCleanupPendingStore = KeychainTokenCleanupPendingStore(),
+        gameLifecycleService: any GameLifecycleServicing = GameLifecycleService()
     ) {
         self.profileStore = profileStore
         self.tokenStore = tokenStore
         self.capabilityProbe = capabilityProbe
         self.authenticationSession = authenticationSession
         self.cleanupPendingStore = cleanupPendingStore
+        self.gameLifecycleService = gameLifecycleService
         startLaunchFlow()
     }
 }
