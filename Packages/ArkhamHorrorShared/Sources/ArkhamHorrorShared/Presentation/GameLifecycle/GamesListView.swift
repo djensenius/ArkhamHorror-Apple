@@ -77,6 +77,9 @@ struct GamesListView: View {
                     }
                 }
             }
+            .navigationDestination(for: GameID.self) { gameID in
+                LiveGameView(model: model, gameID: gameID)
+            }
     }
 
     @ViewBuilder
@@ -168,13 +171,22 @@ struct GamesListView: View {
             // triggering delete then would silently supersede and cancel that other
             // action rather than confirming an explicit, intentional delete.
             let actionInFlight = model.gameLifecycleActions[summary.id] != nil
-            Button {
-                presentedGameID = summary.id
-            } label: {
-                GameRowView(game: summary)
+            // `rowButton(for:)` already applies `liveGameEnterButton` to an active
+            // game's own `NavigationLink`; a later `.accessibilityIdentifier` on the
+            // same node would silently override it, making that identifier
+            // unreachable, so only the non-active (lobby-sheet button) case is
+            // stamped with `gameRow` here.
+            Group {
+                if case .active = summary.gameState {
+                    rowButton(for: summary)
+                } else {
+                    rowButton(for: summary)
+                        .accessibilityIdentifier(
+                            AccountAccessibilityID.gameRow(for: summary.id.rawValue)
+                        )
+                }
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier(AccountAccessibilityID.gameRow(for: summary.id.rawValue))
             .modifier(GameRowSwipeActions(
                 gameID: summary.id, isDeleteDisabled: actionInFlight,
                 onDelete: { pendingDeletion = summary.id }
@@ -194,6 +206,29 @@ struct GamesListView: View {
             Label(failedEntry.error, systemImage: "exclamationmark.triangle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    /// A game already ``GameState/active`` navigates straight into its live board
+    /// (via `NavigationLink(value:)`, resolved by `GamesListView`'s own
+    /// `.navigationDestination(for: GameID.self)`); every other state -- still
+    /// forming its lobby, or ended -- keeps opening the existing lobby sheet, which
+    /// has no equivalent presentation for an in-progress game.
+    @ViewBuilder
+    private func rowButton(for summary: GameSummary) -> some View {
+        if case .active = summary.gameState {
+            NavigationLink(value: summary.id) {
+                GameRowView(game: summary)
+            }
+            .accessibilityIdentifier(
+                AccountAccessibilityID.liveGameEnterButton(for: summary.id.rawValue)
+            )
+        } else {
+            Button {
+                presentedGameID = summary.id
+            } label: {
+                GameRowView(game: summary)
+            }
         }
     }
 }

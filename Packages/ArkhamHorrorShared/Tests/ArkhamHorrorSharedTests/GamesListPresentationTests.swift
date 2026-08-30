@@ -182,6 +182,15 @@ struct GamesListPresentationTests {
             AccountAccessibilityID.gameClaimSeatButton(for: gameID, seat: "c01001"),
             AccountAccessibilityID.gameContinueDeckButton(for: gameID, investigatorId: "01001"),
             AccountAccessibilityID.gameActionFailureText(for: gameID),
+            AccountAccessibilityID.liveGameRetryButton,
+            AccountAccessibilityID.liveGameDismissButton,
+            AccountAccessibilityID.liveGameLoadingText,
+            AccountAccessibilityID.liveGameReconnectingText,
+            AccountAccessibilityID.liveGameOfflineText,
+            AccountAccessibilityID.liveGameIncompatiblePayloadText,
+            AccountAccessibilityID.liveGameAuthenticationExpiredText,
+            AccountAccessibilityID.liveGameTerminalFailureText,
+            AccountAccessibilityID.liveGameEnterButton(for: gameID),
         ]
         #expect(identifiers.allSatisfy { !$0.isEmpty })
         #expect(Set(identifiers).count == identifiers.count)
@@ -201,6 +210,10 @@ struct GamesListPresentationTests {
         #expect(
             AccountAccessibilityID.gameActionFailureText(for: first)
                 != AccountAccessibilityID.gameActionFailureText(for: second)
+        )
+        #expect(
+            AccountAccessibilityID.liveGameEnterButton(for: first)
+                != AccountAccessibilityID.liveGameEnterButton(for: second)
         )
     }
 }
