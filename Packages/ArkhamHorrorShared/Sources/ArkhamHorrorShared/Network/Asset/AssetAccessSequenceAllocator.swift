@@ -21,6 +21,12 @@ struct AssetAccessSequence: Codable, Sendable, Equatable, Comparable, CustomStri
     static let digitWidth = 19
 
     init(_ value: Int) {
+        // Fail fast rather than silently persisting an invariant
+        // violation: a negative value would encode with a leading `-`
+        // character, which is neither fixed-width nor digits-only, and so
+        // would corrupt JSON round-tripping the next time this exact
+        // value is read back by ``init(from:)`` above.
+        precondition(value >= 0, "AssetAccessSequence must never be negative, got \(value)")
         self.value = value
     }
 
