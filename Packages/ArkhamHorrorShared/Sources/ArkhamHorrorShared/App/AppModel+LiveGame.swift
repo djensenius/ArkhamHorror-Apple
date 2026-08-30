@@ -130,7 +130,13 @@ extension AppModel {
             handle.task.cancel()
         }
         liveGameSessions = [:]
+        for handle in liveGameConnections.values {
+            handle.connection.close(code: .goingAway, reason: nil)
+        }
+        liveGameConnections = [:]
         liveGameViewers = [:]
         liveGameStates = [:]
+        liveGameParticipantIdentities = [:]
+        basicChoiceActions = [:]
     }
 }

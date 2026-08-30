@@ -41,26 +41,9 @@ enum LiveGameSocketConsumeOutcome: Equatable {
 ///
 /// ## Connect ordering
 ///
-/// Every connection -- the very first one for a session and every subsequent
-/// reconnect after a loss alike -- opens the socket **before** performing the
-/// authoritative REST refetch, and only begins actually consuming frames from it
-/// once that refetch has been published: opening the socket first guarantees any
-/// update the backend broadcasts from that instant forward is queued for this
-/// client to eventually receive (the OS/TCP layer buffers messages sent to an
-/// established-but-not-yet-``receive()``-ing socket; nothing is lost merely because
-/// this client has not called `receive()` yet), so the refetched REST snapshot can
-/// never be older than the socket's own subscription instant. Refetching *before*
-/// opening the socket instead would leave exactly the opposite, unrecoverable gap:
-/// an update broadcast after the refetch but before the socket subscribes would
-/// never reach either the (already-returned) REST response or the
-/// (not-yet-subscribed) socket, permanently stalling the board until the game's next
-/// unrelated update happened to arrive. This is the "race-safe order that cannot
-/// lose authority" this session runner is required to preserve -- deliberately
-/// trading away a first connection's raw time-to-first-paint (the state now stays
-/// ``LiveGameState/loading``/``LiveGameState/reconnecting(lastKnown:)`` through the
-/// socket-connect step too, rather than showing the REST snapshot the instant it
-/// returns) in favor of this correctness guarantee, since a first connection can
-/// suffer exactly the same unrecoverable broadcast gap a reconnect can.
+/// Every initial connection and reconnect opens the socket before the authoritative
+/// REST refetch, then consumes its queued frames after publishing that snapshot.
+/// This prevents an update between the REST response and subscription from being lost.
 ///
 /// ## Reconnect attempt-budget stability
 ///
@@ -76,8 +59,6 @@ enum LiveGameSocketConsumeOutcome: Equatable {
 /// ``LiveGameReconnectPolicy/maximumAttempts``/``LiveGameState/offline(lastKnown:)``.
 /// See ``LiveGameReconnectPolicy/stableConnectionDuration``'s own documentation for
 /// why this uses an uptime-based (rather than frames-received-based) criterion.
-///
-/// ## Backpressure and cancellation
 ///
 /// Exactly one ``GameSocketConnection`` is open, and exactly one
 /// ``GameSocketConnection/nextEvent()`` call is in flight, at any moment for a given
@@ -119,6 +100,10 @@ extension AppModel {
     /// session.
     func startLiveGameSession(_ id: GameID) {
         liveGameSessions[id]?.task.cancel()
+        if let connection = liveGameConnections.removeValue(forKey: id) {
+            markBasicChoiceOutcomeUncertain(gameID: id, connectionID: connection.connectionID)
+            connection.connection.close(code: .goingAway, reason: nil)
+        }
         guard case let .signedIn(profile, _, _) = sessionState else {
             liveGameSessions[id] = nil
             liveGameStates[id] = .authenticationExpired
@@ -159,6 +144,10 @@ extension AppModel {
     func stopLiveGameSession(_ id: GameID) {
         liveGameSessions[id]?.task.cancel()
         liveGameSessions[id] = nil
+        if let connection = liveGameConnections.removeValue(forKey: id) {
+            markBasicChoiceOutcomeUncertain(gameID: id, connectionID: connection.connectionID)
+            connection.connection.close(code: .goingAway, reason: nil)
+        }
         if let lastKnown = liveGameStates[id]?.lastKnownProjection {
             liveGameStates[id] = .reconnecting(lastKnown: lastKnown)
         } else {
@@ -184,21 +173,42 @@ extension AppModel {
             guard let connection = await connectLiveGameSocketRetrying(
                 attempt, reconnectAttempt: &reconnectAttempt
             ) else { return }
+            guard isCurrentLiveGameSession(attempt) else {
+                connection.close(code: .goingAway, reason: nil)
+                return
+            }
+            let connectionID = UUID()
+            liveGameConnections[attempt.gameID] = LiveGameConnectionHandle(
+                attemptID: attempt.attemptID,
+                connectionID: connectionID,
+                connection: connection
+            )
 
             guard let projection = await fetchLiveGameProjection(attempt) else {
-                connection.close(code: .goingAway, reason: nil)
+                closeLiveGameConnectionIfCurrent(
+                    gameID: attempt.gameID,
+                    connectionID: connectionID,
+                    connection: connection
+                )
                 return
             }
             let connectedAt = await liveGameClock.now()
 
             let outcome = await consumeLiveGameSocket(
-                attempt, connection: connection, projection: projection
+                attempt,
+                connection: connection,
+                connectionID: connectionID,
+                projection: projection
             )
+            removeLiveGameConnection(gameID: attempt.gameID, connectionID: connectionID)
             switch outcome {
             case .stopped:
                 return
             case let .lost(lastKnown):
                 guard isCurrentLiveGameSession(attempt) else { return }
+                markBasicChoiceOutcomeUncertain(
+                    gameID: attempt.gameID, connectionID: connectionID
+                )
                 liveGameStates[attempt.gameID] = .reconnecting(lastKnown: lastKnown)
                 let uptime = await liveGameClock.now() - connectedAt
                 if uptime >= LiveGameReconnectPolicy.stableConnectionDuration {
@@ -208,6 +218,19 @@ extension AppModel {
                 else { return }
             }
         }
+    }
+
+    private func removeLiveGameConnection(gameID: GameID, connectionID: UUID) {
+        guard liveGameConnections[gameID]?.connectionID == connectionID else { return }
+        liveGameConnections[gameID] = nil
+    }
+
+    private func closeLiveGameConnectionIfCurrent(
+        gameID: GameID, connectionID: UUID, connection: any GameSocketConnection
+    ) {
+        guard liveGameConnections[gameID]?.connectionID == connectionID else { return }
+        liveGameConnections[gameID] = nil
+        connection.close(code: .goingAway, reason: nil)
     }
 
     /// Attempts to open this session's socket, retrying every transient
@@ -319,6 +342,11 @@ extension AppModel {
             try Task.checkCancellation()
             let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
             guard isCurrentLiveGameSession(attempt) else { return nil }
+            liveGameParticipantIdentities[attempt.gameID] = envelope.playerID
+                .map(LiveGameParticipantIdentity.participant) ?? .spectator
+            reconcileBasicChoice(
+                gameID: attempt.gameID, projection: projection, isRESTSnapshot: true
+            )
             liveGameStates[attempt.gameID] = .live(projection)
             return projection
         } catch is CancellationError {

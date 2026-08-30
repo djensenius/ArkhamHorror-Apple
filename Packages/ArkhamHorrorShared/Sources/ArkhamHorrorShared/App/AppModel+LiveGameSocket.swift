@@ -154,11 +154,12 @@ extension AppModel {
     func consumeLiveGameSocket(
         _ attempt: LiveGameSessionAttempt,
         connection: any GameSocketConnection,
+        connectionID: UUID? = nil,
         projection initialProjection: BoardProjection
     ) async -> LiveGameSocketConsumeOutcome {
         var projection = initialProjection
         while true {
-            guard isCurrentLiveGameSession(attempt) else {
+            guard isCurrentLiveGameConnection(attempt, connectionID: connectionID) else {
                 connection.close(code: .goingAway, reason: nil)
                 return .stopped
             }
@@ -182,7 +183,10 @@ extension AppModel {
                 // throughout this package's REST clients -- ensures a
                 // cancelled/superseded session is always reported as `.stopped`,
                 // never misreported as a reconnectable `.lost`.
-                if Task.isCancelled || !isCurrentLiveGameSession(attempt) {
+                let isStale = !isCurrentLiveGameConnection(
+                    attempt, connectionID: connectionID
+                )
+                if Task.isCancelled || isStale {
                     connection.close(code: .goingAway, reason: nil)
                     return .stopped
                 }
@@ -190,32 +194,65 @@ extension AppModel {
                 return .lost(projection)
             }
 
-            guard isCurrentLiveGameSession(attempt) else {
+            guard isCurrentLiveGameConnection(attempt, connectionID: connectionID) else {
                 connection.close(code: .goingAway, reason: nil)
                 return .stopped
             }
 
             switch event {
             case let .message(data):
-                let update: BoardSnapshotUpdate
-                do {
-                    update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: data)
-                } catch {
-                    liveGameStates[attempt.gameID] = .incompatiblePayload(lastKnown: projection)
-                    connection.close(code: .goingAway, reason: nil)
+                guard applyLiveGameMessage(
+                    data,
+                    attempt: attempt,
+                    connection: connection,
+                    projection: &projection
+                ) else {
                     return .stopped
-                }
-                switch update {
-                case let .snapshot(snapshot):
-                    projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-                    liveGameStates[attempt.gameID] = .live(projection)
-                case .unsupportedMessage:
-                    continue
                 }
             case .closed:
                 connection.close(code: .goingAway, reason: nil)
                 return .lost(projection)
             }
         }
+    }
+
+    private func applyLiveGameMessage(
+        _ data: Data,
+        attempt: LiveGameSessionAttempt,
+        connection: any GameSocketConnection,
+        projection: inout BoardProjection
+    ) -> Bool {
+        let update: BoardSnapshotUpdate
+        do {
+            update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: data)
+        } catch {
+            liveGameStates[attempt.gameID] = .incompatiblePayload(lastKnown: projection)
+            connection.close(code: .goingAway, reason: nil)
+            return false
+        }
+        switch update {
+        case let .snapshot(snapshot):
+            guard snapshot.scenarioSteps >= projection.counters.scenarioSteps else {
+                return true
+            }
+            projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+            reconcileBasicChoice(
+                gameID: attempt.gameID, projection: projection, isRESTSnapshot: false
+            )
+            liveGameStates[attempt.gameID] = .live(projection)
+        case .gameError:
+            handleBasicChoiceGameError(gameID: attempt.gameID, projection: projection)
+        case .unsupportedMessage:
+            break
+        }
+        return true
+    }
+
+    private func isCurrentLiveGameConnection(
+        _ attempt: LiveGameSessionAttempt, connectionID: UUID?
+    ) -> Bool {
+        guard isCurrentLiveGameSession(attempt) else { return false }
+        guard let connectionID else { return true }
+        return liveGameConnections[attempt.gameID]?.connectionID == connectionID
     }
 }

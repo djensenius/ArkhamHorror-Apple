@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "e6f689d2de1fe7d5895d1f6be598da34bea0b54505a7d9d44c085920dd850557"
+            sha256Hex: "b94bbfaeccc28fb42dfb6b9d06abff95a52aeb66fd544040fbdca63c6bddc9f3"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "0e34f06a60fe095d0927b0be7a2825b135d499719ae273b46fa890276a152d19"
+            sha256Hex: "7c27701c91616e6e76c93f76cdeb2a8dca78741bd68e666e869456115cd68208"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -83,6 +83,22 @@ enum ContractFixtureDigests {
         VendoredFixtureDigest(
             fileName: "card-code-entity-map",
             sha256Hex: "970749b0970f629722515394068afb660b9168a8fbeea768afbbc1cf1ef66492"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-choose-one",
+            sha256Hex: "854d6a2891155ff4da9e075224d4cd5a7519e4e4cb2ec659a740c872f8b799fc"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-player-window-choose-one",
+            sha256Hex: "1a10e17e87e2e77b728484443934e3147ea14d5cdee077cf236fc5efb8334eaf"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-window-choose-one",
+            sha256Hex: "96058cb5e2bb8a1d3beb5107b08fb66b8b4be8eb648317d439c5859657e362f6"
+        ),
+        VendoredFixtureDigest(
+            fileName: "answer-question",
+            sha256Hex: "b6d6b4d70acadd6d11d7c30fd67d052085384c478a00520d68c5c2f4d1b18fa7"
         ),
     ]
 }

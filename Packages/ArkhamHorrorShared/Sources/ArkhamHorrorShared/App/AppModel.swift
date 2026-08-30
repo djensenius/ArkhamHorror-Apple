@@ -280,6 +280,12 @@ final class AppModel {
     /// The in-flight live-session runner task and current attempt identity for each
     /// subscribed ``GameID``. See ``AppModel/startLiveGameSession(_:)``.
     @ObservationIgnored var liveGameSessions: [GameID: LiveGameSessionHandle] = [:]
+    /// REST-authoritative participant identity retained across socket snapshots/reconnects.
+    var liveGameParticipantIdentities: [GameID: LiveGameParticipantIdentity] = [:]
+    /// The currently usable socket, scoped to its exact session attempt and connection.
+    @ObservationIgnored var liveGameConnections: [GameID: LiveGameConnectionHandle] = [:]
+    /// Process-global answer authority: at most one claimed answer per game.
+    var basicChoiceActions: [GameID: BasicChoiceActionRecord] = [:]
 
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),

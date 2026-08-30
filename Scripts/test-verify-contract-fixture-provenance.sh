@@ -25,7 +25,9 @@ fixture_names="capabilities.json catalog.json decks.json game-lifecycle.json gam
 get-game.json game-update.json mode-turn-zero.json mode-campaign-only.json \
 mode-campaign-scenario.json location-enemy-view.json movement.json \
 act-no-advance-cost.json investigator-unhealed-horror-negative.json \
-uuid-entity-map.json card-code-entity-map.json"
+uuid-entity-map.json card-code-entity-map.json question-choose-one.json \
+question-player-window-choose-one.json question-window-choose-one.json \
+answer-question.json"
 
 failures=0
 scenario_count=0
@@ -109,7 +111,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.20",'
+    echo '  "schemaRevision": "0.1.21",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do

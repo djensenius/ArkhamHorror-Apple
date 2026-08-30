@@ -268,4 +268,6 @@ struct BoardProjection: Sendable, Equatable {
     let killedInvestigatorCount: Int
     let chaosBag: BoardChaosBagState
     let counters: BoardCounters
+    /// Exact player-keyed prompts. Choice arrays retain their authoritative wire order.
+    let questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>
 }

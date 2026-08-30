@@ -1,12 +1,12 @@
 # Test Fixtures
 
-## Contract/manifest.json, Contract/capabilities.json, Contract/catalog.json, Contract/decks.json, Contract/game-lifecycle.json, Contract/game-list.json, Contract/get-game.json, Contract/game-update.json, Contract/mode-turn-zero.json, Contract/mode-campaign-only.json, Contract/mode-campaign-scenario.json, Contract/location-enemy-view.json, Contract/movement.json, Contract/act-no-advance-cost.json, Contract/investigator-unhealed-horror-negative.json, Contract/uuid-entity-map.json, Contract/card-code-entity-map.json
+## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@7611b60abc1f0107abfba2c1939e4d170e20d948` (PRs #20, #22, #24, #45),
-schema revision `0.1.20`.
+`djensenius/ArkhamHorror@ee6efffa4d7a49f2ac7bf6b9349802d3d7675ae5` (through PR #49),
+schema revision `0.1.21`.
 
-These seventeen files, and only these seventeen, live under `Fixtures/Contract/` — a
+These twenty-one files, and only these twenty-one, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -29,10 +29,12 @@ REST/WebSocket envelopes both decoding to the same `PublicGameSnapshot`
 field). `mode-turn-zero.json`, `mode-campaign-only.json`, `mode-campaign-scenario.json`,
 `location-enemy-view.json`, `movement.json`, `act-no-advance-cost.json`,
 `investigator-unhealed-horror-negative.json`, `uuid-entity-map.json`, and
-`card-code-entity-map.json` are focused, sub-shape fixtures exercising specific governed
+`card-code-entity-map.json`, the three `question-*.json` files, and
+`answer-question.json` are focused, sub-shape fixtures exercising specific governed
 branches (`Data.These` mode sibling-key combinations and turn zero, the disjoint enemy
 location view, an in-progress `Movement`, an act with no `advanceCost`, negative
-`unhealedHorrorThisRound`, and the UUID-/`CardCode`-keyed entity map shapes) that are not
+``unhealedHorrorThisRound`, the UUID-/`CardCode`-keyed entity map shapes, and the basic
+choice question/answer shapes) that are not
 otherwise exercised by the single non-empty `get-game.json`/`game-update.json` fixture.
 
 ## token.json / whoami.json

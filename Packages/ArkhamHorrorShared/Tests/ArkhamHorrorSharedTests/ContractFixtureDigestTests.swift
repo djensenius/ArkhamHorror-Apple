@@ -83,7 +83,9 @@ struct ContractFixtureDigestTests {
             "get-game", "game-update", "mode-turn-zero", "mode-campaign-only",
             "mode-campaign-scenario", "location-enemy-view", "movement",
             "act-no-advance-cost", "investigator-unhealed-horror-negative",
-            "uuid-entity-map", "card-code-entity-map",
+            "uuid-entity-map", "card-code-entity-map", "question-choose-one",
+            "question-player-window-choose-one", "question-window-choose-one",
+            "answer-question",
         ])
     }
 
@@ -148,6 +150,8 @@ struct ContractFixtureDigestTests {
 
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
-        #expect(ContractPin.current.backendCommit == "7611b60abc1f0107abfba2c1939e4d170e20d948")
+        #expect(
+            ContractPin.current.backendCommit == "ee6efffa4d7a49f2ac7bf6b9349802d3d7675ae5"
+        )
     }
 }

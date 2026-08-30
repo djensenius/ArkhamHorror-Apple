@@ -40,6 +40,10 @@ struct LiveGameView: View {
         model.liveGameState(for: gameID)
     }
 
+    private var prompt: BasicChoicePromptPresentation? {
+        model.basicChoicePresentation(for: gameID)
+    }
+
     var body: some View {
         content
             .navigationTitle("Game")
@@ -82,7 +86,7 @@ struct LiveGameView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier(AccountAccessibilityID.liveGameLoadingText)
         case let .live(projection):
-            BoardView(projection: projection)
+            board(projection)
         case let .reconnecting(lastKnown):
             reconnectingContent(lastKnown: lastKnown)
         case .offline:
@@ -130,7 +134,7 @@ struct LiveGameView: View {
     private func reconnectingContent(lastKnown: BoardProjection?) -> some View {
         ZStack(alignment: .top) {
             if let lastKnown {
-                BoardView(projection: lastKnown)
+                board(lastKnown)
             } else {
                 ProgressView("Loading game…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -145,6 +149,21 @@ struct LiveGameView: View {
                 .accessibilityIdentifier(AccountAccessibilityID.liveGameReconnectingText)
                 .accessibilityAddTraits(.updatesFrequently)
         }
+    }
+
+    private func board(_ projection: BoardProjection) -> some View {
+        BoardView(
+            projection: projection,
+            prompt: prompt,
+            onChoice: { index in
+                guard let identity = prompt?.identity else { return }
+                Task { await model.submitBasicChoice(identity, choiceIndex: index) }
+            },
+            onRetryChoice: {
+                guard let identity = prompt?.identity else { return }
+                Task { await model.retryBasicChoice(identity) }
+            }
+        )
     }
 
     /// A retryable failure state: a full ``ContentUnavailableView`` -- deliberately

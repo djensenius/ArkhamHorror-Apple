@@ -145,11 +145,20 @@ extension PublicGameSnapshot: Codable {
             JSONValue.self, from: container, forKey: .skillTestResults,
             codingPath: path + [CodingKeys.skillTestResults]
         )
-        question = try container.decode(UUIDEntityMap<PlayerIDTag>.self, forKey: .question)
+        question = try container.decode(
+            UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>.self, forKey: .question
+        )
         cards = try container.decode(UUIDEntityMap<WireCardIDTag>.self, forKey: .cards)
         totalDoom = try container.decode(Int.self, forKey: .totalDoom)
         totalClues = try container.decode(Int.self, forKey: .totalClues)
         scenarioSteps = try container.decode(Int.self, forKey: .scenarioSteps)
+        guard scenarioSteps >= 0 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .scenarioSteps,
+                in: container,
+                debugDescription: "scenarioSteps must be non-negative"
+            )
+        }
         undoActionStep = try decodeRequiredNullable(
             Int.self, from: container, forKey: .undoActionStep,
             codingPath: path + [CodingKeys.undoActionStep]

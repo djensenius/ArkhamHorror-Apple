@@ -29,8 +29,8 @@ enum PublicGameSnapshotError: Error, Equatable, Sendable {
 
 /// The top-level authoritative game snapshot published over REST (`GetGame.game`) and
 /// WebSocket (`GameUpdate.contents`) (`Arkham.Types.Game.PublicGame`, backend PR #45).
-/// Pinned byte-for-byte to backend commit `7611b60abc1f0107abfba2c1939e4d170e20d948`,
-/// schema revision `0.1.20`. Read-only: this type is never submitted back to the server.
+/// Pinned byte-for-byte to backend commit `ee6efffa4d7a49f2ac7bf6b9349802d3d7675ae5`,
+/// schema revision `0.1.21`. Read-only: this type is never submitted back to the server.
 struct PublicGameSnapshot: Sendable {
     let name: String
     let id: GameID
@@ -81,7 +81,9 @@ struct PublicGameSnapshot: Sendable {
     let inSetup: Bool
     /// `PublicGame.skillTestResults`. Broad, out of scope for this contract slice.
     let skillTestResults: JSONValue?
-    let question: UUIDEntityMap<PlayerIDTag>
+    /// Exact player-keyed question payloads. Each value retains its full raw JSON while
+    /// recognizing only the narrow basic-choice slice this client can safely answer.
+    let question: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>
     let cards: UUIDEntityMap<WireCardIDTag>
     let totalDoom: Int
     let totalClues: Int

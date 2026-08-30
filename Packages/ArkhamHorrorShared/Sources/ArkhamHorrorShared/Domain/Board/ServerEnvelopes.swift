@@ -55,6 +55,7 @@ extension GetGameEnvelope: Codable {
 /// ``unsupportedMessage(tag:rawContents:)`` for anything else — never a silent no-op.
 enum BoardSnapshotUpdate: Sendable {
     case snapshot(PublicGameSnapshot)
+    case gameError(rawMessage: String)
     /// A recognized-or-unrecognized `ServerMessage` tag this contract slice does not
     /// decode further. `rawContents` preserves whatever `contents`-shaped payload (if
     /// any) accompanied it, for diagnostics.
@@ -72,6 +73,10 @@ extension BoardSnapshotUpdate: Codable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let tag = try container.decode(String.self, forKey: .tag)
+        if tag == "GameError", let message = try? container.decode(String.self, forKey: .contents) {
+            self = .gameError(rawMessage: message)
+            return
+        }
         guard tag == "GameUpdate" else {
             // Distinguishes an absent `contents` key (`nil`) from an explicit
             // `"contents": null` (`.some(.null)`): `decodeIfPresent(JSONValue.self, ...)`
@@ -92,6 +97,9 @@ extension BoardSnapshotUpdate: Codable {
         case let .snapshot(snapshot):
             try container.encode("GameUpdate", forKey: .tag)
             try container.encode(snapshot, forKey: .contents)
+        case let .gameError(rawMessage):
+            try container.encode("GameError", forKey: .tag)
+            try container.encode(rawMessage, forKey: .contents)
         case let .unsupportedMessage(tag, rawContents):
             try container.encode(tag, forKey: .tag)
             try container.encodeIfPresent(rawContents, forKey: .contents)
