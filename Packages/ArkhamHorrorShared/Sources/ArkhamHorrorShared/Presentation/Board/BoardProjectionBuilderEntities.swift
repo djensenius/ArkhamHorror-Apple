@@ -31,6 +31,9 @@ extension BoardProjectionBuilder {
         if lhs.sequence.step != rhs.sequence.step {
             return lhs.sequence.step < rhs.sequence.step
         }
+        if lhs.sequence.side != rhs.sequence.side {
+            return lhs.sequence.side.rawValue < rhs.sequence.side.rawValue
+        }
         return lhs.cardCode.rawValue < rhs.cardCode.rawValue
     }
 
@@ -61,6 +64,9 @@ extension BoardProjectionBuilder {
         }
         if lhs.sequence.step != rhs.sequence.step {
             return lhs.sequence.step < rhs.sequence.step
+        }
+        if lhs.sequence.side != rhs.sequence.side {
+            return lhs.sequence.side.rawValue < rhs.sequence.side.rawValue
         }
         return lhs.cardCode.rawValue < rhs.cardCode.rawValue
     }

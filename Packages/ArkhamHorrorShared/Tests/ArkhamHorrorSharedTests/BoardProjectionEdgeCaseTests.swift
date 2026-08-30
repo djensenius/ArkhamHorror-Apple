@@ -149,6 +149,42 @@ struct BoardProjectionEdgeCaseTests {
         #expect(projection.agendas.map(\.sequence.side) == sides)
     }
 
+    @Test("Acts sharing the same deckID and step still sort by sequence.side, not card code")
+    func actsSharingDeckAndStepSortBySide() {
+        // Card codes deliberately alphabetize opposite to the intended side order, so a
+        // sort key that ignored `sequence.side` would report them in reverse.
+        let sideHID = BoardTestFixtures.actID("c00001")
+        let sideAID = BoardTestFixtures.actID("c99999")
+        let acts: [ActID: Act] = [
+            sideHID: BoardTestFixtures.act(
+                id: sideHID, deckID: 1, sequence: ActSequence(step: 1, side: .sideH)
+            ),
+            sideAID: BoardTestFixtures.act(
+                id: sideAID, deckID: 1, sequence: ActSequence(step: 1, side: .sideA)
+            ),
+        ]
+        let snapshot = BoardTestFixtures.snapshot(acts: acts)
+        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+        #expect(projection.acts.map(\.sequence.side) == [.sideA, .sideH])
+    }
+
+    @Test("Agendas sharing the same deckID and step still sort by sequence.side, not card code")
+    func agendasSharingDeckAndStepSortBySide() {
+        let sideDID = BoardTestFixtures.agendaID("c00001")
+        let sideAID = BoardTestFixtures.agendaID("c99999")
+        let agendas: [AgendaID: Agenda] = [
+            sideDID: BoardTestFixtures.agenda(
+                id: sideDID, deckID: 1, sequence: AgendaSequence(side: .sideD, step: 1)
+            ),
+            sideAID: BoardTestFixtures.agenda(
+                id: sideAID, deckID: 1, sequence: AgendaSequence(side: .sideA, step: 1)
+            ),
+        ]
+        let snapshot = BoardTestFixtures.snapshot(agendas: agendas)
+        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+        #expect(projection.agendas.map(\.sequence.side) == [.sideA, .sideD])
+    }
+
     // MARK: - Empty optional zones
 
     @Test(
