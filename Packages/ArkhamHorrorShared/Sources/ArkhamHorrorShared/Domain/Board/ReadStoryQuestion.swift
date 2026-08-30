@@ -6,8 +6,12 @@ import Foundation
 ///
 /// `title` and every `I18nEntry.key` are literal i18n lookup keys, never rendered narrative
 /// text on the wire (the pinned schema's own documentation: "it is never rendered narrative
-/// text on the wire") — so this client renders them exactly as received rather than
-/// fabricating, translating, or otherwise inventing Arkham Horror LCG flavor prose.
+/// text on the wire") — this domain type preserves them exactly as decoded, completely
+/// losslessly, but never presents them directly: ``StoryNarrativeLocalization`` is this
+/// client's sole narrow, fail-closed boundary that resolves a `FlavorText` into
+/// human-readable presentation text (or `nil`, when no lawful resolution is possible),
+/// rather than fabricating, translating, or otherwise inventing Arkham Horror LCG flavor
+/// prose.
 struct FlavorText: Sendable, Equatable, Hashable {
     let title: String?
     let body: [FlavorTextEntry]

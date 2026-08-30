@@ -251,9 +251,26 @@ enum BasicChoiceParser {
         ))
     }
 
+    /// Strict "engine message" array validator, shared by every `ComponentLabel`/
+    /// `EndTurnButton`/`AbilityLabel` (`before` and `messages`)/`TargetLabel` path. Backend
+    /// 0.1.22's `Message` schema requires every array element to be a tagged constructor
+    /// object -- a bare scalar, `null`, or an object missing/emptying its `tag` cannot
+    /// stand in for one (see `manifest.json`'s `message` schemaBranch negatives). Only the
+    /// `tag` field's shape is validated here; every other field (including an entirely
+    /// opaque `contents`) is returned completely unmodified and lossless, since this
+    /// client never executes or interprets engine messages.
     private static func messages(_ value: JSONValue?) -> [JSONValue]? {
-        guard case let .array(values)? = value else { return nil }
+        guard case let .array(values)? = value, values.allSatisfy(isValidMessage) else {
+            return nil
+        }
         return values
+    }
+
+    private static func isValidMessage(_ value: JSONValue) -> Bool {
+        guard case let .object(object) = value,
+              case let .string(tag)? = object["tag"]
+        else { return false }
+        return !tag.isEmpty
     }
 
     private static func investigatorID(_ value: JSONValue?) -> InvestigatorID? {

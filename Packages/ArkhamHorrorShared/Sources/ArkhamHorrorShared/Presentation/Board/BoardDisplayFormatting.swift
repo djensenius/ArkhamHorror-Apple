@@ -27,11 +27,15 @@ enum BoardDisplayFormatting {
     }
 
     /// A choice's display title. `.chooseLocation` resolves the real starting-location
-    /// label from the authoritative board `projection` (falling back to the location's own
-    /// canonical lowercase-hyphenated UUID text -- never a fabricated or guessed name --
-    /// when the projection doesn't yet carry that location, for example if the prompt
-    /// arrives before that location's own reveal is reflected in the snapshot). Every
-    /// other content kind uses its static per-kind ``BasicChoice/title``, unchanged.
+    /// label from the authoritative board `projection`. When the projection doesn't yet
+    /// (or no longer) carry that location -- for example if the prompt arrives before
+    /// that location's own reveal is reflected in the snapshot -- this falls back to a
+    /// deterministic, concise "Unavailable location" placeholder disambiguated by the
+    /// choice's own original 1-based position, never the location's raw UUID text: this
+    /// is presentation-layer content shown to the player, and the wire identifier is an
+    /// internal implementation detail that must never leak into it. Every other content
+    /// kind uses its static per-kind ``BasicChoice/title``, unchanged. Such a choice is
+    /// also not currently actionable -- see ``BoardProjection/isChoiceActionable(_:story:)``.
     static func choiceDisplayTitle(
         for choice: BasicChoice, in projection: BoardProjection
     ) -> String {
@@ -39,7 +43,40 @@ enum BoardDisplayFormatting {
         if let node = projection.locations.first(where: { $0.id == locationID }) {
             return node.displayLabel
         }
-        return "Location \(locationID.rawValue.uuidString.lowercased())"
+        return "Unavailable location (choice \(choice.index + 1))"
+    }
+
+    /// A choice's VoiceOver/accessibility hint, distinguishing the three reasons a
+    /// choice's control can be disabled from the one case it is genuinely actionable:
+    /// wire-unsupported (a future app version's shape), wire-supported but not currently
+    /// actionable per ``BoardProjection/isChoiceActionable(_:story:)`` (for example a
+    /// starting-location choice whose target isn't yet known to the board, or a
+    /// `.continueReading` choice whose story text this client cannot lawfully localize),
+    /// and currently read-only for an unrelated reason (`canSubmit == false`, for example
+    /// a send already in flight). Never conflates these: an unavailable-location choice
+    /// must never be announced as "requires a newer app version" (it parsed just fine),
+    /// and a wire-unsupported choice must never be announced as merely "not currently
+    /// available" (no future snapshot can ever make it actionable).
+    static func choiceAccessibilityHint(
+        for choice: BasicChoice,
+        in projection: BoardProjection,
+        story: ReadStoryContent? = nil,
+        canSubmit: Bool,
+        statusMessage: String?
+    ) -> String {
+        guard choice.isSupported else {
+            return "This choice requires a newer app version."
+        }
+        guard projection.isChoiceActionable(choice, story: story) else {
+            if case .continueReading = choice.content {
+                return "This story text requires a future app update to display."
+            }
+            return "This location isn't currently available."
+        }
+        if canSubmit {
+            return "Activates choice \(choice.index + 1)."
+        }
+        return statusMessage ?? "This choice is currently read-only."
     }
 
     /// `name.subtitle`, trimmed to `nil` if blank (rather than showing an empty subtitle).

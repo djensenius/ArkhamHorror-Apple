@@ -79,18 +79,34 @@ struct BasicChoicePromptView: View {
     private var story: some View {
         if let content = presentation.question.supportedQuestion?.story {
             VStack(alignment: .leading, spacing: 8) {
-                if let title = content.flavorText.title {
-                    Text(title)
-                        .font(.callout.monospaced())
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("liveGame.prompt.story.title")
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(content.flavorText.body.enumerated()), id: \.offset) { _, entry in
-                        FlavorTextEntryView(entry: entry)
+                if let resolved = StoryNarrativeLocalization.resolvedStory(
+                    for: content.flavorText
+                ) {
+                    if let title = resolved.title {
+                        Text(title)
+                            .font(.callout.monospaced())
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("liveGame.prompt.story.title")
                     }
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(resolved.body.enumerated()), id: \.offset) { _, entry in
+                            ResolvedStoryEntryView(entry: entry)
+                        }
+                    }
+                    .accessibilityIdentifier("liveGame.prompt.story.body")
+                } else {
+                    // No lawful localization source is in scope for this key/title (see
+                    // `StoryNarrativeLocalization`'s own documentation): this app must
+                    // never display a raw i18n key as though it were finished narrative,
+                    // so it shows this explicit, honest notice instead and (via
+                    // `BoardProjection.isChoiceActionable(_:story:)`) disables Continue.
+                    Label(
+                        "This story text requires a future app update to display.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("liveGame.prompt.story.unavailable")
                 }
-                .accessibilityIdentifier("liveGame.prompt.story.body")
                 if let readCards = content.readCards, !readCards.isEmpty {
                     readCardsSummary(readCards)
                 }
@@ -115,10 +131,14 @@ struct BasicChoicePromptView: View {
     }
 
     private var choices: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let story = presentation.question.supportedQuestion?.story
+        return VStack(alignment: .leading, spacing: 8) {
             ForEach(presentation.choices) { choice in
                 let focusID = BoardFocusID.promptChoice(choice.index)
                 let title = displayTitle(for: choice)
+                let isActionable = controller.projection.isChoiceActionable(
+                    choice, story: story
+                )
                 SemanticActionControl(
                     accessibilityLabel: Text(title),
                     semanticFocusID: focusID,
@@ -141,7 +161,7 @@ struct BasicChoicePromptView: View {
                 )
                 .buttonStyle(.bordered)
                 .focused(focusBinding, equals: focusID)
-                .disabled(!choice.isSupported || !presentation.canSubmit)
+                .disabled(!isActionable || !presentation.canSubmit)
                 // `SemanticActionControl` already applies `accessibilityLabel: Text(title)`
                 // internally; an outer override here would risk silently diverging from it.
                 .accessibilityHint(accessibilityHint(for: choice))
@@ -169,55 +189,49 @@ struct BasicChoicePromptView: View {
     }
 
     private func accessibilityHint(for choice: BasicChoice) -> String {
-        guard choice.isSupported else {
-            return "This choice requires a newer app version."
-        }
-        if presentation.canSubmit {
-            return "Activates choice \(choice.index + 1)."
-        }
-        return presentation.statusMessage ?? "This choice is currently read-only."
+        BoardDisplayFormatting.choiceAccessibilityHint(
+            for: choice,
+            in: controller.projection,
+            story: presentation.question.supportedQuestion?.story,
+            canSubmit: presentation.canSubmit,
+            statusMessage: presentation.statusMessage
+        )
     }
 }
 
-/// Renders a single ``FlavorTextEntry``. `.i18n`'s `key` is a raw, un-translated i18n
-/// lookup key (never narrative text on the wire); this app has no localization/lookup
-/// infrastructure, so it is rendered literally in a monospaced, secondary style that
-/// visually distinguishes it from resolved prose rather than presenting it as if it were
-/// finished narrative text.
-private struct FlavorTextEntryView: View {
-    let entry: FlavorTextEntry
+/// Renders a single ``ResolvedStoryEntry``: every entry reaching this view already went
+/// through ``StoryNarrativeLocalization/resolvedStory(for:vocabulary:)``, so `.text` is
+/// always finished, human-readable narrative -- never a raw i18n key.
+private struct ResolvedStoryEntryView: View {
+    let entry: ResolvedStoryEntry
 
     var body: some View {
         switch entry {
-        case let .basic(text):
+        case let .text(text):
             Text(text)
-        case let .i18n(key, _):
-            Text(key)
-                .font(.callout.monospaced())
-                .foregroundStyle(.secondary)
         case let .list(items):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    FlavorTextListItemView(item: item)
+                    ResolvedStoryListItemView(item: item)
                 }
             }
         }
     }
 }
 
-private struct FlavorTextListItemView: View {
-    let item: FlavorTextListItem
+private struct ResolvedStoryListItemView: View {
+    let item: ResolvedStoryListItem
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 6) {
                 Text("•")
-                FlavorTextEntryView(entry: item.entry)
+                ResolvedStoryEntryView(entry: item.entry)
             }
             if !item.nested.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(item.nested.enumerated()), id: \.offset) { _, nested in
-                        FlavorTextListItemView(item: nested)
+                        ResolvedStoryListItemView(item: nested)
                     }
                 }
                 .padding(.leading, 16)

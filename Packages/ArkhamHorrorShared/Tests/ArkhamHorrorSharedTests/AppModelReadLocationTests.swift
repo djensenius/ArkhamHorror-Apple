@@ -14,15 +14,35 @@ extension AppModelLiveGameTests {
     /// `AppModelBasicChoiceTests.snapshotUpdate(...)`'s targeted-mutation style, but swaps
     /// the entire per-player question rather than mutating one field of the existing
     /// `ChooseOne` shape (Read's shape has no `choices` key at all).
+    /// - Parameter addingLocationIDs: Extra locations to merge into the snapshot's
+    ///   authoritative `locations` map (cloned from an existing real location fixture
+    ///   entry, `id` substituted, `investigators` cleared), so a fixture question offering
+    ///   `TargetLabel(LocationTarget)` choices for locations beyond the base envelope's
+    ///   single revealed location can be exercised against a snapshot that authoritatively
+    ///   carries every one of them -- matching real production reality, where a
+    ///   `ChooseOne(LocationTarget)` starting-location prompt only ever offers locations
+    ///   already present in the answering player's own board projection (see
+    ///   `question-choose-one-location.json`'s revealed `d5a66e84` Study choice: the exact
+    ///   same UUID `get-game.json`'s own `locations` map already carries).
     func snapshotUpdate(
         from envelope: GetGameEnvelope,
         scenarioSteps: Int,
-        replacingQuestionWith rawQuestion: JSONValue
+        replacingQuestionWith rawQuestion: JSONValue,
+        addingLocationIDs locationIDs: [String] = []
     ) throws -> BoardSnapshotUpdate {
         let data = try ContractJSON.encode(envelope.game)
         var value = try ContractJSON.decode(JSONValue.self, from: data)
         guard case var .object(object) = value else { throw TestFailure() }
         object["scenarioSteps"] = .number(.integer(Int64(scenarioSteps)))
+        if !locationIDs.isEmpty {
+            guard case var .object(locations)? = object["locations"],
+                  let template = locations.values.first
+            else { throw TestFailure() }
+            for locationID in locationIDs {
+                locations[locationID] = try templatedLocation(template, id: locationID)
+            }
+            object["locations"] = .object(locations)
+        }
         guard case var .object(questions)? = object["question"] else { throw TestFailure() }
         // Prefer the answering player's own map key (matching `Identifier`'s canonical
         // lowercase-hyphenated `codingKey`, see `BoardIdentifiers.swift`) so a fixture that
@@ -46,6 +66,16 @@ extension AppModelLiveGameTests {
             PublicGameSnapshot.self, from: ContractJSON.encode(value)
         )
         return .snapshot(snapshot)
+    }
+
+    /// Clones a real `locations` map entry (`template`) with its `"id"` field replaced by
+    /// `id` and `"investigators"` cleared -- an unmodified clone would otherwise falsely
+    /// place the same investigator at every cloned location simultaneously.
+    private func templatedLocation(_ template: JSONValue, id: String) throws -> JSONValue {
+        guard case var .object(fields) = template else { throw TestFailure() }
+        fields["id"] = .string(id)
+        fields["investigators"] = .array([])
+        return .object(fields)
     }
 
     func loadContractFixtureValue(_ name: String) throws -> JSONValue {
@@ -160,10 +190,21 @@ extension AppModelLiveGameTests {
         let locationQuestion = try loadContractFixtureValue(
             "question-choose-one-location-multiple"
         )
+        // The three real `TargetLabel(LocationTarget)` choices this fixture offers are,
+        // in production, only ever offered once every candidate starting location is
+        // already authoritatively known (exactly like `question-choose-one-location.json`'s
+        // single Study choice, whose UUID the base envelope's own `locations` map already
+        // carries) -- so the snapshot here must carry all three too, matching that same
+        // reality, rather than leaving them presentation-actionable-but-unknown.
         let locationUpdate = try snapshotUpdate(
             from: envelope,
             scenarioSteps: envelope.game.scenarioSteps + 2,
-            replacingQuestionWith: locationQuestion
+            replacingQuestionWith: locationQuestion,
+            addingLocationIDs: [
+                "00000000-0000-0000-0000-000000000398",
+                "00000000-0000-0000-0000-000000000399",
+                "00000000-0000-0000-0000-00000000039a",
+            ]
         )
         try await connection.enqueue(.event(.message(ContractJSON.encode(locationUpdate))))
         await connection.waitUntilAwaitingNextEvent()
@@ -195,7 +236,12 @@ extension AppModelLiveGameTests {
             model: model, fakes: fakes, envelope: envelope, connection: connection
         )
 
-        let readQuestion = try loadContractFixtureValue("question-read")
+        // `question-read-with-cards` (not the real production `question-read`) is used
+        // here since this test exercises duplicate-submission claiming, not story-content
+        // resolution -- its `BasicEntry`-only body resolves lawfully (see
+        // `StoryNarrativeLocalizationTests`), leaving the choice actionable so submission
+        // mechanics can be exercised without depending on a resolvable story.
+        let readQuestion = try loadContractFixtureValue("question-read-with-cards")
         let readUpdate = try snapshotUpdate(
             from: envelope,
             scenarioSteps: envelope.game.scenarioSteps + 1,
@@ -224,7 +270,9 @@ extension AppModelLiveGameTests {
         let gameID = await startChoiceSession(
             model: model, fakes: fakes, envelope: envelope, connection: firstConnection
         )
-        let readQuestion = try loadContractFixtureValue("question-read")
+        // See `duplicateContinueSubmissionSendsOnce`'s comment: a resolvable story is
+        // needed here so this reconnect/retry mechanics test can submit successfully.
+        let readQuestion = try loadContractFixtureValue("question-read-with-cards")
         let readUpdate = try snapshotUpdate(
             from: envelope,
             scenarioSteps: envelope.game.scenarioSteps + 1,
@@ -268,7 +316,9 @@ extension AppModelLiveGameTests {
         let gameID = await startChoiceSession(
             model: model, fakes: fakes, envelope: envelope, connection: connection
         )
-        let readQuestion = try loadContractFixtureValue("question-read")
+        // See `duplicateContinueSubmissionSendsOnce`'s comment: a resolvable story is
+        // needed here so this undo/reset mechanics test can submit successfully.
+        let readQuestion = try loadContractFixtureValue("question-read-with-cards")
         let readUpdate = try snapshotUpdate(
             from: envelope,
             scenarioSteps: envelope.game.scenarioSteps + 1,
@@ -309,7 +359,9 @@ extension AppModelLiveGameTests {
         let gameID = await startChoiceSession(
             model: model, fakes: fakes, envelope: envelope, connection: connection
         )
-        let readQuestion = try loadContractFixtureValue("question-read")
+        // See `duplicateContinueSubmissionSendsOnce`'s comment: a resolvable story is
+        // needed here so this uncorrelated-GameError mechanics test can submit successfully.
+        let readQuestion = try loadContractFixtureValue("question-read-with-cards")
         let readUpdate = try snapshotUpdate(
             from: envelope,
             scenarioSteps: envelope.game.scenarioSteps + 1,

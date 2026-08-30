@@ -142,8 +142,17 @@ extension AppModel {
         guard isRetry ? presentation.readOnlyReason == nil : presentation.canSubmit else {
             return .reject(.readOnly)
         }
-        guard let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
-              choice.isSupported
+        // Revalidated against the current authoritative projection immediately before
+        // send -- never the projection captured whenever this choice was last rendered
+        // -- so a `.chooseLocation` choice whose target has meanwhile stopped being
+        // known to the board, a `.continueReading` choice whose story this client
+        // cannot lawfully resolve, or a stale rendered action racing a snapshot
+        // replacement can never be claimed/answered on the wire.
+        guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
+              let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
+              projection.isChoiceActionable(
+                  choice, story: presentation.question.supportedQuestion?.story
+              )
         else { return .reject(.unsupportedChoice) }
         guard let connection = liveGameConnections[identity.gameID],
               liveGameSessions[identity.gameID]?.attemptID == connection.attemptID

@@ -7,7 +7,7 @@ import Testing
 /// djensenius/ArkhamHorror-Apple#35), pinned to backend commit `52c7ee3b`, schema `0.1.22`.
 @Suite("Read story and location choice contract")
 struct ReadStoryQuestionTests {
-    private func fixture(_ name: String) throws -> Data {
+    func fixture(_ name: String) throws -> Data {
         let url = try #require(
             Bundle.module.url(
                 forResource: name, withExtension: "json", subdirectory: "Fixtures/Contract"
@@ -124,7 +124,7 @@ struct ReadStoryQuestionTests {
         #expect(encodedText.contains(#""choice":1"#))
     }
 
-    private func expectedLocationID(_ uuid: String) -> LocationID {
+    func expectedLocationID(_ uuid: String) -> LocationID {
         // swiftlint:disable:next force_unwrapping
         LocationID(UUID(uuidString: uuid)!)
     }
@@ -246,7 +246,7 @@ struct ReadStoryQuestionTests {
     }
 
     @Test(
-        "choiceDisplayTitle falls back to a deterministic lowercase UUID when the projection doesn't yet carry that location"
+        "choiceDisplayTitle falls back to a concise, non-UUID-leaking placeholder when the projection doesn't yet carry that location"
     )
     func choiceDisplayTitleFallsBackWhenLocationMissing() throws {
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
@@ -254,10 +254,9 @@ struct ReadStoryQuestionTests {
             BasicChoiceQuestionPayload.self, from: fixture("question-choose-one-location")
         )
         let choice = try #require(payload.supportedQuestion?.choices.first)
-        #expect(
-            BoardDisplayFormatting.choiceDisplayTitle(for: choice, in: projection)
-                == "Location d5a66e84-c729-4066-8475-d8a155609025"
-        )
+        let title = BoardDisplayFormatting.choiceDisplayTitle(for: choice, in: projection)
+        #expect(title == "Unavailable location (choice 1)")
+        #expect(!title.contains("d5a66e84"))
     }
 
     @Test("choiceDisplayTitle uses the static per-kind title for every non-location choice")
