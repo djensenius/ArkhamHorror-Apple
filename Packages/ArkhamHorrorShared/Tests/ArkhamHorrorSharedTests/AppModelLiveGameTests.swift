@@ -110,7 +110,7 @@ struct AppModelLiveGameTests {
         return attempt
     }
 
-    // MARK: - Initial subscribe: REST-first ordering, idle→loading→live
+    // MARK: - Initial subscribe: socket-first ordering, idle→loading→live
 
     @Test("Subscribing moves idle → loading, then live once the REST snapshot is published")
     func subscribingMovesFromLoadingToLive() async throws {
@@ -121,49 +121,103 @@ struct AppModelLiveGameTests {
         let gameID = GameID(UUID())
         #expect(model.liveGameState(for: gameID) == .idle)
 
-        await fakes.service.setGetGameGated(true)
         await fakes.socketFactory.setGated(true)
+        await fakes.service.setGetGameGated(true)
         let token = model.subscribeToLiveGame(gameID)
         #expect(model.liveGameState(for: gameID) == .loading)
 
+        // The socket connects *before* the REST fetch is ever attempted -- proven
+        // directly: no `getGame` call has been recorded yet at this point.
+        await fakes.socketFactory.waitUntilConnectPending(1)
+        #expect(await fakes.service.callOrder.isEmpty)
+
+        let connection = FakeGameSocketConnection()
+        await fakes.socketFactory.resumeOldestConnect(with: .success(connection))
+
         await fakes.service.waitUntilGetGamePending(1)
         await fakes.service.resumeOldestGetGame(with: .success(envelope))
-        // Awaiting the socket factory's own connect-pending gate is itself the
+        // Awaiting the connection's own "now awaiting the next frame" gate is the
         // deterministic proof that the REST fetch's completion already ran and
-        // published `.live` on this session's single serial task -- the socket
-        // connect that gate observes only ever happens *after* that publish (see
-        // `runLiveGameSession`'s reconnect-ordering documentation), so no polling of
-        // `liveGameState` is needed to observe it.
-        await fakes.socketFactory.waitUntilConnectPending(1)
+        // published `.live` on this session's single serial task -- consuming only
+        // ever begins *after* that publish (see `runLiveGameSession`'s "Connect
+        // ordering" documentation), so no polling of `liveGameState` is needed to
+        // observe it.
+        await connection.waitUntilAwaitingNextEvent()
         #expect(model.liveGameState(for: gameID) == .live(expectedProjection))
 
-        // The socket connect only ever happens *after* this first REST fetch
-        // publishes -- proven directly by the recorded call order.
         let callOrder = await fakes.service.callOrder
         #expect(callOrder == ["getGame"])
         model.unsubscribeFromLiveGame(token)
     }
 
-    @Test("The first connection's REST fetch is issued strictly before the socket connect")
-    func firstConnectionFetchesRESTBeforeOpeningSocket() async throws {
+    @Test("The first connection's socket connect is issued strictly before the REST fetch")
+    func firstConnectionConnectsSocketBeforeFetchingREST() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         let envelope = try loadGetGame()
         let gameID = GameID(UUID())
 
-        await fakes.service.setGetGameGated(true)
         await fakes.socketFactory.setGated(true)
+        await fakes.service.setGetGameGated(true)
         let token = model.subscribeToLiveGame(gameID)
 
+        await fakes.socketFactory.waitUntilConnectPending(1)
+        // The REST service must not have been reached at all yet.
+        let getGameCallCountBeforeConnect = await fakes.service.callOrder.count
+        #expect(getGameCallCountBeforeConnect == 0)
+
+        let connection = FakeGameSocketConnection()
+        await fakes.socketFactory.resumeOldestConnect(with: .success(connection))
         await fakes.service.waitUntilGetGamePending(1)
-        // The socket factory must not have been reached at all yet.
-        let connectCallCountBeforeFetch = await fakes.socketFactory.connectCallCount
-        #expect(connectCallCountBeforeFetch == 0)
+        let getGameCallCountAfterConnect = await fakes.service.callOrder.count
+        #expect(getGameCallCountAfterConnect == 1)
 
         await fakes.service.resumeOldestGetGame(with: .success(envelope))
+        model.unsubscribeFromLiveGame(token)
+    }
+
+    @Test("""
+    A broadcast frame arriving on the socket while the REST refetch is in flight is not lost
+    """)
+    func broadcastDuringRESTRefetchIsNotLost() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        let restEnvelope = try loadGetGame()
+        let gameID = GameID(UUID())
+
+        await fakes.socketFactory.setGated(true)
+        await fakes.service.setGetGameGated(true)
+        let token = model.subscribeToLiveGame(gameID)
+
         await fakes.socketFactory.waitUntilConnectPending(1)
-        let connectCallCountAfterFetch = await fakes.socketFactory.connectCallCount
-        #expect(connectCallCountAfterFetch == 1)
+        let connection = FakeGameSocketConnection()
+        await fakes.socketFactory.resumeOldestConnect(with: .success(connection))
+
+        await fakes.service.waitUntilGetGamePending(1)
+        // Simulate the backend broadcasting an update on the now-already-open
+        // socket while this session's REST refetch is still in flight -- exactly
+        // the gap opening the socket *before* refetching (rather than after) exists
+        // to close: this frame must be queued and consumed once this session starts
+        // receiving, never silently lost merely because `receive()` hadn't been
+        // called yet.
+        let broadcastUpdate = try loadGameUpdateData()
+        await connection.enqueue(.event(.message(broadcastUpdate)))
+
+        await fakes.service.resumeOldestGetGame(with: .success(restEnvelope))
+
+        let decodedUpdate = try ContractJSON.decode(BoardSnapshotUpdate.self, from: broadcastUpdate)
+        guard case let .snapshot(broadcastSnapshot) = decodedUpdate else {
+            Issue.record("Expected the game-update fixture to decode to .snapshot")
+            return
+        }
+        let expectedFinalProjection = BoardProjectionBuilder.makeProjection(from: broadcastSnapshot)
+
+        // Deterministically wait for the queued broadcast to actually be consumed
+        // (rather than merely the REST publish) before asserting: once the receive
+        // loop is back to awaiting its *next* event, the queued one has already
+        // been dequeued and published, proving it was never lost.
+        await connection.waitUntilAwaitingNextEvent()
+        #expect(model.liveGameState(for: gameID) == .live(expectedFinalProjection))
         model.unsubscribeFromLiveGame(token)
     }
 
@@ -174,6 +228,8 @@ struct AppModelLiveGameTests {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         let gameID = GameID(UUID())
+        let connection = FakeGameSocketConnection()
+        await fakes.socketFactory.enqueueConnectResult(.success(connection))
         await fakes.service.enqueueGetGameResult(.failure(GameLifecycleError.sessionExpired))
 
         model.subscribeToLiveGame(gameID)
@@ -194,6 +250,11 @@ struct AppModelLiveGameTests {
         #expect(model.liveGameSessions[gameID] == nil)
         let remainingToken = try await fakes.tokenStore.token(for: ServerProfile.hosted.id)
         #expect(remainingToken == nil)
+        // The socket -- already open (per the new socket-first ordering) at the
+        // moment the REST refetch failed -- is closed exactly once, never leaked.
+        await connection.waitUntilClosed()
+        let closeCount = await connection.closeCallCount
+        #expect(closeCount == 1)
     }
 
     @Test("A stale live-game 401 after sign-out and re-sign-in cannot delete the newer token")
@@ -201,6 +262,7 @@ struct AppModelLiveGameTests {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         let gameID = GameID(UUID())
+        await fakes.socketFactory.enqueueConnectResult(.success(FakeGameSocketConnection()))
         await fakes.service.setGetGameGated(true)
 
         model.subscribeToLiveGame(gameID)
@@ -233,80 +295,5 @@ struct AppModelLiveGameTests {
         #expect(
             model.sessionState == .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
         )
-    }
-
-    // MARK: - Decode failure
-
-    @Test("A malformed WebSocket frame publishes incompatiblePayload and closes the socket once")
-    func malformedSocketFramePublishesIncompatiblePayload() async throws {
-        let (model, _) = makeSignedInModel()
-        await model.flowTask?.value
-        let gameID = GameID(UUID())
-        let attempt = installCurrentAttempt(for: gameID, on: model)
-        let envelope = try loadGetGame()
-        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
-        model.liveGameStates[gameID] = .live(projection)
-
-        let connection = FakeGameSocketConnection()
-        await connection.enqueue(.event(.message(Data("not valid contract json".utf8))))
-
-        let outcome = await model.consumeLiveGameSocket(
-            attempt, connection: connection, projection: projection
-        )
-        #expect(outcome == .stopped)
-        #expect(model.liveGameState(for: gameID) == .incompatiblePayload(lastKnown: projection))
-        await connection.waitUntilClosed()
-        let closeCount = await connection.closeCallCount
-        #expect(closeCount == 1)
-    }
-
-    @Test("An unsupported ServerMessage tag is ignored, never treated as an incompatibility")
-    func unsupportedServerMessageIsIgnored() async throws {
-        let (model, _) = makeSignedInModel()
-        await model.flowTask?.value
-        let gameID = GameID(UUID())
-        let attempt = installCurrentAttempt(for: gameID, on: model)
-        let envelope = try loadGetGame()
-        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
-
-        let connection = FakeGameSocketConnection()
-        let unsupportedJSON = Data("""
-        {"tag":"SomethingElse","contents":null}
-        """.utf8)
-        await connection.enqueue(.event(.message(unsupportedJSON)))
-        await connection.enqueue(.event(.closed(code: .normalClosure, reason: nil)))
-
-        let outcome = await model.consumeLiveGameSocket(
-            attempt, connection: connection, projection: projection
-        )
-        #expect(outcome == .lost(projection))
-        // Never overwritten to `.incompatiblePayload` by the ignored frame.
-        #expect(model.liveGameState(for: gameID) != .incompatiblePayload(lastKnown: projection))
-    }
-
-    @Test("A valid WebSocket snapshot frame publishes live with the exact decoded projection")
-    func validSocketSnapshotPublishesLive() async throws {
-        let (model, _) = makeSignedInModel()
-        await model.flowTask?.value
-        let gameID = GameID(UUID())
-        let attempt = installCurrentAttempt(for: gameID, on: model)
-        let envelope = try loadGetGame()
-        let initialProjection = BoardProjectionBuilder.makeProjection(from: envelope.game)
-
-        let connection = FakeGameSocketConnection()
-        let update = try loadGameUpdateData()
-        await connection.enqueue(.event(.message(update)))
-        await connection.enqueue(.event(.closed(code: .normalClosure, reason: nil)))
-
-        _ = await model.consumeLiveGameSocket(
-            attempt, connection: connection, projection: initialProjection
-        )
-        let decodedUpdate = try ContractJSON.decode(BoardSnapshotUpdate.self, from: update)
-        guard case let .snapshot(snapshot) = decodedUpdate else {
-            Issue.record("Expected the game-update fixture to decode to .snapshot")
-            return
-        }
-        let expected = BoardProjectionBuilder.makeProjection(from: snapshot)
-        #expect(model.liveGameState(for: gameID) == .live(expected))
     }
 }

@@ -17,6 +17,18 @@
     /// backgrounding never cancels a game no other visible scene is watching's
     /// session a moment sooner than an ordinary "last viewer disappeared" teardown
     /// would anyway.
+    ///
+    /// `.inactive` is deliberately treated exactly like `.active` (i.e. a visible
+    /// view stays subscribed): `.inactive` covers a window merely losing key focus
+    /// while still fully visible -- macOS focus handoff between two windows, iPadOS
+    /// Split View/Slide Over/Stage Manager, Control Center, or any other transient,
+    /// non-backgrounded interruption. Requiring `.active` here previously withdrew
+    /// the subscription on every such focus toggle, and the *last* viewer doing so
+    /// tore the shared session down entirely -- turning an ordinary window-focus
+    /// change into a full state wipe and an expensive REST-refetch/socket-reconnect
+    /// storm, and risking a two-window focus handoff briefly emptying a shared
+    /// game's subscriber set. Only an actually invisible view or an actually
+    /// `.background`-phased scene withdraws a subscription.
     enum LiveGameSubscriptionPolicy {
         /// Whether a subscription should be held right now.
         ///
@@ -26,7 +38,7 @@
         /// when SwiftUI happens to deliver those callbacks relative to a phase
         /// transition.
         static func shouldBeSubscribed(isViewVisible: Bool, scenePhase: ScenePhase) -> Bool {
-            isViewVisible && scenePhase == .active
+            isViewVisible && scenePhase != .background
         }
     }
 #endif

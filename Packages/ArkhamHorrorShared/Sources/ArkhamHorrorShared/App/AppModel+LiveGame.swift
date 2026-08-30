@@ -74,6 +74,17 @@ extension AppModel {
     /// session (cancelling its task and closing its socket) once no viewer remains.
     /// Idempotent: unsubscribing an already-withdrawn (or never-subscribed) token is
     /// a no-op.
+    ///
+    /// This full teardown preserves any last known projection (published as
+    /// ``LiveGameState/reconnecting(lastKnown:)`` rather than wiping the state to
+    /// `nil`/``LiveGameState/idle``): a later ``subscribeToLiveGame(_:)`` for the
+    /// same game (a new scene appearing, or this same scene reappearing) then
+    /// restarts from that preserved board instead of a blank spinner, exactly
+    /// mirroring how an unexpected socket loss already keeps the last known board on
+    /// screen while reconnecting -- an *intentional* teardown/restart should look no
+    /// different to the user than an involuntary one. See
+    /// ``AppModel/startLiveGameSession(_:)`` for the corresponding restart-side read
+    /// of this preserved projection.
     func unsubscribeFromLiveGame(_ token: LiveGameSubscriptionToken) {
         guard var viewers = liveGameViewers[token.gameID] else { return }
         viewers.remove(token.subscriptionID)

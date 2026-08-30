@@ -6,6 +6,15 @@ import Foundation
 /// runner (see its documentation for the full reconnect-ordering/backpressure/
 /// cancellation design this file implements).
 extension AppModel {
+    /// The intermediary-proxy HTTP statuses a pre-upgrade WebSocket handshake
+    /// failure is treated as transient/retryable for, rather than a permanent
+    /// terminal rejection: Bad Gateway, Service Unavailable, and Gateway Timeout --
+    /// the standard statuses a reverse proxy/load balancer in front of the actual
+    /// game server returns when *it* (not the application) could not complete the
+    /// upgrade, distinct from any status the application's own authorization logic
+    /// would ever produce.
+    static let transientIntermediaryStatuses: Set<Int> = [502, 503, 504]
+
     // MARK: - Socket connect
 
     /// Resolves a token and opens a new WebSocket connection to
@@ -46,11 +55,15 @@ extension AppModel {
     /// A `401` is classified explicitly (per this backend's documented
     /// pre-upgrade-`401`-instead-of-a-WebSocket-close-code behavior -- see
     /// ``GameSocketConnectError/http(status:)``) and routed through session-expiry
-    /// exactly like an explicit REST 401, never retried. Any other HTTP status is
-    /// treated as a genuine application-level rejection (not a transient network
-    /// condition) and reported as a non-retryable ``LiveGameState/terminalFailure(_:lastKnown:)``.
-    /// Only ``GameSocketConnectError/transport`` (no HTTP response was ever
-    /// received at all) is treated as transient and retried with backoff.
+    /// exactly like an explicit REST 401, never retried. `502`/`503`/`504` (Bad
+    /// Gateway/Service Unavailable/Gateway Timeout) are the standard, well-defined
+    /// HTTP statuses an intermediary reverse proxy/load balancer returns for a
+    /// transient upstream/handshake condition -- never something this application's
+    /// own token/authorization logic produced -- so they are treated exactly like
+    /// ``GameSocketConnectError/transport`` and retried with backoff rather than
+    /// treated as a permanent rejection. Every other HTTP status is treated as a
+    /// genuine application-level rejection (not a transient network condition) and
+    /// reported as a non-retryable ``LiveGameState/terminalFailure(_:lastKnown:)``.
     func handleLiveGameSocketConnectFailure(
         _ attempt: LiveGameSessionAttempt,
         error: GameSocketConnectError,
@@ -59,20 +72,22 @@ extension AppModel {
         guard isCurrentLiveGameSession(attempt) else { return false }
         let lastKnown = liveGameStates[attempt.gameID]?.lastKnownProjection
         switch error {
+        case let .http(status) where status == 401:
+            liveGameStates[attempt.gameID] = .authenticationExpired
+            await handleGameLifecycleSessionExpired(
+                profile: attempt.profile,
+                generation: attempt.sessionGeneration,
+                credentialEpoch: attempt.credentialEpoch,
+                globalEpoch: attempt.globalEpoch
+            )
+            return false
+        case let .http(status) where Self.transientIntermediaryStatuses.contains(status):
+            liveGameStates[attempt.gameID] = .reconnecting(lastKnown: lastKnown)
+            return await performReconnectBackoff(attempt, reconnectAttempt: &reconnectAttempt)
         case let .http(status):
-            if status == 401 {
-                liveGameStates[attempt.gameID] = .authenticationExpired
-                await handleGameLifecycleSessionExpired(
-                    profile: attempt.profile,
-                    generation: attempt.sessionGeneration,
-                    credentialEpoch: attempt.credentialEpoch,
-                    globalEpoch: attempt.globalEpoch
-                )
-            } else {
-                liveGameStates[attempt.gameID] = .terminalFailure(
-                    .unexpectedStatus(status), lastKnown: lastKnown
-                )
-            }
+            liveGameStates[attempt.gameID] = .terminalFailure(
+                .unexpectedStatus(status), lastKnown: lastKnown
+            )
             return false
         case .transport:
             liveGameStates[attempt.gameID] = .reconnecting(lastKnown: lastKnown)

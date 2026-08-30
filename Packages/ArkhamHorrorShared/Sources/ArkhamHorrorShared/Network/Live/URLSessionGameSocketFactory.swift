@@ -44,6 +44,47 @@ actor WebSocketConnectResolver {
     }
 }
 
+/// Synchronously (and thread-safely) captures whether a WebSocket handshake has
+/// already been observed to open, entirely independent of any subsequent async
+/// scheduling.
+///
+/// This exists to fix an ordering hazard: `didOpenWithProtocol` and
+/// `didCompleteWithError` each used to spawn their own independent, unstructured
+/// `Task` directly into ``WebSocketConnectResolver``. `URLSession`'s delegate queue
+/// delivers both callbacks in true chronological order (this factory's session is
+/// constructed with `delegateQueue: nil`, a private serial `OperationQueue`), but two
+/// separately spawned `Task`s racing each other to call into the resolver actor are
+/// not guaranteed to preserve that relative ordering -- so an open-then-immediate-
+/// close sequence could let the "failed" `Task` win the race and misclassify an
+/// already-succeeded (HTTP 101) handshake as a terminal failure. Recording/checking
+/// this flag happens synchronously inside each delegate callback's own body (already
+/// serialized by the delegate queue itself), *before* ever handing off to the async
+/// resolver actor, so the ordering decision itself never depends on `Task`
+/// scheduling at all. The lock is kept anyway (rather than relying purely on the
+/// delegate queue's documented seriality) for a self-contained invariant that holds
+/// independent of how this delegate happens to be configured.
+final class WebSocketHandshakeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var hasOpened = false
+
+    /// Records that the handshake has opened. Idempotent; safe to call more than
+    /// once (`didOpenWithProtocol` is only ever expected to fire at most once per
+    /// task, but this makes no assumption either way).
+    func recordOpened() {
+        lock.lock()
+        defer { lock.unlock() }
+        hasOpened = true
+    }
+
+    /// Whether ``recordOpened()`` has already been called at least once, as of this
+    /// exact call.
+    func wasAlreadyOpened() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return hasOpened
+    }
+}
+
 /// Bridges `URLSessionWebSocketDelegate`/`URLSessionTaskDelegate` callbacks for one
 /// connection attempt to a ``WebSocketConnectResolver``. A fresh instance per
 /// attempt (assigned as `URLSessionWebSocketTask.delegate`, a per-task delegate
@@ -51,6 +92,7 @@ actor WebSocketConnectResolver {
 /// factory can ever leak into a new one.
 final class GameSocketConnectDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
     private let resolver: WebSocketConnectResolver
+    private let handshakeGate = WebSocketHandshakeGate()
 
     init(resolver: WebSocketConnectResolver) {
         self.resolver = resolver
@@ -59,18 +101,27 @@ final class GameSocketConnectDelegate: NSObject, URLSessionWebSocketDelegate, @u
     func urlSession(
         _: URLSession, webSocketTask _: URLSessionWebSocketTask, didOpenWithProtocol _: String?
     ) {
+        // Recorded synchronously, before ever spawning the `Task` below -- see
+        // `WebSocketHandshakeGate`'s own documentation for why this ordering matters.
+        handshakeGate.recordOpened()
         Task { await resolver.resolveOpened() }
     }
 
     func urlSession(_: URLSession, task: URLSessionTask, didCompleteWithError _: (any Error)?) {
-        // Fires once the task fully completes for *any* reason, including well after
-        // a successful open (that later case is the no-op `resolveFailed` mentioned
-        // on `WebSocketConnectResolver`). Reached here without a prior
-        // `didOpenWithProtocol` only when the handshake itself failed: `task.response`
-        // is still populated with the pre-upgrade `HTTPURLResponse` in that case
-        // (e.g. a 401 the backend sends instead of ever upgrading the connection),
-        // which is why the HTTP status -- and only the status, never any header or
-        // body -- is surfaced here.
+        // Checked synchronously, before ever inspecting `task.response` or spawning
+        // a `Task`: if the handshake was already observed to open (whether that
+        // happened strictly before this callback, or this callback is simply racing
+        // an in-flight `didOpenWithProtocol` on the very same serial delegate
+        // queue), this completion can only be the connection subsequently closing --
+        // never a failed handshake -- and reporting a failure here would incorrectly
+        // resolve (or attempt to resolve) an already-succeeded connect attempt.
+        guard !handshakeGate.wasAlreadyOpened() else { return }
+        // Fires once the task fully completes for *any* reason. Reached here only
+        // when the handshake itself failed (the gate above already excluded "opened,
+        // then later closed"): `task.response` is still populated with the
+        // pre-upgrade `HTTPURLResponse` in that case (e.g. a 401 the backend sends
+        // instead of ever upgrading the connection), which is why the HTTP status --
+        // and only the status, never any header or body -- is surfaced here.
         if let status = (task.response as? HTTPURLResponse)?.statusCode {
             Task { await resolver.resolveFailed(GameSocketConnectError.http(status: status)) }
         } else {

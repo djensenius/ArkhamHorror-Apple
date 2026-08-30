@@ -11,12 +11,26 @@ protocol LiveGameClock: Sendable {
     /// Suspends for `duration`, or throws `CancellationError` if the calling task is
     /// cancelled first.
     func sleep(for duration: Duration) async throws
+
+    /// A monotonic instant, used only to measure elapsed ``Duration``s between two
+    /// captured calls (never as a wall-clock/calendar value) -- specifically, the
+    /// session runner's stable-connection criterion (see
+    /// ``LiveGameReconnectPolicy/stableConnectionDuration``). `async` so an
+    /// actor-isolated test fake can satisfy this requirement without any real
+    /// waiting: a fake's `now()` simply returns its own synthetic, test-advanced
+    /// instant rather than the real wall clock.
+    func now() async -> ContinuousClock.Instant
 }
 
-/// The production ``LiveGameClock``, backed directly by `Task.sleep(for:)`.
+/// The production ``LiveGameClock``, backed directly by `Task.sleep(for:)` and
+/// `ContinuousClock`.
 struct SystemLiveGameClock: LiveGameClock {
     func sleep(for duration: Duration) async throws {
         try await Task.sleep(for: duration)
+    }
+
+    func now() async -> ContinuousClock.Instant {
+        ContinuousClock.now
     }
 }
 
@@ -69,6 +83,34 @@ enum LiveGameReconnectPolicy {
     /// retry unattended in the background -- the concrete bound that prevents this
     /// from ever becoming an unbounded retry storm.
     static let maximumAttempts = 6
+
+    /// The minimum duration a connection must have stayed continuously open (from
+    /// the moment its REST refetch published a fresh snapshot to the moment it was
+    /// lost) before that loss resets ``AppModel/runLiveGameSession(_:)``'s own
+    /// `reconnectAttempt` counter back to `0`.
+    ///
+    /// Without this, resetting the counter unconditionally after *any* successful
+    /// handshake -- even one immediately followed by another close -- lets an
+    /// accept-then-immediate-close flap (a backend/proxy "slow subscriber"
+    /// disconnect storm, or any other pathological rapid connect/close cycle) loop
+    /// forever at `reconnectAttempt == 0`, since every single attempt "succeeds"
+    /// just long enough to reset the budget before failing again: this session
+    /// would then never reach ``maximumAttempts`` and never transition to
+    /// `.offline`, hammering the REST endpoint and socket handshake in an unbounded
+    /// loop. Requiring a connection to have remained open for at least this long
+    /// before its loss is treated as "the backoff budget is refreshed" ensures a
+    /// flapping connection instead keeps accumulating attempts against the same
+    /// bounded budget every ordinary reconnect loss does, reaching `.offline` in
+    /// finite time exactly like any other repeated failure.
+    ///
+    /// An uptime-based (rather than frames-received-based) criterion is used
+    /// deliberately: a legitimately quiet, long-lived game room the backend closes
+    /// on its own idle timeout (already documented elsewhere in this file/package as
+    /// routine, expected churn) may go its entire connected lifetime without ever
+    /// receiving a single broadcast frame, and must still count as "stable" rather
+    /// than being spuriously treated as a flap merely because it happened to be
+    /// quiet.
+    static let stableConnectionDuration: Duration = .seconds(10)
 
     /// The delay ceiling before jitter for the 0-based `attempt`'th automatic
     /// reconnect: doubles per attempt starting from ``initialDelayCeiling``, capped at

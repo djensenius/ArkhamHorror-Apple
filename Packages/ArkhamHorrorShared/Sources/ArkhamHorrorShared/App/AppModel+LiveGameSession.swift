@@ -39,25 +39,43 @@ enum LiveGameSocketConsumeOutcome: Equatable {
 /// mirrors precisely, scoped per ``GameID`` via ``AppModel/liveGameSessions`` instead
 /// of ``AppModel/gameLifecycleActionAttempts``).
 ///
-/// ## Reconnect ordering
+/// ## Connect ordering
 ///
-/// The *very first* connection for a session fetches the authoritative REST snapshot
-/// and publishes it before ever opening a socket (fast time-to-first-paint; see
-/// ``fetchLiveGameProjection(_:)``'s call in ``runLiveGameSession(_:)``). Every
-/// *subsequent* connection (after a loss) instead opens the new socket **before**
-/// performing the REST refetch, and only begins actually consuming frames from it
+/// Every connection -- the very first one for a session and every subsequent
+/// reconnect after a loss alike -- opens the socket **before** performing the
+/// authoritative REST refetch, and only begins actually consuming frames from it
 /// once that refetch has been published: opening the socket first guarantees any
 /// update the backend broadcasts from that instant forward is queued for this
 /// client to eventually receive (the OS/TCP layer buffers messages sent to an
 /// established-but-not-yet-``receive()``-ing socket; nothing is lost merely because
 /// this client has not called `receive()` yet), so the refetched REST snapshot can
 /// never be older than the socket's own subscription instant. Refetching *before*
-/// opening the new socket instead would leave exactly the opposite, unrecoverable
-/// gap: an update broadcast after the refetch but before the new socket subscribes
-/// would never reach either the (already-returned) REST response or the
+/// opening the socket instead would leave exactly the opposite, unrecoverable gap:
+/// an update broadcast after the refetch but before the socket subscribes would
+/// never reach either the (already-returned) REST response or the
 /// (not-yet-subscribed) socket, permanently stalling the board until the game's next
 /// unrelated update happened to arrive. This is the "race-safe order that cannot
-/// lose authority" this session runner is required to preserve.
+/// lose authority" this session runner is required to preserve -- deliberately
+/// trading away a first connection's raw time-to-first-paint (the state now stays
+/// ``LiveGameState/loading``/``LiveGameState/reconnecting(lastKnown:)`` through the
+/// socket-connect step too, rather than showing the REST snapshot the instant it
+/// returns) in favor of this correctness guarantee, since a first connection can
+/// suffer exactly the same unrecoverable broadcast gap a reconnect can.
+///
+/// ## Reconnect attempt-budget stability
+///
+/// `reconnectAttempt` (the shared bounded-backoff counter ``performReconnectBackoff``
+/// consumes) is reset to `0` only once a connection has remained continuously open
+/// for at least ``LiveGameReconnectPolicy/stableConnectionDuration`` (measured via
+/// ``AppModel/liveGameClock``'s injectable monotonic clock) before it is lost --
+/// never unconditionally after merely reaching a successful handshake. Resetting
+/// unconditionally would let an accept-then-immediate-close flap (a backend/proxy
+/// "slow subscriber" disconnect storm, or any other pathological rapid connect/close
+/// cycle) loop forever at `reconnectAttempt == 0`, hammering the REST endpoint and
+/// socket handshake roughly twice a second without ever reaching
+/// ``LiveGameReconnectPolicy/maximumAttempts``/``LiveGameState/offline(lastKnown:)``.
+/// See ``LiveGameReconnectPolicy/stableConnectionDuration``'s own documentation for
+/// why this uses an uptime-based (rather than frames-received-based) criterion.
 ///
 /// ## Backpressure and cancellation
 ///
@@ -87,7 +105,13 @@ extension AppModel {
     /// then guaranteed to fail ``isCurrentLiveGameSession(_:)`` against the new
     /// attempt identity installed below, so this never needs to await that old
     /// task's teardown first), captures a fresh attempt identity/generation/epoch
-    /// snapshot, publishes ``LiveGameState/loading``, and launches the runner task.
+    /// snapshot, and launches the runner task.
+    ///
+    /// Publishes ``LiveGameState/loading`` if `id` has never had a projection, or
+    /// ``LiveGameState/reconnecting(lastKnown:)`` if one was preserved from a prior
+    /// teardown (see ``stopLiveGameSession(_:)``) -- so an intentional
+    /// restart/resubscribe shows the last known board immediately rather than a
+    /// blank spinner, exactly like an involuntary reconnect already does.
     ///
     /// A no-op transition to ``LiveGameState/authenticationExpired`` (no task
     /// started at all) when not currently signed in, exactly matching how every
@@ -108,29 +132,52 @@ extension AppModel {
             credentialEpoch: currentCredentialEpoch(for: profile.id),
             globalEpoch: currentGlobalCredentialEpoch()
         )
-        liveGameStates[id] = .loading
+        if let lastKnown = liveGameStates[id]?.lastKnownProjection {
+            liveGameStates[id] = .reconnecting(lastKnown: lastKnown)
+        } else {
+            liveGameStates[id] = .loading
+        }
         let task = Task<Void, Never> { [weak self] in
             await self?.runLiveGameSession(attempt)
         }
         liveGameSessions[id] = LiveGameSessionHandle(attemptID: attempt.attemptID, task: task)
     }
 
-    /// Cancels `id`'s live session task (if any) and clears its session/state
-    /// entries entirely, so a torn-down game with no remaining viewer leaves
-    /// nothing behind in ``AppModel/liveGameSessions``/``AppModel/liveGameStates``.
-    /// Idempotent.
+    /// Cancels `id`'s live session task (if any) and clears its session entry, but
+    /// -- unlike ``resetLiveGameState()``'s unconditional full wipe used for
+    /// sign-out/profile-switch/session-expiry -- preserves any last known projection
+    /// as ``LiveGameState/reconnecting(lastKnown:)`` rather than discarding it to
+    /// `nil`: this is an intentional per-game teardown (the last viewer withdrew, or
+    /// an explicit restart is about to install a fresh attempt), not an
+    /// authentication/account-identity change, so the board a viewer was just
+    /// looking at should still be there -- displayed exactly like an involuntary
+    /// reconnect -- the moment any scene resubscribes, rather than a blank spinner.
+    /// A game with no projection yet (``LiveGameState/loading``,
+    /// ``LiveGameState/idle``, ``LiveGameState/authenticationExpired``, or any other
+    /// case with no ``LiveGameState/lastKnownProjection``) still clears to `nil`
+    /// exactly as before. Idempotent.
     func stopLiveGameSession(_ id: GameID) {
         liveGameSessions[id]?.task.cancel()
         liveGameSessions[id] = nil
-        liveGameStates[id] = nil
+        if let lastKnown = liveGameStates[id]?.lastKnownProjection {
+            liveGameStates[id] = .reconnecting(lastKnown: lastKnown)
+        } else {
+            liveGameStates[id] = nil
+        }
     }
 
     // MARK: - Runner
 
+    /// Connects the socket, refetches the authoritative REST snapshot, then consumes
+    /// frames until lost/stopped -- repeating for every reconnect after a loss, per
+    /// this file's own "Connect ordering" documentation above. `reconnectAttempt` is
+    /// the one bounded-backoff budget shared across every phase of this loop (both
+    /// pre-handshake connect retries inside ``connectLiveGameSocketRetrying(_:reconnectAttempt:)``
+    /// and post-loss reconnects here), reset to `0` only once a connection has
+    /// stayed open at least ``LiveGameReconnectPolicy/stableConnectionDuration``
+    /// (see this file's "Reconnect attempt-budget stability" documentation above).
     private func runLiveGameSession(_ attempt: LiveGameSessionAttempt) async {
-        guard var projection = await fetchLiveGameProjection(attempt) else { return }
         var reconnectAttempt = 0
-        var needsRefetchBeforeConsuming = false
 
         while true {
             guard isCurrentLiveGameSession(attempt) else { return }
@@ -138,14 +185,11 @@ extension AppModel {
                 attempt, reconnectAttempt: &reconnectAttempt
             ) else { return }
 
-            if needsRefetchBeforeConsuming {
-                guard let refreshed = await fetchLiveGameProjection(attempt) else {
-                    connection.close(code: .goingAway, reason: nil)
-                    return
-                }
-                projection = refreshed
+            guard let projection = await fetchLiveGameProjection(attempt) else {
+                connection.close(code: .goingAway, reason: nil)
+                return
             }
-            reconnectAttempt = 0
+            let connectedAt = await liveGameClock.now()
 
             let outcome = await consumeLiveGameSocket(
                 attempt, connection: connection, projection: projection
@@ -154,12 +198,14 @@ extension AppModel {
             case .stopped:
                 return
             case let .lost(lastKnown):
-                projection = lastKnown
                 guard isCurrentLiveGameSession(attempt) else { return }
-                liveGameStates[attempt.gameID] = .reconnecting(lastKnown: projection)
+                liveGameStates[attempt.gameID] = .reconnecting(lastKnown: lastKnown)
+                let uptime = await liveGameClock.now() - connectedAt
+                if uptime >= LiveGameReconnectPolicy.stableConnectionDuration {
+                    reconnectAttempt = 0
+                }
                 guard await performReconnectBackoff(attempt, reconnectAttempt: &reconnectAttempt)
                 else { return }
-                needsRefetchBeforeConsuming = true
             }
         }
     }
@@ -238,10 +284,9 @@ extension AppModel {
     /// Resolves a token and fetches+publishes `attempt.gameID`'s current
     /// authoritative snapshot via ``GameLifecycleServicing/getGame(_:on:token:)`` --
     /// the exact same ``ContractJSON``/``GetGameEnvelope`` boundary a WebSocket
-    /// frame's snapshot payload also decodes through (see ``fetchLiveGameProjection(_:)``
-    /// 's call sites for why the *order* relative to the socket differs between the
-    /// first fetch and every subsequent reconnect refetch, even though this
-    /// function's own body is identical either way) -- through
+    /// frame's snapshot payload also decodes through (see ``runLiveGameSession(_:)``'s
+    /// "Connect ordering" documentation for why this is always called *after* the
+    /// socket has already connected, never before) -- through
     /// ``BoardProjectionBuilder``, publishing ``LiveGameState/live(_:)`` on success.
     ///
     /// Returns the published projection on success, or `nil` on any failure,

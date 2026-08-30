@@ -4,10 +4,13 @@ import Testing
 
 /// Continuation of `AppModelLiveGameTests.swift`, split purely to respect this
 /// package's file/type-length lint limits: stale/cancelled attempt safety,
-/// reconnect backoff bounds, socket connect failure classification, subscription
-/// reference-counting, `retryLiveGame` semantics, and sign-out cancellation.
-/// Shares the same fixtures/fakes/helpers declared in the primary file via this
-/// `extension`.
+/// reconnect backoff bounds, socket connect failure classification, and
+/// subscription reference-counting. `retryLiveGame` semantics and sign-out
+/// cancellation live in `AppModelLiveGameRetryTests.swift`; decode-failure
+/// classification lives in `AppModelLiveGameDecodeTests.swift`; flapping-
+/// connection reconnect-budget stability lives in
+/// `AppModelLiveGameReconnectStabilityTests.swift`. Shares the same fixtures/
+/// fakes/helpers declared in the primary file via this `extension`.
 extension AppModelLiveGameTests {
     // MARK: - Stale/cancelled attempts cannot publish
 
@@ -229,6 +232,30 @@ extension AppModelLiveGameTests {
         #expect(durations.isEmpty)
     }
 
+    @Test("""
+    Intermediary proxy statuses 502/503/504 publish reconnecting and are retried with \
+    backoff, never treated as a permanent terminal rejection
+    """)
+    func connectFailureIntermediaryProxyStatusesAreRetried() async throws {
+        for status in AppModel.transientIntermediaryStatuses.sorted() {
+            let (model, fakes) = makeSignedInModel()
+            await model.flowTask?.value
+            let gameID = GameID(UUID())
+            let attempt = installCurrentAttempt(for: gameID, on: model)
+            let liveProjection = try BoardProjectionBuilder.makeProjection(from: loadGetGame().game)
+            model.liveGameStates[gameID] = .live(liveProjection)
+
+            var reconnectAttempt = 0
+            let shouldContinue = await model.handleLiveGameSocketConnectFailure(
+                attempt, error: .http(status: status), reconnectAttempt: &reconnectAttempt
+            )
+            #expect(shouldContinue, "status \(status) should be retried")
+            #expect(reconnectAttempt == 1, "status \(status) should have advanced the budget")
+            let durations = await fakes.clock.requestedDurations
+            #expect(durations.count == 1, "status \(status) should have slept once")
+        }
+    }
+
     // MARK: - Subscription ownership / reference counting
 
     @Test("Two viewers share one session; the first unsubscribe does not tear it down")
@@ -241,10 +268,13 @@ extension AppModelLiveGameTests {
         await fakes.socketFactory.setGated(true)
 
         let firstToken = model.subscribeToLiveGame(gameID)
-        // Awaiting the socket factory's connect-pending gate is the deterministic
-        // proof that the REST fetch already completed and published `.live` --
-        // see `subscribingMovesFromLoadingToLive`'s identical technique.
         await fakes.socketFactory.waitUntilConnectPending(1)
+        let connection = FakeGameSocketConnection()
+        await fakes.socketFactory.resumeOldestConnect(with: .success(connection))
+        // Awaiting the connection's own "now awaiting the next frame" gate is the
+        // deterministic proof that the REST fetch already completed and published
+        // `.live` -- see `subscribingMovesFromLoadingToLive`'s identical technique.
+        await connection.waitUntilAwaitingNextEvent()
         #expect(
             model.liveGameState(for: gameID)
                 == .live(BoardProjectionBuilder.makeProjection(from: envelope.game))
@@ -267,9 +297,16 @@ extension AppModelLiveGameTests {
         )
 
         model.unsubscribeFromLiveGame(secondToken)
-        // Only the last viewer unsubscribing actually tears the session down.
+        // Only the last viewer unsubscribing actually tears the session down --
+        // preserving the last known board (see `stopLiveGameSession`) rather than
+        // wiping it to a blank `.idle`, so a later resubscribe shows it immediately.
         #expect(model.liveGameSessions[gameID] == nil)
-        #expect(model.liveGameState(for: gameID) == .idle)
+        #expect(
+            model.liveGameState(for: gameID)
+                == .reconnecting(
+                    lastKnown: BoardProjectionBuilder.makeProjection(from: envelope.game)
+                )
+        )
     }
 
     @Test("Unsubscribing an already-withdrawn token is a harmless no-op")
@@ -298,72 +335,5 @@ extension AppModelLiveGameTests {
         #expect(model.liveGameState(for: gameID) == .authenticationExpired)
         #expect(model.liveGameSessions[gameID] == nil)
         #expect(!model.liveGameState(for: gameID).isRetryable)
-    }
-
-    // MARK: - retryLiveGame
-
-    @Test("retryLiveGame is a no-op unless the current state is retryable")
-    func retryIsANoOpUnlessRetryable() async {
-        let (model, _) = makeSignedInModel()
-        await model.flowTask?.value
-        let gameID = GameID(UUID())
-        let token = model.subscribeToLiveGame(gameID)
-        // Freshly subscribed: `.loading` is not retryable.
-        #expect(!model.liveGameState(for: gameID).isRetryable)
-        let sessionBeforeRetry = model.liveGameSessions[gameID]?.attemptID
-        model.retryLiveGame(gameID)
-        // No-op: still exactly the same session, never restarted.
-        #expect(model.liveGameSessions[gameID]?.attemptID == sessionBeforeRetry)
-        model.unsubscribeFromLiveGame(token)
-    }
-
-    @Test("retryLiveGame restarts an offline session back to loading")
-    func retryRestartsOfflineSessionToLoading() async {
-        let (model, fakes) = makeSignedInModel()
-        await model.flowTask?.value
-        let gameID = GameID(UUID())
-        let token = model.subscribeToLiveGame(gameID)
-        model.liveGameStates[gameID] = .offline(lastKnown: nil)
-
-        await fakes.service.setGetGameGated(true)
-        model.retryLiveGame(gameID)
-        #expect(model.liveGameState(for: gameID) == .loading)
-        await fakes.service.waitUntilGetGamePending(1)
-        model.unsubscribeFromLiveGame(token)
-    }
-
-    @Test("retryLiveGame does nothing when no viewer currently holds a subscription")
-    func retryDoesNothingWithoutAnActiveViewer() {
-        let (model, _) = makeSignedInModel()
-        let gameID = GameID(UUID())
-        model.liveGameStates[gameID] = .offline(lastKnown: nil)
-        model.retryLiveGame(gameID)
-        // No session was ever started, since nothing is subscribed.
-        #expect(model.liveGameSessions[gameID] == nil)
-    }
-
-    // MARK: - Sign-out / profile-switch cancel every session
-
-    @Test("Signing out cancels every live-game session and clears all published state")
-    func signOutCancelsEveryLiveGameSession() async {
-        let (model, fakes) = makeSignedInModel()
-        await model.flowTask?.value
-        let firstGame = GameID(UUID())
-        let secondGame = GameID(UUID())
-        await fakes.socketFactory.setGated(true)
-        await fakes.service.setGetGameGated(true)
-        let firstToken = model.subscribeToLiveGame(firstGame)
-        let secondToken = model.subscribeToLiveGame(secondGame)
-        #expect(model.liveGameSessions.count == 2)
-
-        model.signOut()
-        await model.operationTask?.value
-
-        #expect(model.liveGameSessions.isEmpty)
-        #expect(model.liveGameViewers.isEmpty)
-        #expect(model.liveGameState(for: firstGame) == .idle)
-        #expect(model.liveGameState(for: secondGame) == .idle)
-        model.unsubscribeFromLiveGame(firstToken)
-        model.unsubscribeFromLiveGame(secondToken)
     }
 }

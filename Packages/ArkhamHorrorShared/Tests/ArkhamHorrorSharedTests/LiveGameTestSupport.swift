@@ -215,6 +215,12 @@ actor FakeLiveGameClock: LiveGameClock {
     private var sleepPendingWaiters: [
         (threshold: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
+    /// A synthetic, test-controlled instant this fake's ``now()`` returns, advanced
+    /// only by explicit ``advance(by:)`` calls -- never tied to the real wall clock,
+    /// so a test can assert exact stability-duration boundaries (see
+    /// `LiveGameReconnectPolicy.stableConnectionDuration`) without ever actually
+    /// waiting for real time to elapse.
+    private var fakeNow = ContinuousClock.now
 
     func setGated(_ gated: Bool) {
         isGated = gated
@@ -244,6 +250,16 @@ actor FakeLiveGameClock: LiveGameClock {
             sleepContinuations.append(continuation)
             notifySleepWaiters()
         }
+    }
+
+    func now() async -> ContinuousClock.Instant {
+        fakeNow
+    }
+
+    /// Advances this fake's synthetic ``now()`` instant by `duration`, purely in
+    /// memory -- never a real suspension.
+    func advance(by duration: Duration) {
+        fakeNow = fakeNow.advanced(by: duration)
     }
 
     private func notifySleepWaiters() {
