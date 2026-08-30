@@ -123,21 +123,28 @@ actor AssetDiskCache {
         payload: Data,
         metadata: AssetCacheMetadata,
         token: AssetCacheService.CacheToken? = nil
-    ) throws {
+    ) async throws {
         // The entire write (orphan recovery, payload publish, metadata
         // pointer commit, superseded-generation cleanup, and eviction) runs
         // inside one cross-process/cross-instance exclusive lock (see
-        // ``SecureCacheDirectory/withExclusiveLock(_:)``): every step here
-        // is synchronous Darwin I/O with no `await`, so the whole critical
-        // section can be held for the single call without ever blocking
-        // this actor mid-suspension. This is the sole caller of
-        // `withExclusiveLock` for a write; nothing this closure calls
-        // (including `recoverOrphansIfNeeded`/`evictIfNeeded`) acquires it
-        // again, since `flock` is not reentrant across separate opens of
-        // the same lock file even within one process.
-        try secureDirectory.withExclusiveLock {
-            try setLocked(key, payload: payload, metadata: metadata, token: token)
-        }
+        // ``SecureCacheDirectory/acquireExclusiveLock()``): every step
+        // here is synchronous Darwin I/O with no further `await`, so once
+        // the lock is held, the whole critical section runs to completion
+        // without ever suspending this actor mid-section. This is the sole
+        // caller that acquires it for a write; nothing this critical
+        // section calls (including `recoverOrphansIfNeeded`/
+        // `evictIfNeeded`) acquires it again, since `flock` is not
+        // reentrant across separate opens of the same lock file even
+        // within one process. The lock is acquired and its critical
+        // section run directly on this actor's own executor (never via a
+        // closure passed into `secureDirectory`) so Swift's actor
+        // isolation guarantee — resuming this method back on the actor's
+        // own executor after its own `await` — actually applies; see that
+        // method's doc comment for why a closure-based API cannot offer
+        // the same guarantee.
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try setLocked(key, payload: payload, metadata: metadata, token: token)
     }
 
     private func setLocked(
@@ -195,11 +202,11 @@ actor AssetDiskCache {
         _ key: AssetCacheKey,
         metadata: AssetCacheMetadata,
         token: AssetCacheService.CacheToken? = nil
-    ) throws {
+    ) async throws {
         // Same single-top-level-lock convention as ``set(_:payload:metadata:token:)``.
-        try secureDirectory.withExclusiveLock {
-            try touchLocked(key, metadata: metadata, token: token)
-        }
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try touchLocked(key, metadata: metadata, token: token)
     }
 
     private func touchLocked(

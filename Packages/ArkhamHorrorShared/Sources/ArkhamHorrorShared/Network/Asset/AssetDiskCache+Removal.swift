@@ -16,38 +16,41 @@ extension AssetDiskCache {
     /// orphan sweep. `token`, when supplied, gates this the same way as
     /// ``set(_:payload:metadata:token:)``: a stale removal request can
     /// never delete bytes a more-recently-issued operation just published.
-    func remove(_ key: AssetCacheKey, token: AssetCacheService.CacheToken? = nil) throws {
+    func remove(_ key: AssetCacheKey, token: AssetCacheService.CacheToken? = nil) async throws {
         // Single top-level lock acquisition, same convention as
-        // ``set(_:payload:metadata:token:)``.
-        try secureDirectory.withExclusiveLock {
-            recoverOrphansIfNeeded()
-            if let token, !acceptToken(token, for: key) {
-                return
-            }
-            do {
-                _ = try secureDirectory.remove(name: metadataFilename(for: key))
-                try secureDirectory.fsyncRootDirectory()
-            } catch {
-                // The metadata pointer's deletion could not be confirmed:
-                // without a durable marker, ``get(_:)`` could still serve
-                // this structurally-valid-looking, but supposedly
-                // invalidated, entry — including across a restart, since
-                // an in-memory-only tombstone does not survive one. Best-
-                // effort persist the marker (itself inside this same held
-                // lock) before rethrowing; a failure to even persist that
-                // marker is surfaced identically (this call still throws
-                // either way), letting the caller's own fail-closed
-                // fallback (``AssetCacheService``'s whole-cache disabled
-                // state) cover the residual gap.
-                try? persistTombstoneLocked(keyHash: key.digestHex)
-                throw error
-            }
-            cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
-            // The metadata pointer is now durably confirmed gone: this is
-            // itself the "durable clear" that supersedes any earlier
-            // tombstone for this exact key.
-            clearTombstoneLocked(keyHash: key.digestHex)
+        // ``set(_:payload:metadata:token:)``: acquired and run directly on
+        // this actor's own executor, never via a closure passed into
+        // `secureDirectory` (see ``SecureCacheDirectory/acquireExclusiveLock()``'s
+        // doc comment for why that distinction matters).
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        recoverOrphansIfNeeded()
+        if let token, !acceptToken(token, for: key) {
+            return
         }
+        do {
+            _ = try secureDirectory.remove(name: metadataFilename(for: key))
+            try secureDirectory.fsyncRootDirectory()
+        } catch {
+            // The metadata pointer's deletion could not be confirmed:
+            // without a durable marker, ``get(_:)`` could still serve
+            // this structurally-valid-looking, but supposedly
+            // invalidated, entry — including across a restart, since
+            // an in-memory-only tombstone does not survive one. Best-
+            // effort persist the marker (itself inside this same held
+            // lock) before rethrowing; a failure to even persist that
+            // marker is surfaced identically (this call still throws
+            // either way), letting the caller's own fail-closed
+            // fallback (``AssetCacheService``'s whole-cache disabled
+            // state) cover the residual gap.
+            try? persistTombstoneLocked(keyHash: key.digestHex)
+            throw error
+        }
+        cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
+        // The metadata pointer is now durably confirmed gone: this is
+        // itself the "durable clear" that supersedes any earlier
+        // tombstone for this exact key.
+        clearTombstoneLocked(keyHash: key.digestHex)
     }
 
     /// Removes every entry currently in the cache directory. Never deletes
@@ -67,7 +70,7 @@ extension AssetDiskCache {
     /// success — and let a caller clear its own in-memory bookkeeping —
     /// while every actual entry remains fully present and servable on
     /// disk, breaking the "clear the cache" contract silently.
-    func removeAll() throws {
+    func removeAll() async throws {
         // Wraps the *entire* clear inside the exclusive lock, exactly like
         // every other top-level mutation, so a concurrent `set`/`touch`/
         // `remove` (in this or another process/instance) can never
@@ -80,47 +83,48 @@ extension AssetDiskCache {
         // it) — unlinking the lock file while this very call still holds
         // it open would detach every subsequent `openat` of that name
         // onto a fresh inode, silently breaking cross-process mutual
-        // exclusion for everyone afterward.
-        try secureDirectory.withExclusiveLock {
-            recoverOrphansIfNeeded()
-            // Bumped before any removal work, exactly like
-            // ``AssetMemoryCache/removeAll()``: any `set`/`touch`/`remove`
-            // call bearing a token issued under an older generation is
-            // rejected by ``acceptToken(_:for:)`` from this point on, even
-            // if this actor happens to service it before the corresponding
-            // `AssetCacheService`-level check would have caught it.
-            acceptedGeneration += 1
-            appliedToken.removeAll()
-            let names = try secureDirectory.listNames()
-            var failureCount = 0
-            for name in names where name != SecureCacheDirectory.lockFileName {
-                do {
-                    _ = try secureDirectory.remove(name: name)
-                } catch {
-                    failureCount += 1
-                }
-            }
-            // A failed directory `fsync` here means the removals above
-            // are not durably confirmed even though they already took
-            // effect in this running process: counting it toward
-            // `failureCount` (rather than swallowing it via `try?`) is
-            // required so this method's own "clear cache" contract can
-            // never silently report success while durability was not
-            // actually achieved — and so callers like
-            // ``AssetCacheService/evictAll()`` reliably take their own
-            // failure/tombstoning path instead of clearing their
-            // in-memory bookkeeping as if this had fully succeeded.
+        // exclusion for everyone afterward. Acquired and run directly on
+        // this actor's own executor, same as ``remove(_:token:)``.
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        recoverOrphansIfNeeded()
+        // Bumped before any removal work, exactly like
+        // ``AssetMemoryCache/removeAll()``: any `set`/`touch`/`remove`
+        // call bearing a token issued under an older generation is
+        // rejected by ``acceptToken(_:for:)`` from this point on, even
+        // if this actor happens to service it before the corresponding
+        // `AssetCacheService`-level check would have caught it.
+        acceptedGeneration += 1
+        appliedToken.removeAll()
+        let names = try secureDirectory.listNames()
+        var failureCount = 0
+        for name in names where name != SecureCacheDirectory.lockFileName {
             do {
-                try secureDirectory.fsyncRootDirectory()
+                _ = try secureDirectory.remove(name: name)
             } catch {
                 failureCount += 1
             }
-            guard failureCount == 0 else {
-                throw AssetError.cachePersistenceFailed(
-                    "\(failureCount) cache entries could not be removed, " +
-                        "or the directory fsync failed"
-                )
-            }
+        }
+        // A failed directory `fsync` here means the removals above
+        // are not durably confirmed even though they already took
+        // effect in this running process: counting it toward
+        // `failureCount` (rather than swallowing it via `try?`) is
+        // required so this method's own "clear cache" contract can
+        // never silently report success while durability was not
+        // actually achieved — and so callers like
+        // ``AssetCacheService/evictAll()`` reliably take their own
+        // failure/tombstoning path instead of clearing their
+        // in-memory bookkeeping as if this had fully succeeded.
+        do {
+            try secureDirectory.fsyncRootDirectory()
+        } catch {
+            failureCount += 1
+        }
+        guard failureCount == 0 else {
+            throw AssetError.cachePersistenceFailed(
+                "\(failureCount) cache entries could not be removed, " +
+                    "or the directory fsync failed"
+            )
         }
     }
 

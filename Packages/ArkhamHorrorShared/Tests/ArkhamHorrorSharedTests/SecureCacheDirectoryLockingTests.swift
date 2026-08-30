@@ -79,7 +79,7 @@ struct SecureCacheDirectoryLockingTests {
             // (`maxObservedConcurrentHolders > 1`) rather than merely
             // being a low-probability, flaky miss.
             let firstTask = Task.detached {
-                try first.withExclusiveLock {
+                try await first.withExclusiveLock {
                     tracker.enter()
                     Thread.sleep(forTimeInterval: 0.1)
                     tracker.exit()
@@ -90,7 +90,7 @@ struct SecureCacheDirectoryLockingTests {
             // handshake between the two tasks.
             try await Task.sleep(nanoseconds: 20_000_000)
             let secondTask = Task.detached {
-                try second.withExclusiveLock {
+                try await second.withExclusiveLock {
                     tracker.enter()
                     Thread.sleep(forTimeInterval: 0.1)
                     tracker.exit()
@@ -111,8 +111,8 @@ struct SecureCacheDirectoryLockingTests {
             let secure = try SecureCacheDirectory(directory: directory, fileManager: .default)
             struct MarkerError: Error {}
 
-            #expect(throws: MarkerError.self) {
-                try secure.withExclusiveLock {
+            await #expect(throws: MarkerError.self) {
+                try await secure.withExclusiveLock {
                     throw MarkerError()
                 }
             }
@@ -122,7 +122,7 @@ struct SecureCacheDirectoryLockingTests {
             // the previous call's body threw instead of returning
             // normally.
             var ranSecondBody = false
-            try secure.withExclusiveLock {
+            try await secure.withExclusiveLock {
                 ranSecondBody = true
             }
             #expect(ranSecondBody)
@@ -164,7 +164,7 @@ struct SecureCacheDirectoryLockingTests {
             var ranAfterClear = false
             try await cache.set(cacheKey, payload: payload, metadata: entryMetadata)
             let secure = try SecureCacheDirectory(directory: directory, fileManager: .default)
-            try secure.withExclusiveLock {
+            try await secure.withExclusiveLock {
                 ranAfterClear = true
             }
             #expect(ranAfterClear)
@@ -187,8 +187,8 @@ struct SecureCacheDirectoryLockingTests {
             #expect(mkfifo(lockPath.path, 0o600) == 0)
 
             let secure = try SecureCacheDirectory(directory: directory, fileManager: .default)
-            #expect(throws: AssetError.self) {
-                try secure.withExclusiveLock {
+            await #expect(throws: AssetError.self) {
+                try await secure.withExclusiveLock {
                     Issue.record("body must never run against a non-regular-file lock name")
                 }
             }
@@ -223,8 +223,8 @@ struct SecureCacheDirectoryLockingTests {
             #expect(link(externalFile.path, lockPath.path) == 0)
 
             let secure = try SecureCacheDirectory(directory: directory, fileManager: .default)
-            #expect(throws: AssetError.self) {
-                try secure.withExclusiveLock {
+            await #expect(throws: AssetError.self) {
+                try await secure.withExclusiveLock {
                     Issue.record("body must never run against a hardlinked lock file")
                 }
             }

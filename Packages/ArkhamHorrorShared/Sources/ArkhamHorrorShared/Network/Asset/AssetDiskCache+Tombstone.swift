@@ -93,10 +93,12 @@ extension AssetDiskCache {
     /// helpers above): called from ``AssetCacheService/evictAll()``, which
     /// is not already inside any ``AssetDiskCache`` critical section at
     /// that point.
-    func markDiskReadsDisabled() {
-        try? secureDirectory.withExclusiveLock {
-            markDiskReadsDisabledLocked()
+    func markDiskReadsDisabled() async {
+        guard let lockFD = try? await secureDirectory.acquireExclusiveLock() else {
+            return
         }
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        markDiskReadsDisabledLocked()
     }
 
     /// Same marker write as ``markDiskReadsDisabled()``, but for use from

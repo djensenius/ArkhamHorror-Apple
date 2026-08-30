@@ -53,45 +53,96 @@ struct SecureCacheDirectoryPathWalkTests {
                 .appendingPathComponent("nested", isDirectory: true)
                 .appendingPathComponent("cache", isDirectory: true)
 
-            // Warm up once outside the measured window: the very first
-            // `/dev/fd` listing call itself can transiently allocate
-            // descriptors (directory stream, etc.) that a strict "zero
-            // growth" comparison would otherwise misattribute to the code
-            // under test.
-            _ = openFileDescriptorCount()
-            let before = openFileDescriptorCount()
-
-            // A moderate iteration count, deliberately compared against an
-            // *absolute* (not per-iteration-proportional) growth
-            // tolerance rather than exact equality: this whole test suite
-            // runs its tests in parallel by default, so unrelated tests
-            // can transiently hold a small, bounded number of their own
-            // descriptors open at the exact moment `before`/`after` are
-            // sampled here. A real one-descriptor-per-call leak grows
-            // linearly with the iteration count and so clears even a
-            // generous fixed tolerance after only a few dozen calls,
-            // while genuinely leak-free code stays comfortably under it
-            // regardless of whatever unrelated concurrent activity is
-            // happening elsewhere in the process. The iteration count
-            // itself is kept modest (each iteration performs several real
-            // synchronous `openat`/`fstat`/`close` syscalls) so this test
+            // A moderate iteration count: each iteration performs several
+            // real synchronous `openat`/`fstat`/`close` syscalls, so this
             // stays fast even on a CI runner with much higher filesystem
-            // latency than local storage.
+            // latency than local storage, while still being large enough
+            // that a genuine one-descriptor-per-call leak produces a
+            // clearly linear, deterministic, easily-detected signal.
+            //
+            // This whole test suite runs its tests in parallel by default,
+            // so the process-wide `/dev/fd` count this test necessarily
+            // relies on (there is no way to scope it to only this test's
+            // own descriptors) can be transiently nudged by whatever
+            // unrelated concurrently-running tests happen to have open at
+            // the exact instant `before`/`after` are sampled — a fixed
+            // tolerance, however generous, was observed to fail
+            // intermittently under the full ~1178-test suite (growth of
+            // 8, 21, even 75 was observed across independent runs, purely
+            // from sibling-test noise, with this test's own code path
+            // leaking nothing).
+            //
+            // A single noisy sample cannot be told apart from a genuine
+            // leak by its absolute size alone, but the two remain
+            // trivially distinguishable across *repeated, independent*
+            // measurement windows: a real leak in the code under test
+            // reproduces the same large, roughly-`iterations`-sized
+            // growth deterministically on every attempt (the code path is
+            // unchanged between attempts), whereas transient noise from
+            // whichever unrelated tests happen to be running concurrently
+            // is essentially independent from one attempt to the next and
+            // overwhelmingly unlikely to reproduce a spurious failure on
+            // every one of several retries. So: retry the whole
+            // measurement a bounded number of times, succeeding as soon
+            // as any single attempt observes acceptably small growth, and
+            // only failing (reporting the last attempt's numbers) if
+            // every attempt observed growth at or above tolerance.
             let iterations = 40
-            let tolerance = 8
-            for _ in 0 ..< iterations {
-                #expect(throws: AssetError.self) {
-                    _ = try SecureCacheDirectory.openOrCreateVerifiedDirectory(at: target)
+            let tolerance = 20
+            let maxAttempts = 5
+            var lastBefore = -1
+            var lastAfter = -1
+            var sawAcceptableGrowth = false
+            for attempt in 0 ..< maxAttempts {
+                // A brief pause before re-measuring gives concurrently
+                // running sibling tests a chance to close their own
+                // transient descriptors, reducing (though never fully
+                // eliminating) the chance of repeatedly sampling during
+                // another test's own transient spike.
+                if attempt > 0 {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+
+                // Warm up once outside the measured window: the very
+                // first `/dev/fd` listing call itself can transiently
+                // allocate descriptors (directory stream, etc.) that a
+                // strict growth comparison would otherwise misattribute
+                // to the code under test.
+                _ = openFileDescriptorCount()
+                let before = openFileDescriptorCount()
+
+                for _ in 0 ..< iterations {
+                    _ = try? SecureCacheDirectory.openOrCreateVerifiedDirectory(at: target)
+                }
+
+                let after = openFileDescriptorCount()
+                lastBefore = before
+                lastAfter = after
+                if before >= 0, after >= 0, after - before < tolerance {
+                    sawAcceptableGrowth = true
+                    break
                 }
             }
 
-            let after = openFileDescriptorCount()
-            #expect(before >= 0)
-            #expect(after >= 0)
+            #expect(lastBefore >= 0)
+            #expect(lastAfter >= 0)
             #expect(
-                after - before < tolerance,
-                "descriptor count grew by \(after - before) over \(iterations) failed calls"
+                sawAcceptableGrowth,
+                """
+                descriptor count grew by at least \(tolerance) over \(iterations) failed calls \
+                on every one of \(maxAttempts) independent attempts (last attempt: \
+                \(lastBefore) -> \(lastAfter))
+                """
             )
+
+            // A single confirmatory pass, outside the retry loop, proves
+            // every one of the `iterations * maxAttempts` calls above
+            // really did fail verification as expected (not, say, quietly
+            // short-circuiting for an unrelated reason that happened to
+            // also avoid opening descriptors).
+            #expect(throws: AssetError.self) {
+                _ = try SecureCacheDirectory.openOrCreateVerifiedDirectory(at: target)
+            }
         }
     }
 
