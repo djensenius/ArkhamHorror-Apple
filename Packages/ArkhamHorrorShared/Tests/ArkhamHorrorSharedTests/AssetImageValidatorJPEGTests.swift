@@ -107,16 +107,37 @@ extension AssetImageValidatorTests {
         // one 3-byte component descriptor — the smallest valid SOF.
         bytes += [0x00, 0x0B]
         bytes += [0x08] // precision
-        bytes += [0x00, 0x09] // height = 9
+        bytes += [0x00, 0x06] // height = 6 (fits within a single 8x8 MCU)
         bytes += [0x00, 0x06] // width = 6
         bytes += [0x01] // component count = 1
         bytes += [0x01, 0x11, 0x00] // one component descriptor
+        // A minimal, genuinely valid single-symbol DC Huffman table
+        // (destination 0): one 1-bit code ("0") mapping to category 0
+        // (a zero DC difference) -- needed so the strict entropy decoder
+        // below the marker/length walk has an actual table to decode
+        // against, not merely a plausible SOF/SOS shape.
+        bytes += [0xFF, 0xC4, 0x00, 0x14, 0x00]
+        bytes += [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        bytes += [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        bytes += [0x00]
+        // A minimal, genuinely valid single-symbol AC Huffman table
+        // (destination 0): one 1-bit code ("0") mapping to run/size 0x00
+        // (end-of-block).
+        bytes += [0xFF, 0xC4, 0x00, 0x14, 0x10]
+        bytes += [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        bytes += [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        bytes += [0x00]
         bytes += [0xFF, 0xDA] // SOS marker
         bytes += [0x00, 0x08] // SOS header length = 8
         bytes += [0x01] // Ns = 1 component in this scan
         bytes += [0x01, 0x00] // component selector, DC/AC table selector
         bytes += [0x00, 0x3F, 0x00] // Ss, Se, AhAl
-        bytes += [0x00] // one byte of entropy-coded scan data
+        // One byte of entropy-coded scan data: bit 0 (DC code "0" ->
+        // category 0, no additional bits) then bit 1 (AC code "0" ->
+        // end-of-block, terminating this sole 8x8 block's decode). The
+        // remaining 6 bits are the standard all-1s padding that fills
+        // out the final byte.
+        bytes += [0b0011_1111]
         bytes += [0xFF, 0xD9] // EOI
         let metadata = try AssetImageValidator.validate(
             data: Data(bytes),
@@ -125,7 +146,7 @@ extension AssetImageValidatorTests {
             limits: limits
         )
         #expect(metadata.width == 6)
-        #expect(metadata.height == 9)
+        #expect(metadata.height == 6)
     }
 
     @Test(

@@ -18,7 +18,15 @@ import Foundation
 /// `IDAT` truncated or corrupted mid-stream, since removing or altering
 /// even one byte changes that chunk's checksum.
 extension AssetImageValidator {
-    static func validatePNGStructure(_ data: Data) throws {
+    /// Validates every chunk's container-level structure and returns the
+    /// exact concatenated bytes of every `IDAT` chunk's own data (in file
+    /// order, excluding each chunk's length/type/CRC framing) -- the
+    /// single RFC 1950 zlib datastream the PNG specification requires
+    /// their concatenation to form, which
+    /// ``validateExactPNGInflation(idatPayload:expectedByteCount:)`` then
+    /// decompresses and checks for an exact byte-count match.
+    @discardableResult
+    static func validatePNGStructure(_ data: Data) throws -> Data {
         var offset = data.startIndex + 8 // past the 8-byte signature
         var sawIDAT = false
         // PNG requires every `IDAT` chunk to appear consecutively, with no
@@ -28,42 +36,56 @@ extension AssetImageValidator {
         // though each individual chunk's own CRC still checks out.
         var idatRunEnded = false
         var isFirstChunk = true
+        var idatPayload = Data()
 
         while true {
-            let (chunkEnd, type) = try validatePNGChunk(data, at: offset)
+            let chunk = try validatePNGChunk(data, at: offset)
 
             if isFirstChunk {
-                guard type == "IHDR" else { throw AssetError.malformedImageData }
+                guard chunk.type == "IHDR" else { throw AssetError.malformedImageData }
                 isFirstChunk = false
             }
-            if type == "IDAT" {
+            if chunk.type == "IDAT" {
                 guard !idatRunEnded else { throw AssetError.malformedImageData }
                 sawIDAT = true
+                idatPayload.append(data[chunk.dataRange])
             } else if sawIDAT {
                 idatRunEnded = true
             }
-            if type == "IEND" {
+            if chunk.type == "IEND" {
                 // Strict no-trailing-bytes policy: `IEND` must be the
                 // exact final chunk in the buffer, not merely present
                 // somewhere before other, ignored trailing data.
-                guard chunkEnd == data.endIndex else { throw AssetError.malformedImageData }
+                guard chunk.chunkEnd == data.endIndex else { throw AssetError.malformedImageData }
                 guard sawIDAT else { throw AssetError.malformedImageData }
-                return
+                return idatPayload
             }
-            offset = chunkEnd
+            offset = chunk.chunkEnd
         }
+    }
+
+    /// A single validated PNG chunk: the offset just past it, its
+    /// 4-character type, and the exact range of its own data bytes
+    /// (excluding the length/type/CRC framing). A dedicated struct rather
+    /// than a tuple purely to keep this package's tuple-arity convention.
+    private struct PNGChunk {
+        let chunkEnd: Int
+        let type: String
+        let dataRange: Range<Int>
     }
 
     /// Validates a single PNG chunk starting at `offset` — its declared
     /// length, its type field is valid ASCII, and its CRC-32 matches —
-    /// returning the offset just past it and its 4-character type.
+    /// returning the offset just past it, its 4-character type, and the
+    /// exact range of its own data bytes (excluding the length/type/CRC
+    /// framing).
     /// Factored out of ``validatePNGStructure(_:)`` purely to keep that
     /// function's own cyclomatic complexity within this package's
     /// convention.
     private static func validatePNGChunk(
         _ data: Data,
         at offset: Int
-    ) throws -> (chunkEnd: Int, type: String) {
+    ) throws -> PNGChunk {
         guard offset < data.endIndex else {
             // Ran off the end of the buffer without ever reaching a
             // terminal `IEND` chunk: truncated.
@@ -93,6 +115,6 @@ extension AssetImageValidator {
         guard computedCRC == storedCRC else {
             throw AssetError.malformedImageData
         }
-        return (crcStart + 4, type)
+        return PNGChunk(chunkEnd: crcStart + 4, type: type, dataRange: dataStart ..< dataEnd)
     }
 }

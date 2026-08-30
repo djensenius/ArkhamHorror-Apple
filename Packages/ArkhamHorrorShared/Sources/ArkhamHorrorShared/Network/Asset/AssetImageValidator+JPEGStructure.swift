@@ -15,12 +15,59 @@ import Foundation
 /// scan) is actually followed by a real marker; and a terminal `EOI`
 /// (`FFD9`) marker that is the exact last two bytes of the buffer, not
 /// merely present somewhere before other, ignored trailing data.
+///
+/// Individual segment-field parsers (`SOF`/`DHT`/`DRI`/`SOS` payload
+/// layout, marker/segment navigation) live in
+/// `AssetImageValidator+JPEGSegments.swift`, split out purely to keep this
+/// file within this package's file-length convention.
 extension AssetImageValidator {
-    static func validateJPEGStructure(_ data: Data) throws {
-        var offset = data.startIndex + 2 // past the 2-byte SOI
-        let end = data.endIndex
+    /// A single parsed Huffman table definition from a `DHT` segment. A
+    /// dedicated struct rather than a tuple purely to keep this package's
+    /// tuple-arity convention. Not `private`: shared with
+    /// `AssetImageValidator+JPEGEntropy.swift`'s
+    /// `validateJPEGEntropyCoverage`.
+    struct JPEGHuffmanTableDefinition {
+        let isACTable: Bool
+        let destination: Int
+        let counts: [Int]
+        let values: [UInt8]
+    }
+
+    /// Mutable marker-walk state threaded through
+    /// ``validateJPEGStructure(_:expectedWidth:expectedHeight:)``, bundled
+    /// into a single struct purely to keep that function's own (and its
+    /// helpers') parameter counts within this package's convention.
+    private struct JPEGParserState {
         var sawSOF = false
         var sawScanData = false
+        var sawSOS = false
+        var frame: JPEGFrameInfo?
+        var huffmanTables: [JPEGHuffmanTableDefinition] = []
+        var restartInterval = 0
+    }
+
+    /// The single frame's expected pixel dimensions, as already
+    /// established by ``AssetImageValidator``'s own pure first-`SOF`
+    /// dimension parse -- bundled into a struct purely to keep
+    /// `handleFrameHeaderMarker`'s own parameter count within this
+    /// package's convention.
+    private struct JPEGExpectedDimensions {
+        let width: Int
+        let height: Int
+    }
+
+    static func validateJPEGStructure(
+        _ data: Data,
+        expectedWidth: Int,
+        expectedHeight: Int
+    ) throws {
+        var offset = data.startIndex + 2 // past the 2-byte SOI
+        let end = data.endIndex
+        var state = JPEGParserState()
+        let expectedDimensions = JPEGExpectedDimensions(
+            width: expectedWidth,
+            height: expectedHeight
+        )
 
         while true {
             let (markerOffset, marker) = try nextMarker(data, from: offset, end: end)
@@ -29,8 +76,8 @@ extension AssetImageValidator {
                 try requireTerminalEOI(
                     markerOffset: markerOffset,
                     end: end,
-                    sawSOF: sawSOF,
-                    sawScanData: sawScanData
+                    sawSOF: state.sawSOF,
+                    sawScanData: state.sawScanData
                 )
                 return
             }
@@ -41,125 +88,205 @@ extension AssetImageValidator {
                 continue
             }
 
-            let segmentEnd = try jpegSegmentEnd(data, markerOffset: markerOffset, end: end)
-            if jpegSOFMarkers.contains(marker) {
-                sawSOF = true
-            }
-            if marker == 0xDA {
-                // Start-of-scan: its own header ends at `segmentEnd`;
-                // entropy-coded data begins there and continues until the
-                // next real (non-stuffed, non-restart) marker.
-                offset = try scanEntropyData(data, from: segmentEnd, end: end)
-                sawScanData = true
-                continue
-            }
-            offset = segmentEnd
+            offset = try handleLengthPrefixedMarker(
+                data,
+                location: JPEGMarkerLocation(marker: marker, offset: markerOffset),
+                end: end,
+                expected: expectedDimensions,
+                state: &state
+            )
         }
     }
 
-    /// Finds the next marker starting at or after `offset` (which must
-    /// itself be the position of an `0xFF` prefix byte), skipping any
-    /// `0xFF` fill bytes between the prefix and the actual marker byte.
-    /// Returns the marker byte's own offset and value.
-    private static func nextMarker(
+    /// A marker byte together with the buffer offset it was found at,
+    /// bundled into a struct purely to keep
+    /// ``handleLengthPrefixedMarker(_:location:end:expected:state:)``'s
+    /// own parameter count within this package's convention.
+    private struct JPEGMarkerLocation {
+        let marker: UInt8
+        let offset: Int
+    }
+
+    /// Handles every marker that carries its own 2-byte segment length
+    /// (every marker except `SOI`/`EOI`/`TEM`/in-scan restart markers,
+    /// all already handled directly by the main loop): computes the
+    /// segment's end, dispatches frame-header/table-definition/
+    /// start-of-scan handling as appropriate, and returns the offset to
+    /// resume the marker walk from. Factored out of
+    /// ``validateJPEGStructure(_:expectedWidth:expectedHeight:)`` purely
+    /// to keep that function's own body length within this package's
+    /// convention.
+    private static func handleLengthPrefixedMarker(
         _ data: Data,
-        from offset: Int,
-        end: Int
-    ) throws -> (markerOffset: Int, marker: UInt8) {
-        guard offset + 1 < end, data[offset] == 0xFF else {
-            throw AssetError.malformedImageData
-        }
-        var markerOffset = offset + 1
-        while markerOffset < end, data[markerOffset] == 0xFF {
-            markerOffset += 1
-        }
-        guard markerOffset < end else { throw AssetError.malformedImageData }
-        return (markerOffset, data[markerOffset])
-    }
-
-    /// Validates that an `EOI` marker at `markerOffset` is the file's
-    /// exact final byte (strict no-trailing-bytes policy) and that real
-    /// frame and scan data were both already seen — an `EOI` reached
-    /// before any `SOS` (or any `SOF`) is not a legitimate terminator.
-    private static func requireTerminalEOI(
-        markerOffset: Int,
+        location: JPEGMarkerLocation,
         end: Int,
-        sawSOF: Bool,
-        sawScanData: Bool
+        expected: JPEGExpectedDimensions,
+        state: inout JPEGParserState
+    ) throws -> Int {
+        let marker = location.marker
+        let markerOffset = location.offset
+        let segmentEnd = try jpegSegmentEnd(data, markerOffset: markerOffset, end: end)
+        if jpegSOFMarkers.contains(marker) {
+            state.frame = try handleFrameHeaderMarker(
+                data,
+                marker: marker,
+                markerOffset: markerOffset,
+                segmentEnd: segmentEnd,
+                expected: expected
+            )
+            state.sawSOF = true
+        }
+        if marker == 0xC4 || marker == 0xDD {
+            try handleTableDefinitionMarker(
+                data,
+                marker: marker,
+                markerOffset: markerOffset,
+                segmentEnd: segmentEnd,
+                state: &state
+            )
+        }
+        if marker == 0xDA {
+            return try handleScanMarker(
+                data,
+                markerOffset: markerOffset,
+                segmentEnd: segmentEnd,
+                end: end,
+                state: &state
+            )
+        }
+        return segmentEnd
+    }
+
+    /// Handles a `DHT` (Huffman table definitions) or `DRI` (restart
+    /// interval) marker reached by the main marker walk, merging both
+    /// already-parsed results into `state`. Factored out of
+    /// ``validateJPEGStructure(_:expectedWidth:expectedHeight:)`` purely
+    /// to keep that function's own body length within this package's
+    /// convention.
+    private static func handleTableDefinitionMarker(
+        _ data: Data,
+        marker: UInt8,
+        markerOffset: Int,
+        segmentEnd: Int,
+        state: inout JPEGParserState
     ) throws {
-        guard markerOffset == end - 1 else { throw AssetError.malformedImageData }
-        guard sawSOF, sawScanData else { throw AssetError.malformedImageData }
+        if marker == 0xC4 {
+            let tables = try parseJPEGHuffmanTables(
+                data,
+                markerOffset: markerOffset,
+                segmentEnd: segmentEnd
+            )
+            state.huffmanTables.append(contentsOf: tables)
+        } else {
+            state.restartInterval = try parseJPEGRestartInterval(
+                data,
+                markerOffset: markerOffset,
+                segmentEnd: segmentEnd
+            )
+        }
     }
 
-    /// Reads a non-SOI/EOI/TEM/restart marker's own declared 2-byte
-    /// big-endian segment length (which starts immediately after the
-    /// marker byte and includes its own 2 bytes) and returns the offset
-    /// immediately past this whole segment.
-    private static func jpegSegmentEnd(_ data: Data, markerOffset: Int, end: Int) throws -> Int {
-        let lengthOffset = markerOffset + 1
-        guard lengthOffset + 1 < end,
-              let segmentLength = readUInt16BE(data, at: lengthOffset)
-        else {
+    /// Handles a `SOS` marker reached by the main marker walk: rejects a
+    /// second scan (only a single interleaved scan is in scope), then
+    /// delegates to ``handleStartOfScan(_:markerOffset:segmentEnd:end:state:)``
+    /// and updates `state` to reflect that real scan data was consumed.
+    /// Factored out of
+    /// ``validateJPEGStructure(_:expectedWidth:expectedHeight:)`` purely
+    /// to keep that function's own body length within this package's
+    /// convention.
+    private static func handleScanMarker(
+        _ data: Data,
+        markerOffset: Int,
+        segmentEnd: Int,
+        end: Int,
+        state: inout JPEGParserState
+    ) throws -> Int {
+        guard !state.sawSOS else {
+            // Only a single scan (interleaved, covering every frame
+            // component) is in scope; a legal-but-never-ImageIO-produced
+            // multi-scan baseline JPEG is rejected as unsupported.
             throw AssetError.malformedImageData
         }
-        guard segmentLength >= 2, lengthOffset + Int(segmentLength) <= end else {
-            throw AssetError.malformedImageData
-        }
-        return lengthOffset + Int(segmentLength)
+        state.sawSOS = true
+        let entropyEnd = try handleStartOfScan(
+            data,
+            markerOffset: markerOffset,
+            segmentEnd: segmentEnd,
+            end: end,
+            state: state
+        )
+        state.sawScanData = true
+        return entropyEnd
     }
 
-    /// Skips forward from `start` (the first byte of entropy-coded scan
-    /// data, immediately after a start-of-scan segment's own header) past
-    /// every byte-stuffed `FF 00` and in-scan restart marker (`FFD0`-
-    /// `FFD7`, which restart the entropy coder but never terminate a
-    /// scan), returning the offset of the next real marker prefix (an
-    /// `0xFF` byte that is followed by neither `0x00` nor a restart
-    /// marker).
-    private static func scanEntropyData(_ data: Data, from start: Int, end: Int) throws -> Int {
-        var index = start
-        while index < end {
-            guard data[index] == 0xFF else {
-                index += 1
-                continue
-            }
-            guard index + 1 < end else {
-                // A trailing lone `0xFF` with nothing after it to
-                // disambiguate stuffing from a real marker: truncated.
-                throw AssetError.malformedImageData
-            }
-            let next = data[index + 1]
-            if next == 0x00 {
-                // Byte-stuffed literal `0xFF` within the entropy stream.
-                index += 2
-                continue
-            }
-            if (0xD0 ... 0xD7).contains(next) {
-                // In-scan restart marker: does not terminate the scan.
-                index += 2
-                continue
-            }
-            // A real marker: entropy data for this scan ends here.
-            break
-        }
-        guard index < end else {
-            // Ran off the end of the buffer while still inside
-            // entropy-coded scan data, with no terminating marker (not
-            // even `EOI`) at all.
+    /// Validates a `SOF` marker is a supported baseline/extended-
+    /// sequential variant, parses its frame header, and cross-checks the
+    /// result against the already-validated pure dimension parse. Factored
+    /// out of ``validateJPEGStructure(_:expectedWidth:expectedHeight:)``
+    /// purely to keep that function's own cyclomatic complexity and body
+    /// length within this package's convention.
+    private static func handleFrameHeaderMarker(
+        _ data: Data,
+        marker: UInt8,
+        markerOffset: Int,
+        segmentEnd: Int,
+        expected: JPEGExpectedDimensions
+    ) throws -> JPEGFrameInfo {
+        // Baseline sequential (`SOF0`) and extended-sequential Huffman
+        // (`SOF1`) are the only frame types this strict entropy decoder
+        // understands; every other `SOF` variant (progressive, lossless,
+        // arithmetic-coded, hierarchical) is rejected as unsupported
+        // rather than risk silently mis-validating a coding structure
+        // this decoder cannot actually walk.
+        guard marker == 0xC0 || marker == 0xC1 else {
             throw AssetError.malformedImageData
         }
-        // A start-of-scan segment immediately followed by a real marker —
-        // zero bytes of entropy-coded data at all (for example `SOS`
-        // directly followed by `EOI`) — is not a legitimate scan: ImageIO
-        // itself may still lazily/leniently decode such a truncated file
-        // for a small enough declared size, but no real compressed image
-        // data was ever actually present. Requiring strictly more than
-        // zero bytes here is what makes `sawScanData` (checked by
-        // ``requireTerminalEOI(markerOffset:end:sawSOF:sawScanData:)``)
-        // an honest claim that *some* entropy-coded content, not merely a
-        // scan *header*, was found.
-        guard index > start else {
+        let frame = try parseJPEGFrameHeader(
+            data,
+            markerOffset: markerOffset,
+            segmentEnd: segmentEnd
+        )
+        guard frame.width == expected.width, frame.height == expected.height else {
+            // Cross-check against the already-validated pure dimension
+            // parse: must be the exact same frame.
             throw AssetError.malformedImageData
         }
-        return index
+        return frame
+    }
+
+    /// Validates a `SOS` segment's own header against the already-parsed
+    /// frame, locates and validates its entropy-coded scan data, and
+    /// returns the offset immediately past that entropy data. Factored
+    /// out of ``validateJPEGStructure(_:expectedWidth:expectedHeight:)``
+    /// purely to keep that function's own cyclomatic complexity and body
+    /// length within this package's convention.
+    private static func handleStartOfScan(
+        _ data: Data,
+        markerOffset: Int,
+        segmentEnd: Int,
+        end: Int,
+        state: JPEGParserState
+    ) throws -> Int {
+        guard let frame = state.frame else { throw AssetError.malformedImageData }
+        let scanComponents = try parseJPEGScanHeader(
+            data,
+            markerOffset: markerOffset,
+            segmentEnd: segmentEnd
+        )
+        // Start-of-scan: its own header ends at `segmentEnd`; entropy-
+        // coded data begins there and continues until the next real
+        // (non-stuffed, non-restart) marker.
+        let entropyEnd = try scanEntropyData(data, from: segmentEnd, end: end)
+        try validateJPEGEntropyCoverage(
+            data,
+            scan: JPEGEntropyScanInput(
+                frame: frame,
+                scanComponents: scanComponents,
+                huffmanTables: state.huffmanTables,
+                restartInterval: state.restartInterval,
+                entropyRange: segmentEnd ..< entropyEnd
+            )
+        )
+        return entropyEnd
     }
 }

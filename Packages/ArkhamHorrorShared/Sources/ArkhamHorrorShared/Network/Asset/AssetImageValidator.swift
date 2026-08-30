@@ -68,9 +68,23 @@ enum AssetImageValidator {
         // already resolved via ImageIO in `parseAVIFDimensions`.
         switch expectedFormat {
         case .png:
-            try validatePNGStructure(data)
+            let idatPayload = try validatePNGStructure(data)
+            let colorInfo = try parsePNGColorInfo(data)
+            let expectedByteCount = try expectedPNGScanlineByteCount(
+                width: dimensions.width,
+                height: dimensions.height,
+                colorInfo: colorInfo
+            )
+            try validateExactPNGInflation(
+                idatPayload: idatPayload,
+                expectedByteCount: expectedByteCount
+            )
         case .jpeg:
-            try validateJPEGStructure(data)
+            try validateJPEGStructure(
+                data,
+                expectedWidth: dimensions.width,
+                expectedHeight: dimensions.height
+            )
         case .avif:
             break
         }
