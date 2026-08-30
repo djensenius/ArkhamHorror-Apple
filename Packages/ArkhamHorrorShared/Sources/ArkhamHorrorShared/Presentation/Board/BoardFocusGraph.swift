@@ -136,16 +136,28 @@ enum BoardFocusGraphBuilder {
     }
 
     /// Resolves the compact-width zone switcher's selected zone: `focusedZone` if it is
-    /// one of `zones` (the switcher's own tags), else the first of `zones`. Falls back
-    /// rather than passing `focusedZone` straight through, most notably when it is
-    /// ``BoardFocusZone/inspector`` while the inspector modal is presented — a zone never
-    /// listed in ``nonEmptyZonesInCycleOrder(projection:)`` — since binding a `Picker`'s
-    /// `selection` to a value with no matching tag leaves it in an undefined visual state.
+    /// one of `zones` (the switcher's own tags); else `preModalZone` if *that* is still
+    /// one of `zones`; else the first of `zones`. The middle case is what keeps the
+    /// switcher (and the board content beneath the modal) parked on whatever zone the
+    /// user had actually selected for the entire time the inspector is presented, rather
+    /// than arbitrarily jumping to the first zone: while the inspector modal is up,
+    /// `focusedZone` is always ``BoardFocusZone/inspector`` (never one of `zones`, which
+    /// never lists it — see ``nonEmptyZonesInCycleOrder(projection:)``), so without a
+    /// remembered `preModalZone` a `Picker` bound to this value would visibly snap away
+    /// from the user's actual selection every time they opened an inspector. Falls back
+    /// to the first zone only when neither candidate is still valid (for example the
+    /// pre-modal zone's last entity was removed by an intervening snapshot replacement),
+    /// and to ``BoardFocusZone/scenario`` when `zones` itself is empty, rather than
+    /// binding a `Picker`'s `selection` to a value with no matching tag.
     static func resolveCompactSelectedZone(
-        focusedZone: SemanticFocusZone?, zones: [SemanticFocusZone]
+        focusedZone: SemanticFocusZone?, preModalZone: SemanticFocusZone?,
+        zones: [SemanticFocusZone]
     ) -> SemanticFocusZone {
         if let focusedZone, zones.contains(focusedZone) {
             return focusedZone
+        }
+        if let preModalZone, zones.contains(preModalZone) {
+            return preModalZone
         }
         return zones.first ?? BoardFocusZone.scenario
     }

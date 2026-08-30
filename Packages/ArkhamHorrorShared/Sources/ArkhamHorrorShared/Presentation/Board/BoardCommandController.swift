@@ -24,6 +24,14 @@ final class BoardCommandController {
     /// presented. Mirrors (but is distinct from) ``FocusCoordinator/isModalPresented``,
     /// which this type always keeps in lockstep with a non-`nil` value here.
     private(set) var inspectedID: SemanticFocusID?
+    /// The compact-width zone switcher's selection immediately before the inspector was
+    /// presented, or `nil` when no inspector is presented. Read by
+    /// ``BoardCompactLayoutView`` (via
+    /// ``BoardFocusGraphBuilder/resolveCompactSelectedZone(focusedZone:preModalZone:zones:)``)
+    /// so the switcher stays parked on the user's actual selection for the modal's entire
+    /// lifetime, rather than snapping to the first zone merely because ``focusedZone``
+    /// reads as ``BoardFocusZone/inspector`` while it is presented.
+    private(set) var preModalZone: SemanticFocusZone?
     /// The most recently dispatched command, for on-screen/test verification.
     private(set) var lastCommand: SemanticCommand?
 
@@ -53,8 +61,7 @@ final class BoardCommandController {
     /// untouched: a snapshot replacement is not a user-initiated "reset view".
     func applySnapshot(_ newProjection: BoardProjection) {
         if coordinator.isModalPresented {
-            coordinator.dismissModal()
-            inspectedID = nil
+            dismissModal()
         }
         projection = newProjection
         layout = BoardLayoutBuilder.makeLayout(
@@ -90,8 +97,7 @@ final class BoardCommandController {
         switch outcome {
         case .reservedBack:
             guard coordinator.isModalPresented else { return false }
-            coordinator.dismissModal()
-            inspectedID = nil
+            dismissModal()
             return true
         case let .command(command):
             lastCommand = command
@@ -152,15 +158,28 @@ final class BoardCommandController {
             return false
         }
         inspectedID = focused
+        // Captured before `presentModal` transitions `currentFocus` to
+        // `.inspectorClose`: this is the zone the compact switcher must keep showing for
+        // the modal's entire lifetime (see `resolveCompactSelectedZone`'s doc comment).
+        preModalZone = focusedZone
         coordinator.presentModal(entry: BoardFocusID.inspectorClose)
         return true
     }
 
     private func closeInspector() -> Bool {
         guard coordinator.isModalPresented else { return false }
+        dismissModal()
+        return true
+    }
+
+    /// Shared dismissal used by every path that closes an open inspector modal
+    /// (`closeInspector()`, `.reservedBack`, and a snapshot replacement that force-closes
+    /// one): always clears ``inspectedID`` and ``preModalZone`` together, so neither can
+    /// ever linger stale after the other is reset.
+    private func dismissModal() {
         coordinator.dismissModal()
         inspectedID = nil
-        return true
+        preModalZone = nil
     }
 
     /// Moves focus to the next/previous zone's declared entry point, skipping any zone
