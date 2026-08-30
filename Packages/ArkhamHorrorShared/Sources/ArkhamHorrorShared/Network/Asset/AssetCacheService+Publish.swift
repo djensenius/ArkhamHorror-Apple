@@ -109,10 +109,32 @@ extension AssetCacheService {
         return .applied
     }
 
+    /// Records the outcome of a best-effort disk-persistence `operation`
+    /// into ``AssetCacheService/lastDiskPersistenceFailure``, deliberately
+    /// distinguishing genuine failures from cooperative cancellation: a
+    /// caller's task being cancelled while `operation` was itself
+    /// suspended (for example on ``AssetDiskCache``'s cross-process lock,
+    /// as the last remaining waiter for this exact fetch/revalidation) is
+    /// not a disk-persistence *failure* -- the write was aborted, not
+    /// attempted-and-failed -- so recording it as one would incorrectly
+    /// leave ``AssetCacheService/lastDiskPersistenceFailure`` non-nil
+    /// purely because of a cancellation race, in turn wrongly blocking
+    /// the tombstone-clearing logic gated on it in ``publish(_:asset:token:)``.
+    /// Leaves ``AssetCacheService/lastDiskPersistenceFailure`` exactly as
+    /// it already was for a cancelled attempt, rather than clearing it
+    /// either -- a cancelled attempt proves nothing one way or the other
+    /// about whether disk persistence is currently healthy. Calls
+    /// ``AssetCacheService/testOnlyDiskPersistenceRecordedHook``
+    /// once this bookkeeping is complete, in every case (success, genuine
+    /// failure, or cancellation), so a test can deterministically wait
+    /// for it rather than racing an unrelated coalesced waiter's own
+    /// continuation resuming.
     private func recordDiskPersistenceResult(_ operation: () async throws -> Void) async {
+        defer { testOnlyDiskPersistenceRecordedHook?() }
         do {
             try await operation()
             lastDiskPersistenceFailure = nil
+        } catch is CancellationError {
         } catch let error as AssetError {
             lastDiskPersistenceFailure = error
         } catch {

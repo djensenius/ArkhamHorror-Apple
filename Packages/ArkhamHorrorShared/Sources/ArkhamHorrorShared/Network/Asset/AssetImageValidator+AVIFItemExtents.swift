@@ -80,7 +80,22 @@ extension AssetImageValidator {
                 throw AssetError.malformedImageData
             }
             for extent in item.extents {
-                guard let mdatIndex = mdatBoxes.firstIndex(where: { $0.range.contains(extent) })
+                guard let mdatIndex = mdatBoxes.firstIndex(where: {
+                    // Explicit "does `$0.range` fully contain `extent`"
+                    // bound comparison, rather than relying on
+                    // `Range.contains(_ other: Range<Bound>)` (a real,
+                    // documented overload in the Swift standard library,
+                    // not `Sequence.contains(_:Element)` — but easy for a
+                    // reader to mistake for the wrong one, and its
+                    // "any empty range is always contained regardless of
+                    // position" behavior is not the semantics wanted
+                    // here): an extent is only ever genuinely inside an
+                    // `mdat` box if it is non-empty and its bounds fall
+                    // entirely within that box's own range.
+                    !extent.isEmpty
+                        && extent.lowerBound >= $0.range.lowerBound
+                        && extent.upperBound <= $0.range.upperBound
+                })
                 else {
                     // An extent that lands outside every declared `mdat`
                     // box's payload (or straddles more than one) can never

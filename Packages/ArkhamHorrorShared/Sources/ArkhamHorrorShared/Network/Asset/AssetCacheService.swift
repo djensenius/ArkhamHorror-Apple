@@ -133,6 +133,18 @@ actor AssetCacheService {
     /// ``evictAll()`` on a partial disk-clear failure.
     var lastDiskPersistenceFailure: AssetError?
 
+    /// Test-only hook invoked by ``recordDiskPersistenceResult(_:)``
+    /// immediately after it has finished updating
+    /// ``lastDiskPersistenceFailure`` (whether that update happened or,
+    /// for a cancelled attempt, deliberately did not) — see that
+    /// function's own doc comment. Always `nil` in production; a test
+    /// installs a closure here to deterministically wait for that exact
+    /// disk-persistence bookkeeping to have completed before inspecting
+    /// ``lastDiskPersistenceFailure``, rather than racing it via the
+    /// unrelated timing of when a coalesced waiter's own continuation
+    /// happens to resume.
+    var testOnlyDiskPersistenceRecordedHook: (() -> Void)?
+
     init(
         memoryCache: AssetMemoryCache,
         diskCache: AssetDiskCache,
@@ -298,5 +310,13 @@ actor AssetCacheService {
             // issues (or joins) its own currently-authoritative token.
         }
         return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
+    }
+
+    /// Test-only: installs ``testOnlyDiskPersistenceRecordedHook``.
+    /// A plain actor-isolated method (rather than exposing the stored
+    /// property for direct external assignment) so a test's call site
+    /// reads as an ordinary, obviously-`await`-requiring actor call.
+    func installTestOnlyDiskPersistenceRecordedHook(_ hook: @escaping () -> Void) {
+        testOnlyDiskPersistenceRecordedHook = hook
     }
 }
