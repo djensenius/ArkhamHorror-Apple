@@ -83,9 +83,10 @@ enum BoardFocusGraphBuilder {
         nodes.append(FocusNode(id: BoardFocusID.scenarioHeader, zone: BoardFocusZone.scenario))
         zoneEntryPoints[BoardFocusZone.scenario] = BoardFocusID.scenarioHeader
 
+        let promptStory = prompt?.question.supportedQuestion?.story
         let promptChoices: [SemanticFocusID] = if prompt?.canSubmit == true {
             prompt?.choices
-                .filter(\.isSupported)
+                .filter { projection.isChoiceActionable($0, story: promptStory) }
                 .map { BoardFocusID.promptChoice($0.index) } ?? []
         } else if prompt?.canRetry == true {
             [BoardFocusID.promptRetry]
@@ -146,11 +147,11 @@ enum BoardFocusGraphBuilder {
         projection: BoardProjection, prompt: BasicChoicePromptPresentation? = nil
     ) -> [SemanticFocusZone] {
         var populated: Set<SemanticFocusZone> = [BoardFocusZone.scenario, BoardFocusZone.chaosBag]
+        let hasActionableChoice = prompt?.choices.contains {
+            projection.isChoiceActionable($0, story: prompt?.question.supportedQuestion?.story)
+        } == true
         let hasPromptFocus = prompt?.canRetry == true
-            || (
-                prompt?.canSubmit == true
-                    && prompt?.choices.contains(where: \.isSupported) == true
-            )
+            || (prompt?.canSubmit == true && hasActionableChoice)
         if hasPromptFocus {
             populated.insert(BoardFocusZone.prompt)
         }

@@ -279,8 +279,11 @@ final class BoardCommandController {
             coordinator.syncExternalFocus(BoardFocusID.promptRetry)
             return true
         }
+        let story = prompt?.question.supportedQuestion?.story
         guard prompt?.canSubmit == true,
-              let choice = prompt?.choices.first(where: \.isSupported)
+              let choice = prompt?.choices.first(where: {
+                  projection.isChoiceActionable($0, story: story)
+              })
         else { return false }
         coordinator.syncExternalFocus(BoardFocusID.promptChoice(choice.index))
         return true
@@ -289,7 +292,10 @@ final class BoardCommandController {
     @discardableResult
     func activatePromptChoice(_ index: Int) -> Bool {
         guard prompt?.canSubmit == true,
-              prompt?.choices.first(where: { $0.index == index })?.isSupported == true
+              let choice = prompt?.choices.first(where: { $0.index == index }),
+              projection.isChoiceActionable(
+                  choice, story: prompt?.question.supportedQuestion?.story
+              )
         else { return false }
         onChoice(index)
         return true

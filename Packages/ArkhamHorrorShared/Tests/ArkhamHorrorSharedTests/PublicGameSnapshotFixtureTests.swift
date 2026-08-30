@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 /// Decodes the exact, non-empty production `get-game`/`game-update` fixtures (pinned to
-/// backend commit `ee6efffa4d7a49f2ac7bf6b9349802d3d7675ae5`, schema revision `0.1.21`)
+/// backend commit `52c7ee3b730c87129907e26b91acc3933da841cd`, schema revision `0.1.22`)
 /// through production `ContractJSON`, and asserts the REST and WebSocket envelopes decode
 /// to an equal ``PublicGameSnapshot`` plus representative nonempty maps/entities/mode/
 /// turn/counters, matching this contract slice's core invariant.

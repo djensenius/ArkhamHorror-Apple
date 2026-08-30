@@ -4,6 +4,7 @@ enum BasicChoiceQuestionKind: String, Sendable {
     case chooseOne = "ChooseOne"
     case playerWindowChooseOne = "PlayerWindowChooseOne"
     case windowChooseOne = "WindowChooseOne"
+    case read = "Read"
 }
 
 struct BasicChoiceAbility: Sendable, Equatable, Hashable {
@@ -20,6 +21,8 @@ enum BasicChoiceContent: Sendable, Equatable, Hashable {
     case drawCard(investigatorID: InvestigatorID, messages: [JSONValue])
     case endTurn(investigatorID: InvestigatorID, messages: [JSONValue])
     case investigate(BasicChoiceAbility)
+    case continueReading(messages: [JSONValue])
+    case chooseLocation(locationID: LocationID, messages: [JSONValue])
     case unsupported(tag: String?)
 }
 
@@ -46,6 +49,8 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .drawCard: "Draw a card"
         case .endTurn: "End turn"
         case .investigate: "Investigate"
+        case .continueReading: "Continue"
+        case .chooseLocation: "Choose starting location"
         case .unsupported: "Update required"
         }
     }
@@ -56,6 +61,8 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .drawCard: "rectangle.stack"
         case .endTurn: "forward.end"
         case .investigate: "magnifyingglass"
+        case .continueReading: "arrow.right.circle.fill"
+        case .chooseLocation: "mappin.and.ellipse"
         case .unsupported: "exclamationmark.triangle"
         }
     }
@@ -64,11 +71,20 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         guard case let .investigate(ability) = content else { return nil }
         return ability
     }
+
+    var locationID: LocationID? {
+        guard case let .chooseLocation(locationID, _) = content else { return nil }
+        return locationID
+    }
 }
 
 struct BasicChoiceQuestion: Sendable, Equatable, Hashable {
     let kind: BasicChoiceQuestionKind
     let choices: [BasicChoice]
+    /// The `Read` question's story payload (flavor text plus any cards it adds to play).
+    /// Always `nil` for every other kind; always non-nil (and internally consistent with
+    /// `choices`, a single synthesized `.continueReading` entry) when `kind == .read`.
+    let story: ReadStoryContent?
     let rawValue: JSONValue
 }
 
@@ -122,6 +138,9 @@ enum BasicChoiceParser {
         guard let kind = BasicChoiceQuestionKind(rawValue: tag) else {
             return .updateRequired(tag: tag)
         }
+        if kind == .read {
+            return parseReadQuestion(object, rawValue: value)
+        }
         guard Set(object.keys) == ["tag", "choices"],
               case let .array(rawChoices)? = object["choices"],
               !rawChoices.isEmpty
@@ -131,7 +150,9 @@ enum BasicChoiceParser {
         let choices = rawChoices.enumerated().map { index, choice in
             BasicChoice(index: index, rawValue: choice, content: parseChoice(choice))
         }
-        return .supported(BasicChoiceQuestion(kind: kind, choices: choices, rawValue: value))
+        return .supported(
+            BasicChoiceQuestion(kind: kind, choices: choices, story: nil, rawValue: value)
+        )
     }
 
     private static func parseChoice(_ value: JSONValue) -> BasicChoiceContent {
@@ -147,6 +168,8 @@ enum BasicChoiceParser {
             return parseEndTurn(object) ?? .unsupported(tag: tag)
         case "AbilityLabel":
             return parseAbilityLabel(object) ?? .unsupported(tag: tag)
+        case "TargetLabel":
+            return parseTargetLabel(object) ?? .unsupported(tag: tag)
         default:
             return .unsupported(tag: tag)
         }
@@ -185,6 +208,18 @@ enum BasicChoiceParser {
         return .endTurn(investigatorID: investigatorID, messages: messages)
     }
 
+    private static func parseTargetLabel(_ object: [String: JSONValue]) -> BasicChoiceContent? {
+        guard Set(object.keys) == ["tag", "target", "messages"],
+              let messages = messages(object["messages"]),
+              case let .object(target)? = object["target"],
+              Set(target.keys) == ["tag", "contents"],
+              target["tag"] == .string("LocationTarget"),
+              case let .string(rawLocationID)? = target["contents"],
+              let locationID = canonicalLocationID(rawLocationID)
+        else { return nil }
+        return .chooseLocation(locationID: locationID, messages: messages)
+    }
+
     private static func parseAbilityLabel(
         _ object: [String: JSONValue]
     ) -> BasicChoiceContent? {
@@ -216,9 +251,26 @@ enum BasicChoiceParser {
         ))
     }
 
+    /// Strict "engine message" array validator, shared by every `ComponentLabel`/
+    /// `EndTurnButton`/`AbilityLabel` (`before` and `messages`)/`TargetLabel` path. Backend
+    /// 0.1.22's `Message` schema requires every array element to be a tagged constructor
+    /// object -- a bare scalar, `null`, or an object missing/emptying its `tag` cannot
+    /// stand in for one (see `manifest.json`'s `message` schemaBranch negatives). Only the
+    /// `tag` field's shape is validated here; every other field (including an entirely
+    /// opaque `contents`) is returned completely unmodified and lossless, since this
+    /// client never executes or interprets engine messages.
     private static func messages(_ value: JSONValue?) -> [JSONValue]? {
-        guard case let .array(values)? = value else { return nil }
+        guard case let .array(values)? = value, values.allSatisfy(isValidMessage) else {
+            return nil
+        }
         return values
+    }
+
+    private static func isValidMessage(_ value: JSONValue) -> Bool {
+        guard case let .object(object) = value,
+              case let .string(tag)? = object["tag"]
+        else { return false }
+        return !tag.isEmpty
     }
 
     private static func investigatorID(_ value: JSONValue?) -> InvestigatorID? {
@@ -226,8 +278,19 @@ enum BasicChoiceParser {
         return InvestigatorID(code)
     }
 
-    private static func strictCardCode(_ raw: String) -> CardCode? {
+    /// Reused (not `private`) by `ReadStoryQuestion.swift`'s `readCards` parsing, so both
+    /// value-position card-code fields share exactly one strict validation rule.
+    static func strictCardCode(_ raw: String) -> CardCode? {
         CardCode(codingKey: AnyCodingKey(stringValue: raw))
+    }
+
+    /// Strict canonical-lowercase UUID text, matching the `Identifier<Tag>
+    /// .init?(codingKey:)` map-key rule (`BoardIdentifiers.swift`) rather than plain
+    /// `Decodable`'s case-insensitive `UUID(uuidString:)` path, so an uppercase-rendered
+    /// location ID is rejected here exactly as the pinned contract's `uuid.schema.json`
+    /// requires -- not silently accepted as an alias of the same value.
+    private static func canonicalLocationID(_ raw: String) -> LocationID? {
+        LocationID(codingKey: AnyCodingKey(stringValue: raw))
     }
 
     private static func isCanonicalInteger(_ value: JSONValue?) -> Bool {

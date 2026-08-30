@@ -142,8 +142,17 @@ extension AppModel {
         guard isRetry ? presentation.readOnlyReason == nil : presentation.canSubmit else {
             return .reject(.readOnly)
         }
-        guard let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
-              choice.isSupported
+        // Revalidated against the current authoritative projection immediately before
+        // send -- never the projection captured whenever this choice was last rendered
+        // -- so a `.chooseLocation` choice whose target has meanwhile stopped being
+        // known to the board, a `.continueReading` choice whose story this client
+        // cannot lawfully resolve, or a stale rendered action racing a snapshot
+        // replacement can never be claimed/answered on the wire.
+        guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
+              let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
+              projection.isChoiceActionable(
+                  choice, story: presentation.question.supportedQuestion?.story
+              )
         else { return .reject(.unsupportedChoice) }
         guard let connection = liveGameConnections[identity.gameID],
               liveGameSessions[identity.gameID]?.attemptID == connection.attemptID
@@ -249,9 +258,11 @@ extension AppModel {
         let current = projection.questions[action.identity.ownerID]
         let samePrompt = projection.counters.scenarioSteps == action.identity.questionVersion
             && current?.rawValue == action.identity.rawQuestion
-        if !samePrompt {
+        guard samePrompt else {
             basicChoiceActions[gameID] = nil
-        } else if isRESTSnapshot {
+            return
+        }
+        if isRESTSnapshot {
             basicChoiceActions[gameID]?.identity = BasicChoicePromptIdentity(
                 gameID: gameID,
                 ownerID: action.identity.ownerID,
@@ -267,6 +278,36 @@ extension AppModel {
                 basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
             }
         }
+        retireStaleRetryRecordIfNeeded(gameID: gameID, current: current, projection: projection)
+    }
+
+    /// A `.retryable` record is definitively not in flight -- the exact same authoritative
+    /// prompt (`samePrompt`, established by the caller: same `scenarioSteps` *and* same raw
+    /// question bytes) has just been observed again unanswered, so the prior send attempt
+    /// provably never advanced the game. That is exactly the fingerprint/version/projection
+    /// evidence needed to safely retire a record whose originally-targeted choice this
+    /// fresh authoritative `projection` (never a stale local rendering) no longer considers
+    /// actionable -- for example a `.chooseLocation` choice whose `LocationTarget` has
+    /// meanwhile stopped being known to the board, or a `.continueReading` choice whose
+    /// story has stopped resolving -- so a different, currently-actionable choice isn't
+    /// permanently blocked behind it (see independent-review blocker 2 on PR #36).
+    ///
+    /// Deliberately never applied to `.sending`/`.awaitingSnapshot`/`.uncertain`: while a
+    /// send might still be in flight or its outcome is still genuinely unknown, retiring
+    /// the record here could let a second, different choice be claimed and sent while the
+    /// first is still capable of landing, producing two accepted answers for one prompt.
+    /// If the original choice remains actionable, the record is left untouched entirely,
+    /// preserving the existing manual-retry path.
+    private func retireStaleRetryRecordIfNeeded(
+        gameID: GameID, current: BasicChoiceQuestionPayload?, projection: BoardProjection
+    ) {
+        guard case .retryable = basicChoiceActions[gameID]?.phase,
+              let choiceIndex = basicChoiceActions[gameID]?.choiceIndex,
+              let question = current?.supportedQuestion,
+              let originalChoice = question.choices.first(where: { $0.index == choiceIndex }),
+              !projection.isChoiceActionable(originalChoice, story: question.story)
+        else { return }
+        basicChoiceActions[gameID] = nil
     }
 
     /// `GameError` is broadcast room-wide and carries no player, question, or request

@@ -87,10 +87,47 @@ struct BasicChoiceQuestionTests {
         #expect(choice.title == "Update required")
     }
 
-    @Test("Engine-owned message values remain lossless and do not drive presentation")
-    func nestedMessagesRemainOpaque() throws {
+    @Test(
+        "A malformed messages/before array element -- a scalar, null, a tag-less object, or an empty-string tag -- poisons the whole choice, on every label/target kind the shared Message validator governs",
+        arguments: [
+            // A bare scalar cannot stand in for a production Message constructor object.
+            #"{"tag":"EndTurnButton","investigatorId":"c01001","messages":[42,"future",null]}"#,
+            // JSON null alone cannot stand in for one either.
+            #"{"tag":"EndTurnButton","investigatorId":"c01001","messages":[null]}"#,
+            // An object missing its required "tag" field is not a valid Message.
+            #"{"tag":"EndTurnButton","investigatorId":"c01001","messages":[{"contents":"c01001"}]}"#,
+            // An empty-string tag is not a valid non-empty constructor tag.
+            #"{"tag":"EndTurnButton","investigatorId":"c01001","messages":[{"tag":"","contents":"c01001"}]}"#,
+            // A single malformed element still poisons the whole array, even alongside an
+            // otherwise well-formed element.
+            #"{"tag":"EndTurnButton","investigatorId":"c01001","messages":[{"tag":"ChooseEndTurn","contents":"c01001"},42]}"#,
+            // ComponentLabel's "messages" field is governed by the exact same rule.
+            #"{"tag":"ComponentLabel","component":{"tag":"InvestigatorDeckComponent","investigatorId":"c01001"},"messages":[42]}"#,
+            // AbilityLabel's "before" array is governed by the exact same Message shape,
+            // independently of its sibling "messages" array.
+            #"{"tag":"AbilityLabel","investigatorId":"c01001","ability":{"source":{},"cardCode":"c01111","index":103,"type":{"tag":"ActionAbility","actions":{"tag":"SingleAction","contents":"Investigate"}}},"windows":[],"before":[42],"messages":[]}"#,
+            // TargetLabel's own "messages" field is governed by the same rule.
+            #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"00000000-0000-0000-0000-000000000001"},"messages":[42]}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"00000000-0000-0000-0000-000000000001"},"messages":[null]}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"00000000-0000-0000-0000-000000000001"},"messages":[{"contents":1}]}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"00000000-0000-0000-0000-000000000001"},"messages":[{"tag":"","contents":1}]}"#,
+        ]
+    )
+    func malformedMessageArrayElementsFailClosed(choiceJSON: String) throws {
+        let bytes = Data(
+            #"{"tag":"ChooseOne","choices":[\#(choiceJSON)]}"#.utf8
+        )
+        let payload = try ContractJSON.decode(BasicChoiceQuestionPayload.self, from: bytes)
+        let choice = try #require(payload.supportedQuestion?.choices.first)
+        #expect(choice.index == 0)
+        #expect(!choice.isSupported)
+        #expect(choice.title == "Update required")
+    }
+
+    @Test("A well-formed but engine-unknown Message tag remains a lossless, opaque, supported choice")
+    func opaqueMessageObjectsRemainLosslessAndDoNotDrivePresentation() throws {
         let data = Data(
-            #"{"tag":"ChooseOne","choices":[{"tag":"EndTurnButton","investigatorId":"c01001","messages":[42,"future",null]}]}"#
+            #"{"tag":"ChooseOne","choices":[{"tag":"EndTurnButton","investigatorId":"c01001","messages":[{"tag":"SomeFutureEngineMessage","contents":{"nested":[1,"two",null,true]}}]}]}"#
                 .utf8
         )
         let payload = try ContractJSON.decode(BasicChoiceQuestionPayload.self, from: data)
@@ -101,7 +138,15 @@ struct BasicChoiceQuestionTests {
             Issue.record("Expected EndTurnButton")
             return
         }
-        #expect(messages == [.number(.integer(42)), .string("future"), .null])
+        #expect(messages.count == 1)
+        guard case let .object(message) = messages[0] else {
+            Issue.record("Expected the message to remain a JSON object")
+            return
+        }
+        #expect(message["tag"] == .string("SomeFutureEngineMessage"))
+        #expect(message["contents"] == .object([
+            "nested": .array([.number(.integer(1)), .string("two"), .null, .bool(true)]),
+        ]))
     }
 
     @Test(

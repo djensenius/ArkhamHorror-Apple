@@ -27,7 +27,8 @@ mode-campaign-scenario.json location-enemy-view.json movement.json \
 act-no-advance-cost.json investigator-unhealed-horror-negative.json \
 uuid-entity-map.json card-code-entity-map.json question-choose-one.json \
 question-player-window-choose-one.json question-window-choose-one.json \
-answer-question.json"
+answer-question.json question-read.json question-read-with-cards.json \
+question-choose-one-location.json question-choose-one-location-multiple.json"
 
 failures=0
 scenario_count=0
@@ -111,7 +112,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.21",'
+    echo '  "schemaRevision": "0.1.22",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
