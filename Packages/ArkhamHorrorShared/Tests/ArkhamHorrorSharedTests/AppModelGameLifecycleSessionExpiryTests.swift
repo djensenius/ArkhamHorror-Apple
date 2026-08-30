@@ -157,6 +157,157 @@ struct AppModelGameLifecycleSessionExpiryTests {
         #expect(model.gameLifecycleActions[gameID] == .deleting)
         #expect(model.gameLifecycleActionFailures[gameID] == nil)
     }
+
+    // MARK: - Stale credential-epoch token reads (distinct from cancellation/401)
+
+    //
+    // `currentGameLifecycleToken(for:)` always reads the credential epoch *fresh*,
+    // right before entering `serializedTokenAccess`'s queue for that profile -- it
+    // never reuses the value `beginGameAction` captured earlier into `GameActionAttempt`
+    // (that capture exists only for `handleGameLifecycleSessionExpired`'s own guard).
+    // So `GameLifecycleTokenAccessError.stale` can only actually surface when a read
+    // is queued *behind* another still-in-flight token-store operation for the same
+    // profile (via `previous` in `serializedTokenAccess`), and a *second* concurrent
+    // invalidation lands while it is still waiting there -- exactly the review
+    // scenario: a still-signed-in profile's credential epoch changes out from under
+    // an already-queued game action. Both tests below reproduce this with a real
+    // `enqueueCancellationCleanup` reservation (the same primitive an endpoint
+    // edit/removal uses) gated via `GatedTokenStore`, rather than a bare
+    // `invalidateCredentialEpoch` call, which alone can never trigger this path.
+
+    @Test(
+        """
+        A stale credential-epoch token read for a still-current action clears its \
+        in-flight marker without recording a failure, deleting its token, or \
+        resetting the session
+        """
+    )
+    func staleTokenReadForCurrentActionClearsMarkerWithoutFailure() async {
+        let tokenStore = GatedTokenStore(tokens: [ServerProfile.hosted.id: "token"])
+        let service = ScriptedGameLifecycleService()
+        let admissions = TokenAccessAdmissionCounter()
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            gameLifecycleService: service
+        )
+        await model.flowTask?.value
+        model.tokenAccessAdmissionHook = admissions.hook
+        let gameID = GameID(UUID())
+
+        // A concurrent cleanup reservation for the *same* profile -- exactly what an
+        // endpoint edit/removal's `reserveCleanupInterruptingActiveAuth` issues --
+        // whose own token deletion is gated so it does not complete yet.
+        guard case let .reserved(cleanupTask) = model.enqueueCancellationCleanup(
+            for: ServerProfile.hosted.id, globalEpoch: model.currentGlobalCredentialEpoch()
+        ) else {
+            Issue.record("Expected the cleanup reservation to succeed.")
+            return
+        }
+
+        model.deleteGame(gameID)
+        // Waits for the delete's own token read to have captured its still-current
+        // epoch and queued itself behind the reservation above (admission #1 was the
+        // reservation itself; #2 is this delete's read).
+        await admissions.waitForAdmissions(2, of: ServerProfile.hosted.id)
+
+        // A second concurrent invalidation while the delete's read is still
+        // genuinely queued behind the first reservation's gated deletion.
+        model.invalidateCredentialEpoch(for: ServerProfile.hosted.id)
+
+        // Let the reservation's gated deletion resolve (failing, as if a concurrent
+        // Keychain/profile-store failure had interrupted it -- exactly the
+        // "restartFlow never runs" review scenario -- so the token itself is left
+        // intact; only the epoch invalidation, which always happens synchronously at
+        // reservation time regardless of whether the deletion itself later
+        // succeeds, is what matters here), unblocking the delete's own queued
+        // check, which must now observe the epoch mismatch.
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest(throwing: TestFailure())
+        await model.gameLifecycleActionTasks[gameID]?.value
+        _ = await cleanupTask.value
+
+        #expect(model.gameLifecycleActions[gameID] == nil)
+        #expect(model.gameLifecycleActionFailures[gameID] == nil)
+        // The concurrent cleanup reservation (simulating some other legitimate
+        // in-flight operation, e.g. an endpoint edit) is the one that actually
+        // deletes the token here -- that is its own correct behavior, orthogonal to
+        // this assertion. What matters for *this* delete's stale read is that it
+        // never itself calls `handleGameLifecycleSessionExpired` (which would
+        // redundantly touch the token store again and flip `sessionState`) --
+        // confirmed by the session remaining signed in below.
+        #expect(model.sessionState.isSignedIn)
+    }
+
+    @Test(
+        "A superseded action's stale credential-epoch read never clears a newer action's marker"
+    )
+    func staleTokenReadForSupersededActionDoesNotClearNewerMarker() async {
+        let tokenStore = GatedTokenStore(tokens: [ServerProfile.hosted.id: "token"])
+        let service = ScriptedGameLifecycleService()
+        await service.setDeleteGameGated(true)
+        let admissions = TokenAccessAdmissionCounter()
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            gameLifecycleService: service
+        )
+        await model.flowTask?.value
+        model.tokenAccessAdmissionHook = admissions.hook
+        let gameID = GameID(UUID())
+
+        // A concurrent cleanup reservation for the same profile, gated exactly as
+        // above.
+        guard case let .reserved(cleanupTask) = model.enqueueCancellationCleanup(
+            for: ServerProfile.hosted.id, globalEpoch: model.currentGlobalCredentialEpoch()
+        ) else {
+            Issue.record("Expected the cleanup reservation to succeed.")
+            return
+        }
+
+        // T1: begins deleting `gameID`, capturing the still-current epoch (0) and
+        // queuing its token read behind the reservation above.
+        model.deleteGame(gameID)
+        let staleDeleteTask = model.gameLifecycleActionTasks[gameID]
+        await admissions.waitForAdmissions(2, of: ServerProfile.hosted.id)
+
+        // Invalidated while T1's read is still queued -- T1's captured epoch (0) is
+        // now genuinely stale.
+        model.invalidateCredentialEpoch(for: ServerProfile.hosted.id)
+
+        // T2: a newer delete for the *same* game supersedes T1 and captures the new,
+        // current epoch (1) as its own -- T2 is not itself stale; its token read
+        // simply queues behind T1's (still pending on the reservation) and, once
+        // reached, will match cleanly.
+        model.deleteGame(gameID)
+
+        // Unblock the reservation, letting T1's now-stale read finally resolve. The
+        // deletion itself fails here (as if a concurrent Keychain/profile-store
+        // failure had interrupted it) so the token remains intact for T2's own,
+        // otherwise-unaffected read to succeed with below.
+        await tokenStore.waitUntilPending(1)
+        await tokenStore.resumeOldest(throwing: TestFailure())
+        await staleDeleteTask?.value
+
+        // T2's own (unaffected) token read now resolves and its service call is
+        // reached and held at the existing service-level gate.
+        await service.waitUntilDeleteGamePending(1)
+
+        // T2 is still genuinely in flight; T1's stale token read must not have
+        // cleared T2's own marker.
+        #expect(model.gameLifecycleActions[gameID] == .deleting)
+        #expect(model.gameLifecycleActionFailures[gameID] == nil)
+
+        await service.resumeOldestDeleteGame(with: .success(()))
+        await model.gameLifecycleActionTasks[gameID]?.value
+        _ = await cleanupTask.value
+    }
 }
 
 private extension SessionState {

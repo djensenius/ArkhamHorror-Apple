@@ -222,7 +222,13 @@ extension AppModel {
     /// Resolves the games list's bearer token, recording a typed failure on every
     /// non-stale failure. Returns `nil` on any failure or staleness; callers must
     /// return immediately when `nil`. Split out of ``performRefreshGames(_:)`` purely
-    /// to keep that function's branching within this project's complexity convention.
+    /// to keep that function's branching within this project's complexity
+    /// convention. A stale credential-epoch read is treated exactly like
+    /// cancellation (via ``revertGameListStateAfterCancellation(_:)``): some other
+    /// concurrent event already invalidated this read while the profile may still
+    /// be signed in, so `gameListState` must revert out of `.loading` rather than
+    /// stay stuck, and no error is ever synthesized for a condition the backend
+    /// never reported.
     private func resolveGameListToken(_ attempt: GameListLoadAttempt) async -> String? {
         do {
             return try await currentGameLifecycleToken(for: attempt.profile)
@@ -233,7 +239,7 @@ extension AppModel {
             guard isCurrentGameList(attempt) else { return nil }
             switch tokenError {
             case .stale:
-                return nil
+                revertGameListStateAfterCancellation(attempt)
             case .noToken:
                 gameListState = .failed(.sessionExpired, previous: gameListState.games)
             case .tokenStore:
@@ -251,6 +257,13 @@ extension AppModel {
     ///
     /// Exposed for tests and a future option-driven create surface; this slice never
     /// presents a raw-ID creation form.
+    ///
+    /// Unlike ``refreshGames()`` and every per-game action, `createGame` owns no
+    /// ``AppModel``-level "in flight" marker of its own -- a future create surface
+    /// tracks its own submit-in-progress state locally (e.g. `@State`), scoped to
+    /// that view. A stale credential-epoch read therefore has no stuck shared UI
+    /// state to revert; converting it to `CancellationError` (below) is already
+    /// sufficient, matching how every other caller here treats staleness.
     ///
     /// - Throws: ``GameLifecycleError``, or rethrows `CancellationError`.
     @discardableResult

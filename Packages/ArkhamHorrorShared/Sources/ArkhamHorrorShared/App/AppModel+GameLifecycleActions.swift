@@ -28,6 +28,18 @@ extension AppModel {
         isCurrent(attempt.sessionGeneration) && gameLifecycleActionAttempts[id] == attempt.attemptID
     }
 
+    /// Clears `id`'s in-flight action marker when, and only when, `attempt` is still
+    /// this game's current action -- shared by every path that must revert the
+    /// "in flight" UI state without reporting a failure (cancellation and a stale
+    /// credential-epoch token read, both of which mean *something else* already
+    /// superseded or invalidated this read, not that the action itself failed). A
+    /// superseded action's own stale completion is left completely untouched here,
+    /// exactly like every other stale-completion guard in this file.
+    private func clearGameActionMarkerIfCurrent(_ id: GameID, _ attempt: GameActionAttempt) {
+        guard isCurrentGameAction(id, attempt) else { return }
+        gameLifecycleActions[id] = nil
+    }
+
     /// Marks `id` as having `kind` in flight: cancels and supersedes any previous
     /// action already running for `id`, clears its prior failure, and returns the new
     /// attempt's identity together with the currently signed-in profile -- or `nil`
@@ -62,23 +74,26 @@ extension AppModel {
     /// Resolves this action's bearer token, recording a typed failure (and clearing
     /// the in-flight action marker) on every non-stale failure. Returns `nil` on any
     /// failure or staleness; callers must return immediately when `nil`. Cancellation
-    /// while `attempt` is still current also clears the in-flight marker (see
-    /// ``performGameAction(_:kind:attempt:body:onSuccess:)``'s matching cancellation
-    /// handling) so the row is never left stuck disabled with no way to retry.
+    /// and a stale credential-epoch read both clear the in-flight marker (via
+    /// ``clearGameActionMarkerIfCurrent(_:_:)``, when `attempt` is still current)
+    /// rather than reporting a failure -- a stale read means some other concurrent
+    /// event (a profile-endpoint edit, sign-out, or storage reset) already
+    /// invalidated this read while the profile may still be signed in, exactly like
+    /// this file's own session-expiry handling treats it elsewhere -- so the row is
+    /// never left stuck disabled with no way to retry, and no error is ever
+    /// synthesized for a condition the backend never reported.
     private func resolveGameActionToken(
         _ id: GameID, kind: GameLifecycleAction, attempt: GameActionAttempt
     ) async -> String? {
         do {
             return try await currentGameLifecycleToken(for: attempt.profile)
         } catch is CancellationError {
-            if isCurrentGameAction(id, attempt) {
-                gameLifecycleActions[id] = nil
-            }
+            clearGameActionMarkerIfCurrent(id, attempt)
             return nil
         } catch let tokenError as GameLifecycleTokenAccessError {
             switch tokenError {
             case .stale:
-                return nil
+                clearGameActionMarkerIfCurrent(id, attempt)
             case .noToken:
                 recordGameActionFailure(id, attempt: attempt, kind: kind, error: .sessionExpired)
             case .tokenStore:
@@ -86,9 +101,7 @@ extension AppModel {
             }
             return nil
         } catch {
-            if isCurrentGameAction(id, attempt) {
-                gameLifecycleActions[id] = nil
-            }
+            clearGameActionMarkerIfCurrent(id, attempt)
             return nil
         }
     }
@@ -126,9 +139,7 @@ extension AppModel {
         do {
             try await body()
         } catch is CancellationError {
-            if isCurrentGameAction(id, attempt) {
-                gameLifecycleActions[id] = nil
-            }
+            clearGameActionMarkerIfCurrent(id, attempt)
             return
         } catch let error as GameLifecycleError {
             recordGameActionFailure(id, attempt: attempt, kind: kind, error: error)
