@@ -41,4 +41,34 @@ struct GameLifecycleServicePathSegmentTests {
         )
         #expect(encoded == gameID.description)
     }
+
+    @Test(
+        """
+        A game ID containing hex letters is rendered lowercase in the request URL, \
+        matching Identifier's wire-canonical encoding -- never Foundation's uppercase \
+        `UUID.uuidString` (what `Identifier.description` returns)
+        """
+    )
+    func gameIDPathSegmentIsLowercased() async throws {
+        let profile = ServerProfile.hosted
+        let mixedCaseUUID = try #require(UUID(uuidString: "0000000A-BBCC-DDEE-FF00-000000000001"))
+        let mixedCaseGameID = GameID(mixedCaseUUID)
+        let url = profile.endpointURL(
+            path: "/arkham/games/0000000a-bbcc-ddee-ff00-000000000001"
+        )
+        let response = try #require(
+            HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)
+        )
+        let transport = GameLifecycleRecordingTransport(data: Data(), response: response)
+        let service = GameLifecycleService(transport: transport)
+
+        try await service.deleteGame(mixedCaseGameID, on: profile, token: "the-session-token")
+
+        let request = await transport.capturedRequest
+        #expect(
+            request?.url?.absoluteString
+                == "https://arkhamhorror.app/api/v1/arkham/games/"
+                + "0000000a-bbcc-ddee-ff00-000000000001"
+        )
+    }
 }
