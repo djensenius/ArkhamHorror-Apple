@@ -132,10 +132,13 @@ extension AppModel {
     /// closes/is lost, an incompatible payload is decoded, or this session is
     /// cancelled/superseded -- exactly one ``GameSocketConnection/nextEvent()`` call
     /// in flight at a time, never concurrently. `connection.close(code:reason:)` is
-    /// called exactly once on every exit path (each call site below is mutually
-    /// exclusive with every other), so this connection can never be left open, and
-    /// is always closed at most once per generation, matching this method's own
-    /// idempotent-close guarantee defensively rather than relying on it.
+    /// called on every exit path below, so this connection can never be left open;
+    /// a cancellation race can call it more than once for the very same exit (the
+    /// `onCancel` handler closes it immediately to interrupt an in-flight
+    /// `nextEvent()`, and the subsequent `catch` block below closes it again once
+    /// that call actually throws) -- ``GameSocketConnection/close(code:reason:)``'s
+    /// own contract is idempotent precisely so this is always safe, never relied
+    /// upon to happen only once.
     ///
     /// A `.snapshot` frame decodes through the exact same ``BoardProjectionBuilder``
     /// a REST fetch's ``PublicGameSnapshot`` does, publishing
