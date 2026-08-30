@@ -4,26 +4,29 @@ import Testing
 
 /// Deterministic reproduction of the final cumulative review's finding #1:
 /// ``AssetCacheService/revalidate(for:)``'s validated-disk-hit branch must
-/// never let its eventual conditional-revalidation network step mint a
-/// *fresh* authority token from bytes a concurrent, more-recently-issued
-/// invalidation (a direct `invalidate()` or a cache-wide `evictAll()`) has
-/// already superseded — even though that same token was still genuinely
-/// authoritative the instant this branch finished decoding those bytes.
+/// never let a concurrent, more-recently-issued invalidation (a direct
+/// `invalidate()` or a cache-wide `evictAll()`) that supersedes its
+/// already-decoded bytes result in those bytes being resurrected — even
+/// though they were still genuinely current the instant this branch
+/// finished decoding them.
 ///
-/// Before the fix, `revalidateExisting`/`resolveRevalidationFetchID`
-/// unconditionally minted a brand-new token for the network step via
-/// `issueToken(for:)`, regardless of whether the token the disk-hit branch
-/// had just re-verified was still current. A token freshly issued *after*
-/// a clear is, by construction, always the newest one for its key —
-/// nothing else has touched that key since — so a 304 response for a
-/// request conditioned on the *already-superseded* bytes could still pass
-/// that fresh token's own authority check and get written straight back
-/// into the cache, resurrecting exactly the content the clear was meant to
-/// remove. The fix instead carries the *original* token — the one already
-/// re-verified against the freshly decoded bytes — straight through to the
-/// network step's own terminal authority check, so an invalidation that
-/// happens at any point from decode through to that terminal outcome is
-/// never crossed.
+/// The disk-hit branch itself never issues or reserves any durable
+/// per-key authority; it only re-verifies its own read-only snapshot is
+/// still unchanged immediately after decoding. Fresh authority is derived
+/// only later, atomically alongside the join-or-create decision for the
+/// actual (revalidation or fallback-fetch) operation, directly from the
+/// decoded entry's own historical publication stamp
+/// (`beginRevalidationIssuance`). When a concurrent `evictAll()`/
+/// `invalidate()` has superseded that stamp by the time this decision
+/// runs, it fails closed (`AssetError.revalidationProvenanceUnavailable`),
+/// and the disk-hit branch catches that and falls through to a genuinely
+/// fresh, *unconditional* fetch — exactly as if the disk entry had never
+/// existed — rather than ever sending a conditional request paired with
+/// the now-superseded bytes at all. This is stricter than merely gating a
+/// conditional network step's terminal outcome on a frozen token: the
+/// stale bytes are discarded before any conditional request is even
+/// attempted, so a 304 for them can never be received, let alone
+/// resurrect them.
 ///
 /// Split from `AssetCacheServiceTests.swift` purely for `file_length`,
 /// reusing its `cardArtKey`/`candidateURLs`/`successResult` helpers and
@@ -74,9 +77,11 @@ extension AssetCacheServiceTests {
 
     @Test(
         """
-        A validated-disk-hit revalidation's conditional network step never mints fresh \
-        authority from bytes an evictAll() already superseded between decode and the network \
-        step, so a 304 for those bytes cannot resurrect them
+        A validated-disk-hit revalidation never carries a conditional request forward from \
+        bytes an evictAll() already superseded between decode and the network step: it \
+        instead discards those bytes and falls through to a genuinely fresh, unconditional \
+        fetch, so a 304 for the superseded bytes can never even be requested, let alone \
+        resurrect them
         """
     )
     func racedDiskHitRevalidationAgainstEvictAllNeverResurrectsOnNotModified() async throws {
@@ -109,20 +114,32 @@ extension AssetCacheServiceTests {
                 await gate.markStartedAndWaitForRelease()
             }
 
-            // The server will answer the eventual conditional request with
-            // a 304 against the *same* `"v1"` validator: nothing has
-            // actually changed server-side. The only thing that changes
-            // is this process's own cache state, via the `evictAll()`
-            // below.
-            await layers.transport.enqueue(.success(.notModified), for: urls[0])
+            // The evictAll() below invalidates `staleBody`'s own
+            // historical publication stamp before this branch's
+            // join-or-create decision ever re-derives fresh authority
+            // from it. That decision (`beginRevalidationIssuance`) then
+            // fails closed with `AssetError.revalidationProvenanceUnavailable`,
+            // which this branch catches and treats exactly like a fresh
+            // cache miss: an ordinary *unconditional* fetch of `urls[0]`,
+            // never a conditional request paired with the
+            // now-superseded `staleBody`/`"v1"` bytes at all. The queued
+            // response below is that unconditional fetch's genuinely
+            // fresh content — a real 304 for the stale bytes is never
+            // even attempted, so nothing needs to be enqueued to answer
+            // one.
+            let freshBody = AssetImageFixtureBuilder.validAVIF(width: 6, height: 6)
+            await layers.transport.enqueue(
+                .success(successResult(body: freshBody, etag: "\"v2\"")),
+                for: urls[0]
+            )
 
             let revalidateTask = Task { try await layers.service.revalidate(for: key) }
             await gate.waitUntilStarted()
 
-            // The disk-hit branch has already re-verified its token is
-            // authoritative immediately after decoding `staleBody`, and is
-            // now paused immediately before carrying that same token
-            // through to the conditional network step. Run a cache-wide
+            // The disk-hit branch has already re-verified its snapshot is
+            // still current immediately after decoding `staleBody`, and is
+            // now paused immediately before carrying that snapshot
+            // through to the join-or-create decision. Run a cache-wide
             // invalidation to completion here — standing in for whatever
             // more-authoritative concurrent event (a definitive 404 on a
             // distinct in-flight fetch, or an explicit "clear cache"
@@ -130,28 +147,25 @@ extension AssetCacheServiceTests {
             try await layers.service.evictAll()
             await gate.release()
 
-            // The stale-authority 304 must never be treated as success:
-            // the token the network step's terminal check is gated on was
-            // already superseded by the `evictAll()` above before that
-            // check ever ran.
-            await #expect(throws: AssetError.staleOperation) {
-                _ = try await revalidateTask.value
-            }
-
-            // Nothing must have been written back into either cache layer
-            // under the superseded token: a completely fresh fetch must
-            // see this key exactly as if it had never been cached, not the
-            // just-cleared `staleBody`.
-            let freshBody = AssetImageFixtureBuilder.validAVIF(width: 6, height: 6)
-            await layers.transport.enqueue(
-                .success(successResult(body: freshBody, etag: "\"v2\"")),
-                for: urls[0]
-            )
-            let refetched = try await layers.service.asset(for: key)
+            // The now-stale `staleBody` must never be treated as still
+            // current: the join-or-create decision reached immediately
+            // after release must reject `staleBody`'s own historical
+            // stamp (superseded by the `evictAll()` above) and fall
+            // through to the freshly-enqueued unconditional fetch above,
+            // so this call succeeds with the fresh content rather than
+            // resurrecting `staleBody`.
+            let resolved = try await revalidateTask.value
             #expect(
-                refetched.payload == freshBody,
-                "The evicted, then-stale-304'd bytes must never be resurrected into the cache"
+                resolved.payload == freshBody,
+                "The evicted, then-superseded bytes must never be resurrected into the cache"
             )
+            #expect(resolved.metadata.etag == "\"v2\"")
+
+            // A subsequent, independent call must observe exactly this
+            // freshly-published entry from cache, with no further
+            // network access needed.
+            let refetched = try await layers.service.asset(for: key)
+            #expect(refetched.payload == freshBody)
         }
     }
 }

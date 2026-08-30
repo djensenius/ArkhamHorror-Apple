@@ -40,22 +40,70 @@ extension AssetDiskCache {
     /// delegating to
     /// ``SecureCacheDirectory/ensureRootAuthorityInitializedLocked(isSurvivingEntryAcceptable:)``,
     /// rather than leaving every call site to sequence the two
-    /// separately (a prior revision's own convention): the root-authority
-    /// decision for a directory with no epoch and no marker needs to know
-    /// whether recovery found any *genuine* surviving entry
-    /// (``foundGenuineExistingEntryDuringRecovery``), and that can only be
-    /// known accurately once recovery has actually had a chance to
-    /// reclaim whatever reclaimable debris it can first — folding both
-    /// steps into one call also guarantees every locked entry point gets
-    /// them in this exact order, rather than relying on each call site to
+    /// separately (a prior revision's own convention) — folding both
+    /// steps into one call guarantees every locked entry point gets them
+    /// in this exact order, rather than relying on each call site to
     /// never regress it.
+    ///
+    /// **Rejects every survivor unconditionally, with exactly one narrow,
+    /// explicitly-justified exception: the fixed-name whole-cache
+    /// disk-writes-disabled marker (``AssetDiskCache/diskWritesDisabledMarkerName``).**
+    /// A prior revision instead supplied a closure that tolerated *any*
+    /// survivor as long as ``recoverOrphansIfNeeded()`` had not classified
+    /// at least one surviving name as a genuine, currently-valid,
+    /// referenced cache entry — but that criterion only ever looked at
+    /// whether a `.meta.json`/`.bin` *pair* was still fully intact; it
+    /// said nothing about, and so silently waved through, every other
+    /// kind of survivor recovery cannot prove is harmless first-init
+    /// debris: a leftover per-key `.gen`/`.applied` write-generation
+    /// ticket file (definitive proof this exact key was previously
+    /// issued/mutated, regardless of whether its content ever fully
+    /// published), an orphaned `.tmp`/`.bin` that
+    /// ``sweepOrphanFiles(names:referencedPayloadFilenames:)`` attempted
+    /// but failed to remove, a corrupt/undecodable `.meta.json` sidecar
+    /// (removed by the classification loop above, but only best-effort —
+    /// a failed removal there survives this pass too), or a non-regular
+    /// entry (directory/FIFO/device/symlink) at any cache-owned name.
+    /// Every one of those is either definite evidence of prior real use
+    /// or a genuine classification/removal uncertainty this transaction
+    /// cannot safely resolve — and either one, left unaccounted for,
+    /// could let a root that was never actually pristine still be
+    /// initialized to clear-epoch `0`, silently resurrecting whatever
+    /// authority a real prior clear (or a still-uncertain survivor's own
+    /// true history) was supposed to have revoked or still be
+    /// protecting. Rejecting every one of *those* unconditionally is the
+    /// only criterion provably safe.
+    ///
+    /// The disk-writes-disabled marker is categorically different: it is
+    /// written *only* by ``AssetDiskCache/markDiskWritesDisabledLocked()``,
+    /// itself reachable only from a locked entry point already past this
+    /// exact check (``recoverOrphansIfNeeded()``'s own unenumerable-
+    /// listing branch, or ``AssetDiskCache/evictIfNeeded()``'s identical
+    /// one) — never as any byproduct of genuine cache content, a per-key
+    /// mutation, or a prior clear. Its presence or absence carries zero
+    /// information about whether this root was ever previously cleared;
+    /// it means only "a *write budget* could not be proven as of some
+    /// earlier attempt," a concern ``AssetDiskCache/requireDiskWritesEnabledLocked()``
+    /// (called immediately after this method succeeds, from the same
+    /// `setLocked` critical section) already independently, durably
+    /// re-verifies and clears-or-keeps on its own, via
+    /// ``AssetDiskCache/evictIfNeeded()`` — every write this method itself
+    /// permits still passes through that unconditionally. Rejecting this
+    /// exact marker here instead would durably deadlock root-authority
+    /// initialization forever the moment even one *transient* listing
+    /// failure (a single unlucky `recoverOrphansIfNeeded()`/
+    /// `evictIfNeeded()` call, on a root that has otherwise never been
+    /// written to at all) ever wrote it once: initialization would keep
+    /// finding this now-permanent survivor and refusing to proceed, even
+    /// once the very next listing attempt proves the directory is
+    /// otherwise genuinely empty — the marker's own clearing path can
+    /// never even run, since it is gated behind this method succeeding
+    /// first.
     func ensureRootAuthorityInitializedLocked() throws {
         guard !didEnsureRootAuthorityInitialized else { return }
-        recoverOrphansIfNeeded()
+        recoverOrphansIfNeeded(forceRetry: true)
         try secureDirectory.ensureRootAuthorityInitializedLocked(
-            isSurvivingEntryAcceptable: { [foundGenuineExistingEntryDuringRecovery] _ in
-                !foundGenuineExistingEntryDuringRecovery
-            }
+            isSurvivingEntryAcceptable: { $0 == Self.diskWritesDisabledMarkerName }
         )
         didEnsureRootAuthorityInitialized = true
     }

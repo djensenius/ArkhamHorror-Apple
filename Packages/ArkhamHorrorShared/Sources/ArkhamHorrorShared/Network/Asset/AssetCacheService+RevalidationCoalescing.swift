@@ -100,51 +100,36 @@ extension AssetCacheService {
                     continuation.resume(returning: .failure(CancellationError()))
                 }
             }
-            // See the identical `Task.isCancelled` override in
-            // `coalescedFetch` for why this check is race-free even though
-            // the resumed `result` value alone would not be.
-            if Task.isCancelled {
-                throw CancellationError()
+            // `Task.isCancelled` is read inside
+            // ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``
+            // below, as the very last step before this waiter's outcome
+            // is decided — see `finalizeFetchWaiterOutcome`'s doc
+            // comment (`AssetCacheService+Coalescing.swift`) for why
+            // folding the cancellation check, the authority re-check, and
+            // this exact waiter's ledger acknowledgement into that single
+            // synchronous actor method — rather than separate steps, as a
+            // prior revision of this code had — is required.
+            let currentEpoch = await currentDurableClearEpoch()
+            let resultIsSuccess = if case .success = result {
+                true
+            } else {
+                false
             }
-            let delivered = try result.get()
-            // Final actor-isolated authority/liveness re-check,
-            // immediately before this specific waiter returns a
-            // success-shaped value to its own caller: significant
-            // suspension can have elapsed between the moment the shared
-            // revalidation's own `publish`/`touch` call landed
-            // successfully under `token` and the moment this exact
-            // waiter's continuation actually resumes (the completion
-            // watcher iterating every waiter, this waiter's own
-            // scheduling, or simply another waiter's continuation being
-            // resumed first) — during which a more-recently-issued
-            // operation for this exact key, or a cache-wide
-            // `evictAll()`, may already have superseded `token`. Without
-            // this, such a waiter could still return a value shaped as
-            // current/successful even though this actor's own
-            // bookkeeping no longer considers it so, entirely
-            // independent of whether the underlying cache mutation
-            // itself remains correct (``publish``/``touch`` already
-            // retract their own mutation the instant *they* detect this
-            // same staleness — this closes the analogous gap for what
-            // this waiter hands back to its caller).
-            guard await isAuthoritative(token, for: cacheKey) else {
+            let outcome = finalizeRevalidationWaiterOutcome(
+                slot,
+                waiter: WaiterIdentity(fetchID: fetchID, waiterID: waiterID),
+                token: token,
+                currentEpoch: currentEpoch,
+                resultIsSuccess: resultIsSuccess
+            )
+            switch outcome {
+            case .cancelled:
+                throw CancellationError()
+            case .stale:
                 throw AssetError.staleOperation
+            case .failed, .delivered:
+                return try result.get()
             }
-            // A second, terminal `Task.isCancelled` check, immediately
-            // before this exact success-shaped value is handed back:
-            // ``isAuthoritative(_:for:)`` above itself suspends (a
-            // durable epoch read), and the very first `Task.isCancelled`
-            // check above this method only covers the window up to the
-            // continuation's own resumption -- it cannot observe a
-            // cancellation that lands *during* `isAuthoritative`'s own
-            // suspension. Without this second check, a waiter whose task
-            // was told to cancel in exactly that window could still
-            // return `delivered` as if nothing had happened, even though
-            // its caller has already stopped listening.
-            if Task.isCancelled {
-                throw CancellationError()
-            }
-            return delivered
         } onCancel: {
             Task {
                 await self.cancelRevalidationWaiter(slot, fetchID: fetchID, waiterID: waiterID)
@@ -229,6 +214,13 @@ extension AssetCacheService {
         }
     }
 
+    /// Called exactly once by the shared revalidation's own completion
+    /// watcher. Mirrors ``completeFetch(_:fetchID:result:)`` exactly,
+    /// including seeding ``pendingRevalidationAcknowledgement`` (keyed by
+    /// `fetchID`) with this exact set of resumed waiters before any of
+    /// them is actually resumed — see that method's own doc comment and
+    /// `AssetCacheService+WaiterAcknowledgement.swift`'s type-level doc
+    /// comment for the full reasoning.
     func completeRevalidation(
         _ slot: RevalidationSlot,
         fetchID: UUID,
@@ -236,6 +228,12 @@ extension AssetCacheService {
     ) {
         guard let fetch = inFlightRevalidation[slot], fetch.id == fetchID else { return }
         clearInFlightRevalidation(for: slot)
+        pendingRevalidationAcknowledgement[fetchID] = PendingWaiterAcknowledgement(
+            key: slot,
+            token: fetch.token,
+            pendingWaiterIDs: Set(fetch.waiters.keys)
+        )
+        testOnlyBeforeRevalidationResumesWaiters?()
         for (_, continuation) in fetch.waiters {
             continuation.resume(returning: result)
         }
@@ -301,24 +299,39 @@ extension AssetCacheService {
             }
             var refreshed = request.existing
             refreshed.metadata.accessSequence = AssetAccessSequence(0)
-            // Deliberately *not* re-stamped from `token` here: `token`'s
-            // own durable clear epoch/disk write generation are now
-            // always derived from `request.existing`'s own historical
-            // publication stamp at the moment this revalidation was
-            // issued (see every caller of
-            // ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``
-            // in `AssetCacheService+Revalidation.swift`/`+DiskHit.swift`/
-            // `+RevalidationDiskFetch.swift`), so `refreshed` -- an
-            // unmodified copy of `request.existing` -- already carries
-            // the exact correct values by construction. A prior revision
-            // instead force-overwrote them with whatever `token` says
-            // here: that was the literal "restamping" defect a review
-            // flagged -- it silently replaced an entry's own true,
-            // possibly-long-superseded provenance with a fresh-looking
-            // stamp the instant a 304 merely confirmed the bytes were
-            // still unchanged, letting a clear that happened *before* this
-            // exact 304 (but after the original publish) go permanently
-            // undetected on every subsequent hit.
+            // `writeGenerationAtPublication`/`writeGeneration` *are*
+            // advanced here, to `token`'s own freshly issued ticket —
+            // this 304 is itself a genuine, durable re-confirmation that
+            // these exact bytes are still current, and
+            // ``AssetDiskCache/touch(_:metadata:token:)`` (called below)
+            // always durably commits `token`'s ticket as this key's new
+            // disk *applied* ticket regardless of what this metadata
+            // says; leaving this field frozen at the original publish's
+            // ticket would silently drift it out of sync with that disk
+            // counter after this exact call, permanently poisoning every
+            // *subsequent* revalidation's own provenance check (see
+            // ``AssetCacheMetadata/writeGenerationAtPublication``'s own
+            // doc comment for the full "sequential 304" scenario this
+            // closes). `clearEpochAtPublication`/`durableClearEpoch` are
+            // deliberately left exactly as ``request.existing`` already
+            // carries: the `isAuthoritative` re-check immediately above
+            // already re-verified `token`'s own durable clear epoch
+            // exactly matches the current one (and, transitively —
+            // ``beginRevalidationIssuance(for:expectedClearEpoch:expectedAppliedTicket:)``
+            // having accepted this operation's issuance at all already
+            // proved that epoch matched `request.existing`'s own
+            // historical stamp too) — so `token.durableClearEpoch` and
+            // `request.existing.durableClearEpoch` are already
+            // guaranteed identical at this exact point; restamping would
+            // write the same value, not a different one. See
+            // ``AssetCacheMetadata/clearEpochAtPublication``'s own doc
+            // comment for why this field is never restamped as a matter
+            // of principle regardless.
+            guard let freshTicket = token.diskWriteGeneration else {
+                throw AssetError.staleOperation
+            }
+            refreshed.metadata.writeGenerationAtPublication = freshTicket
+            refreshed.writeGeneration = freshTicket
             // See the identical final ``MutationOutcome`` re-check on the
             // `.success` branch below for why a `.stale` result here must
             // also surface as ``AssetError/staleOperation`` rather than

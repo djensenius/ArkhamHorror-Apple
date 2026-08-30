@@ -78,16 +78,6 @@ extension AssetCacheService {
             try await diskCache.removeAll()
             tombstonedKeys.removeAll()
             lastDiskPersistenceFailure = nil
-        } catch is CancellationError {
-            // A cancelled clear is not a persistence failure of any
-            // kind -- the durable fence attempt may never even have been
-            // made -- and must never be folded into
-            // ``lastDiskPersistenceFailure``/the best-effort tombstone
-            // path below as if it were: doing so would let a merely
-            // *cancelled* task appear, to any caller inspecting that
-            // state afterward, as though a real fence/deletion failure
-            // had occurred. Propagates unchanged.
-            throw CancellationError()
         } catch let fenceError as AssetError where isFenceFailure(fenceError) {
             // The durable fence itself (the clear epoch, or the root-
             // authority transaction that guards it) never advanced: this

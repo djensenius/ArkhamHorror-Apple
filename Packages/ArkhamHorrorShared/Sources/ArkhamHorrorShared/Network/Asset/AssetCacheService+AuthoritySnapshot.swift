@@ -106,11 +106,46 @@ extension AssetCacheService {
     /// `true` only if `storedEpoch` — a ``CachedAsset/durableClearEpoch``
     /// captured at the moment some prior call published or revalidated
     /// this exact memory entry — still exactly matches a *freshly re-read*
-    /// ``currentDurableClearEpoch()``. `false` if either value is `nil`
-    /// (an unstamped entry, or a durable read failure just now — both
-    /// fail closed, the same reasoning ``isAuthoritative(_:for:)`` and
-    /// ``unchanged(since:for:)`` already apply to their own durable-epoch
-    /// comparisons) or if they simply differ.
+    /// ``currentDurableClearEpoch()``, **and** `storedGeneration` — that
+    /// same entry's own ``CachedAsset/writeGeneration`` — is still `>=`
+    /// a freshly re-read ``currentDurableAppliedTicket(for:)`` for `key`.
+    /// `false` if any of `storedEpoch`/`storedGeneration`/either fresh
+    /// durable read is `nil` (an unstamped entry, or a durable read
+    /// failure just now — both fail closed, the same reasoning
+    /// ``isAuthoritative(_:for:)`` and ``unchanged(since:for:)`` already
+    /// apply to their own durable comparisons).
+    ///
+    /// **Why the per-key generation check exists at all, alongside the
+    /// epoch check.** `durableClearEpoch` only ever changes on a
+    /// whole-cache clear (``AssetDiskCache/removeAll()``): it can never,
+    /// by itself, detect a *sibling* ``AssetCacheService``/
+    /// `AssetDiskCache` instance (a second service in this process, or a
+    /// second OS process) sharing this same on-disk directory publishing
+    /// a genuinely *different*, newer body for this exact key under the
+    /// *same* epoch — an ordinary per-key ``AssetDiskCache/set(_:payload:metadata:token:)``
+    /// never bumps the epoch at all. Without this second check, service A
+    /// could cache epoch-0 content in memory, service B could then
+    /// publish an epoch-0-but-newer-generation replacement for the same
+    /// key to disk, and A's epoch check alone would keep reporting its
+    /// now-superseded memory entry "still current" forever — the exact
+    /// "sibling clear leaves existing memory servable" defect a prior
+    /// review flagged.
+    ///
+    /// **Why `>=`, never exact equality, against the current applied
+    /// ticket.** A memory entry's own ``CachedAsset/writeGeneration`` is
+    /// always stamped from the token that produced it, *regardless* of
+    /// whether that token's own disk write actually succeeded —
+    /// ``AssetCacheService+Publish.swift``'s ``publish(_:)`` documents
+    /// this as a deliberate best-effort policy: a memory-only entry
+    /// (disk write failed, non-fatally) legitimately carries a
+    /// `writeGeneration` that can never again match disk's own applied
+    /// ticket for this key (nothing of this generation ever actually
+    /// landed there), yet remains perfectly valid to keep serving from
+    /// memory. Exact equality would permanently and wrongly reject that
+    /// entry the instant this check ever ran; `>=` still correctly
+    /// rejects genuine supersession, since that is the one case where
+    /// disk's applied ticket has advanced *strictly past* what this
+    /// memory entry itself claims.
     ///
     /// Deliberately *additive* to, not a replacement for, the existing
     /// ``unchanged(since:for:)``/``clearStateUnchanged(since:for:)``
@@ -118,27 +153,25 @@ extension AssetCacheService {
     /// those two remain exactly correct for the race they were built to
     /// catch (an invalidation/clear that happens *during* this specific
     /// call's own suspension window, between their own snapshot and
-    /// recheck reads). What neither of them can ever detect is a clear
-    /// that already completed *before* this call even began — both of
-    /// their reads would then trivially observe the same
-    /// already-superseded epoch and agree "unchanged", even though the
-    /// cached entry itself was published under a durable epoch that
-    /// predates that clear. Comparing the entry's own *stored* epoch
-    /// (fixed at the moment it was written) against a fresh read here,
-    /// on every hit, closes exactly that gap: a memory entry published
-    /// under epoch *N* can never again pass this check once any
-    /// instance/process sharing this cache's directory has since bumped
-    /// the durable epoch past *N*, regardless of how long ago that
-    /// publish happened or whether this specific call has been suspended
-    /// at all.
-    func memoryEntryStillCurrent(_ storedEpoch: Int?) async -> Bool {
+    /// recheck reads). What none of them can ever detect is a clear or a
+    /// sibling per-key publish that already completed *before* this call
+    /// even began — comparing the entry's own *stored* epoch/generation
+    /// (fixed at the moment it was written) against a fresh read here, on
+    /// every hit, closes exactly that gap.
+    func memoryEntryStillCurrent(
+        _ storedEpoch: Int?,
+        storedGeneration: Int?,
+        for key: AssetCacheKey
+    ) async -> Bool {
         guard
             let storedEpoch,
-            let currentEpoch = await currentDurableClearEpoch()
+            let storedGeneration,
+            let currentEpoch = await currentDurableClearEpoch(),
+            let currentAppliedTicket = await currentDurableAppliedTicket(for: key)
         else {
             return false
         }
-        return storedEpoch == currentEpoch
+        return storedEpoch == currentEpoch && storedGeneration >= currentAppliedTicket
     }
 
     /// A named, non-tuple result type for ``snapshotClearState(for:)``/

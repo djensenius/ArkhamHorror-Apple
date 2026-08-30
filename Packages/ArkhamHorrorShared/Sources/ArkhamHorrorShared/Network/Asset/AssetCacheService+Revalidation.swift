@@ -8,69 +8,6 @@ import Foundation
 /// package's file/type-length conventions; still part of the single
 /// `AssetCacheService` actor's isolated state.
 extension AssetCacheService {
-    /// Re-validates an on-disk cache hit against the *current* validation
-    /// contract before ever trusting it as an already-resolved asset.
-    ///
-    /// ``AssetDiskCache/get(_:)`` already re-verifies the payload's byte
-    /// count and SHA-256 hash against its own metadata (so the bytes are
-    /// exactly what was written), but that alone does not prove the
-    /// payload is still a genuinely valid, fully decodable image under
-    /// *this process's* current limits: limits can tighten between
-    /// launches, and a previously-published entry could in principle
-    /// predate a validation fix. This re-runs the full
-    /// format/magic-byte/dimension validation, cross-checks the freshly
-    /// parsed dimensions against what metadata claims, and performs a full
-    /// platform decode — never trusting metadata's `width`/`height` alone
-    /// to stand in for a real decode.
-    ///
-    /// Returns `nil` (having already quarantined the disk entry) on any
-    /// genuine mismatch or validation/decode failure. A `CancellationError`
-    /// is rethrown instead of quarantining: it means the caller stopped
-    /// caring, not that the entry is invalid.
-    ///
-    /// The persisted `resolvedURLString` is untrusted: a disk hit is only
-    /// accepted when it exactly matches one of `key`'s own current
-    /// candidates (never whatever URL happens to be recorded), which also
-    /// recovers the exact ``AssetFormat`` that candidate resolved to.
-    func revalidateDiskHit(
-        _ cached: CachedAsset,
-        key: AssetKey,
-        cacheKey: AssetCacheKey,
-        candidates: [AssetCandidate],
-        token: CacheToken
-    ) async throws -> CachedAsset? {
-        guard let candidate = candidates.first(where: {
-            $0.url(base: key.source).absoluteString == cached.metadata.resolvedURLString
-        }) else {
-            await invalidate(cacheKey, token: token)
-            return nil
-        }
-        do {
-            let validated = try AssetImageValidator.validate(
-                data: cached.payload,
-                declaredContentType: cached.metadata.contentType,
-                expectedFormat: candidate.format,
-                limits: limits
-            )
-            guard
-                validated.width == cached.metadata.width,
-                validated.height == cached.metadata.height
-            else {
-                throw AssetError.malformedImageData
-            }
-            let decoded = try await decodeImageOffActor(cached.payload)
-            guard decoded.width == validated.width, decoded.height == validated.height else {
-                throw AssetError.malformedImageData
-            }
-            return cached
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            await invalidate(cacheKey, token: token)
-            return nil
-        }
-    }
-
     /// Conditionally revalidates an already-cached entry for `key` against
     /// the exact URL its payload came from. Requires a currently valid
     /// cached entry (memory or disk) to condition against; if none exists,
@@ -133,7 +70,11 @@ extension AssetCacheService {
         var memoryHitIsCurrent = false
         if let memoryHit {
             let stillUnchanged = await clearStateUnchanged(since: memorySnapshot, for: cacheKey)
-            let stillCurrentEpoch = await memoryEntryStillCurrent(memoryHit.durableClearEpoch)
+            let stillCurrentEpoch = await memoryEntryStillCurrent(
+                memoryHit.durableClearEpoch,
+                storedGeneration: memoryHit.writeGeneration,
+                for: cacheKey
+            )
             memoryHitIsCurrent = stillUnchanged && stillCurrentEpoch
         }
         endAuthorityWindow(for: cacheKey)

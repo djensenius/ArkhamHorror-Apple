@@ -75,12 +75,13 @@ struct CrossServiceAuthorityTests {
     }
 
     private func successResult(
-        body: Data = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+        body: Data = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4),
+        etag: String? = nil
     ) -> AssetHTTPResult {
         .success(AssetHTTPResponse(
             body: body,
             contentType: "image/avif",
-            etag: nil,
+            etag: etag,
             lastModified: nil
         ))
     }
@@ -217,6 +218,179 @@ struct CrossServiceAuthorityTests {
                 onDisk.payload == payloadB,
                 "The durable disk entry must remain B's newer, already-applied publish"
             )
+        }
+    }
+
+    /// Polls ``AssetCacheService/inFlightRevalidationWaiterCount(forCacheKey:)``
+    /// until it reports exactly `count` -- this suite's own analog of
+    /// `AssetCacheServiceTests+WaiterSync.swift`'s identical helper, kept
+    /// separate purely because ``CrossServiceAuthorityTests`` is its own
+    /// `@Suite` struct, not an `extension AssetCacheServiceTests`.
+    private func waitForRevalidationWaiterCount(
+        _ count: Int,
+        cacheKey: AssetCacheKey,
+        on service: AssetCacheService,
+        timeoutNanoseconds: UInt64 = 10_000_000_000
+    ) async throws {
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+        while await service.inFlightRevalidationWaiterCount(forCacheKey: cacheKey) != count {
+            guard DispatchTime.now().uptimeNanoseconds < deadline else {
+                preconditionFailure(
+                    "waitForRevalidationWaiterCount(\(count)) timed out"
+                )
+            }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+    }
+
+    @Test(
+        """
+        A same-epoch sibling publish for the exact same key (no whole-cache clear at all) must \
+        invalidate a service's own already-cached memory entry: the durable clear epoch alone \
+        never changes for an ordinary per-key publish, so only a per-key write-generation \
+        comparison can catch this
+        """
+    )
+    func siblingSameEpochPublishInvalidatesMemoryEntry() async throws {
+        try await withScratchDirectory { directory in
+            let limits = standardLimits()
+            let (serviceA, transportA) = try makeIndependentService(
+                directory: directory,
+                limits: limits
+            )
+            let (serviceB, transportB) = try makeIndependentService(
+                directory: directory,
+                limits: limits
+            )
+
+            let key = try cardArtKey()
+            let urls = candidateURLs(for: key)
+
+            let payloadA = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+            let payloadB = AssetImageFixtureBuilder.validAVIF(width: 8, height: 8)
+            let payloadC = AssetImageFixtureBuilder.validAVIF(width: 12, height: 12)
+
+            // A fully publishes -- no ETag/Last-Modified at all, so this
+            // entry can never be conditionally revalidated later, only
+            // ever re-fetched outright -- and caches the result in its
+            // own memory.
+            await transportA.enqueue(.success(successResult(body: payloadA)), for: urls[0])
+            let firstFetch = try await serviceA.asset(for: key)
+            #expect(firstFetch.payload == payloadA)
+
+            // B -- sharing no in-memory state with A, but the same disk
+            // directory -- looks the same key up. B's memory misses, its
+            // disk hit finds A's entry, but that entry carries no
+            // validator at all, so it can never be trusted for a
+            // conditional request: B falls through to an ordinary,
+            // unconditional re-fetch of its own, which durably bumps this
+            // key's applied write-generation counter without ever
+            // touching the durable clear epoch.
+            await transportB.enqueue(.success(successResult(body: payloadB)), for: urls[0])
+            let siblingFetch = try await serviceB.asset(for: key)
+            #expect(siblingFetch.payload == payloadB)
+
+            // A's own next lookup for this exact key must not trust its
+            // still-untouched in-process memory entry: its own stored
+            // write-generation (stamped at the first fetch) is now
+            // strictly less than the current durable applied ticket B's
+            // publish just committed, even though the durable clear epoch
+            // itself never changed. A prior revision's memory-hit check
+            // compared only the clear epoch and would have wrongly kept
+            // serving `payloadA` here forever.
+            await transportA.enqueue(.success(successResult(body: payloadC)), for: urls[0])
+            let thirdFetch = try await serviceA.asset(for: key)
+            #expect(
+                thirdFetch.payload != payloadA,
+                "A must never keep serving its own now-superseded memory entry"
+            )
+            #expect(thirdFetch.payload == payloadC)
+            #expect(
+                await transportA.callCount(for: urls[0]) == 2,
+                "A's third lookup must be a genuine new network fetch, not a trusted memory hit"
+            )
+        }
+    }
+
+    @Test(
+        """
+        A second, concurrent disk-only caller joining an already in-flight conditional \
+        revalidation must reserve no durable disk authority of its own: the first caller's \
+        held request must still be able to publish its own result once released, never wrongly \
+        rejected as stale by a wasted reservation the second caller's own join made
+        """
+    )
+    func joiningDiskOnlyCallerReservesNoDurableAuthority() async throws {
+        try await withScratchDirectory { directory in
+            let limits = standardLimits()
+            let (seedService, seedTransport) = try makeIndependentService(
+                directory: directory,
+                limits: limits
+            )
+            let key = try cardArtKey()
+            let urls = candidateURLs(for: key)
+            let candidates = AssetLocator.candidates(for: key, digest: FakeDigestLookup())
+            let cacheKey = AssetCacheKey(for: key, candidates: candidates)
+
+            // Seeds the shared disk directory with an entry that *does*
+            // carry a validator, so a later disk-only hit can attempt a
+            // genuine conditional revalidation rather than an
+            // unconditional re-fetch.
+            await seedTransport.enqueue(
+                .success(successResult(etag: "\"v1\"")),
+                for: urls[0]
+            )
+            let seeded = try await seedService.asset(for: key)
+            #expect(seeded.metadata.etag == "\"v1\"")
+
+            // A fresh service, sharing no in-memory state with
+            // `seedService` at all, so both concurrent lookups below
+            // start from a genuine disk-only hit.
+            let (service, transport) = try makeIndependentService(
+                directory: directory,
+                limits: limits
+            )
+            await transport.hold(urls[0])
+            await transport.enqueue(.success(.notModified), for: urls[0])
+
+            let firstTask = Task<CachedAsset, Error> {
+                try await service.asset(for: key)
+            }
+            // Waits until the first caller's own conditional network
+            // call has actually started (registering it as the in-flight
+            // revalidation the second caller below must join) before
+            // starting the second.
+            await transport.waitForCallCount(1, for: urls[0])
+
+            let secondTask = Task<CachedAsset, Error> {
+                try await service.asset(for: key)
+            }
+            // Waits until the second caller has genuinely joined the
+            // same in-flight revalidation as a waiter, rather than
+            // assuming a fixed delay is long enough.
+            try await waitForRevalidationWaiterCount(2, cacheKey: cacheKey, on: service)
+
+            // Exactly one network call must ever have been made: a
+            // genuinely joining second caller reserves and issues
+            // nothing of its own, so there is no second request to make.
+            #expect(await transport.callCount(for: urls[0]) == 1)
+
+            await transport.release(urls[0])
+
+            // Neither waiter may observe `AssetError.staleOperation`: a
+            // prior revision's eager reservation, made by the *second*
+            // caller purely on the chance it might need one before ever
+            // knowing it would join, durably bumped the shared per-key
+            // issuance counter past the first caller's own already-issued
+            // ticket -- stranding the first caller's own legitimate,
+            // already in-flight publish/touch the instant it tried to
+            // land, and failing both waiters of what should have been a
+            // single successful, genuinely coalesced operation.
+            let firstResult = try await firstTask.value
+            let secondResult = try await secondTask.value
+            #expect(firstResult.payload == seeded.payload)
+            #expect(secondResult.payload == seeded.payload)
+            #expect(await transport.callCount(for: urls[0]) == 1)
         }
     }
 }

@@ -129,6 +129,35 @@ extension AssetDiskCache {
     /// that landed successfully but was only afterward discovered to
     /// already have been superseded (e.g. the last waiter of a coalesced
     /// operation cancelled before delivery).
+    ///
+    /// **Resets the applied ticket to the sentinel `0`, never reserves a
+    /// fresh one.** A prior revision instead called
+    /// ``reserveAndCommitMutationTicketLocked(for:)`` here, on the theory
+    /// that this retraction is "one further mutation" needing its own
+    /// advancing ticket exactly like every genuine `set`/`touch`/`remove`
+    /// does — but that reservation draws from the *same* shared issuance
+    /// counter (``issueTicketLocked(for:)``/`.gen`) every other in-flight
+    /// operation for this exact key relies on to know its own ticket is
+    /// still the most recently issued one. A concurrent, already-issued
+    /// (but not yet applied — e.g. paused mid-revalidation) operation B
+    /// for this same key can never predict, and has no way to survive,
+    /// this retraction's own reservation manufacturing a phantom "even
+    /// later" issuance that nobody actually asked for: the very next time
+    /// B attempts its own `set`/`touch`, ``acceptToken(_:currentEpoch:currentIssued:)``
+    /// finds B's own already-issued ticket is no longer `>=` the issuance
+    /// counter's new value and wrongly rejects perfectly legitimate,
+    /// already-in-flight work as stale — even though B was issued
+    /// strictly *before* this retraction's phantom ticket ever existed.
+    /// Committing the sentinel `0` directly instead touches only the
+    /// *applied* counter, leaving the *issuance* counter — and therefore
+    /// every other operation's own already-reserved ticket — completely
+    /// untouched. `0` can never collide with any genuine historical
+    /// applied ticket (the first real ticket ``issueTicketLocked(for:)``
+    /// ever reserves for any key is `1`), so a future
+    /// ``beginRevalidationIssuance(for:expectedClearEpoch:expectedAppliedTicket:)``
+    /// provenance check comparing against a real cached entry's own
+    /// historical stamp (always `>= 1`) can never mistake this sentinel
+    /// for "still applied".
     func removeIfApplied(_ key: AssetCacheKey, token: AssetCacheService.CacheToken) async {
         guard let lockFD = try? await secureDirectory.acquireExclusiveLock() else { return }
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
@@ -146,14 +175,12 @@ extension AssetDiskCache {
         _ = try? secureDirectory.remove(name: metadataFilename(for: key))
         try? secureDirectory.fsyncRootDirectory()
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
-        // Advances the applied ticket one further step past this exact
-        // retraction, mirroring every other successful mutation in this
-        // file: leaves no window where a *third*, even-later-issued
-        // token could still find `currentApplied == its own ticket` by
-        // coincidence after this retraction, and correctly permits a
-        // still-in-flight, genuinely newer operation for this same key to
-        // freely proceed afterward.
-        _ = try? reserveAndCommitMutationTicketLocked(for: key)
+        // See this method's own doc comment for why this must commit the
+        // fixed sentinel `0` directly (never reserve/mint a fresh
+        // ticket): doing so would advance the shared issuance counter
+        // past whatever a different, already-issued-but-not-yet-applied
+        // operation for this same key legitimately relies on.
+        try? commitAppliedTicketLocked(0, for: key)
     }
 
     /// `true` only for a string that is exactly 64 lowercase ASCII hex

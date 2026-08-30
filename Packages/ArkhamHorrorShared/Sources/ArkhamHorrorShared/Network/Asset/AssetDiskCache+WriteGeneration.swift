@@ -249,6 +249,25 @@ extension AssetDiskCache {
         try readTicketLocked(name: appliedTicketFilename(for: key))
     }
 
+    /// The lock-acquiring public counterpart to
+    /// ``currentAppliedTicketLocked(for:)``, mirroring
+    /// ``AssetDiskCache/currentClearEpoch()``'s own pattern exactly: a
+    /// plain, non-reserving durable read safe to call from any
+    /// already-suspending context, never itself part of an atomic
+    /// join-or-create decision. Used by
+    /// ``AssetCacheService/memoryEntryStillCurrent(_:storedGeneration:for:)``
+    /// to detect a sibling service/process publishing a *newer* per-key
+    /// generation for this exact key with no accompanying clear-epoch
+    /// bump at all — a same-epoch, per-key supersession the durable
+    /// clear epoch alone can never observe, since it only ever changes
+    /// on a whole-cache clear.
+    func currentAppliedTicket(for key: AssetCacheKey) async throws -> Int {
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try ensureRootAuthorityInitializedLocked()
+        return try currentAppliedTicketLocked(for: key)
+    }
+
     private func readTicketLocked(name: String) throws -> Int {
         guard let data = try secureDirectory.read(
             name: name,

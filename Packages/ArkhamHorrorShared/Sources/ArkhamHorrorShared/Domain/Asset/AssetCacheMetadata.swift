@@ -52,13 +52,48 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// ``AssetCacheService/CacheToken/durableClearEpoch``) and this key's
     /// own durable disk write generation (see
     /// ``AssetDiskCache/beginIssuance(for:)``) that were current at the
-    /// moment this exact payload was durably confirmed fresh from origin
-    /// — a genuine full publish, or a successful conditional
-    /// revalidation whose response body is these exact bytes. **Never**
-    /// updated by an ordinary `304`-driven metadata-only touch (which
-    /// only refreshes ``accessSequence``/validators): these two fields
-    /// are this entry's own permanent, immutable provenance stamp for as
-    /// long as its payload bytes remain unchanged.
+    /// moment this exact payload's provenance was most recently durably
+    /// confirmed fresh from origin — a genuine full publish, a successful
+    /// conditional revalidation whose response body is these exact bytes,
+    /// **or** a `304 Not Modified` conditional revalidation that
+    /// confirmed these already-cached bytes are still current. Advanced
+    /// by any of the three (never by a plain metadata-only
+    /// ``AssetCacheMetadata/accessSequence`` bump with no accompanying
+    /// revalidation at all — an ordinary cache *read* never touches
+    /// these fields).
+    ///
+    /// **A `304` legitimately advances `writeGenerationAtPublication`,
+    /// even though the payload bytes themselves are unchanged.** A prior
+    /// revision left both fields frozen at their *original* full-publish
+    /// values across every subsequent `304`, on the theory that they are
+    /// this entry's permanent, immutable provenance stamp "for as long as
+    /// its payload bytes remain unchanged" — but
+    /// ``AssetDiskCache/touch(_:metadata:token:)`` (the disk write a
+    /// `304` performs) always durably commits the *revalidating*
+    /// operation's own freshly issued ticket as this key's new disk
+    /// *applied* ticket (``AssetDiskCache/commitMutationTicketLocked(for:token:)``),
+    /// regardless of what this metadata's own fields say. Leaving this
+    /// field frozen therefore let it silently drift out of sync with the
+    /// disk's own applied-ticket counter after the very first `304`: a
+    /// *third*, subsequent revalidation attempt reads this frozen,
+    /// now-stale field back as its own historical stamp and passes it to
+    /// ``AssetDiskCache/beginRevalidationIssuance(for:expectedClearEpoch:expectedAppliedTicket:)``
+    /// as `expectedAppliedTicket` — which compares it against the disk's
+    /// *current* applied ticket (already advanced by the second `304`)
+    /// and always finds a mismatch, permanently degrading every
+    /// subsequent revalidation attempt for this key into an uncached
+    /// full re-fetch the instant a single `304` has ever landed. Advancing
+    /// this field in lockstep with every successful `304` (see
+    /// ``AssetCacheService/RevalidationCoalescing/performRevalidation(_:)``'s
+    /// `.notModified` case) keeps it exactly synchronized with the disk's
+    /// own applied-ticket counter, so this stays a correct — not merely a
+    /// historical — provenance stamp for every subsequent revalidation.
+    /// ``clearEpochAtPublication`` is left unchanged by a `304`: the
+    /// operation performing it already had its own durable clear epoch
+    /// re-verified unchanged (via ``AssetCacheService/isAuthoritative(_:for:)``)
+    /// immediately before the disk write that would persist this value,
+    /// so it is, by construction, already identical to the value that
+    /// would be written either way.
     ///
     /// This is what actually closes a review finding: a disk (or memory)
     /// hit's own authority must never be re-derived from whatever epoch/
@@ -83,7 +118,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// operation's own mutation is what is currently applied" even when
     /// this operation itself never applied anything.
     let clearEpochAtPublication: Int
-    let writeGenerationAtPublication: Int
+    var writeGenerationAtPublication: Int
 
     static let currentSchemaVersion = 4
 

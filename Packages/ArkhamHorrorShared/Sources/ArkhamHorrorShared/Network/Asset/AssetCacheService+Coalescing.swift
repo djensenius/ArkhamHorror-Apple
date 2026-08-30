@@ -99,38 +99,22 @@ extension AssetCacheService {
                     continuation.resume(returning: .failure(CancellationError()))
                 }
             }
-            // Deterministically overrides to `CancellationError` for a
-            // waiter whose own task was cancelled, regardless of whether
-            // this waiter's cancellation cleanup (`cancelWaiter`, below)
-            // happened to run before or after the shared fetch's own
-            // completion (`completeFetch`) reached the actor — those two
-            // hops race against each other with no ordering guarantee,
-            // but `Task.isCancelled` is monotonic once set, so this check
-            // is race-free even though the resumed `result` value alone
-            // would not be.
-            if Task.isCancelled {
-                throw CancellationError()
-            }
-            let delivered = try result.get()
-            // Final actor-isolated authority/liveness re-check,
-            // immediately before this specific waiter returns a
-            // success-shaped value to its own caller. Significant
-            // suspension can elapse between the moment the shared
-            // fetch's own `publish` call landed successfully under
-            // `token` and the moment this exact waiter's continuation
-            // actually resumes (the completion watcher iterating every
-            // waiter, this waiter's own scheduling, or another waiter's
-            // continuation being resumed first) — during which a
-            // more-recently-issued operation for this exact key, or a
-            // cache-wide `evictAll()`, may already have superseded
-            // `token`. Without this, such a waiter could still return a
-            // value shaped as current/successful even though this
-            // actor's own bookkeeping no longer considers it so, entirely
-            // independent of whether the underlying cache mutation
-            // itself remains correct (``publish``/``touch`` already
-            // retract their own mutation the instant *they* detect this
-            // same staleness — this closes the analogous gap for what
-            // this waiter hands back to its caller).
+            // `Task.isCancelled` alone is not consulted directly here:
+            // ``finalizeFetchWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``
+            // below reads it itself, as the very last step before this
+            // waiter's outcome is decided — see that method's own doc
+            // comment, and `AssetCacheService+WaiterAcknowledgement.swift`'s
+            // type-level doc comment, for why folding the cancellation
+            // check, the authority re-check, and this exact waiter's
+            // ledger acknowledgement into that single synchronous actor
+            // method (rather than three separate steps, as a prior
+            // revision of this code had) is required: `Task.isCancelled`
+            // is monotonic once set, so checking it there — after the
+            // one durable epoch read below, immediately before the final
+            // decision — already covers every window a cancellation
+            // could have landed in since this waiter's continuation
+            // resumed, including one landing during that epoch read
+            // itself.
             //
             // `token` (captured above, before this shared fetch's `Task`
             // was even created) already carries its own fully-stamped
@@ -141,23 +125,31 @@ extension AssetCacheService {
             // prior revision of this code, there is no separate,
             // later-stamped copy to reconstruct here, since issuance
             // itself never leaves that window open in the first place.
-            guard await isAuthoritative(token, for: cacheKey) else {
-                throw AssetError.staleOperation
+            let currentEpoch = await currentDurableClearEpoch()
+            let resultIsSuccess = if case .success = result {
+                true
+            } else {
+                false
             }
-            // A second, terminal `Task.isCancelled` check, immediately
-            // before this exact success-shaped value is handed back --
-            // mirrors `AssetCacheService+RevalidationCoalescing.swift`'s
-            // ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``.
-            // ``isAuthoritative(_:for:)`` above itself suspends (a
-            // durable epoch read), and the very first `Task.isCancelled`
-            // check above only covers the window up to the
-            // continuation's own resumption -- it cannot observe a
-            // cancellation landing *during* `isAuthoritative`'s own
-            // suspension.
-            if Task.isCancelled {
+            let outcome = finalizeFetchWaiterOutcome(
+                cacheKey,
+                waiter: WaiterIdentity(fetchID: fetchID, waiterID: waiterID),
+                token: token,
+                currentEpoch: currentEpoch,
+                resultIsSuccess: resultIsSuccess
+            )
+            switch outcome {
+            case .cancelled:
                 throw CancellationError()
+            case .stale:
+                throw AssetError.staleOperation
+            case .failed, .delivered:
+                // `.failed` propagates the shared fetch's own original
+                // failure (never a synthesized authority error); a
+                // failure never mutates the cache, so there is nothing
+                // for authority to protect either way.
+                return try result.get()
             }
-            return delivered
         } onCancel: {
             // `onCancel` may run synchronously on an arbitrary executor,
             // so this hops back onto the actor rather than touching
@@ -329,6 +321,19 @@ extension AssetCacheService {
     /// already have removed (and possibly replaced with fresh work) this
     /// exact entry, in which case this stale completion must not touch
     /// newer state.
+    ///
+    /// Registers exactly this set of resumed waiters into
+    /// ``pendingFetchAcknowledgement`` *before* resuming any of them —
+    /// see `AssetCacheService+WaiterAcknowledgement.swift`'s type-level
+    /// doc comment for why this entry must be retained (rather than
+    /// unconditionally forgotten here, as a prior revision of this
+    /// method did) until each of these exact waiters has individually
+    /// finalized via ``finalizeFetchWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``.
+    /// No new waiter can ever register into this exact `fetchID` after
+    /// this point: `resolveOrCreateInFlightFetch`'s registration closure
+    /// only ever joins `inFlight[cacheKey]`, which this method clears
+    /// synchronously, in this same step, before any waiter is resumed —
+    /// so the waiter set captured here is already final.
     private func completeFetch(
         _ key: AssetCacheKey,
         fetchID: UUID,
@@ -342,6 +347,12 @@ extension AssetCacheService {
             return
         }
         inFlight[key] = nil
+        pendingFetchAcknowledgement[fetchID] = PendingWaiterAcknowledgement(
+            key: key,
+            token: fetch.token,
+            pendingWaiterIDs: Set(fetch.waiters.keys)
+        )
+        testOnlyBeforeFetchResumesWaiters?()
         for (_, continuation) in fetch.waiters {
             continuation.resume(returning: result)
         }

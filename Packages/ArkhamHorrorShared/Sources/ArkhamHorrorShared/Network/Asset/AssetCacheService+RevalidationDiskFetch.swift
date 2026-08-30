@@ -36,45 +36,34 @@ extension AssetCacheService {
         else {
             throw AssetError.staleConditionalResponse
         }
-        // This disk-hit branch is never behind any coalescing dictionary,
-        // so there is no "duplicate in-flight work" hazard to defer this
-        // past — see ``issueToken(for:)``. This entry's own *historical*
-        // clear-epoch/disk-write-generation provenance (populated by
-        // ``AssetDiskCache/get(_:)`` from
-        // ``AssetCacheMetadata/clearEpochAtPublication``/
-        // ``AssetCacheMetadata/writeGenerationAtPublication``) is
-        // validated -- atomically, under one disk-cache lock hold,
-        // alongside reserving this operation's own fresh authority -- via
-        // ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``,
-        // exactly like ``asset(for:)``'s identical disk-hit branch — see
-        // that method's doc comment for why this entry's own historical
-        // stamp must only ever be used to *validate* current durable
-        // reality, never threaded through directly as this operation's
-        // own token.
-        guard
-            let historicalEpoch = onDisk.durableClearEpoch,
-            let historicalGeneration = onDisk.writeGeneration,
-            let preIssuedAuthority = await beginRevalidationIssuance(
-                for: cacheKey,
-                historicalClearEpoch: historicalEpoch,
-                historicalWriteGeneration: historicalGeneration
-            )
-        else {
-            // No historical provenance at all, a durable read failure, or
-            // this entry's own historical stamp no longer matching
-            // current durable reality: fail closed exactly like a
-            // stale/lost race, never fall back to a freshly-minted
-            // "current" stamp.
-            throw AssetError.staleConditionalResponse
-        }
-        var token = issueToken(for: cacheKey)
-        token.durableClearEpoch = preIssuedAuthority.clearEpoch
-        token.diskWriteGeneration = preIssuedAuthority.diskWriteGeneration
+        // **Deliberately reserves no durable per-key disk authority, and
+        // issues no local token, here.** See
+        // ``AssetCacheService/diskHitIfTrusted(key:cacheKey:candidates:)``'s
+        // doc comment for the full reasoning: an intermediate revision of
+        // this exact fix called ``issueToken(for:)`` purely to have
+        // something to compare this function's own post-decode fail-fast
+        // re-check against below — but that unconditionally overwrites
+        // ``AssetCacheService/keyLatestToken`` for `cacheKey`, which can
+        // durably clobber whatever token an already in-flight coalesced
+        // revalidation for this exact key currently depends on, wrongly
+        // rejecting its own eventual, perfectly legitimate publish/touch
+        // as stale the instant a second, ultimately-joining caller also
+        // happens to reach this same code path. `snapshot` above is
+        // reused for that re-check instead: a plain, read-only capture
+        // with no side effects at all, answering the identical question
+        // ("has anything more authoritative for this key become current
+        // since I started?") without ever writing to `keyLatestToken`.
+        // Fresh per-key reservation (when one turns out to be needed at
+        // all) is deferred entirely to
+        // ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``'s
+        // own join-or-create decision below, which derives it fresh from
+        // `onDisk`'s own historical stamp only on the "create" branch --
+        // so a joiner truly reserves/issues nothing, anywhere.
         // A disk-loaded body is never trusted as the basis for a
         // conditional request until it has passed the exact same current
         // format/magic-byte/dimension/limits/decode validation as a disk
         // *hit* in ``asset(for:)`` (see
-        // ``revalidateDiskHit(_:key:cacheKey:candidates:token:)``):
+        // ``revalidateDiskHit(_:key:cacheKey:candidates:)``):
         // without this, a persisted wrong-format, oversized, undecodable,
         // or stale-limits body could be silently "touched" (its
         // `accessSequence` refreshed) or re-cached in memory the moment
@@ -84,8 +73,7 @@ extension AssetCacheService {
             onDisk,
             key: key,
             cacheKey: cacheKey,
-            candidates: candidates,
-            token: token
+            candidates: candidates
         ) else {
             // Already quarantined by `revalidateDiskHit`: there is no
             // longer any valid basis for a *conditional* request, so fall
@@ -102,56 +90,41 @@ extension AssetCacheService {
         // entirely from a fresh lookup: whatever is now current for this
         // key (freshly published by memory, freshly revalidated from
         // disk, or a brand fresh fetch) is always the correct answer, and
-        // never once involves the bytes this now-stale token was derived
-        // from.
-        guard await isAuthoritative(token, for: cacheKey) else {
+        // never once involves the bytes this now-stale snapshot was
+        // taken alongside. Reuses `snapshot` (never a token) -- see this
+        // function's own doc comment immediately above.
+        guard await unchanged(since: snapshot, for: cacheKey) else {
             return try await asset(for: key)
         }
         await testOnlyPauseBeforeRevalidationRequest?()
-        // Deliberately does *not* insert `validated` into the memory
-        // cache here, before any conditional network round trip has even
-        // been attempted: doing so previously let a concurrent
-        // `evictAll()`/`invalidate()` that completed *after* this
-        // insertion landed, but *before* the network step ever accounted
-        // for it, still get "crossed" — the network step used to always
-        // mint a brand-new token via ``issueToken(for:)`` regardless of
-        // `token`'s own fate, and a fresh token is, by construction,
-        // always authoritative the instant it is issued, even one issued
-        // moments after a clear. That let a 304 for a request built from
-        // these exact already-decoded (and, at that point,
-        // already-superseded) bytes sail through the terminal authority
-        // check in ``performRevalidation(_:)`` and republish content the
-        // clear had just removed. `token.durableClearEpoch` — read at the
-        // exact same moment this decode was captured and just
-        // re-verified under, above — is instead carried straight through
-        // to the network step via `preIssuedAuthority:` below (never the
-        // token itself, and never re-derived from `validated` a second
-        // time later: see
-        // ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``'s
-        // doc comment for why forwarding this branch's own already-issued
-        // token would clobber whatever token an already in-flight
-        // coalesced revalidation for this key is relying on, and why
-        // re-deriving fresh authority here instead would move this
-        // operation's own issuance moment to *after* the pause hook
-        // immediately above — letting a clear injected during it be
-        // missed by an earlier check while still correctly caught by
-        // ``performRevalidation(_:)``'s own terminal authority check
-        // later, changing which typed error a race exactly there
-        // produces): if any invalidation supersedes this epoch/
-        // generation at *any* point between here and that request's
-        // eventual terminal outcome (a 304, a 404, or a fresh 200),
-        // ``performRevalidation(_:)``'s own authority check will
-        // correctly reject it as stale rather than resurrecting these
-        // bytes.
-        return try await revalidateExisting(
-            validated,
-            key: key,
-            cacheKey: cacheKey,
-            candidates: candidates,
-            preIssuedAuthority: PreIssuedAuthority(
-                clearEpoch: token.durableClearEpoch,
-                diskWriteGeneration: token.diskWriteGeneration
+        // Deliberately passes no `preIssuedAuthority` (defaults to
+        // `nil`): nothing above ever reserved or issued any durable disk
+        // authority (see this function's own doc comment above for why),
+        // so there is nothing to forward. ``revalidateExisting``'s own
+        // join-or-create decision derives and validates fresh authority
+        // itself, from `validated`'s own historical stamp, but *only* on
+        // the "create" branch -- a joiner uses whatever token the
+        // in-flight operation it joins was issued when *it* started,
+        // exactly as if this call had reserved nothing here at all. A
+        // ``AssetError/revalidationProvenanceUnavailable`` thrown by
+        // that join-or-create decision (`validated`'s historical stamp no
+        // longer matching current durable reality by the time it
+        // actually ran) *is* caught below, exactly like the quarantine
+        // branch above: there is no longer any valid basis for a
+        // conditional request, so this falls through to an ordinary
+        // unconditional fetch exactly as if `validated` had never
+        // existed, rather than surfacing a typed error this function's
+        // own callers have no reason to expect from what looks, from the
+        // outside, like an ordinary cache-miss continuation.
+        do {
+            return try await revalidateExisting(
+                validated,
+                key: key,
+                cacheKey: cacheKey,
+                candidates: candidates
             )
-        )
+        } catch AssetError.revalidationProvenanceUnavailable {
+            return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
+        }
     }
 }

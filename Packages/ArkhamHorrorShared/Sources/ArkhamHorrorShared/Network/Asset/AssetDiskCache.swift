@@ -58,43 +58,30 @@ actor AssetDiskCache {
     let limits: AssetCacheLimits
     let fileManager: FileManager
     let secureDirectory: SecureCacheDirectory
+    /// One-time-per-instance guard for ``recoverOrphansIfNeeded(forceRetry:)``'s
+    /// own listing/reconciliation scan in ordinary steady-state operation
+    /// — **but not unconditionally**: ``ensureRootAuthorityInitializedLocked()``
+    /// always passes `forceRetry: true`, bypassing this flag entirely, so
+    /// a failed best-effort removal (e.g. a transient fault) discovered
+    /// while root authority has not yet successfully initialized is
+    /// always retried on the next such call, rather than this flag
+    /// permanently starving further attempts. Every other call site
+    /// (notably ``get(_:)``'s read path) always passes the default
+    /// `forceRetry: false`, preserving this flag's one-shot-per-instance
+    /// contract there. See ``recoverOrphansIfNeeded(forceRetry:)``'s own
+    /// doc comment for the full reasoning.
     var didRecoverOrphans = false
 
     /// One-time-per-instance guard for
     /// ``ensureRootAuthorityInitializedLocked()`` (see
-    /// `AssetDiskCache+RootAuthority.swift`) — mirrors ``didRecoverOrphans``'s
-    /// identical pattern: cheap to skip once this instance has already
-    /// confirmed the shared directory's root authority is initialized, at
-    /// no cost to correctness (the underlying
+    /// `AssetDiskCache+RootAuthority.swift`): cheap to skip once this
+    /// instance has already confirmed the shared directory's root
+    /// authority is initialized, at no cost to correctness (the underlying
     /// ``SecureCacheDirectory/ensureRootAuthorityInitializedLocked()`` is
     /// itself fully idempotent and safe to call unconditionally; this
     /// flag exists purely to avoid a redundant read on every single locked
     /// entry point for the remainder of this instance's lifetime).
     var didEnsureRootAuthorityInitialized = false
-
-    /// Set once, by ``recoverOrphansIfNeeded()`` itself, the first time
-    /// that pass successfully completes: `true` only if it found at least
-    /// one currently-valid, schema-matching, hash-valid metadata sidecar
-    /// whose referenced payload also exists as a verified regular file --
-    /// i.e. genuine, still-servable prior cache content, never merely
-    /// reclaimable debris (a stray `.tmp`, an unreferenced `.bin`, a
-    /// corrupt/undecodable `.meta.json`, a symlink, or any other
-    /// non-regular entry, every one of which recovery already attempts to
-    /// reclaim on this exact same pass regardless of whether that attempt
-    /// actually succeeds).
-    ///
-    /// ``ensureRootAuthorityInitializedLocked()`` (`AssetDiskCache+RootAuthority.swift`)
-    /// consults this immediately after invoking recovery, and *only* this
-    /// flag, to decide whether a directory with a missing clear-epoch
-    /// counter and missing root-init marker may still be treated as a
-    /// genuinely pristine root: reclaimable debris that recovery could not
-    /// physically remove (e.g. because its removal is transiently or
-    /// persistently faulted) must never by itself block that decision --
-    /// it is fully accounted for and retried by the entirely separate
-    /// disk-quota/writes-disabled machinery instead -- while even a single
-    /// surviving *genuine* entry is definitive proof this is not a fresh
-    /// root and must fail closed exactly like a lost/corrupted epoch would.
-    var foundGenuineExistingEntryDuringRecovery = false
 
     /// This process's own in-memory fail-closed half of the disk-writes-
     /// disabled marker (see `AssetDiskCache+Tombstone.swift`'s type-level

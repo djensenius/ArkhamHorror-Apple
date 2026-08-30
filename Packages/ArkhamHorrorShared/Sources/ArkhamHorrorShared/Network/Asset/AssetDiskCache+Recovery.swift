@@ -34,22 +34,35 @@ extension AssetDiskCache {
         }
     }
 
-    /// Runs once per cache instance lifetime (covering the common "cache
-    /// created once at app launch" case, which is what makes this a real
-    /// restart-recovery pass rather than a per-call cost). Removes any
-    /// leftover `.tmp` file from an interrupted write, any metadata sidecar
-    /// that fails to decode or validate, and any payload file not named
-    /// for the exact content hash a currently valid metadata sidecar
-    /// references. Also reconciles the durable, cross-instance/cross-process
-    /// access-sequence counter (``SecureCacheDirectory/floorAccessSequence(atLeast:)``)
-    /// to be at least the highest ``AssetCacheMetadata/accessSequence``
-    /// found among every currently valid persisted entry, so every value
-    /// allocated afterward — by this instance, another concurrent
-    /// instance, or a genuinely separate process — is guaranteed greater
-    /// than every value already on disk at the moment of this scan,
-    /// required for LRU order to survive a restart correctly.
-    func recoverOrphansIfNeeded() {
-        guard !didRecoverOrphans else { return }
+    /// Runs once per cache instance lifetime in ordinary steady-state
+    /// operation (covering the common "cache created once at app launch"
+    /// case, which is what makes this a real restart-recovery pass rather
+    /// than a per-call cost, and what keeps a read-only caller like
+    /// ``AssetDiskCache/get(_:)``'s clean-miss path O(1)). Removes any
+    /// leftover `.tmp` file from an interrupted write, any metadata
+    /// sidecar that fails to decode or validate, and any payload file not
+    /// named for the exact content hash a currently valid metadata
+    /// sidecar references. Also reconciles the durable, cross-instance/
+    /// cross-process access-sequence counter
+    /// (``SecureCacheDirectory/floorAccessSequence(atLeast:)``) to be at
+    /// least the highest ``AssetCacheMetadata/accessSequence`` found among
+    /// every currently valid persisted entry, so every value allocated
+    /// afterward is guaranteed greater than every value already on disk
+    /// at the moment of this scan, required for LRU order to survive a
+    /// restart correctly.
+    ///
+    /// - Parameter forceRetry: When `true`, re-runs the full scan even if
+    ///   ``didRecoverOrphans`` is already set from an earlier call whose
+    ///   own listing succeeded but left some removal unresolved —
+    ///   ``AssetDiskCache/ensureRootAuthorityInitializedLocked()`` always
+    ///   passes `true` here (see that method's own doc comment for why);
+    ///   every other call site, including ``AssetDiskCache/get(_:)``'s
+    ///   read path, uses the default `false` and keeps this one-shot.
+    ///   Every step a retry repeats is itself idempotent (a floor bump to
+    ///   an already-reached value, or sweeping an already-removed name,
+    ///   is a safe no-op).
+    func recoverOrphansIfNeeded(forceRetry: Bool = false) {
+        guard !didRecoverOrphans || forceRetry else { return }
         // Only mark recovery as done once the directory listing actually
         // succeeds. If listing fails (e.g. a transient I/O error),
         // `didRecoverOrphans` must stay `false` so the very next call
@@ -127,15 +140,6 @@ extension AssetDiskCache {
         }
         _ = sweepOrphanFiles(names: names, referencedPayloadFilenames: referencedPayloadFilenames)
         reconcileAccessSequenceFloor(highestAccessSequence)
-        // Recorded *after* the classification loop above (which already
-        // quarantines every corrupt/dangling sidecar it finds) but
-        // *before* the orphan sweep, since neither affects which names
-        // ended up genuinely referenced -- see
-        // ``foundGenuineExistingEntryDuringRecovery``'s own doc comment
-        // for why only a genuinely-referenced entry surviving this pass,
-        // never mere reclaimable debris, may block treating an otherwise
-        // pristine root as fresh.
-        foundGenuineExistingEntryDuringRecovery = !referencedPayloadFilenames.isEmpty
     }
 
     /// Attempts to remove every leftover `.tmp` file and every `.bin`

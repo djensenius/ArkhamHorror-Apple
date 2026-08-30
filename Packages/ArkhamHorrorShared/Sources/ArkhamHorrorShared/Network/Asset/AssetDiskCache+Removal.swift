@@ -132,24 +132,38 @@ extension AssetDiskCache {
         // own internal wrapping -- any read failure encountered while
         // determining that root's state) is normalized to
         // ``AssetError/clearFenceNotDurable(_:)`` rather than left as
-        // whatever raw error type happened to surface, *except* a genuine
-        // `CancellationError`, which is rethrown completely unchanged: a
-        // cancelled clear is not a persistence failure at all, and must
-        // never be misreported as one to ``AssetCacheService/evictAll()``,
-        // which treats `clearFenceNotDurable` as proof a fence attempt was
-        // actually made and failed. This closes the exact "pre-fence
-        // failures are swallowed" gap a prior review flagged: previously,
-        // a lock-acquisition failure (or a root-authority read failure not
-        // already typed as `clearFenceNotDurable`) here would propagate as
-        // a generic error that ``evictAll()``'s own catch-all clause
-        // treated as a best-effort, non-fatal outcome -- silently leaving
-        // this instance's in-memory bookkeeping cleared while the durable
-        // fence was never actually bumped at all.
+        // whatever raw error type happened to surface -- **including**
+        // ``CancellationError``. A prior revision rethrew a cancellation
+        // encountered here completely unchanged, on the theory that "a
+        // cancelled clear is not a persistence failure at all" -- but
+        // that reasoning only holds for a cancellation observed *after*
+        // the durable fence below has already committed (this method has
+        // exactly one suspension point before that commit: acquiring the
+        // lock itself). A `Task` cancelled while waiting on that lock has
+        // no way to know whether the fence will ever actually land --
+        // this method simply returns without ever reaching
+        // ``SecureCacheDirectory/bumpClearEpoch()`` -- so from
+        // ``AssetCacheService/evictAll()``'s own perspective this is
+        // indistinguishable from any other pre-fence failure: local,
+        // in-process bookkeeping (already-cleared memory entries,
+        // in-flight waiters) must not be trusted as if a durable,
+        // cross-instance/cross-process fence had actually been committed.
+        // Reporting it as plain, untyped ``CancellationError`` instead let
+        // a caller's generic `catch` silently treat this identically to
+        // "cancellation is always safe to ignore" and proceed as though
+        // nothing durable was at stake -- exactly the "pre-fence failures
+        // are swallowed" gap a prior review flagged, just for one
+        // specific error type the previous fix's catch-all deliberately
+        // carved back out. Only a cancellation observed strictly *after*
+        // the fence has already durably committed (there is no such
+        // suspension point remaining in this method once the lock is
+        // held -- everything from root-authority initialization through
+        // the final directory `fsync` below is synchronous Darwin I/O) is
+        // ever an ordinary, non-fence-related cancellation; this method
+        // has no such window to preserve.
         let lockFD: Int32
         do {
             lockFD = try await secureDirectory.acquireExclusiveLock()
-        } catch is CancellationError {
-            throw CancellationError()
         } catch {
             throw AssetError.clearFenceNotDurable(
                 "Could not acquire the cross-process lock before the clear fence: \(error)"

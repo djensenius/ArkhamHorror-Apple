@@ -38,6 +38,19 @@ actor AssetCacheService {
     /// otherwise find their entry already gone.
     var inFlight: [AssetCacheKey: InFlightFetch] = [:]
 
+    /// Retained bookkeeping for a coalesced fetch whose completion
+    /// watcher (``completeFetch(_:fetchID:result:)``) has already
+    /// resumed every currently-registered waiter, until each of those
+    /// waiters has individually finalized — keyed by `fetchID`, not
+    /// cache key; see `AssetCacheService+WaiterAcknowledgement.swift`'s
+    /// type-level doc comment for the full reasoning.
+    var pendingFetchAcknowledgement: [UUID: PendingWaiterAcknowledgement<AssetCacheKey>] = [:]
+
+    /// Mirrors ``pendingFetchAcknowledgement`` for coalesced
+    /// revalidations, keyed the same way.
+    var pendingRevalidationAcknowledgement:
+        [UUID: PendingWaiterAcknowledgement<RevalidationSlot>] = [:]
+
     /// Per-key issuance-ordered authority state and the shared global
     /// generation, together forming the single authority every
     /// cache-mutating operation (a normal fetch's publish, a
@@ -219,6 +232,22 @@ actor AssetCacheService {
     /// that ordering via incidental scheduling timing.
     var testOnlyPauseAfterFetchPublishApplied: (() async -> Void)?
 
+    /// Test-only hook invoked by ``completeFetch(_:fetchID:result:)``
+    /// synchronously, before it resumes any of the fetch's currently
+    /// registered waiters — see
+    /// `AssetCacheService+WaiterAcknowledgement.swift`'s type-level doc
+    /// comment for the exact hazard this lets a test deterministically
+    /// reproduce (a waiter's own task cancelled after the shared fetch
+    /// has already succeeded, rather than while it is still pending).
+    /// Always `nil` in production.
+    var testOnlyBeforeFetchResumesWaiters: (() -> Void)?
+
+    /// Test-only hook invoked by ``completeRevalidation(_:fetchID:result:)``
+    /// — the revalidation counterpart to
+    /// ``testOnlyBeforeFetchResumesWaiters``. Always `nil` in
+    /// production.
+    var testOnlyBeforeRevalidationResumesWaiters: (() -> Void)?
+
     init(
         memoryCache: AssetMemoryCache,
         diskCache: AssetDiskCache,
@@ -276,7 +305,11 @@ actor AssetCacheService {
         var memoryHitIsCurrent = false
         if let memoryHit {
             let stillUnchanged = await unchanged(since: memorySnapshot, for: cacheKey)
-            let stillCurrentEpoch = await memoryEntryStillCurrent(memoryHit.durableClearEpoch)
+            let stillCurrentEpoch = await memoryEntryStillCurrent(
+                memoryHit.durableClearEpoch,
+                storedGeneration: memoryHit.writeGeneration,
+                for: cacheKey
+            )
             memoryHitIsCurrent = stillUnchanged && stillCurrentEpoch
         }
         endAuthorityWindow(for: cacheKey)
@@ -309,5 +342,15 @@ actor AssetCacheService {
     /// Test-only: installs ``testOnlyPauseAfterFetchPublishApplied``.
     func installTestOnlyPauseAfterFetchPublishApplied(_ hook: @escaping () async -> Void) {
         testOnlyPauseAfterFetchPublishApplied = hook
+    }
+
+    /// Test-only: installs ``testOnlyBeforeFetchResumesWaiters``.
+    func installTestOnlyBeforeFetchResumesWaiters(_ hook: @escaping () -> Void) {
+        testOnlyBeforeFetchResumesWaiters = hook
+    }
+
+    /// Test-only: installs ``testOnlyBeforeRevalidationResumesWaiters``.
+    func installTestOnlyBeforeRevalidationResumesWaiters(_ hook: @escaping () -> Void) {
+        testOnlyBeforeRevalidationResumesWaiters = hook
     }
 }
