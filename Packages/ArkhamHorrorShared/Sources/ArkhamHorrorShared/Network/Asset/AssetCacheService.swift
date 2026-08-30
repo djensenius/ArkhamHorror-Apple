@@ -324,8 +324,13 @@ actor AssetCacheService {
         }
         do {
             try await diskCache.remove(cacheKey, token: token)
+            lastDiskPersistenceFailure = nil
+        } catch let error as AssetError {
+            tombstonedKeys.insert(cacheKey)
+            lastDiskPersistenceFailure = error
         } catch {
             tombstonedKeys.insert(cacheKey)
+            lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
         }
         if let token, !isAuthoritative(token, for: cacheKey) {
             return .stale

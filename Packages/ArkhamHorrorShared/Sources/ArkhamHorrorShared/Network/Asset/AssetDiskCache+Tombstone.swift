@@ -102,11 +102,14 @@ extension AssetDiskCache {
     }
 
     /// Same marker write as ``markDiskReadsDisabled()``, but for use from
-    /// *inside* an already-held lock (currently unused directly, kept
-    /// alongside the locked/unlocked pair convention established by
-    /// ``persistTombstoneLocked(keyHash:)``/``clearTombstoneLocked(keyHash:)``
-    /// for symmetry and any future locked call site).
-    private func markDiskReadsDisabledLocked() {
+    /// *inside* an already-held lock — called by
+    /// ``AssetDiskCache/Removal/remove(_:token:)``'s own catch block when
+    /// its own ``persistTombstoneLocked(keyHash:)`` attempt also fails
+    /// (this key's own durable protection could not be established at
+    /// all, so the whole-cache fail-closed marker is the only remaining
+    /// option), alongside the locked/unlocked pair convention established
+    /// by ``persistTombstoneLocked(keyHash:)``/``clearTombstoneLocked(keyHash:)``.
+    func markDiskReadsDisabledLocked() {
         let name = Self.diskReadsDisabledMarkerName
         _ = try? secureDirectory.writeTempAndFsync(tempName: name + ".tmp", data: Data())
         _ = try? secureDirectory.renameAndFsyncDirectory(from: name + ".tmp", to: name)

@@ -38,12 +38,23 @@ extension AssetDiskCache {
             // invalidated, entry — including across a restart, since
             // an in-memory-only tombstone does not survive one. Best-
             // effort persist the marker (itself inside this same held
-            // lock) before rethrowing; a failure to even persist that
-            // marker is surfaced identically (this call still throws
-            // either way), letting the caller's own fail-closed
-            // fallback (``AssetCacheService``'s whole-cache disabled
-            // state) cover the residual gap.
-            try? persistTombstoneLocked(keyHash: key.digestHex)
+            // lock) before rethrowing.
+            //
+            // If *that* write also fails, this key's own durable
+            // protection cannot be established at all — falling back
+            // silently to only ``AssetCacheService``'s in-memory
+            // `tombstonedKeys` would leave the entry fully servable
+            // again the moment this process restarts, exactly the gap
+            // a tombstone exists to close. Escalating to the whole-
+            // cache ``markDiskReadsDisabledLocked()`` marker in that
+            // case is the only remaining fail-closed option: it costs
+            // every other key's disk reads until a fully successful
+            // ``removeAll()`` clears it, but that is strictly safer
+            // than silently resurrecting this one invalidated entry
+            // across a restart.
+            if (try? persistTombstoneLocked(keyHash: key.digestHex)) == nil {
+                markDiskReadsDisabledLocked()
+            }
             throw error
         }
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
