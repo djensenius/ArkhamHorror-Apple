@@ -18,12 +18,23 @@ actor WebSocketConnectResolver {
 
     /// Suspends until this attempt resolves, throwing whatever error
     /// ``resolveFailed(_:)`` was given if it resolved that way.
+    ///
+    /// Defensively rejects a second concurrent call made before resolution rather
+    /// than silently overwriting (and thereby permanently orphaning) the first
+    /// waiter's continuation: this resolver is documented/used as a fresh,
+    /// single-attempt instance (see this type's own top-level documentation), so a
+    /// second concurrent `awaitConnected()` call would only ever indicate a
+    /// programming error -- failing loudly here surfaces that misuse immediately
+    /// instead of hanging the first caller forever.
     func awaitConnected() async throws {
         if isResolved {
             if let failure {
                 throw failure
             }
             return
+        }
+        guard continuation == nil else {
+            throw WebSocketConnectResolverMisuseError()
         }
         try await withCheckedThrowingContinuation { continuation = $0 }
     }
@@ -44,8 +55,16 @@ actor WebSocketConnectResolver {
     }
 }
 
+/// Thrown by ``WebSocketConnectResolver/awaitConnected()`` when a second call
+/// arrives while a first is still awaiting resolution -- a defensive programmer-
+/// error signal, never expected in production use (see that method's own
+/// documentation).
+struct WebSocketConnectResolverMisuseError: Error, Sendable, Equatable {}
+
 /// Synchronously (and thread-safely) captures whether a WebSocket handshake has
-/// already been observed to open, entirely independent of any subsequent async
+/// already been observed to open, and atomically arbitrates which of
+/// `didOpenWithProtocol`/`didCompleteWithError` gets to hand its outcome off to the
+/// async resolver actor at all -- entirely independent of any subsequent `Task`
 /// scheduling.
 ///
 /// This exists to fix an ordering hazard: `didOpenWithProtocol` and
@@ -56,28 +75,53 @@ actor WebSocketConnectResolver {
 /// separately spawned `Task`s racing each other to call into the resolver actor are
 /// not guaranteed to preserve that relative ordering -- so an open-then-immediate-
 /// close sequence could let the "failed" `Task` win the race and misclassify an
-/// already-succeeded (HTTP 101) handshake as a terminal failure. Recording/checking
-/// this flag happens synchronously inside each delegate callback's own body (already
-/// serialized by the delegate queue itself), *before* ever handing off to the async
-/// resolver actor, so the ordering decision itself never depends on `Task`
-/// scheduling at all. The lock is kept anyway (rather than relying purely on the
-/// delegate queue's documented seriality) for a self-contained invariant that holds
-/// independent of how this delegate happens to be configured.
+/// already-succeeded (HTTP 101) handshake as a terminal failure (and, symmetrically,
+/// a pathological complete-before-open sequence could let a stray later "opened"
+/// `Task` win and rescue an already-genuine failure). ``recordOpened()``/
+/// ``recordFailed()`` atomically claim "first (and only) outcome" synchronously
+/// inside each delegate callback's own body -- already serialized by the delegate
+/// queue itself -- *before* ever handing off to the async resolver actor: whichever
+/// callback is invoked first claims the outcome and is the only one that ever
+/// spawns a `Task` into the resolver, so the ordering decision itself never depends
+/// on `Task` scheduling at all, in either direction. The lock is kept anyway (rather
+/// than relying purely on the delegate queue's documented seriality) for a
+/// self-contained invariant that holds independent of how this delegate happens to
+/// be configured.
 final class WebSocketHandshakeGate: @unchecked Sendable {
     private let lock = NSLock()
     private var hasOpened = false
+    private var isDetermined = false
 
-    /// Records that the handshake has opened. Idempotent; safe to call more than
-    /// once (`didOpenWithProtocol` is only ever expected to fire at most once per
-    /// task, but this makes no assumption either way).
-    func recordOpened() {
+    /// Atomically claims "opened" as this handshake's outcome, but only if no
+    /// outcome (opened *or* failed) has been claimed yet. Returns whether this call
+    /// won that claim -- the caller should spawn its resolver `Task` only when it
+    /// did, so at most one outcome is ever delivered to the resolver actor.
+    /// Idempotent/safe to call more than once (`didOpenWithProtocol` is only ever
+    /// expected to fire at most once per task, but this makes no assumption either
+    /// way): a later call always reports it lost the claim.
+    @discardableResult
+    func recordOpened() -> Bool {
         lock.lock()
         defer { lock.unlock() }
+        guard !isDetermined else { return false }
+        isDetermined = true
         hasOpened = true
+        return true
     }
 
-    /// Whether ``recordOpened()`` has already been called at least once, as of this
-    /// exact call.
+    /// Atomically claims "failed" as this handshake's outcome, but only if no
+    /// outcome (opened *or* failed) has been claimed yet -- symmetric to
+    /// ``recordOpened()``. Returns whether this call won that claim.
+    @discardableResult
+    func recordFailed() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isDetermined else { return false }
+        isDetermined = true
+        return true
+    }
+
+    /// Whether ``recordOpened()`` has already won its claim, as of this exact call.
     func wasAlreadyOpened() -> Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -101,21 +145,29 @@ final class GameSocketConnectDelegate: NSObject, URLSessionWebSocketDelegate, @u
     func urlSession(
         _: URLSession, webSocketTask _: URLSessionWebSocketTask, didOpenWithProtocol _: String?
     ) {
-        // Recorded synchronously, before ever spawning the `Task` below -- see
-        // `WebSocketHandshakeGate`'s own documentation for why this ordering matters.
-        handshakeGate.recordOpened()
+        // Claimed synchronously, before ever spawning the `Task` below: if a
+        // completion already won the outcome claim first (only possible via a
+        // pathological ordering that never happens for a real `URLSession` task,
+        // since `didOpenWithProtocol` cannot legitimately fire after the terminal
+        // `didCompleteWithError`, but defended against anyway), this call is a
+        // no-op and never spawns a conflicting resolver `Task` -- see
+        // `WebSocketHandshakeGate`'s own documentation for why this matters.
+        guard handshakeGate.recordOpened() else { return }
         Task { await resolver.resolveOpened() }
     }
 
     func urlSession(_: URLSession, task: URLSessionTask, didCompleteWithError _: (any Error)?) {
-        // Checked synchronously, before ever inspecting `task.response` or spawning
-        // a `Task`: if the handshake was already observed to open (whether that
+        // Claimed synchronously, before ever inspecting `task.response` or spawning
+        // a `Task`: if the handshake already won the "opened" claim (whether that
         // happened strictly before this callback, or this callback is simply racing
         // an in-flight `didOpenWithProtocol` on the very same serial delegate
         // queue), this completion can only be the connection subsequently closing --
         // never a failed handshake -- and reporting a failure here would incorrectly
-        // resolve (or attempt to resolve) an already-succeeded connect attempt.
-        guard !handshakeGate.wasAlreadyOpened() else { return }
+        // resolve (or attempt to resolve) an already-succeeded connect attempt. This
+        // claim is symmetric with `didOpenWithProtocol`'s own above, so whichever
+        // callback is actually invoked first is guaranteed to be the only one that
+        // ever spawns a resolver `Task`, regardless of `Task` scheduling.
+        guard handshakeGate.recordFailed() else { return }
         // Fires once the task fully completes for *any* reason. Reached here only
         // when the handshake itself failed (the gate above already excluded "opened,
         // then later closed"): `task.response` is still populated with the

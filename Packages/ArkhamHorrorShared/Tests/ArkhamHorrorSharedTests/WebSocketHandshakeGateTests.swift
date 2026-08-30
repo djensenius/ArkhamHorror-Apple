@@ -15,11 +15,14 @@ import Testing
 /// not guaranteed to preserve `URLSession`'s own true chronological delegate-queue
 /// callback ordering, so an open-then-immediate-close sequence could let the
 /// "failed" `Task` win the race and misclassify an already-succeeded (HTTP 101)
-/// handshake as a terminal failure. The fix records/checks
-/// ``WebSocketHandshakeGate/recordOpened()``/``WebSocketHandshakeGate/wasAlreadyOpened()``
-/// synchronously inside each callback's own body, before ever spawning a `Task` --
-/// these tests drive both callbacks directly, in every relevant order, proving that
-/// ordering decision no longer depends on `Task` scheduling at all.
+/// handshake as a terminal failure -- and, symmetrically, a pathological
+/// complete-before-open sequence could let a stray later "opened" `Task` win and
+/// rescue an already-genuine failure. The fix has ``WebSocketHandshakeGate/recordOpened()``/
+/// ``WebSocketHandshakeGate/recordFailed()`` atomically arbitrate -- synchronously
+/// inside each callback's own body, before ever spawning a `Task` -- which single
+/// outcome actually reaches the resolver: these tests drive both callbacks
+/// directly, in every relevant order, proving that decision no longer depends on
+/// `Task` scheduling at all, in either direction.
 @Suite("WebSocketHandshakeGate / GameSocketConnectDelegate ordering")
 struct WebSocketHandshakeGateTests {
     // MARK: - WebSocketHandshakeGate (direct)
@@ -46,6 +49,24 @@ struct WebSocketHandshakeGateTests {
         #expect(gate.wasAlreadyOpened())
     }
 
+    @Test("recordOpened() returns true exactly once, false on every later call (open or failed)")
+    func recordOpenedReturnsTrueExactlyOnce() {
+        let gate = WebSocketHandshakeGate()
+        #expect(gate.recordOpened())
+        #expect(!gate.recordOpened())
+        #expect(!gate.recordFailed())
+    }
+
+    @Test("recordFailed() returns true exactly once, false on every later call (failed or open)")
+    func recordFailedReturnsTrueExactlyOnce() {
+        let gate = WebSocketHandshakeGate()
+        #expect(gate.recordFailed())
+        #expect(!gate.recordFailed())
+        #expect(!gate.recordOpened())
+        // A failed-first claim must never retroactively report "opened".
+        #expect(!gate.wasAlreadyOpened())
+    }
+
     @Test("Many concurrent recordOpened()/wasAlreadyOpened() calls never crash or corrupt state")
     func concurrentAccessIsThreadSafe() async {
         let gate = WebSocketHandshakeGate()
@@ -59,6 +80,30 @@ struct WebSocketHandshakeGateTests {
         // gate is unconditionally left open -- proving no lost update under
         // concurrent access.
         #expect(gate.wasAlreadyOpened())
+    }
+
+    @Test("""
+    Many concurrent recordOpened()/recordFailed() calls against one fresh gate \
+    always yield exactly one winner overall, never zero and never more than one
+    """)
+    func concurrentOpenAndFailedClaimsYieldExactlyOneWinner() async {
+        let gate = WebSocketHandshakeGate()
+        let winnerCount = LockedCounter()
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0 ..< 100 {
+                group.addTask {
+                    if gate.recordOpened() {
+                        winnerCount.increment()
+                    }
+                }
+                group.addTask {
+                    if gate.recordFailed() {
+                        winnerCount.increment()
+                    }
+                }
+            }
+        }
+        #expect(winnerCount.value == 1)
     }
 
     // MARK: - GameSocketConnectDelegate (production seam, driven directly)
@@ -120,8 +165,13 @@ struct WebSocketHandshakeGateTests {
 
         // Deliberately reversed: complete fires, and only *afterward* does this
         // test simulate what would have been a (never-actually-arriving in this
-        // scenario) open callback -- proving a late/absent open cannot retroactively
-        // rescue an already-resolved failure.
+        // scenario) open callback -- proving a late open cannot retroactively
+        // rescue an already-claimed failure. `recordFailed()` wins this outcome
+        // claim synchronously the moment `didCompleteWithError` runs, so the later
+        // `didOpenWithProtocol` call never even spawns a competing resolver `Task`
+        // (see ``WebSocketHandshakeGate``'s own documentation) -- this assertion is
+        // therefore fully deterministic, not a race that merely tends to resolve
+        // this way.
         delegate.urlSession(session, task: task, didCompleteWithError: nil)
         delegate.urlSession(session, webSocketTask: task, didOpenWithProtocol: nil)
 
@@ -190,5 +240,55 @@ struct WebSocketHandshakeGateTests {
             }
             try await group.waitForAll()
         }
+    }
+
+    @Test("""
+    A second awaitConnected() call arriving while a first is still suspended \
+    (unresolved) is defensively rejected with WebSocketConnectResolverMisuseError, \
+    never silently overwriting/orphaning the first waiter's continuation -- the \
+    first waiter still resolves normally once resolveOpened()/resolveFailed(_:) is \
+    eventually called
+    """)
+    func secondConcurrentAwaitBeforeResolutionIsDefensivelyRejected() async throws {
+        let resolver = WebSocketConnectResolver()
+        let firstWaiter = Task { try await resolver.awaitConnected() }
+
+        // This resolver is a fresh, single-attempt-per-connection production
+        // actor with no gate/waiter-count hook exposed for tests (deliberately --
+        // this defensive branch is unreachable via its own single real production
+        // call site in `URLSessionGameSocketFactory.connect(to:)`, so no
+        // permanent test-only synchronization surface was added to it). A short
+        // real sleep gives the first call's actor hop time to reach its
+        // suspension point inside `withCheckedThrowingContinuation` before the
+        // second call below is issued.
+        try await Task.sleep(for: .milliseconds(50))
+
+        await #expect(throws: WebSocketConnectResolverMisuseError.self) {
+            try await resolver.awaitConnected()
+        }
+
+        // The first waiter was never orphaned: resolving now still completes it.
+        await resolver.resolveOpened()
+        try await firstWaiter.value
+    }
+}
+
+/// A minimal thread-safe counter, used only to tally winners across concurrently
+/// racing `Task`s in
+/// ``WebSocketHandshakeGateTests/concurrentOpenAndFailedClaimsYieldExactlyOneWinner()``.
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func increment() {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+    }
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
     }
 }
