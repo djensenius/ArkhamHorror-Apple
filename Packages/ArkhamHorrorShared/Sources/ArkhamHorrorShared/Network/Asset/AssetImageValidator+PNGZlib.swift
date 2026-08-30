@@ -27,6 +27,15 @@ extension AssetImageValidator {
     static func parsePNGColorInfo(_ data: Data) throws -> PNGColorInfo {
         guard data.count >= 29 else { throw AssetError.malformedImageData }
         let base = data.startIndex
+        // Per the PNG spec, `IHDR`'s compression method (byte 26) and
+        // filter method (byte 27) are each defined to have exactly one
+        // valid value (0: deflate/inflate; 0: adaptive filtering per
+        // scanline). Any other value means the file is not a spec-valid
+        // PNG, even if every other field looks plausible -- reject it
+        // here rather than letting a structurally-invalid IHDR reach
+        // ImageIO decode.
+        guard data[base + 26] == 0 else { throw AssetError.malformedImageData }
+        guard data[base + 27] == 0 else { throw AssetError.malformedImageData }
         return PNGColorInfo(
             bitDepth: data[base + 24],
             colorType: data[base + 25],
@@ -43,6 +52,24 @@ extension AssetImageValidator {
         case 3: return 1 // indexed
         case 4: return 2 // grayscale + alpha
         case 6: return 4 // truecolor + alpha
+        default: throw AssetError.malformedImageData
+        }
+    }
+
+    /// The PNG specification restricts which `bitDepth` values are valid
+    /// for each `colorType`, beyond the five bit depths (1/2/4/8/16) that
+    /// are valid for *some* color type: indexed-color (3) is capped at 8
+    /// bits (a palette index can't need 16 bits), while truecolor (2),
+    /// grayscale+alpha (4), and truecolor+alpha (6) all require at least
+    /// one full byte per channel (8 or 16) since sub-byte packing is only
+    /// defined for single-channel images. Only grayscale (0) permits the
+    /// full 1/2/4/8/16 range. Accepting an out-of-range combination here
+    /// would let a structurally-invalid IHDR reach ImageIO decode.
+    private static func pngAllowedBitDepths(for colorType: UInt8) throws -> Set<UInt8> {
+        switch colorType {
+        case 0: return [1, 2, 4, 8, 16] // grayscale
+        case 2, 4, 6: return [8, 16] // truecolor, grayscale+alpha, truecolor+alpha
+        case 3: return [1, 2, 4, 8] // indexed
         default: throw AssetError.malformedImageData
         }
     }
@@ -73,7 +100,8 @@ extension AssetImageValidator {
             throw AssetError.malformedImageData
         }
         let channels = try pngChannelCount(for: colorInfo.colorType)
-        guard [1, 2, 4, 8, 16].contains(colorInfo.bitDepth) else {
+        let allowedBitDepths = try pngAllowedBitDepths(for: colorInfo.colorType)
+        guard allowedBitDepths.contains(colorInfo.bitDepth) else {
             throw AssetError.malformedImageData
         }
         let bitsPerPixel = channels * Int(colorInfo.bitDepth)
