@@ -9,7 +9,14 @@ import Testing
 /// `URLSessionWebSocketTask`) a `CancellationError` rethrow.
 enum FakeGameSocketEventOutcome: Sendable {
     case event(GameSocketEvent)
-    case failure(any Error)
+    /// Constrained to `any Error & Sendable` (not plain `any Error`): this enum
+    /// itself is `Sendable`, and an unconstrained `any Error` associated value would
+    /// let a non-`Sendable` error type compile in here while silently violating that
+    /// conformance -- every error actually scripted through this fake (e.g.
+    /// `GameSocketTransportError`, `CancellationError`, `URLError`) is already
+    /// `Sendable`, so this only tightens what the compiler can verify, without
+    /// narrowing legitimate test usage.
+    case failure(any Error & Sendable)
 }
 
 /// A deterministic, gate-driven ``GameSocketConnection`` fake.

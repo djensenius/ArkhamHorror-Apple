@@ -32,16 +32,25 @@ struct LiveGameEndpointTests {
         #expect(url.scheme == "ws")
     }
 
-    @Test("The token query item is appended alongside (not replacing) any existing query items")
-    func tokenAppendedAlongsideExistingQueryItems() throws {
+    @Test("""
+    The token is the only query item on the resulting URL, matching the REST \
+    endpoint's own query-free construction
+    """)
+    func tokenIsTheOnlyQueryItem() throws {
         let gameID = GameID(UUID())
         let url = try LiveGameEndpoint.webSocketURL(
             for: gameID, on: .hosted, token: "abc123", pin: .current
         )
         let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
-        // Exactly the REST path plus the appended token -- no other query items are
-        // introduced by this rewrite.
+        // `ServerProfile` normalization always strips any query component from a
+        // profile's own base URL (see `ServerProfile+Normalization.swift`), so no
+        // `ServerProfile` this client can construct ever carries a pre-existing
+        // query item into `gameURL(_:suffix:on:pin:)` for this appended token to
+        // sit "alongside" -- this test instead proves the appended token is the
+        // *only* query item ever produced by this rewrite, exactly as many query
+        // items as the underlying REST URL itself has (none) plus the one token.
         #expect(components.queryItems?.count == 1)
+        #expect(components.queryItems?.first?.name == "token")
     }
 
     @Test("Two different games on the same profile/token produce distinct URLs")
