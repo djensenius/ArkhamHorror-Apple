@@ -32,7 +32,8 @@ extension AssetCacheService {
         let snapshot = await snapshotAuthority(for: cacheKey)
         guard
             let onDisk = try await diskCache.get(cacheKey),
-            await unchanged(since: snapshot, for: cacheKey)
+            await unchanged(since: snapshot, for: cacheKey),
+            !writeGenerationIsRetiring(onDisk.writeGeneration, for: cacheKey)
         else {
             throw AssetError.staleConditionalResponse
         }
@@ -93,7 +94,10 @@ extension AssetCacheService {
         // never once involves the bytes this now-stale snapshot was
         // taken alongside. Reuses `snapshot` (never a token) -- see this
         // function's own doc comment immediately above.
-        guard await unchanged(since: snapshot, for: cacheKey) else {
+        guard
+            await unchanged(since: snapshot, for: cacheKey),
+            !writeGenerationIsRetiring(validated.writeGeneration, for: cacheKey)
+        else {
             return try await asset(for: key)
         }
         await testOnlyPauseBeforeRevalidationRequest?()

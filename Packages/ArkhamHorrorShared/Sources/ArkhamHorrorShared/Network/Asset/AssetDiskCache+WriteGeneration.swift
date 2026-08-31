@@ -74,7 +74,7 @@ import Foundation
 /// removal: the replayed token's own ticket can never again be `>=` the
 /// applied ticket that removal itself just committed.
 extension AssetDiskCache {
-    private static let ticketDigitWidth = 20
+    static let ticketDigitWidth = 20
 
     /// The fixed leaf name of `key`'s durable issuance-ticket counter
     /// file — the source of every fresh ticket ever reserved for `key`,
@@ -249,23 +249,59 @@ extension AssetDiskCache {
         try readTicketLocked(name: appliedTicketFilename(for: key))
     }
 
-    /// The lock-acquiring public counterpart to
-    /// ``currentAppliedTicketLocked(for:)``, mirroring
-    /// ``AssetDiskCache/currentClearEpoch()``'s own pattern exactly: a
-    /// plain, non-reserving durable read safe to call from any
-    /// already-suspending context, never itself part of an atomic
-    /// join-or-create decision. Used by
+    /// A single, atomic, cross-instance/cross-process authority snapshot
+    /// for `key` — the durable clear epoch and this key's own highest
+    /// durably *issued* ticket, read together under one exclusive-lock
+    /// acquisition. Used by
     /// ``AssetCacheService/memoryEntryStillCurrent(_:storedGeneration:for:)``
-    /// to detect a sibling service/process publishing a *newer* per-key
-    /// generation for this exact key with no accompanying clear-epoch
-    /// bump at all — a same-epoch, per-key supersession the durable
-    /// clear epoch alone can never observe, since it only ever changes
-    /// on a whole-cache clear.
-    func currentAppliedTicket(for key: AssetCacheKey) async throws -> Int {
+    /// to decide whether an already-cached memory entry is still safe to
+    /// serve without re-validating.
+    ///
+    /// **Deliberately reads the highest *issued* ticket, never merely the
+    /// highest *applied* one, and the two fields are read together under
+    /// one lock hold rather than as two separate, independently-locked
+    /// calls.** An earlier revision instead read
+    /// ``currentDurableClearEpoch()`` and a separate
+    /// ``currentAppliedTicket(for:)`` call one after the other, each its
+    /// own independent lock acquisition/release — a torn read: a sibling
+    /// instance/process's whole-cache clear landing in the window between
+    /// those two separately-locked reads could leave this call observing
+    /// a pre-clear epoch paired with a post-clear (or vice versa)
+    /// applied ticket, neither half actually describing the same durable
+    /// moment in time. Comparing only against the highest *applied*
+    /// ticket has a second, independent defect: a sibling service/process
+    /// can *issue* (durably reserve, via ``issueTicketLocked(for:)``) a
+    /// fresh ticket for this exact key the moment it begins a
+    /// fetch/revalidation, strictly *before* that operation's own
+    /// eventual mutation actually lands and advances the *applied*
+    /// counter -- during that whole window, an applied-ticket-only
+    /// comparison would keep reporting an older memory entry "still
+    /// current" even though a strictly newer, already-in-flight operation
+    /// for this exact key has already been issued and may complete with
+    /// entirely different content (or a definitive removal) at any
+    /// moment. Comparing against the highest *issued* ticket instead, with
+    /// exact equality (not `>=`), rejects a memory hit the instant *any*
+    /// newer operation for this key has been issued anywhere, regardless
+    /// of whether that operation has itself completed yet -- the
+    /// strictest safe comparison, matching
+    /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``'s own
+    /// per-key fencing semantics exactly.
+    func currentKeyAuthority(for key: AssetCacheKey) async throws -> KeyAuthoritySnapshot {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
-        return try currentAppliedTicketLocked(for: key)
+        let epoch = try secureDirectory.readPersistedClearEpoch()
+        let issuedTicket = try currentIssuedTicketLocked(for: key)
+        return KeyAuthoritySnapshot(clearEpoch: epoch, issuedTicket: issuedTicket)
+    }
+
+    /// The named result of ``currentKeyAuthority(for:)`` — see that
+    /// method's own doc comment for why both fields must always be read
+    /// together, under one lock hold, rather than as two independently
+    /// re-readable values.
+    struct KeyAuthoritySnapshot: Sendable, Equatable {
+        let clearEpoch: Int
+        let issuedTicket: Int
     }
 
     private func readTicketLocked(name: String) throws -> Int {
@@ -312,89 +348,5 @@ extension AssetDiskCache {
         let next = current + 1
         try persistTicketLocked(next, name: writeGenerationFilename(for: key))
         return next
-    }
-
-    /// Reserves a brand-new ticket for `key` (via ``issueTicketLocked(for:)``)
-    /// and immediately durably commits it as `key`'s new applied ticket.
-    /// Used only for an *unconditional* mutation (`token: nil` — direct
-    /// actor access, or ``AssetDiskCache/removeAll()``'s own per-key
-    /// counter handling is separate) that has no already-issued ticket of
-    /// its own to commit: without reserving a fresh one here, an
-    /// unconditional removal would leave `key`'s applied ticket exactly
-    /// where it already was, letting a *later* replay of a token issued
-    /// *before* this removal still satisfy `>=` against that unchanged
-    /// value. A freshly reserved ticket is, by construction, always
-    /// strictly greater than whatever was previously applied, so this
-    /// unconditionally advances `key`'s applied ticket past every ticket
-    /// ever issued up to and including this exact call.
-    ///
-    /// See ``commitAppliedTicketLocked(_:for:)`` for the token-gated
-    /// counterpart used instead whenever a real, already-issued ticket
-    /// exists to commit — the two must never be conflated (see that
-    /// method's own doc comment for why).
-    @discardableResult
-    func reserveAndCommitMutationTicketLocked(for key: AssetCacheKey) throws -> Int {
-        let ticket = try issueTicketLocked(for: key)
-        try persistTicketLocked(ticket, name: appliedTicketFilename(for: key))
-        return ticket
-    }
-
-    /// Durably commits `ticket` — the *exact* value a token-gated
-    /// operation's own ``AssetCacheService/CacheToken/diskWriteGeneration``
-    /// already carries from its own issuance — as `key`'s new applied
-    /// ticket, without reserving any further, different value.
-    ///
-    /// **Must never instead call ``reserveAndCommitMutationTicketLocked(for:)``
-    /// for a token-gated commit.** That method mints a *brand-new* ticket
-    /// distinct from whatever the caller's own token carries — which
-    /// would durably commit a value the token itself never actually
-    /// carries, so a later retraction of that exact same token/mutation
-    /// (``AssetDiskCache/removeIfApplied(_:token:)``, whose own contract
-    /// is deliberately an *exact* match against `token`'s own issued
-    /// ticket — never `AssetDiskCache/acceptToken(_:currentEpoch:currentApplied:)``'s
-    /// `>=`) could never again find `currentApplied == token`'s own
-    /// ticket, since the actually-applied value would already have moved
-    /// one step past it. Committing the token's own already-checked
-    /// ticket verbatim instead keeps the applied counter's value in exact
-    /// lockstep with whichever token's mutation most recently landed —
-    /// still always monotonically non-decreasing, since
-    /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentApplied:)`` only
-    /// ever accepts a token whose own ticket is already `>=` the value
-    /// this then commits.
-    func commitAppliedTicketLocked(_ ticket: Int, for key: AssetCacheKey) throws {
-        try persistTicketLocked(ticket, name: appliedTicketFilename(for: key))
-    }
-
-    /// Commits the correct applied ticket for a just-completed mutation on
-    /// `key`, dispatching to whichever of ``commitAppliedTicketLocked(_:for:)``/
-    /// ``reserveAndCommitMutationTicketLocked(for:)`` applies: a token-gated
-    /// call already carries its own issued ticket (already accepted by
-    /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentApplied:)`` before
-    /// this runs) and must commit *exactly* that value; an unconditional
-    /// (`token: nil`) call has no ticket of its own and must instead
-    /// reserve a brand-new one. Every actually-committing mutation
-    /// (``AssetDiskCache/set(_:payload:metadata:token:)``,
-    /// ``AssetDiskCache/touch(_:metadata:token:)``,
-    /// ``AssetDiskCache/remove(_:token:)``) calls this immediately before
-    /// its own durable write/removal takes effect.
-    @discardableResult
-    func commitMutationTicketLocked(
-        for key: AssetCacheKey,
-        token: AssetCacheService.CacheToken?
-    ) throws -> Int {
-        if let ticket = token?.diskWriteGeneration {
-            try commitAppliedTicketLocked(ticket, for: key)
-            return ticket
-        }
-        return try reserveAndCommitMutationTicketLocked(for: key)
-    }
-
-    private func persistTicketLocked(_ value: Int, name: String) throws {
-        precondition(value >= 0, "A ticket must never be negative")
-        let raw = String(value)
-        let padded = String(repeating: "0", count: Self.ticketDigitWidth - raw.count) + raw
-        let tempName = name + ".tmp"
-        try secureDirectory.writeTempAndFsync(tempName: tempName, data: Data(padded.utf8))
-        try secureDirectory.renameAndFsyncDirectory(from: tempName, to: name)
     }
 }

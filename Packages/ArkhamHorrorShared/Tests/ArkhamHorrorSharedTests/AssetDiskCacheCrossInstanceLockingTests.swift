@@ -18,11 +18,14 @@ import Testing
 @Suite("AssetDiskCache cross-instance read/write locking")
 struct AssetDiskCacheCrossInstanceLockingTests {
     private func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
-        let root = URL(fileURLWithPath: #filePath)
+        let rootParent = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("DiskCacheLockingScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: rootParent,
+            withIntermediateDirectories: true
+        )
+        let root = rootParent.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try await body(root)
     }

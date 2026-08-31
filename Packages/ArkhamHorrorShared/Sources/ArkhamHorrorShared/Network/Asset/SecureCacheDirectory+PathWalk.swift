@@ -43,7 +43,46 @@ extension SecureCacheDirectory {
     /// mount-point/ownership substitution attacks against every
     /// intermediate component, not merely the leaf
     /// ``SecureCacheDirectory`` itself already fully verifies.
-    static func openOrCreateVerifiedDirectory(at directory: URL) throws -> Int32 {
+    /// The result of ``openOrCreateVerifiedDirectory(at:)``: the final
+    /// component's own verified descriptor, plus whether *that exact leaf
+    /// component* was newly created by *this* call's own `mkdirat` (`true`)
+    /// or already existed beforehand (`false`, including every case where
+    /// `mkdirat` raced against a concurrent creator and lost, observing
+    /// `EEXIST`).
+    ///
+    /// This distinction is load-bearing, not merely diagnostic:
+    /// `mkdirat`'s return value is the only race-proof, un-spoofable
+    /// evidence available anywhere in this cache that a given directory
+    /// is genuinely, provably fresh — no combination of directory-listing
+    /// or survivor-name checks performed *after* the fact can ever
+    /// distinguish "created by me, just now" from "already existed, and
+    /// every other file inside it just happens to look tolerable", since
+    /// both states present identically to any check that only inspects
+    /// what the directory currently *contains*. See
+    /// ``SecureCacheDirectory/rootDirectoryWasFreshlyCreated`` (which
+    /// stores this exact value) and
+    /// ``SecureCacheDirectory/ensureRootAuthorityInitializedLockedUnwrapped``
+    /// (the one place it is actually consulted) for why.
+    struct DirectoryWalkResult {
+        let descriptor: Int32
+        let leafWasFreshlyCreated: Bool
+    }
+
+    /// Rewrites `components`' first element in place if it is one of the
+    /// well-known Darwin compatibility symlinks (see the call site's own
+    /// doc comment above for why this rewrite is purely advisory and
+    /// never itself relied on for any security property).
+    private static func rewriteWellKnownTopLevelCompatibilitySymlink(
+        in components: inout [String],
+        first: String
+    ) {
+        guard let resolved = resolvedWellKnownTopLevelCompatibilitySymlink(name: first) else {
+            return
+        }
+        components.replaceSubrange(0 ... 0, with: resolved)
+    }
+
+    static func openOrCreateVerifiedDirectory(at directory: URL) throws -> DirectoryWalkResult {
         let standardized = directory.standardizedFileURL
         var components = standardized.pathComponents.filter { $0 != "/" }
         // A `directory` that standardizes to the filesystem root itself
@@ -91,32 +130,21 @@ extension SecureCacheDirectory {
         // resulting component is still opened with `O_NOFOLLOW` and
         // checked for device/ownership by that same unmodified walk.
         if let first = components.first, ["tmp", "var", "etc"].contains(first) {
-            if let resolved = resolvedWellKnownTopLevelCompatibilitySymlink(name: first) {
-                components.replaceSubrange(0 ... 0, with: resolved)
-            }
+            rewriteWellKnownTopLevelCompatibilitySymlink(in: &components, first: first)
         }
-        var currentFD = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard currentFD >= 0 else {
-            throw AssetError.cachePersistenceFailed(
-                "Could not open filesystem root (errno \(errno))"
-            )
-        }
-        var rootInfo = stat()
-        guard fstat(currentFD, &rootInfo) == 0 else {
-            close(currentFD)
-            throw AssetError.cachePersistenceFailed("fstat failed for the filesystem root")
-        }
-        do {
-            try requireTrustedAncestor(info: rootInfo, name: "/", trustedOwnerUID: getuid())
-        } catch {
-            close(currentFD)
-            throw error
-        }
-        let devicePolicy = DeviceTransitionPolicy(rootDevice: rootInfo.st_dev)
+        let root = try openAndVerifyFilesystemRoot()
+        var currentFD = root.descriptor
+        let devicePolicy = DeviceTransitionPolicy(rootDevice: root.info.st_dev)
         let trustedOwnerUID = getuid()
+        // Only the *final* component's own freshly-created-or-not status
+        // is ever load-bearing (see ``DirectoryWalkResult``'s own doc
+        // comment) — every intermediate ancestor's own creation status is
+        // irrelevant, and re-assigning this on every iteration (rather
+        // than only the last) is simplest and costs nothing extra.
+        var leafWasFreshlyCreated = false
         for component in components {
             do {
-                let nextFD = try openVerifiedComponent(
+                let result = try openVerifiedComponent(
                     parentFD: currentFD,
                     name: component,
                     createIfMissing: true,
@@ -124,7 +152,8 @@ extension SecureCacheDirectory {
                     trustedOwnerUID: trustedOwnerUID
                 )
                 close(currentFD)
-                currentFD = nextFD
+                currentFD = result.descriptor
+                leafWasFreshlyCreated = result.wasFreshlyCreated
             } catch {
                 // `openVerifiedComponent` failing mid-walk must not leak
                 // the parent descriptor this iteration was about to
@@ -138,114 +167,36 @@ extension SecureCacheDirectory {
                 throw error
             }
         }
-        return currentFD
+        return DirectoryWalkResult(
+            descriptor: currentFD,
+            leafWasFreshlyCreated: leafWasFreshlyCreated
+        )
     }
 
-    /// The owner/permission policy shared by every component of the walk
-    /// (including the filesystem root itself): a world-writable directory
-    /// is rejected unconditionally, and ownership must be either `root`
-    /// (tolerating a pre-existing, OS-managed ancestor this cache does not
-    /// itself own) or `trustedOwnerUID` (this process's own real user ID)
-    /// -- never a third owner, which would mean some other, untrusted
-    /// principal controls a directory somewhere between the filesystem
-    /// root and this cache's own data.
-    static func requireTrustedAncestor(
-        info: stat,
-        name: String,
-        trustedOwnerUID: uid_t
-    ) throws {
-        guard info.st_uid == 0 || info.st_uid == trustedOwnerUID else {
+    /// Opens and verifies the filesystem root (`/`) itself: the fixed
+    /// starting point every strict per-component walk in
+    /// ``openOrCreateVerifiedDirectory(at:)`` climbs down from. Split out
+    /// purely to keep that method's own body under this package's
+    /// function-length limit.
+    private static func openAndVerifyFilesystemRoot() throws -> (descriptor: Int32, info: stat) {
+        let rootFD = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard rootFD >= 0 else {
             throw AssetError.cachePersistenceFailed(
-                "Path component '\(name)' has an untrusted owner"
-            )
-        }
-        guard info.st_mode & S_IWOTH == 0 else {
-            throw AssetError.cachePersistenceFailed(
-                "Path component '\(name)' is world-writable"
-            )
-        }
-    }
-
-    /// Opens `name` directly under `parentFD` with `O_NOFOLLOW` (never
-    /// following a symlink planted at this exact path component,
-    /// regardless of which component in the overall walk this is),
-    /// creating it via `mkdirat` first if `createIfMissing` is `true` and
-    /// it does not yet exist, and verifying the opened descriptor is
-    /// actually a directory -- on the expected device (either a fixed
-    /// `expectedDevice`, for a single standalone call, or `devicePolicy`'s
-    /// own tolerant-of-one-transition policy, for a call that is part of
-    /// ``openOrCreateVerifiedDirectory(at:)``'s own walk), owned by
-    /// either `root` or `trustedOwnerUID`, and not world-writable --
-    /// before returning it. A symlink, a regular file, any other
-    /// non-directory entry, or a directory that fails any of those
-    /// checks occupying `name` fails closed here rather than being
-    /// silently traversed, trusted, or replaced.
-    ///
-    /// `expectedDevice` and `devicePolicy` are mutually exclusive in
-    /// practice (never both non-`nil` from any real call site): the
-    /// former is used only by tests exercising this function in
-    /// isolation against a single, fixed expected device; the latter is
-    /// used only by the walk itself, which must tolerate the single
-    /// legitimate device transition a real device can produce (see
-    /// ``DeviceTransitionPolicy``'s own doc comment).
-    static func openVerifiedComponent(
-        parentFD: Int32,
-        name: String,
-        createIfMissing: Bool,
-        expectedDevice: dev_t? = nil,
-        devicePolicy: DeviceTransitionPolicy? = nil,
-        trustedOwnerUID: uid_t? = nil
-    ) throws -> Int32 {
-        var descriptor = openat(parentFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        if descriptor < 0, errno == ENOENT, createIfMissing {
-            guard mkdirat(parentFD, name, 0o700) == 0 || errno == EEXIST else {
-                throw AssetError.cachePersistenceFailed(
-                    "Could not create directory component '\(name)' (errno \(errno))"
-                )
-            }
-            descriptor = openat(parentFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        }
-        guard descriptor >= 0 else {
-            throw AssetError.cachePersistenceFailed(
-                "Could not open directory component '\(name)' (errno \(errno))"
+                "Could not open filesystem root (errno \(errno))"
             )
         }
         var info = stat()
-        guard fstat(descriptor, &info) == 0 else {
-            close(descriptor)
-            throw AssetError.cachePersistenceFailed("fstat failed for '\(name)'")
+        guard fstat(rootFD, &info) == 0 else {
+            close(rootFD)
+            throw AssetError.cachePersistenceFailed("fstat failed for the filesystem root")
         }
-        guard (info.st_mode & S_IFMT) == S_IFDIR else {
-            close(descriptor)
-            throw AssetError.cachePersistenceFailed(
-                "Directory component '\(name)' is not a verified directory"
-            )
+        do {
+            try requireTrustedAncestor(info: info, name: "/", trustedOwnerUID: getuid())
+        } catch {
+            close(rootFD)
+            throw error
         }
-        if let expectedDevice, info.st_dev != expectedDevice {
-            close(descriptor)
-            throw AssetError.cachePersistenceFailed(
-                "Directory component '\(name)' is not on the expected device"
-            )
-        }
-        if let devicePolicy, !devicePolicy.accepts(info.st_dev) {
-            close(descriptor)
-            throw AssetError.cachePersistenceFailed(
-                "Directory component '\(name)' is a second, unexpected device transition"
-            )
-        }
-        if let trustedOwnerUID {
-            do {
-                try requireTrustedAncestor(
-                    info: info,
-                    name: name,
-                    trustedOwnerUID: trustedOwnerUID
-                )
-            } catch {
-                close(descriptor)
-                throw error
-            }
-        }
-        return descriptor
+        return (rootFD, info)
     }
 
     /// If `/name` (`name` one of `"tmp"`, `"var"`, `"etc"`) is currently a

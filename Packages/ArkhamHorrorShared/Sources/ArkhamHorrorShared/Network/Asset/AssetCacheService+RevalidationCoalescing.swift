@@ -8,18 +8,6 @@ import Foundation
 /// each file within this package's file/type-length conventions; still
 /// part of the single `AssetCacheService` actor's isolated state.
 extension AssetCacheService {
-    /// Test-only observability accessor: mirrors
-    /// ``inFlightWaiterCount(for:)`` for coalesced revalidations --
-    /// summed across every currently in-flight revalidation slot for
-    /// `cacheKey` (there is normally at most one at a time in the
-    /// scenarios that need this). Lets tests synchronize on real
-    /// actor-isolated state instead of a `Task.sleep` guess.
-    func inFlightRevalidationWaiterCount(forCacheKey cacheKey: AssetCacheKey) -> Int {
-        inFlightRevalidation
-            .filter { $0.key.cacheKey == cacheKey }
-            .reduce(0) { $0 + $1.value.waiters.count }
-    }
-
     /// `existing`'s own historical publication stamp
     /// (``AssetMemoryCache/CachedAsset/durableClearEpoch``/
     /// ``AssetMemoryCache/CachedAsset/writeGeneration``) is the source of
@@ -206,6 +194,10 @@ extension AssetCacheService {
         if fetch.waiters.isEmpty {
             clearInFlightRevalidation(for: slot)
             retireIfCurrent(fetch.token, for: slot.cacheKey)
+            // See ``AssetCacheService+Coalescing.swift``'s
+            // ``cancelWaiter(_:fetchID:waiterID:)`` for why this must be
+            // recorded synchronously, before either `await` below.
+            markGenerationRetiring(fetch.token, for: slot.cacheKey)
             fetch.task.cancel()
             await memoryCache.removeIfApplied(slot.cacheKey, token: fetch.token)
             await diskCache.removeIfApplied(slot.cacheKey, token: fetch.token)
@@ -297,8 +289,8 @@ extension AssetCacheService {
             guard await isAuthoritative(token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
-            var refreshed = request.existing
-            refreshed.metadata.accessSequence = AssetAccessSequence(0)
+            var updatedMetadata = request.existing.metadata
+            updatedMetadata.accessSequence = AssetAccessSequence(0)
             // `writeGenerationAtPublication`/`writeGeneration` *are*
             // advanced here, to `token`'s own freshly issued ticket —
             // this 304 is itself a genuine, durable re-confirmation that
@@ -330,8 +322,22 @@ extension AssetCacheService {
             guard let freshTicket = token.diskWriteGeneration else {
                 throw AssetError.staleOperation
             }
-            refreshed.metadata.writeGenerationAtPublication = freshTicket
-            refreshed.writeGeneration = freshTicket
+            updatedMetadata.writeGenerationAtPublication = freshTicket
+            // Built via ``CachedAsset/withUpdatedMetadata(_:writeGeneration:)``,
+            // never by mutating a copy of `request.existing` in place: a
+            // plain field mutation would leave `accountedByteCount` frozen
+            // at whatever `updatedMetadata`'s *previous* serialized size
+            // was, silently under- or over-billing this entry against
+            // ``AssetMemoryCache``'s quota the instant
+            // `writeGenerationAtPublication`'s own digit count changes
+            // (e.g. a ticket advancing from `9` to `10`) — see that
+            // method's own doc comment for the exact "quota accounting
+            // cost stale after a metadata-only mutation" defect this
+            // closes.
+            let refreshed = request.existing.withUpdatedMetadata(
+                updatedMetadata,
+                writeGeneration: freshTicket
+            )
             // See the identical final ``MutationOutcome`` re-check on the
             // `.success` branch below for why a `.stale` result here must
             // also surface as ``AssetError/staleOperation`` rather than

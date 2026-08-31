@@ -99,6 +99,20 @@ extension AssetDiskCache {
     /// otherwise genuinely empty — the marker's own clearing path can
     /// never even run, since it is gated behind this method succeeding
     /// first.
+    ///
+    /// **This exception is safe only because it is no longer, itself,
+    /// what ever authorizes treating a root as pristine.**
+    /// ``SecureCacheDirectory/ensureRootAuthorityInitializedLockedUnwrapped``
+    /// gates epoch-zero initialization on an independent, race-proof
+    /// freshness proof (this exact process having just won the race to
+    /// create the root directory itself, or a durable witness file
+    /// recording that a *prior* creator did) *before* this closure is
+    /// ever consulted at all — this marker's tolerance here can therefore
+    /// never, by itself, let a genuinely used root (one that was never
+    /// actually freshly created) slip through as pristine merely because
+    /// this is the only survivor it happens to contain; a used root
+    /// lacking that independent freshness proof still fails closed
+    /// regardless of what this closure would have accepted.
     func ensureRootAuthorityInitializedLocked() throws {
         guard !didEnsureRootAuthorityInitialized else { return }
         recoverOrphansIfNeeded(forceRetry: true)

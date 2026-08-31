@@ -126,6 +126,19 @@ actor AssetCacheService {
     /// under it purely due to unrelated keys' churn.
     static let maxTrackedAuthorityKeys = 4096
 
+    /// Defensive ceiling on how many strictly-increasing tickets
+    /// ``AssetCacheService/ticketGapIsEntirelyAbandoned(from:downTo:for:)``
+    /// will walk, one confirmed-retiring lookup at a time, for a single
+    /// cache key's own gap between a stored memory entry's ``CachedAsset/writeGeneration``
+    /// and that key's current durable highest-issued ticket — see that
+    /// method's own doc comment for why this walk exists at all. A gap
+    /// this wide for one key, within one durable clear epoch, would mean
+    /// thousands of distinct issue-then-abandon cycles for that exact
+    /// key alone; failing closed beyond it costs nothing but one
+    /// unconditional live revalidation for a pathological key, never an
+    /// unbounded synchronous walk.
+    static let maxRetiringGapWalk = 256
+
     /// First-seen-insertion-order list of every key currently tracked
     /// across ``keyLatestToken``/``keyClearGeneration`` — oldest first.
     /// Deliberately *not* re-ordered on every subsequent touch of an
@@ -160,6 +173,52 @@ actor AssetCacheService {
     /// fresh, successful publish for that exact key later supersedes
     /// whatever the tombstone was protecting against.
     var tombstonedKeys: Set<AssetCacheKey> = []
+
+    /// Per-key set of disk write-generation tickets whose own mutation
+    /// has been *decided* to be retracted (a cancelled coalesced fetch/
+    /// revalidation's last waiter leaving, or a completed one every
+    /// waiter finalized without ever taking delivery of) — see
+    /// ``markGenerationRetiring(_:for:)`` in `AssetCacheService+Epoch.swift`.
+    ///
+    /// **Why this exists at all, alongside ``keyLatestToken``/
+    /// ``retireIfCurrent(_:for:)``.** Retiring a token there only ever
+    /// prevents a *future* mutation under that same token; it says
+    /// nothing about a mutation the doomed operation's own body already
+    /// applied to memory/disk strictly *before* the decision to retract
+    /// was made. That already-applied entry's own durable stamps
+    /// (``AssetCacheMetadata/clearEpochAtPublication``/
+    /// ``writeGenerationAtPublication``) are, by construction,
+    /// completely unaffected by retiring a token or by the fact that a
+    /// retraction has been decided at all — nothing else has been issued
+    /// for this key, so every durable authority check
+    /// (``memoryEntryStillCurrent(_:storedGeneration:for:)``,
+    /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``)
+    /// would otherwise keep reporting that exact entry "still current"
+    /// indefinitely — a window a concurrent ``asset(for:)``/
+    /// ``revalidate(for:)`` call could otherwise read straight through,
+    /// serving a value this actor has already promised its own sole
+    /// caller (the one who just cancelled, or every one of whom already
+    /// walked away without delivery) will never survive. Recording the
+    /// exact retracted ticket here, *synchronously*, at the same moment
+    /// the decision to retract is made — always strictly before the
+    /// first `await` of the actual removal — closes that window: any
+    /// memory hit whose own stamped generation exactly matches an entry
+    /// in this set for its key is unconditionally treated as not current.
+    ///
+    /// **Deliberately never individually cleared once the corresponding
+    /// removal actually completes — see ``markGenerationRetiring(_:for:)``'s
+    /// own doc comment for why eagerly clearing on completion is
+    /// itself unsound** (a concurrent reader that already captured this
+    /// exact entry, strictly before the removal ran, could still be
+    /// suspended somewhere between that capture and its own authority
+    /// check for arbitrarily long afterward). Bounded instead exactly
+    /// like ``keyLatestToken``/``keyClearGeneration``: pruned in the same
+    /// bundle, for the same key, by the same
+    /// `AssetCacheService+AuthorityPruning.swift` mechanism, which
+    /// already refuses to prune any key with an open authority window or
+    /// a live in-flight operation — the same protection that already
+    /// keeps a still-suspended reader's own snapshot safe.
+    var retiringGenerations: [AssetCacheKey: Set<Int>] = [:]
 
     /// Per-``AssetCacheKey`` FIFO mutex backing store for
     /// ``acquireIssuanceDecisionLock(for:)``/``releaseIssuanceDecisionLock(for:)``
@@ -324,33 +383,5 @@ actor AssetCacheService {
             return diskResult
         }
         return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
-    }
-
-    /// Test-only: installs ``testOnlyDiskPersistenceRecordedHook``.
-    /// A plain actor-isolated method (rather than exposing the stored
-    /// property for direct external assignment) so a test's call site
-    /// reads as an ordinary, obviously-`await`-requiring actor call.
-    func installTestOnlyDiskPersistenceRecordedHook(_ hook: @escaping () -> Void) {
-        testOnlyDiskPersistenceRecordedHook = hook
-    }
-
-    /// Test-only: installs ``testOnlyPauseBeforeRevalidationRequest``.
-    func installTestOnlyPauseBeforeRevalidationNetworkStep(_ hook: @escaping () async -> Void) {
-        testOnlyPauseBeforeRevalidationRequest = hook
-    }
-
-    /// Test-only: installs ``testOnlyPauseAfterFetchPublishApplied``.
-    func installTestOnlyPauseAfterFetchPublishApplied(_ hook: @escaping () async -> Void) {
-        testOnlyPauseAfterFetchPublishApplied = hook
-    }
-
-    /// Test-only: installs ``testOnlyBeforeFetchResumesWaiters``.
-    func installTestOnlyBeforeFetchResumesWaiters(_ hook: @escaping () -> Void) {
-        testOnlyBeforeFetchResumesWaiters = hook
-    }
-
-    /// Test-only: installs ``testOnlyBeforeRevalidationResumesWaiters``.
-    func installTestOnlyBeforeRevalidationResumesWaiters(_ hook: @escaping () -> Void) {
-        testOnlyBeforeRevalidationResumesWaiters = hook
     }
 }

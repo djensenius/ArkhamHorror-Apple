@@ -9,11 +9,23 @@ struct AssetImageLoaderTests {
         transport: FakeAssetTransport = FakeAssetTransport(),
         _ body: (AssetImageLoader, FakeAssetTransport) async throws -> Void
     ) async throws {
-        let root = URL(fileURLWithPath: #filePath)
+        let scratchContainer = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("ImageLoaderScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: scratchContainer,
+            withIntermediateDirectories: true
+        )
+        // Only the container above is pre-created; `root` itself is left
+        // for `AssetDiskCache`/`SecureCacheDirectory`'s own `mkdirat` walk
+        // to create fresh, exactly like production's `productionDirectory()`
+        // never pre-creates its own leaf. A test-pre-created (but
+        // otherwise perfectly ordinary) leaf directory is indistinguishable
+        // from an adversarially pre-created one from `mkdirat`'s own
+        // perspective, so pre-creating it here would wrongly fail the
+        // root-freshness proof `ensureRootAuthorityInitializedLockedUnwrapped`
+        // now requires before ever initializing the durable clear epoch.
+        let root = scratchContainer.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let limits = AssetCacheLimits(

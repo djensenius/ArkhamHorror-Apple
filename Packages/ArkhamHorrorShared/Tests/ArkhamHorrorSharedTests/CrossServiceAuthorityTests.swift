@@ -27,17 +27,20 @@ import Testing
 ///    bytes were the current, cache-consistent answer.
 @Suite("AssetCacheService cross-service authority")
 struct CrossServiceAuthorityTests {
-    private func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
-        let root = URL(fileURLWithPath: #filePath)
+    func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
+        let rootParent = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("CrossServiceAuthorityScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: rootParent,
+            withIntermediateDirectories: true
+        )
+        let root = rootParent.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try await body(root)
     }
 
-    private func standardLimits() -> AssetCacheLimits {
+    func standardLimits() -> AssetCacheLimits {
         AssetCacheLimits(
             maxEncodedBytes: 1_000_000,
             maxDimension: 8192,
@@ -47,7 +50,7 @@ struct CrossServiceAuthorityTests {
         )
     }
 
-    private func makeIndependentService(
+    func makeIndependentService(
         directory: URL,
         limits: AssetCacheLimits
     ) throws -> (service: AssetCacheService, transport: FakeAssetTransport) {
@@ -64,17 +67,17 @@ struct CrossServiceAuthorityTests {
         return (service, transport)
     }
 
-    private func cardArtKey(_ rawCardCode: String = "01001") throws -> AssetKey {
+    func cardArtKey(_ rawCardCode: String = "01001") throws -> AssetKey {
         let identifier = try AssetIdentifier.cardCode(rawCardCode)
         return AssetKey(category: .card(.art, identifier))
     }
 
-    private func candidateURLs(for key: AssetKey) -> [URL] {
+    func candidateURLs(for key: AssetKey) -> [URL] {
         AssetLocator.candidates(for: key, digest: FakeDigestLookup())
             .map { $0.url(base: key.source) }
     }
 
-    private func successResult(
+    func successResult(
         body: Data = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4),
         etag: String? = nil
     ) -> AssetHTTPResult {
@@ -226,7 +229,7 @@ struct CrossServiceAuthorityTests {
     /// `AssetCacheServiceTests+WaiterSync.swift`'s identical helper, kept
     /// separate purely because ``CrossServiceAuthorityTests`` is its own
     /// `@Suite` struct, not an `extension AssetCacheServiceTests`.
-    private func waitForRevalidationWaiterCount(
+    func waitForRevalidationWaiterCount(
         _ count: Int,
         cacheKey: AssetCacheKey,
         on service: AssetCacheService,
@@ -309,88 +312,6 @@ struct CrossServiceAuthorityTests {
                 await transportA.callCount(for: urls[0]) == 2,
                 "A's third lookup must be a genuine new network fetch, not a trusted memory hit"
             )
-        }
-    }
-
-    @Test(
-        """
-        A second, concurrent disk-only caller joining an already in-flight conditional \
-        revalidation must reserve no durable disk authority of its own: the first caller's \
-        held request must still be able to publish its own result once released, never wrongly \
-        rejected as stale by a wasted reservation the second caller's own join made
-        """
-    )
-    func joiningDiskOnlyCallerReservesNoDurableAuthority() async throws {
-        try await withScratchDirectory { directory in
-            let limits = standardLimits()
-            let (seedService, seedTransport) = try makeIndependentService(
-                directory: directory,
-                limits: limits
-            )
-            let key = try cardArtKey()
-            let urls = candidateURLs(for: key)
-            let candidates = AssetLocator.candidates(for: key, digest: FakeDigestLookup())
-            let cacheKey = AssetCacheKey(for: key, candidates: candidates)
-
-            // Seeds the shared disk directory with an entry that *does*
-            // carry a validator, so a later disk-only hit can attempt a
-            // genuine conditional revalidation rather than an
-            // unconditional re-fetch.
-            await seedTransport.enqueue(
-                .success(successResult(etag: "\"v1\"")),
-                for: urls[0]
-            )
-            let seeded = try await seedService.asset(for: key)
-            #expect(seeded.metadata.etag == "\"v1\"")
-
-            // A fresh service, sharing no in-memory state with
-            // `seedService` at all, so both concurrent lookups below
-            // start from a genuine disk-only hit.
-            let (service, transport) = try makeIndependentService(
-                directory: directory,
-                limits: limits
-            )
-            await transport.hold(urls[0])
-            await transport.enqueue(.success(.notModified), for: urls[0])
-
-            let firstTask = Task<CachedAsset, Error> {
-                try await service.asset(for: key)
-            }
-            // Waits until the first caller's own conditional network
-            // call has actually started (registering it as the in-flight
-            // revalidation the second caller below must join) before
-            // starting the second.
-            await transport.waitForCallCount(1, for: urls[0])
-
-            let secondTask = Task<CachedAsset, Error> {
-                try await service.asset(for: key)
-            }
-            // Waits until the second caller has genuinely joined the
-            // same in-flight revalidation as a waiter, rather than
-            // assuming a fixed delay is long enough.
-            try await waitForRevalidationWaiterCount(2, cacheKey: cacheKey, on: service)
-
-            // Exactly one network call must ever have been made: a
-            // genuinely joining second caller reserves and issues
-            // nothing of its own, so there is no second request to make.
-            #expect(await transport.callCount(for: urls[0]) == 1)
-
-            await transport.release(urls[0])
-
-            // Neither waiter may observe `AssetError.staleOperation`: a
-            // prior revision's eager reservation, made by the *second*
-            // caller purely on the chance it might need one before ever
-            // knowing it would join, durably bumped the shared per-key
-            // issuance counter past the first caller's own already-issued
-            // ticket -- stranding the first caller's own legitimate,
-            // already in-flight publish/touch the instant it tried to
-            // land, and failing both waiters of what should have been a
-            // single successful, genuinely coalesced operation.
-            let firstResult = try await firstTask.value
-            let secondResult = try await secondTask.value
-            #expect(firstResult.payload == seeded.payload)
-            #expect(secondResult.payload == seeded.payload)
-            #expect(await transport.callCount(for: urls[0]) == 1)
         }
     }
 }

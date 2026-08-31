@@ -306,6 +306,14 @@ extension AssetCacheService {
         if fetch.waiters.isEmpty {
             inFlight[key] = nil
             retireIfCurrent(fetch.token, for: key)
+            // Recorded synchronously, before either `await` below, so a
+            // concurrent memory hit that races this cancellation (this
+            // actor is reentrant across the suspensions immediately
+            // following) can never observe this exact entry as current
+            // in the window before these removals actually complete —
+            // see ``AssetCacheService/retiringGenerations``'s own doc
+            // comment for the full reasoning.
+            markGenerationRetiring(fetch.token, for: key)
             fetch.task.cancel()
             await memoryCache.removeIfApplied(key, token: fetch.token)
             await diskCache.removeIfApplied(key, token: fetch.token)

@@ -115,7 +115,7 @@ struct DeviceTransitionPolicyTests {
                 createIfMissing: true,
                 devicePolicy: policy,
                 trustedOwnerUID: getuid()
-            )
+            ).descriptor
             defer { close(descriptor) }
             #expect(descriptor >= 0)
             #expect(policy.hasTransitioned)
@@ -146,7 +146,7 @@ struct DeviceTransitionPolicyTests {
                     createIfMissing: true,
                     devicePolicy: policy,
                     trustedOwnerUID: getuid()
-                )
+                ).descriptor
                 close(descriptor)
             }
         }

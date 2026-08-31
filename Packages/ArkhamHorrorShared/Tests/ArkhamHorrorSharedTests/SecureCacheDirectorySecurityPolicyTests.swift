@@ -22,6 +22,11 @@ struct SecureCacheDirectorySecurityPolicyTests {
             .deletingLastPathComponent()
             .appendingPathComponent("SecurityPolicyScratch", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        // This suite exercises `openVerifiedComponent(...)` directly
+        // against a raw `open(2)`-obtained parent descriptor -- never
+        // through `SecureCacheDirectory.init`'s own walk -- so, unlike
+        // every other suite's `withScratchDirectory`, this directory
+        // must already exist before `body` runs.
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try body(base)
@@ -101,7 +106,7 @@ struct SecureCacheDirectorySecurityPolicyTests {
                     createIfMissing: true,
                     expectedDevice: dev_t.max,
                     trustedOwnerUID: getuid()
-                )
+                ).descriptor
                 close(descriptor)
             }
         }
@@ -126,7 +131,7 @@ struct SecureCacheDirectorySecurityPolicyTests {
                 createIfMissing: true,
                 expectedDevice: rootInfo.st_dev,
                 trustedOwnerUID: getuid()
-            )
+            ).descriptor
             close(descriptor)
         }
     }

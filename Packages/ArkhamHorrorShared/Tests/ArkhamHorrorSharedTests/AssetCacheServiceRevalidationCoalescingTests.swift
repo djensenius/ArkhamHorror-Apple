@@ -19,42 +19,24 @@ import Testing
 /// queued response is given a long artificial delay, the second-issued
 /// request's a short one), which deterministically reorders *completion*
 /// without touching *start* order or depending on ambient task-scheduling.
+///
+/// Three of these tests construct op B as a fresh, independent fetch that
+/// only starts *after* an explicit `invalidate(_:)` for the same key, not
+/// as a second, differently-validated `revalidate(for:)` call for the
+/// still-cached entry: `beginRevalidationIssuance`'s own gate requires the
+/// caller's historical write generation to match the *durably applied*
+/// ticket for that key, so two independently issued, still-unapplied
+/// revalidations against the same underlying entry can never coexist
+/// within one service instance — the second one always either fails its
+/// own memory-hit check and joins the first's in-flight slot (both
+/// observe the same, still-unpublished disk state), or is rejected
+/// outright by the issuance gate. That is the service's own coalescing
+/// invariant working as intended (see
+/// `revalidationCoalescesConcurrentIdenticalRequests` below), not a gap
+/// for these tests to defeat by forging cache state no real caller could
+/// ever produce. A genuinely independent *sibling service/process* racing
+/// the same key is instead covered by `CrossServiceAuthorityTests.swift`.
 extension AssetCacheServiceTests {
-    /// `AssetCacheMetadata.etag` is deliberately `let` (see its own file):
-    /// this rebuilds a ``CachedAsset`` with every field preserved except a
-    /// substituted `etag`, standing in for "some other path updated the
-    /// cached entry's validator" so a concurrently in-flight revalidation
-    /// (captured under the *old* etag) is provably distinguishable from a
-    /// caller that reads the cache afterward.
-    func withSubstitutedETag(_ asset: CachedAsset, etag: String) -> CachedAsset {
-        let metadata = asset.metadata
-        return CachedAsset(
-            payload: asset.payload,
-            metadata: AssetCacheMetadata(
-                cacheKeyHex: metadata.cacheKeyHex,
-                contentType: metadata.contentType,
-                encodedByteCount: metadata.encodedByteCount,
-                width: metadata.width,
-                height: metadata.height,
-                payloadSHA256Hex: metadata.payloadSHA256Hex,
-                etag: etag,
-                lastModified: metadata.lastModified,
-                resolvedURLString: metadata.resolvedURLString,
-                insertedAt: metadata.insertedAt,
-                accessSequence: metadata.accessSequence,
-                clearEpochAtPublication: metadata.clearEpochAtPublication,
-                writeGenerationAtPublication: metadata.writeGenerationAtPublication
-            ),
-            // "Every field preserved" includes the entry's real published
-            // durable clear epoch/disk write generation, or the
-            // revalidation authority derived from this exact entry's own
-            // historical stamp would fail closed for reasons unrelated
-            // to this test.
-            durableClearEpoch: asset.durableClearEpoch,
-            writeGeneration: asset.writeGeneration
-        )
-    }
-
     @Test(
         "Two concurrent identical revalidate(for:) calls are coalesced onto a single network fetch"
     )
@@ -116,30 +98,42 @@ extension AssetCacheServiceTests {
             let initial = try await service.asset(for: key)
             #expect(initial.metadata.etag == "\"v1\"")
 
-            // The first-issued (etag "v1") request's response is a slow,
-            // stale 304; the second-issued (etag "v2") request's response
-            // is a fast, definitive 404. Enqueue order matches call order
-            // (FIFO per URL), so the slow entry is consumed by whichever
-            // call starts first.
+            // Op A's conditional revalidation (against etag "v1") issues
+            // its ticket and starts its network call first, but is given
+            // a slow, stale 304. While it is still in flight -- its
+            // ticket already captured, its network round trip already
+            // under way, but no response yet examined -- a legitimate,
+            // independent per-key invalidation runs to completion for
+            // this exact key (standing in for whatever other concurrent
+            // event durably established a newer per-key authority in
+            // production: a distinct in-flight write, a definitive 404 on
+            // a sibling fetch, or an explicit administrative
+            // invalidation; see this file's own header comment for why
+            // op B is constructed this way, as a fresh independent fetch,
+            // rather than a forged second `revalidate(for:)` call). Op B
+            // is then a fresh, fully independent fetch attempt for the
+            // now-empty key, which gets a definitive 404.
             await transport.enqueue(
                 .success(.notModified),
                 for: urls[0],
                 delayNanoseconds: 300_000_000
             )
-            await transport.enqueue(.success(.notFound), for: urls[0])
 
             let taskA = Task { try await service.revalidate(for: key) }
-            // Wait until op A's own network call has actually started
-            // (call 2, after the initial fetch's call 1) before mutating
-            // the cache out from under it — this is what makes op B's
-            // subsequent call see a different validator snapshot and
-            // start its own independent operation instead of joining A's.
             await transport.waitForCallCount(2, for: urls[0])
 
-            let bumped = withSubstitutedETag(initial, etag: "\"v2\"")
-            await memoryCache.set(cacheKey, asset: bumped)
+            await service.invalidate(cacheKey)
 
-            let taskB = Task { try await service.revalidate(for: key) }
+            // Unlike `revalidate(for:)` (which conditions against a
+            // single already-resolved URL), a fresh `asset(for:)` fetch
+            // walks the *whole* candidate list, so every candidate must
+            // return a definitive 404 for it to converge on
+            // `candidatesExhausted` rather than an empty-queue error from
+            // the fake transport.
+            for url in urls {
+                await transport.enqueue(.success(.notFound), for: url)
+            }
+            let taskB = Task { try await service.asset(for: key) }
             await #expect(throws: AssetError.candidatesExhausted) {
                 _ = try await taskB.value
             }
@@ -149,7 +143,8 @@ extension AssetCacheServiceTests {
             }
 
             // Op A's stale 304 must not have resurrected anything: the
-            // entry op B's 404 evicted stays evicted in both layers.
+            // entry the invalidation (and op B's confirming 404) evicted
+            // stays evicted in both layers.
             let memoryAfter = await memoryCache.get(cacheKey)
             #expect(memoryAfter == nil)
             let diskAfter = try await diskCache.get(cacheKey)
@@ -178,31 +173,37 @@ extension AssetCacheServiceTests {
                 candidates: AssetLocator.candidates(for: key, digest: FakeDigestLookup())
             )
             await transport.enqueue(.success(successResult(etag: "\"v1\"")), for: urls[0])
-            let initial = try await service.asset(for: key)
+            _ = try await service.asset(for: key)
 
             let oldBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
             let newBody = AssetImageFixtureBuilder.validAVIF(width: 8, height: 8)
-            // Op A (etag "v1", started first) gets a slow but otherwise
-            // perfectly valid fresh response; op B (etag "v2", started
-            // second) gets a fast valid fresh response with different
-            // (distinguishable) bytes.
+            // Op A's conditional revalidation (against etag "v1") issues
+            // its ticket and starts its network call first, but is given
+            // a slow, otherwise perfectly valid fresh response. While it
+            // is still in flight, a legitimate, independent per-key
+            // invalidation runs to completion for this exact key (see
+            // `delayedStale304CannotResurrectAfterADefinitiveNotFound`'s
+            // own comment above for why op B must be constructed this
+            // way rather than as a forged second `revalidate(for:)`
+            // call), and op B is a fresh, fully independent fetch that
+            // gets a fast valid response with different, distinguishable
+            // bytes.
             await transport.enqueue(
                 .success(successResult(body: oldBody, etag: "\"v1-refreshed\"")),
                 for: urls[0],
                 delayNanoseconds: 300_000_000
             )
-            await transport.enqueue(
-                .success(successResult(body: newBody, etag: "\"v2-refreshed\"")),
-                for: urls[0]
-            )
 
             let taskA = Task { try await service.revalidate(for: key) }
             await transport.waitForCallCount(2, for: urls[0])
 
-            let bumped = withSubstitutedETag(initial, etag: "\"v2\"")
-            await memoryCache.set(cacheKey, asset: bumped)
+            await service.invalidate(cacheKey)
 
-            let taskB = Task { try await service.revalidate(for: key) }
+            await transport.enqueue(
+                .success(successResult(body: newBody, etag: "\"v2-refreshed\"")),
+                for: urls[0]
+            )
+            let taskB = Task { try await service.asset(for: key) }
             let resultB = try await taskB.value
             #expect(resultB.payload == newBody)
 
@@ -243,45 +244,53 @@ extension AssetCacheServiceTests {
                 candidates: AssetLocator.candidates(for: key, digest: FakeDigestLookup())
             )
             await transport.enqueue(.success(successResult(etag: "\"v1\"")), for: urls[0])
-            let initial = try await service.asset(for: key)
+            _ = try await service.asset(for: key)
 
             let olderBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
             let newerBody = AssetImageFixtureBuilder.validAVIF(width: 8, height: 8)
-            // Op A (etag "v1", issued first) gets a short delay -- just
-            // long enough that it is still in flight (has dequeued its
-            // response and registered its call, but has not yet finished
-            // validating/checking authority) when op B (etag "v2", issued
-            // second) is started -- but resolves and completes its own
-            // pipeline well *before* op B's much longer delay elapses.
-            // This is the *inverse* of ``oldDelayed200CannotOverwriteANewer200``
-            // above: here the *older*-issued operation is the one that
-            // completes first. Under the old completion-ordered epoch
-            // design, A's completion would have bumped the epoch first
-            // (nothing else had bumped it yet), and B -- having captured
-            // its starting epoch *before* that bump -- would then find its
-            // own, later completion looks stale and be wrongly rejected.
-            // Under the issuance-ordered token design, B's issuance alone
-            // (recorded synchronously at B's start, before any network
-            // round trip) already supersedes A the moment it happens,
-            // regardless of which one's network response returns first.
+            // Op A's conditional revalidation (issued first, against etag
+            // "v1") gets only a short delay, so it is the one whose
+            // network round trip resolves and reaches its own final
+            // authority check *first* -- but by then a legitimate,
+            // independent per-key invalidation has already run to
+            // completion (see
+            // `delayedStale304CannotResurrectAfterADefinitiveNotFound`'s
+            // comment above for why op B must be a fresh, independent
+            // fetch rather than a forged second `revalidate(for:)` call),
+            // and op B -- issued *after* A, while A's short delay is
+            // still pending -- is given a much longer delay, so it is
+            // still genuinely in flight (its own network call already
+            // started, confirmed below) at the exact moment op A's fast
+            // completion is rejected. This is the *inverse* of
+            // ``oldDelayed200CannotOverwriteANewer200`` above: here the
+            // *older*-issued operation is the one whose network response
+            // comes back first, and it must still lose -- not because it
+            // finished late, but because a newer per-key authority was
+            // already established before its own completion was ever
+            // checked, regardless of what op B's own network round trip
+            // has or has not done yet.
             await transport.enqueue(
                 .success(successResult(body: olderBody, etag: "\"v1-refreshed\"")),
                 for: urls[0],
                 delayNanoseconds: 20_000_000
             )
+
+            let taskA = Task { try await service.revalidate(for: key) }
+            await transport.waitForCallCount(2, for: urls[0])
+
+            await service.invalidate(cacheKey)
+
             await transport.enqueue(
                 .success(successResult(body: newerBody, etag: "\"v2-refreshed\"")),
                 for: urls[0],
                 delayNanoseconds: 300_000_000
             )
-
-            let taskA = Task { try await service.revalidate(for: key) }
-            await transport.waitForCallCount(2, for: urls[0])
-
-            let bumped = withSubstitutedETag(initial, etag: "\"v2\"")
-            await memoryCache.set(cacheKey, asset: bumped)
-
-            let taskB = Task { try await service.revalidate(for: key) }
+            let taskB = Task { try await service.asset(for: key) }
+            // Confirms op B's own network call has genuinely started --
+            // it is "still in flight", not merely about to be issued --
+            // before asserting op A's own (much sooner) completion is
+            // rejected.
+            await transport.waitForCallCount(3, for: urls[0])
 
             await #expect(throws: AssetError.staleOperation) {
                 _ = try await taskA.value

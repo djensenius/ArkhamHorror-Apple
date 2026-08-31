@@ -196,9 +196,11 @@ struct SecureCacheDirectoryPathWalkTests {
             )
         defer { try? FileManager.default.removeItem(at: target) }
 
-        let descriptor = try SecureCacheDirectory.openOrCreateVerifiedDirectory(at: target)
+        let result = try SecureCacheDirectory.openOrCreateVerifiedDirectory(at: target)
+        let descriptor = result.descriptor
         defer { close(descriptor) }
         #expect(descriptor >= 0)
+        #expect(result.leafWasFreshlyCreated)
 
         var info = stat()
         #expect(fstat(descriptor, &info) == 0)

@@ -24,11 +24,14 @@ struct ClearEpochCorruptionTests {
     private func withScratchDirectory(
         _ body: (_ base: URL) throws -> Void
     ) throws {
-        let base = URL(fileURLWithPath: #filePath)
+        let baseParent = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("ClearEpochCorruptionScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: baseParent,
+            withIntermediateDirectories: true
+        )
+        let base = baseParent.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try body(base)
     }
@@ -36,6 +39,11 @@ struct ClearEpochCorruptionTests {
     private func withScratchDirectory(
         _ body: (_ base: URL) async throws -> Void
     ) async throws {
+        // Deliberately still pre-creates `base` itself (unlike the sync
+        // overload above): this file's own async-context tests write raw
+        // garbage bytes directly at `base` *before* ever constructing a
+        // `SecureCacheDirectory`/`AssetDiskCache`, which requires the
+        // directory to already exist.
         let base = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("ClearEpochCorruptionScratch", isDirectory: true)

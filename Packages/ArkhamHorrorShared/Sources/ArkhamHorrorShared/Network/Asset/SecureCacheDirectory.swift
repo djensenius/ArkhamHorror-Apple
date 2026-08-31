@@ -44,6 +44,26 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// even though `O_NOFOLLOW` alone would not by itself distinguish it
     /// from a same-device file.
     private let rootDevice: dev_t
+    /// Whether *this exact instance's own* call to
+    /// ``SecureCacheDirectory/openOrCreateVerifiedDirectory(at:)`` won the
+    /// race to create the cache root directory itself (`true`), as opposed
+    /// to the root directory already existing beforehand for any reason,
+    /// including a concurrent creator elsewhere winning that same race
+    /// instead (`false`). This is the only race-proof, un-spoofable
+    /// evidence available anywhere in this cache that a root directory is
+    /// genuinely, provably fresh — no combination of directory-listing or
+    /// survivor-name checks performed *after* the fact can ever
+    /// distinguish "created by me, just now" from "already existed, and
+    /// every file inside it just happens to look tolerable". It is
+    /// consulted exactly once, in
+    /// ``ensureRootAuthorityInitializedLockedUnwrapped(isSurvivingEntryAcceptable:)``,
+    /// as one of the two independent proofs of freshness (the other being
+    /// the durable, cross-process/cross-instance ``rootFreshnessWitnessFileName``
+    /// file this same flag also causes `init` to best-effort persist,
+    /// below) that gate ever treating an absent clear epoch as "pristine,
+    /// safe to initialize at zero" rather than "used root with lost
+    /// authority state, must fail closed".
+    let rootDirectoryWasFreshlyCreated: Bool
     /// This instance's single, in-process lock coordinator — see
     /// ``SecureCacheDirectoryLockCoordinator``'s own doc comment. Opens
     /// its lock file descriptor lazily (on first
@@ -120,7 +140,8 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// this type ever again touching a `FileManager` path-string API for
     /// directory creation.
     init(directory: URL, fileManager _: FileManager) throws {
-        let descriptor = try Self.openOrCreateVerifiedDirectory(at: directory)
+        let walkResult = try Self.openOrCreateVerifiedDirectory(at: directory)
+        let descriptor = walkResult.descriptor
         var rootStat = stat()
         guard fstat(descriptor, &rootStat) == 0, (rootStat.st_mode & S_IFMT) == S_IFDIR else {
             close(descriptor)
@@ -141,6 +162,7 @@ final class SecureCacheDirectory: @unchecked Sendable {
         rootFD = descriptor
         rootOwnerUID = rootStat.st_uid
         rootDevice = rootStat.st_dev
+        rootDirectoryWasFreshlyCreated = walkResult.leafWasFreshlyCreated
         // Deliberately does *not* initialize the durable clear-epoch
         // counter (or its root-init marker) here: doing so race-free
         // requires this directory's cross-process
@@ -152,6 +174,31 @@ final class SecureCacheDirectory: @unchecked Sendable {
         // called by every ``AssetDiskCache`` locked entry point, exactly
         // once per instance, strictly before that entry point's own
         // first read of the durable epoch.
+        //
+        // If this exact call just won the race to create the root
+        // directory, best-effort (unlocked) persist the durable freshness
+        // witness right now, purely as an optimization: it lets *other*
+        // instances/processes that open this same, now-no-longer-empty
+        // root later see durable proof of freshness even after this
+        // instance's own in-memory `rootDirectoryWasFreshlyCreated` flag
+        // is gone. A failure here is never a correctness problem -- this
+        // exact instance's own in-memory flag remains fully sufficient
+        // proof for its own lifetime, and
+        // ``ensureRootAuthorityInitializedLockedUnwrapped(isSurvivingEntryAcceptable:)``
+        // durably retries this same write, under its own cross-process
+        // lock, the very first time this instance performs any locked
+        // operation -- so a transient failure here is fully recovered
+        // moments later without this directory's own fail-closed
+        // freshness contract ever being weakened for any other
+        // instance/process. This write is safe unlocked specifically
+        // because `mkdirat`'s own atomicity already proved this call is
+        // the sole, exclusive first creator: no other opener of this
+        // exact path could concurrently believe itself to also be the
+        // fresh creator, so nothing else could be racing to write this
+        // witness at the same time.
+        if rootDirectoryWasFreshlyCreated {
+            _ = try? installRootFreshnessWitnessBestEffort()
+        }
     }
 
     deinit {

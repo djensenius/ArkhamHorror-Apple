@@ -270,6 +270,7 @@ extension AssetDiskCacheTests {
                         && $0 != SecureCacheDirectory.accessSequenceFileName
                         && $0 != SecureCacheDirectory.clearEpochFileName
                         && $0 != SecureCacheDirectory.rootInitMarkerFileName
+                        && $0 != SecureCacheDirectory.rootFreshnessWitnessFileName
                         && $0 != "\(cacheKey.digestHex).gen"
                         && $0 != "\(cacheKey.digestHex).applied"
                 }

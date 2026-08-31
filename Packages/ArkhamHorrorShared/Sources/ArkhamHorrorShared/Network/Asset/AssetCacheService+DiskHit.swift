@@ -51,12 +51,21 @@ extension AssetCacheService {
         defer { endAuthorityWindow(for: cacheKey) }
         let snapshot = await snapshotAuthority(for: cacheKey)
         let diskHit = try await diskCache.get(cacheKey)
-        guard let cached = diskHit, await unchanged(since: snapshot, for: cacheKey) else {
-            // Either a genuine disk miss, or a disk hit whose read raced
+        guard
+            let cached = diskHit,
+            await unchanged(since: snapshot, for: cacheKey),
+            !writeGenerationIsRetiring(cached.writeGeneration, for: cacheKey)
+        else {
+            // Either a genuine disk miss, a disk hit whose read raced
             // with a more authoritative concurrent operation for this
-            // exact key and so cannot be trusted or promoted -- both fall
-            // through identically to a fresh network fetch below, which
-            // issues (or joins) its own currently-authoritative token.
+            // exact key, or a disk hit whose own stamped generation has
+            // already been decided (by some sibling cancellation/
+            // retraction still in flight) to be retracted -- see
+            // ``writeGenerationIsRetiring(_:for:)``'s doc comment for why
+            // ``unchanged(since:for:)`` alone cannot detect that last
+            // case. All three fall through identically to a fresh
+            // network fetch below, which issues (or joins) its own
+            // currently-authoritative token.
             return nil
         }
         // **Deliberately reserves no durable per-key disk authority, and
@@ -164,7 +173,11 @@ extension AssetCacheService {
             key: key,
             candidates: candidates
         )
-        guard await unchanged(since: snapshot, for: cacheKey), let target else {
+        guard
+            await unchanged(since: snapshot, for: cacheKey),
+            !writeGenerationIsRetiring(revalidated.writeGeneration, for: cacheKey),
+            let target
+        else {
             // Either something more authoritative for this key has
             // already superseded this snapshot, or there is no validator
             // to conditionally revalidate against at all: neither case

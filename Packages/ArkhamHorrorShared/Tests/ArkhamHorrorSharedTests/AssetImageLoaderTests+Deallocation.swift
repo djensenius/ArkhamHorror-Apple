@@ -18,11 +18,18 @@ extension AssetImageLoaderTests {
         """
     )
     func loaderDeallocatesPromptlyWhileItsOwnFetchIsHeldInFlight() async throws {
-        let root = URL(fileURLWithPath: #filePath)
+        let scratchContainer = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("ImageLoaderScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: scratchContainer,
+            withIntermediateDirectories: true
+        )
+        // See `AssetImageLoaderTests.withLoader`'s own comment: only the
+        // container is pre-created, never `root` itself, so this instance's
+        // own `mkdirat` remains the sole (or durably-witnessed) proof of a
+        // genuinely fresh cache root the durable clear-epoch gate requires.
+        let root = scratchContainer.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let limits = AssetCacheLimits(

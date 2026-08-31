@@ -67,4 +67,18 @@ extension AssetCacheService {
             writeGeneration: request.token.diskWriteGeneration
         )
     }
+
+    /// Test-only observability accessor: mirrors
+    /// ``inFlightWaiterCount(for:)`` for coalesced revalidations --
+    /// summed across every currently in-flight revalidation slot for
+    /// `cacheKey` (there is normally at most one at a time in the
+    /// scenarios that need this). Lets tests synchronize on real
+    /// actor-isolated state instead of a `Task.sleep` guess. Kept here
+    /// rather than alongside the rest of coalescing/cancellation purely
+    /// to keep that file within this package's `file_length` limit.
+    func inFlightRevalidationWaiterCount(forCacheKey cacheKey: AssetCacheKey) -> Int {
+        inFlightRevalidation
+            .filter { $0.key.cacheKey == cacheKey }
+            .reduce(0) { $0 + $1.value.waiters.count }
+    }
 }

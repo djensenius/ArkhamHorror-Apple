@@ -105,15 +105,16 @@ extension AssetCacheService {
 
     /// `true` only if `storedEpoch` — a ``CachedAsset/durableClearEpoch``
     /// captured at the moment some prior call published or revalidated
-    /// this exact memory entry — still exactly matches a *freshly re-read*
-    /// ``currentDurableClearEpoch()``, **and** `storedGeneration` — that
-    /// same entry's own ``CachedAsset/writeGeneration`` — is still `>=`
-    /// a freshly re-read ``currentDurableAppliedTicket(for:)`` for `key`.
-    /// `false` if any of `storedEpoch`/`storedGeneration`/either fresh
-    /// durable read is `nil` (an unstamped entry, or a durable read
-    /// failure just now — both fail closed, the same reasoning
-    /// ``isAuthoritative(_:for:)`` and ``unchanged(since:for:)`` already
-    /// apply to their own durable comparisons).
+    /// this exact memory entry — still *exactly* matches a **single,
+    /// atomically-read** ``AssetDiskCache/currentKeyAuthority(for:)``
+    /// snapshot's clear epoch, **and** `storedGeneration` — that same
+    /// entry's own ``CachedAsset/writeGeneration`` — still *exactly*
+    /// matches that same snapshot's highest durably *issued* ticket for
+    /// `key`. `false` if any of `storedEpoch`/`storedGeneration`/the
+    /// fresh durable snapshot itself is `nil` (an unstamped entry, or a
+    /// durable read failure just now — both fail closed, the same
+    /// reasoning ``isAuthoritative(_:for:)`` and ``unchanged(since:for:)``
+    /// already apply to their own durable comparisons).
     ///
     /// **Why the per-key generation check exists at all, alongside the
     /// epoch check.** `durableClearEpoch` only ever changes on a
@@ -131,21 +132,45 @@ extension AssetCacheService {
     /// "sibling clear leaves existing memory servable" defect a prior
     /// review flagged.
     ///
-    /// **Why `>=`, never exact equality, against the current applied
-    /// ticket.** A memory entry's own ``CachedAsset/writeGeneration`` is
-    /// always stamped from the token that produced it, *regardless* of
-    /// whether that token's own disk write actually succeeded —
-    /// ``AssetCacheService+Publish.swift``'s ``publish(_:)`` documents
-    /// this as a deliberate best-effort policy: a memory-only entry
-    /// (disk write failed, non-fatally) legitimately carries a
-    /// `writeGeneration` that can never again match disk's own applied
-    /// ticket for this key (nothing of this generation ever actually
-    /// landed there), yet remains perfectly valid to keep serving from
-    /// memory. Exact equality would permanently and wrongly reject that
-    /// entry the instant this check ever ran; `>=` still correctly
-    /// rejects genuine supersession, since that is the one case where
-    /// disk's applied ticket has advanced *strictly past* what this
-    /// memory entry itself claims.
+    /// **Why both fields must come from one atomically-read snapshot,
+    /// never two separately-locked reads.** A prior revision called
+    /// ``currentDurableClearEpoch()`` and a separate durable applied-
+    /// ticket read one after another, each its own independent disk-cache
+    /// lock acquisition/release — a torn read: a sibling instance/
+    /// process's whole-cache clear landing in the exact window between
+    /// those two calls could leave this check comparing a pre-clear epoch
+    /// against a post-clear ticket (or vice versa), neither half actually
+    /// describing the same durable moment in time.
+    /// ``AssetDiskCache/currentKeyAuthority(for:)`` instead reads both
+    /// under a single lock hold, so they always describe one consistent
+    /// instant.
+    ///
+    /// **Why exact equality against the highest *issued* ticket, never
+    /// `>=` against the highest *applied* one.** A prior revision
+    /// compared `storedGeneration >= currentAppliedTicket` instead — but a
+    /// sibling service/process can durably *issue* (reserve) a fresh
+    /// ticket for this exact key the moment it begins a fetch/
+    /// revalidation, strictly *before* that operation's own eventual
+    /// mutation actually lands and advances the *applied* counter; during
+    /// that whole window, an applied-ticket-only `>=` comparison would
+    /// keep reporting this memory entry "still current" even though a
+    /// strictly newer, already-in-flight operation for this exact key has
+    /// already been issued and may complete with entirely different
+    /// content (or a definitive removal) at any moment. Exact equality
+    /// against the highest *issued* ticket instead rejects this memory
+    /// hit the instant *any* newer operation for this key has been
+    /// issued anywhere, regardless of whether that operation has itself
+    /// completed yet — the strictest safe comparison, and still exactly
+    /// what a genuinely-current, untouched-since memory entry's own
+    /// stamped ticket will always continue to satisfy (nothing else has
+    /// ever been issued for this key since). This remains correct even
+    /// for a memory-only entry whose own disk write failed non-fatally
+    /// (``AssetCacheService+Publish.swift``'s documented best-effort
+    /// policy): ``AssetDiskCache/beginIssuance(for:)`` durably reserves
+    /// this operation's own issuance ticket *before* the write it gates
+    /// is even attempted, so that ticket is already durably the current
+    /// "highest issued" value for this key regardless of whether the
+    /// later write itself actually landed.
     ///
     /// Deliberately *additive* to, not a replacement for, the existing
     /// ``unchanged(since:for:)``/``clearStateUnchanged(since:for:)``
@@ -166,12 +191,83 @@ extension AssetCacheService {
         guard
             let storedEpoch,
             let storedGeneration,
-            let currentEpoch = await currentDurableClearEpoch(),
-            let currentAppliedTicket = await currentDurableAppliedTicket(for: key)
+            let currentAuthority = await currentDurableKeyAuthority(for: key)
         else {
             return false
         }
-        return storedEpoch == currentEpoch && storedGeneration >= currentAppliedTicket
+        guard !writeGenerationIsRetiring(storedGeneration, for: key) else {
+            // `storedGeneration`'s own mutation has already been decided
+            // to be retracted (see ``retiringGenerations``'s doc
+            // comment) — even though its durable stamps still exactly
+            // match current disk reality (nothing else has been issued
+            // for this key since), this exact entry must never be served
+            // again: the sole caller(s) who ever asked for it have
+            // already been told, definitively, that it will not survive.
+            return false
+        }
+        guard storedEpoch == currentAuthority.clearEpoch else { return false }
+        return ticketGapIsEntirelyAbandoned(
+            from: currentAuthority.issuedTicket,
+            downTo: storedGeneration,
+            for: key
+        )
+    }
+
+    /// `true` if `issuedTicket` (``AssetDiskCache/KeyAuthoritySnapshot/issuedTicket``,
+    /// `key`'s current durable highest-issued ticket) is exactly
+    /// `storedGeneration`, **or** every ticket strictly between the two
+    /// has already been durably decided, via ``markGenerationRetiring(_:for:)``,
+    /// to be retracted and therefore can never legitimately apply a
+    /// mutation for `key` at all.
+    ///
+    /// Closes a gap ``memoryEntryStillCurrent(_:storedGeneration:for:)``'s
+    /// prior plain `storedGeneration == currentAuthority.issuedTicket`
+    /// equality check left open: issuing a ticket for `key` — reserved
+    /// the instant a fresh fetch/revalidation begins, strictly *before*
+    /// it is known whether that operation will ever complete — advances
+    /// `currentAuthority.issuedTicket` immediately, even if that exact
+    /// operation is cancelled (by its sole waiter leaving) before it ever
+    /// reaches a `publish`/`touch`/`invalidate` call. A plain equality
+    /// check would then treat *every* still-genuinely-current entry as
+    /// permanently stale the instant any later operation for the same
+    /// key is merely issued and abandoned — forcing every subsequent
+    /// read through a live disk-hit-then-mandatory-online-revalidation
+    /// path for content that never actually changed, even while that
+    /// network round trip may be genuinely unreachable (e.g. cancelled
+    /// mid-flight against a still-held transport in a test, or a
+    /// genuinely offline network).
+    ///
+    /// Walking strictly *downward* from the highest issued ticket keeps
+    /// this fail-closed: the instant any ticket in the gap is *not*
+    /// confirmed-retiring — because it is still genuinely in flight, or
+    /// because it already applied a real mutation — this returns `false`
+    /// exactly as the original equality check would have, since that
+    /// ticket could still (or already does) carry different content for
+    /// `key`. Only a gap of *exclusively* confirmed-dead tickets lets the
+    /// older, still-unretracted entry keep being served.
+    ///
+    /// Bounded at ``AssetCacheService/maxRetiringGapWalk`` purely as a
+    /// defensive ceiling on this one key's own gap (ticket numbers are
+    /// strictly increasing per key — see
+    /// `AssetDiskCache+WriteGeneration.swift` — so this can only ever
+    /// grow from genuinely distinct issue-then-abandon cycles for this
+    /// *same* key, never from unrelated cache activity): a gap wider
+    /// than that ceiling fails closed rather than performing an
+    /// unbounded walk.
+    private func ticketGapIsEntirelyAbandoned(
+        from issuedTicket: Int,
+        downTo storedGeneration: Int,
+        for key: AssetCacheKey
+    ) -> Bool {
+        guard issuedTicket != storedGeneration else { return true }
+        guard issuedTicket > storedGeneration else { return false }
+        guard issuedTicket - storedGeneration <= Self.maxRetiringGapWalk else { return false }
+        var candidate = issuedTicket
+        while candidate > storedGeneration {
+            guard writeGenerationIsRetiring(candidate, for: key) else { return false }
+            candidate -= 1
+        }
+        return true
     }
 
     /// A named, non-tuple result type for ``snapshotClearState(for:)``/

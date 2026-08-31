@@ -35,15 +35,18 @@ extension AssetCacheService {
     }
 
     /// Reads `key`'s current durable, cross-instance/cross-process
-    /// *applied* ticket — the highest ticket any mutation for `key` has
-    /// actually committed to disk — or `nil` if that durable read itself
-    /// failed. See ``AssetDiskCache/currentAppliedTicket(for:)``'s doc
-    /// comment for why this exists alongside ``currentDurableClearEpoch()``
-    /// rather than being folded into it: the clear epoch alone can never
-    /// detect a sibling service/process publishing a newer per-key
-    /// generation without any accompanying whole-cache clear.
-    func currentDurableAppliedTicket(for key: AssetCacheKey) async -> Int? {
-        try? await diskCache.currentAppliedTicket(for: key)
+    /// authority snapshot — the durable clear epoch and this key's own
+    /// highest durably *issued* ticket, read together under one disk-cache
+    /// lock hold — or `nil` if that durable read itself failed. See
+    /// ``AssetDiskCache/currentKeyAuthority(for:)``'s own doc comment for
+    /// why both fields must always be read together (never as two
+    /// separate, independently re-lockable calls), and for why this
+    /// compares against the highest *issued* ticket rather than merely
+    /// the highest *applied* one.
+    func currentDurableKeyAuthority(
+        for key: AssetCacheKey
+    ) async -> AssetDiskCache.KeyAuthoritySnapshot? {
+        try? await diskCache.currentKeyAuthority(for: key)
     }
 
     /// Captures both halves of a fresh token's durable authority — the

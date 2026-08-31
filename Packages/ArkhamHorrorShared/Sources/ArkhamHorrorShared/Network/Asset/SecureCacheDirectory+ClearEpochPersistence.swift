@@ -116,4 +116,107 @@ extension SecureCacheDirectory {
         try writeTempAndFsync(tempName: tempName, data: Data(padded.utf8))
         try renameAndFsyncDirectory(from: tempName, to: Self.clearEpochFileName)
     }
+
+    /// Durably commits the permanent root-init marker file (write,
+    /// `fsync`, rename, directory `fsync`) — idempotent to call again if
+    /// it already exists (a plain overwrite-with-identical-content), so
+    /// callers never need to re-check existence immediately beforehand
+    /// themselves.
+    func installRootInitMarkerLocked() throws {
+        let markerTempName = Self.rootInitMarkerFileName + ".tmp"
+        try writeTempAndFsync(tempName: markerTempName, data: Data([0x01]))
+        try renameAndFsyncDirectory(from: markerTempName, to: Self.rootInitMarkerFileName)
+    }
+
+    /// Durably commits the root-freshness witness file (write, `fsync`,
+    /// rename, directory `fsync`) under this directory's already-held
+    /// cross-process lock — the durable retry point for the best-effort,
+    /// unlocked write ``installRootFreshnessWitnessBestEffort()`` attempts
+    /// from `init`. Idempotent, exactly like ``installRootInitMarkerLocked()``.
+    func installRootFreshnessWitnessLocked() throws {
+        let witnessTempName = Self.rootFreshnessWitnessFileName + ".tmp"
+        try writeTempAndFsync(tempName: witnessTempName, data: Data([0x01]))
+        try renameAndFsyncDirectory(from: witnessTempName, to: Self.rootFreshnessWitnessFileName)
+    }
+
+    /// Called exactly once, from `init`, only when this exact instance's
+    /// own `mkdirat` just won the race to create this directory. Safe to
+    /// run without this directory's cross-process lock (unavailable from
+    /// `init` regardless, since acquiring it is `async`) specifically
+    /// because `mkdirat`'s own atomicity already proved this call is the
+    /// directory's sole, exclusive creator: no other opener of this exact
+    /// path could concurrently believe itself to also be the fresh
+    /// creator, so nothing else could be racing to write this same file
+    /// at the same time. A failure here is recovered durably, under this
+    /// directory's real lock, the first time this instance runs
+    /// ``ensureRootAuthorityInitializedLockedUnwrapped(isSurvivingEntryAcceptable:)``
+    /// -- so this method intentionally never throws to its caller;
+    /// `init` treats it as pure best-effort.
+    func installRootFreshnessWitnessBestEffort() throws {
+        try installRootFreshnessWitnessLocked()
+    }
+
+    /// Refuses to treat this directory as a genuinely pristine,
+    /// never-before-used root unless the *only* entries it currently
+    /// contains are the shared cross-process lock file
+    /// (``SecureCacheDirectory/lockFileName``) — which, by every call
+    /// site's own convention, always already exists by the time this
+    /// runs, since ``acquireExclusiveLock()`` lazily creates it and every
+    /// caller of ``ensureRootAuthorityInitializedLocked()`` has always
+    /// already acquired that lock first — and, possibly, the root-
+    /// freshness witness file itself (``rootFreshnessWitnessFileName``),
+    /// which this exact instance's own `init` may have already durably
+    /// written moments ago, before the freshness proof above was ever
+    /// consulted.
+    ///
+    /// This check is now purely defense-in-depth: by the time it runs,
+    /// this root's freshness has *already* been proven (see the caller),
+    /// so this exists only to catch something unexpected -- a bug, or a
+    /// foreign writer -- landing inside a provably fresh root before
+    /// authority finished initializing, not to itself authorize treating
+    /// the root as pristine.
+    ///
+    /// `isSurvivingEntryAcceptable` is consulted for every surviving
+    /// entry other than those two fixed names — never for either of
+    /// them, since both are this type's own, already-understood
+    /// internal state — so a caller with domain knowledge of what its
+    /// own entries look like (``AssetDiskCache``, the only production
+    /// caller) can distinguish debris its own recovery pass already
+    /// attempted (and may or may not have succeeded) to reclaim from
+    /// genuine surviving cache content, without this generic type
+    /// needing any awareness of that distinction itself.
+    func rejectSurvivingEntriesForPristineRootLocked(
+        isSurvivingEntryAcceptable: (String) throws -> Bool
+    ) throws {
+        let names = try listNames()
+        func isReservedControlFileName(_ name: String) -> Bool {
+            name == Self.lockFileName || name == Self.rootFreshnessWitnessFileName
+        }
+        for name in names where !isReservedControlFileName(name) {
+            guard try isSurvivingEntryAcceptable(name) else {
+                throw AssetError.clearFenceNotDurable(
+                    "Cache root has surviving entries despite missing clear-epoch authority; " +
+                        "refusing to treat it as a pristine root"
+                )
+            }
+            // Descriptor-validate every survivor the caller's closure
+            // vouches for by name: a symlink, directory, FIFO, or device
+            // planted at a "recognized" name (most plausibly
+            // ``AssetDiskCache/diskWritesDisabledMarkerName``, the only
+            // name any production closure currently accepts here) is
+            // never what that recognized name's own real writer would
+            // ever produce, and must not be tolerated merely because its
+            // *name* matches -- the freshness proof above already
+            // authorizes epoch-zero initialization independently of this
+            // loop, so this check exists purely to catch something
+            // unexpected landing inside an otherwise-provably-fresh root,
+            // not to itself decide whether initialization may proceed.
+            guard let attributes = try attributes(name: name), attributes.isRegularFile else {
+                throw AssetError.clearFenceNotDurable(
+                    "Cache root has a non-regular-file survivor named '\(name)'; " +
+                        "refusing to treat it as a pristine root"
+                )
+            }
+        }
+    }
 }

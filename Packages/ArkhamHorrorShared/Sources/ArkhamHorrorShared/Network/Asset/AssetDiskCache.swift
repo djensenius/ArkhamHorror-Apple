@@ -128,6 +128,22 @@ actor AssetDiskCache {
     /// on this hook, not on any earlier read-side one.
     var testOnlyPauseBeforeAcquiringWriteLock: (() async -> Void)?
 
+    /// Test-only hook invoked by ``removeIfApplied(_:token:)``
+    /// immediately before *its own* call to
+    /// ``SecureCacheDirectory/acquireExclusiveLock()`` — see that call
+    /// site's doc comment. Always `nil` in production. A dedicated hook,
+    /// separate from ``testOnlyPauseBeforeAcquiringWriteLock``, so a test
+    /// can deterministically pause specifically a cancelled/superseded
+    /// operation's own retraction — after
+    /// ``AssetCacheService/markGenerationRetiring(_:for:)`` has already
+    /// run (synchronously, strictly before this call) but strictly
+    /// *before* this retraction's disk write has even begun — to prove
+    /// that in-memory marker alone, with disk metadata still completely
+    /// untouched, is what a concurrent reader's authority check must
+    /// reject against, independent of and prior to any disk-side
+    /// re-check.
+    var testOnlyPauseBeforeAcquiringRemovalLock: (() async -> Void)?
+
     init(directory: URL, limits: AssetCacheLimits, fileManager: FileManager = .default) throws {
         self.directory = directory
         self.limits = limits
@@ -148,6 +164,14 @@ actor AssetDiskCache {
     /// behind exposing this as a method rather than a settable property.
     func installTestOnlyPauseBeforeAcquiringWriteLock(_ pause: @escaping () async -> Void) {
         testOnlyPauseBeforeAcquiringWriteLock = pause
+    }
+
+    /// Test-only: installs ``testOnlyPauseBeforeAcquiringRemovalLock``.
+    /// See ``installTestOnlyPauseBeforeReturningHit(_:)`` for the
+    /// rationale behind exposing this as a method rather than a settable
+    /// property.
+    func installTestOnlyPauseBeforeAcquiringRemovalLock(_ pause: @escaping () async -> Void) {
+        testOnlyPauseBeforeAcquiringRemovalLock = pause
     }
 
     /// The default production cache directory: a versioned subdirectory of

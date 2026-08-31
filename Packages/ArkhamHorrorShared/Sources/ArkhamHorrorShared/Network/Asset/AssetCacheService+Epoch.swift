@@ -221,6 +221,75 @@ extension AssetCacheService {
         keyLatestToken[key] = nil
     }
 
+    /// Synchronously records that `token`'s own disk write-generation
+    /// ticket for `key` is being retracted — see
+    /// ``AssetCacheService/retiringGenerations``'s own doc comment for
+    /// the full reasoning. A no-op if `token` never actually reserved a
+    /// durable ticket at all (`token.diskWriteGeneration == nil`): with
+    /// no ticket, no memory/disk entry could ever have been stamped from
+    /// it, so there is nothing any hit-authority check could mistakenly
+    /// still consider current on its behalf. Must always be called
+    /// strictly before the first `await` of the actual removal it
+    /// precedes, at every one of this method's call sites (mirroring
+    /// ``retireIfCurrent(_:for:)``'s own identical timing requirement).
+    ///
+    /// **Deliberately permanent for `key`'s own bookkeeping lifetime —
+    /// never individually reversed once the actual removal completes.**
+    /// A ticket, once retracted, can never legitimately become valid
+    /// again for this exact key within this exact durable clear epoch
+    /// (issuance tickets are strictly increasing and never reused short
+    /// of a whole-cache clear — see `AssetDiskCache+WriteGeneration.swift`'s
+    /// own doc comment), so remembering it costs nothing beyond the one
+    /// `Int` itself. Clearing it the instant the asynchronous removal
+    /// completes was an earlier, *unsound* revision of this fix: a
+    /// concurrent reader that had already captured this exact entry from
+    /// ``AssetMemoryCache/get(_:)`` (finding it still present, strictly
+    /// before the removal actually ran) but was itself still suspended
+    /// somewhere between that capture and its own
+    /// ``memoryEntryStillCurrent(_:storedGeneration:for:)`` check could
+    /// otherwise still lose the race against this method's own eager
+    /// clear — there is no bound on how long that reader's own
+    /// suspension might last, so no fixed point after the removal
+    /// itself completes is ever late enough to safely clear this marker.
+    /// Bounded instead exactly like ``keyLatestToken``/``keyClearGeneration``
+    /// themselves: pruned in one bundle with the rest of `key`'s own
+    /// authority bookkeeping by ``pruneAuthorityKeysIfNeeded(protecting:)``,
+    /// which already refuses to prune any key with an open authority
+    /// window or in-flight operation — the same protection that already
+    /// keeps a still-suspended reader's own snapshot from being pruned
+    /// out from under it.
+    func markGenerationRetiring(_ token: CacheToken, for key: AssetCacheKey) {
+        guard let ticket = token.diskWriteGeneration else { return }
+        retiringGenerations[key, default: []].insert(ticket)
+    }
+
+    /// `true` if `generation` — some entry's own stamped
+    /// ``CachedAsset/writeGeneration``/``AssetCacheMetadata/writeGenerationAtPublication``
+    /// — has already been decided (via ``markGenerationRetiring(_:for:)``)
+    /// to be retracted for `key`, regardless of whether that entry was
+    /// read from memory or freshly read from disk just now. `false` for a
+    /// `nil` generation (an unstamped entry never carries any retiring
+    /// decision to check against).
+    ///
+    /// Shared by ``memoryEntryStillCurrent(_:storedGeneration:for:)`` (a
+    /// memory hit) *and* every disk-hit branch
+    /// (``diskHitIfTrusted(key:cacheKey:candidates:)``/
+    /// ``revalidateFromDiskOrFetch(key:cacheKey:candidates:)``) that reads
+    /// ``AssetDiskCache/get(_:)`` directly: a disk read can just as
+    /// easily observe an abandoned operation's already-published bytes as
+    /// a memory read can, in the exact same pre-retraction-completing
+    /// window — ``unchanged(since:for:)`` alone, being a pure
+    /// self-consistency check against a snapshot taken *after* the
+    /// retraction's synchronous bookkeeping already ran, can never detect
+    /// this: both its "before" and "after" reads already agree, since
+    /// nothing in-process changed during this call's own suspension. Only
+    /// this explicit, retraction-authored marker closes that gap for a
+    /// disk read the same way it already does for a memory read.
+    func writeGenerationIsRetiring(_ generation: Int?, for key: AssetCacheKey) -> Bool {
+        guard let generation else { return false }
+        return retiringGenerations[key]?.contains(generation) == true
+    }
+
     /// Issues a fresh, strictly-increasing authority token for `key`, and
     /// immediately records it as the sole currently-authoritative token
     /// for that key — superseding whatever token (if any) was previously

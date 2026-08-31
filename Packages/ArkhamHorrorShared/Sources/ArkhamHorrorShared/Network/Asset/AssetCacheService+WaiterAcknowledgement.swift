@@ -256,6 +256,18 @@ extension AssetCacheService {
     /// already-abandoned operation's own (already-completed) task body
     /// could otherwise still be mistaken for authoritative.
     ///
+    /// ``markGenerationRetiring(_:for:)`` is called synchronously here,
+    /// *before* the detached `Task` below is even created, so a
+    /// concurrent memory hit that races this retraction can never
+    /// observe this exact entry as current in the window before that
+    /// `Task` actually runs, nor in the (potentially much longer) window
+    /// before such a reader gets around to its own authority check
+    /// after already having captured this entry — see
+    /// ``markGenerationRetiring(_:for:)``'s own doc comment for why this
+    /// marker is therefore deliberately never eagerly cleared once this
+    /// `Task`'s own removals complete, only ever pruned in bulk alongside
+    /// the rest of `key`'s own bounded authority bookkeeping.
+    ///
     /// Spawned as its own detached `Task` rather than `await`ed directly
     /// from the synchronous finalize methods above: those methods must
     /// themselves remain fully synchronous (no suspension between their
@@ -268,6 +280,7 @@ extension AssetCacheService {
     /// waiter whose cancellation triggered it.
     private func retractUndeliveredMutation(_ key: AssetCacheKey, token: CacheToken) {
         retireIfCurrent(token, for: key)
+        markGenerationRetiring(token, for: key)
         Task { [memoryCache, diskCache] in
             await memoryCache.removeIfApplied(key, token: token)
             await diskCache.removeIfApplied(key, token: token)

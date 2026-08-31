@@ -137,6 +137,14 @@ extension AssetCacheService {
             trackedAuthorityKeys.remove(oldest)
             keyLatestToken[oldest] = nil
             keyClearGeneration[oldest] = nil
+            // Pruned in the same bundle, for the identical reason: see
+            // ``markGenerationRetiring(_:for:)``'s own doc comment for
+            // why this is deliberately never cleared any earlier than
+            // this — this key's own bookkeeping (including any still-
+            // suspended reader's authority window) is only ever pruned
+            // once ``isAuthorityKeyBusy(_:)`` above has already confirmed
+            // nothing live still depends on it.
+            retiringGenerations[oldest] = nil
         }
     }
 

@@ -166,6 +166,24 @@ extension AssetDiskCacheTests {
             )
             let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
 
+            // This test plants both the metadata sidecar and its
+            // symlinked "payload" directly via `FileManager`, bypassing
+            // `AssetDiskCache` entirely -- mirroring a real prior process
+            // run's output later tampered with, rather than this exact
+            // process's own fresh write. Since a genuinely fresh,
+            // never-before-used root can only ever be proven so by this
+            // exact instance's own `mkdirat` (or a durable witness a
+            // *prior* legitimate creator already left behind -- see
+            // `SecureCacheDirectory+ClearEpoch.swift`), this first
+            // constructs (and immediately discards) a `SecureCacheDirectory`
+            // purely to durably establish that this root is legitimately
+            // fresh -- exactly as a real first-ever process run over this
+            // same directory would -- *before* any tampering is planted,
+            // so the later "next process run" `AssetDiskCache` below is
+            // never confused for one opening a root with no verifiable
+            // provenance at all.
+            _ = try SecureCacheDirectory(directory: directory, fileManager: .default)
+
             // Write a metadata sidecar exactly as `set` would, but replace
             // its referenced payload file with a symlink rather than the
             // real bytes — simulating external tampering or a payload

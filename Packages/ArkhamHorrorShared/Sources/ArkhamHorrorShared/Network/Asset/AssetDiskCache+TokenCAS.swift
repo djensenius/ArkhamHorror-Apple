@@ -158,7 +158,34 @@ extension AssetDiskCache {
     /// provenance check comparing against a real cached entry's own
     /// historical stamp (always `>= 1`) can never mistake this sentinel
     /// for "still applied".
+    ///
+    /// **Never retracts (resets to `0`) a disposition that is itself
+    /// already a deletion/tombstone rather than a content publication.**
+    /// A definitive 404 (``AssetCacheService/performRevalidation(_:)``'s
+    /// `.notFound` branch, via ``AssetCacheService/invalidate(_:token:)``)
+    /// durably commits *exactly* `token`'s own ticket as the applied
+    /// value — the correct, authoritative "this key is confirmed absent
+    /// as of this ticket" disposition — and then, from this cache's own
+    /// external caller's point of view, that operation's overall `Result`
+    /// is a *failure* (``AssetError/candidatesExhausted``), which every
+    /// coalesced waiter observes identically whether or not it was
+    /// cancelled. A prior revision treated "this operation's Result was
+    /// not a delivered success" as synonymous with "nothing durably
+    /// applied, safe to retract" and called this method regardless — but
+    /// for a definitive 404, something *was* durably, authoritatively
+    /// applied (the tombstone itself), and resetting it back to the
+    /// unapplied sentinel `0` would erase the one piece of durable state
+    /// that actually protects a stale sibling memory entry for this exact
+    /// key from being served again after the origin has confirmed it
+    /// gone. Distinguished here by whether a metadata sidecar was
+    /// actually present to remove: a tombstone's own commit never leaves
+    /// one behind (there is no content it publishes), so finding none
+    /// here is exactly the signal that this ticket's own disposition was
+    /// already a deletion, not a publication to undo.
     func removeIfApplied(_ key: AssetCacheKey, token: AssetCacheService.CacheToken) async {
+        if let pause = testOnlyPauseBeforeAcquiringRemovalLock {
+            await pause()
+        }
         guard let lockFD = try? await secureDirectory.acquireExclusiveLock() else { return }
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try? ensureRootAuthorityInitializedLocked()
@@ -172,8 +199,24 @@ extension AssetDiskCache {
         else {
             return
         }
-        _ = try? secureDirectory.remove(name: metadataFilename(for: key))
+        let metadataWasPresent = (try? secureDirectory.remove(name: metadataFilename(for: key)))
+            ?? false
         try? secureDirectory.fsyncRootDirectory()
+        guard metadataWasPresent else {
+            // Nothing was actually removed: this exact ticket's own
+            // durable disposition was already a tombstone (a definitive
+            // 404's own `invalidate` commit), never a content
+            // publication — see this method's own doc comment. The
+            // tombstone already correctly represents "this key is
+            // confirmed absent"; there is no content here to roll back,
+            // and committing the sentinel `0` would instead erase that
+            // confirmed-absent disposition, wrongly making a since-
+            // superseded but not-yet-durably-recorded-as-such stale
+            // sibling entry look provably unsuperseded again. Payload
+            // cleanup is likewise unnecessary: a tombstone never
+            // publishes a payload file for this exact ticket to sweep.
+            return
+        }
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
         // See this method's own doc comment for why this must commit the
         // fixed sentinel `0` directly (never reserve/mint a fresh

@@ -8,11 +8,14 @@ struct AssetDiskCacheTests {
     /// build output (never `/tmp`), removed unconditionally when the test
     /// finishes.
     func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
-        let root = URL(fileURLWithPath: #filePath)
+        let rootParent = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("DiskCacheScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: rootParent,
+            withIntermediateDirectories: true
+        )
+        let root = rootParent.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try await body(root)
     }
@@ -154,6 +157,7 @@ struct AssetDiskCacheTests {
                 contents.filter {
                     $0 != SecureCacheDirectory.lockFileName
                         && $0 != SecureCacheDirectory.clearEpochFileName
+                        && $0 != SecureCacheDirectory.rootFreshnessWitnessFileName
                 }.isEmpty
             )
         }

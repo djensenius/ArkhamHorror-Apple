@@ -25,11 +25,14 @@ struct SecureCacheDirectoryLockingTests {
     private func withScratchDirectory(
         _ body: (_ directory: URL) async throws -> Void
     ) async throws {
-        let directory = URL(fileURLWithPath: #filePath)
+        let directoryParent = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("LockingScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: directoryParent,
+            withIntermediateDirectories: true
+        )
+        let directory = directoryParent.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try await body(directory)
     }
@@ -221,8 +224,9 @@ struct SecureCacheDirectoryLockingTests {
                 .contentsOfDirectory(atPath: directory.path)
             // The reserved lock file, the durable access-sequence counter
             // file, the durable cross-process clear-epoch counter file
-            // (see `SecureCacheDirectory+ClearEpoch.swift`), and the
-            // durable root-authority-initialization marker (also in
+            // (see `SecureCacheDirectory+ClearEpoch.swift`), the durable
+            // root-authority-initialization marker, and the durable
+            // root-freshness witness (also in
             // `SecureCacheDirectory+ClearEpoch.swift`) are the only
             // entries expected to survive a `removeAll()` -- every actual
             // cache entry must be gone. The clear-epoch file must survive
@@ -240,13 +244,17 @@ struct SecureCacheDirectoryLockingTests {
             // because it records this exact root as already-initialized;
             // deleting it would let a later re-open of this same,
             // previously-cleared root be misclassified as genuinely
-            // pristine.
+            // pristine. The freshness witness must survive for the
+            // identical reason: deleting it would strip this already-used,
+            // now-cleared root of its only remaining durable proof of ever
+            // having been fresh.
             #expect(
                 Set(namesAfterClear) == [
                     SecureCacheDirectory.lockFileName,
                     SecureCacheDirectory.accessSequenceFileName,
                     SecureCacheDirectory.clearEpochFileName,
                     SecureCacheDirectory.rootInitMarkerFileName,
+                    SecureCacheDirectory.rootFreshnessWitnessFileName,
                 ]
             )
 

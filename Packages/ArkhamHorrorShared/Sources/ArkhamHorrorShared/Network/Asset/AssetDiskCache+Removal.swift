@@ -106,8 +106,9 @@ extension AssetDiskCache {
         // SecureCacheDirectory.lockFileName && name !=
         // SecureCacheDirectory.accessSequenceFileName && name !=
         // SecureCacheDirectory.clearEpochFileName && name !=
-        // SecureCacheDirectory.rootInitMarkerFileName` guard is what keeps
-        // all four reserved files out of every removal pass here
+        // SecureCacheDirectory.rootInitMarkerFileName && name !=
+        // SecureCacheDirectory.rootFreshnessWitnessFileName` guard is what
+        // keeps all five reserved files out of every removal pass here
         // (`listNames()`/`remove(name:)` themselves have no special-case
         // awareness of any of them): unlinking the lock file while this
         // very call still holds it open would detach every subsequent
@@ -122,7 +123,12 @@ extension AssetDiskCache {
         // back to "never cleared", undoing this very call's own bump
         // below; deleting the root-init marker would let a future missing
         // clear-epoch counter be wrongly treated as a genuinely pristine
-        // root again (see ``SecureCacheDirectory/ensureRootAuthorityInitializedLocked()``).
+        // root again (see ``SecureCacheDirectory/ensureRootAuthorityInitializedLocked()``);
+        // deleting the root-freshness witness would strip an already-used,
+        // since-cleared root of its only remaining durable proof of ever
+        // having been fresh, permanently and incorrectly fail-closing its
+        // very next authority check the moment both authority files were
+        // ever simultaneously lost.
         // Acquired and run directly on this actor's own executor,
         // same as ``remove(_:token:)``.
         //
@@ -274,6 +280,7 @@ extension AssetDiskCache {
             && name != SecureCacheDirectory.accessSequenceFileName
             && name != SecureCacheDirectory.clearEpochFileName
             && name != SecureCacheDirectory.rootInitMarkerFileName
+            && name != SecureCacheDirectory.rootFreshnessWitnessFileName
     }
 
     /// The key hash embedded in every entry name currently present in the

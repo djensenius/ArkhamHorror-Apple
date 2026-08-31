@@ -25,11 +25,14 @@ struct AssetCacheServiceTests {
     /// compiler's region-based "sending to an actor initializer" analysis
     /// even though the direct call site itself is provably safe).
     func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
-        let root = URL(fileURLWithPath: #filePath)
+        let rootParent = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("CacheServiceScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: rootParent,
+            withIntermediateDirectories: true
+        )
+        let root = rootParent.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try await body(root)
     }

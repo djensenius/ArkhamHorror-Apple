@@ -123,6 +123,29 @@ extension SecureCacheDirectory {
     /// the lifetime of this directory.
     static let rootInitMarkerFileName = ".arkham-cache.root-init"
 
+    /// The fixed leaf name of this cache's durable **root-freshness
+    /// witness** file — the load-bearing counterpart, for the "was this
+    /// root really just created, or did it already exist?" question, that
+    /// ``SecureCacheDirectory/rootDirectoryWasFreshlyCreated`` provides
+    /// purely in-process. See that property's own doc comment for the
+    /// full rationale. Written once, best-effort and unlocked, by
+    /// ``SecureCacheDirectory/init(directory:fileManager:)`` itself when
+    /// (and only when) that exact call's own `mkdirat` proved it was the
+    /// directory's sole creator, and durably retried (under this
+    /// directory's cross-process lock, guaranteed to succeed absent an
+    /// actual I/O failure) the first time this instance ever runs
+    /// ``ensureRootAuthorityInitializedLockedUnwrapped(isSurvivingEntryAcceptable:)``.
+    /// Not `private`, for the same reason as every other fixed name in
+    /// this file: ``AssetDiskCache/removeAll()`` must recognize and
+    /// preserve this exact name across the very whole-cache clear it
+    /// itself is used to authorize -- deleting it would permanently and
+    /// silently strip this root of its only durable proof of having ever
+    /// been fresh, which a later crash/restart could then never recover
+    /// from (a used, since-cleared root would incorrectly, permanently,
+    /// fail closed on its very next authority-check with no witness
+    /// left to consult).
+    static let rootFreshnessWitnessFileName = ".arkham-cache.root-freshly-created"
+
     /// Idempotently ensures this cache directory's durable root authority
     /// — the root-init marker and the clear-epoch counter together — is
     /// fully initialized, as one cross-process locked transaction.
@@ -240,9 +263,60 @@ extension SecureCacheDirectory {
                     "refusing to silently reinitialize its authority"
             )
         }
+        // Both authority files are absent. This is the one branch a bare
+        // "both missing" existence check can never safely resolve on its
+        // own -- it reads identically whether this root is genuinely
+        // pristine, or is a previously-used root whose authority files
+        // were lost/deleted/corrupted (including, specifically, a root
+        // whose *only* surviving entry is
+        // ``AssetDiskCache/diskWritesDisabledMarkerName``, an ordinary
+        // used-root failure marker with no bearing on freshness at all).
+        // Fail closed unconditionally unless this root's freshness can be
+        // *proven*, via either of two independent, race-proof signals:
+        //
+        // 1. `rootDirectoryWasFreshlyCreated` -- this exact in-process
+        //    instance's own `mkdirat` won the race to create this
+        //    directory, moments ago, in `init`.
+        // 2. The durable ``rootFreshnessWitnessFileName`` file --
+        //    written (possibly by a *different*, now-gone instance/
+        //    process, at its own `init` time) the moment *that* creator
+        //    observed the same in-process proof this one checks in (1).
+        //
+        // No other survivor, regardless of name -- including a
+        // "recognized" name like the disk-writes-disabled marker -- may
+        // ever substitute for either of these: a used root can contain
+        // arbitrary combinations of recognized filenames purely because
+        // it was used and later partially swept, which is exactly the
+        // deceptive case this gate exists to reject.
+        let witnessExists =
+            try read(name: Self.rootFreshnessWitnessFileName, maxBytes: 1) != nil
+        guard rootDirectoryWasFreshlyCreated || witnessExists else {
+            throw AssetError.clearFenceNotDurable(
+                "Cache root has no durable or in-process proof of first-ever creation; " +
+                    "refusing to treat a root with no verifiable freshness witness as pristine, " +
+                    "regardless of which entries it currently contains"
+            )
+        }
+        // Freshness is now proven. Any *other* survivor is still
+        // descriptor-validated as defense-in-depth (a bug or foreign
+        // writer landing inside a provably fresh root before authority
+        // finished initializing would be surprising and worth rejecting)
+        // -- but, unlike before this fix, is never itself the thing that
+        // authorizes treating this root as pristine; that authorization
+        // already came entirely from the freshness proof above.
         try rejectSurvivingEntriesForPristineRootLocked(
             isSurvivingEntryAcceptable: isSurvivingEntryAcceptable
         )
+        // This locked transaction is also the durable retry point for the
+        // best-effort, unlocked witness write `init` already attempted:
+        // if that earlier write failed (or this instance is a survivor of
+        // a still-durable witness written by a now-gone prior instance),
+        // commit it now, under this directory's cross-process lock, where
+        // a failure is a real, typed I/O error rather than silently
+        // swallowed.
+        if !witnessExists {
+            try installRootFreshnessWitnessLocked()
+        }
         // Counter first, marker second -- see this method's own doc
         // comment for why this exact order is what makes a crash
         // strictly between the two steps land in the self-healing
@@ -251,63 +325,5 @@ extension SecureCacheDirectory {
         // counter missing" branch.
         try persistClearEpoch(0)
         try installRootInitMarkerLocked()
-    }
-
-    /// Durably commits the permanent root-init marker file (write,
-    /// `fsync`, rename, directory `fsync`) — idempotent to call again if
-    /// it already exists (a plain overwrite-with-identical-content), so
-    /// callers never need to re-check existence immediately beforehand
-    /// themselves.
-    private func installRootInitMarkerLocked() throws {
-        let markerTempName = Self.rootInitMarkerFileName + ".tmp"
-        try writeTempAndFsync(tempName: markerTempName, data: Data([0x01]))
-        try renameAndFsyncDirectory(from: markerTempName, to: Self.rootInitMarkerFileName)
-    }
-
-    /// Refuses to treat this directory as a genuinely pristine,
-    /// never-before-used root unless the *only* entry it currently
-    /// contains is the shared cross-process lock file
-    /// (``SecureCacheDirectory/lockFileName``) — which, by every call
-    /// site's own convention, always already exists by the time this
-    /// runs, since ``acquireExclusiveLock()`` lazily creates it and every
-    /// caller of ``ensureRootAuthorityInitializedLocked()`` has always
-    /// already acquired that lock first.
-    ///
-    /// Closes a gap a bare "counter and marker are both absent" check
-    /// alone cannot: a directory that already holds real cache entries
-    /// (payload files, metadata sidecars, per-key write-generation
-    /// tickets, or even an orphaned `.tmp`) from some prior use — most
-    /// plausibly a version of this package that predates *both* the
-    /// counter and the marker entirely, and therefore never durably
-    /// recorded whatever clears may have happened under it — is definite
-    /// evidence this is not actually a fresh root, even though neither
-    /// authority file happens to be present. Silently treating that case
-    /// as pristine and starting the epoch at `0` cannot be proven safe
-    /// the way it can for a directory with genuinely nothing else in it;
-    /// this throws the identical typed, fail-closed failure the
-    /// "previously initialized root, counter lost" branch above does,
-    /// rather than attempt to guess.
-    ///
-    /// `isSurvivingEntryAcceptable` is consulted for every surviving
-    /// non-lock-file entry — never for the lock file itself, which every
-    /// caller's own convention already guarantees is present by the time
-    /// this runs — so a caller with domain knowledge of what its own
-    /// entries look like (``AssetDiskCache``, the only production caller)
-    /// can distinguish debris its own recovery pass already attempted (and
-    /// may or may not have succeeded) to reclaim from genuine surviving
-    /// cache content, without this generic type needing any awareness of
-    /// that distinction itself.
-    private func rejectSurvivingEntriesForPristineRootLocked(
-        isSurvivingEntryAcceptable: (String) throws -> Bool
-    ) throws {
-        let names = try listNames()
-        for name in names where name != Self.lockFileName {
-            guard try isSurvivingEntryAcceptable(name) else {
-                throw AssetError.clearFenceNotDurable(
-                    "Cache root has surviving entries despite missing clear-epoch authority; " +
-                        "refusing to treat it as a pristine root"
-                )
-            }
-        }
     }
 }

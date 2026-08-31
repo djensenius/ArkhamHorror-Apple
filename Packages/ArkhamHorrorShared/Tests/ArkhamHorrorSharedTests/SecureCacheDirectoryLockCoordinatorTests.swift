@@ -15,11 +15,14 @@ struct SecureCacheDirectoryLockCoordinatorTests {
     private func withScratchDirectory(
         _ body: (_ directory: URL) async throws -> Void
     ) async throws {
-        let directory = URL(fileURLWithPath: #filePath)
+        let directoryParent = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("LockCoordinatorScratch", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: directoryParent,
+            withIntermediateDirectories: true
+        )
+        let directory = directoryParent.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try await body(directory)
     }
