@@ -59,7 +59,23 @@ extension SecureCacheDirectory {
             // other entry this cache reads/writes already requires —
             // regular file, same owner, same device as the verified root,
             // exactly one hardlink — before ever calling `flock` on it.
-            guard let self else { return }
+            //
+            // `self` cannot actually be nil here in practice: an async
+            // instance method's own stack frame keeps `self` alive for
+            // its entire execution, including every suspension, and this
+            // closure only ever runs synchronously from inside that
+            // still-executing call. `weak` is captured purely so this
+            // closure cannot itself extend that lifetime, never as a
+            // genuinely expected runtime case — but a security-critical
+            // verification gate must never silently *succeed* (skip
+            // `flock` verification and let the caller proceed to lock an
+            // unverified file) merely because some future refactor makes
+            // this theoretical case reachable. Fail closed instead.
+            guard let self else {
+                throw AssetError.cachePersistenceFailed(
+                    "SecureCacheDirectory was deallocated before lock-file verification could run"
+                )
+            }
             try requireVerifiedRegularFile(descriptor: descriptor, name: Self.lockFileName)
         }
     }
