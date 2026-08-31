@@ -54,7 +54,11 @@ extension AssetCacheService {
         guard
             let cached = diskHit,
             await unchanged(since: snapshot, for: cacheKey),
-            !writeGenerationIsRetiring(cached.writeGeneration, for: cacheKey)
+            !writeGenerationIsRetiring(
+                cached.writeGeneration,
+                epoch: snapshot.durableClearEpoch,
+                for: cacheKey
+            )
         else {
             // Either a genuine disk miss, a disk hit whose read raced
             // with a more authoritative concurrent operation for this
@@ -174,7 +178,11 @@ extension AssetCacheService {
         )
         guard
             await unchanged(since: snapshot, for: cacheKey),
-            !writeGenerationIsRetiring(revalidated.writeGeneration, for: cacheKey),
+            !writeGenerationIsRetiring(
+                revalidated.writeGeneration,
+                epoch: snapshot.durableClearEpoch,
+                for: cacheKey
+            ),
             let target
         else {
             // Either something more authoritative for this key has

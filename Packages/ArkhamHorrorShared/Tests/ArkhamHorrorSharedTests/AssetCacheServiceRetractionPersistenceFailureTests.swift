@@ -60,22 +60,36 @@ extension AssetCacheServiceTests {
     }
 
     /// Polls (test-only; not a production concurrency pattern) until
-    /// `memoryCache` no longer holds an entry for `cacheKey`, or fails
-    /// the test via `Issue.record` if `timeoutNanoseconds` elapses first
-    /// — identical in shape to `AssetCacheServiceRetirementFenceTests.swift`'s
-    /// own private helper of the same name (not shared across files, by
-    /// this suite's established convention).
-    private func waitForMemoryEntryRetracted(
-        _ memoryCache: AssetMemoryCache,
-        cacheKey: AssetCacheKey,
+    /// ``AssetCacheService/lastDiskPersistenceFailure`` is no longer
+    /// `nil`, or fails the test via `Issue.record` if
+    /// `timeoutNanoseconds` elapses first.
+    ///
+    /// **Why this polls the disk-persistence-failure receipt, never
+    /// merely `memoryCache`'s own removal.**
+    /// ``AssetCacheService/completeDurableRetractionIfApplied(_:token:)``
+    /// removes the memory-side entry *first*, strictly before it ever
+    /// attempts the disk-side removal this test's fault injection
+    /// targets — so a memory-only poll can return the instant the
+    /// memory-side half completes, *before* the disk-side attempt has
+    /// even begun, let alone recorded its outcome into
+    /// `lastDiskPersistenceFailure`/`tombstonedKeys`. That gap is narrow
+    /// enough to go unnoticed running this test in isolation, but widens
+    /// under a full-suite run's heavier scheduler contention — exactly
+    /// the nondeterministic failure this helper closes by polling the
+    /// actual receipt the test's own assertions below depend on, rather
+    /// than an earlier, weaker proxy for it.
+    private func waitForDiskPersistenceFailureRecorded(
+        _ service: AssetCacheService,
         timeoutNanoseconds: UInt64 = 5_000_000_000
     ) async {
         let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
-        while await memoryCache.get(cacheKey) != nil {
+        while await service.lastDiskPersistenceFailure == nil {
             guard DispatchTime.now().uptimeNanoseconds < deadline else {
-                Issue.record(
-                    "Timed out waiting for the abandoned entry to be retracted from memory"
-                )
+                let message = """
+                Timed out waiting for the retraction's disk-side failure to be \
+                durably recorded
+                """
+                Issue.record("\(message)")
                 return
             }
             try? await Task.sleep(nanoseconds: 1_000_000)
@@ -132,11 +146,15 @@ extension AssetCacheServiceTests {
             callerTask.cancel()
 
             // Poll until the retraction's own disk attempt has definitely
-            // run and recorded its outcome (whether it failed, as this
-            // test expects, or -- pre-fix -- silently swallowed the
-            // error) before inspecting `lastDiskPersistenceFailure`,
-            // rather than racing an unawaited retraction task.
-            await waitForMemoryEntryRetracted(layers.memoryCache, cacheKey: cacheKey)
+            // run and durably recorded its outcome (whether it failed,
+            // as this test expects, or -- pre-fix -- silently swallowed
+            // the error) before inspecting `lastDiskPersistenceFailure`,
+            // rather than racing an unawaited retraction task. Polls the
+            // actual receipt this test's own assertions below depend on
+            // -- not the earlier, weaker memory-side signal, which
+            // completes strictly before the disk-side attempt even
+            // begins (see this helper's own doc comment).
+            await waitForDiskPersistenceFailureRecorded(layers.service)
 
             await gate.release()
             await #expect(throws: CancellationError.self) {

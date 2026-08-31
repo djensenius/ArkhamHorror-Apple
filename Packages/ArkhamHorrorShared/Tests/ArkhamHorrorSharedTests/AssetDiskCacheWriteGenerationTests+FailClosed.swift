@@ -2,32 +2,132 @@
 import Foundation
 import Testing
 
-/// Deterministic reproduction of this review round's finding #2: a
-/// missing/lost `.gen` (issuance-ticket counter) file must fail closed
-/// whenever `key`'s own surviving disposition proves a ticket was
-/// genuinely issued and applied for it at some point -- never silently
-/// collapse back to the same zero baseline a truly pristine key would
-/// also report (see `AssetDiskCache+WriteGeneration.swift`'s
-/// `currentIssuedTicketLocked(for:)` doc comment for the full
-/// reasoning). Split out of `AssetDiskCacheWriteGenerationTests.swift`
+/// Deterministic reproduction of this review round's finding #2 (the
+/// LATEST round: merging the previously-separate `.gen` issuance
+/// counter and `.applied` disposition file into one atomically-written
+/// ``AssetDiskCache/KeyAuthorityRecord`` -- see
+/// `AssetDiskCache+Disposition.swift`'s own type-level doc comment for
+/// the full reasoning behind the merge). The three tests this file
+/// previously contained directly manipulated a standalone `.gen` file
+/// (via a now-removed `writeGenerationFilename(for:)` helper) to
+/// reproduce "issuance counter lost while disposition survives" -- that
+/// exact scenario is now structurally impossible, since both halves are
+/// the same on-disk artifact and can no longer independently diverge.
+/// This file's tests instead prove the properties that specific merge
+/// actually delivers: (1) issuing a ticket with nothing yet published
+/// already durably anchors that ticket in the very same file a
+/// disposition would occupy, so a corruption at that exact point -- a
+/// window the prior two-file design left completely undetectable, since
+/// no `.applied` file existed yet at all -- is now provably detectable;
+/// and (2) a present-but-unparsable (torn/partial) authority record
+/// always fails closed rather than ever being treated as a clean
+/// absence. Split out of `AssetDiskCacheWriteGenerationTests.swift`
 /// purely to keep that file within this package's `file_length`/
 /// `type_body_length` conventions; reuses that file's own
 /// `withScratchDirectory`/`limits`/`key`/`metadata`/`issuedToken`
 /// helpers.
 extension AssetDiskCacheWriteGenerationTests {
-    // MARK: - Missing/lost `.gen` counter fail-closed (review round: HIGH #2)
+    // MARK: - Merged authority record fail-closed (review round: HIGH #2)
 
     @Test(
         """
-        A `.gen` (issuance-ticket counter) file lost or corrupted independently of `key`'s own \
-        surviving `.content` disposition must fail closed on every operation that consults it \
-        -- never silently collapse back to the same zero baseline a genuinely pristine key \
-        reports, which would let a delayed/replayed ticket wrongly satisfy a fresh \
-        issuance/CAS check and overwrite or retract content a strictly newer ticket already \
-        durably owns
+        Before this round's merge, a ticket issued for a key with nothing yet published wrote \
+        *only* the bare `.gen` counter -- no `.applied` file existed for that key at all yet \
+        -- so a fault that struck that lone `.gen` file was indistinguishable, on its own, from \
+        a genuinely pristine key that had never had a ticket issued for it at all: reads would \
+        fall back to zero and a delayed/duplicate reservation could silently replay ticket 1. \
+        This round's merge closes that window: `beginIssuance` now durably writes the FULL \
+        merged authority record (the issued ticket alongside a still-pristine disposition) even \
+        when nothing has ever been published for this key, so a corruption at this exact point \
+        is now provably detectable rather than silently indistinguishable from a fresh key.
         """
     )
-    func missingGenerationCounterWithSurvivingContentDispositionFailsClosed() async throws {
+    func issuanceOnlyAuthorityRecordCorruptionFailsClosedRatherThanResettingToPristine(
+    ) async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: limits())
+            let cacheKey = try key()
+
+            let snapshot = try await cache.beginIssuance(for: cacheKey)
+            #expect(snapshot.writeGeneration == 1)
+
+            // Corrupts the single merged authority record -- present,
+            // but unparsable -- immediately after issuance, strictly
+            // before any publish for this key has ever happened.
+            let name = await cache.appliedTicketFilename(for: cacheKey)
+            let access = await cache.directoryAccess
+            try access.writeTempAndFsync(tempName: name + ".tmp", data: Data("not json".utf8))
+            try access.renameAndFsyncDirectory(from: name + ".tmp", to: name)
+
+            await #expect(throws: AssetError.self) {
+                _ = try await cache.beginIssuance(for: cacheKey)
+            }
+            await #expect(throws: AssetError.self) {
+                _ = try await cache.currentKeyAuthority(for: cacheKey)
+            }
+            await #expect(throws: AssetError.self) {
+                let payload = Data([1, 2, 3])
+                try await cache.set(
+                    cacheKey,
+                    payload: payload,
+                    metadata: metadata(for: cacheKey, payload: payload),
+                    token: nil
+                )
+            }
+        }
+    }
+
+    @Test(
+        """
+        A issues ticket 1 for a key (nothing published yet) and then this exact merged \
+        authority record is torn -- a partial/truncated fragment left behind, simulating a \
+        crash mid-write, never a clean absence. A fresh sibling instance's own subsequent \
+        reservation for the same key must fail closed rather than silently resuming from zero \
+        and reissuing ticket 1 again: under the prior, now-removed two-file design this exact \
+        corruption target (`.applied`) did not even exist yet at this point in the sequence, so \
+        a sibling's reservation would have silently succeeded with a fresh ticket 2, oblivious \
+        to the torn state -- this test only passes once the merge's write-on-issuance behavior \
+        is in place.
+        """
+    )
+    func tornAuthorityRecordAfterIssuanceOnlyFailsClosedForFreshSiblingReservation() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: limits())
+            let cacheKey = try key()
+
+            let snapshot = try await cache.beginIssuance(for: cacheKey)
+            #expect(snapshot.writeGeneration == 1)
+
+            let name = await cache.appliedTicketFilename(for: cacheKey)
+            let access = await cache.directoryAccess
+            // Simulates a torn/partial write (not a clean absence) -- a
+            // crash mid-`fsync` that left a truncated fragment behind
+            // rather than either the old (nonexistent) or new complete
+            // value.
+            try access.writeTempAndFsync(tempName: name + ".tmp", data: Data("{\"issued".utf8))
+            try access.renameAndFsyncDirectory(from: name + ".tmp", to: name)
+
+            // A brand-new sibling instance over the same directory (an
+            // independent process, or this same process after a
+            // restart) must fail closed rather than silently reissuing
+            // ticket 1 again.
+            let sibling = try AssetDiskCache(directory: directory, limits: limits())
+            await #expect(throws: AssetError.self) {
+                _ = try await sibling.beginIssuance(for: cacheKey)
+            }
+        }
+    }
+
+    @Test(
+        """
+        The merged authority record's disposition half remains fully protected too: a \
+        `.content`/`.tombstone`/`.retiring` disposition surviving alongside a corrupted -- \
+        present but unparsable -- authority record still fails closed on every subsequent \
+        operation, exactly like the issuance-only case above, never silently treated as a \
+        pristine key.
+        """
+    )
+    func corruptedAuthorityRecordWithSurvivingContentDispositionFailsClosed() async throws {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: limits())
             let cacheKey = try key()
@@ -40,20 +140,15 @@ extension AssetDiskCacheWriteGenerationTests {
                 metadata: metadata(for: cacheKey, payload: payload),
                 token: publishToken
             )
-            let dispositionBeforeLoss = try await cache.currentKeyDisposition(for: cacheKey)
-            #expect(dispositionBeforeLoss.kind == .content)
-            #expect(dispositionBeforeLoss.ticket == publishToken.diskWriteGeneration)
-
-            // Simulates the `.gen` counter file being independently lost
-            // or corrupted -- never a legitimate outcome for a key whose
-            // own disposition still durably records a ticket that was
-            // once actually issued (only `removeAll()` ever legitimately
-            // removes both files together, always paired with a durable
-            // clear-epoch bump; see this file's own type-level doc
-            // comment).
-            _ = try await cache.directoryAccess.remove(
-                name: cache.writeGenerationFilename(for: cacheKey)
+            let dispositionBeforeCorruption = try await cache.currentKeyDisposition(
+                for: cacheKey
             )
+            #expect(dispositionBeforeCorruption.kind == .content)
+
+            let name = await cache.appliedTicketFilename(for: cacheKey)
+            let access = await cache.directoryAccess
+            try access.writeTempAndFsync(tempName: name + ".tmp", data: Data("not json".utf8))
+            try access.renameAndFsyncDirectory(from: name + ".tmp", to: name)
 
             await #expect(throws: AssetError.self) {
                 _ = try await cache.beginIssuance(for: cacheKey)
@@ -73,109 +168,15 @@ extension AssetDiskCacheWriteGenerationTests {
             await #expect(throws: AssetError.self) {
                 _ = try await cache.currentKeyAuthority(for: cacheKey)
             }
-
-            // Fail-closed here means "refuse to issue/mutate further,"
-            // never "destroy what is already there": the original
-            // content itself, and its disposition, remain completely
-            // untouched by every one of the above rejected attempts.
-            let dispositionAfterFailures = try await cache.currentKeyDisposition(for: cacheKey)
-            #expect(dispositionAfterFailures == dispositionBeforeLoss)
-            let hit = try await cache.get(cacheKey)
-            #expect(hit?.payload == payload)
-        }
-    }
-
-    @Test(
-        """
-        A `.gen` file lost independently of `key`'s own surviving `.tombstone` disposition \
-        (a completed, definitive removal) must fail closed identically to the `.content` case \
-        -- a tombstoned key is not "pristine," and must not be allowed to silently re-admit a \
-        delayed ticket issued before its own removal
-        """
-    )
-    func missingGenerationCounterWithSurvivingTombstoneDispositionFailsClosed() async throws {
-        try await withScratchDirectory { directory in
-            let cache = try AssetDiskCache(directory: directory, limits: limits())
-            let cacheKey = try key()
-
-            let publishToken = try await issuedToken(from: cache, for: cacheKey)
-            let payload = Data([3, 3, 3])
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload),
-                token: publishToken
-            )
-            try await cache.remove(cacheKey, token: nil)
-            let dispositionBeforeLoss = try await cache.currentKeyDisposition(for: cacheKey)
-            #expect(dispositionBeforeLoss.kind == .tombstone)
-            #expect(dispositionBeforeLoss.ticket > 0)
-
-            _ = try await cache.directoryAccess.remove(
-                name: cache.writeGenerationFilename(for: cacheKey)
-            )
-
-            await #expect(throws: AssetError.self) {
-                _ = try await cache.beginIssuance(for: cacheKey)
-            }
-
-            let dispositionAfterFailure = try await cache.currentKeyDisposition(for: cacheKey)
-            #expect(dispositionAfterFailure == dispositionBeforeLoss)
-        }
-    }
-
-    @Test(
-        """
-        A `.gen` file lost independently of `key`'s own surviving `.retiring` disposition (a \
-        retraction whose durable phase-1 commit landed but whose physical cleanup has not yet \
-        run) must fail closed exactly like the `.content`/`.tombstone` cases -- `.retiring` is \
-        already unreadable to `get(_:)`, but a lost counter here must still never let a fresh \
-        issuance silently resume from zero
-        """
-    )
-    func missingGenerationCounterWithSurvivingRetiringDispositionFailsClosed() async throws {
-        try await withScratchDirectory { directory in
-            let cache = try AssetDiskCache(directory: directory, limits: limits())
-            let cacheKey = try key()
-
-            let publishToken = try await issuedToken(from: cache, for: cacheKey)
-            let payload = Data([5, 5, 5])
-            try await cache.set(
-                cacheKey,
-                payload: payload,
-                metadata: metadata(for: cacheKey, payload: payload),
-                token: publishToken
-            )
-            // Durably commits `.retiring` alone, deliberately never
-            // completing phase 2 -- see `AssetDiskCache+TokenCAS.swift`'s
-            // `beginRetraction(_:token:)`/`completeRetraction(_:token:)`
-            // doc comments for why phase 1 alone already leaves this key
-            // unreadable.
-            let beginOutcome = try await cache.beginRetraction(cacheKey, token: publishToken)
-            #expect(beginOutcome == .applied)
-            let dispositionBeforeLoss = try await cache.currentKeyDisposition(for: cacheKey)
-            #expect(dispositionBeforeLoss.kind == .retiring)
-            #expect(dispositionBeforeLoss.ticket == publishToken.diskWriteGeneration)
-
-            _ = try await cache.directoryAccess.remove(
-                name: cache.writeGenerationFilename(for: cacheKey)
-            )
-
-            await #expect(throws: AssetError.self) {
-                _ = try await cache.beginIssuance(for: cacheKey)
-            }
-
-            let dispositionAfterFailure = try await cache.currentKeyDisposition(for: cacheKey)
-            #expect(dispositionAfterFailure == dispositionBeforeLoss)
         }
     }
 
     @Test(
         """
         A genuinely pristine key -- one that has never had any ticket issued or disposition \
-        committed for it at all -- is unaffected by the fail-closed cross-check above: issuance \
-        still succeeds normally, starting from ticket 1, exactly as before this review round's \
-        fix
+        committed for it at all -- is unaffected by any of the fail-closed checks above: \
+        issuance still succeeds normally, starting from ticket 1, exactly as before this \
+        review round's fix
         """
     )
     func genuinelyPristineKeyIssuanceStillSucceedsNormally() async throws {

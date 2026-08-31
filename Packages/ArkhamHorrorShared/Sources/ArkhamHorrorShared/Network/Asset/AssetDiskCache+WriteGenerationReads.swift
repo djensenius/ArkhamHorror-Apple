@@ -13,50 +13,22 @@ extension AssetDiskCache {
     /// called while the caller already holds this instance's
     /// ``SecureCacheDirectory/acquireExclusiveLock()``.
     ///
-    /// A clean "does not exist" miss is `0` — a genuinely pristine key
+    /// Simply the `issuedTicket` half of
+    /// ``currentAuthorityRecordLocked(for:)``'s single merged record --
+    /// see `AssetDiskCache+Disposition.swift`'s own type-level doc
+    /// comment for why this counter and this key's applied disposition
+    /// are always read from (and written to) that one file together, as
+    /// one atomic unit, rather than as two independently-losable files.
+    /// A clean "does not exist" miss is `0` -- a genuinely pristine key
     /// that has never had a ticket reserved for it has no prior value to
-    /// compare against, and `0` is a safe baseline precisely because no
-    /// counter for this key has ever been durably persisted to lose. Any
-    /// *other* failure (a symlink/non-regular entry at this name, an
-    /// oversized or unparsable value) is a hard, typed, fail-closed
-    /// failure instead, since it means a real, previously persisted
-    /// counter exists but could not be trusted, which must never silently
-    /// default back to the same baseline a pristine key would also
-    /// report.
-    ///
-    /// **Also cross-checked, every call, against `key`'s own currently
-    /// applied disposition (``currentDispositionLocked(for:)``).** The
-    /// `.gen` counter this reads and the `.applied`/disposition file are
-    /// two separate durable files; only ``AssetDiskCache/removeAll()``
-    /// ever legitimately deletes both together, always paired with a
-    /// durable clear-epoch bump every stale token is independently and
-    /// unconditionally rejected by regardless (see
-    /// `SecureCacheDirectory+ClearEpoch.swift`). So "this key's
-    /// disposition durably records ticket *N* > 0 (content, retiring, or
-    /// tombstone — any of the three, since all three prove a ticket was
-    /// genuinely issued and applied for this key at some point), but this
-    /// key's own `.gen` file is missing or reports a value below *N*" can
-    /// only mean the `.gen` file itself was independently lost or
-    /// corrupted — never a legitimately pristine key — and must never
-    /// silently collapse back to the same `0` baseline a truly pristine
-    /// key reports: a delayed/replayed ticket reserved against that
-    /// wrongly-reset baseline could otherwise satisfy
-    /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``'s own
-    /// CAS and overwrite or retract content a strictly newer ticket
-    /// already durably owns. Fails closed with a typed
-    /// ``AssetError/cachePersistenceFailed(_:)`` instead, exactly like
-    /// every other "a real, previously persisted value exists but could
-    /// not be trusted" case this method already fails closed for.
+    /// compare against. Any *other* failure (a symlink/non-regular entry
+    /// at this name, an oversized or unparsable value) is a hard, typed,
+    /// fail-closed failure instead, since it means a real, previously
+    /// persisted record exists but could not be trusted, which must
+    /// never silently default back to the same baseline a pristine key
+    /// would also report.
     func currentIssuedTicketLocked(for key: AssetCacheKey) throws -> Int {
-        let issued = try readTicketLocked(name: writeGenerationFilename(for: key))
-        let appliedTicket = try currentDispositionLocked(for: key).ticket
-        guard appliedTicket <= issued else {
-            throw AssetError.cachePersistenceFailed(
-                "Issuance counter for this key is missing or behind its own "
-                    + "surviving disposition"
-            )
-        }
-        return issued
+        try currentAuthorityRecordLocked(for: key).issuedTicket
     }
 
     /// Reads `key`'s current durable *applied* ticket — the ticket half
@@ -126,31 +98,13 @@ extension AssetDiskCache {
         let issuedTicket: Int
     }
 
-    private func readTicketLocked(name: String) throws -> Int {
-        guard let data = try secureDirectory.read(
-            name: name,
-            maxBytes: Self.ticketDigitWidth
-        ) else {
-            return 0
-        }
-        guard
-            let string = String(data: data, encoding: .utf8),
-            string.utf8.count == Self.ticketDigitWidth,
-            string.utf8.allSatisfy({ (0x30 ... 0x39).contains($0) }),
-            let parsed = Int(string)
-        else {
-            throw AssetError.cachePersistenceFailed(
-                "Ticket file '\(name)' is corrupt or unparsable"
-            )
-        }
-        return parsed
-    }
-
     /// Durably reserves and returns a fresh ticket for `key`: reads the
-    /// current issuance counter, durably commits its successor (write,
-    /// `fsync`, rename, directory `fsync`), and returns that successor —
-    /// never the pre-bump value. Called by ``beginIssuance(for:)`` (one
-    /// reservation per logical operation's issuance) and by
+    /// current merged authority record, durably commits it back with
+    /// `issuedTicket` bumped to its successor (write, `fsync`, rename,
+    /// directory `fsync`) while leaving `disposition` entirely untouched,
+    /// and returns that successor — never the pre-bump value. Called by
+    /// ``beginIssuance(for:)`` (one reservation per logical operation's
+    /// issuance) and by
     /// ``AssetDiskCache/resolvedMutationTicketLocked(for:token:)``'s own
     /// unconditional (`token: nil`) branch (one further reservation per
     /// actual committed mutation with no external token to reuse) alike:
@@ -158,18 +112,32 @@ extension AssetDiskCache {
     /// no other call -- past, present, or future -- will ever return
     /// again for this key.
     ///
+    /// **Writes the full merged record on every call, disposition
+    /// included, not merely a bare counter** -- see
+    /// `AssetDiskCache+Disposition.swift`'s own type-level doc comment
+    /// for why this is precisely the change that makes the two-file
+    /// split's independent-loss defect structurally impossible: an
+    /// issuance that has not yet had anything applied for it durably
+    /// records that fact (``KeyDisposition/pristine``) in the very same
+    /// file as its own ticket, rather than leaving that ticket as the
+    /// sole occupant of an entirely separate file with nothing else
+    /// durably anchoring it.
+    ///
     /// Guards against overflow: once already at `Int.max`, throws rather
     /// than silently colliding two genuinely different future tickets
     /// onto the same value.
     func issueTicketLocked(for key: AssetCacheKey) throws -> Int {
-        let current = try currentIssuedTicketLocked(for: key)
-        guard current < Int.max else {
+        let current = try currentAuthorityRecordLocked(for: key)
+        guard current.issuedTicket < Int.max else {
             throw AssetError.cachePersistenceFailed(
                 "Write-generation counter is exhausted for this key"
             )
         }
-        let next = current + 1
-        try persistTicketLocked(next, name: writeGenerationFilename(for: key))
+        let next = current.issuedTicket + 1
+        try commitAuthorityRecordLocked(
+            KeyAuthorityRecord(issuedTicket: next, disposition: current.disposition),
+            for: key
+        )
         return next
     }
 }

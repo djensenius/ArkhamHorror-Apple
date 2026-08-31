@@ -12,17 +12,27 @@ import Foundation
 /// learn a newer instance already concluded for the exact same key, and
 /// vice versa.
 ///
-/// **Two separate durable counters per key, not one.** An earlier
-/// revision of this mechanism used a single counter file, read (never
-/// reserved) at issuance time and compared for *exact* equality at
-/// publish time. That is completion-ordered, not issuance-ordered: two
-/// operations issued at nearly the same moment, before either has
-/// published, both read the *same* current value (nothing has changed
-/// yet), so whichever one happens to *complete* first "wins" the
-/// equality check and advances the counter — and the other, genuinely
-/// issued *after* it, then finds the counter has moved past its own
-/// stale snapshot and is wrongly rejected, even though it should be the
-/// one to win. This revision instead keeps:
+/// **One merged, atomically-written durable record per key, not two
+/// separate counter files.** An earlier revision of this mechanism used
+/// a single counter file, read (never reserved) at issuance time and
+/// compared for *exact* equality at publish time. That is completion-
+/// ordered, not issuance-ordered: two operations issued at nearly the
+/// same moment, before either has published, both read the *same*
+/// current value (nothing has changed yet), so whichever one happens to
+/// *complete* first "wins" the equality check and advances the counter —
+/// and the other, genuinely issued *after* it, then finds the counter
+/// has moved past its own stale snapshot and is wrongly rejected, even
+/// though it should be the one to win. A *later* revision fixed that by
+/// splitting issuance from application into two separately-reserved
+/// counters, but stored them as two independent files (`<hash>.gen` for
+/// issuance, `<hash>.applied` for disposition) — which introduced its
+/// own, subtler defect: any failure that struck exactly one of those two
+/// files independently (while leaving the other untouched) was
+/// indistinguishable, on its own, from a genuinely pristine key. This
+/// revision keeps both counters conceptually distinct but stores them as
+/// one atomically-written ``KeyAuthorityRecord`` (see
+/// `AssetDiskCache+Disposition.swift`'s own type-level doc comment for
+/// why), at the single `<hash>.applied` filename:
 ///
 /// - ``issueTicketLocked(for:)`` (called by ``beginIssuance(for:)``):
 ///   durably reserves a fresh, strictly-increasing, never-reused ticket
@@ -31,13 +41,13 @@ import Foundation
 ///   operations for the same key always receive two distinct,
 ///   totally-ordered tickets, never the same snapshot value.
 /// - ``currentAppliedTicketLocked(for:)``/``commitPublicationLocked(for:token:contentHash:)``:
-///   a *separate* durable counter — now embedded in a typed
-///   ``KeyDisposition`` (see `AssetDiskCache+Disposition.swift`) rather
-///   than a bare integer, so a retraction/removal can record *which kind*
-///   of disposition (`content`/`retiring`/`tombstone`) is currently
-///   applied, not merely a ticket number — recording the highest ticket
-///   any mutation for `key` has actually committed (published, touched,
-///   or removed). ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``
+///   the record's own typed ``KeyDisposition`` half (see
+///   `AssetDiskCache+Disposition.swift`), so a retraction/removal can
+///   record *which kind* of disposition (`content`/`retiring`/`tombstone`)
+///   is currently applied, not merely a ticket number — recording the
+///   highest ticket any mutation for `key` has actually committed
+///   (published, touched, or removed).
+///   ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``
 ///   itself compares an operation's own issued ticket by *exact equality*
 ///   against the highest ticket ever *issued* for this key
 ///   (``currentIssuedTicketLocked(for:)``), never against this applied
@@ -49,22 +59,22 @@ import Foundation
 ///   finish first; an operation whose own ticket is no longer the
 ///   single most recently issued one is unconditionally stale.
 ///
-/// Both counters live entirely separate from the key's
+/// This merged record lives entirely separate from the key's
 /// ``AssetCacheMetadata`` sidecar: that sidecar is deleted the instant a
 /// key's entry is definitively removed (a 404 invalidation, a failed
-/// re-validation quarantine), and reusing either counter's storage there
+/// re-validation quarantine), and reusing this record's storage there
 /// would let "no entry currently exists" collapse back to the exact same
 /// baseline value (`0`) an operation issued *before this key had ever
 /// been written at all* also captured — indistinguishable from a
 /// genuinely pristine key, and so wrongly able to resurrect content
 /// after a legitimate removal if that very first, still-suspended
 /// operation's own response happens to arrive after both a full write and
-/// a subsequent removal have already completed for the same key. Neither
-/// counter file is ever deleted by an ordinary per-key
+/// a subsequent removal have already completed for the same key. This
+/// record is never deleted by an ordinary per-key
 /// ``AssetDiskCache/remove(_:token:)`` — only ``AssetDiskCache/removeAll()``
 /// (which is always paired with a durable clear-epoch bump any stale
 /// token is independently and unconditionally rejected by; see
-/// `SecureCacheDirectory+ClearEpoch.swift`) ever removes them, so a key's
+/// `SecureCacheDirectory+ClearEpoch.swift`) ever removes it, so a key's
 /// write-ordering history survives an ordinary content removal exactly as
 /// long as it needs to.
 ///
@@ -85,18 +95,6 @@ import Foundation
 /// removal: the replayed token's own ticket can never again be `>=` the
 /// applied ticket that removal itself just committed.
 extension AssetDiskCache {
-    static let ticketDigitWidth = 20
-
-    /// The fixed leaf name of `key`'s durable issuance-ticket counter
-    /// file — the source of every fresh ticket ever reserved for `key`,
-    /// via ``issueTicketLocked(for:)`` alike. Key-hash-derived only
-    /// (never from any other input), so it is always a single,
-    /// traversal-proof leaf name, exactly like
-    /// ``metadataFilename(for:)``/``payloadFilename(keyHash:contentHash:)``.
-    func writeGenerationFilename(for key: AssetCacheKey) -> String {
-        "\(key.digestHex).gen"
-    }
-
     /// The fixed leaf name of `key`'s durable *applied* ticket counter
     /// file — the highest ticket any mutation for `key` has actually
     /// committed. Not directly consulted by

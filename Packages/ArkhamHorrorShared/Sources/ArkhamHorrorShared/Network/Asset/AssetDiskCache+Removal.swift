@@ -204,18 +204,19 @@ extension AssetDiskCache {
         // begins: a caller must never observe "entries are already gone"
         // without the durable epoch having also already advanced.
         try secureDirectory.bumpClearEpoch()
-        // Every per-key durable issuance/applied ticket counter file
-        // (`.gen`/`.applied`, see `AssetDiskCache+WriteGeneration.swift`)
-        // is deliberately *not* specially reserved here the way the
-        // lock/access-sequence/clear-epoch files are: this clear's own
-        // epoch bump above already durably fences every token issued
-        // before it (any such token's ``AssetCacheService/CacheToken/durableClearEpoch``
+        // Every per-key durable authority record file (`.applied`,
+        // merging both the issuance ticket and applied disposition --
+        // see `AssetDiskCache+Disposition.swift`) is deliberately *not*
+        // specially reserved here the way the lock/access-sequence/
+        // clear-epoch files are: this clear's own epoch bump above
+        // already durably fences every token issued before it (any such
+        // token's ``AssetCacheService/CacheToken/durableClearEpoch``
         // can never again match, regardless of what its
         // ``AssetCacheService/CacheToken/diskWriteGeneration`` says), so
-        // letting the removal pass below sweep away every `.gen`/
-        // `.applied` file too is both safe and desirable: it lets every
-        // key restart from a clean ticket baseline after a real clear,
-        // rather than accumulating two small counter files per key ever
+        // letting the removal pass below sweep away every `.applied`
+        // file too is both safe and desirable: it lets every key restart
+        // from a clean ticket baseline after a real clear, rather than
+        // accumulating one small authority-record file per key ever
         // written for the lifetime of this cache directory.
         let names = try secureDirectory.listNames()
         var failureCount = 0

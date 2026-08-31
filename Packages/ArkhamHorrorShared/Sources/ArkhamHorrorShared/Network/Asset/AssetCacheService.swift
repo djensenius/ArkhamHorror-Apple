@@ -218,7 +218,21 @@ actor AssetCacheService {
     /// already refuses to prune any key with an open authority window or
     /// a live in-flight operation — the same protection that already
     /// keeps a still-suspended reader's own snapshot safe.
-    var retiringGenerations: [AssetCacheKey: Set<Int>] = [:]
+    var retiringGenerations: [AssetCacheKey: Set<RetiringTicket>] = [:]
+
+    /// A durable-clear-epoch-scoped ticket -- see
+    /// ``AssetCacheService/retiringGenerations``'s own doc comment for
+    /// why a bare `Int` ticket alone is unsound: issuance tickets reset
+    /// to `1` for every key the instant ``AssetDiskCache/removeAll()``
+    /// sweeps its per-key authority record away, so the exact same `Int`
+    /// value can legitimately mean two entirely different, unrelated
+    /// mutations across a whole-cache clear boundary -- a ticket retired
+    /// under one epoch must never be mistaken for a ticket of the same
+    /// number legitimately reissued under a later one.
+    struct RetiringTicket: Hashable, Sendable {
+        let epoch: Int
+        let ticket: Int
+    }
 
     /// Per-``AssetCacheKey`` FIFO mutex backing store for
     /// ``acquireIssuanceDecisionLock(for:)``/``releaseIssuanceDecisionLock(for:)``
@@ -329,6 +343,21 @@ actor AssetCacheService {
     /// silently handing it the lock once its turn eventually comes —
     /// without relying on incidental scheduling timing alone.
     var testOnlyPauseHoldingIssuanceLock: (() async -> Void)?
+
+    /// Test-only hook awaited by ``coalescedFetch(key:cacheKey:candidates:)``
+    /// immediately after its `result` has been produced (whether via
+    /// ``completeFetch(_:fetchID:result:)``'s normal delivery or a
+    /// synthetic resume from ``resolveOrCreateInFlightFetch(key:cacheKey:candidates:)``'s
+    /// own registration closure) but strictly *before*
+    /// ``currentDurableKeyAuthority(for:)`` is read and
+    /// ``finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``
+    /// performs this exact waiter's final authority decision. Always
+    /// `nil` in production. A test installs a closure here to
+    /// deterministically let an independent, freshly-issued fetch ticket
+    /// for the exact same key durably supersede this one in exactly this
+    /// window, confirming the subsequent durable authority read (not
+    /// merely `result` itself) is what rejects this now-stale delivery.
+    var testOnlyPauseBeforeFetchWaiterFinalCAS: (() async -> Void)?
 
     /// Test-only hook invoked by ``completeFetch(_:fetchID:result:)``
     /// synchronously, before it resumes any of the fetch's currently

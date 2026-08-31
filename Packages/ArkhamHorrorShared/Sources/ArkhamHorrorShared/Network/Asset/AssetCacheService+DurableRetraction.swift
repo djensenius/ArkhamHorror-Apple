@@ -30,36 +30,69 @@ extension AssetCacheService {
     /// prior revision's detached, unawaited retraction task left that
     /// window open.
     ///
-    /// Deliberately never throws: a genuine disk-side failure here means
-    /// this phase's own durable transition could not be confirmed, which
-    /// this actor can no longer prove either way — mirroring
-    /// ``invalidate(_:token:)``'s own identical reaction to an
-    /// unconfirmed disk mutation, this records the failure
-    /// (``lastDiskPersistenceFailure``) and marks `key` tombstoned
-    /// (``tombstonedKeys``) — a purely in-process, best-effort signal to
-    /// skip a disk read this actor already expects to be pointless, never
-    /// a correctness requirement, since every disk hit for any key must
-    /// independently pass a fresh online conditional revalidation before
-    /// ever being trusted (see ``AssetDiskCache``'s own doc comment) —
-    /// but this failure must never be silently discarded as if the
-    /// retraction had definitely succeeded, the exact defect a prior
-    /// review flagged in this method's own disk-layer counterpart. Every
-    /// caller still resumes its own waiter with plain cancellation/
-    /// staleness regardless of whether this phase durably succeeded:
-    /// once this actor can no longer trust `key`'s own disk state either
-    /// way, ``tombstonedKeys`` already fails this process's own future
-    /// reads of it closed, which is the strongest guarantee available
-    /// once a genuine I/O failure — as opposed to a merely undelivered
-    /// waiter — is what is actually being reported.
-    func beginDurableRetractionIfApplied(_ key: AssetCacheKey, token: CacheToken) async {
-        do {
+    /// **Throws instead of silently swallowing a genuine failure.** A
+    /// prior revision caught every error here, recorded it into
+    /// ``lastDiskPersistenceFailure``/``tombstonedKeys``, and always
+    /// returned `Void` — every caller then unconditionally proceeded to
+    /// resume its own waiter with plain cancellation/staleness
+    /// regardless of whether this phase's durable `.retiring` commit
+    /// actually landed. That let a caller observe "cancelled, nothing
+    /// retained" even when this exact commit genuinely failed (a lock/
+    /// write/`fsync`/rename failure) and durable disk state may still
+    /// say `.content` — precisely the gap a later review round closed by
+    /// requiring this to propagate a typed failure instead. Every
+    /// caller of this method now must react to a thrown error by
+    /// reporting a typed, non-cancellation/non-staleness outcome (see
+    /// ``AssetError/retractionNotDurable(_:)`` and
+    /// ``WaiterFinalOutcome/retractionNotDurable(_:)``) — never folding
+    /// it into an ordinary cancellation/staleness result. The
+    /// diagnostic bookkeeping (``lastDiskPersistenceFailure``/
+    /// ``tombstonedKeys``) is still recorded before rethrowing, exactly
+    /// as before, purely as a best-effort in-process signal to skip a
+    /// disk read this actor already expects to be pointless — never
+    /// itself a correctness requirement, since every disk hit for any
+    /// key must independently pass a fresh online conditional
+    /// revalidation before ever being trusted (see ``AssetDiskCache``'s
+    /// own doc comment).
+    ///
+    /// **Cancellation-shielded: this exact commit runs to completion
+    /// regardless of whether the *calling* waiter's own task is already
+    /// (or becomes) cancelled.** Every caller of this method reaches it
+    /// from a context that may itself be cancelled — a coalesced
+    /// waiter's own task observing cancellation, or a zero-waiter
+    /// cancellation's cleanup — and
+    /// ``AssetDiskCache/beginRetraction(_:token:)``'s own disk-lock
+    /// acquisition
+    /// (`SecureCacheDirectoryLockCoordinator`) is itself
+    /// cancellation-aware: a caller cancelled while merely *queued* for
+    /// that in-process lock throws plain `CancellationError` having
+    /// never even attempted the durable commit, which — left unshielded
+    /// — would let this exact caller's own cancellation state (nothing
+    /// to do with any genuine disk failure) abort the one operation
+    /// that must complete before cancellation can safely be observed.
+    /// Running the actual disk call from inside a fresh, unstructured
+    /// `Task` closes this: unlike a structured child task (a task-group
+    /// child, or `async let`), an unstructured `Task { ... }` does
+    /// *not* inherit its creating context's cancellation state, so this
+    /// commit always runs as if freshly, uncancellably started,
+    /// regardless of what happens to the caller's own task concurrently.
+    /// Awaiting `.result` here still keeps this call synchronous from
+    /// its own caller's point of view — this method does not return
+    /// until the shielded commit itself has concluded, one way or the
+    /// other.
+    func beginDurableRetractionIfApplied(_ key: AssetCacheKey, token: CacheToken) async throws {
+        let outcome = await Task {
             try await diskCache.beginRetraction(key, token: token)
-        } catch let error as AssetError {
+        }.result
+        switch outcome {
+        case .success:
+            return
+        case let .failure(error):
+            let assetError = (error as? AssetError)
+                ?? .cachePersistenceFailed(String(describing: error))
             tombstonedKeys.insert(key)
-            lastDiskPersistenceFailure = error
-        } catch {
-            tombstonedKeys.insert(key)
-            lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
+            lastDiskPersistenceFailure = assetError
+            throw assetError
         }
     }
 

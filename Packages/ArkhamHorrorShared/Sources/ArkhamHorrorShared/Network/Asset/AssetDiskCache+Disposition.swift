@@ -1,31 +1,49 @@
 import Foundation
 
-/// The durable, typed per-key **disposition** record for
-/// ``AssetDiskCache`` -- what actually occupies the `<hash>.applied` file
-/// this cache has always used to track the highest ticket any mutation
-/// for a key has committed (see `AssetDiskCache+WriteGeneration.swift`'s
-/// own type-level doc comment for that counter's full history), now
-/// carrying a typed *kind* alongside that same ticket rather than a bare
-/// integer.
+/// The durable, typed per-key **authority record** for ``AssetDiskCache``
+/// -- what actually occupies the `<hash>.applied` file this cache has
+/// always used, now carrying *both* halves of this key's own durable
+/// mutation-ordering state in one atomically-written unit: the highest
+/// ticket ever durably *issued* for this key
+/// (``AssetDiskCache/KeyAuthorityRecord/issuedTicket``, previously its
+/// own separate `<hash>.gen` file) and this key's own typed *applied*
+/// disposition (``AssetDiskCache/KeyAuthorityRecord/disposition``,
+/// carrying a typed *kind* alongside the applied ticket rather than a
+/// bare integer).
 ///
-/// **Closes this package's most persistent review finding: a purely
-/// process-local/volatile signal cannot durably distinguish "a content
-/// publication's own metadata-pointer removal merely failed" from "this
-/// exact ticket's disposition was always a confirmed, durable
-/// tombstone".** Both used to manifest identically as "no metadata
-/// sidecar present at this key's hash-derived name" -- an ordinary,
-/// expected `ENOENT` for a genuine tombstone, but *also* exactly what a
-/// crash (or any other failure) between removing that sidecar and
-/// durably committing the applied-ticket counter's new value would leave
-/// behind, with the bare-integer counter itself still recording the
-/// *old*, now-physically-absent content's own ticket as if it were still
-/// the current disposition -- and, concretely, letting a stale cached
-/// entry whose own historical ticket happens to equal that unchanged
-/// counter value pass a ticket-only provenance check and revalidate
-/// (or even publish over) content that was already confirmed gone.
+/// **Closes this package's most persistent review finding, round two: a
+/// key's issuance counter and its applied disposition, once stored as
+/// two separate files, can be torn apart by any failure that manages to
+/// delete/corrupt exactly one of them while leaving the other
+/// untouched — indistinguishable, from either file alone, from a
+/// genuinely pristine key that never had a ticket issued for it at
+/// all.** A prior revision of this cache split these two into
+/// `<hash>.gen` (issuance) and `<hash>.applied` (disposition), each its
+/// own independently-written file, guarded only by a cross-check
+/// (`issued >= applied`) that catches one direction of that asymmetry
+/// (a disposition somehow ahead of its own issuance counter) but not the
+/// other: a ticket issued for a key that has never yet had anything
+/// *applied* (its disposition is still genuinely
+/// ``KeyDisposition/pristine``) writes only to `<hash>.gen` — if that
+/// one file is later lost or corrupted independently (any I/O fault, or
+/// external interference, that happens to strike only that one name),
+/// the key reads back as if it had *never* had a ticket issued at all,
+/// letting a fresh reservation silently replay a ticket number some
+/// other, already-issued-but-not-yet-applied operation (in this process,
+/// a sibling process, or this same process before a later crash) still
+/// legitimately owns. Merging both halves into one file, written
+/// atomically as a single unit at *every* durable state transition —
+/// issuance included, not merely publication/retraction — removes this
+/// asymmetry entirely: there is no longer any way for "issued" and
+/// "applied" to independently diverge, because they are the same
+/// on-disk artifact. A missing file is now unambiguously "no ticket has
+/// ever been issued for this key" (the *only* way to reach that state);
+/// a present-but-unparsable/wrong-type file is, as before, a hard,
+/// typed, fail-closed failure rather than a silent collapse back to
+/// that same pristine baseline.
 ///
-/// Three states, in the only order a key's disposition can ever legally
-/// advance through for a given ticket:
+/// Three disposition states, in the only order a key's disposition can
+/// ever legally advance through for a given ticket:
 ///
 /// - ``KeyDispositionKind/content``: `ticket`'s own mutation durably
 ///   published a payload+metadata pair; `contentHash` is that payload's
@@ -57,8 +75,9 @@ import Foundation
 ///
 /// Stored at the exact same filename ``AssetDiskCache/appliedTicketFilename(for:)``
 /// has always used (`<hash>.applied`) -- only the on-disk *format*
-/// changes, from a fixed-width zero-padded decimal ticket to this type's
-/// own JSON encoding. This is safe purely because this whole subsystem
+/// changes, from a bare disposition JSON object to this wrapping
+/// record's own JSON encoding (which nests that same disposition object
+/// under a new key). This is safe purely because this whole subsystem
 /// is pre-release, unshipped software: an old-format file encountered by
 /// this new code throws a typed, fail-closed
 /// ``AssetError/cachePersistenceFailed(_:)`` (an acceptable "treat this
@@ -66,7 +85,10 @@ import Foundation
 /// ephemeral disk cache), so no migration path is required. Reusing this
 /// exact filename also means every existing reserved-name exclusion this
 /// cache already maintains (`AssetDiskCache+Removal.swift`'s
-/// `removeAll()` sweep, in particular) requires no further change at all.
+/// `removeAll()` sweep, in particular) requires no further change at
+/// all -- and means one fewer per-key file (`<hash>.gen` no longer
+/// exists at all) is ever written for the lifetime of this cache
+/// directory.
 extension AssetDiskCache {
     enum KeyDispositionKind: String, Codable, Sendable, Equatable {
         case content
@@ -90,56 +112,115 @@ extension AssetDiskCache {
         static let pristine = KeyDisposition(ticket: 0, kind: .tombstone, contentHash: nil)
     }
 
+    /// The full durable per-key authority record — both halves of a
+    /// key's own durable mutation-ordering state, always read/written
+    /// together as one atomic unit. See this file's own type-level doc
+    /// comment for why splitting these two into separate files was
+    /// itself the defect a prior review round found.
+    struct KeyAuthorityRecord: Codable, Sendable, Equatable {
+        /// The highest ticket ever durably reserved for this key via
+        /// ``AssetDiskCache/issueTicketLocked(for:)`` — always `>=`
+        /// `disposition.ticket`, by construction: every disposition
+        /// commit reuses a ticket that was itself already issued (see
+        /// ``AssetDiskCache/resolvedMutationTicketLocked(for:token:)``),
+        /// never a value this record's own `issuedTicket` has not
+        /// already advanced to.
+        let issuedTicket: Int
+        let disposition: KeyDisposition
+
+        /// The record a key that has never had any ticket issued or
+        /// mutation committed for it implicitly has.
+        static let pristine = KeyAuthorityRecord(issuedTicket: 0, disposition: .pristine)
+    }
+
     /// Generous enough for this record's own small, fixed-shape JSON
-    /// encoding (a ticket, a short enum string, and an optional 64-hex-
-    /// character content hash) with ample headroom, while still bounding
-    /// a read against a tampered or corrupt file of unbounded size.
+    /// encoding (an issuance ticket, a nested disposition ticket, a
+    /// short enum string, and an optional 64-hex-character content hash)
+    /// with ample headroom, while still bounding a read against a
+    /// tampered or corrupt file of unbounded size.
     static let maxDispositionBytes = 512
 
-    /// Reads `key`'s current durable disposition. Must only ever be
-    /// called while the caller already holds this instance's
-    /// ``SecureCacheDirectory/acquireExclusiveLock()``. A clean "does not
-    /// exist" miss is ``KeyDisposition/pristine`` for the identical
-    /// reason ``currentIssuedTicketLocked(for:)``'s own is: a genuinely
-    /// pristine key has nothing durably applied yet. Any *other* failure
-    /// (a symlink/non-regular entry at this name, an oversized or
-    /// unparsable value -- including a pre-migration bare-integer file
-    /// from before this type existed) is a hard, typed, fail-closed
-    /// failure instead, since it means a real, previously persisted
-    /// disposition exists but could not be trusted, which must never
-    /// silently default back to the same baseline a pristine key would
-    /// also report.
-    func currentDispositionLocked(for key: AssetCacheKey) throws -> KeyDisposition {
+    /// Reads `key`'s current durable authority record in full (both the
+    /// highest-issued ticket and the applied disposition, always
+    /// together — see this file's own type-level doc comment for why).
+    /// Must only ever be called while the caller already holds this
+    /// instance's ``SecureCacheDirectory/acquireExclusiveLock()``. A
+    /// clean "does not exist" miss is ``KeyAuthorityRecord/pristine`` —
+    /// the *only* way this can legitimately occur is a key that has
+    /// never had a ticket issued or a mutation committed for it at all,
+    /// since both halves have lived in this exact one file, written
+    /// atomically together, from the moment either was first ever
+    /// durably recorded. Any *other* failure (a symlink/non-regular
+    /// entry at this name, an oversized or unparsable value — including
+    /// a pre-merge bare-disposition or bare-integer file from before
+    /// this type existed) is a hard, typed, fail-closed failure instead,
+    /// since it means a real, previously persisted record exists but
+    /// could not be trusted, which must never silently default back to
+    /// the same baseline a pristine key would also report.
+    func currentAuthorityRecordLocked(for key: AssetCacheKey) throws -> KeyAuthorityRecord {
         guard let data = try secureDirectory.read(
             name: appliedTicketFilename(for: key),
             maxBytes: Self.maxDispositionBytes
         ) else {
             return .pristine
         }
-        guard let disposition = try? JSONDecoder.assetCache().decode(
-            KeyDisposition.self,
+        guard let record = try? JSONDecoder.assetCache().decode(
+            KeyAuthorityRecord.self,
             from: data
         ) else {
             throw AssetError.cachePersistenceFailed(
-                "Key disposition file '\(appliedTicketFilename(for: key))' is corrupt or unparsable"
+                "Key authority record '\(appliedTicketFilename(for: key))' is corrupt or unparsable"
             )
         }
-        return disposition
+        return record
     }
 
-    /// Durably commits `disposition` as `key`'s new applied disposition:
+    /// The disposition half of ``currentAuthorityRecordLocked(for:)`` —
+    /// kept as its own entry point since most callers only ever need
+    /// this half, exactly like before this file's own issuance/
+    /// disposition merge.
+    func currentDispositionLocked(for key: AssetCacheKey) throws -> KeyDisposition {
+        try currentAuthorityRecordLocked(for: key).disposition
+    }
+
+    /// Durably commits `record` as `key`'s new authority record in full:
     /// write a bounded temp file, `fsync` it, rename it into place,
     /// `fsync` the containing directory -- the identical crash-
     /// consistency shape every other durable single-file commit in this
     /// cache follows (see ``AssetDiskCache``'s own type-level doc
     /// comment). Must only ever be called while the caller already holds
     /// this instance's ``SecureCacheDirectory/acquireExclusiveLock()``.
-    func commitDispositionLocked(_ disposition: KeyDisposition, for key: AssetCacheKey) throws {
-        let data = try JSONEncoder.assetCache().encode(disposition)
+    func commitAuthorityRecordLocked(
+        _ record: KeyAuthorityRecord,
+        for key: AssetCacheKey
+    ) throws {
+        let data = try JSONEncoder.assetCache().encode(record)
         let name = appliedTicketFilename(for: key)
         let tempName = name + ".tmp"
         try secureDirectory.writeTempAndFsync(tempName: tempName, data: data)
         try secureDirectory.renameAndFsyncDirectory(from: tempName, to: name)
+    }
+
+    /// Durably commits `disposition` as `key`'s new applied disposition,
+    /// preserving this key's own currently-recorded `issuedTicket`
+    /// (bumped up to at least `disposition.ticket`, which by
+    /// construction — see ``resolvedMutationTicketLocked(for:token:)`` —
+    /// can never itself exceed a ticket this key has not already been
+    /// issued) rather than discarding it: every disposition commit
+    /// re-reads the current record first specifically so this one
+    /// write remains the single, atomic unit this file's own type-level
+    /// doc comment requires — there is no window in which only the
+    /// disposition half of this key's authority is durably updated
+    /// while `issuedTicket` is not.
+    func commitDispositionLocked(_ disposition: KeyDisposition, for key: AssetCacheKey) throws {
+        let current = try currentAuthorityRecordLocked(for: key)
+        try commitAuthorityRecordLocked(
+            KeyAuthorityRecord(
+                issuedTicket: max(current.issuedTicket, disposition.ticket),
+                disposition: disposition
+            ),
+            for: key
+        )
     }
 
     /// The exact ticket a token-gated caller's own already-issued ticket

@@ -137,6 +137,21 @@ enum AssetError: Error, Sendable {
     /// `String` is diagnostic only.
     case clearFenceNotDurable(String)
 
+    /// A single key's durable phase-1 retraction commit
+    /// (``AssetCacheService/beginDurableRetractionIfApplied(_:token:)``,
+    /// which durably installs `.retiring(token's ticket)` -- see
+    /// ``AssetDiskCache/beginRetraction(_:token:)``) could not be
+    /// confirmed. Distinct from ordinary cancellation/staleness: those
+    /// two outcomes both require this exact durable transition to have
+    /// *already* landed (or to be already provably unnecessary — the
+    /// token is already stale/non-content) before a waiter is ever told
+    /// "nothing was retained" — a caller must never report cancellation
+    /// while durable disk state may still say `.content`. Callers that
+    /// observe this must treat it identically to a genuine I/O failure,
+    /// never as a soft/best-effort outcome. The associated `String` is
+    /// diagnostic only.
+    case retractionNotDurable(String)
+
     // MARK: Configuration / packaging
 
     /// A bundled resource this package's own configuration depends on
@@ -174,6 +189,7 @@ extension AssetError: Equatable {
         case (.transportFailure, .transportFailure),
              (.cachePersistenceFailed, .cachePersistenceFailed),
              (.clearFenceNotDurable, .clearFenceNotDurable),
+             (.retractionNotDurable, .retractionNotDurable),
              (.configurationFailure, .configurationFailure):
             // Diagnostic strings are informational only; equality ignores them.
             true

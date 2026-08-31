@@ -2,10 +2,11 @@ import Foundation
 
 /// The coalesced-in-flight-fetch machinery for a normal (non-revalidation)
 /// cache miss: joining/starting a single shared network fetch per cache
-/// key, and the per-waiter cancellation/completion bookkeeping that keeps
-/// one waiter's cancellation from ever corrupting shared work or another
-/// waiter's own result. Split out of the main actor file purely to stay
-/// under this package's file-length limit; every member here is still
+/// key. Cancellation (`cancelWaiter`) and completion (`completeFetch`)
+/// bookkeeping — that keeps one waiter's cancellation from ever
+/// corrupting shared work or another waiter's own result — is split into
+/// `AssetCacheService+FetchCompletion.swift`, purely to stay under this
+/// package's file-length limit; every member in both files is still
 /// actor-isolated `AssetCacheService` state/behavior.
 extension AssetCacheService {
     // MARK: - Coalesced network fetch
@@ -100,7 +101,7 @@ extension AssetCacheService {
                 }
             }
             // `Task.isCancelled` alone is not consulted directly here:
-            // ``finalizeFetchWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``
+            // ``finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``
             // below reads it itself, as the very last step before this
             // waiter's outcome is decided — see that method's own doc
             // comment, and `AssetCacheService+WaiterAcknowledgement.swift`'s
@@ -110,16 +111,16 @@ extension AssetCacheService {
             // suspension between them (rather than three separate steps,
             // as a prior revision of this code had) is required:
             // `Task.isCancelled` is monotonic once set, so checking it
-            // there — after the one durable epoch read below, immediately
-            // before the final decision — already covers every window a
-            // cancellation could have landed in since this waiter's
-            // continuation resumed, including one landing during that
-            // epoch read itself. That callee is itself `async` only so
-            // it can, strictly *after* this atomic block already decided
-            // this was the group's last undelivered waiter, `await` the
-            // durable phase-1 retraction of an abandoned mutation before
-            // returning — never before or during the atomic decision
-            // itself.
+            // there — after the one durable authority read below,
+            // immediately before the final decision — already covers
+            // every window a cancellation could have landed in since
+            // this waiter's continuation resumed, including one landing
+            // during that read itself. That callee is itself `async`
+            // only so it can, strictly *after* this atomic block already
+            // decided this was the group's last undelivered waiter,
+            // `await` the durable phase-1 retraction of an abandoned
+            // mutation before returning — never before or during the
+            // atomic decision itself.
             //
             // `token` (captured above, before this shared fetch's `Task`
             // was even created) already carries its own fully-stamped
@@ -130,24 +131,51 @@ extension AssetCacheService {
             // prior revision of this code, there is no separate,
             // later-stamped copy to reconstruct here, since issuance
             // itself never leaves that window open in the first place.
-            let currentEpoch = await currentDurableClearEpoch()
-            let resultIsSuccess = if case .success = result {
-                true
-            } else {
-                false
-            }
+            //
+            // Reads the full per-key durable authority snapshot (epoch
+            // *and* highest-issued ticket), not merely the epoch — a
+            // purely epoch-based check here cannot detect an independent
+            // sibling instance/process's own newer issuance for this
+            // exact key (two operations for the same key can be issued
+            // in one order and complete/deliver in another; the epoch
+            // alone is unaffected by either), which is exactly what let
+            // an older, already-superseded delivery win a race against a
+            // strictly newer, still-pending sibling issuance. See
+            // ``AssetCacheService/isTokenAuthoritative(_:for:currentAuthority:)``'s
+            // own doc comment.
+            await testOnlyPauseBeforeFetchWaiterFinalCAS?()
+            let currentAuthority = await currentDurableKeyAuthority(for: cacheKey)
+            let resultIsSuccess = result.isCacheOperationSuccess
             let outcome = await finalizeFetchWaiterOutcome(
                 cacheKey,
                 waiter: WaiterIdentity(fetchID: fetchID, waiterID: waiterID),
                 token: token,
-                currentEpoch: currentEpoch,
+                currentAuthority: currentAuthority,
                 resultIsSuccess: resultIsSuccess
             )
             switch outcome {
             case .cancelled:
+                // `finalizeFetchWaiterOutcome` derives `.cancelled` from
+                // `Task.isCancelled` alone, independent of `result` --
+                // which, for a waiter resolved directly by
+                // ``cancelWaiter(_:fetchID:waiterID:)`` (this waiter was
+                // the sole one and phase-1 durable retraction ran
+                // *before* `result` was ever produced), may already
+                // carry that exact typed outcome: either a genuine
+                // `CancellationError()` (retraction durably confirmed,
+                // or provably unnecessary) or a typed `AssetError` (the
+                // durable `.retiring` commit itself failed). Never
+                // collapse the latter into plain cancellation -- that
+                // would let this caller believe nothing was retained
+                // while durable disk state may still say `.content`.
+                if case let .failure(error) = result, !(error is CancellationError) {
+                    throw error
+                }
                 throw CancellationError()
             case .stale:
                 throw AssetError.staleOperation
+            case let .retractionNotDurable(error):
+                throw error
             case .failed, .delivered:
                 // `.failed` propagates the shared fetch's own original
                 // failure (never a synthesized authority error); a
@@ -307,93 +335,5 @@ extension AssetCacheService {
             }
         }
         return (fetchID, token)
-    }
-
-    private func cancelWaiter(_ key: AssetCacheKey, fetchID: UUID, waiterID: UUID) async {
-        guard var fetch = inFlight[key], fetch.id == fetchID else {
-            // Already completed/replaced by the time this cancellation
-            // reached the actor; the completion path already resumed (or
-            // this waiter never actually registered) this waiter, so
-            // there is nothing left to do here.
-            return
-        }
-        guard let continuation = fetch.waiters.removeValue(forKey: waiterID) else {
-            inFlight[key] = fetch
-            return
-        }
-        guard fetch.waiters.isEmpty else {
-            inFlight[key] = fetch
-            continuation.resume(returning: .failure(CancellationError()))
-            return
-        }
-        inFlight[key] = nil
-        retireIfCurrent(fetch.token, for: key)
-        // Recorded synchronously, before either `await` below, so a
-        // concurrent memory hit that races this cancellation (this
-        // actor is reentrant across the suspensions immediately
-        // following) can never observe this exact entry as current
-        // in the window before these removals actually complete —
-        // see ``AssetCacheService/retiringGenerations``'s own doc
-        // comment for the full reasoning.
-        markGenerationRetiring(fetch.token, for: key)
-        fetch.task.cancel()
-        // Phase 1 -- the durable disk `.retiring` commit -- is awaited
-        // to completion here, *before* this exact waiter's own
-        // continuation is resumed below: see
-        // ``AssetCacheService/beginDurableRetractionIfApplied(_:token:)``'s
-        // own doc comment for why letting this waiter (or any other
-        // reader, in this process or a sibling one) observe cancellation
-        // while disk still durably says `.content` is exactly the defect
-        // this ordering closes. Only the best-effort physical cleanup
-        // and final `.tombstone` commit (phase 2) remain safe to finish
-        // asynchronously, after this waiter has already been told the
-        // outcome.
-        await beginDurableRetractionIfApplied(key, token: fetch.token)
-        continuation.resume(returning: .failure(CancellationError()))
-        Task { await self.completeDurableRetractionIfApplied(key, token: fetch.token) }
-    }
-
-    /// Called exactly once by the shared fetch's own completion watcher.
-    /// Resumes every still-registered waiter with the shared result, and
-    /// clears `inFlight` only if the entry for `key` is still exactly the
-    /// fetch identified by `fetchID` — a zero-waiter cancellation may
-    /// already have removed (and possibly replaced with fresh work) this
-    /// exact entry, in which case this stale completion must not touch
-    /// newer state.
-    ///
-    /// Registers exactly this set of resumed waiters into
-    /// ``pendingFetchAcknowledgement`` *before* resuming any of them —
-    /// see `AssetCacheService+WaiterAcknowledgement.swift`'s type-level
-    /// doc comment for why this entry must be retained (rather than
-    /// unconditionally forgotten here, as a prior revision of this
-    /// method did) until each of these exact waiters has individually
-    /// finalized via ``finalizeFetchWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``.
-    /// No new waiter can ever register into this exact `fetchID` after
-    /// this point: `resolveOrCreateInFlightFetch`'s registration closure
-    /// only ever joins `inFlight[cacheKey]`, which this method clears
-    /// synchronously, in this same step, before any waiter is resumed —
-    /// so the waiter set captured here is already final.
-    private func completeFetch(
-        _ key: AssetCacheKey,
-        fetchID: UUID,
-        result: Result<CachedAsset, Error>
-    ) {
-        guard let fetch = inFlight[key], fetch.id == fetchID else {
-            // Already replaced (e.g. by a zero-waiter cancellation
-            // followed by fresh work); that replaced entry's waiters (if
-            // any) belong to the newer fetch and must not be touched by
-            // this stale completion.
-            return
-        }
-        inFlight[key] = nil
-        pendingFetchAcknowledgement[fetchID] = PendingWaiterAcknowledgement(
-            key: key,
-            token: fetch.token,
-            pendingWaiterIDs: Set(fetch.waiters.keys)
-        )
-        testOnlyBeforeFetchResumesWaiters?()
-        for (_, continuation) in fetch.waiters {
-            continuation.resume(returning: result)
-        }
     }
 }

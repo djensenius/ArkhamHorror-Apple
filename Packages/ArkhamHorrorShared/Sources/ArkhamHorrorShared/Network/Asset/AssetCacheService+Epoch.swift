@@ -236,10 +236,11 @@ extension AssetCacheService {
     /// never individually reversed once the actual removal completes.**
     /// A ticket, once retracted, can never legitimately become valid
     /// again for this exact key within this exact durable clear epoch
-    /// (issuance tickets are strictly increasing and never reused short
-    /// of a whole-cache clear — see `AssetDiskCache+WriteGeneration.swift`'s
-    /// own doc comment), so remembering it costs nothing beyond the one
-    /// `Int` itself. Clearing it the instant the asynchronous removal
+    /// (issuance tickets are strictly increasing and never reused within
+    /// one epoch — see `AssetDiskCache+WriteGeneration.swift`'s own doc
+    /// comment), so remembering it (scoped to the epoch it was retracted
+    /// under — see ``RetiringTicket``) costs nothing beyond one small
+    /// struct. Clearing it the instant the asynchronous removal
     /// completes was an earlier, *unsound* revision of this fix: a
     /// concurrent reader that had already captured this exact entry from
     /// ``AssetMemoryCache/get(_:)`` (finding it still present, strictly
@@ -257,18 +258,41 @@ extension AssetCacheService {
     /// window or in-flight operation — the same protection that already
     /// keeps a still-suspended reader's own snapshot from being pruned
     /// out from under it.
+    ///
+    /// A no-op (beyond the existing `diskWriteGeneration == nil` guard)
+    /// if `token.durableClearEpoch` is also `nil`: an unstamped epoch is
+    /// exactly as uninformative as an unstamped ticket — there is nothing
+    /// scoped-and-meaningful to record either way.
     func markGenerationRetiring(_ token: CacheToken, for key: AssetCacheKey) {
-        guard let ticket = token.diskWriteGeneration else { return }
-        retiringGenerations[key, default: []].insert(ticket)
+        guard
+            let ticket = token.diskWriteGeneration,
+            let epoch = token.durableClearEpoch
+        else { return }
+        retiringGenerations[key, default: []].insert(RetiringTicket(epoch: epoch, ticket: ticket))
     }
 
-    /// `true` if `generation` — some entry's own stamped
+    /// `true` if `generation` under `epoch` — some entry's own stamped
     /// ``CachedAsset/writeGeneration``/``AssetCacheMetadata/writeGenerationAtPublication``
+    /// paired with that same entry's own stamped
+    /// ``CachedAsset/durableClearEpoch``/``AssetDiskCache/KeyAuthoritySnapshot/clearEpoch``
     /// — has already been decided (via ``markGenerationRetiring(_:for:)``)
     /// to be retracted for `key`, regardless of whether that entry was
     /// read from memory or freshly read from disk just now. `false` for a
-    /// `nil` generation (an unstamped entry never carries any retiring
-    /// decision to check against).
+    /// `nil` generation or `nil` epoch (an unstamped entry never carries
+    /// any retiring decision to check against).
+    ///
+    /// **Why `epoch` must always be passed, never a bare ticket alone.**
+    /// ``AssetDiskCache/removeAll()`` resets every key's own issuance
+    /// counter back to `1` as part of a whole-cache clear, so the exact
+    /// same `Int` ticket value can legitimately mean two entirely
+    /// different, unrelated mutations on either side of a clear boundary
+    /// — a fresh, perfectly legitimate post-clear ticket `1` must never
+    /// be confused with a stale pre-clear ticket `1` this method already
+    /// marked retiring. Every call site already has the exactly-current
+    /// epoch on hand at the point it calls this (having just verified,
+    /// via ``unchanged(since:for:)``/the caller's own durable-authority
+    /// comparison, that its own local epoch value *is* the current one),
+    /// so passing it through here costs nothing extra and closes that gap.
     ///
     /// Shared by ``memoryEntryStillCurrent(_:storedGeneration:for:)`` (a
     /// memory hit) *and* every disk-hit branch
@@ -284,9 +308,15 @@ extension AssetCacheService {
     /// nothing in-process changed during this call's own suspension. Only
     /// this explicit, retraction-authored marker closes that gap for a
     /// disk read the same way it already does for a memory read.
-    func writeGenerationIsRetiring(_ generation: Int?, for key: AssetCacheKey) -> Bool {
-        guard let generation else { return false }
-        return retiringGenerations[key]?.contains(generation) == true
+    func writeGenerationIsRetiring(
+        _ generation: Int?,
+        epoch: Int?,
+        for key: AssetCacheKey
+    ) -> Bool {
+        guard let generation, let epoch else { return false }
+        return retiringGenerations[key]?.contains(
+            RetiringTicket(epoch: epoch, ticket: generation)
+        ) == true
     }
 
     /// Issues a fresh, strictly-increasing authority token for `key`, and

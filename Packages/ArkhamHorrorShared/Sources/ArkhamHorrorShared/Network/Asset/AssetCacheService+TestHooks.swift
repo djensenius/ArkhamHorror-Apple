@@ -22,6 +22,11 @@ extension AssetCacheService {
         testOnlyPauseAfterFetchPublishApplied = hook
     }
 
+    /// Test-only: installs ``testOnlyPauseBeforeFetchWaiterFinalCAS``.
+    func installTestOnlyPauseBeforeFetchWaiterFinalCAS(_ hook: @escaping () async -> Void) {
+        testOnlyPauseBeforeFetchWaiterFinalCAS = hook
+    }
+
     /// Test-only: installs ``testOnlyBeforeFetchResumesWaiters``.
     func installTestOnlyBeforeFetchResumesWaiters(_ hook: @escaping () -> Void) {
         testOnlyBeforeFetchResumesWaiters = hook

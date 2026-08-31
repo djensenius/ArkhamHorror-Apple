@@ -104,8 +104,15 @@ extension AssetCacheService {
             // observe its outcome), this call site has no waiter to
             // unblock early; awaiting phase 2 as well before returning
             // keeps this method's own long-standing "fully retracted by
-            // the time `.stale` is returned" contract unchanged.
-            await beginDurableRetractionIfApplied(cacheKey, token: token)
+            // the time `.stale` is returned" contract unchanged. This
+            // call already reports `.stale` unconditionally below
+            // regardless of phase 1's own outcome, so a thrown
+            // persistence failure is swallowed here (`try?`) rather than
+            // propagated -- `beginDurableRetractionIfApplied` itself
+            // already records it into `lastDiskPersistenceFailure`/
+            // `tombstonedKeys` before throwing, and this method has no
+            // waiter of its own to report a distinct typed outcome to.
+            try? await beginDurableRetractionIfApplied(cacheKey, token: token)
             await completeDurableRetractionIfApplied(cacheKey, token: token)
             return .stale
         }
@@ -160,13 +167,17 @@ extension AssetCacheService {
             // authority check had failed, rather than folding either into
             // `lastDiskPersistenceFailure` as a soft failure the memory
             // write survives. See ``AssetError/entryNoLongerCachedToTouch``'s
-            // own doc comment.
-            await beginDurableRetractionIfApplied(cacheKey, token: token)
+            // own doc comment. This call already reports `.stale`
+            // unconditionally below regardless of phase 1's own
+            // outcome -- see ``publish(_:asset:token:)``'s identical
+            // `try?` for why swallowing a thrown persistence failure
+            // here is correct.
+            try? await beginDurableRetractionIfApplied(cacheKey, token: token)
             await completeDurableRetractionIfApplied(cacheKey, token: token)
             return .stale
         }
         guard await isAuthoritative(token, for: cacheKey) else {
-            await beginDurableRetractionIfApplied(cacheKey, token: token)
+            try? await beginDurableRetractionIfApplied(cacheKey, token: token)
             await completeDurableRetractionIfApplied(cacheKey, token: token)
             return .stale
         }

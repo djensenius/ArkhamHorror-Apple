@@ -90,7 +90,7 @@ extension AssetCacheService {
                 }
             }
             // `Task.isCancelled` is read inside
-            // ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``
+            // `finalizeRevalidationWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)`
             // below, as the very last step before this waiter's outcome
             // is decided — see `finalizeFetchWaiterOutcome`'s doc
             // comment (`AssetCacheService+Coalescing.swift`) for why
@@ -98,24 +98,40 @@ extension AssetCacheService {
             // this exact waiter's ledger acknowledgement into that single
             // synchronous actor method — rather than separate steps, as a
             // prior revision of this code had — is required.
-            let currentEpoch = await currentDurableClearEpoch()
-            let resultIsSuccess = if case .success = result {
-                true
-            } else {
-                false
-            }
+            //
+            // Reads the full per-key durable authority snapshot (epoch
+            // *and* highest-issued ticket) rather than merely the epoch
+            // — see ``AssetCacheService/isTokenAuthoritative(_:for:currentAuthority:)``'s
+            // own doc comment for why an epoch-only check cannot detect
+            // an independent sibling instance/process's own newer
+            // issuance for this exact key.
+            let currentAuthority = await currentDurableKeyAuthority(for: cacheKey)
+            let resultIsSuccess = result.isCacheOperationSuccess
             let outcome = await finalizeRevalidationWaiterOutcome(
                 slot,
                 waiter: WaiterIdentity(fetchID: fetchID, waiterID: waiterID),
                 token: token,
-                currentEpoch: currentEpoch,
+                currentAuthority: currentAuthority,
                 resultIsSuccess: resultIsSuccess
             )
             switch outcome {
             case .cancelled:
+                // See ``AssetCacheService+Coalescing.swift``'s
+                // ``coalescedFetch(key:cacheKey:candidates:)`` for the
+                // full reasoning this mirrors: a waiter resolved
+                // directly by ``cancelRevalidationWaiter(_:fetchID:waiterID:)``
+                // may already carry a typed `AssetError` in `result` (the
+                // durable `.retiring` commit itself failed) rather than
+                // plain cancellation -- never collapse that into
+                // `CancellationError()`.
+                if case let .failure(error) = result, !(error is CancellationError) {
+                    throw error
+                }
                 throw CancellationError()
             case .stale:
                 throw AssetError.staleOperation
+            case let .retractionNotDurable(error):
+                throw error
             case .failed, .delivered:
                 return try result.get()
             }
@@ -216,8 +232,17 @@ extension AssetCacheService {
         // updated doc comment for the full reasoning this mirrors.
         // Only phase 2 (best-effort physical cleanup + final
         // `.tombstone` commit) is deferred to a detached `Task`.
-        await beginDurableRetractionIfApplied(slot.cacheKey, token: fetch.token)
-        continuation.resume(returning: .failure(CancellationError()))
+        //
+        // If phase 1 cannot be durably confirmed, this waiter must
+        // never be told plain cancellation regardless -- durable disk
+        // state may still say `.content` -- so it is instead resumed
+        // with the typed failure directly.
+        do {
+            try await beginDurableRetractionIfApplied(slot.cacheKey, token: fetch.token)
+            continuation.resume(returning: .failure(CancellationError()))
+        } catch {
+            continuation.resume(returning: .failure(error))
+        }
         Task {
             await self.completeDurableRetractionIfApplied(slot.cacheKey, token: fetch.token)
         }

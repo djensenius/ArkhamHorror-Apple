@@ -66,8 +66,9 @@ extension AssetCacheService {
         var anyDelivered = false
     }
 
-    /// The outcome ``finalizeFetchWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``/
-    /// ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``
+    /// The outcome
+    /// ``finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``/
+    /// ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``
     /// hands back to exactly one waiter.
     enum WaiterFinalOutcome {
         /// The underlying result was itself a failure (e.g. a transport
@@ -88,6 +89,19 @@ extension AssetCacheService {
         /// fully authoritative: safe to hand back to this waiter's own
         /// external caller.
         case delivered
+        /// This waiter was the last one remaining, no waiter in the
+        /// group ever took delivery, and the group's own abandoned
+        /// mutation's phase-1 durable retraction
+        /// (``AssetCacheService/beginDurableRetractionIfApplied(_:token:)``)
+        /// could not be confirmed. Must never be folded into
+        /// `.cancelled`/`.stale`: those two both require this exact
+        /// durable transition to have already landed (or to be already
+        /// provably unnecessary) first — reporting either while this
+        /// commit genuinely failed would let a caller believe "nothing
+        /// was retained" while durable disk state may still say
+        /// `.content`. The associated ``AssetError`` is the typed
+        /// failure to propagate.
+        case retractionNotDurable(AssetError)
     }
 
     /// Identifies exactly one waiter within exactly one coalesced
@@ -96,8 +110,8 @@ extension AssetCacheService {
     /// paired with the specific waiter's own identity (`waiterID`)
     /// within that operation's set of resumed-but-unacknowledged
     /// waiters. Bundled into one type purely so
-    /// ``finalizeFetchWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``/
-    /// ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``
+    /// ``finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``/
+    /// ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``
     /// stay within this package's parameter-count convention.
     struct WaiterIdentity {
         let fetchID: UUID
@@ -107,8 +121,9 @@ extension AssetCacheService {
     /// The single, terminal, actor-isolated decision point for exactly
     /// one coalesced-fetch waiter, called immediately after that waiter's
     /// continuation has resumed with the shared fetch's own `result` (see
-    /// ``completeFetch(_:fetchID:result:)``). `currentEpoch` must already
-    /// have been freshly read (``currentDurableClearEpoch()``) by the
+    /// ``completeFetch(_:fetchID:result:)``). `currentAuthority` must
+    /// already have been freshly read (``currentDurableKeyAuthority(for:)``)
+    /// by the
     /// caller *before* this method is entered: the cancellation check,
     /// authority re-check, and this exact waiter's own ledger update
     /// below all still happen as one atomic block with no suspension
@@ -140,11 +155,15 @@ extension AssetCacheService {
         _ key: AssetCacheKey,
         waiter: WaiterIdentity,
         token: CacheToken,
-        currentEpoch: Int?,
+        currentAuthority: AssetDiskCache.KeyAuthoritySnapshot?,
         resultIsSuccess: Bool
     ) async -> WaiterFinalOutcome {
         let cancelled = Task.isCancelled
-        let authoritative = isTokenAuthoritative(token, for: key, currentEpoch: currentEpoch)
+        let authoritative = isTokenAuthoritative(
+            token,
+            for: key,
+            currentAuthority: currentAuthority
+        )
         let delivered = !cancelled && resultIsSuccess && authoritative
         let pendingRetraction = finalizePendingAcknowledgement(
             &pendingFetchAcknowledgement,
@@ -153,7 +172,16 @@ extension AssetCacheService {
             delivered: delivered
         )
         if let pendingRetraction {
-            await retractUndeliveredMutation(pendingRetraction.key, token: pendingRetraction.token)
+            do {
+                try await retractUndeliveredMutation(
+                    pendingRetraction.key,
+                    token: pendingRetraction.token
+                )
+            } catch let error as AssetError {
+                return .retractionNotDurable(error)
+            } catch {
+                return .retractionNotDurable(.cachePersistenceFailed(String(describing: error)))
+            }
         }
         if cancelled {
             return .cancelled
@@ -164,7 +192,7 @@ extension AssetCacheService {
         return delivered ? .delivered : .stale
     }
 
-    /// Mirrors ``finalizeFetchWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``
+    /// Mirrors ``finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``
     /// for a coalesced revalidation waiter — see that method's doc
     /// comment for the full reasoning; identical shape, the
     /// authority/ledger's `Key` is ``RevalidationSlot`` rather than
@@ -175,14 +203,14 @@ extension AssetCacheService {
         _ slot: RevalidationSlot,
         waiter: WaiterIdentity,
         token: CacheToken,
-        currentEpoch: Int?,
+        currentAuthority: AssetDiskCache.KeyAuthoritySnapshot?,
         resultIsSuccess: Bool
     ) async -> WaiterFinalOutcome {
         let cancelled = Task.isCancelled
         let authoritative = isTokenAuthoritative(
             token,
             for: slot.cacheKey,
-            currentEpoch: currentEpoch
+            currentAuthority: currentAuthority
         )
         let delivered = !cancelled && resultIsSuccess && authoritative
         let pendingRetraction = finalizePendingAcknowledgement(
@@ -192,10 +220,16 @@ extension AssetCacheService {
             delivered: delivered
         )
         if let pendingRetraction {
-            await retractUndeliveredMutation(
-                pendingRetraction.key.cacheKey,
-                token: pendingRetraction.token
-            )
+            do {
+                try await retractUndeliveredMutation(
+                    pendingRetraction.key.cacheKey,
+                    token: pendingRetraction.token
+                )
+            } catch let error as AssetError {
+                return .retractionNotDurable(error)
+            } catch {
+                return .retractionNotDurable(.cachePersistenceFailed(String(describing: error)))
+            }
         }
         if cancelled {
             return .cancelled
@@ -207,33 +241,50 @@ extension AssetCacheService {
     }
 
     /// The exact same synchronous authority check ``isAuthoritative(_:for:)``
-    /// performs, factored out so it can be combined, in one atomic
-    /// actor-isolated step with no `await` in between, with the
-    /// pending-acknowledgement ledger update above — `currentEpoch` is
-    /// always the caller's own already-completed ``currentDurableClearEpoch()``
-    /// read, never re-read here.
+    /// performs — except also requiring `token`'s own issued ticket to
+    /// still be, or be entirely superseded only by abandoned tickets
+    /// (``ticketGapIsEntirelyAbandoned(from:downTo:for:)``, the exact
+    /// tolerance ``memoryEntryStillCurrent(_:storedGeneration:for:)``
+    /// already applies to a memory-hit re-validation), the key's own
+    /// current durable highest-*issued* ticket. `currentEpoch` alone
+    /// (this method's prior signature) could never detect an
+    /// independent sibling instance/process's own newer issuance for
+    /// this exact key: two operations for the same key can be issued in
+    /// one order and complete in another, and the epoch alone is
+    /// unaffected by either — only this key's own durable issued-ticket
+    /// counter reflects that a strictly newer operation now exists,
+    /// regardless of whether it has completed yet. `currentAuthority` is
+    /// always the caller's own already-completed
+    /// ``currentDurableKeyAuthority(for:)`` read, never re-read here.
     private func isTokenAuthoritative(
         _ token: CacheToken,
         for key: AssetCacheKey,
-        currentEpoch: Int?
+        currentAuthority: AssetDiskCache.KeyAuthoritySnapshot?
     ) -> Bool {
         guard
             token.generation == globalGeneration,
             keyLatestToken[key] == token,
             token.clearGeneration == (keyClearGeneration[key] ?? 0),
             let tokenEpoch = token.durableClearEpoch,
-            let currentEpoch,
-            tokenEpoch == currentEpoch
+            let tokenTicket = token.diskWriteGeneration,
+            let currentAuthority,
+            tokenEpoch == currentAuthority.clearEpoch,
+            !writeGenerationIsRetiring(tokenTicket, epoch: tokenEpoch, for: key)
         else {
             return false
         }
-        return true
+        return ticketGapIsEntirelyAbandoned(
+            from: currentAuthority.issuedTicket,
+            downTo: tokenTicket,
+            epoch: currentAuthority.clearEpoch,
+            for: key
+        )
     }
 
     /// Shared bookkeeping update for exactly one waiter's finalize call,
     /// generic over the ledger's own key type so
-    /// ``finalizeFetchWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``
-    /// and ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``
+    /// ``finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``
+    /// and ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``
     /// can share one implementation despite tracking
     /// ``AssetCacheKey``/``RevalidationSlot`` respectively. Removes
     /// `waiterID` from the pending set and returns the original cache
@@ -303,8 +354,8 @@ extension AssetCacheService {
     /// bounded authority bookkeeping.
     ///
     /// **`await`ed directly by its sole caller
-    /// (``finalizeFetchWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``/
-    /// ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentEpoch:resultIsSuccess:)``)
+    /// (``finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``/
+    /// ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``)
     /// for phase 1 (the durable disk `.retiring` commit) only** — a
     /// prior revision instead fired this whole retraction, phase 1
     /// included, from a detached, unawaited `Task` and let its caller
@@ -331,10 +382,10 @@ extension AssetCacheService {
     /// own best-effort cleanup is abandoned purely because this one
     /// process's own actor happened to deallocate first, strictly within
     /// that same process's own lifetime.
-    private func retractUndeliveredMutation(_ key: AssetCacheKey, token: CacheToken) async {
+    private func retractUndeliveredMutation(_ key: AssetCacheKey, token: CacheToken) async throws {
         retireIfCurrent(token, for: key)
         markGenerationRetiring(token, for: key)
-        await beginDurableRetractionIfApplied(key, token: token)
+        try await beginDurableRetractionIfApplied(key, token: token)
         Task {
             await self.completeDurableRetractionIfApplied(key, token: token)
         }
