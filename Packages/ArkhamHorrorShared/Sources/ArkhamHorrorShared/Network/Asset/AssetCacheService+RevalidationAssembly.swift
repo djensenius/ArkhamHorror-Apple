@@ -46,6 +46,29 @@ extension AssetCacheService {
             throw AssetError.malformedImageData
         }
         try Task.checkCancellation()
+        // `request.token.durableClearEpoch`/`diskWriteGeneration` are
+        // `nil` only if this token's own durable epoch read/disk
+        // reservation failed at issuance time — a case
+        // ``isAuthoritative(_:for:)``/``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``
+        // already treat as permanently unacceptable everywhere this
+        // asset could ever actually be published, so this can never
+        // currently escape into a live cache entry. But
+        // `clearEpochAtPublication`/`writeGenerationAtPublication` are
+        // the *sole* provenance stamps later revalidations trust to
+        // detect cache laundering (see ``AssetCacheMetadata``'s own doc
+        // comment) — silently substituting `0` here rather than failing
+        // this exact assembly step would weaken that invariant for any
+        // future caller that reaches this method with a differently
+        // gated token, and could mask a regression that lets an
+        // unstamped token become publishable. Fail exactly like the
+        // authority check just below would have, rather than assembling
+        // a not-yet-authoritative asset with a fabricated stamp at all.
+        guard
+            let clearEpochAtPublication = request.token.durableClearEpoch,
+            let writeGenerationAtPublication = request.token.diskWriteGeneration
+        else {
+            throw AssetError.staleOperation
+        }
         return CachedAsset(
             payload: response.body,
             metadata: AssetCacheMetadata(
@@ -60,8 +83,8 @@ extension AssetCacheService {
                 resolvedURLString: request.url.absoluteString,
                 insertedAt: request.existing.metadata.insertedAt,
                 accessSequence: AssetAccessSequence(0),
-                clearEpochAtPublication: request.token.durableClearEpoch ?? 0,
-                writeGenerationAtPublication: request.token.diskWriteGeneration ?? 0
+                clearEpochAtPublication: clearEpochAtPublication,
+                writeGenerationAtPublication: writeGenerationAtPublication
             ),
             durableClearEpoch: request.token.durableClearEpoch,
             writeGeneration: request.token.diskWriteGeneration
