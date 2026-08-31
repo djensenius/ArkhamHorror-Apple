@@ -31,4 +31,9 @@ extension AssetCacheService {
     func installTestOnlyBeforeRevalidationResumesWaiters(_ hook: @escaping () -> Void) {
         testOnlyBeforeRevalidationResumesWaiters = hook
     }
+
+    /// Test-only: installs ``testOnlyPauseBeforeMemoryFinalCAS``.
+    func installTestOnlyPauseBeforeFinalMemoryAuthorityCAS(_ hook: @escaping () async -> Void) {
+        testOnlyPauseBeforeMemoryFinalCAS = hook
+    }
 }

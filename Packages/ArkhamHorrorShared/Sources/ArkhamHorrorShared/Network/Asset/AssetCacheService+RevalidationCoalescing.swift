@@ -199,8 +199,7 @@ extension AssetCacheService {
             // recorded synchronously, before either `await` below.
             markGenerationRetiring(fetch.token, for: slot.cacheKey)
             fetch.task.cancel()
-            await memoryCache.removeIfApplied(slot.cacheKey, token: fetch.token)
-            await diskCache.removeIfApplied(slot.cacheKey, token: fetch.token)
+            await retractIfApplied(slot.cacheKey, token: fetch.token)
         } else {
             setInFlightRevalidation(fetch, for: slot)
         }

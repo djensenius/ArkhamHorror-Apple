@@ -92,6 +92,37 @@ import Foundation
 ///    definitely initialized before and its counter was definitely lost
 ///    since — a hard, typed, fail-closed failure, never a silent
 ///    reinitialization to `0`.
+///
+/// **A third gap, closed in a later revision: the root-freshness witness
+/// file itself outliving the authority it once helped establish.** The
+/// marker above proves "this root's authority was established at least
+/// once", but a *separate* file — ``rootFreshnessWitnessFileName`` — is
+/// what actually proves "this root was pristine right now" in the "both
+/// missing" branch below, and a prior revision never removed it: once
+/// written (by whichever instance first created this directory), it
+/// persisted forever, surviving every subsequent real clear untouched
+/// (``AssetDiskCache/removeAll()`` deliberately preserves it, the same way
+/// it preserves the marker and the counter). If, after one or more real
+/// clears had already durably happened, some fault entirely external to
+/// this package independently deleted or corrupted *both* the counter and
+/// the marker while that stale witness file survived, this method would
+/// still find the witness present and wrongly conclude the root was
+/// pristine again — durably resetting its authority back to epoch `0` and
+/// resurrecting exactly the authority those real clears had already
+/// revoked. This revision makes the witness a genuine **one-shot
+/// initialization token**: it is durably consumed (removed) the instant
+/// completed authority (counter + marker) is next observed — either
+/// immediately after this same transaction's own first-ever pristine-root
+/// commit, or, for a witness left over from some earlier root/version, the
+/// very next time any instance/process takes the "counter exists"
+/// fast-path branch below — so it can never again satisfy a *later*
+/// "both missing" check once real authority has ever been established.
+/// A same-instance residual (a single long-lived ``SecureCacheDirectory``
+/// whose own ``SecureCacheDirectory/rootDirectoryWasFreshlyCreated`` flag,
+/// being a `let`, remains `true` for its entire lifetime regardless of
+/// what happens to the durable files afterward) is separately closed by
+/// ``SecureCacheDirectory/hasDurablyObservedRootAuthorityOnce`` — see that
+/// property's own doc comment.
 extension SecureCacheDirectory {
     /// The fixed leaf name of this cache's durable clear-epoch counter
     /// file, inside the verified root directory. Not `private`, for the
@@ -255,12 +286,41 @@ extension SecureCacheDirectory {
             if !markerExists {
                 try installRootInitMarkerLocked()
             }
+            // Completed authority (counter + marker) is independently
+            // observed here, on *every* call, regardless of which
+            // instance/process originally established it -- this is
+            // where a leftover witness (pre-fix root, a crash strictly
+            // between the marker-install step above and this
+            // witness-consumption, or any other instance/process that
+            // already durably established authority) must be swept: see
+            // ``removeRootFreshnessWitnessIfPresentLocked()``'s doc
+            // comment for why it must never outlive that authority.
+            try removeRootFreshnessWitnessIfPresentLocked()
+            hasDurablyObservedRootAuthorityOnce = true
             return
         }
         guard !markerExists else {
             throw AssetError.clearFenceNotDurable(
                 "Clear-epoch counter is missing on a previously initialized cache root; " +
                     "refusing to silently reinitialize its authority"
+            )
+        }
+        // This exact instance has, at some earlier point in its own
+        // lifetime, already durably observed real authority established
+        // here -- regardless of what ``rootDirectoryWasFreshlyCreated``
+        // (a `let`, fixed at `init` time and therefore permanently stale
+        // the instant real authority is later lost) or any surviving
+        // witness file claims now, both authority files being absent at
+        // this point is definite proof this root was used and has since
+        // lost its authority state, never a safe "pristine root" case.
+        // See ``hasDurablyObservedRootAuthorityOnce``'s own doc comment
+        // for the full reasoning this guard exists to enforce.
+        guard !hasDurablyObservedRootAuthorityOnce else {
+            throw AssetError.clearFenceNotDurable(
+                "This cache root's authority was already durably observed earlier in this " +
+                    "process's own lifetime; both authority files are now absent, which can " +
+                    "only mean real authority was lost since, never that this root just " +
+                    "became pristine again"
             )
         }
         // Both authority files are absent. This is the one branch a bare
@@ -325,5 +385,15 @@ extension SecureCacheDirectory {
         // counter missing" branch.
         try persistClearEpoch(0)
         try installRootInitMarkerLocked()
+        // Authority (counter + marker) is now durably established: the
+        // witness's one and only job -- proving this exact moment's own
+        // pristine-root treatment was legitimate -- is already done.
+        // Consumed *after* both of the writes above, never before (a
+        // crash between the two would otherwise permanently strip an
+        // still-genuinely-pristine root of its only remaining freshness
+        // proof) -- see ``removeRootFreshnessWitnessIfPresentLocked()``'s
+        // own doc comment.
+        try removeRootFreshnessWitnessIfPresentLocked()
+        hasDurablyObservedRootAuthorityOnce = true
     }
 }

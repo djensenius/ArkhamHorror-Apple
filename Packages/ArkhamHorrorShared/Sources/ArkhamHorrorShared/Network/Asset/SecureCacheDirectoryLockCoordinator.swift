@@ -169,13 +169,50 @@ final class SecureCacheDirectoryLockCoordinator: @unchecked Sendable {
         if existing >= 0 {
             return existing
         }
-        let descriptor = openat(
-            rootFD, SecureCacheDirectory.lockFileName,
-            O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600
-        )
+        // A bounded retry, on `ENOENT` specifically only -- never any
+        // other `errno` -- for this single, otherwise-unconditionally-
+        // atomic `open(..., O_CREAT)`. `rootFD` was already verified, at
+        // this exact instance's own `init`, to be a live directory
+        // descriptor held open for this instance's entire lifetime, so a
+        // permanent "the cache root itself is gone" failure is not a
+        // real possibility here: nothing in this package ever removes
+        // the cache root directory itself. What *is* real, and observed
+        // in practice, is a transient VFS-level race when two
+        // independent, already-open directory descriptors referencing
+        // the identical physical directory (as two separate
+        // ``SecureCacheDirectory`` instances -- for example two
+        // independently constructed services, or two processes -- both
+        // racing to be the very first to create this shared cache's own
+        // lock file) concurrently mutate that same directory's entries
+        // (this very `open(O_CREAT)`, alongside a sibling instance's own
+        // concurrent root-authority-initialization writes into the same
+        // directory): the kernel can, rarely, surface a spurious `ENOENT`
+        // for what is otherwise a guaranteed-atomic create-or-open call.
+        // A handful of immediate retries (mirroring this file's own
+        // `EINTR` retry convention for `fsync`) converges on the correct,
+        // already-guaranteed-to-exist outcome without weakening any
+        // correctness guarantee -- this call still fails hard, exactly as
+        // before, on any other `errno`, or if `ENOENT` persists past
+        // every retry.
+        var lastErrno: Int32 = 0
+        var descriptor: Int32 = -1
+        for attempt in 0 ..< 5 {
+            descriptor = openat(
+                rootFD, SecureCacheDirectory.lockFileName,
+                O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600
+            )
+            if descriptor >= 0 {
+                break
+            }
+            lastErrno = errno
+            guard lastErrno == ENOENT, attempt < 4 else {
+                break
+            }
+            usleep(500)
+        }
         guard descriptor >= 0 else {
             throw AssetError.cachePersistenceFailed(
-                "Could not open cache lock file (errno \(errno))"
+                "Could not open cache lock file (errno \(lastErrno))"
             )
         }
         do {

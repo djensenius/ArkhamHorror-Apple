@@ -281,9 +281,8 @@ extension AssetCacheService {
     private func retractUndeliveredMutation(_ key: AssetCacheKey, token: CacheToken) {
         retireIfCurrent(token, for: key)
         markGenerationRetiring(token, for: key)
-        Task { [memoryCache, diskCache] in
-            await memoryCache.removeIfApplied(key, token: token)
-            await diskCache.removeIfApplied(key, token: token)
+        Task { [weak self] in
+            await self?.retractIfApplied(key, token: token)
         }
     }
 }

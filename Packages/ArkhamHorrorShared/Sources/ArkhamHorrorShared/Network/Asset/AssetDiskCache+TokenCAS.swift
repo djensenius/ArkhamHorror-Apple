@@ -182,26 +182,60 @@ extension AssetDiskCache {
     /// one behind (there is no content it publishes), so finding none
     /// here is exactly the signal that this ticket's own disposition was
     /// already a deletion, not a publication to undo.
-    func removeIfApplied(_ key: AssetCacheKey, token: AssetCacheService.CacheToken) async {
+    ///
+    /// **Never swallows a genuine I/O failure as if nothing happened.**
+    /// A prior revision folded every step here — lock acquisition, root-
+    /// authority initialization, the epoch/ticket reads, the metadata
+    /// `remove`, the directory `fsync`, and the final applied-ticket
+    /// commit — through `try?`, collapsing "this ticket's disposition
+    /// was already a tombstone" (a genuine, expected `ENOENT`) together
+    /// with "removal was attempted and failed for an unrelated I/O
+    /// reason" into the same silent `nil`/`false`/early-`return`, and
+    /// discarded the caller's only signal that this retraction's own
+    /// durable disposition could not actually be confirmed. Every failure
+    /// here now propagates as a typed ``AssetError`` instead: a caller
+    /// that cannot confirm a retraction actually landed must not treat it
+    /// as if it had (see ``AssetCacheService/retractIfApplied(_:token:)``,
+    /// this method's sole production caller, for how that typed failure
+    /// is recorded rather than lost).
+    ///
+    /// Returns ``AssetCacheService/MutationOutcome/stale`` (never
+    /// throwing) when `token` is no longer exactly the applied ticket for
+    /// `key` — genuinely nothing to retract, not a failure — and
+    /// ``AssetCacheService/MutationOutcome/applied`` once this call's own
+    /// retraction (or the discovery that this exact ticket's own
+    /// disposition was already a tombstone with nothing to roll back) has
+    /// durably completed.
+    @discardableResult
+    func removeIfApplied(
+        _ key: AssetCacheKey,
+        token: AssetCacheService.CacheToken
+    ) async throws -> AssetCacheService.MutationOutcome {
         if let pause = testOnlyPauseBeforeAcquiringRemovalLock {
             await pause()
         }
-        guard let lockFD = try? await secureDirectory.acquireExclusiveLock() else { return }
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
-        try? ensureRootAuthorityInitializedLocked()
+        try ensureRootAuthorityInitializedLocked()
         guard
             let issuedTicket = token.diskWriteGeneration,
-            let issuedEpoch = token.durableClearEpoch,
-            let currentEpoch = try? secureDirectory.readPersistedClearEpoch(),
-            currentEpoch == issuedEpoch,
-            let currentApplied = try? currentAppliedTicketLocked(for: key),
-            currentApplied == issuedTicket
+            let issuedEpoch = token.durableClearEpoch
         else {
-            return
+            return .stale
         }
-        let metadataWasPresent = (try? secureDirectory.remove(name: metadataFilename(for: key)))
-            ?? false
-        try? secureDirectory.fsyncRootDirectory()
+        let currentEpoch = try secureDirectory.readPersistedClearEpoch()
+        guard currentEpoch == issuedEpoch else { return .stale }
+        let currentApplied = try currentAppliedTicketLocked(for: key)
+        guard currentApplied == issuedTicket else { return .stale }
+        let metadataWasPresent: Bool
+        do {
+            metadataWasPresent = try secureDirectory.remove(name: metadataFilename(for: key))
+        } catch {
+            throw AssetError.cachePersistenceFailed(
+                "Could not confirm retraction of key's metadata pointer: \(error)"
+            )
+        }
+        try secureDirectory.fsyncRootDirectory()
         guard metadataWasPresent else {
             // Nothing was actually removed: this exact ticket's own
             // durable disposition was already a tombstone (a definitive
@@ -215,7 +249,7 @@ extension AssetDiskCache {
             // sibling entry look provably unsuperseded again. Payload
             // cleanup is likewise unnecessary: a tombstone never
             // publishes a payload file for this exact ticket to sweep.
-            return
+            return .applied
         }
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
         // See this method's own doc comment for why this must commit the
@@ -223,7 +257,8 @@ extension AssetDiskCache {
         // ticket): doing so would advance the shared issuance counter
         // past whatever a different, already-issued-but-not-yet-applied
         // operation for this same key legitimately relies on.
-        try? commitAppliedTicketLocked(0, for: key)
+        try commitAppliedTicketLocked(0, for: key)
+        return .applied
     }
 
     /// `true` only for a string that is exactly 64 lowercase ASCII hex

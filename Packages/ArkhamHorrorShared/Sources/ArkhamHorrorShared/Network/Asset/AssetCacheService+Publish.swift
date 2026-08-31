@@ -99,8 +99,7 @@ extension AssetCacheService {
             // Same retraction, now for both layers: the disk write may
             // also have landed under `token` before this suspension
             // returned.
-            await memoryCache.removeIfApplied(cacheKey, token: token)
-            await diskCache.removeIfApplied(cacheKey, token: token)
+            await retractIfApplied(cacheKey, token: token)
             return .stale
         }
         if lastDiskPersistenceFailure == nil {
@@ -155,13 +154,11 @@ extension AssetCacheService {
             // `lastDiskPersistenceFailure` as a soft failure the memory
             // write survives. See ``AssetError/entryNoLongerCachedToTouch``'s
             // own doc comment.
-            await memoryCache.removeIfApplied(cacheKey, token: token)
-            await diskCache.removeIfApplied(cacheKey, token: token)
+            await retractIfApplied(cacheKey, token: token)
             return .stale
         }
         guard await isAuthoritative(token, for: cacheKey) else {
-            await memoryCache.removeIfApplied(cacheKey, token: token)
-            await diskCache.removeIfApplied(cacheKey, token: token)
+            await retractIfApplied(cacheKey, token: token)
             return .stale
         }
         return .applied

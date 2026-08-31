@@ -64,6 +64,36 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// safe to initialize at zero" rather than "used root with lost
     /// authority state, must fail closed".
     let rootDirectoryWasFreshlyCreated: Bool
+    /// `true` once this exact instance has, at any point in its own
+    /// lifetime, durably confirmed this root's authority (the clear-epoch
+    /// counter and its root-init marker) to genuinely already exist —
+    /// set exactly once, from inside
+    /// ``ensureRootAuthorityInitializedLockedUnwrapped(isSurvivingEntryAcceptable:)``,
+    /// on every successful return from either of its two "authority
+    /// already exists" outcomes. Never cleared afterward.
+    ///
+    /// Closes a residual, same-instance-only window
+    /// ``rootFreshnessWitnessFileName``'s own durable one-shot consumption
+    /// (see `SecureCacheDirectory+ClearEpoch.swift`'s type-level doc
+    /// comment) cannot close alone: ``rootDirectoryWasFreshlyCreated``
+    /// above is a `let`, fixed at `init` and never updated, so it stays
+    /// `true` for this instance's entire lifetime regardless of what
+    /// later happens to this root's durable files. Without this mutable
+    /// latch, a long-lived instance that already durably observed real
+    /// authority once could, if this root's durable counter, marker,
+    /// *and* witness were all later lost externally, still fall back to
+    /// its own stale `rootDirectoryWasFreshlyCreated == true` and wrongly
+    /// re-initialize a used root's authority back to epoch `0`. Once this
+    /// latch is `true`, the "both missing" branch fails closed
+    /// unconditionally, never consulting `rootDirectoryWasFreshlyCreated`
+    /// or any witness at all.
+    ///
+    /// Guarded by the same cross-process ``acquireExclusiveLock()`` every
+    /// other read/write of this root's durable authority already
+    /// requires — only ever touched from inside
+    /// `ensureRootAuthorityInitializedLockedUnwrapped(isSurvivingEntryAcceptable:)`,
+    /// which every call site holds the lock across.
+    var hasDurablyObservedRootAuthorityOnce = false
     /// This instance's single, in-process lock coordinator — see
     /// ``SecureCacheDirectoryLockCoordinator``'s own doc comment. Opens
     /// its lock file descriptor lazily (on first
@@ -71,52 +101,6 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// entire lifetime, and closes it in its own `deinit`.
     let lockCoordinator = SecureCacheDirectoryLockCoordinator()
     let faultState = FaultInjectionState()
-
-    /// Test-only deterministic fault injection, installed via `@testable
-    /// import`. Replaces `FailingFileManager` (a `FileManager` subclass)
-    /// now that this type performs its own POSIX I/O directly rather than
-    /// routing writes/renames/listings through `FileManager` at all — a
-    /// fake `FileManager` subclass can no longer intercept anything.
-    /// `failSuffixes`/`failPrefixes` match the *final* (non-`.tmp`) target
-    /// name of a temp-file write, mirroring a real interrupted write: a
-    /// truncated stub left at the temp name, then a thrown error, so a
-    /// test can assert on production code's cleanup of that leftover
-    /// file. `listNamesFailuresRemaining` fails that many subsequent
-    /// `listNames()` calls before succeeding normally again.
-    /// `failRemoveSuffixes`/`failRemovePrefixes` independently fail
-    /// `remove(name:)` for any matching name (e.g. an unremovable entry
-    /// during a real `removeAll()`), without affecting temp-file writes.
-    func installFaultInjection(
-        failSuffixes: Set<String> = [],
-        failPrefixes: Set<String> = [],
-        failRemoveSuffixes: Set<String> = [],
-        failRemovePrefixes: Set<String> = [],
-        listNamesFailuresRemaining: Int = 0,
-        failFsyncAfterRenameSuffixes: Set<String> = [],
-        failAttributesSuffixes: Set<String> = [],
-        failNextRootFsyncCount: Int = 0,
-        failReaddirAfterEntryCount: Int? = nil,
-        failRenameToSuffixes: Set<String> = []
-    ) {
-        faultState.failSuffixes = failSuffixes
-        faultState.failPrefixes = failPrefixes
-        faultState.failRemoveSuffixes = failRemoveSuffixes
-        faultState.failRemovePrefixes = failRemovePrefixes
-        faultState.listNamesFailuresRemaining = listNamesFailuresRemaining
-        faultState.failFsyncAfterRenameSuffixes = failFsyncAfterRenameSuffixes
-        faultState.failAttributesSuffixes = failAttributesSuffixes
-        faultState.failNextRootFsyncCount = failNextRootFsyncCount
-        faultState.failReaddirAfterEntryCount = failReaddirAfterEntryCount
-        faultState.failRenameToSuffixes = failRenameToSuffixes
-    }
-
-    /// Test-only. The number of times `listNames()` has actually been
-    /// called (successful or failed), for asserting a call was — or, more
-    /// often, was deliberately *not* — made after crossing an actor
-    /// boundary.
-    var listNamesCallCount: Int {
-        faultState.listNamesCallCount
-    }
 
     /// Opens and verifies `directory` exactly once. Throws
     /// ``AssetError/cachePersistenceFailed(_:)`` if `directory` cannot be

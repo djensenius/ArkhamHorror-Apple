@@ -49,7 +49,9 @@ struct RootFreshnessWitnessTests {
     @Test(
         """
         A genuinely fresh root -- this exact instance's own mkdirat having just created it --
-        still initializes clear-epoch 0 and both authority files normally
+        still initializes clear-epoch 0 and both authority files normally, and its now-unneeded \
+        freshness witness is durably consumed (removed) the moment authority is established, \
+        rather than surviving forever as a permanent, later-abusable freshness proof
         """
     )
     func freshRootStillInitializesNormally() throws {
@@ -65,11 +67,16 @@ struct RootFreshnessWitnessTests {
                 try secure.read(name: SecureCacheDirectory.rootInitMarkerFileName, maxBytes: 1)
                     != nil
             )
+            // The witness is a one-shot initialization token: once real
+            // authority (the counter + marker above) has been durably
+            // established, it must already be gone -- never left behind
+            // as a permanent freshness proof a much later, otherwise
+            // genuine loss of both authority files could wrongly reuse.
             #expect(
                 try secure.read(
                     name: SecureCacheDirectory.rootFreshnessWitnessFileName,
                     maxBytes: 1
-                ) != nil
+                ) == nil
             )
         }
     }
@@ -98,16 +105,19 @@ struct RootFreshnessWitnessTests {
                 )
                 _ = try secure.bumpClearEpoch()
                 _ = try secure.bumpClearEpoch()
+                // The freshness witness is already durably consumed by
+                // the initialization call above (it is a one-shot token,
+                // never a permanent freshness proof -- see
+                // ``SecureCacheDirectory/removeRootFreshnessWitnessIfPresentLocked()``),
+                // so this scenario need not (and, since it no longer
+                // exists, cannot) delete it explicitly: only the counter
+                // and marker below are deleted to simulate real
+                // authority-state loss.
                 try FileManager.default.removeItem(
                     at: root.appendingPathComponent(SecureCacheDirectory.clearEpochFileName)
                 )
                 try FileManager.default.removeItem(
                     at: root.appendingPathComponent(SecureCacheDirectory.rootInitMarkerFileName)
-                )
-                try FileManager.default.removeItem(
-                    at: root.appendingPathComponent(
-                        SecureCacheDirectory.rootFreshnessWitnessFileName
-                    )
                 )
                 try Data().write(
                     to: root.appendingPathComponent(AssetDiskCache.diskWritesDisabledMarkerName)

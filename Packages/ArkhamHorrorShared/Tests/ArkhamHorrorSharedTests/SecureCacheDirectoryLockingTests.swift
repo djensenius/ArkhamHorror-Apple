@@ -224,10 +224,8 @@ struct SecureCacheDirectoryLockingTests {
                 .contentsOfDirectory(atPath: directory.path)
             // The reserved lock file, the durable access-sequence counter
             // file, the durable cross-process clear-epoch counter file
-            // (see `SecureCacheDirectory+ClearEpoch.swift`), the durable
-            // root-authority-initialization marker, and the durable
-            // root-freshness witness (also in
-            // `SecureCacheDirectory+ClearEpoch.swift`) are the only
+            // (see `SecureCacheDirectory+ClearEpoch.swift`), and the
+            // durable root-authority-initialization marker are the only
             // entries expected to survive a `removeAll()` -- every actual
             // cache entry must be gone. The clear-epoch file must survive
             // *this exact clear* (rather than merely a later one) because
@@ -244,17 +242,23 @@ struct SecureCacheDirectoryLockingTests {
             // because it records this exact root as already-initialized;
             // deleting it would let a later re-open of this same,
             // previously-cleared root be misclassified as genuinely
-            // pristine. The freshness witness must survive for the
-            // identical reason: deleting it would strip this already-used,
-            // now-cleared root of its only remaining durable proof of ever
-            // having been fresh.
+            // pristine. The freshness witness, unlike the other four, is
+            // never expected to survive here: it is a one-shot
+            // initialization token, consumed (removed) the moment any
+            // instance/process first durably observes this root's real
+            // authority (epoch + marker) already established -- which the
+            // `cache.set(...)` call above, strictly before this
+            // `removeAll()`, already did. See
+            // `SecureCacheDirectory+ClearEpoch.swift`'s type-level doc
+            // comment for why a witness that survived normal, already-
+            // authenticated use would otherwise let a *later* loss of the
+            // real authority files wrongly resurrect epoch `0`.
             #expect(
                 Set(namesAfterClear) == [
                     SecureCacheDirectory.lockFileName,
                     SecureCacheDirectory.accessSequenceFileName,
                     SecureCacheDirectory.clearEpochFileName,
                     SecureCacheDirectory.rootInitMarkerFileName,
-                    SecureCacheDirectory.rootFreshnessWitnessFileName,
                 ]
             )
 

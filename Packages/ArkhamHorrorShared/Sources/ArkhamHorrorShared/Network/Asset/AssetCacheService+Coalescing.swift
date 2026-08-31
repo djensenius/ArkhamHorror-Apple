@@ -315,8 +315,7 @@ extension AssetCacheService {
             // comment for the full reasoning.
             markGenerationRetiring(fetch.token, for: key)
             fetch.task.cancel()
-            await memoryCache.removeIfApplied(key, token: fetch.token)
-            await diskCache.removeIfApplied(key, token: fetch.token)
+            await retractIfApplied(key, token: fetch.token)
         } else {
             inFlight[key] = fetch
         }

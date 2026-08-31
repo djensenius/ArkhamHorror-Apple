@@ -291,6 +291,20 @@ actor AssetCacheService {
     /// that ordering via incidental scheduling timing.
     var testOnlyPauseAfterFetchPublishApplied: (() async -> Void)?
 
+    /// Test-only hook awaited by ``asset(for:)``'s/``revalidate(for:)``'s
+    /// memory-hit branches immediately after both of their own durable
+    /// checks (``unchanged(since:for:)``/``clearStateUnchanged(since:for:)``
+    /// and ``memoryEntryStillCurrent(_:storedGeneration:for:)``) already
+    /// completed, and immediately *before* the final synchronous
+    /// ``localAuthorityStillMatchesSync(_:for:)``/
+    /// ``localClearStateStillMatchesSync(_:for:)`` re-check. Always `nil`
+    /// in production. A test installs a closure here to deterministically
+    /// drive a concurrent same-actor ``evictAll()``/``invalidate(_:token:)``
+    /// to completion in exactly this window, confirming the final
+    /// synchronous re-check (not either durable check) rejects the
+    /// now-superseded memory hit.
+    var testOnlyPauseBeforeMemoryFinalCAS: (() async -> Void)?
+
     /// Test-only hook invoked by ``completeFetch(_:fetchID:result:)``
     /// synchronously, before it resumes any of the fetch's currently
     /// registered waiters — see
@@ -319,69 +333,5 @@ actor AssetCacheService {
         self.transport = transport
         self.digest = digest
         self.limits = limits
-    }
-
-    /// Resolves `key` to a validated cached asset, serving from memory or
-    /// disk when a valid entry already exists and otherwise performing (or
-    /// joining an already in-flight) network fetch.
-    ///
-    /// A *memory* hit (already proven fresh earlier in this exact process
-    /// run, and never surviving a restart) is returned immediately. A
-    /// *disk-only* hit is different: this cache does not attempt to
-    /// durably order writes across separate processes/instances sharing
-    /// the same disk directory (see ``AssetDiskCache``'s doc comment), so
-    /// persisted bytes from a possibly-different prior process are never
-    /// independently trusted as still-fresh, offline-authoritative
-    /// content — they are, at best, a conditional-revalidation candidate.
-    /// Every disk-only hit must therefore pass the exact same structural
-    /// re-validation as ``AssetCacheService/revalidateDiskHit(_:key:cacheKey:candidates:token:)``
-    /// already performs, *and* a fresh online conditional
-    /// (`ETag`/`Last-Modified`) revalidation against the live server,
-    /// before it may ever be cached in memory or returned to a caller. If
-    /// no validator is available at all (or the structural check already
-    /// failed, or authority was lost mid-decode), this falls through to
-    /// an ordinary unconditional fetch exactly as if this had been a
-    /// clean cache miss — never silently serving unverified offline bytes.
-    func asset(for key: AssetKey) async throws -> CachedAsset {
-        let candidates = try resolvedCandidates(for: key)
-        let cacheKey = AssetCacheKey(for: key, candidates: candidates)
-
-        // Snapshotted *before* the memory-cache read itself, mirroring the
-        // disk-hit snapshot immediately below: `memoryCache.get` suspends
-        // (a genuine hop to a different actor), during which a
-        // more-recently-issued operation for this exact key — or a
-        // cache-wide `evictAll()` — can become authoritative on *this*
-        // actor without that having any effect on `memoryCache`'s own
-        // already-in-flight `get` call. Without this check, such a race
-        // could still hand back an entry this actor's own bookkeeping
-        // already considers superseded, purely because of memory-cache
-        // actor-hop timing luck. Wrapped in an authority window so this
-        // key's bookkeeping cannot be pruned while this snapshot is still
-        // suspended awaiting `memoryCache.get`.
-        beginAuthorityWindow(for: cacheKey)
-        let memorySnapshot = await snapshotAuthority(for: cacheKey)
-        let memoryHit = await memoryCache.get(cacheKey)
-        var memoryHitIsCurrent = false
-        if let memoryHit {
-            let stillUnchanged = await unchanged(since: memorySnapshot, for: cacheKey)
-            let stillCurrentEpoch = await memoryEntryStillCurrent(
-                memoryHit.durableClearEpoch,
-                storedGeneration: memoryHit.writeGeneration,
-                for: cacheKey
-            )
-            memoryHitIsCurrent = stillUnchanged && stillCurrentEpoch
-        }
-        endAuthorityWindow(for: cacheKey)
-        if let cached = memoryHit, memoryHitIsCurrent {
-            return cached
-        }
-        if let diskResult = try await diskHitIfTrusted(
-            key: key,
-            cacheKey: cacheKey,
-            candidates: candidates
-        ) {
-            return diskResult
-        }
-        return try await coalescedFetch(key: key, cacheKey: cacheKey, candidates: candidates)
     }
 }

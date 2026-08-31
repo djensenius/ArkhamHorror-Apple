@@ -220,3 +220,55 @@ final class FaultInjectionState: @unchecked Sendable {
         }
     }
 }
+
+/// Test-only fault-injection installer/accessor for ``SecureCacheDirectory``
+/// itself -- split out of the main file purely to stay under this
+/// package's `file_length` convention, since ``FaultInjectionState``'s own
+/// storage above already lives in this file.
+extension SecureCacheDirectory {
+    /// Test-only deterministic fault injection, installed via `@testable
+    /// import`. Replaces `FailingFileManager` (a `FileManager` subclass)
+    /// now that this type performs its own POSIX I/O directly rather than
+    /// routing writes/renames/listings through `FileManager` at all — a
+    /// fake `FileManager` subclass can no longer intercept anything.
+    /// `failSuffixes`/`failPrefixes` match the *final* (non-`.tmp`) target
+    /// name of a temp-file write, mirroring a real interrupted write: a
+    /// truncated stub left at the temp name, then a thrown error, so a
+    /// test can assert on production code's cleanup of that leftover
+    /// file. `listNamesFailuresRemaining` fails that many subsequent
+    /// `listNames()` calls before succeeding normally again.
+    /// `failRemoveSuffixes`/`failRemovePrefixes` independently fail
+    /// `remove(name:)` for any matching name (e.g. an unremovable entry
+    /// during a real `removeAll()`), without affecting temp-file writes.
+    func installFaultInjection(
+        failSuffixes: Set<String> = [],
+        failPrefixes: Set<String> = [],
+        failRemoveSuffixes: Set<String> = [],
+        failRemovePrefixes: Set<String> = [],
+        listNamesFailuresRemaining: Int = 0,
+        failFsyncAfterRenameSuffixes: Set<String> = [],
+        failAttributesSuffixes: Set<String> = [],
+        failNextRootFsyncCount: Int = 0,
+        failReaddirAfterEntryCount: Int? = nil,
+        failRenameToSuffixes: Set<String> = []
+    ) {
+        faultState.failSuffixes = failSuffixes
+        faultState.failPrefixes = failPrefixes
+        faultState.failRemoveSuffixes = failRemoveSuffixes
+        faultState.failRemovePrefixes = failRemovePrefixes
+        faultState.listNamesFailuresRemaining = listNamesFailuresRemaining
+        faultState.failFsyncAfterRenameSuffixes = failFsyncAfterRenameSuffixes
+        faultState.failAttributesSuffixes = failAttributesSuffixes
+        faultState.failNextRootFsyncCount = failNextRootFsyncCount
+        faultState.failReaddirAfterEntryCount = failReaddirAfterEntryCount
+        faultState.failRenameToSuffixes = failRenameToSuffixes
+    }
+
+    /// Test-only. The number of times `listNames()` has actually been
+    /// called (successful or failed), for asserting a call was — or, more
+    /// often, was deliberately *not* — made after crossing an actor
+    /// boundary.
+    var listNamesCallCount: Int {
+        faultState.listNamesCallCount
+    }
+}

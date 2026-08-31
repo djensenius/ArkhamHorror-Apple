@@ -75,7 +75,15 @@ extension AssetCacheService {
                 storedGeneration: memoryHit.writeGeneration,
                 for: cacheKey
             )
-            memoryHitIsCurrent = stillUnchanged && stillCurrentEpoch
+            // Final synchronous, no-further-suspension re-check — see
+            // ``localAuthorityStillMatchesSync(_:for:)``'s doc comment
+            // (this branch's own ``localClearStateStillMatchesSync(_:for:)``
+            // counterpart) for why this is required in addition to
+            // `stillUnchanged` above.
+            await testOnlyPauseBeforeMemoryFinalCAS?()
+            memoryHitIsCurrent = stillUnchanged
+                && stillCurrentEpoch
+                && localClearStateStillMatchesSync(memorySnapshot, for: cacheKey)
         }
         endAuthorityWindow(for: cacheKey)
         if let existing = memoryHit, memoryHitIsCurrent {

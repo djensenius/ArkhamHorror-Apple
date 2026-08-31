@@ -139,6 +139,40 @@ extension SecureCacheDirectory {
         try renameAndFsyncDirectory(from: witnessTempName, to: Self.rootFreshnessWitnessFileName)
     }
 
+    /// Durably consumes (removes, then `fsync`s the directory entry
+    /// mutation) the root-freshness witness file — see
+    /// `SecureCacheDirectory+ClearEpoch.swift`'s type-level doc comment
+    /// for why this witness must become a one-shot token, never a
+    /// permanent freshness proof: once this root's real authority (the
+    /// clear-epoch counter and its root-init marker) is durably
+    /// established, the witness's only job is already done, and letting
+    /// it persist forever afterward is exactly what would let a *later*,
+    /// otherwise-unrelated loss of both authority files wrongly resurrect
+    /// "pristine root" treatment for a root that has since been through
+    /// one or more real clears.
+    ///
+    /// Idempotent: tolerates the witness already being absent (a clean
+    /// `ENOENT` from ``remove(name:)``) as success, never an error — this
+    /// is called unconditionally, on every single locked authority check
+    /// for the remaining lifetime of an already-initialized root (see
+    /// ``ensureRootAuthorityInitializedLockedUnwrapped(isSurvivingEntryAcceptable:)``'s
+    /// "counter exists" branch), so it must be cheap and safe to call
+    /// redundantly, including after a crash left a prior call to this
+    /// same method only partially complete.
+    ///
+    /// Must only ever be called *after* this transaction's own
+    /// authority-establishing writes (the epoch counter and the root-init
+    /// marker) have already durably committed — never before. Removing
+    /// this witness first and only afterward committing the epoch/marker
+    /// would, if a crash landed in between, permanently strip an
+    /// otherwise still-genuinely-pristine root of its only remaining
+    /// freshness proof, bricking it exactly like a marker-before-epoch
+    /// crash already does for the counter/marker pair themselves.
+    func removeRootFreshnessWitnessIfPresentLocked() throws {
+        _ = try remove(name: Self.rootFreshnessWitnessFileName)
+        try fsyncRootDirectory()
+    }
+
     /// Called exactly once, from `init`, only when this exact instance's
     /// own `mkdirat` just won the race to create this directory. Safe to
     /// run without this directory's cross-process lock (unavailable from

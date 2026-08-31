@@ -338,4 +338,62 @@ extension AssetCacheService {
         }
         return snapshotEpoch == currentEpoch
     }
+
+    /// The final, synchronous, actor-isolated re-verification of `key`'s
+    /// *local* authority state against `snapshot` — deliberately
+    /// re-reading ``AssetCacheService/keyLatestToken``/
+    /// ``AssetCacheService/globalGeneration``/
+    /// ``AssetCacheService/keyClearGeneration`` fresh, right now, rather
+    /// than reusing whichever ``unchanged(since:for:)``/
+    /// ``clearStateUnchanged(since:for:)`` boolean a caller already
+    /// computed earlier in the same lookup.
+    ///
+    /// **Must be called as the last step before a memory hit is used —
+    /// after every durable (`await`) check that decision also depends on
+    /// has already completed, with no further suspension between this
+    /// call and the caller's own `return`.** ``asset(for:)``'s and
+    /// ``revalidate(for:)``'s memory-hit branches each call
+    /// ``unchanged(since:for:)``/``clearStateUnchanged(since:for:)`` and
+    /// then ``memoryEntryStillCurrent(_:storedGeneration:for:)`` in
+    /// sequence — both of the latter's own *internal* implementations
+    /// suspend at least once more (a durable disk round trip) after the
+    /// first check's own local-state comparison already ran. A same-actor
+    /// invalidation (``invalidate(_:token:)``, ``evictAll()``, or a fresh
+    /// issuance for this exact key) can complete *entirely* — bumping
+    /// ``AssetCacheService/globalGeneration``/
+    /// ``AssetCacheService/keyClearGeneration``/``keyLatestToken``
+    /// synchronously, in-process — while one of those durable reads is
+    /// still in flight, purely because that durable counterpart's own
+    /// disk-actor round trip happened to be scheduled to run (and
+    /// return) *before* the sibling invalidation's own durable commit
+    /// landed. In that exact window, the earlier local-state check
+    /// already passed (it ran before the invalidation happened at all)
+    /// and the durable check can also still report "unchanged" (its own
+    /// disk-side counterpart has not caught up yet) — but this actor's
+    /// own in-process bookkeeping has, by now, already moved on. Only a
+    /// final synchronous re-comparison, performed with no suspension
+    /// between it and the decision it gates, is guaranteed to observe
+    /// that already-landed, in-process invalidation regardless of
+    /// whether its own durable counterpart has caught up yet.
+    func localAuthorityStillMatchesSync(
+        _ snapshot: AuthoritySnapshot,
+        for key: AssetCacheKey
+    ) -> Bool {
+        keyLatestToken[key] == snapshot.token
+            && globalGeneration == snapshot.generation
+            && (keyClearGeneration[key] ?? 0) == snapshot.clearGeneration
+    }
+
+    /// The ``ClearStateSnapshot`` counterpart to
+    /// ``localAuthorityStillMatchesSync(_:for:)`` — see that method's doc
+    /// comment for why this final, synchronous, no-further-suspension
+    /// re-check is required, and ``snapshotClearState(for:)``'s doc
+    /// comment for why this pair deliberately omits `keyLatestToken`.
+    func localClearStateStillMatchesSync(
+        _ snapshot: ClearStateSnapshot,
+        for key: AssetCacheKey
+    ) -> Bool {
+        globalGeneration == snapshot.generation
+            && (keyClearGeneration[key] ?? 0) == snapshot.clearGeneration
+    }
 }

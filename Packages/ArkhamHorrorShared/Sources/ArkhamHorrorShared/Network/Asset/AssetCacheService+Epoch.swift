@@ -221,6 +221,42 @@ extension AssetCacheService {
         keyLatestToken[key] = nil
     }
 
+    /// This actor's single call site for both
+    /// ``AssetMemoryCache/removeIfApplied(_:token:)`` and
+    /// ``AssetDiskCache/removeIfApplied(_:token:)``, used by every one of
+    /// this subsystem's retraction points (a cancelled last waiter, a
+    /// publish/touch discovered stale immediately after its own write
+    /// landed) so a genuine disk-side I/O failure is handled identically
+    /// everywhere, rather than each call site independently choosing (or
+    /// forgetting) how to react.
+    ///
+    /// A disk-side failure here means this retraction's own durable
+    /// disposition could not be confirmed: this actor can no longer
+    /// prove the disk-side mutation was actually undone. Mirroring
+    /// ``invalidate(_:token:)``'s own identical reaction to an
+    /// unconfirmed disk mutation, this records the failure
+    /// (``lastDiskPersistenceFailure``) and marks `key` tombstoned
+    /// (``tombstonedKeys``) — a purely in-process, best-effort signal to
+    /// skip a disk read this actor already expects to be pointless, never
+    /// a correctness requirement, since every disk hit for any key must
+    /// independently pass a fresh online conditional revalidation before
+    /// ever being trusted (see ``AssetDiskCache``'s own doc comment) —
+    /// but this failure must never be silently discarded as if the
+    /// retraction had definitely succeeded, the exact defect a prior
+    /// review flagged in this method's own disk-layer counterpart.
+    func retractIfApplied(_ key: AssetCacheKey, token: CacheToken) async {
+        await memoryCache.removeIfApplied(key, token: token)
+        do {
+            try await diskCache.removeIfApplied(key, token: token)
+        } catch let error as AssetError {
+            tombstonedKeys.insert(key)
+            lastDiskPersistenceFailure = error
+        } catch {
+            tombstonedKeys.insert(key)
+            lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
+        }
+    }
+
     /// Synchronously records that `token`'s own disk write-generation
     /// ticket for `key` is being retracted — see
     /// ``AssetCacheService/retiringGenerations``'s own doc comment for
