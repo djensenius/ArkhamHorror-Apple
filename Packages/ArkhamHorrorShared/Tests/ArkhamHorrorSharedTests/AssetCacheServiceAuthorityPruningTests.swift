@@ -74,7 +74,7 @@ extension AssetCacheServiceTests {
                 // would), so keyClearGeneration's own growth is exercised
                 // by the exact same loop rather than needing a second,
                 // separate pass over just as many keys.
-                await service.invalidate(cacheKey)
+                try await service.invalidate(cacheKey)
             }
 
             let latestTokenCount = await service.keyLatestToken.count
@@ -251,7 +251,7 @@ extension AssetCacheServiceTests {
                 let rawCode = String(format: "%06d", index + 500_000)
                 let cacheKey = try distinctCacheKey(rawCode)
                 _ = await service.issueToken(for: cacheKey)
-                await service.invalidate(cacheKey)
+                try await service.invalidate(cacheKey)
             }
 
             let orderCount = await service.authorityKeyOrder.count
@@ -358,7 +358,7 @@ extension AssetCacheServiceTests {
                 let rawCode = String(format: "%d%05d", keyPrefix, index + 90000)
                 let cacheKey = try distinctCacheKey(rawCode)
                 _ = await service.issueToken(for: cacheKey)
-                await service.invalidate(cacheKey)
+                try await service.invalidate(cacheKey)
             }
             elapsedMs = (DispatchTime.now().uptimeNanoseconds - churnStart) / 1_000_000
 

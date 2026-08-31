@@ -279,12 +279,11 @@ extension AssetCacheService {
             // newer fetch/revalidation, or `evictAll()`) — a staleness
             // race, never a claim that the *conditional-response
             // protocol itself* was violated (that is
-            // ``AssetError/staleConditionalResponse``'s distinct meaning,
-            // used elsewhere in this subsystem for "no cached payload
-            // exists to pair a 304 with" and similar protocol-level
-            // preconditions). Using the same error for both would make it
-            // impossible for a caller/test to tell a normal staleness
-            // race apart from a genuine protocol violation.
+            // ``AssetError/staleConditionalResponse``'s distinct
+            // meaning, used elsewhere for "no cached payload exists to
+            // pair a 304 with"). Using the same error for both would
+            // make it impossible to tell a staleness race apart from a
+            // genuine protocol violation.
             guard await isAuthoritative(token, for: cacheKey) else {
                 throw AssetError.staleOperation
             }
@@ -308,13 +307,12 @@ extension AssetCacheService {
             // carries: the `isAuthoritative` re-check immediately above
             // already re-verified `token`'s own durable clear epoch
             // exactly matches the current one (and, transitively —
-            // ``beginRevalidationIssuance(for:expectedClearEpoch:expectedAppliedTicket:)``
-            // having accepted this operation's issuance at all already
-            // proved that epoch matched `request.existing`'s own
-            // historical stamp too) — so `token.durableClearEpoch` and
-            // `request.existing.durableClearEpoch` are already
-            // guaranteed identical at this exact point; restamping would
-            // write the same value, not a different one. See
+            // `beginRevalidationIssuance` having accepted this
+            // operation's issuance at all already proved that epoch
+            // matched `request.existing`'s own historical stamp too) —
+            // so both are already guaranteed identical at this exact
+            // point; restamping would write the same value, not a
+            // different one. See
             // ``AssetCacheMetadata/clearEpochAtPublication``'s own doc
             // comment for why this field is never restamped as a matter
             // of principle regardless.
@@ -366,8 +364,13 @@ extension AssetCacheService {
             // land; reporting `candidatesExhausted` in that case would
             // wrongly tell this caller the asset is gone when a
             // more-authoritative concurrent operation may since have
-            // published (or be about to publish) fresh content for it.
-            guard await invalidate(cacheKey, token: token) == .applied else {
+            // published fresh content for it. A thrown error (a durable
+            // disposition failure -- see ``invalidate(_:token:)``'s own
+            // doc comment) propagates straight out rather than folding
+            // into either error below: a definitive 404 must never
+            // report success or advance the fallback chain until a
+            // durable tombstone has actually landed.
+            guard try await invalidate(cacheKey, token: token) == .applied else {
                 throw AssetError.staleOperation
             }
             throw AssetError.candidatesExhausted

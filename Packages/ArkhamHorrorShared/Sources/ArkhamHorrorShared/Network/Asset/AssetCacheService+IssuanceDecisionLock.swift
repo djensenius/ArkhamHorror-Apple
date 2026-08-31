@@ -4,8 +4,7 @@ import Foundation
 /// fetch/revalidation should join already-registered in-flight work for
 /// that key or begin fresh work of its own — including any durable disk
 /// authority reservation
-/// (``AssetCacheService/beginIssuance(for:)``/
-/// ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``)
+/// (``AssetCacheService/beginIssuance(for:)``/`beginRevalidationIssuance`)
 /// that starting fresh work requires.
 ///
 /// Without this, Swift's actor reentrancy lets two concurrent calls for

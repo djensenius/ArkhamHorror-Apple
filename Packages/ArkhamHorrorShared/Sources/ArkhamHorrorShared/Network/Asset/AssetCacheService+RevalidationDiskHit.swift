@@ -88,13 +88,21 @@ extension AssetCacheService {
     /// Reserves a fresh disk-authority token, lazily and only now that a
     /// quarantine is actually needed, and invalidates `cacheKey`'s disk
     /// entry with it. `cached`'s historical stamp (`durableClearEpoch`/
-    /// `writeGeneration`) is validated atomically alongside this
-    /// reservation via
-    /// ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``.
+    /// `writeGeneration`/`payloadSHA256Hex`) is validated atomically
+    /// alongside this reservation via `beginRevalidationIssuance`.
     /// If that stamp is missing or no longer matches current durable
-    /// reality (already superseded by a sibling clear/publish or
-    /// quarantine), there is nothing left to safely retract, so this
-    /// simply returns without touching disk.
+    /// reality (already superseded by a sibling clear/publish/retraction
+    /// or quarantine), there is nothing left to safely retract, so this
+    /// simply returns without touching disk. A subsequent
+    /// ``AssetCacheService/invalidate(_:token:)`` failure (the durable
+    /// disposition transaction itself could not be committed) is
+    /// deliberately swallowed here (`try?`): this quarantine path is
+    /// itself already best-effort local cleanup for an entry this call's
+    /// own caller has independently decided not to trust any further —
+    /// unlike ``AssetCacheService+RevalidationCoalescing.swift``'s own
+    /// definitive-404 call site, nothing here depends on this
+    /// invalidation having durably landed for its own outward-facing
+    /// correctness.
     private func quarantineDiskHit(_ cached: CachedAsset, cacheKey: AssetCacheKey) async {
         guard
             let historicalEpoch = cached.durableClearEpoch,
@@ -102,7 +110,8 @@ extension AssetCacheService {
             let authority = await beginRevalidationIssuance(
                 for: cacheKey,
                 historicalClearEpoch: historicalEpoch,
-                historicalWriteGeneration: historicalGeneration
+                historicalWriteGeneration: historicalGeneration,
+                historicalContentHash: cached.metadata.payloadSHA256Hex
             )
         else {
             return
@@ -110,6 +119,6 @@ extension AssetCacheService {
         var token = issueToken(for: cacheKey)
         token.durableClearEpoch = authority.clearEpoch
         token.diskWriteGeneration = authority.diskWriteGeneration
-        await invalidate(cacheKey, token: token)
+        _ = try? await invalidate(cacheKey, token: token)
     }
 }

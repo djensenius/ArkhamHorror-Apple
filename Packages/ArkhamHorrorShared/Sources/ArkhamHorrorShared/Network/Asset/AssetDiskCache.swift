@@ -260,15 +260,16 @@ actor AssetDiskCache {
         try requireDiskWritesEnabledLocked()
         // Read once, under this already-held lock, and reused for
         // ``acceptToken(_:currentEpoch:currentIssued:)``'s compare: a
-        // second, later re-read here could in principle observe a value a
-        // *different* concurrent writer already changed, which would
-        // defeat the whole point of holding this single exclusive lock
-        // across the entire critical section. The applied ticket this
-        // write itself commits (via
-        // ``reserveAndCommitMutationTicketLocked(for:)`` below) is a
-        // freshly reserved value, not a function of this read — see that
-        // method's own doc comment for why that is what makes it always
-        // strictly greater than whatever was read here.
+        // later re-read here could in principle observe a value a
+        // *different* concurrent writer already changed, defeating the
+        // whole point of holding this single exclusive lock across the
+        // entire critical section. The applied disposition this write
+        // itself commits (via
+        // ``commitPublicationLocked(for:ticket:contentHash:)`` below) is
+        // either `token`'s own already-accepted ticket, reused verbatim,
+        // or (with no `token`) a freshly reserved value, not a function
+        // of this read — see that method's own doc comment for why that
+        // always exceeds whatever was read here.
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
         let currentIssued = try currentIssuedTicketLocked(for: key)
         if let token {
@@ -288,6 +289,17 @@ actor AssetDiskCache {
                 "payloadSHA256Hex does not match the actual payload bytes"
             )
         }
+        // Resolved exactly once and threaded through both the metadata
+        // sidecar written below and this key's own disposition commit —
+        // see ``resolvedMutationTicketLocked(for:token:)``'s own doc
+        // comment for why re-deriving it a second time for one logical
+        // write would desynchronize
+        // ``AssetCacheMetadata/writeGenerationAtPublication`` from the
+        // disposition ``AssetDiskCache/get(_:)`` actually checks it
+        // against.
+        let ticket = try resolvedMutationTicketLocked(for: key, token: token)
+        var stampedMetadata = metadata
+        stampedMetadata.writeGenerationAtPublication = ticket
         let payloadName = payloadFilename(
             keyHash: key.digestHex,
             contentHash: metadata.payloadSHA256Hex
@@ -323,21 +335,47 @@ actor AssetDiskCache {
         // open indefinitely.
         defer { evictIfNeeded() }
         try writePayloadGenerationLocked(payloadName: payloadName, payload: payload)
-        try commitMetadataPointerLocked(
+        // `false` here means the metadata pointer rename itself already
+        // succeeded (this generation is genuinely live) but the
+        // confirming directory `fsync` did not -- see
+        // ``commitMetadataPointerLocked(_:metadata:payloadName:payloadAlreadyExisted:)``'s
+        // own doc comment for why that failure must still fall through
+        // to the disposition commit below, only surfacing as a thrown
+        // failure to *this* method's own caller afterward.
+        let metadataPointerConfirmed = try commitMetadataPointerLocked(
             key,
-            metadata: metadata,
+            metadata: stampedMetadata,
             payloadName: payloadName,
             payloadAlreadyExisted: payloadAlreadyExisted
         )
-        // Only after both the payload and metadata pointer are durably
-        // committed: this key's durable applied ticket must never advance
-        // past a mutation that did not itself actually land. Commits
-        // `token`'s own already-accepted ticket verbatim (never a
-        // freshly-reserved one) when `token` is non-nil — see
-        // ``commitMutationTicketLocked(for:token:)``'s own doc comment
+        // Only after the payload is durably committed and the metadata
+        // pointer rename has *at least* taken effect (whether or not its
+        // own confirming fsync did): this key's durable applied
+        // disposition must never advance past a mutation whose payload
+        // write did not itself actually land, but must still advance for
+        // one whose metadata pointer is already live, or that entry
+        // would be made unreadable by ``AssetDiskCache/get(_:)``'s own
+        // disposition cross-check for no reason. Commits the exact same
+        // `ticket` already stamped into `stampedMetadata` above (never
+        // independently re-resolved) — see
+        // ``resolvedMutationTicketLocked(for:token:)``'s own doc comment
         // for why conflating the two would break
-        // ``removeIfApplied(_:token:)``'s exact-match retraction.
-        try commitMutationTicketLocked(for: key, token: token)
+        // ``removeIfApplied(_:token:)``'s exact-match retraction, and a
+        // ``KeyDispositionKind/content`` disposition carrying this exact
+        // payload's own hash, so a later `beginRevalidationIssuance` can
+        // confirm the disposition is still genuinely live content, not a
+        // since-retracted `.retiring`/`.tombstone` sharing the same
+        // ticket value.
+        try commitPublicationLocked(
+            for: key,
+            ticket: ticket,
+            contentHash: metadata.payloadSHA256Hex
+        )
+        guard metadataPointerConfirmed else {
+            throw AssetError.cachePersistenceFailed(
+                "metadata pointer committed but its directory fsync failed"
+            )
+        }
         return .applied
     }
 

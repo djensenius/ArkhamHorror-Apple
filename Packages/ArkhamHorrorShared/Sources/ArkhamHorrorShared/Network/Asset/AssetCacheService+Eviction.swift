@@ -163,11 +163,10 @@ extension AssetCacheService {
         return false
     }
 
-    /// Removes `cacheKey` from both cache layers, tombstoning it if the
-    /// disk deletion could not be confirmed to fully succeed (see
-    /// ``tombstonedKeys``). Centralizes every disk-invalidating call site
-    /// (a definitive 404, a failed re-validation quarantine) so none of
-    /// them can accidentally swallow a deletion failure the way a bare
+    /// Removes `cacheKey` from both cache layers. Centralizes every
+    /// disk-invalidating call site (a definitive 404, a failed
+    /// re-validation quarantine) so none of them can accidentally treat a
+    /// failed durable removal as if it had succeeded the way a bare
     /// `try?`/best-effort `remove` used to.
     ///
     /// `token` is optional: a re-validation quarantine
@@ -179,8 +178,33 @@ extension AssetCacheService {
     /// Returns ``MutationOutcome/stale`` under the same conditions
     /// ``publish(_:asset:token:)`` does (only ever possible when `token`
     /// is non-`nil`: a `nil` token has no authority to lose).
+    ///
+    /// **Throws — never returns ``MutationOutcome/applied`` — when
+    /// ``AssetDiskCache/remove(_:token:)``'s own durable disposition
+    /// transaction itself could not be committed.** A prior revision
+    /// instead recorded any such failure only in ``tombstonedKeys``/
+    /// ``lastDiskPersistenceFailure`` (purely volatile, in-process
+    /// diagnostics) and still fell through to return `.applied` — which
+    /// let a definitive 404 (``RevalidationCoalescing``'s `.notFound`
+    /// branch) believe this key's disk state was durably invalidated and
+    /// advance its fallback candidate chain, or report overall success,
+    /// even though nothing was actually durably committed to disk at
+    /// all. Since ``AssetDiskCache/remove(_:token:)`` itself now only
+    /// ever throws for a genuine disposition-commit failure (physical
+    /// payload/metadata deletion is deliberately best-effort inside it
+    /// and never escapes as a thrown error — see that method's own doc
+    /// comment), any error caught here is, by construction, exactly the
+    /// "durable tombstone never landed" case a caller must react to as a
+    /// distinct, non-`.applied` outcome. `tombstonedKeys`/
+    /// `lastDiskPersistenceFailure` are still updated first, purely as
+    /// diagnostics parity with ``evictAll()``'s own best-effort path, but
+    /// the thrown error itself — not those fields — is what a caller must
+    /// actually react to.
     @discardableResult
-    func invalidate(_ cacheKey: AssetCacheKey, token: CacheToken? = nil) async -> MutationOutcome {
+    func invalidate(
+        _ cacheKey: AssetCacheKey,
+        token: CacheToken? = nil
+    ) async throws -> MutationOutcome {
         if let token, await !isAuthoritative(token, for: cacheKey) {
             return .stale
         }
@@ -247,9 +271,12 @@ extension AssetCacheService {
         } catch let error as AssetError {
             tombstonedKeys.insert(cacheKey)
             lastDiskPersistenceFailure = error
+            throw error
         } catch {
+            let typedError = AssetError.cachePersistenceFailed(String(describing: error))
             tombstonedKeys.insert(cacheKey)
-            lastDiskPersistenceFailure = .cachePersistenceFailed(String(describing: error))
+            lastDiskPersistenceFailure = typedError
+            throw typedError
         }
         guard !diskOutcomeIsStale else {
             // The disk-durable, cross-instance/cross-process CAS itself

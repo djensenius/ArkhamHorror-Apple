@@ -278,11 +278,28 @@ extension AssetCacheService {
     /// observed, exactly like ``cancelWaiter(_:fetchID:waiterID:)``'s
     /// identical retraction, which is likewise never awaited by the
     /// waiter whose cancellation triggered it.
+    ///
+    /// **Captures `self` strongly, not weakly.** A prior revision used
+    /// `Task { [weak self] in ... }` here, which can silently never run
+    /// its body at all if this actor happens to deallocate (its last
+    /// strong reference elsewhere released) before this detached `Task`
+    /// is scheduled — abandoning the retraction entirely, with no
+    /// durable trace that it was ever supposed to happen. This alone is
+    /// not the reviewer-required fix for the cross-process/durable case
+    /// (a genuinely separate process, or this same process after a
+    /// crash, can never share this actor's own in-memory lifetime at
+    /// all) — that is what ``AssetDiskCache/commitRetractionLocked(for:token:destroy:)``'s
+    /// own durable `.retiring`-before-`destroy` transaction exists to
+    /// close, regardless of whether *any* in-process `Task` here ever
+    /// runs — but it does close the narrower, still-real sub-case where
+    /// this exact retraction is abandoned purely because this one
+    /// process's own actor happened to deallocate first, strictly within
+    /// that same process's own lifetime.
     private func retractUndeliveredMutation(_ key: AssetCacheKey, token: CacheToken) {
         retireIfCurrent(token, for: key)
         markGenerationRetiring(token, for: key)
-        Task { [weak self] in
-            await self?.retractIfApplied(key, token: token)
+        Task {
+            await self.retractIfApplied(key, token: token)
         }
     }
 }

@@ -97,7 +97,7 @@ extension AssetCacheServiceTests {
             // fetch, or a cache-wide `evictAll()`) actually cleared it in
             // production. The memory *and* disk entries are both gone by
             // the time this returns.
-            await service.invalidate(cacheKey)
+            try await service.invalidate(cacheKey)
 
             // Only once the invalidation has fully completed does the
             // test let the paused read actually resume and return its

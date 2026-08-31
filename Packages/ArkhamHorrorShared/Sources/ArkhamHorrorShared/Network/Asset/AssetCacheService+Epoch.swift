@@ -142,8 +142,7 @@ extension AssetCacheService {
         ///
         /// A revalidation of an existing memory/disk hit still always
         /// reserves its own freshly-issued ticket here, exactly like a
-        /// genuinely new fetch (via
-        /// ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``)
+        /// genuinely new fetch (via `beginRevalidationIssuance`)
         /// — never the hit's own historical stamp verbatim: a token
         /// whose ticket merely repeats whatever is already the currently
         /// -applied value is indistinguishable, to

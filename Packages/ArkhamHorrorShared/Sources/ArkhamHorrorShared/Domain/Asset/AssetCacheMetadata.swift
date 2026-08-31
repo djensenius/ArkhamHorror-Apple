@@ -71,13 +71,13 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// ``AssetDiskCache/touch(_:metadata:token:)`` (the disk write a
     /// `304` performs) always durably commits the *revalidating*
     /// operation's own freshly issued ticket as this key's new disk
-    /// *applied* ticket (``AssetDiskCache/commitMutationTicketLocked(for:token:)``),
+    /// applied disposition (``AssetDiskCache/commitPublicationLocked(for:token:contentHash:)``),
     /// regardless of what this metadata's own fields say. Leaving this
     /// field frozen therefore let it silently drift out of sync with the
     /// disk's own applied-ticket counter after the very first `304`: a
     /// *third*, subsequent revalidation attempt reads this frozen,
     /// now-stale field back as its own historical stamp and passes it to
-    /// ``AssetDiskCache/beginRevalidationIssuance(for:expectedClearEpoch:expectedAppliedTicket:)``
+    /// `AssetDiskCache.beginRevalidationIssuance`
     /// as `expectedAppliedTicket` — which compares it against the disk's
     /// *current* applied ticket (already advanced by the second `304`)
     /// and always finds a mismatch, permanently degrading every
@@ -106,8 +106,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// instead validates these two fields — this entry's own historical
     /// stamp — against a freshly re-read *current* value, atomically
     /// under one disk-cache lock hold, alongside reserving that
-    /// operation's own fresh ticket
-    /// (``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``);
+    /// operation's own fresh ticket (`beginRevalidationIssuance`);
     /// a mismatch fails closed (falls through to a full, uncached fetch)
     /// rather than ever revalidating bytes whose own provenance no
     /// longer matches durable reality. This historical stamp is

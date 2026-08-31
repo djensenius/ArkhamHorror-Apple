@@ -279,16 +279,15 @@ extension AssetCacheServiceTests {
 
     @Test(
         """
-        A key whose metadata-pointer deletion fails leaves its structurally-intact entry \
-        physically on disk (`remove(_:)` reports this via a thrown typed error rather than \
-        swallowing it), but that alone can never let it be served again: a fresh \
-        AssetCacheService opened over the same directory -- simulating a restart, sharing \
-        no in-memory state with the original service at all -- still mandatorily \
-        revalidates online before ever trusting it, exactly as an entry no removal was ever \
-        even attempted for would be
+        A key whose metadata-pointer physical deletion fails during `remove(_:)` still \
+        durably commits a tombstone disposition (physical cleanup is deliberately \
+        best-effort once that disposition itself is durable) -- so `remove(_:)` itself \
+        reports success, not a thrown error, and the structurally-intact orphaned bytes it \
+        leaves behind are immediately unreadable via `get(_:)`, in this exact same process, \
+        with no restart required -- and remain so after a restart too
         """
     )
-    func failedRemovalLeavesOrphanedBytesStillSubjectToMandatoryOnlineRevalidation() async throws {
+    func failedPhysicalDeletionStillDurablyTombstonesAndSelfHeals() async throws {
         try await withScratchDirectory { directory in
             let limits = standardLimits()
             let diskCache = try AssetDiskCache(directory: directory, limits: limits)
@@ -300,28 +299,33 @@ extension AssetCacheServiceTests {
             let originalBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
             try await publishAsset(key, body: originalBody, via: layers)
 
-            // The metadata sidecar's own removal fails, so the entry
-            // (metadata + payload) survives `remove(_:)` completely
-            // intact on disk. `AssetDiskCache.remove(_:)` itself still
-            // must surface this as a thrown typed error rather than
-            // silently reporting success -- that contract is unchanged
-            // and unrelated to the (now-removed) durable per-key
-            // tombstone this test previously also asserted.
+            // The metadata sidecar's own physical removal fails, so the
+            // entry (metadata + payload) survives `remove(_:)` completely
+            // intact on disk. This must no longer make `remove(_:)`
+            // itself throw: the durable `.retiring`→`.tombstone`
+            // disposition transaction (`AssetDiskCache+Disposition.swift`)
+            // is what actually makes this key's content unreadable from
+            // this point on, and physical cleanup of whatever bytes a
+            // failed deletion left behind is intentionally best-effort --
+            // conflating that with a genuine disposition-commit failure
+            // would wrongly prevent a definitive 404 from ever reporting
+            // success purely because some already-unreadable bytes could
+            // not be swept.
             await diskCache.directoryAccess.installFaultInjection(
                 failRemoveSuffixes: [".meta.json"]
             )
-            await #expect(throws: AssetError.self) {
-                try await diskCache.remove(cacheKey)
-            }
+            let outcome = try await diskCache.remove(cacheKey)
+            #expect(outcome == .applied)
 
-            // `AssetDiskCache.remove(_:)`'s failure is still audited via
-            // the service's `invalidate(_:token:)` path in production —
-            // reproduced here directly against the same disk cache — so
-            // `lastDiskPersistenceFailure` is observable even without a
-            // durable on-disk marker.
-            await layers.service.invalidate(cacheKey)
-            let failure = await layers.service.lastDiskPersistenceFailure
-            #expect(failure != nil, "A failed disk removal must be audited")
+            // Self-heals immediately, in this exact same process, with no
+            // restart at all: `get(_:)` cross-checks the durable
+            // disposition against the still-physically-present metadata
+            // and refuses to serve a mismatch.
+            let hitAfterFailedDeletion = try await diskCache.get(cacheKey)
+            #expect(
+                hitAfterFailedDeletion == nil,
+                "Orphaned bytes a failed physical deletion left behind must never be servable"
+            )
 
             // A brand-new `AssetCacheService`/`AssetDiskCache`/
             // `AssetMemoryCache` triple over this exact directory --
@@ -346,6 +350,51 @@ extension AssetCacheServiceTests {
                 removal left behind -- it must always revalidate online first
                 """
             )
+        }
+    }
+
+    @Test(
+        """
+        A genuine failure committing `remove(_:)`'s own durable disposition transaction -- \
+        not merely a best-effort physical-deletion failure -- is a thrown typed error, \
+        audited via `AssetCacheService.invalidate(_:token:)` into lastDiskPersistenceFailure, \
+        since nothing was actually durably confirmed removed in that case
+        """
+    )
+    func failedDispositionCommitDuringRemovalIsAuditedAndTombstonesKey() async throws {
+        try await withScratchDirectory { directory in
+            let limits = standardLimits()
+            let diskCache = try AssetDiskCache(directory: directory, limits: limits)
+            let layers = makeService(diskCache: diskCache, limits: limits)
+
+            let key = try cardArtKey("01001")
+            let candidates = AssetLocator.candidates(for: key, digest: FakeDigestLookup())
+            let cacheKey = AssetCacheKey(for: key, candidates: candidates)
+            let originalBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+            try await publishAsset(key, body: originalBody, via: layers)
+
+            // Fails the disposition file's own temp write (`.applied.tmp`)
+            // -- the first of `commitRetractionLocked(for:token:destroy:)`'s
+            // two durable commits, attempted before any destructive
+            // deletion is even tried -- so nothing about this key's
+            // durable disposition can be confirmed changed at all. This
+            // is the one failure mode `remove(_:)` must still surface as
+            // a thrown typed error.
+            await diskCache.directoryAccess.installFaultInjection(
+                failSuffixes: [".applied"]
+            )
+            await #expect(throws: AssetError.self) {
+                try await diskCache.remove(cacheKey)
+            }
+
+            // `AssetDiskCache.remove(_:)`'s failure is still audited via
+            // the service's `invalidate(_:token:)` path in production.
+            await #expect(throws: AssetError.self) {
+                try await layers.service.invalidate(cacheKey)
+            }
+            let failure = await layers.service.lastDiskPersistenceFailure
+            #expect(failure != nil, "A failed disposition commit must be audited")
+            #expect(await layers.service.tombstonedKeys.contains(cacheKey))
         }
     }
 }

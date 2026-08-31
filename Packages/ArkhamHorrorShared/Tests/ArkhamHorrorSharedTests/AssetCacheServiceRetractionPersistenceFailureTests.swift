@@ -171,4 +171,100 @@ extension AssetCacheServiceTests {
             #expect(await layers.service.tombstonedKeys.contains(cacheKey))
         }
     }
+
+    /// Polls (test-only) until `diskCache`'s own durable disposition for
+    /// `cacheKey` is no longer `.content` (or a genuine read failure --
+    /// treated identically, since either means the abandoned publication
+    /// is no longer confirmed live), or fails the test via `Issue.record`
+    /// if `timeoutNanoseconds` elapses first. Deliberately never goes
+    /// through `AssetCacheService` at all -- only ``AssetDiskCache``,
+    /// this test's own independently-held reference -- so it keeps
+    /// working even once every other strong reference to the service
+    /// that published this entry is long gone.
+    private func waitForDiskDispositionRetracted(
+        _ diskCache: AssetDiskCache,
+        cacheKey: AssetCacheKey,
+        timeoutNanoseconds: UInt64 = 5_000_000_000
+    ) async {
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+        while await (try? diskCache.currentKeyDisposition(for: cacheKey))?.kind == .content {
+            guard DispatchTime.now().uptimeNanoseconds < deadline else {
+                Issue.record(
+                    "Timed out waiting for the abandoned entry's disk disposition to retract"
+                )
+                return
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+    }
+
+    @Test(
+        """
+        An abandoned mutation's own cleanup (`retractUndeliveredMutation`'s \
+        detached retraction task) must still durably complete even when every other strong \
+        reference to the service that published it -- including its own caller's completed \
+        task and this test's own local `ServiceLayers` -- has already gone away by the time \
+        that task actually runs, because that task's own capture of the service is strong, not \
+        weak: a weak capture would let the service deallocate first and silently skip the \
+        retraction, permanently stranding the abandoned publication as still-live content.
+        """
+    )
+    func abandonedMutationCleanupSurvivesEveryOtherReferenceGoingAway() async throws {
+        try await withScratchDirectory { root in
+            let limits = standardLimits()
+            let key = try cardArtKey()
+            let urls = candidateURLs(for: key)
+            let candidates = AssetLocator.candidates(for: key, digest: FakeDigestLookup())
+            let cacheKey = AssetCacheKey(for: key, candidates: candidates)
+
+            // Held independently of `ServiceLayers`/`service` for the
+            // whole rest of this test -- the sole reference this test
+            // ever uses to observe the outcome, so the assertion below
+            // can never be satisfied merely because `service` itself
+            // happened to still be alive through some other path.
+            let diskCache = try AssetDiskCache(directory: root, limits: limits)
+
+            let gate = PauseGate()
+            let callerTask: Task<CachedAsset, Error> = await {
+                // `layers` (and therefore its own strong reference to
+                // `service`) is scoped entirely to this closure -- it
+                // does not survive past this line's `return`.
+                let layers = makeService(diskCache: diskCache, limits: limits)
+                let abandonedBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
+                await layers.transport.enqueue(
+                    .success(successResult(body: abandonedBody)),
+                    for: urls[0]
+                )
+                await layers.service.installTestOnlyPauseAfterFetchPublishApplied {
+                    await gate.markStartedAndWaitForRelease()
+                }
+                let task = Task { try await layers.service.asset(for: key) }
+                await gate.waitUntilStarted()
+                task.cancel()
+                return task
+            }()
+
+            await gate.release()
+            await #expect(throws: CancellationError.self) {
+                _ = try await callerTask.value
+            }
+
+            // By this point `callerTask` has completed and released its
+            // own capture of `service`, and the closure above's local
+            // `layers` has long since gone out of scope: the only
+            // strong reference to `service` that can possibly remain is
+            // whatever `retractUndeliveredMutation(_:token:)`'s own
+            // detached `Task { await self.retractIfApplied(...) }`
+            // itself captured when it was spawned. If that capture were
+            // weak instead, `service` could already have deallocated by
+            // now, and the retraction would silently never happen --
+            // this poll would then time out and fail the test.
+            await waitForDiskDispositionRetracted(diskCache, cacheKey: cacheKey)
+            let finalDisposition = try await diskCache.currentKeyDisposition(for: cacheKey)
+            let dispositionMessage = "The abandoned publication must eventually be durably " +
+                "retracted even after every other strong reference to the service that " +
+                "published it is gone"
+            #expect(finalDisposition.kind != .content, "\(dispositionMessage)")
+        }
+    }
 }

@@ -122,7 +122,7 @@ extension AssetCacheServiceTests {
             let taskA = Task { try await service.revalidate(for: key) }
             await transport.waitForCallCount(2, for: urls[0])
 
-            await service.invalidate(cacheKey)
+            try await service.invalidate(cacheKey)
 
             // Unlike `revalidate(for:)` (which conditions against a
             // single already-resolved URL), a fresh `asset(for:)` fetch
@@ -197,7 +197,7 @@ extension AssetCacheServiceTests {
             let taskA = Task { try await service.revalidate(for: key) }
             await transport.waitForCallCount(2, for: urls[0])
 
-            await service.invalidate(cacheKey)
+            try await service.invalidate(cacheKey)
 
             await transport.enqueue(
                 .success(successResult(body: newBody, etag: "\"v2-refreshed\"")),
@@ -278,7 +278,7 @@ extension AssetCacheServiceTests {
             let taskA = Task { try await service.revalidate(for: key) }
             await transport.waitForCallCount(2, for: urls[0])
 
-            await service.invalidate(cacheKey)
+            try await service.invalidate(cacheKey)
 
             await transport.enqueue(
                 .success(successResult(body: newerBody, etag: "\"v2-refreshed\"")),

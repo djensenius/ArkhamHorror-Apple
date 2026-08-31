@@ -96,27 +96,40 @@ extension AssetCacheService {
     }
 
     /// The revalidation counterpart to ``beginIssuance(for:)`` — see
-    /// ``AssetDiskCache/beginRevalidationIssuance(for:expectedClearEpoch:expectedAppliedTicket:)``
-    /// for the full reasoning. `historicalClearEpoch`/
-    /// `historicalWriteGeneration` are the cached entry's own historical
-    /// publication stamp; a `nil` return means either that durable read
-    /// itself failed, *or* that stamp no longer matches durable reality
-    /// (this entry has been superseded by a clear or a competing write
-    /// since it was last confirmed good) — callers must treat both
-    /// identically: fall through to a full, uncached fetch rather than
-    /// revalidating this entry. A non-`nil` return always carries a
-    /// freshly, uniquely reserved ticket for `key`, exactly like
+    /// `AssetDiskCache.beginRevalidationIssuance` for the full reasoning.
+    /// `historicalClearEpoch`/
+    /// `historicalWriteGeneration`/`historicalContentHash` are the cached
+    /// entry's own historical publication stamp; a `nil` return means
+    /// either that durable read itself failed, *or* that stamp no longer
+    /// matches durable reality (this entry has been superseded by a
+    /// clear, a competing write, or a retraction/tombstone since it was
+    /// last confirmed good) — callers must treat both identically: fall
+    /// through to a full, uncached fetch rather than revalidating this
+    /// entry. `historicalContentHash` is required, not merely an optional
+    /// belt-and-suspenders extra: every production caller already has
+    /// this cached entry's own ``AssetCacheMetadata/payloadSHA256Hex``
+    /// unconditionally available, and passing it lets the disk-cache
+    /// layer confirm not just that the ticket number still matches but
+    /// that the durable disposition is still genuinely
+    /// ``AssetDiskCache/KeyDispositionKind/content`` for *this exact*
+    /// payload — closing the window where a since-retracted disposition
+    /// happens to still carry the same ticket a stale cached entry's own
+    /// historical stamp captured (see `AssetDiskCache.beginRevalidationIssuance`'s
+    /// own doc comment). A non-`nil` return always carries a freshly,
+    /// uniquely reserved ticket for `key`, exactly like
     /// ``beginIssuance(for:)``'s own result — never the historical value
     /// verbatim.
     func beginRevalidationIssuance(
         for key: AssetCacheKey,
         historicalClearEpoch: Int,
-        historicalWriteGeneration: Int
+        historicalWriteGeneration: Int,
+        historicalContentHash: String
     ) async -> PreIssuedAuthority? {
         guard let snapshot = try? await diskCache.beginRevalidationIssuance(
             for: key,
             expectedClearEpoch: historicalClearEpoch,
-            expectedAppliedTicket: historicalWriteGeneration
+            expectedAppliedTicket: historicalWriteGeneration,
+            expectedContentHash: historicalContentHash
         ) else {
             return nil
         }

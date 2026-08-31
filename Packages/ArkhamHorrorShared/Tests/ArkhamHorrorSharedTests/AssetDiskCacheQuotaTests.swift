@@ -21,24 +21,34 @@ extension AssetDiskCacheTests {
             // relative to the payload — the exact eviction/survival
             // outcome does not depend on its precise value. Budget/ratios
             // mirror `AssetMemoryCacheTests`' exact-watermark scenario,
-            // with `diskBudgetBytes` given extra headroom (disk-only,
-            // `memoryBudgetBytes` is untouched) over that memory-only
-            // scenario's value: unlike the memory cache, the disk cache
-            // also durably accounts for this directory's root-authority
-            // marker, clear-epoch file, and every key's own per-key
-            // issuance-ticket bookkeeping files (which persist across an
-            // ordinary single-entry eviction by design, see
-            // `AssetDiskCache+WriteGeneration.swift`), and that fixed
-            // overhead must not itself force evicting more than the one
-            // truly-least-recently-used entry this test expects.
+            // with `diskBudgetBytes` given substantial extra headroom
+            // (disk-only, `memoryBudgetBytes` is untouched) over that
+            // memory-only scenario's value: unlike the memory cache, the
+            // disk cache also durably accounts for this directory's
+            // root-authority marker, clear-epoch file, and every key's
+            // own per-key issuance-ticket and disposition bookkeeping
+            // files (which persist across an ordinary single-entry
+            // eviction by design, see `AssetDiskCache+WriteGeneration.swift`
+            // and `AssetDiskCache+Disposition.swift`'s typed, JSON-encoded
+            // `<hash>.applied` disposition record in particular — roughly
+            // 110 bytes per key, substantially larger than a bare
+            // fixed-width ticket integer would be), and that fixed
+            // overhead — persisting for all three keys regardless of
+            // which single entry is evicted — must not itself force
+            // evicting more than the one truly-least-recently-used entry
+            // this test expects. The margins below are deliberately wide
+            // (several hundred bytes on each side of the exact computed
+            // three-entries-present and one-entry-remaining totals) so
+            // this test remains robust to any future, similarly modest
+            // growth in that same fixed per-key bookkeeping overhead.
             let limits = AssetCacheLimits(
                 maxEncodedBytes: 1_000_000,
                 maxDimension: 8192,
                 maxPixelCount: 32_000_000,
                 memoryBudgetBytes: 4000,
-                diskBudgetBytes: 4500,
-                highWaterMarkRatio: 0.95,
-                lowWaterMarkRatio: 0.76
+                diskBudgetBytes: 8000,
+                highWaterMarkRatio: 0.55,
+                lowWaterMarkRatio: 0.50
             )
             let cache = try AssetDiskCache(directory: directory, limits: limits)
             let keyA = try key("01001")

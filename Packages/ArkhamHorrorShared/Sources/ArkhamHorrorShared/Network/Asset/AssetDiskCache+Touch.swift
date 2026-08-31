@@ -102,18 +102,38 @@ extension AssetDiskCache {
         stamped.accessSequence = try secureDirectory.allocateAccessSequence(
             atLeastAfter: metadata.accessSequence
         )
+        // Resolved exactly once and threaded through both the metadata
+        // sidecar written below and this key's own disposition commit --
+        // see ``resolvedMutationTicketLocked(for:token:)``'s own doc
+        // comment for why an unconditional (`token: nil`) caller's own
+        // freshly reserved ticket must never be independently re-derived
+        // a second time for one logical write. `clearEpochAtPublication`
+        // is deliberately left untouched here (see
+        // ``AssetCacheMetadata/clearEpochAtPublication``'s own doc
+        // comment for why a touch/304 never changes it), only
+        // `writeGenerationAtPublication` advances.
+        let ticket = try resolvedMutationTicketLocked(for: key, token: token)
+        stamped.writeGenerationAtPublication = ticket
         do {
             try persistMetadata(stamped, name: metadataFilename(for: key))
         } catch {
             throw AssetError.cachePersistenceFailed(String(describing: error))
         }
         // Same single-top-level-lock convention as ``set(_:payload:metadata:token:)``:
-        // commits `token`'s own already-accepted ticket verbatim (never a
-        // freshly-reserved one) when `token` is non-nil — see
-        // ``commitMutationTicketLocked(for:token:)``'s own doc comment
+        // commits the exact same `ticket` already stamped into `stamped`
+        // above (never independently re-resolved) — see
+        // ``resolvedMutationTicketLocked(for:token:)``'s own doc comment
         // for why conflating the two would break
-        // ``removeIfApplied(_:token:)``'s exact-match retraction.
-        try commitMutationTicketLocked(for: key, token: token)
+        // ``removeIfApplied(_:token:)``'s exact-match retraction (and
+        // desynchronize the metadata's own provenance stamp from this
+        // key's disposition). A touch never changes the underlying
+        // bytes, so it commits the exact same ``KeyDispositionKind/content``
+        // hash the entry already carries.
+        try commitPublicationLocked(
+            for: key,
+            ticket: ticket,
+            contentHash: metadata.payloadSHA256Hex
+        )
         return .applied
     }
 }

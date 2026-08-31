@@ -76,7 +76,7 @@ extension AssetDiskCache {
     /// fences A the instant B is issued, regardless of which one's
     /// network round trip or decode happens to complete, or apply, first.
     /// Since every ticket is reserved by a single, strictly-increasing,
-    /// durable counter (``reserveAndCommitMutationTicketLocked(for:)``/
+    /// durable counter (``resolvedMutationTicketLocked(for:token:)``/
     /// ``issueTicketLocked(for:)``) and a token's own ticket can never
     /// itself exceed whatever is currently the highest-issued one, this
     /// check is in effect an *exact* match against "the single most
@@ -113,16 +113,16 @@ extension AssetDiskCache {
 
     /// Removes `key`'s on-disk entry only if `token` is *exactly* the
     /// token whose own mutation is currently the last-applied one for
-    /// this key — i.e. the current durable applied ticket is *exactly*
-    /// `token`'s own issued ticket — and the durable clear epoch has not
-    /// changed since. Deliberately exact-match, not the `>=` compare
-    /// ``acceptToken(_:currentEpoch:currentApplied:)`` uses: by the time
+    /// this key — i.e. the current durable disposition is *exactly*
+    /// ``KeyDispositionKind/content`` at `token`'s own issued ticket —
+    /// and the durable clear epoch has not changed since. Deliberately
+    /// exact-match, not the `>=` compare
+    /// ``acceptToken(_:currentEpoch:currentIssued:)`` uses: by the time
     /// this runs, `token`'s own mutation has already durably become the
-    /// applied ticket for this key (via
-    /// ``reserveAndCommitMutationTicketLocked(for:)``), so this only ever
-    /// retracts a mutation that is still exactly the current, unsuperseded
-    /// state — never a token some other, later mutation has since moved
-    /// past. Mirrors ``AssetMemoryCache/removeIfApplied(_:token:)``'s
+    /// applied disposition for this key, so this only ever retracts a
+    /// mutation that is still exactly the current, unsuperseded state —
+    /// never a token some other, later mutation has since moved past.
+    /// Mirrors ``AssetMemoryCache/removeIfApplied(_:token:)``'s
     /// exact-match semantics. Used by
     /// ``AssetCacheService/publish(_:asset:token:)``/
     /// ``AssetCacheService/touch(_:asset:token:)`` to retract a disk write
@@ -130,82 +130,70 @@ extension AssetDiskCache {
     /// already have been superseded (e.g. the last waiter of a coalesced
     /// operation cancelled before delivery).
     ///
-    /// **Resets the applied ticket to the sentinel `0`, never reserves a
-    /// fresh one.** A prior revision instead called
-    /// ``reserveAndCommitMutationTicketLocked(for:)`` here, on the theory
-    /// that this retraction is "one further mutation" needing its own
-    /// advancing ticket exactly like every genuine `set`/`touch`/`remove`
-    /// does — but that reservation draws from the *same* shared issuance
-    /// counter (``issueTicketLocked(for:)``/`.gen`) every other in-flight
-    /// operation for this exact key relies on to know its own ticket is
-    /// still the most recently issued one. A concurrent, already-issued
-    /// (but not yet applied — e.g. paused mid-revalidation) operation B
-    /// for this same key can never predict, and has no way to survive,
-    /// this retraction's own reservation manufacturing a phantom "even
-    /// later" issuance that nobody actually asked for: the very next time
-    /// B attempts its own `set`/`touch`, ``acceptToken(_:currentEpoch:currentIssued:)``
-    /// finds B's own already-issued ticket is no longer `>=` the issuance
-    /// counter's new value and wrongly rejects perfectly legitimate,
-    /// already-in-flight work as stale — even though B was issued
-    /// strictly *before* this retraction's phantom ticket ever existed.
-    /// Committing the sentinel `0` directly instead touches only the
-    /// *applied* counter, leaving the *issuance* counter — and therefore
-    /// every other operation's own already-reserved ticket — completely
-    /// untouched. `0` can never collide with any genuine historical
-    /// applied ticket (the first real ticket ``issueTicketLocked(for:)``
-    /// ever reserves for any key is `1`), so a future
-    /// ``beginRevalidationIssuance(for:expectedClearEpoch:expectedAppliedTicket:)``
-    /// provenance check comparing against a real cached entry's own
-    /// historical stamp (always `>= 1`) can never mistake this sentinel
-    /// for "still applied".
+    /// **Durably commits `.retiring(token's ticket)` before the actual
+    /// metadata/payload deletion is even attempted, and `.tombstone(token's
+    /// ticket)` only once that deletion has been attempted** — via
+    /// ``commitRetractionLocked(for:token:destroy:)``, see that method's
+    /// and `AssetDiskCache+Disposition.swift`'s own doc comments for the
+    /// full crash-safety reasoning this closes. A prior revision instead
+    /// reset a single bare applied-ticket counter straight to a sentinel
+    /// `0` in one single write, with no intermediate durable checkpoint
+    /// at all: a crash between removing the metadata pointer and
+    /// committing that single write left the counter still recording the
+    /// *old*, now-physically-absent content's own ticket as if it were
+    /// still current — exactly the ambiguity a durable `.retiring`
+    /// checkpoint, committed *first*, exists to remove. Never reserves a
+    /// fresh ticket for this retraction: both disposition commits reuse
+    /// `token`'s own already-issued ticket verbatim (see
+    /// ``commitRetractionLocked(for:token:destroy:)``'s own doc comment
+    /// for why minting a fresh one here would wrongly reject a different,
+    /// concurrent, already-issued-but-not-yet-applied operation for this
+    /// same key as stale).
     ///
-    /// **Never retracts (resets to `0`) a disposition that is itself
-    /// already a deletion/tombstone rather than a content publication.**
-    /// A definitive 404 (``AssetCacheService/performRevalidation(_:)``'s
+    /// **Never retracts a disposition that is itself already a
+    /// deletion/retirement rather than a live content publication.** A
+    /// definitive 404 (``AssetCacheService/performRevalidation(_:)``'s
     /// `.notFound` branch, via ``AssetCacheService/invalidate(_:token:)``)
-    /// durably commits *exactly* `token`'s own ticket as the applied
-    /// value — the correct, authoritative "this key is confirmed absent
-    /// as of this ticket" disposition — and then, from this cache's own
-    /// external caller's point of view, that operation's overall `Result`
-    /// is a *failure* (``AssetError/candidatesExhausted``), which every
+    /// durably commits `token`'s own ticket as a `.tombstone` — the
+    /// correct, authoritative "this key is confirmed absent as of this
+    /// ticket" disposition — and then, from this cache's own external
+    /// caller's point of view, that operation's overall `Result` is a
+    /// *failure* (``AssetError/candidatesExhausted``), which every
     /// coalesced waiter observes identically whether or not it was
     /// cancelled. A prior revision treated "this operation's Result was
     /// not a delivered success" as synonymous with "nothing durably
     /// applied, safe to retract" and called this method regardless — but
     /// for a definitive 404, something *was* durably, authoritatively
-    /// applied (the tombstone itself), and resetting it back to the
-    /// unapplied sentinel `0` would erase the one piece of durable state
-    /// that actually protects a stale sibling memory entry for this exact
-    /// key from being served again after the origin has confirmed it
-    /// gone. Distinguished here by whether a metadata sidecar was
-    /// actually present to remove: a tombstone's own commit never leaves
-    /// one behind (there is no content it publishes), so finding none
-    /// here is exactly the signal that this ticket's own disposition was
-    /// already a deletion, not a publication to undo.
+    /// applied (the tombstone itself), and rolling it back would erase
+    /// the one piece of durable state that actually protects a stale
+    /// sibling memory entry for this exact key from being served again
+    /// after the origin has confirmed it gone. Distinguished here by this
+    /// exact ticket's own disposition *kind*, never by whether a metadata
+    /// sidecar happens to still be physically present.
     ///
-    /// **Never swallows a genuine I/O failure as if nothing happened.**
-    /// A prior revision folded every step here — lock acquisition, root-
-    /// authority initialization, the epoch/ticket reads, the metadata
-    /// `remove`, the directory `fsync`, and the final applied-ticket
-    /// commit — through `try?`, collapsing "this ticket's disposition
-    /// was already a tombstone" (a genuine, expected `ENOENT`) together
-    /// with "removal was attempted and failed for an unrelated I/O
-    /// reason" into the same silent `nil`/`false`/early-`return`, and
-    /// discarded the caller's only signal that this retraction's own
-    /// durable disposition could not actually be confirmed. Every failure
-    /// here now propagates as a typed ``AssetError`` instead: a caller
-    /// that cannot confirm a retraction actually landed must not treat it
-    /// as if it had (see ``AssetCacheService/retractIfApplied(_:token:)``,
-    /// this method's sole production caller, for how that typed failure
-    /// is recorded rather than lost).
+    /// **Never swallows a genuine disk I/O failure as if nothing
+    /// happened.** Every failure here — lock acquisition, root-authority
+    /// initialization, the epoch/disposition reads, and (unlike
+    /// ``remove(_:token:)``'s own, deliberately best-effort physical
+    /// cleanup) the metadata `remove`/directory `fsync` performed by this
+    /// method's own `destroy` closure — propagates as a typed
+    /// ``AssetError`` instead: a caller that cannot confirm a retraction
+    /// actually landed must not treat it as if it had (see
+    /// ``AssetCacheService/retractIfApplied(_:token:)``, this method's
+    /// sole production caller, for how that typed failure is recorded
+    /// rather than lost). This is deliberately *not* relaxed to best-effort
+    /// the way ``remove(_:token:)``'s own physical cleanup now is: a
+    /// caller of this method still requires the specific, auditable
+    /// "was this key's disk state actually confirmed retracted?" signal
+    /// this method has always provided.
     ///
     /// Returns ``AssetCacheService/MutationOutcome/stale`` (never
     /// throwing) when `token` is no longer exactly the applied ticket for
     /// `key` — genuinely nothing to retract, not a failure — and
     /// ``AssetCacheService/MutationOutcome/applied`` once this call's own
     /// retraction (or the discovery that this exact ticket's own
-    /// disposition was already a tombstone with nothing to roll back) has
-    /// durably completed.
+    /// disposition was already a non-content kind with nothing to roll
+    /// back) has durably completed.
     @discardableResult
     func removeIfApplied(
         _ key: AssetCacheKey,
@@ -225,39 +213,28 @@ extension AssetDiskCache {
         }
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
         guard currentEpoch == issuedEpoch else { return .stale }
-        let currentApplied = try currentAppliedTicketLocked(for: key)
-        guard currentApplied == issuedTicket else { return .stale }
-        let metadataWasPresent: Bool
-        do {
-            metadataWasPresent = try secureDirectory.remove(name: metadataFilename(for: key))
-        } catch {
-            throw AssetError.cachePersistenceFailed(
-                "Could not confirm retraction of key's metadata pointer: \(error)"
-            )
-        }
-        try secureDirectory.fsyncRootDirectory()
-        guard metadataWasPresent else {
-            // Nothing was actually removed: this exact ticket's own
-            // durable disposition was already a tombstone (a definitive
-            // 404's own `invalidate` commit), never a content
-            // publication — see this method's own doc comment. The
-            // tombstone already correctly represents "this key is
-            // confirmed absent"; there is no content here to roll back,
-            // and committing the sentinel `0` would instead erase that
-            // confirmed-absent disposition, wrongly making a since-
-            // superseded but not-yet-durably-recorded-as-such stale
-            // sibling entry look provably unsuperseded again. Payload
-            // cleanup is likewise unnecessary: a tombstone never
-            // publishes a payload file for this exact ticket to sweep.
+        let disposition = try currentDispositionLocked(for: key)
+        guard disposition.ticket == issuedTicket else { return .stale }
+        guard disposition.kind == .content else {
+            // This exact ticket's own durable disposition is already a
+            // deletion/retirement (a definitive 404's own `invalidate`
+            // commit, or a previously interrupted retraction of this
+            // very ticket) — see this method's own doc comment. There is
+            // no live content publication left here to roll back, and
+            // rewriting an already-tombstoned/retiring disposition would
+            // gain nothing; simply report this retraction as already
+            // satisfied.
             return .applied
         }
-        cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
-        // See this method's own doc comment for why this must commit the
-        // fixed sentinel `0` directly (never reserve/mint a fresh
-        // ticket): doing so would advance the shared issuance counter
-        // past whatever a different, already-issued-but-not-yet-applied
-        // operation for this same key legitimately relies on.
-        try commitAppliedTicketLocked(0, for: key)
+        try commitRetractionLocked(for: key, token: token) {
+            let metadataWasPresent = try self.secureDirectory.remove(
+                name: self.metadataFilename(for: key)
+            )
+            try self.secureDirectory.fsyncRootDirectory()
+            if metadataWasPresent {
+                self.cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
+            }
+        }
         return .applied
     }
 

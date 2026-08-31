@@ -97,8 +97,7 @@ extension AssetCacheService {
             // authority -- entirely inside
             // ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``,
             // never eagerly at this call site (a prior revision of this
-            // code called
-            // ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``
+            // code called `beginRevalidationIssuance`
             // unconditionally here, before knowing whether this call
             // would join already in-flight work or start fresh work --
             // wasting a disk-ticket reservation, and under this
@@ -255,8 +254,7 @@ extension AssetCacheService {
     /// (minted here, for this call, only after `existing`'s own
     /// historical publication stamp has just been re-validated against
     /// current durable reality *and* fresh disk authority reserved for
-    /// it — see
-    /// ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``).
+    /// it — see `beginRevalidationIssuance`).
     /// Split out of
     /// ``coalescedRevalidation(cacheKey:url:expectedFormat:existing:preIssuedAuthority:)``
     /// purely to keep that function's body within this package's
@@ -288,7 +286,7 @@ extension AssetCacheService {
     /// stamp, atomically alongside the reservation itself, and throws
     /// ``AssetError/revalidationProvenanceUnavailable`` when `existing`
     /// carries no historical stamp at all, or its own
-    /// ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``
+    /// `beginRevalidationIssuance`
     /// itself reports that stamp no longer matches current durable
     /// reality (or that durable read outright failed) — see that error
     /// case's own doc comment for why the one caller that can reach this
@@ -313,7 +311,8 @@ extension AssetCacheService {
                 let resolvedAuthority = await beginRevalidationIssuance(
                     for: slot.cacheKey,
                     historicalClearEpoch: historicalEpoch,
-                    historicalWriteGeneration: historicalGeneration
+                    historicalWriteGeneration: historicalGeneration,
+                    historicalContentHash: existing.metadata.payloadSHA256Hex
                 )
             else {
                 throw AssetError.revalidationProvenanceUnavailable

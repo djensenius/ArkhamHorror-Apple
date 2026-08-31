@@ -152,7 +152,7 @@ extension AssetCacheServiceTests {
             // direct, unconditional invalidation for this exact key runs
             // to completion — standing in for whatever more-authoritative
             // concurrent event actually cleared it in production.
-            await service.invalidate(cacheKey)
+            try await service.invalidate(cacheKey)
             await gate.release()
 
             await #expect(throws: AssetError.staleConditionalResponse) {

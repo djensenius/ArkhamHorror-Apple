@@ -5,15 +5,22 @@ import Foundation
 /// `file_length` convention, the same way `AssetDiskCache+Recovery.swift`
 /// and `AssetDiskCache+Read.swift` already are.
 extension AssetDiskCache {
-    /// Removes `key`'s metadata pointer (so it can never again be served
-    /// by ``get(_:)``, regardless of whether any payload generation's
-    /// bytes are still physically present on disk afterward), then
-    /// best-effort sweeps every payload generation for it. Throws only if
-    /// the metadata pointer itself could not be removed — that is the one
-    /// failure the caller must react to (by tombstoning the key), since a
-    /// leftover *payload* file with no metadata pointer referencing it can
-    /// never be served by `get(_:)` and is simply reclaimed by the next
-    /// orphan sweep. `token`, when supplied, gates this the same way as
+    /// Durably commits a `.retiring` then `.tombstone` disposition for
+    /// `key` (see ``commitRetractionLocked(for:token:destroy:)``), so it
+    /// can never again be served by ``get(_:)`` regardless of whether any
+    /// metadata pointer or payload generation's bytes are still
+    /// physically present on disk afterward, then best-effort attempts to
+    /// actually delete the metadata pointer and every payload generation.
+    /// Throws only if the durable disposition transaction itself could
+    /// not be committed (a state-write or its confirming `fsync` failed)
+    /// — that is the one failure a caller must react to as a genuine,
+    /// non-`.applied` outcome (see ``AssetCacheService/invalidate(_:token:)``'s
+    /// own doc comment); a mere physical-deletion failure is intentionally
+    /// never surfaced here, since the durable `.tombstone` disposition
+    /// alone is what actually makes this key's prior content unreadable
+    /// from this point on, and any leftover bytes a failed deletion left
+    /// behind are simply reclaimed by the next orphan sweep. `token`,
+    /// when supplied, gates this the same way as
     /// ``set(_:payload:metadata:token:)``: a stale removal request never
     /// deletes bytes a more-recently-issued operation just published —
     /// returns ``AssetCacheService/MutationOutcome/stale`` (not a silent
@@ -42,40 +49,32 @@ extension AssetDiskCache {
                 return .stale
             }
         }
-        do {
-            _ = try secureDirectory.remove(name: metadataFilename(for: key))
-            try secureDirectory.fsyncRootDirectory()
-        } catch {
-            // The metadata pointer's deletion could not be confirmed: a
-            // structurally-valid-looking entry may still be servable by
-            // ``get(_:)`` afterward. This is no longer escalated to a
-            // durable per-key tombstone or whole-cache disabled-reads
-            // marker — see ``AssetDiskCache+Tombstone.swift``'s doc
-            // comment for why that is no longer required: any such
-            // residual bytes can never be trusted or served by
-            // ``AssetCacheService`` without first passing a fresh online
-            // conditional revalidation, so a failed local deletion can
-            // never resurrect content the origin itself no longer serves.
-            // The typed error thrown here still lets the caller maintain
-            // its own in-process, best-effort tombstone
-            // (``AssetCacheService/tombstonedKeys``) for the remainder of
-            // this process's lifetime.
-            throw error
+        // Two-phase, crash-safe removal via
+        // ``commitRetractionLocked(for:token:destroy:)``: durably commits
+        // `.retiring(ticket)` *before* this closure ever runs, then
+        // `.tombstone(ticket)` only once it returns. Physical deletion
+        // itself is deliberately best-effort (`try?`) here, never
+        // propagated: once the final `.tombstone` commit below lands
+        // durably, this key is unreadable by ``get(_:)`` regardless of
+        // whether the metadata sidecar or any payload generation happens
+        // to still be physically present -- a caller (``AssetCacheService/invalidate(_:token:)``)
+        // must only ever see this call throw for a genuine failure to
+        // commit the *disposition itself* (the two durable JSON writes
+        // above), which is the one failure that must actually prevent
+        // reporting this definitive removal as applied or advancing a
+        // fallback candidate chain. A prior revision instead let a mere
+        // physical-deletion failure escape this call entirely,
+        // indistinguishable from a disposition-commit failure to this
+        // method's own caller — collapsing "the durable tombstone landed
+        // but some stray bytes could not be swept" together with "the
+        // durable tombstone itself never landed at all", which is
+        // exactly the ambiguity this whole two-phase disposition model
+        // exists to remove.
+        try commitRetractionLocked(for: key, token: token) {
+            _ = try? self.secureDirectory.remove(name: self.metadataFilename(for: key))
+            try? self.secureDirectory.fsyncRootDirectory()
+            self.cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
         }
-        cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
-        // Removal counts as this key's next durable "write" for CAS
-        // purposes exactly like ``set(_:payload:metadata:token:)``/
-        // ``touch(_:metadata:token:)``: a token-gated removal commits
-        // *exactly* that token's own already-accepted ticket (never a
-        // freshly-reserved one — see
-        // ``AssetDiskCache/commitMutationTicketLocked(for:token:)``'s own
-        // doc comment for why conflating the two would break
-        // ``removeIfApplied(_:token:)``'s exact-match retraction), while
-        // an unconditional (`token: nil`) removal instead reserves a
-        // brand-new ticket so a *later* replay of a token issued
-        // *before* this removal can never again satisfy `>=` against the
-        // unchanged applied value.
-        try commitMutationTicketLocked(for: key, token: token)
         return .applied
     }
 

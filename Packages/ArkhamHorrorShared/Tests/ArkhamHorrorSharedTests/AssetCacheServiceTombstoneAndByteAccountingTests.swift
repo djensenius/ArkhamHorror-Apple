@@ -81,38 +81,38 @@ extension AssetCacheServiceTests {
                 cacheKey: cacheKey
             )
 
-            // The critical assertion: this key's durable applied ticket
-            // must still exactly equal the tombstone's own ticket (2 --
-            // the second ticket ever issued for this key, after the
-            // original seed's ticket 1), never the unapplied sentinel 0
-            // a naive retraction would have reset it to. Proven
-            // indirectly via `beginRevalidationIssuance`'s own
-            // provenance check (a public, already-tested primitive):
-            // this must report `expectedAppliedTicket: 2` as still
-            // current, and `expectedAppliedTicket: 0` as stale.
-            let matchesTombstoneTicket = try await layers.diskCache.beginRevalidationIssuance(
-                for: cacheKey,
-                expectedClearEpoch: authorityAfterTombstone.clearEpoch,
-                expectedAppliedTicket: authorityAfterTombstone.issuedTicket
+            // The critical assertion: this key's durable applied
+            // disposition must still exactly equal the tombstone's own
+            // ticket (2 -- the second ticket ever issued for this key,
+            // after the original seed's ticket 1) and its own
+            // ``AssetDiskCache/KeyDispositionKind/tombstone`` kind, never
+            // reset back to the unapplied pristine sentinel (ticket `0`)
+            // a naive retraction would have produced. Asserted directly
+            // via ``AssetDiskCache/currentKeyDisposition(for:)`` -- a
+            // test/diagnostic-only accessor for exactly this durable
+            // state -- rather than indirectly through
+            // `beginRevalidationIssuance`'s own provenance check: that
+            // check now additionally requires
+            // ``AssetDiskCache/KeyDispositionKind/content``, which a
+            // tombstone's own disposition can never satisfy regardless of
+            // its ticket, so it is no longer a usable probe for this
+            // specific assertion.
+            let disposition = try await layers.diskCache.currentKeyDisposition(for: cacheKey)
+            #expect(
+                disposition.ticket == authorityAfterTombstone.issuedTicket,
+                """
+                The tombstone's own ticket must still be the key's current applied disposition \
+                ticket after its own automatic retraction ran -- this key's durable "confirmed \
+                absent" disposition must never have been reset back to the unapplied pristine \
+                sentinel
+                """
             )
             #expect(
-                matchesTombstoneTicket != nil,
+                disposition.kind == .tombstone,
                 """
-                The tombstone's own ticket must still be the key's current applied ticket after \
-                its own automatic retraction ran -- this key's durable "confirmed absent" \
-                disposition must never have been erased back to the unapplied sentinel 0
-                """
-            )
-            let matchesSentinelZero = try await layers.diskCache.beginRevalidationIssuance(
-                for: cacheKey,
-                expectedClearEpoch: authorityAfterTombstone.clearEpoch,
-                expectedAppliedTicket: 0
-            )
-            #expect(
-                matchesSentinelZero == nil,
-                """
-                If this matched, the tombstone's own applied ticket would have been wrongly \
-                reset back to the unapplied sentinel 0 by its own automatic retraction
+                This key's durable disposition must still be a tombstone (confirmed absent), \
+                never silently reverted back to content or left stuck at retiring, after its own \
+                automatic retraction observed nothing left to roll back
                 """
             )
         }

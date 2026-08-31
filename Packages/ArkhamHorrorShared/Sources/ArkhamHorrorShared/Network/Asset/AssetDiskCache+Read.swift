@@ -76,6 +76,35 @@ extension AssetDiskCache {
         guard let payload = readValidatedPayload(for: key, metadata: metadata) else {
             return nil
         }
+        // Cross-checks this entry's own durable applied *disposition*
+        // (`AssetDiskCache+Disposition.swift`) before ever trusting a
+        // structurally-valid-looking metadata+payload pair: a metadata
+        // sidecar can still be physically present and perfectly
+        // well-formed even after this exact key's disposition has since
+        // durably advanced to `.retiring`/`.tombstone` (a definitive 404,
+        // or a cancellation-triggered retraction, whose own destructive
+        // deletion step failed or has simply not yet run — physical
+        // cleanup is deliberately best-effort once the disposition itself
+        // is durable; see ``commitRetractionLocked(for:token:destroy:)``'s
+        // own doc comment), or even after a *different*, newer ticket's
+        // own publication has since landed for this exact key. Without
+        // this check, any reader that races ahead of best-effort physical
+        // cleanup — a fresh service instance, an independent sibling
+        // process, or this same process after a restart, not merely the
+        // process whose in-memory authority already knows to distrust
+        // this entry — could still serve content that has since been
+        // durably confirmed gone. A mismatch quarantines the stale
+        // sidecar/payload pair here (self-healing the very inconsistency
+        // this check exists to catch) and reports an ordinary miss.
+        guard
+            let disposition = try? currentDispositionLocked(for: key),
+            disposition.kind == .content,
+            disposition.ticket == metadata.writeGenerationAtPublication,
+            disposition.contentHash == metadata.payloadSHA256Hex
+        else {
+            quarantine(keyHash: key.digestHex, metadataName: metadataName)
+            return nil
+        }
 
         // Bumped to the next durable, globally monotonic value via
         // ``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``,

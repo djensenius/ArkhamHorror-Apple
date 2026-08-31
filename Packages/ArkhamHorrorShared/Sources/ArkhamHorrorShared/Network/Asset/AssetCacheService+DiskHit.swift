@@ -70,8 +70,7 @@ extension AssetCacheService {
         }
         // **Deliberately reserves no durable per-key disk authority, and
         // issues no local token, here.** A prior revision either eagerly
-        // reserved a fresh disk ticket via
-        // ``beginRevalidationIssuance(for:historicalClearEpoch:historicalWriteGeneration:)``,
+        // reserved a fresh disk ticket via `beginRevalidationIssuance`,
         // or (an intermediate, still-broken revision of this exact fix)
         // called ``issueToken(for:)`` purely to have *something* to
         // compare this method's own post-decode fail-fast re-check

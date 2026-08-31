@@ -65,19 +65,34 @@ extension AssetDiskCache {
     /// (as an unconditional "the commit failed, undo it" rollback would)
     /// would immediately break a reference that is already live, not
     /// merely leave a future crash free to resurrect stale state. In that
-    /// case this still throws (the caller must know durability was not
-    /// confirmed), but never deletes the payload; at worst, a real crash
-    /// before a later `fsync` reverts the rename at the filesystem level,
-    /// which the next startup's orphan sweep already tolerates by design
-    /// (the payload simply becomes an unreferenced orphan, never a
-    /// dangling reference). Factored out of `setLocked` purely to stay
-    /// under this package's `function_body_length` convention.
+    /// case this never throws directly -- the rename genuinely already
+    /// took effect and must never be treated as rolled back -- but its
+    /// `Bool` return reports `false` so
+    /// ``AssetDiskCache/setLocked(_:payload:metadata:token:)`` still
+    /// knows durability was not confirmed and must still surface a
+    /// thrown failure to *its own* caller, crucially only *after* it has
+    /// already gone on to commit this key's own disposition using the
+    /// exact same ticket already stamped into `metadata`: the metadata
+    /// pointer this call just switched to is, for this and every other
+    /// currently running process, already live, so leaving this key's
+    /// disposition uncommitted (by throwing here directly, the way a
+    /// confirmed-durability failure elsewhere does) would make a
+    /// perfectly valid, already-live entry unreadable by
+    /// ``AssetDiskCache/get(_:)``'s own disposition cross-check for no
+    /// reason -- not merely leave a future crash free to resurrect stale
+    /// state. At worst, a real crash before a later `fsync` reverts the
+    /// rename at the filesystem level, which the next startup's orphan
+    /// sweep already tolerates by design (the payload simply becomes an
+    /// unreferenced orphan, never a dangling reference). Factored out of
+    /// `setLocked` purely to stay under this package's
+    /// `function_body_length` convention.
+    @discardableResult
     func commitMetadataPointerLocked(
         _ key: AssetCacheKey,
         metadata: AssetCacheMetadata,
         payloadName: String,
         payloadAlreadyExisted: Bool
-    ) throws {
+    ) throws -> Bool {
         var stamped = metadata
         let metadataName = metadataFilename(for: key)
         // A best-effort read of whatever metadata sidecar currently
@@ -109,9 +124,16 @@ extension AssetDiskCache {
         do {
             try secureDirectory.fsyncRootDirectory()
         } catch {
-            throw AssetError.cachePersistenceFailed(
-                "metadata pointer committed but its directory fsync failed: \(error)"
-            )
+            // Deliberately does NOT throw here -- see this method's own
+            // doc comment for why the rename already took effect and
+            // ``setLocked(_:payload:metadata:token:)`` must still go on
+            // to commit this key's disposition before it surfaces this
+            // unconfirmed-durability failure to its own caller. Cleanup
+            // of any now-superseded prior generation is skipped in this
+            // case, exactly as it always has been: only a *confirmed*
+            // durable pointer switch is treated as safe to delete the
+            // previous generation's payload out from under.
+            return false
         }
 
         // Only now that the new generation is durably referenced, remove
@@ -121,6 +143,7 @@ extension AssetDiskCache {
         // once more so that cleanup itself is durable.
         cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: metadata.payloadSHA256Hex)
         try? secureDirectory.fsyncRootDirectory()
+        return true
     }
 
     /// Best-effort read of the `accessSequence` currently stamped on

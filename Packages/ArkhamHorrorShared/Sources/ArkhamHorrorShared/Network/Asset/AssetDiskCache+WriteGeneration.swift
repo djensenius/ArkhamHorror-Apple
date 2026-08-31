@@ -30,11 +30,15 @@ import Foundation
 ///   suspends for network I/O or a decode — so two concurrently-issued
 ///   operations for the same key always receive two distinct,
 ///   totally-ordered tickets, never the same snapshot value.
-/// - ``currentAppliedTicketLocked(for:)``/``reserveAndCommitMutationTicketLocked(for:)``:
-///   a *separate* durable counter recording the highest ticket any
-///   mutation for `key` has actually committed (published, touched, or
-///   removed) — compared with `>=`, not `==`, against an operation's own
-///   issued ticket in ``AssetDiskCache/acceptToken(_:currentEpoch:currentApplied:)``.
+/// - ``currentAppliedTicketLocked(for:)``/``commitPublicationLocked(for:token:contentHash:)``:
+///   a *separate* durable counter — now embedded in a typed
+///   ``KeyDisposition`` (see `AssetDiskCache+Disposition.swift`) rather
+///   than a bare integer, so a retraction/removal can record *which kind*
+///   of disposition (`content`/`retiring`/`tombstone`) is currently
+///   applied, not merely a ticket number — recording the highest ticket
+///   any mutation for `key` has actually committed (published, touched,
+///   or removed) — compared with `>=`, not `==`, against an operation's
+///   own issued ticket in ``AssetDiskCache/acceptToken(_:currentEpoch:currentApplied:)``.
 ///   A higher-ticketed (later-issued) operation always outranks a
 ///   lower-ticketed one regardless of which one's network round trip or
 ///   decode happens to finish first; an operation whose own ticket is no
@@ -63,10 +67,12 @@ import Foundation
 /// ``AssetDiskCache/touch(_:metadata:token:)``, ``AssetDiskCache/remove(_:token:)``)
 /// — even one called with no external `token` at all (test-only direct
 /// actor access) — reserves and commits its *own* fresh ticket via
-/// ``reserveAndCommitMutationTicketLocked(for:)`` immediately before it
-/// actually mutates disk state, and that freshly reserved ticket (always
-/// strictly greater than whatever was previously applied, by
-/// construction: a ticket is only ever reserved by bumping the same
+/// ``commitPublicationLocked(for:token:contentHash:)``/
+/// ``commitRetractionLocked(for:token:destroy:)`` immediately before (a
+/// content publication) or as part of (a retraction's own two-phase
+/// commit) it actually mutates disk state, and that freshly reserved
+/// ticket (always strictly greater than whatever was previously applied,
+/// by construction: a ticket is only ever reserved by bumping the same
 /// monotonic counter ``issueTicketLocked(for:)`` itself draws from)
 /// becomes the new applied value. This is what makes even an
 /// *unconditional* removal (no `token` supplied) permanently and
@@ -202,17 +208,42 @@ extension AssetDiskCache {
     /// durable read/write failure; returns `nil` (a distinct, non-throwing
     /// "safe to fall through, nothing durably wrong happened" outcome)
     /// only for a genuine provenance mismatch.
+    /// **Compares `key`'s full durable disposition, not merely its
+    /// ticket.** A bare ticket-equality check here is unsound on its own:
+    /// ``AssetDiskCache/commitRetractionLocked(for:token:destroy:)``
+    /// durably commits a `.retiring`/`.tombstone` disposition for
+    /// *exactly* the same ticket the content it is retracting was
+    /// published under (a token-gated retraction reuses its own token's
+    /// already-issued ticket verbatim -- see that method's own doc
+    /// comment) -- so a stale cached entry whose historical stamp
+    /// happens to equal that unchanged ticket value would otherwise still
+    /// pass this check even though the content it once pointed to has
+    /// since been definitively torn down, letting a revalidation
+    /// (touch/304) proceed against -- and potentially resurrect
+    /// authority over -- content that is durably gone. Requiring
+    /// ``AssetDiskCache/KeyDispositionKind/content`` here closes that
+    /// window: only a disposition that is *still* a live content
+    /// publication, at exactly this ticket, can ever pass. `expectedContentHash`,
+    /// when supplied, is compared too, as a further belt-and-suspenders
+    /// check against the exact bytes this operation's own historical
+    /// stamp was captured alongside.
     func beginRevalidationIssuance(
         for key: AssetCacheKey,
         expectedClearEpoch: Int,
-        expectedAppliedTicket: Int
+        expectedAppliedTicket: Int,
+        expectedContentHash: String? = nil
     ) async throws -> IssuanceSnapshot? {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
         let epoch = try secureDirectory.readPersistedClearEpoch()
-        let appliedTicket = try currentAppliedTicketLocked(for: key)
-        guard epoch == expectedClearEpoch, appliedTicket == expectedAppliedTicket else {
+        let disposition = try currentDispositionLocked(for: key)
+        guard
+            epoch == expectedClearEpoch,
+            disposition.kind == .content,
+            disposition.ticket == expectedAppliedTicket,
+            expectedContentHash == nil || disposition.contentHash == expectedContentHash
+        else {
             return nil
         }
         let ticket = try issueTicketLocked(for: key)
@@ -238,15 +269,16 @@ extension AssetDiskCache {
         try readTicketLocked(name: writeGenerationFilename(for: key))
     }
 
-    /// Reads `key`'s current durable *applied* ticket — the highest
-    /// ticket any mutation for `key` has actually committed. Must only
-    /// ever be called while the caller already holds this instance's
-    /// ``SecureCacheDirectory/acquireExclusiveLock()``. A clean "does not
-    /// exist" miss is `0` for the identical reason
+    /// Reads `key`'s current durable *applied* ticket — the ticket half
+    /// of ``currentDispositionLocked(for:)``'s full typed disposition
+    /// (see `AssetDiskCache+Disposition.swift`'s type-level doc comment).
+    /// Must only ever be called while the caller already holds this
+    /// instance's ``SecureCacheDirectory/acquireExclusiveLock()``. A
+    /// clean "does not exist" miss is `0` for the identical reason
     /// ``currentIssuedTicketLocked(for:)``'s own is: a genuinely pristine
     /// key has nothing applied yet.
     func currentAppliedTicketLocked(for key: AssetCacheKey) throws -> Int {
-        try readTicketLocked(name: appliedTicketFilename(for: key))
+        try currentDispositionLocked(for: key).ticket
     }
 
     /// A single, atomic, cross-instance/cross-process authority snapshot
@@ -329,11 +361,12 @@ extension AssetDiskCache {
     /// `fsync`, rename, directory `fsync`), and returns that successor —
     /// never the pre-bump value. Called by ``beginIssuance(for:)`` (one
     /// reservation per logical operation's issuance) and by
-    /// ``reserveAndCommitMutationTicketLocked(for:)`` (one further
-    /// reservation per actual committed mutation) alike: every single
-    /// call to this method, from anywhere, returns a value no other call
-    /// -- past, present, or future -- will ever return again for this
-    /// key.
+    /// ``AssetDiskCache/resolvedMutationTicketLocked(for:token:)``'s own
+    /// unconditional (`token: nil`) branch (one further reservation per
+    /// actual committed mutation with no external token to reuse) alike:
+    /// every single call to this method, from anywhere, returns a value
+    /// no other call -- past, present, or future -- will ever return
+    /// again for this key.
     ///
     /// Guards against overflow: once already at `Int.max`, throws rather
     /// than silently colliding two genuinely different future tickets
