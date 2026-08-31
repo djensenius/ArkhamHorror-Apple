@@ -3,10 +3,11 @@ import Foundation
 extension AssetCacheService {
     /// `true` if `issuedTicket` (``AssetDiskCache/KeyAuthoritySnapshot/issuedTicket``,
     /// `key`'s current durable highest-issued ticket) is exactly
-    /// `storedGeneration`, **or** every ticket strictly between the two
-    /// has already been durably decided, via ``markGenerationRetiring(_:for:)``,
-    /// to be retracted and therefore can never legitimately apply a
-    /// mutation for `key` at all.
+    /// `storedGeneration`, **or** every ticket in `(storedGeneration, issuedTicket]`
+    /// — that is, `issuedTicket` itself and every ticket strictly between it
+    /// and `storedGeneration` — has already been durably decided, via
+    /// ``markGenerationRetiring(_:for:)``, to be retracted and therefore can
+    /// never legitimately apply a mutation for `key` at all.
     ///
     /// Closes a gap ``memoryEntryStillCurrent(_:storedGeneration:for:)``'s
     /// prior plain `storedGeneration == currentAuthority.issuedTicket`
