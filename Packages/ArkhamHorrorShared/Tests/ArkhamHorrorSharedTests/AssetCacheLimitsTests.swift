@@ -90,4 +90,65 @@ struct AssetCacheLimitsTests {
             )
         }
     }
+
+    @Test(
+        """
+        A budget of Int.max with a ratio of 1 computes highWaterMark*Bytes without trapping \
+        (Double(Int.max) alone already rounds up to 2^63, which Int(_:) cannot represent), \
+        and the result never exceeds the original budget
+        """
+    )
+    func maxBudgetWithRatioOneNeverTraps() {
+        let limits = AssetCacheLimits(
+            maxEncodedBytes: 1024,
+            maxDimension: 64,
+            maxPixelCount: 4096,
+            memoryBudgetBytes: .max,
+            diskBudgetBytes: .max,
+            highWaterMarkRatio: 1,
+            lowWaterMarkRatio: 1
+        )
+        #expect(limits.highWaterMarkMemoryBytes <= .max)
+        #expect(limits.lowWaterMarkMemoryBytes <= .max)
+        #expect(limits.highWaterMarkDiskBytes <= .max)
+        #expect(limits.lowWaterMarkDiskBytes <= .max)
+    }
+
+    @Test(
+        """
+        A budget one below Int.max with a high-water ratio just under 1 computes a water mark \
+        that never traps and never exceeds the original budget, exercising the boundary just \
+        below where Double(budget) itself starts rounding up past the true Int value
+        """
+    )
+    func nearMaxBudgetWithNearOneRatioNeverExceedsBudget() {
+        let limits = AssetCacheLimits(
+            maxEncodedBytes: 1024,
+            maxDimension: 64,
+            maxPixelCount: 4096,
+            memoryBudgetBytes: .max - 1,
+            diskBudgetBytes: .max - 1,
+            highWaterMarkRatio: 0.999_999_999_9,
+            lowWaterMarkRatio: 0.5
+        )
+        #expect(limits.highWaterMarkMemoryBytes <= limits.memoryBudgetBytes)
+        #expect(limits.highWaterMarkDiskBytes <= limits.diskBudgetBytes)
+    }
+
+    @Test("An ordinary, non-extreme budget still computes the expected exact water mark bytes")
+    func ordinaryBudgetComputesExactWaterMarkBytes() {
+        let limits = AssetCacheLimits(
+            maxEncodedBytes: 1024,
+            maxDimension: 64,
+            maxPixelCount: 4096,
+            memoryBudgetBytes: 1000,
+            diskBudgetBytes: 2000,
+            highWaterMarkRatio: 0.9,
+            lowWaterMarkRatio: 0.75
+        )
+        #expect(limits.highWaterMarkMemoryBytes == 900)
+        #expect(limits.lowWaterMarkMemoryBytes == 750)
+        #expect(limits.highWaterMarkDiskBytes == 1800)
+        #expect(limits.lowWaterMarkDiskBytes == 1500)
+    }
 }

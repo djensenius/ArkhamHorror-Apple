@@ -71,18 +71,43 @@ struct AssetCacheLimits: Sendable, Equatable {
     )
 
     var highWaterMarkMemoryBytes: Int {
-        Int(Double(memoryBudgetBytes) * highWaterMarkRatio)
+        Self.waterMarkBytes(budget: memoryBudgetBytes, ratio: highWaterMarkRatio)
     }
 
     var lowWaterMarkMemoryBytes: Int {
-        Int(Double(memoryBudgetBytes) * lowWaterMarkRatio)
+        Self.waterMarkBytes(budget: memoryBudgetBytes, ratio: lowWaterMarkRatio)
     }
 
     var highWaterMarkDiskBytes: Int {
-        Int(Double(diskBudgetBytes) * highWaterMarkRatio)
+        Self.waterMarkBytes(budget: diskBudgetBytes, ratio: highWaterMarkRatio)
     }
 
     var lowWaterMarkDiskBytes: Int {
-        Int(Double(diskBudgetBytes) * lowWaterMarkRatio)
+        Self.waterMarkBytes(budget: diskBudgetBytes, ratio: lowWaterMarkRatio)
+    }
+
+    /// `Int(Double(budget) * ratio)` alone is unsafe for a `budget` near
+    /// `Int.max`: converting a huge `Int` to `Double` itself rounds (every
+    /// `Double` this close to `Int.max` is at least 1024 apart from its
+    /// neighbors), and can round *up* past `Int.max` even before `ratio`
+    /// is applied -- `Double(Int.max)` itself already rounds up to
+    /// exactly `2^63`, which traps `Int(_:)` (a precondition failure, not
+    /// a silently wrong answer) regardless of `ratio`. Guards against
+    /// that by working entirely in `Double` first, only ever converting
+    /// back to `Int` once the value is provably representable, and
+    /// additionally clamps the result to `budget` itself: since
+    /// `ratio` is always in `0...1` (enforced by `init`), a water mark
+    /// can never be a meaningful value above its own budget, so any
+    /// residual floating-point rounding that pushed the product slightly
+    /// past `budget` is clamped back down rather than surfaced.
+    private static func waterMarkBytes(budget: Int, ratio: Double) -> Int {
+        let product = Double(budget) * ratio
+        // `product` finite and strictly below `2^63` (`Double(Int.max)`,
+        // itself already rounded up from the true `Int.max`) guarantees
+        // `Int(product)` lands on a representable, non-trapping value.
+        guard product.isFinite, product < Double(Int.max) else {
+            return budget
+        }
+        return min(Int(product), budget)
     }
 }
