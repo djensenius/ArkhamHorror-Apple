@@ -39,17 +39,88 @@ import Foundation
 /// already registered, and simply join it without reserving anything of
 /// its own).
 extension AssetCacheService {
+    /// A single queued in-process waiter for one ``AssetCacheKey``'s
+    /// decision lock: its continuation, plus a monotonically increasing
+    /// `id` (``AssetCacheService/nextIssuanceDecisionWaiterID``) so a
+    /// cancellation handler firing on an arbitrary executor can find and
+    /// remove *this exact* entry from
+    /// ``AssetCacheService/issuanceDecisionWaiters`` — never some other,
+    /// still-legitimately-waiting caller's — without racing a concurrent
+    /// normal hand-off of that very same entry. Mirrors
+    /// ``SecureCacheDirectoryLockCoordinator/QueuedWaiter``.
+    struct QueuedIssuanceDecisionWaiter {
+        let id: Int
+        let continuation: CheckedContinuation<Void, Error>
+    }
+
     /// Acquires the per-key decision lock for `key`, suspending only if
     /// another caller currently holds it. See this file's type-level doc
     /// comment for what this lock actually protects and why.
-    func acquireIssuanceDecisionLock(for key: AssetCacheKey) async {
+    ///
+    /// Cancellation-aware on both the queued-wait and the immediately-
+    /// granted path: a caller cancelled while still queued is found (by
+    /// its own stable `id`, allocated *before* it ever suspends) and
+    /// resumed with `CancellationError` immediately, rather than only
+    /// discovering its own cancellation once it eventually reaches the
+    /// front of the queue and is handed a lock it can no longer
+    /// legitimately use. A cancellation delivered in the narrow window
+    /// *after* a queued waiter's continuation is resumed (handing it the
+    /// lock) but *before* this method returns to its caller — racing
+    /// ``releaseIssuanceDecisionLock(for:)``'s own hand-off — is closed
+    /// by the `Task.isCancelled` check just before returning below:
+    /// on cancellation, the lock this caller was just granted is
+    /// released right here (handing it on to the *next* queued waiter,
+    /// if any) rather than silently handed back to a caller that will
+    /// never use it, which would otherwise leave every later waiter for
+    /// this key stuck behind a lock nobody is ever going to release.
+    /// Throwing at all times means "this caller never gets to use the
+    /// lock and owes no matching release" — every call site relies on
+    /// exactly that invariant.
+    func acquireIssuanceDecisionLock(for key: AssetCacheKey) async throws {
         guard issuanceDecisionLocked.contains(key) else {
             issuanceDecisionLocked.insert(key)
+            if Task.isCancelled {
+                releaseIssuanceDecisionLock(for: key)
+                throw CancellationError()
+            }
             return
         }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            issuanceDecisionWaiters[key, default: []].append(continuation)
+        let id = nextIssuanceDecisionWaiterID
+        nextIssuanceDecisionWaiterID += 1
+        try await withTaskCancellationHandler {
+            typealias LockContinuation = CheckedContinuation<Void, Error>
+            try await withCheckedThrowingContinuation { (continuation: LockContinuation) in
+                issuanceDecisionWaiters[key, default: []].append(
+                    QueuedIssuanceDecisionWaiter(id: id, continuation: continuation)
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelQueuedIssuanceDecisionWaiter(key, id: id) }
         }
+        if Task.isCancelled {
+            releaseIssuanceDecisionLock(for: key)
+            throw CancellationError()
+        }
+    }
+
+    /// Finds and removes the exact queued waiter matching `id` for `key`
+    /// (if it is still queued — it may already have been normally
+    /// dequeued by a concurrent ``releaseIssuanceDecisionLock(for:)``
+    /// racing this same cancellation, in which case there is nothing
+    /// left to do here: that hand-off's own resumed waiter is caught by
+    /// ``acquireIssuanceDecisionLock(for:)``'s own post-grant
+    /// `Task.isCancelled` check instead), and resumes *that* waiter with
+    /// `CancellationError`. Never removes or resumes any other,
+    /// still-legitimately-waiting entry.
+    private func cancelQueuedIssuanceDecisionWaiter(_ key: AssetCacheKey, id: Int) {
+        guard var waiters = issuanceDecisionWaiters[key],
+              let index = waiters.firstIndex(where: { $0.id == id })
+        else {
+            return
+        }
+        let cancelled = waiters.remove(at: index)
+        issuanceDecisionWaiters[key] = waiters.isEmpty ? nil : waiters
+        cancelled.continuation.resume(throwing: CancellationError())
     }
 
     /// Releases the per-key decision lock for `key`: if another caller is
@@ -58,6 +129,17 @@ extension AssetCacheService {
     /// handoff — this key is never briefly "unlocked" in between, which
     /// could otherwise let a third, newly-arriving caller jump the queue
     /// ahead of an already-waiting one). Otherwise fully releases it.
+    ///
+    /// The waiter handed the lock here may go on to discover, in
+    /// ``acquireIssuanceDecisionLock(for:)``'s own post-grant check, that
+    /// it was cancelled at (or immediately before) this exact hand-off —
+    /// that check, not this method, is what prevents a cancelled waiter
+    /// from actually using a lock it is resumed with here; this method
+    /// itself only ever hands off to the single longest-waiting *still-
+    /// queued* entry (any waiter already cancelled away by
+    /// ``cancelQueuedIssuanceDecisionWaiter(_:id:)`` is no longer present
+    /// in ``AssetCacheService/issuanceDecisionWaiters`` at all by the time
+    /// this runs).
     func releaseIssuanceDecisionLock(for key: AssetCacheKey) {
         guard var waiters = issuanceDecisionWaiters[key], !waiters.isEmpty else {
             issuanceDecisionLocked.remove(key)
@@ -66,6 +148,6 @@ extension AssetCacheService {
         }
         let next = waiters.removeFirst()
         issuanceDecisionWaiters[key] = waiters.isEmpty ? nil : waiters
-        next.resume()
+        next.continuation.resume()
     }
 }

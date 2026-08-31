@@ -230,7 +230,16 @@ actor AssetCacheService {
     /// fencing, duplicate disk-ticket-reservation hazard that plain
     /// actor reentrancy alone otherwise allows.
     var issuanceDecisionLocked: Set<AssetCacheKey> = []
-    var issuanceDecisionWaiters: [AssetCacheKey: [CheckedContinuation<Void, Never>]] = [:]
+    var issuanceDecisionWaiters: [AssetCacheKey: [QueuedIssuanceDecisionWaiter]] = [:]
+
+    /// Monotonically increasing source for
+    /// ``QueuedIssuanceDecisionWaiter/id``, so a cancellation handler
+    /// firing on an arbitrary executor can find and remove *this exact*
+    /// queued waiter (never some other, still-legitimately-waiting one)
+    /// from ``issuanceDecisionWaiters`` — mirrors
+    /// ``SecureCacheDirectoryLockCoordinator``'s identical `nextWaiterID`
+    /// convention, for the identical reason.
+    var nextIssuanceDecisionWaiterID = 0
 
     /// The most recent disk-cache persistence failure from ``publish``, if
     /// any, retained so a best-effort (non-fatal) disk write failure is
@@ -304,6 +313,22 @@ actor AssetCacheService {
     /// synchronous re-check (not either durable check) rejects the
     /// now-superseded memory hit.
     var testOnlyPauseBeforeMemoryFinalCAS: (() async -> Void)?
+
+    /// Test-only hook awaited by ``resolveOrCreateInFlightFetch(key:cacheKey:candidates:)``
+    /// immediately after it acquires `cacheKey`'s issuance decision lock
+    /// (``acquireIssuanceDecisionLock(for:)``) but before it inspects
+    /// ``inFlight`` or reserves any disk authority — i.e. while this
+    /// caller alone still holds that key's lock. Always `nil` in
+    /// production. A test installs a closure here to deterministically
+    /// hold this lock open long enough for a second, concurrent caller
+    /// for the identical key to genuinely become queued behind it (via
+    /// ``AssetCacheService/issuanceDecisionWaiters``) and then be
+    /// cancelled while still queued, proving
+    /// ``acquireIssuanceDecisionLock(for:)``'s cancellation handling
+    /// resumes that exact queued waiter with `CancellationError` — never
+    /// silently handing it the lock once its turn eventually comes —
+    /// without relying on incidental scheduling timing alone.
+    var testOnlyPauseHoldingIssuanceLock: (() async -> Void)?
 
     /// Test-only hook invoked by ``completeFetch(_:fetchID:result:)``
     /// synchronously, before it resumes any of the fetch's currently

@@ -72,7 +72,7 @@ extension AssetCacheService {
         candidates: [AssetCandidate]
     ) async throws -> CachedAsset {
         let waiterID = UUID()
-        let (fetchID, token) = await resolveOrCreateInFlightFetch(
+        let (fetchID, token) = try await resolveOrCreateInFlightFetch(
             key: key,
             cacheKey: cacheKey,
             candidates: candidates
@@ -238,10 +238,16 @@ extension AssetCacheService {
         key: AssetKey,
         cacheKey: AssetCacheKey,
         candidates: [AssetCandidate]
-    ) async -> (fetchID: UUID, token: CacheToken) {
+    ) async throws -> (fetchID: UUID, token: CacheToken) {
         let fetchID: UUID
         let token: CacheToken
-        await acquireIssuanceDecisionLock(for: cacheKey)
+        // Cancellation-aware: a caller cancelled while queued for this
+        // key's decision lock (or in the narrow post-grant window --
+        // see ``acquireIssuanceDecisionLock(for:)``'s own doc comment)
+        // throws here having never joined or reserved anything at all --
+        // there is nothing to release/undo below in that case.
+        try await acquireIssuanceDecisionLock(for: cacheKey)
+        await testOnlyPauseHoldingIssuanceLock?()
         if let existing = inFlight[cacheKey] {
             fetchID = existing.id
             // The already-registered fetch's own token, issued when *it*

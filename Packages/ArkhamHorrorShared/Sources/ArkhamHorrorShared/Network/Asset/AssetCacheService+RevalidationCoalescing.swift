@@ -151,7 +151,12 @@ extension AssetCacheService {
             etag: etag,
             lastModified: lastModified
         )
-        await acquireIssuanceDecisionLock(for: cacheKey)
+        // Cancellation-aware: a caller cancelled while queued for this
+        // key's decision lock (or in the narrow post-grant window -- see
+        // ``acquireIssuanceDecisionLock(for:)``'s own doc comment) throws
+        // here having never joined or reserved anything at all -- there
+        // is nothing to release below in that case.
+        try await acquireIssuanceDecisionLock(for: cacheKey)
         let resolved: ResolvedRevalidationFetch
         do {
             resolved = try await resolveOrIssueRevalidation(

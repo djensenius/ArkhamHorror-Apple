@@ -36,4 +36,22 @@ extension AssetCacheService {
     func installTestOnlyPauseBeforeFinalMemoryAuthorityCAS(_ hook: @escaping () async -> Void) {
         testOnlyPauseBeforeMemoryFinalCAS = hook
     }
+
+    /// Test-only: installs ``testOnlyPauseHoldingIssuanceLock``.
+    func installTestOnlyPauseHoldingIssuanceLock(_ hook: @escaping () async -> Void) {
+        testOnlyPauseHoldingIssuanceLock = hook
+    }
+
+    /// Test-only observability accessor: the number of callers currently
+    /// queued (neither granted nor yet cancelled/resumed) behind `key`'s
+    /// issuance decision lock — see
+    /// `AssetCacheService+IssuanceDecisionLock.swift`'s type-level doc
+    /// comment. Exists purely so a test can deterministically confirm "a
+    /// second caller has genuinely joined this key's queue" before acting
+    /// on it (e.g. cancelling it), rather than approximating that with a
+    /// timing guess. Read-only and side-effect-free; harmless in a
+    /// release build.
+    func issuanceDecisionWaiterCount(for key: AssetCacheKey) -> Int {
+        issuanceDecisionWaiters[key]?.count ?? 0
+    }
 }
