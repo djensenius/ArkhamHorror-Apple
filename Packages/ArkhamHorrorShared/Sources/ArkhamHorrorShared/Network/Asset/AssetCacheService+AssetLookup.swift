@@ -18,7 +18,7 @@ extension AssetCacheService {
     /// independently trusted as still-fresh, offline-authoritative
     /// content — they are, at best, a conditional-revalidation candidate.
     /// Every disk-only hit must therefore pass the exact same structural
-    /// re-validation as ``AssetCacheService/revalidateDiskHit(_:key:cacheKey:candidates:token:)``
+    /// re-validation as ``AssetCacheService/revalidateDiskHit(_:key:cacheKey:candidates:)``
     /// already performs, *and* a fresh online conditional
     /// (`ETag`/`Last-Modified`) revalidation against the live server,
     /// before it may ever be cached in memory or returned to a caller. If
