@@ -84,4 +84,40 @@ extension AssetDiskCacheTests {
             #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
         }
     }
+
+    @Test(
+        """
+        touch(_:metadata:) rejects a metadata.cacheKeyHex that does not match the AssetCacheKey \
+        being touched, rather than persisting a sidecar that later reads as belonging to a \
+        different key's own entry
+        """
+    )
+    func touchRejectsMismatchedCacheKeyHexWithoutPersistingSidecar() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            let otherKey = try key("01002")
+            let payload = Data([1, 2, 3])
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: metadata(for: cacheKey, payload: payload)
+            )
+
+            let mismatchedMetadata = metadata(for: otherKey, payload: payload)
+            await #expect(throws: AssetError.self) {
+                try await cache.touch(cacheKey, metadata: mismatchedMetadata)
+            }
+
+            // The pre-existing, correctly-keyed sidecar must survive
+            // completely untouched: the rejected call must never have
+            // overwritten it with the mismatched metadata.
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+            let persistedMetadata = try JSONDecoder.assetCache().decode(
+                AssetCacheMetadata.self,
+                from: Data(contentsOf: metadataURL)
+            )
+            #expect(persistedMetadata.cacheKeyHex == cacheKey.digestHex)
+        }
+    }
 }

@@ -42,6 +42,21 @@ extension AssetDiskCache {
                 return .stale
             }
         }
+        // A mismatched `metadata.cacheKeyHex` here would persist a sidecar
+        // that later reads as belonging to a *different* key than the one
+        // actually touched: `AssetDiskCache+Read.swift` and
+        // `AssetDiskCache+Recovery.swift` both treat `cacheKeyHex` as this
+        // entry's own authoritative identity when validating/quarantining
+        // survivors, so a caller-supplied mismatch here (accidental, or
+        // from a future internal caller) could persist an entry that is
+        // later quarantined and trigger unintended cleanup of payload
+        // generations belonging to the real key. Fail fast rather than
+        // ever persist that mismatch.
+        guard metadata.cacheKeyHex == key.digestHex else {
+            throw AssetError.cachePersistenceFailed(
+                "metadata.cacheKeyHex does not match the AssetCacheKey being touched"
+            )
+        }
         guard Self.isValidContentHash(metadata.payloadSHA256Hex) else {
             throw AssetError.cachePersistenceFailed("payloadSHA256Hex is not a valid content hash")
         }
