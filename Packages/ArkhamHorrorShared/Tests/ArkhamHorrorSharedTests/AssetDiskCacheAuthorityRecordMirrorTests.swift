@@ -9,31 +9,21 @@ import Testing
 /// record as unconditionally pristine — an independent loss/corruption
 /// of that single file after real prior use is indistinguishable, from
 /// that file alone, from a key that has never been issued a ticket at
-/// all, letting an already-issued ticket be silently reissued.
-///
-/// This fix keeps two independently-stored copies (the primary at
-/// ``AssetDiskCache/appliedTicketFilename(for:)`` and the mirror at
-/// ``AssetDiskCache/authorityRecordMirrorFilename(for:)``), each
-/// individually structurally validated
-/// (`AssetDiskCache+Disposition.swift`'s private `isValidAuthorityRecord`)
-/// before being trusted, and reconciled deterministically when they
-/// disagree. These tests drive that reconciliation directly by writing
-/// raw bytes to one or both copies' own on-disk names — exactly the
-/// "independent loss of exactly one file" scenario a fault-injection
-/// helper cannot itself express (fault injection only intercepts this
-/// cache's own writes, never a pre-existing file's already-committed
-/// bytes) — then reading the key's authority back through the public
+/// all, letting an already-issued ticket be silently reissued. The fix
+/// keeps two independently-stored, individually validated copies (the
+/// primary at ``AssetDiskCache/appliedTicketFilename(for:)`` and the
+/// mirror at ``AssetDiskCache/authorityRecordMirrorFilename(for:)``),
+/// reconciled deterministically when they disagree. These tests drive
+/// that reconciliation by writing raw bytes to one or both copies' own
+/// on-disk names — the "independent loss of exactly one file" scenario
+/// fault injection cannot itself express, since it only intercepts this
+/// cache's own future writes, never a pre-existing already-committed
+/// file — then reading the key's authority back through the public
 /// ``AssetDiskCache/currentKeyDisposition(for:)``/
-/// ``AssetDiskCache/currentKeyAuthority(for:)`` surface, exactly as
-/// production code would.
+/// ``AssetDiskCache/currentKeyAuthority(for:)`` surface.
 extension AssetDiskCacheTests {
     /// Constructs a `CacheToken` carrying exactly `snapshot`'s durable
-    /// authority — identical in shape to
-    /// `AssetDiskCacheDispositionTests.swift`'s own private helper of the
-    /// same purpose, but deliberately kept non-`private` *here* so this
-    /// suite's own `+ValidationRejection.swift` split file can reuse it,
-    /// mirroring `AssetDiskCacheWriteGenerationTests+FailClosed.swift`'s
-    /// identical convention.
+    /// authority. Non-`private` so sibling split test files can reuse it.
     func mirrorTestToken(
         from snapshot: AssetDiskCache.IssuanceSnapshot
     ) -> AssetCacheService.CacheToken {
@@ -90,7 +80,8 @@ extension AssetDiskCacheTests {
         issuedTicket: Int,
         ticket: Int,
         kind: AssetDiskCache.KeyDispositionKind,
-        contentHash: String?
+        contentHash: String?,
+        revision: Int
     ) throws -> Data {
         let record = AssetDiskCache.KeyAuthorityRecord(
             issuedTicket: issuedTicket,
@@ -98,7 +89,8 @@ extension AssetDiskCacheTests {
                 ticket: ticket,
                 kind: kind,
                 contentHash: contentHash
-            )
+            ),
+            revision: revision
         )
         return try JSONEncoder.assetCache().encode(record)
     }
@@ -226,23 +218,20 @@ extension AssetDiskCacheTests {
     @Test(
         """
         A torn pair -- both copies present and individually valid, but disagreeing (a crash \
-        between the mirror's write and the primary's) -- resolves to the higher issuedTicket \
-        copy, since the mirror is always written first and can therefore only ever be as new \
-        as or newer than the primary; the loser is then self-healed to match
+        between the mirror's write and the primary's) -- resolves to the higher-revision copy, \
+        since the mirror is always written before the primary and can therefore only ever be as \
+        new as or newer than it; the loser is then self-healed to match
         """
     )
-    func tornPairResolvesToHigherIssuedTicketAndSelfHeals() async throws {
+    func tornPairResolvesToHigherRevisionAndSelfHeals() async throws {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
             let cacheKey = try key("01001")
-            // Forces root-authority initialization while the root is
-            // still genuinely empty, *before* this test writes raw bytes
-            // directly to `cacheKey`'s own authority-record files below
-            // -- otherwise `ensureRootAuthorityInitializedLocked`
-            // correctly refuses to treat a root with unexplained
-            // surviving entries as pristine (a prior review round's own
-            // fix), which this test's raw-byte injection would
-            // otherwise trip for an unrelated reason.
+            // Forces root-authority initialization on an unrelated key
+            // while the root is still genuinely empty, before this
+            // test's own raw-byte injection below (which bypasses the
+            // anchor entirely, so no anchor cross-check applies here --
+            // see `AssetDiskCacheIssuanceAnchorTests.swift` for that).
             _ = try await cache.currentKeyDisposition(for: key("09999"))
 
             // Simulates the crash window `commitAuthorityRecordLocked`
@@ -255,13 +244,15 @@ extension AssetDiskCacheTests {
                 issuedTicket: 5,
                 ticket: 5,
                 kind: .content,
-                contentHash: newerHash
+                contentHash: newerHash,
+                revision: 5
             )
             let olderRecordData = try encodedRecord(
                 issuedTicket: 3,
                 ticket: 3,
                 kind: .content,
-                contentHash: olderHash
+                contentHash: olderHash,
+                revision: 3
             )
             try await newerRecordData.write(
                 to: mirrorURL(directory: directory, cache: cache, cacheKey: cacheKey)
@@ -273,7 +264,7 @@ extension AssetDiskCacheTests {
             let disposition = try await cache.currentKeyDisposition(for: cacheKey)
             #expect(
                 disposition.ticket == 5,
-                "The higher-issuedTicket copy (the mirror, always written first) must win"
+                "The higher-revision copy (the mirror, always written first) must win"
             )
             #expect(disposition.contentHash == newerHash)
 
@@ -292,6 +283,116 @@ extension AssetDiskCacheTests {
             )
             #expect(healedPrimary.issuedTicket == 5)
             #expect(healedPrimary.disposition.contentHash == newerHash)
+        }
+    }
+
+    @Test(
+        """
+        Finding #2's exact reconciliation bug: a torn pair sharing the *same* ticket (a \
+        content -> retiring transition durably reuses its own content's exact ticket) must \
+        still resolve by the higher-revision copy, never by an arbitrary primary-wins tie-break \
+        on ticket alone -- the mirror's newer `.retiring` disposition must win over the \
+        primary's stale, unresolved `.content` one, since the mirror is always written first
+        """
+    )
+    func tornPairAtEqualTicketDifferentDispositionResolvesByRevision() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            _ = try await cache.currentKeyDisposition(for: key("09999"))
+
+            let contentHash = String(repeating: "e", count: 64)
+            // The mirror already reflects the newer `.retiring(7)`
+            // transition (revision 9); the primary is still stuck at
+            // the older `.content(7)` disposition it retired *from*
+            // (revision 8) -- both at the exact same ticket, 7.
+            let mirrorData = try encodedRecord(
+                issuedTicket: 7,
+                ticket: 7,
+                kind: .retiring,
+                contentHash: nil,
+                revision: 9
+            )
+            let primaryData = try encodedRecord(
+                issuedTicket: 7,
+                ticket: 7,
+                kind: .content,
+                contentHash: contentHash,
+                revision: 8
+            )
+            try await mirrorData.write(
+                to: mirrorURL(directory: directory, cache: cache, cacheKey: cacheKey)
+            )
+            try await primaryData.write(
+                to: primaryURL(directory: directory, cache: cache, cacheKey: cacheKey)
+            )
+
+            let disposition = try await cache.currentKeyDisposition(for: cacheKey)
+            #expect(
+                disposition.kind == .retiring,
+                """
+                The higher-revision mirror copy (`.retiring`) must win -- a ticket-only \
+                tie-break would wrongly resurrect the primary's stale `.content` disposition \
+                its own mirror had already begun retiring
+                """
+            )
+            #expect(disposition.ticket == 7)
+
+            // A caller must not be able to read this key at all now --
+            // an unresolved `.retiring` disposition is never served.
+            let hit = try await cache.get(cacheKey)
+            #expect(hit == nil)
+
+            // The primary must have self-healed to match the winner.
+            let healedPrimaryData = try await Data(
+                contentsOf: primaryURL(directory: directory, cache: cache, cacheKey: cacheKey)
+            )
+            let healedPrimary = try JSONDecoder.assetCache().decode(
+                AssetDiskCache.KeyAuthorityRecord.self,
+                from: healedPrimaryData
+            )
+            #expect(healedPrimary.disposition.kind == .retiring)
+        }
+    }
+
+    @Test(
+        """
+        Two individually-valid copies sharing the exact same revision but disagreeing on \
+        anything else can never legitimately arise (each revision is written exactly once, by \
+        exactly one commit) -- this must fail closed rather than arbitrarily preferring either \
+        copy
+        """
+    )
+    func tornPairAtEqualRevisionDisagreeingFailsClosed() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            _ = try await cache.currentKeyDisposition(for: key("09999"))
+
+            let mirrorData = try encodedRecord(
+                issuedTicket: 4,
+                ticket: 4,
+                kind: .content,
+                contentHash: String(repeating: "f", count: 64),
+                revision: 4
+            )
+            let primaryData = try encodedRecord(
+                issuedTicket: 4,
+                ticket: 4,
+                kind: .content,
+                contentHash: String(repeating: "1", count: 64),
+                revision: 4
+            )
+            try await mirrorData.write(
+                to: mirrorURL(directory: directory, cache: cache, cacheKey: cacheKey)
+            )
+            try await primaryData.write(
+                to: primaryURL(directory: directory, cache: cache, cacheKey: cacheKey)
+            )
+
+            await #expect(throws: AssetError.self) {
+                _ = try await cache.currentKeyDisposition(for: cacheKey)
+            }
         }
     }
 }

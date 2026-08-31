@@ -44,8 +44,10 @@ extension AssetDiskCacheTests {
                 issuedTicket: -1,
                 ticket: 0,
                 kind: .tombstone,
-                contentHash: nil
+                contentHash: nil,
+                revision: 1
             )
+
             try await invalidData.write(
                 to: primaryURL(directory: directory, cache: cache, cacheKey: cacheKey)
             )
@@ -73,7 +75,8 @@ extension AssetDiskCacheTests {
                 issuedTicket: 1,
                 ticket: 5,
                 kind: .content,
-                contentHash: String(repeating: "c", count: 64)
+                contentHash: String(repeating: "c", count: 64),
+                revision: 1
             )
             try await invalidData.write(
                 to: primaryURL(directory: directory, cache: cache, cacheKey: cacheKey)
@@ -100,7 +103,8 @@ extension AssetDiskCacheTests {
                 issuedTicket: 3,
                 ticket: 3,
                 kind: .content,
-                contentHash: nil
+                contentHash: nil,
+                revision: 1
             )
             try await invalidData.write(
                 to: primaryURL(directory: directory, cache: cache, cacheKey: cacheKey)
@@ -127,7 +131,8 @@ extension AssetDiskCacheTests {
                 issuedTicket: 3,
                 ticket: 3,
                 kind: .tombstone,
-                contentHash: String(repeating: "d", count: 64)
+                contentHash: String(repeating: "d", count: 64),
+                revision: 1
             )
             try await invalidData.write(
                 to: primaryURL(directory: directory, cache: cache, cacheKey: cacheKey)
@@ -173,7 +178,8 @@ extension AssetDiskCacheTests {
                 issuedTicket: -5,
                 ticket: 0,
                 kind: .tombstone,
-                contentHash: nil
+                contentHash: nil,
+                revision: 1
             )
             try await corrupt.write(
                 to: primaryURL(directory: directory, cache: cache, cacheKey: cacheKey)

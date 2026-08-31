@@ -284,6 +284,24 @@ extension AssetDiskCacheTests {
             // -- the very first durable operation `commitRetractionLocked`
             // performs, strictly before its `destroy` closure (the actual
             // physical deletion attempt) is ever invoked.
+            //
+            // Note this call passes no `token`, so `remove(_:token:)`'s
+            // own unconditional branch must durably reserve a fresh
+            // ticket of its own first (see
+            // ``AssetDiskCache/resolvedMutationTicketLocked(for:token:)``) --
+            // a *separate* commit that leaves `disposition` itself
+            // completely untouched (still `.content`) -- strictly before
+            // ever attempting the `.retiring` disposition transition this
+            // method's own doc comment describes. That earlier ticket-
+            // reservation commit is exactly what this fault intercepts:
+            // primary fails on that very first post-fault write, so the
+            // `.retiring` transition itself is never even attempted, and
+            // the reconciled disposition (mirror wins by revision) is
+            // genuinely, correctly still `.content` -- unlike this
+            // suite's token-gated sibling tests (`AssetCacheService*NotDurableTests.swift`),
+            // whose already-reserved token skips straight to the
+            // `.retiring` commit itself, which is what those tests'
+            // fault instead intercepts.
             await cache.directoryAccess.installFaultInjection(failSuffixes: [".applied"])
             await #expect(throws: AssetError.self) {
                 try await cache.remove(cacheKey)

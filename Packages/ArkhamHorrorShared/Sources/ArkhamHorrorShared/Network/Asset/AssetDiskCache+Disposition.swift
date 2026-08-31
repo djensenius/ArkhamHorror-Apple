@@ -128,158 +128,48 @@ extension AssetDiskCache {
         let issuedTicket: Int
         let disposition: KeyDisposition
 
+        /// A strictly-increasing counter bumped by exactly one on
+        /// *every* durable commit this record's own key ever undergoes —
+        /// a fresh ticket issuance, a publish/touch, or either half of a
+        /// two-phase retraction — never reset, and never itself reused
+        /// across two different commits. Unlike `issuedTicket`/
+        /// `disposition.ticket` (which can legitimately repeat: a
+        /// content → retiring → tombstone cycle for one ticket keeps
+        /// `disposition.ticket` fixed across three separate commits),
+        /// `revision` totally orders every commit this key has ever
+        /// durably undergone, which is exactly what's required to
+        /// reconcile two individually-valid-but-disagreeing copies of
+        /// this record correctly even when they happen to share the same
+        /// ticket (see ``currentAuthorityRecordLocked(for:)``'s own doc
+        /// comment for the concrete scenario a bare ticket-based
+        /// tie-break cannot resolve) and to durably anchor this key's
+        /// issuance against a second, independent witness (see
+        /// `AssetDiskCache+IssuanceAnchor.swift`).
+        let revision: Int
+
         /// The record a key that has never had any ticket issued or
         /// mutation committed for it implicitly has.
-        static let pristine = KeyAuthorityRecord(issuedTicket: 0, disposition: .pristine)
+        static let pristine = KeyAuthorityRecord(
+            issuedTicket: 0,
+            disposition: .pristine,
+            revision: 0
+        )
     }
 
     /// Generous enough for this record's own small, fixed-shape JSON
-    /// encoding (an issuance ticket, a nested disposition ticket, a
-    /// short enum string, and an optional 64-hex-character content hash)
-    /// with ample headroom, while still bounding a read against a
-    /// tampered or corrupt file of unbounded size.
-    static let maxDispositionBytes = 512
+    /// encoding (an issuance ticket, a revision counter, a nested
+    /// disposition ticket, a short enum string, and an optional
+    /// 64-hex-character content hash) with ample headroom, while still
+    /// bounding a read against a tampered or corrupt file of unbounded
+    /// size.
+    static let maxDispositionBytes = 768
 
-    /// Reads `key`'s current durable authority record in full (both the
-    /// highest-issued ticket and the applied disposition, always
-    /// together — see this file's own type-level doc comment for why),
-    /// reconciling its two independently-stored copies (the primary at
-    /// ``AssetDiskCache/appliedTicketFilename(for:)`` and the mirror at
-    /// ``AssetDiskCache/authorityRecordMirrorFilename(for:)`` — see that
-    /// method's own doc comment for why a second copy exists at all).
-    /// Must only ever be called while the caller already holds this
-    /// instance's ``SecureCacheDirectory/acquireExclusiveLock()``.
+    /// See `AssetDiskCache+DispositionReconciliation.swift` for how
+    /// this record's two independently-stored on-disk copies (the
+    /// primary and the mirror) are read, classified, and reconciled
+    /// into one trusted value, then cross-checked against `key`'s own
+    /// durable issuance anchor (`AssetDiskCache+IssuanceAnchor.swift`).
     ///
-    /// **Neither copy alone dictates the outcome.** A clean "both copies
-    /// absent" miss is ``KeyAuthorityRecord/pristine`` — the only way
-    /// this can legitimately occur for a key that has ever had anything
-    /// durably committed for it is an independent loss of *both* copies
-    /// at once, which this redundancy cannot, by itself, ever fully rule
-    /// out (see ``AssetDiskCache/authorityRecordMirrorFilename(for:)``'s
-    /// own doc comment). But if *either* copy alone is present, well
-    /// formed, and passes ``isValidAuthorityRecord(_:)``'s structural
-    /// invariants, that copy is trusted outright, **never** collapsed
-    /// down to pristine merely because its sibling copy happens to be
-    /// missing, corrupt, non-regular, oversized, or unparsable — exactly
-    /// the single-point-of-failure defect a prior single-file (and, per
-    /// a later review round, single-merged-file) design could not avoid.
-    /// The missing/untrustworthy copy is then durably repaired
-    /// (best-effort — see below) from the surviving one, so a *second*,
-    /// independent loss is required before this same gap could ever
-    /// reopen for this key.
-    ///
-    /// If *both* copies are present and individually valid but disagree,
-    /// that can only mean a crash landed in the narrow window between
-    /// ``commitAuthorityRecordLocked(_:for:)``'s two sequential writes —
-    /// since a ticket/disposition for a single key only ever advances
-    /// forward, never backward, the copy with the higher `issuedTicket`
-    /// is unconditionally the newer, authoritative one; that value is
-    /// re-committed to both copies before being returned, so a torn pair
-    /// self-heals on its very next read rather than persisting
-    /// indefinitely.
-    ///
-    /// **A copy that is present but fails to decode or validate is a
-    /// fundamentally different signal than a copy that simply does not
-    /// exist, and this deliberately never conflates the two.** A prior
-    /// review round already established — and this round's own findings
-    /// require preserving — that a present-but-unparsable/structurally-
-    /// invalid authority record must always fail closed rather than ever
-    /// being silently treated as absent: unlike a clean deletion (this
-    /// round's own "disappearance" finding, which this redundancy exists
-    /// to close), a torn/tampered/semantically-impossible record active
-    /// evidence *against* trusting anything read from this root at all,
-    /// including its sibling copy, so it is never allowed to fall back
-    /// to that sibling. Only a copy that is cleanly ``.absent`` (the
-    /// underlying file simply does not exist) may defer to its sibling;
-    /// a `.corrupt` copy always throws.
-    ///
-    /// Repair writes throughout are deliberately best-effort: a failure
-    /// to durably repair a missing/torn copy must never prevent
-    /// returning an already-fully-valid, already-determined value — the
-    /// repair only improves *future* reads' resilience, it is never a
-    /// precondition for trusting the value this call itself just
-    /// determined.
-    func currentAuthorityRecordLocked(for key: AssetCacheKey) throws -> KeyAuthorityRecord {
-        let primaryName = appliedTicketFilename(for: key)
-        let mirrorName = authorityRecordMirrorFilename(for: key)
-        let primary = try readAuthorityRecordCopyStateLocked(name: primaryName)
-        let mirror = try readAuthorityRecordCopyStateLocked(name: mirrorName)
-        switch (primary, mirror) {
-        case (.corrupt, _), (_, .corrupt):
-            throw AssetError.cachePersistenceFailed(
-                "Authority record for this key is present but cannot be trusted; refusing to"
-                    + " fall back to any sibling copy."
-            )
-        case (.absent, .absent):
-            return .pristine
-        case let (.valid(record), .absent):
-            _ = try? writeAuthorityRecordFileLocked(record, name: mirrorName)
-            return record
-        case let (.absent, .valid(record)):
-            _ = try? writeAuthorityRecordFileLocked(record, name: primaryName)
-            return record
-        case let (.valid(lhs), .valid(rhs)):
-            guard lhs != rhs else { return lhs }
-            let winner = lhs.issuedTicket >= rhs.issuedTicket ? lhs : rhs
-            _ = try? commitAuthorityRecordLocked(winner, for: key)
-            return winner
-        }
-    }
-
-    /// The three mutually-exclusive states a single named on-disk
-    /// authority-record copy can be in, from
-    /// ``currentAuthorityRecordLocked(for:)``'s perspective — see that
-    /// method's own doc comment for why `.absent` and `.corrupt` are
-    /// deliberately never conflated into one another, unlike a prior
-    /// design's collapsing of both into a single `nil`.
-    private enum AuthorityRecordCopyState {
-        /// The underlying file simply does not exist — a clean,
-        /// unambiguous miss that may defer entirely to a sibling copy.
-        case absent
-        /// The underlying file exists but cannot be trusted (wrong
-        /// type, oversized, unparsable JSON, or fails
-        /// ``isValidAuthorityRecord(_:)``'s structural invariants) —
-        /// active evidence against this specific copy that must never
-        /// be silently overridden by falling back to a sibling.
-        case corrupt
-        case valid(KeyAuthorityRecord)
-    }
-
-    /// Reads and classifies a single named on-disk copy of `key`'s
-    /// authority record into exactly one of
-    /// ``AuthorityRecordCopyState``'s three cases. Throws only for a
-    /// failure that has nothing to do with this specific copy's own
-    /// trustworthiness at all (this method has none today — every
-    /// `SecureCacheDirectory.read(name:maxBytes:)` failure mode this
-    /// call distinguishes is itself evidence about *this* copy
-    /// specifically) — kept `throws` purely so a future caller-visible
-    /// failure mode never requires changing this method's own
-    /// signature.
-    private func readAuthorityRecordCopyStateLocked(
-        name: String
-    ) throws -> AuthorityRecordCopyState {
-        // `SecureCacheDirectory.read(name:maxBytes:)` itself already
-        // distinguishes a clean "does not exist" miss (`nil`) from every
-        // other failure mode (wrong type, oversized, short/interrupted
-        // read) by *throwing* for the latter -- deliberately propagated
-        // here, unswallowed, rather than collapsed into `.absent`, since
-        // those are exactly the kind of active anomaly that must fail
-        // closed rather than ever defer to a sibling copy.
-        guard let data = try secureDirectory.read(
-            name: name,
-            maxBytes: Self.maxDispositionBytes
-        ) else {
-            return .absent
-        }
-        guard let record = try? JSONDecoder.assetCache().decode(
-            KeyAuthorityRecord.self,
-            from: data
-        ), isValidAuthorityRecord(record) else {
-            return .corrupt
-        }
-        return .valid(record)
-    }
-
     /// Structural invariants every durably-decoded ``KeyAuthorityRecord``
     /// must satisfy before it is ever trusted, independent of which of
     /// the two on-disk copies (primary or mirror) produced it —
@@ -302,12 +192,32 @@ extension AssetDiskCache {
     /// even without ever — anything is actually applied for it, which is
     /// an entirely ordinary, legitimate state, not evidence of
     /// corruption.
-    private func isValidAuthorityRecord(_ record: KeyAuthorityRecord) -> Bool {
+    ///
+    /// Also validates `revision`: it must be non-negative, and — since
+    /// `revision == 0` is reserved exclusively for
+    /// ``KeyAuthorityRecord/pristine`` (a key that has never had a
+    /// single commit) — a record whose `issuedTicket`/`disposition`
+    /// otherwise exactly match the pristine shape must carry
+    /// `revision == 0`, and conversely any *other* shape (anything ever
+    /// actually issued or applied) must carry `revision >= 1`. A record
+    /// claiming to be pristine at a nonzero revision, or claiming a
+    /// zero revision while showing real issued/applied state, can never
+    /// legitimately arise from this cache's own commit paths (every
+    /// commit unconditionally bumps `revision`) and is rejected here
+    /// exactly like every other impossible kind/hash pairing above.
+    ///
+    /// Not `private`: `AssetDiskCache+IssuanceAnchor.swift` reuses this
+    /// exact invariant to validate the `KeyAuthorityRecord` nested inside
+    /// a decoded ``KeyIssuanceAnchor``, rather than duplicating it.
+    func isValidAuthorityRecord(_ record: KeyAuthorityRecord) -> Bool {
         guard record.issuedTicket >= 0, record.disposition.ticket >= 0 else { return false }
         guard record.issuedTicket >= record.disposition.ticket else { return false }
+        guard record.revision >= 0 else { return false }
         if record.disposition.ticket == 0 {
             guard record.disposition == .pristine else { return false }
         }
+        let isPristineShape = record.issuedTicket == 0 && record.disposition == .pristine
+        guard (record.revision == 0) == isPristineShape else { return false }
         switch record.disposition.kind {
         case .content:
             guard record.disposition.contentHash != nil else { return false }

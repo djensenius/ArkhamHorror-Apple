@@ -26,27 +26,31 @@ extension AssetDiskCacheTests {
             // memory-only scenario's value: unlike the memory cache, the
             // disk cache also durably accounts for this directory's
             // root-authority marker, clear-epoch file, and every key's
-            // own per-key issuance-ticket and disposition bookkeeping
-            // files (which persist across an ordinary single-entry
-            // eviction by design, see `AssetDiskCache+WriteGeneration.swift`
-            // and `AssetDiskCache+Disposition.swift`'s typed, JSON-encoded
-            // `<hash>.applied` disposition record in particular — roughly
-            // 110 bytes per key, substantially larger than a bare
-            // fixed-width ticket integer would be), and that fixed
+            // own per-key issuance-ticket, disposition, and issuance-
+            // anchor bookkeeping files (which persist across an ordinary
+            // single-entry eviction by design, see
+            // `AssetDiskCache+WriteGeneration.swift`,
+            // `AssetDiskCache+Disposition.swift`'s typed, JSON-encoded
+            // `<hash>.applied`/`<hash>.applied-mirror` disposition
+            // records, and `AssetDiskCache+IssuanceAnchor.swift`'s
+            // `<hash>.issuance-anchor` -- together roughly 500 bytes per
+            // key across all three files, substantially larger than a
+            // bare fixed-width ticket integer would be), and that fixed
             // overhead — persisting for all three keys regardless of
             // which single entry is evicted — must not itself force
             // evicting more than the one truly-least-recently-used entry
             // this test expects. The margins below are deliberately wide
-            // (several hundred bytes on each side of the exact computed
-            // three-entries-present and one-entry-remaining totals) so
-            // this test remains robust to any future, similarly modest
-            // growth in that same fixed per-key bookkeeping overhead.
+            // (well over a thousand bytes on each side of the exact
+            // computed three-entries-present and one-entry-remaining
+            // totals) so this test remains robust to any future,
+            // similarly modest growth in that same fixed per-key
+            // bookkeeping overhead.
             let limits = AssetCacheLimits(
                 maxEncodedBytes: 1_000_000,
                 maxDimension: 8192,
                 maxPixelCount: 32_000_000,
                 memoryBudgetBytes: 4000,
-                diskBudgetBytes: 8000,
+                diskBudgetBytes: 10000,
                 highWaterMarkRatio: 0.55,
                 lowWaterMarkRatio: 0.50
             )
@@ -264,10 +268,12 @@ extension AssetDiskCacheTests {
             // Excludes the cache's own reserved cross-process lock file,
             // durable root-authority-initialization marker, durable
             // clear-epoch counter, and this exact key's own durable
-            // disk-write-generation authority record and its
-            // independently-stored mirror copy (`<hash>.gen`/
-            // `<hash>.applied`/`<hash>.applied-mirror`, see
-            // `AssetDiskCache+WriteGeneration.swift`): unlike the
+            // disk-write-generation authority record, its
+            // independently-stored mirror copy, and its independent
+            // issuance anchor (`<hash>.gen`/`<hash>.applied`/
+            // `<hash>.applied-mirror`/`<hash>.issuance-anchor`, see
+            // `AssetDiskCache+WriteGeneration.swift`/
+            // `AssetDiskCache+IssuanceAnchor.swift`): unlike the
             // payload/metadata pair a removal is actually responsible for
             // deleting, those counters are deliberately never removed by an
             // ordinary per-key `remove(_:token:)` -- see that file's own
@@ -286,6 +292,7 @@ extension AssetDiskCacheTests {
                         && $0 != "\(cacheKey.digestHex).gen"
                         && $0 != "\(cacheKey.digestHex).applied"
                         && $0 != "\(cacheKey.digestHex).applied-mirror"
+                        && $0 != "\(cacheKey.digestHex).issuance-anchor"
                 }
             #expect(contents.isEmpty)
         }

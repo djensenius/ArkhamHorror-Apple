@@ -135,7 +135,11 @@ extension AssetDiskCache {
         }
         let next = current.issuedTicket + 1
         try commitAuthorityRecordLocked(
-            KeyAuthorityRecord(issuedTicket: next, disposition: current.disposition),
+            KeyAuthorityRecord(
+                issuedTicket: next,
+                disposition: current.disposition,
+                revision: current.revision + 1
+            ),
             for: key
         )
         return next

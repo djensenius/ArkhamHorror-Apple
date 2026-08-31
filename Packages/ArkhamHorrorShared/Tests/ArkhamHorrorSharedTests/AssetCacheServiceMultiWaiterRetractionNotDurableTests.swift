@@ -112,11 +112,13 @@ extension AssetCacheServiceTests {
             // leaving genuine work for the group's own retraction to do.
             _ = await layers.service.issueToken(for: cacheKey)
 
-            // Fails the exact write the durable `.retiring` commit
-            // performs (the merged per-key authority record's primary
-            // copy), installed before releasing the pause so it is
-            // unconditionally active by the time the group's retraction
-            // attempts it.
+            // Fails only the *primary* copy's own write of the durable
+            // `.retiring` commit, installed before releasing the pause
+            // so it is unconditionally active by the time the group's
+            // retraction attempts it. The anchor and mirror copies
+            // (always written first) still durably land, which is what
+            // lets the reconciled disposition resolve forward to
+            // `.retiring` below rather than reverting to `.content`.
             let appliedName = await layers.diskCache.appliedTicketFilename(for: cacheKey)
             await layers.diskCache.directoryAccess.installFaultInjection(
                 failSuffixes: [appliedName]
@@ -129,14 +131,18 @@ extension AssetCacheServiceTests {
             assertRetractionNotDurableFailure(firstResult, waiterLabel: "first")
             assertRetractionNotDurableFailure(secondResult, waiterLabel: "second")
 
-            // Disk must still durably report `.content`: the failed
-            // `.retiring` commit never landed, so nothing was actually
-            // retracted.
+            // Disk must now durably report `.retiring`: the mirror's own
+            // write already durably landed before the primary's failed,
+            // so the reconciled authority record correctly resolves
+            // forward rather than reverting to `.content` -- and must
+            // never be servable in that state.
             let disposition = try await layers.diskCache.currentKeyDisposition(for: cacheKey)
             #expect(
-                disposition.kind == .content,
-                "A failed retraction commit must not have partially applied any transition"
+                disposition.kind == .retiring,
+                "The mirror's own already-durable write must resolve forward, not revert"
             )
+            let hit = try await layers.diskCache.get(cacheKey)
+            #expect(hit == nil, "An unresolved `.retiring` disposition must never be served")
         }
     }
 
@@ -200,14 +206,19 @@ extension AssetCacheServiceTests {
             assertRetractionNotDurableFailure(firstResult, waiterLabel: "first")
             assertRetractionNotDurableFailure(secondResult, waiterLabel: "second")
 
-            // The pre-existing entry's own disposition must still
-            // durably report `.content`: the failed `.retiring` commit
-            // never landed, so nothing was actually retracted.
+            // The pre-existing entry's own disposition must now durably
+            // report `.retiring`: the mirror's own write already durably
+            // landed before the primary's failed, so the reconciled
+            // authority record correctly resolves forward rather than
+            // reverting to `.content` -- and must never be servable in
+            // that state.
             let disposition = try await layers.diskCache.currentKeyDisposition(for: cacheKey)
             #expect(
-                disposition.kind == .content,
-                "A failed retraction commit must not have partially applied any transition"
+                disposition.kind == .retiring,
+                "The mirror's own already-durable write must resolve forward, not revert"
             )
+            let hit = try await layers.diskCache.get(cacheKey)
+            #expect(hit == nil, "An unresolved `.retiring` disposition must never be served")
         }
     }
 }

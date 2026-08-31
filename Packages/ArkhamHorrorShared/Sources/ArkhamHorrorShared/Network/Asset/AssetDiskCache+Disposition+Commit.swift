@@ -21,31 +21,44 @@ extension AssetDiskCache {
     /// Durably commits `record` as `key`'s new authority record in full,
     /// to *both* of its independently-stored copies (see
     /// ``AssetDiskCache/authorityRecordMirrorFilename(for:)``'s own doc
-    /// comment for why two copies exist at all) — each written via the
+    /// comment for why two copies exist at all) plus this key's own
+    /// durable issuance anchor (``AssetDiskCache/issuanceAnchorFilename(for:)``,
+    /// see `AssetDiskCache+IssuanceAnchor.swift`) — each written via the
     /// identical crash-consistency shape every other durable single-file
     /// commit in this cache follows (bounded temp file, `fsync`, rename
     /// into place, `fsync` the containing directory; see
     /// ``AssetDiskCache``'s own type-level doc comment), via
-    /// ``writeAuthorityRecordFileLocked(_:name:)``. Must only ever be
+    /// ``writeAuthorityRecordFileLocked(_:name:)``/
+    /// ``writeIssuanceAnchorFileLocked(_:name:)``. Must only ever be
     /// called while the caller already holds this instance's
     /// ``SecureCacheDirectory/acquireExclusiveLock()``.
     ///
-    /// **The mirror copy is always written first, then the primary.**
-    /// This order is load-bearing, not arbitrary: it is what lets
+    /// **Written in a fixed order -- anchor first, then mirror, then
+    /// primary -- and this order is load-bearing, not arbitrary.** The
+    /// mirror-before-primary half is what lets
     /// ``currentAuthorityRecordLocked(for:)``'s own reconciliation of two
     /// individually-valid-but-disagreeing copies always resolve
-    /// correctly, by picking whichever copy has the higher
-    /// `issuedTicket` — see that method's own doc comment. A crash
-    /// landing between these two writes below always leaves the mirror
-    /// already reflecting this call's new value and the primary still at
-    /// its old one (never the reverse), so "higher `issuedTicket` wins"
-    /// is guaranteed to select the value this call was actually trying
-    /// to commit, not an artifact of whichever copy this method happened
-    /// to write to first.
+    /// correctly, by picking whichever copy has the higher `revision` —
+    /// see that method's own doc comment. The anchor-first half is what
+    /// makes a crash landing *before* either of those two writes even
+    /// begins provably, permanently detectable: since this key's own
+    /// exclusive lock (acquired by every caller before this method ever
+    /// runs) fully serializes every commit for this key, the *only* way
+    /// a future read can ever observe the mirror/primary pair behind
+    /// this exact anchor write is a crash landing inside this very call,
+    /// between the anchor write and whichever of the other two writes
+    /// comes next -- see `AssetDiskCache+IssuanceAnchor.swift`'s own
+    /// type-level doc comment for why that specific window is left to
+    /// fail closed rather than repaired.
     func commitAuthorityRecordLocked(
         _ record: KeyAuthorityRecord,
         for key: AssetCacheKey
     ) throws {
+        let epoch = try secureDirectory.readPersistedClearEpoch()
+        try writeIssuanceAnchorFileLocked(
+            KeyIssuanceAnchor(epoch: epoch, record: record),
+            name: issuanceAnchorFilename(for: key)
+        )
         try writeAuthorityRecordFileLocked(
             record,
             name: authorityRecordMirrorFilename(for: key)
@@ -58,18 +71,19 @@ extension AssetDiskCache {
     /// (bumped up to at least `disposition.ticket`, which by
     /// construction — see ``resolvedMutationTicketLocked(for:token:)`` —
     /// can never itself exceed a ticket this key has not already been
-    /// issued) rather than discarding it: every disposition commit
-    /// re-reads the current record first specifically so this one
-    /// write remains the single, atomic unit this file's own type-level
-    /// doc comment requires — there is no window in which only the
-    /// disposition half of this key's authority is durably updated
-    /// while `issuedTicket` is not.
+    /// issued) rather than discarding it, and bumping `revision` by
+    /// exactly one — every disposition commit re-reads the current
+    /// record first specifically so this one write remains the single,
+    /// atomic unit this file's own type-level doc comment requires —
+    /// there is no window in which only part of this key's authority is
+    /// durably updated while the rest is not.
     func commitDispositionLocked(_ disposition: KeyDisposition, for key: AssetCacheKey) throws {
         let current = try currentAuthorityRecordLocked(for: key)
         try commitAuthorityRecordLocked(
             KeyAuthorityRecord(
                 issuedTicket: max(current.issuedTicket, disposition.ticket),
-                disposition: disposition
+                disposition: disposition,
+                revision: current.revision + 1
             ),
             for: key
         )

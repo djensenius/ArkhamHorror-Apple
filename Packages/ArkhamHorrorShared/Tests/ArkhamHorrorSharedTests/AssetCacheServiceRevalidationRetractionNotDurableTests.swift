@@ -8,10 +8,11 @@ import Testing
 /// (`AssetCacheService+RevalidationCoalescing.swift`): cancelling the sole
 /// waiter of an already-applied revalidation whose durable `.retiring`
 /// commit genuinely fails must surface that commit's own typed
-/// `AssetError` to the caller, never plain cancellation, and disk must
-/// still report `.content` afterward. See that sibling file's own
-/// type-level doc comment for the exact defect this closes: before the
-/// fix, ``AssetCacheService/cancelRevalidationWaiter(_:fetchID:waiterID:)``
+/// `AssetError` to the caller, never plain cancellation. See that sibling
+/// file's own type-level doc comment for the exact defect this closes,
+/// and for why disk resolves *forward* to `.tombstone` rather than
+/// reverting to `.content` afterward: before the fix,
+/// ``AssetCacheService/cancelRevalidationWaiter(_:fetchID:waiterID:)``
 /// already resumed this waiter with the typed failure, but
 /// `coalescedRevalidation`'s own unconditional re-derivation of the
 /// final outcome (via
@@ -22,8 +23,9 @@ extension AssetCacheServiceTests {
         """
         Cancelling the sole waiter of an already-applied revalidation whose durable \
         `.retiring` commit genuinely fails must report the underlying typed error to the \
-        caller -- never plain cancellation -- and disk must still report `.content` \
-        afterward, since nothing was actually retracted
+        caller -- never plain cancellation -- and disk must resolve forward to `.tombstone` \
+        afterward, since phase 2's own unconditional detached cleanup durably completes via \
+        the mirror's own already-landed writes
         """
     )
     func revalidationCancellationWithFailedRetiringCommitReportsTypedFailure() async throws {
@@ -62,10 +64,11 @@ extension AssetCacheServiceTests {
             let callerTask = Task { try await layers.service.revalidate(for: key) }
             await gate.waitUntilStarted()
 
-            // Fails the exact write the durable `.retiring` commit
-            // performs, installed before cancellation so it is
+            // Fails only the *primary* copy's own write of the durable
+            // `.retiring` commit, installed before cancellation so it is
             // unconditionally active by the time the cancellation-
-            // triggered retraction attempts that write.
+            // triggered retraction attempts that write. The anchor and
+            // mirror copies (always written first) still durably land.
             let appliedName = await layers.diskCache.appliedTicketFilename(for: cacheKey)
             await layers.diskCache.directoryAccess.installFaultInjection(
                 failSuffixes: [appliedName]
@@ -83,17 +86,25 @@ extension AssetCacheServiceTests {
                 "The genuine durable-commit write failure must be recorded for auditing"
             )
 
-            // Disk must still durably report `.content` with the
-            // refreshed (v2) bytes: the `.retiring` commit's own write
-            // failed, so nothing was actually retracted.
+            // Disk must now durably report `.tombstone` for the refreshed
+            // (v2) publication: `cancelRevalidationWaiter` fires phase 2
+            // (``completeDurableRetractionIfApplied(_:token:)``)
+            // unconditionally in its own detached `Task`, regardless of
+            // whether phase 1 threw to this caller. Phase 2 reads the
+            // disposition fresh -- reconciling to the mirror's
+            // already-durable `.retiring` -- and proceeds to commit
+            // `.tombstone`, whose primary write fails identically but
+            // whose mirror/anchor again durably land. An unresolved
+            // `.tombstone` disposition is never served by `get(_:)`.
             let disposition = try await layers.diskCache.currentKeyDisposition(for: cacheKey)
             let dispositionMessage = """
-            Disk must still report `.content`: the failed write must not have \
-            partially applied any transition
+            Disk must report `.tombstone`: phase 2's own detached cleanup fires \
+            unconditionally after phase 1's local throw and durably completes via the \
+            mirror's own already-landed writes
             """
-            #expect(disposition.kind == .content, "\(dispositionMessage)")
+            #expect(disposition.kind == .tombstone, "\(dispositionMessage)")
             let onDisk = try await layers.diskCache.get(cacheKey)
-            #expect(onDisk?.payload == refreshedBody)
+            #expect(onDisk == nil, "An unresolved `.retiring` disposition must never be served")
         }
     }
 }
