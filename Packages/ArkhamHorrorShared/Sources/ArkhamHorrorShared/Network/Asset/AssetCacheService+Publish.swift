@@ -98,8 +98,15 @@ extension AssetCacheService {
         guard await isAuthoritative(token, for: cacheKey) else {
             // Same retraction, now for both layers: the disk write may
             // also have landed under `token` before this suspension
-            // returned.
-            await retractIfApplied(cacheKey, token: token)
+            // returned. Both retraction phases are awaited here, in
+            // sequence — unlike a cancelled waiter's own retraction
+            // (which must only await phase 1 before letting that waiter
+            // observe its outcome), this call site has no waiter to
+            // unblock early; awaiting phase 2 as well before returning
+            // keeps this method's own long-standing "fully retracted by
+            // the time `.stale` is returned" contract unchanged.
+            await beginDurableRetractionIfApplied(cacheKey, token: token)
+            await completeDurableRetractionIfApplied(cacheKey, token: token)
             return .stale
         }
         if lastDiskPersistenceFailure == nil {
@@ -154,11 +161,13 @@ extension AssetCacheService {
             // `lastDiskPersistenceFailure` as a soft failure the memory
             // write survives. See ``AssetError/entryNoLongerCachedToTouch``'s
             // own doc comment.
-            await retractIfApplied(cacheKey, token: token)
+            await beginDurableRetractionIfApplied(cacheKey, token: token)
+            await completeDurableRetractionIfApplied(cacheKey, token: token)
             return .stale
         }
         guard await isAuthoritative(token, for: cacheKey) else {
-            await retractIfApplied(cacheKey, token: token)
+            await beginDurableRetractionIfApplied(cacheKey, token: token)
+            await completeDurableRetractionIfApplied(cacheKey, token: token)
             return .stale
         }
         return .applied

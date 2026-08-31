@@ -209,12 +209,18 @@ extension AssetDiskCache {
     /// Durably commits a key's removal via the two-phase, crash-safe
     /// transition this file's own type-level doc comment describes:
     /// `.retiring(ticket)` *before* `destroy` ever runs, `.tombstone(ticket)`
-    /// only once `destroy` has returned without throwing. Used by both
-    /// ``AssetDiskCache/remove(_:token:)`` (a definitive 404) and
-    /// ``AssetDiskCache/removeIfApplied(_:token:)`` (a cancellation-
-    /// triggered retraction of an abandoned publish) -- see each
-    /// method's own doc comment for how their two, differently-shaped
-    /// `destroy` closures use this identically.
+    /// only once `destroy` has returned without throwing. Used by
+    /// ``AssetDiskCache/remove(_:token:)`` (a definitive 404) as one
+    /// single locked transaction -- unlike
+    /// ``AssetDiskCache/beginRetraction(_:token:)``/
+    /// ``AssetDiskCache/completeRetraction(_:token:)``, which durably
+    /// commit that same `.retiring`-then-`.tombstone` pair of
+    /// disposition transitions as two *separately lockable, separately
+    /// awaitable* steps instead (so `AssetCacheService`'s own actor-level
+    /// callers can await just the first before letting a waiter observe
+    /// cancellation/staleness -- see ``beginRetraction(_:token:)``'s own
+    /// doc comment) rather than a single all-in-one call through this
+    /// method.
     ///
     /// Every durable state-write here (both disposition commits) always
     /// throws straight out on failure -- a caller that cannot durably
@@ -231,13 +237,7 @@ extension AssetDiskCache {
     /// never lets a physical deletion failure escape, since once this
     /// method's own final `.tombstone` commit lands, stale content is
     /// unreadable regardless of whatever bytes a failed deletion left
-    /// physically present -- whereas ``removeIfApplied(_:token:)``'s own
-    /// closure deliberately still propagates a genuine deletion failure,
-    /// preserving that method's own pre-existing, still-required
-    /// contract of auditing a retraction's disk failure as a distinct,
-    /// typed outcome its sole caller
-    /// (``AssetCacheService/retractIfApplied(_:token:)``) records rather
-    /// than silently treating as success.
+    /// physically present.
     @discardableResult
     func commitRetractionLocked(
         for key: AssetCacheKey,

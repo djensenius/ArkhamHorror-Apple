@@ -37,12 +37,17 @@ import Foundation
 ///   of disposition (`content`/`retiring`/`tombstone`) is currently
 ///   applied, not merely a ticket number — recording the highest ticket
 ///   any mutation for `key` has actually committed (published, touched,
-///   or removed) — compared with `>=`, not `==`, against an operation's
-///   own issued ticket in ``AssetDiskCache/acceptToken(_:currentEpoch:currentApplied:)``.
-///   A higher-ticketed (later-issued) operation always outranks a
-///   lower-ticketed one regardless of which one's network round trip or
-///   decode happens to finish first; an operation whose own ticket is no
-///   longer the highest ever applied is unconditionally stale.
+///   or removed). ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``
+///   itself compares an operation's own issued ticket by *exact equality*
+///   against the highest ticket ever *issued* for this key
+///   (``currentIssuedTicketLocked(for:)``), never against this applied
+///   counter directly — see that method's own doc comment for why
+///   issued, not applied, is the correct comparison target, and why
+///   exact equality, not `>=`, is required. A higher-ticketed
+///   (later-issued) operation always outranks a lower-ticketed one
+///   regardless of which one's network round trip or decode happens to
+///   finish first; an operation whose own ticket is no longer the
+///   single most recently issued one is unconditionally stale.
 ///
 /// Both counters live entirely separate from the key's
 /// ``AssetCacheMetadata`` sidecar: that sidecar is deleted the instant a
@@ -94,8 +99,10 @@ extension AssetDiskCache {
 
     /// The fixed leaf name of `key`'s durable *applied* ticket counter
     /// file — the highest ticket any mutation for `key` has actually
-    /// committed, compared with `>=` against an operation's own issued
-    /// ticket by ``AssetDiskCache/acceptToken(_:currentEpoch:currentApplied:)``.
+    /// committed. Not directly consulted by
+    /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``,
+    /// which compares against the highest *issued* ticket instead — see
+    /// that method's own doc comment.
     func appliedTicketFilename(for key: AssetCacheKey) -> String {
         "\(key.digestHex).applied"
     }
@@ -248,138 +255,5 @@ extension AssetDiskCache {
         }
         let ticket = try issueTicketLocked(for: key)
         return IssuanceSnapshot(clearEpoch: epoch, writeGeneration: ticket)
-    }
-
-    /// Reads `key`'s current durable issuance-ticket counter (the highest
-    /// ticket ever reserved for `key`, by any caller). Must only ever be
-    /// called while the caller already holds this instance's
-    /// ``SecureCacheDirectory/acquireExclusiveLock()``.
-    ///
-    /// A clean "does not exist" miss is `0` — a genuinely pristine key
-    /// that has never had a ticket reserved for it has no prior value to
-    /// compare against, and `0` is a safe baseline precisely because no
-    /// counter for this key has ever been durably persisted to lose. Any
-    /// *other* failure (a symlink/non-regular entry at this name, an
-    /// oversized or unparsable value) is a hard, typed, fail-closed
-    /// failure instead, since it means a real, previously persisted
-    /// counter exists but could not be trusted, which must never silently
-    /// default back to the same baseline a pristine key would also
-    /// report.
-    func currentIssuedTicketLocked(for key: AssetCacheKey) throws -> Int {
-        try readTicketLocked(name: writeGenerationFilename(for: key))
-    }
-
-    /// Reads `key`'s current durable *applied* ticket — the ticket half
-    /// of ``currentDispositionLocked(for:)``'s full typed disposition
-    /// (see `AssetDiskCache+Disposition.swift`'s type-level doc comment).
-    /// Must only ever be called while the caller already holds this
-    /// instance's ``SecureCacheDirectory/acquireExclusiveLock()``. A
-    /// clean "does not exist" miss is `0` for the identical reason
-    /// ``currentIssuedTicketLocked(for:)``'s own is: a genuinely pristine
-    /// key has nothing applied yet.
-    func currentAppliedTicketLocked(for key: AssetCacheKey) throws -> Int {
-        try currentDispositionLocked(for: key).ticket
-    }
-
-    /// A single, atomic, cross-instance/cross-process authority snapshot
-    /// for `key` — the durable clear epoch and this key's own highest
-    /// durably *issued* ticket, read together under one exclusive-lock
-    /// acquisition. Used by
-    /// ``AssetCacheService/memoryEntryStillCurrent(_:storedGeneration:for:)``
-    /// to decide whether an already-cached memory entry is still safe to
-    /// serve without re-validating.
-    ///
-    /// **Deliberately reads the highest *issued* ticket, never merely the
-    /// highest *applied* one, and the two fields are read together under
-    /// one lock hold rather than as two separate, independently-locked
-    /// calls.** An earlier revision instead read
-    /// ``currentDurableClearEpoch()`` and a separate
-    /// ``currentAppliedTicket(for:)`` call one after the other, each its
-    /// own independent lock acquisition/release — a torn read: a sibling
-    /// instance/process's whole-cache clear landing in the window between
-    /// those two separately-locked reads could leave this call observing
-    /// a pre-clear epoch paired with a post-clear (or vice versa)
-    /// applied ticket, neither half actually describing the same durable
-    /// moment in time. Comparing only against the highest *applied*
-    /// ticket has a second, independent defect: a sibling service/process
-    /// can *issue* (durably reserve, via ``issueTicketLocked(for:)``) a
-    /// fresh ticket for this exact key the moment it begins a
-    /// fetch/revalidation, strictly *before* that operation's own
-    /// eventual mutation actually lands and advances the *applied*
-    /// counter -- during that whole window, an applied-ticket-only
-    /// comparison would keep reporting an older memory entry "still
-    /// current" even though a strictly newer, already-in-flight operation
-    /// for this exact key has already been issued and may complete with
-    /// entirely different content (or a definitive removal) at any
-    /// moment. Comparing against the highest *issued* ticket instead, with
-    /// exact equality (not `>=`), rejects a memory hit the instant *any*
-    /// newer operation for this key has been issued anywhere, regardless
-    /// of whether that operation has itself completed yet -- the
-    /// strictest safe comparison, matching
-    /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``'s own
-    /// per-key fencing semantics exactly.
-    func currentKeyAuthority(for key: AssetCacheKey) async throws -> KeyAuthoritySnapshot {
-        let lockFD = try await secureDirectory.acquireExclusiveLock()
-        defer { secureDirectory.releaseExclusiveLock(lockFD) }
-        try ensureRootAuthorityInitializedLocked()
-        let epoch = try secureDirectory.readPersistedClearEpoch()
-        let issuedTicket = try currentIssuedTicketLocked(for: key)
-        return KeyAuthoritySnapshot(clearEpoch: epoch, issuedTicket: issuedTicket)
-    }
-
-    /// The named result of ``currentKeyAuthority(for:)`` — see that
-    /// method's own doc comment for why both fields must always be read
-    /// together, under one lock hold, rather than as two independently
-    /// re-readable values.
-    struct KeyAuthoritySnapshot: Sendable, Equatable {
-        let clearEpoch: Int
-        let issuedTicket: Int
-    }
-
-    private func readTicketLocked(name: String) throws -> Int {
-        guard let data = try secureDirectory.read(
-            name: name,
-            maxBytes: Self.ticketDigitWidth
-        ) else {
-            return 0
-        }
-        guard
-            let string = String(data: data, encoding: .utf8),
-            string.utf8.count == Self.ticketDigitWidth,
-            string.utf8.allSatisfy({ (0x30 ... 0x39).contains($0) }),
-            let parsed = Int(string)
-        else {
-            throw AssetError.cachePersistenceFailed(
-                "Ticket file '\(name)' is corrupt or unparsable"
-            )
-        }
-        return parsed
-    }
-
-    /// Durably reserves and returns a fresh ticket for `key`: reads the
-    /// current issuance counter, durably commits its successor (write,
-    /// `fsync`, rename, directory `fsync`), and returns that successor —
-    /// never the pre-bump value. Called by ``beginIssuance(for:)`` (one
-    /// reservation per logical operation's issuance) and by
-    /// ``AssetDiskCache/resolvedMutationTicketLocked(for:token:)``'s own
-    /// unconditional (`token: nil`) branch (one further reservation per
-    /// actual committed mutation with no external token to reuse) alike:
-    /// every single call to this method, from anywhere, returns a value
-    /// no other call -- past, present, or future -- will ever return
-    /// again for this key.
-    ///
-    /// Guards against overflow: once already at `Int.max`, throws rather
-    /// than silently colliding two genuinely different future tickets
-    /// onto the same value.
-    func issueTicketLocked(for key: AssetCacheKey) throws -> Int {
-        let current = try currentIssuedTicketLocked(for: key)
-        guard current < Int.max else {
-            throw AssetError.cachePersistenceFailed(
-                "Write-generation counter is exhausted for this key"
-            )
-        }
-        let next = current + 1
-        try persistTicketLocked(next, name: writeGenerationFilename(for: key))
-        return next
     }
 }

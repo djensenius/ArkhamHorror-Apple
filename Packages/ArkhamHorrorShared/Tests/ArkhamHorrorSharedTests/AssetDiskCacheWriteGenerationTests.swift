@@ -20,7 +20,7 @@ import Testing
 /// any value the *other* instance could compare against.
 @Suite("AssetDiskCache durable per-key write generation")
 struct AssetDiskCacheWriteGenerationTests {
-    private func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
+    func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
         let rootParent = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("DiskCacheWriteGenerationScratch", isDirectory: true)
@@ -33,7 +33,7 @@ struct AssetDiskCacheWriteGenerationTests {
         try await body(root)
     }
 
-    private func limits() -> AssetCacheLimits {
+    func limits() -> AssetCacheLimits {
         AssetCacheLimits(
             maxEncodedBytes: 1_000_000,
             maxDimension: 8192,
@@ -43,14 +43,14 @@ struct AssetDiskCacheWriteGenerationTests {
         )
     }
 
-    private func key(_ rawCardCode: String = "01001") throws -> AssetCacheKey {
+    func key(_ rawCardCode: String = "01001") throws -> AssetCacheKey {
         let identifier = try AssetIdentifier.cardCode(rawCardCode)
         let assetKey = AssetKey(category: .card(.art, identifier))
         let candidates = AssetLocator.candidates(for: assetKey, digest: FakeDigestLookup())
         return AssetCacheKey(for: assetKey, candidates: candidates)
     }
 
-    private func metadata(
+    func metadata(
         for cacheKey: AssetCacheKey,
         payload: Data,
         resolvedURLString: String = "https://example.com/a"
@@ -74,7 +74,7 @@ struct AssetDiskCacheWriteGenerationTests {
     /// call site now stamps one: both halves of its durable authority
     /// (clear epoch, disk write generation) captured together via
     /// ``AssetDiskCache/beginIssuance(for:)`` at issuance time.
-    private func issuedToken(
+    func issuedToken(
         from cache: AssetDiskCache,
         for cacheKey: AssetCacheKey
     ) async throws -> AssetCacheService.CacheToken {

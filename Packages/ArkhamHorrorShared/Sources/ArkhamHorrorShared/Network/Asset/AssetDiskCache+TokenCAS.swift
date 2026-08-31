@@ -51,8 +51,8 @@ extension AssetDiskCache {
     /// read (under the same already-held exclusive lock) via
     /// ``SecureCacheDirectory/readPersistedClearEpoch()``, **and** its own
     /// issued ticket (``AssetCacheService/CacheToken/diskWriteGeneration``)
-    /// is still `>=` the highest ticket *ever reserved* for this key so
-    /// far (`currentIssued`, read via
+    /// is *exactly* equal to the highest ticket *ever reserved* for this
+    /// key so far (`currentIssued`, read via
     /// ``currentIssuedTicketLocked(for:)``) — never against any
     /// actor-local, in-memory bookkeeping, and never re-read internally
     /// here (the caller reads both exactly once, so it can reuse the same
@@ -62,27 +62,40 @@ extension AssetDiskCache {
     /// issuance time) always rejects; there is no in-memory fallback.
     ///
     /// **Deliberately compared against the highest *issued* ticket, not
-    /// merely the highest *applied* one.** An earlier revision compared
-    /// against ``currentAppliedTicketLocked(for:)`` instead — but two
-    /// operations for the same key can be issued (each reserving its own
-    /// ticket) in one order while completing, and therefore *applying*,
-    /// in a different order: an older-issued operation A and a
-    /// newer-issued operation B can both reserve their tickets before
-    /// either applies, and if A's own (slower) work happens to finish and
-    /// apply *before* B's, comparing only against "highest applied" would
-    /// let A's own subsequent re-checks keep succeeding even after B has
-    /// already been issued — a stale-but-not-yet-detected authority
-    /// window. Comparing against the highest *issued* ticket instead
-    /// fences A the instant B is issued, regardless of which one's
-    /// network round trip or decode happens to complete, or apply, first.
-    /// Since every ticket is reserved by a single, strictly-increasing,
-    /// durable counter (``resolvedMutationTicketLocked(for:token:)``/
+    /// merely the highest *applied* one, and by exact equality, not
+    /// `>=`.** An earlier revision compared against
+    /// ``currentAppliedTicketLocked(for:)`` instead — but two operations
+    /// for the same key can be issued (each reserving its own ticket) in
+    /// one order while completing, and therefore *applying*, in a
+    /// different order: an older-issued operation A and a newer-issued
+    /// operation B can both reserve their tickets before either applies,
+    /// and if A's own (slower) work happens to finish and apply *before*
+    /// B's, comparing only against "highest applied" would let A's own
+    /// subsequent re-checks keep succeeding even after B has already been
+    /// issued — a stale-but-not-yet-detected authority window. Comparing
+    /// against the highest *issued* ticket instead fences A the instant B
+    /// is issued, regardless of which one's network round trip or decode
+    /// happens to complete, or apply, first. Since every ticket is
+    /// reserved by a single, strictly-increasing, durable counter
+    /// (``resolvedMutationTicketLocked(for:token:)``/
     /// ``issueTicketLocked(for:)``) and a token's own ticket can never
-    /// itself exceed whatever is currently the highest-issued one, this
-    /// check is in effect an *exact* match against "the single most
-    /// recently issued ticket for this key, right now" — the strictest
-    /// safe comparison, and exactly what a genuinely-current operation's
-    /// own just-reserved ticket will always still satisfy.
+    /// itself exceed whatever is currently the highest-issued one at
+    /// issuance time, an exact `==` here is always at least as strict as
+    /// (and, in the healthy case, behaviorally identical to) the earlier
+    /// `>=` comparison — but `==` is the check this cache's own review
+    /// history requires unconditionally, rather than relying on
+    /// "`currentIssued` can never legitimately be observed *below* a
+    /// still-valid token's own ticket" as an invariant every other file
+    /// in this cache must independently uphold for `>=` to remain safe.
+    /// In particular, ``currentIssuedTicketLocked(for:)``'s own
+    /// cross-check against this key's surviving disposition already
+    /// fails this whole read closed the moment that invariant could ever
+    /// be in doubt (a lost/corrupt `.gen` counter with a surviving,
+    /// higher-ticketed disposition) — see that method's own doc comment
+    /// — so `currentIssued` itself is never allowed to silently regress
+    /// out from under a token that already legitimately holds it; this
+    /// exact match is what then makes that guarantee actually load-
+    /// bearing here, rather than merely decorative.
     ///
     /// This is what actually makes two independently wired instances/
     /// processes sharing this same on-disk directory agree on write
@@ -108,20 +121,22 @@ extension AssetDiskCache {
         else {
             return false
         }
-        return currentEpoch == expectedEpoch && issuedTicket >= currentIssued
+        return currentEpoch == expectedEpoch && issuedTicket == currentIssued
     }
 
     /// Removes `key`'s on-disk entry only if `token` is *exactly* the
     /// token whose own mutation is currently the last-applied one for
     /// this key — i.e. the current durable disposition is *exactly*
     /// ``KeyDispositionKind/content`` at `token`'s own issued ticket —
-    /// and the durable clear epoch has not changed since. Deliberately
-    /// exact-match, not the `>=` compare
-    /// ``acceptToken(_:currentEpoch:currentIssued:)`` uses: by the time
-    /// this runs, `token`'s own mutation has already durably become the
-    /// applied disposition for this key, so this only ever retracts a
-    /// mutation that is still exactly the current, unsuperseded state —
-    /// never a token some other, later mutation has since moved past.
+    /// and the durable clear epoch has not changed since. This is an
+    /// exact match against `key`'s currently *applied* disposition
+    /// ticket, distinct from
+    /// ``acceptToken(_:currentEpoch:currentIssued:)``'s own exact match
+    /// against the highest *issued* ticket: by the time this runs,
+    /// `token`'s own mutation has already durably become the applied
+    /// disposition for this key, so this only ever retracts a mutation
+    /// that is still exactly the current, unsuperseded state — never a
+    /// token some other, later mutation has since moved past.
     /// Mirrors ``AssetMemoryCache/removeIfApplied(_:token:)``'s
     /// exact-match semantics. Used by
     /// ``AssetCacheService/publish(_:asset:token:)``/
@@ -132,10 +147,15 @@ extension AssetDiskCache {
     ///
     /// **Durably commits `.retiring(token's ticket)` before the actual
     /// metadata/payload deletion is even attempted, and `.tombstone(token's
-    /// ticket)` only once that deletion has been attempted** — via
-    /// ``commitRetractionLocked(for:token:destroy:)``, see that method's
-    /// and `AssetDiskCache+Disposition.swift`'s own doc comments for the
-    /// full crash-safety reasoning this closes. A prior revision instead
+    /// ticket)` only once that deletion has been attempted** — composed
+    /// from ``beginRetraction(_:token:)`` (the `.retiring` commit alone)
+    /// followed by ``completeRetraction(_:token:)`` (the physical
+    /// deletion + final `.tombstone` commit); see each method's own doc
+    /// comment, and `AssetDiskCache+Disposition.swift`'s, for the full
+    /// crash-safety reasoning this closes, and for why
+    /// `AssetCacheService`'s own actor-level retraction callers `await`
+    /// these two phases separately rather than calling this composed,
+    /// single-shot method. A prior revision instead
     /// reset a single bare applied-ticket counter straight to a sentinel
     /// `0` in one single write, with no intermediate durable checkpoint
     /// at all: a crash between removing the metadata pointer and
@@ -175,17 +195,20 @@ extension AssetDiskCache {
     /// happened.** Every failure here — lock acquisition, root-authority
     /// initialization, the epoch/disposition reads, and (unlike
     /// ``remove(_:token:)``'s own, deliberately best-effort physical
-    /// cleanup) the metadata `remove`/directory `fsync` performed by this
-    /// method's own `destroy` closure — propagates as a typed
-    /// ``AssetError`` instead: a caller that cannot confirm a retraction
-    /// actually landed must not treat it as if it had (see
-    /// ``AssetCacheService/retractIfApplied(_:token:)``, this method's
-    /// sole production caller, for how that typed failure is recorded
-    /// rather than lost). This is deliberately *not* relaxed to best-effort
-    /// the way ``remove(_:token:)``'s own physical cleanup now is: a
-    /// caller of this method still requires the specific, auditable
-    /// "was this key's disk state actually confirmed retracted?" signal
-    /// this method has always provided.
+    /// cleanup) the metadata `remove`/directory `fsync` ``completeRetraction(_:token:)``
+    /// performs — propagates as a typed ``AssetError`` instead: a caller
+    /// that cannot confirm a retraction actually landed must not treat
+    /// it as if it had (see `AssetCacheService+Epoch.swift`'s
+    /// `beginDurableRetractionIfApplied(_:token:)`/
+    /// `completeDurableRetractionIfApplied(_:token:)` — this composed
+    /// method's actual production callers each go through those two
+    /// separately-awaited phases directly, not through this single-shot
+    /// wrapper — for how that typed failure is recorded rather than
+    /// lost). This is deliberately *not* relaxed to best-effort the way
+    /// ``remove(_:token:)``'s own physical cleanup now is: a caller of
+    /// this method still requires the specific, auditable "was this
+    /// key's disk state actually confirmed retracted?" signal this
+    /// method has always provided.
     ///
     /// Returns ``AssetCacheService/MutationOutcome/stale`` (never
     /// throwing) when `token` is no longer exactly the applied ticket for
@@ -199,42 +222,9 @@ extension AssetDiskCache {
         _ key: AssetCacheKey,
         token: AssetCacheService.CacheToken
     ) async throws -> AssetCacheService.MutationOutcome {
-        if let pause = testOnlyPauseBeforeAcquiringRemovalLock {
-            await pause()
-        }
-        let lockFD = try await secureDirectory.acquireExclusiveLock()
-        defer { secureDirectory.releaseExclusiveLock(lockFD) }
-        try ensureRootAuthorityInitializedLocked()
-        guard
-            let issuedTicket = token.diskWriteGeneration,
-            let issuedEpoch = token.durableClearEpoch
-        else {
-            return .stale
-        }
-        let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        guard currentEpoch == issuedEpoch else { return .stale }
-        let disposition = try currentDispositionLocked(for: key)
-        guard disposition.ticket == issuedTicket else { return .stale }
-        guard disposition.kind == .content else {
-            // This exact ticket's own durable disposition is already a
-            // deletion/retirement (a definitive 404's own `invalidate`
-            // commit, or a previously interrupted retraction of this
-            // very ticket) — see this method's own doc comment. There is
-            // no live content publication left here to roll back, and
-            // rewriting an already-tombstoned/retiring disposition would
-            // gain nothing; simply report this retraction as already
-            // satisfied.
-            return .applied
-        }
-        try commitRetractionLocked(for: key, token: token) {
-            let metadataWasPresent = try self.secureDirectory.remove(
-                name: self.metadataFilename(for: key)
-            )
-            try self.secureDirectory.fsyncRootDirectory()
-            if metadataWasPresent {
-                self.cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
-            }
-        }
+        let outcome = try await beginRetraction(key, token: token)
+        guard outcome == .applied else { return outcome }
+        try await completeRetraction(key, token: token)
         return .applied
     }
 
