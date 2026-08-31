@@ -1,0 +1,208 @@
+import Foundation
+
+/// Split out of `AssetDiskCache+Disposition.swift` purely to stay under
+/// this package's file-length lint limit. Contains the commit/mutation
+/// side of the per-key authority record protocol that file's own
+/// type-level doc comment introduces: durably committing a full
+/// ``AssetDiskCache/KeyAuthorityRecord`` (both copies), resolving and
+/// committing a single mutation's ticket, and the two commit entry
+/// points every publish/touch/retraction actually calls. See that
+/// file's own doc comment for the full reasoning; this file assumes it
+/// as context.
+extension AssetDiskCache {
+    /// The disposition half of ``currentAuthorityRecordLocked(for:)`` —
+    /// kept as its own entry point since most callers only ever need
+    /// this half, exactly like before this file's own issuance/
+    /// disposition merge.
+    func currentDispositionLocked(for key: AssetCacheKey) throws -> KeyDisposition {
+        try currentAuthorityRecordLocked(for: key).disposition
+    }
+
+    /// Durably commits `record` as `key`'s new authority record in full,
+    /// to *both* of its independently-stored copies (see
+    /// ``AssetDiskCache/authorityRecordMirrorFilename(for:)``'s own doc
+    /// comment for why two copies exist at all) — each written via the
+    /// identical crash-consistency shape every other durable single-file
+    /// commit in this cache follows (bounded temp file, `fsync`, rename
+    /// into place, `fsync` the containing directory; see
+    /// ``AssetDiskCache``'s own type-level doc comment), via
+    /// ``writeAuthorityRecordFileLocked(_:name:)``. Must only ever be
+    /// called while the caller already holds this instance's
+    /// ``SecureCacheDirectory/acquireExclusiveLock()``.
+    ///
+    /// **The mirror copy is always written first, then the primary.**
+    /// This order is load-bearing, not arbitrary: it is what lets
+    /// ``currentAuthorityRecordLocked(for:)``'s own reconciliation of two
+    /// individually-valid-but-disagreeing copies always resolve
+    /// correctly, by picking whichever copy has the higher
+    /// `issuedTicket` — see that method's own doc comment. A crash
+    /// landing between these two writes below always leaves the mirror
+    /// already reflecting this call's new value and the primary still at
+    /// its old one (never the reverse), so "higher `issuedTicket` wins"
+    /// is guaranteed to select the value this call was actually trying
+    /// to commit, not an artifact of whichever copy this method happened
+    /// to write to first.
+    func commitAuthorityRecordLocked(
+        _ record: KeyAuthorityRecord,
+        for key: AssetCacheKey
+    ) throws {
+        try writeAuthorityRecordFileLocked(
+            record,
+            name: authorityRecordMirrorFilename(for: key)
+        )
+        try writeAuthorityRecordFileLocked(record, name: appliedTicketFilename(for: key))
+    }
+
+    /// Durably commits `disposition` as `key`'s new applied disposition,
+    /// preserving this key's own currently-recorded `issuedTicket`
+    /// (bumped up to at least `disposition.ticket`, which by
+    /// construction — see ``resolvedMutationTicketLocked(for:token:)`` —
+    /// can never itself exceed a ticket this key has not already been
+    /// issued) rather than discarding it: every disposition commit
+    /// re-reads the current record first specifically so this one
+    /// write remains the single, atomic unit this file's own type-level
+    /// doc comment requires — there is no window in which only the
+    /// disposition half of this key's authority is durably updated
+    /// while `issuedTicket` is not.
+    func commitDispositionLocked(_ disposition: KeyDisposition, for key: AssetCacheKey) throws {
+        let current = try currentAuthorityRecordLocked(for: key)
+        try commitAuthorityRecordLocked(
+            KeyAuthorityRecord(
+                issuedTicket: max(current.issuedTicket, disposition.ticket),
+                disposition: disposition
+            ),
+            for: key
+        )
+    }
+
+    /// The exact ticket a token-gated caller's own already-issued ticket
+    /// resolves to, or a freshly reserved one for an unconditional
+    /// (`token: nil`) caller -- shared dispatch logic every commit path
+    /// below (``commitRetractionLocked(for:token:destroy:)``, and
+    /// ``AssetDiskCache/set(_:payload:metadata:token:)``/
+    /// ``AssetDiskCache/touch(_:metadata:token:)`` themselves, which each
+    /// resolve their own ticket via this method *once* and reuse that
+    /// exact value both to stamp
+    /// ``AssetCacheMetadata/writeGenerationAtPublication`` before writing
+    /// the metadata sidecar and to commit this key's disposition below --
+    /// never resolving it a second, independent time, which for an
+    /// unconditional caller would otherwise mint two different tickets
+    /// for one logical write) uses identically to this cache's own prior
+    /// `commitMutationTicketLocked(for:token:)` dispatch: a token-gated
+    /// commit must always reuse its own already-accepted ticket verbatim,
+    /// never mint a fresh one, since that fresh reservation would durably
+    /// advance the shared issuance counter past whatever a different,
+    /// already-issued-but-not-yet-applied operation for this same key
+    /// legitimately relies on; an unconditional caller has no ticket of
+    /// its own to reuse and must reserve a brand-new one so a *later*
+    /// replay of a token issued *before* this call can never again
+    /// satisfy ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``'s
+    /// `>=` against the unchanged prior disposition.
+    func resolvedMutationTicketLocked(
+        for key: AssetCacheKey,
+        token: AssetCacheService.CacheToken?
+    ) throws -> Int {
+        if let ticket = token?.diskWriteGeneration {
+            return ticket
+        }
+        return try issueTicketLocked(for: key)
+    }
+
+    /// Durably commits a `.content` disposition for `key` -- the
+    /// counterpart, for a successful publish/touch, to
+    /// ``commitRetractionLocked(for:token:destroy:)``'s two-phase
+    /// removal. Used by ``AssetDiskCache/set(_:payload:metadata:token:)``/
+    /// ``AssetDiskCache/touch(_:metadata:token:)`` immediately after their
+    /// own payload/metadata-pointer commits have already durably landed
+    /// -- both resolve `ticket` themselves (via
+    /// ``resolvedMutationTicketLocked(for:token:)``, exactly once) before
+    /// ever calling this, the identical value already stamped into the
+    /// metadata sidecar they each just wrote, so this key's disposition
+    /// and its metadata's own
+    /// ``AssetCacheMetadata/writeGenerationAtPublication`` can never
+    /// disagree regardless of whether `token` was supplied at all: an
+    /// unconditional (`token: nil`) caller's own freshly reserved ticket
+    /// is resolved only once and threaded through to both writes, never
+    /// independently re-resolved here (which would mint a second,
+    /// different ticket for the same logical write and desynchronize the
+    /// two).
+    @discardableResult
+    func commitPublicationLocked(
+        for key: AssetCacheKey,
+        ticket: Int,
+        contentHash: String
+    ) throws -> Int {
+        try commitDispositionLocked(
+            KeyDisposition(ticket: ticket, kind: .content, contentHash: contentHash),
+            for: key
+        )
+        return ticket
+    }
+
+    /// Durably commits a key's removal via the two-phase, crash-safe
+    /// transition this file's own type-level doc comment describes:
+    /// `.retiring(ticket)` *before* `destroy` ever runs, `.tombstone(ticket)`
+    /// only once `destroy` has returned without throwing. Used by
+    /// ``AssetDiskCache/remove(_:token:)`` (a definitive 404) as one
+    /// single locked transaction -- unlike
+    /// ``AssetDiskCache/beginRetraction(_:token:)``/
+    /// ``AssetDiskCache/completeRetraction(_:token:)``, which durably
+    /// commit that same `.retiring`-then-`.tombstone` pair of
+    /// disposition transitions as two *separately lockable, separately
+    /// awaitable* steps instead (so `AssetCacheService`'s own actor-level
+    /// callers can await just the first before letting a waiter observe
+    /// cancellation/staleness -- see ``beginRetraction(_:token:)``'s own
+    /// doc comment) rather than a single all-in-one call through this
+    /// method.
+    ///
+    /// Every durable state-write here (both disposition commits) always
+    /// throws straight out on failure -- a caller that cannot durably
+    /// confirm reaching `.tombstone` must never treat this as having
+    /// succeeded: the disposition durably stays at `.retiring(ticket)`
+    /// in that case, which is exactly as unreadable to
+    /// ``AssetDiskCache/get(_:)`` as a confirmed tombstone, and which
+    /// self-heals the instant a future mutation for this exact key
+    /// commits its own newer disposition over it.
+    ///
+    /// `destroy` itself is `rethrows`: whether a failure inside it is
+    /// fatal to this whole transaction is entirely up to the specific
+    /// closure a caller supplies. ``remove(_:token:)``'s own closure
+    /// never lets a physical deletion failure escape, since once this
+    /// method's own final `.tombstone` commit lands, stale content is
+    /// unreadable regardless of whatever bytes a failed deletion left
+    /// physically present.
+    @discardableResult
+    func commitRetractionLocked(
+        for key: AssetCacheKey,
+        token: AssetCacheService.CacheToken?,
+        destroy: () throws -> Void
+    ) throws -> Int {
+        let ticket = try resolvedMutationTicketLocked(for: key, token: token)
+        try commitDispositionLocked(
+            KeyDisposition(ticket: ticket, kind: .retiring, contentHash: nil),
+            for: key
+        )
+        try destroy()
+        try commitDispositionLocked(
+            KeyDisposition(ticket: ticket, kind: .tombstone, contentHash: nil),
+            for: key
+        )
+        return ticket
+    }
+
+    /// Test/diagnostic-only: a single, lock-acquiring read of `key`'s
+    /// current durable disposition. Not used by any production code path
+    /// -- every production caller either goes through
+    /// `beginRevalidationIssuance`'s
+    /// own atomic compare, or ``AssetDiskCache/get(_:)``'s own read-time
+    /// gate -- but exposed so tests can assert on this exact durable
+    /// state directly, rather than needing to infer it indirectly
+    /// through some other primitive whose own contract has since changed
+    /// to require more than a bare ticket match.
+    func currentKeyDisposition(for key: AssetCacheKey) async throws -> KeyDisposition {
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try ensureRootAuthorityInitializedLocked()
+        return try currentDispositionLocked(for: key)
+    }
+}

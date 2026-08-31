@@ -64,6 +64,54 @@ extension AssetCacheService {
         let token: CacheToken
         var pendingWaiterIDs: Set<UUID>
         var anyDelivered = false
+        /// Continuations for every waiter in this exact group that has
+        /// already computed its own `delivered == false` outcome and is
+        /// suspended waiting to learn this group's shared
+        /// ``GroupRetractionOutcome`` — resumed exactly once each, by
+        /// whichever waiter's own ledger update turns out to be the last
+        /// one (see this file's own fetch/revalidation acknowledgement
+        /// ledger update methods).
+        /// **Closes this package's most recently flagged review finding:**
+        /// a prior revision let only the logically-last waiter ever
+        /// `await` this group's own retraction before returning its
+        /// outcome; every earlier-finalizing, non-delivered waiter
+        /// returned `.cancelled`/`.failed`/`.stale` to its own external
+        /// caller immediately, with zero synchronization against whether
+        /// that eventual, guaranteed-to-happen retraction ever actually
+        /// succeeded — a caller could observe "nothing retained" while a
+        /// fresh sibling/restart could still durably read the abandoned
+        /// `content(ticket)` this group's mutation left behind. Every
+        /// non-delivered waiter, not merely the last, now suspends here
+        /// until the group's shared, one-time-computed outcome is
+        /// broadcast to it.
+        var awaitingResolution: [CheckedContinuation<GroupRetractionOutcome, Never>] = []
+    }
+
+    /// The one-time, shared outcome of a coalesced-fetch/-revalidation
+    /// group's own attempt to retract an abandoned mutation — computed
+    /// exactly once, by whichever waiter's own ledger update empties
+    /// `pendingWaiterIDs` last, and then broadcast to every other
+    /// non-delivered waiter in that same group (see
+    /// ``PendingWaiterAcknowledgement/awaitingResolution``).
+    enum GroupRetractionOutcome {
+        /// No waiter in this group ever needed a retraction at all —
+        /// either some waiter's own token was `.delivered`
+        /// (``PendingWaiterAcknowledgement/anyDelivered``), or this
+        /// group's ledger entry never existed in the first place (e.g.
+        /// ``AssetCacheService/evictAll()`` already invalidated and
+        /// cleared everything itself, bypassing this ledger entirely).
+        case notNeeded
+        /// This group's retraction was attempted and durably confirmed
+        /// (or was itself a safe no-op — see
+        /// ``AssetCacheService/retractUndeliveredMutation(_:token:)``'s
+        /// own doc comment).
+        case retracted
+        /// This group's retraction was attempted but could not be
+        /// durably confirmed. Every waiter that receives this — not only
+        /// whichever one happened to attempt it — must report
+        /// ``AssetCacheService/WaiterFinalOutcome/retractionNotDurable(_:)``,
+        /// never a plain `.cancelled`/`.stale`/`.failed`.
+        case failed(AssetError)
     }
 
     /// The outcome
@@ -134,23 +182,37 @@ extension AssetCacheService {
     /// `evictAll()`, or another waiter's own finalize call can interleave
     /// with *that* portion.
     ///
-    /// `async` (unlike a prior revision of this method) specifically so
-    /// that, when this exact waiter's own ledger update discovers it is
-    /// the last one and no waiter in the group ever took delivery, this
-    /// method can `await` the durable disk `.retiring` commit
-    /// (``AssetCacheService/beginDurableRetractionIfApplied(_:token:)``)
-    /// *before returning* — i.e. before this waiter's own cancellation/
-    /// staleness outcome can ever be observed by its caller. A prior
-    /// revision instead fired that retraction from a detached,
-    /// unawaited `Task` and returned immediately, leaving a real window
-    /// in which this waiter's own caller — or, worse, an entirely
-    /// independent sibling process, or this same process after a crash —
-    /// could still observe `key` as durably `.content` even though this
-    /// method had already reported "cancelled/stale, nothing retained".
-    /// Only the best-effort physical cleanup half of that retraction
-    /// (phase 2) remains safely deferred to a detached `Task` — see
-    /// ``AssetCacheService/beginDurableRetractionIfApplied(_:token:)``'s
-    /// own doc comment for the full reasoning.
+    /// **Every non-delivered waiter, not merely the logically-last one,
+    /// now suspends here until this group's shared
+    /// ``GroupRetractionOutcome`` is known.** A prior revision only
+    /// `await`ed the group's retraction from whichever waiter's own
+    /// ledger update happened to empty `pendingWaiterIDs` last; every
+    /// earlier-finalizing, non-delivered waiter read back `nil` from its
+    /// own ledger update (nothing left *for it* to do) and returned its
+    /// own precomputed `.cancelled`/`.failed`/`.stale` outcome
+    /// immediately — with zero synchronization against whether that
+    /// group's retraction, guaranteed to eventually run, ever actually
+    /// succeeded. A caller could observe "nothing retained" while a
+    /// fresh sibling instance/process (or this same process after a
+    /// restart) could still durably read the abandoned `content(ticket)`
+    /// this group's mutation left behind. See
+    /// ``PendingWaiterAcknowledgement/awaitingResolution``'s own doc
+    /// comment for the exact mechanism this now uses instead: this
+    /// waiter's own ledger update
+    /// (``updateFetchAcknowledgementLedgerLocked(fetchID:waiterID:delivered:)``)
+    /// and, if it is not the group's own retracting waiter, its
+    /// continuation's registration into that ledger entry, both happen
+    /// synchronously with no suspension between them — so no
+    /// concurrently-arriving sibling waiter's own finalize call can ever
+    /// interleave with that portion and lose this exact waiter's
+    /// eventual wakeup.
+    ///
+    /// A `delivered` waiter never enters this wait at all — see this
+    /// method's own body: there is nothing this exact group could ever
+    /// need to retract on behalf of a waiter that itself already took
+    /// delivery, and a delivered waiter has no reason to depend on every
+    /// sibling waiter (which may straggle far longer than this one) also
+    /// having finished finalizing before it can return.
     func finalizeFetchWaiterOutcome(
         _ key: AssetCacheKey,
         waiter: WaiterIdentity,
@@ -165,22 +227,20 @@ extension AssetCacheService {
             currentAuthority: currentAuthority
         )
         let delivered = !cancelled && resultIsSuccess && authoritative
-        let pendingRetraction = finalizePendingAcknowledgement(
-            &pendingFetchAcknowledgement,
+        // Always performed, delivered or not: the ledger's own
+        // `pendingWaiterIDs`/`anyDelivered` bookkeeping must reflect
+        // every waiter in the group, not only the non-delivered ones —
+        // see ``updateFetchAcknowledgementLedgerLocked(fetchID:waiterID:delivered:)``'s
+        // own doc comment.
+        let decision = updateFetchAcknowledgementLedgerLocked(
             fetchID: waiter.fetchID,
             waiterID: waiter.waiterID,
             delivered: delivered
         )
-        if let pendingRetraction {
-            do {
-                try await retractUndeliveredMutation(
-                    pendingRetraction.key,
-                    token: pendingRetraction.token
-                )
-            } catch let error as AssetError {
+        if !delivered {
+            let resolution = await resolveFetchGroupRetraction(decision, fetchID: waiter.fetchID)
+            if case let .failed(error) = resolution {
                 return .retractionNotDurable(error)
-            } catch {
-                return .retractionNotDurable(.cachePersistenceFailed(String(describing: error)))
             }
         }
         if cancelled {
@@ -213,22 +273,18 @@ extension AssetCacheService {
             currentAuthority: currentAuthority
         )
         let delivered = !cancelled && resultIsSuccess && authoritative
-        let pendingRetraction = finalizePendingAcknowledgement(
-            &pendingRevalidationAcknowledgement,
+        let decision = updateRevalidationAcknowledgementLedgerLocked(
             fetchID: waiter.fetchID,
             waiterID: waiter.waiterID,
             delivered: delivered
         )
-        if let pendingRetraction {
-            do {
-                try await retractUndeliveredMutation(
-                    pendingRetraction.key.cacheKey,
-                    token: pendingRetraction.token
-                )
-            } catch let error as AssetError {
+        if !delivered {
+            let resolution = await resolveRevalidationGroupRetraction(
+                decision,
+                fetchID: waiter.fetchID
+            )
+            if case let .failed(error) = resolution {
                 return .retractionNotDurable(error)
-            } catch {
-                return .retractionNotDurable(.cachePersistenceFailed(String(describing: error)))
             }
         }
         if cancelled {
@@ -279,115 +335,5 @@ extension AssetCacheService {
             epoch: currentAuthority.clearEpoch,
             for: key
         )
-    }
-
-    /// Shared bookkeeping update for exactly one waiter's finalize call,
-    /// generic over the ledger's own key type so
-    /// ``finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``
-    /// and ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``
-    /// can share one implementation despite tracking
-    /// ``AssetCacheKey``/``RevalidationSlot`` respectively. Removes
-    /// `waiterID` from the pending set and returns the original cache
-    /// key/slot and the token whose mutation must now be retracted, but
-    /// only if this was the last waiter remaining and not one single
-    /// waiter across the whole group ever actually delivered — `nil`
-    /// otherwise (nothing yet to retract).
-    ///
-    /// **Deliberately returns rather than performs the retraction
-    /// itself** (a prior revision took a `retract` closure and invoked
-    /// it synchronously, in-line, from right here). This method itself
-    /// remains fully synchronous — no suspension between the ledger
-    /// read/mutate above and this return — so its caller's own
-    /// cancellation-check-plus-ledger-update atomicity is preserved
-    /// exactly as before; only the caller, once back in its own `async`
-    /// context, decides whether and how to `await` the retraction this
-    /// return value describes.
-    private func finalizePendingAcknowledgement<Key: Hashable>(
-        _ ledger: inout [UUID: PendingWaiterAcknowledgement<Key>],
-        fetchID: UUID,
-        waiterID: UUID,
-        delivered: Bool
-    ) -> (key: Key, token: CacheToken)? {
-        guard var pending = ledger[fetchID] else {
-            // Never populated for this exact waiter -- e.g. `evictAll()`
-            // resumes waiters directly, bypassing the completion watcher
-            // (and this ledger) entirely, having already invalidated
-            // every token's authority and cleared both cache layers
-            // itself; there is nothing left here for this waiter to
-            // retract.
-            return nil
-        }
-        pending.pendingWaiterIDs.remove(waiterID)
-        if delivered {
-            pending.anyDelivered = true
-        }
-        guard pending.pendingWaiterIDs.isEmpty else {
-            ledger[fetchID] = pending
-            return nil
-        }
-        ledger[fetchID] = nil
-        guard !pending.anyDelivered else { return nil }
-        return (pending.key, pending.token)
-    }
-
-    /// Retracts a coalesced operation's own mutation from both cache
-    /// layers once every one of its waiters has finalized without a
-    /// single one of them ever taking delivery of it — a no-op if
-    /// nothing was ever actually applied under `token`, or if a
-    /// still-more-recent token has since superseded it (see
-    /// ``AssetCacheService/beginDurableRetractionIfApplied(_:token:)``).
-    /// Retiring `token` first closes the window against any *future*
-    /// mutation this already-abandoned operation's own (already-
-    /// completed) task body could otherwise still be mistaken for
-    /// authoritative.
-    ///
-    /// ``markGenerationRetiring(_:for:)`` is called synchronously here,
-    /// *before* this method's own `await` below, so a concurrent memory
-    /// hit that races this retraction can never observe this exact entry
-    /// as current in the window before phase 1 actually lands, nor in
-    /// the (potentially much longer) window before such a reader gets
-    /// around to its own authority check after already having captured
-    /// this entry — see ``markGenerationRetiring(_:for:)``'s own doc
-    /// comment for why this marker is therefore deliberately never
-    /// eagerly cleared once this retraction's own removals complete,
-    /// only ever pruned in bulk alongside the rest of `key`'s own
-    /// bounded authority bookkeeping.
-    ///
-    /// **`await`ed directly by its sole caller
-    /// (``finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``/
-    /// ``finalizeRevalidationWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:)``)
-    /// for phase 1 (the durable disk `.retiring` commit) only** — a
-    /// prior revision instead fired this whole retraction, phase 1
-    /// included, from a detached, unawaited `Task` and let its caller
-    /// return immediately, leaving a real window in which that waiter's
-    /// own caller — or an entirely independent sibling process, or this
-    /// same process after a crash — could still observe `key` as durably
-    /// `.content` even after being told "cancelled/stale, nothing
-    /// retained". Only phase 2 (the best-effort memory removal, physical
-    /// disk deletion, and final `.tombstone` commit) remains safely
-    /// deferred to a detached `Task` below: nothing depends on it having
-    /// already completed by the time this method's own caller returns.
-    ///
-    /// **That detached `Task` captures `self` strongly, not weakly.** A
-    /// prior revision used `Task { [weak self] in ... }` here, which can
-    /// silently never run its body at all if this actor happens to
-    /// deallocate (its last strong reference elsewhere released) before
-    /// this detached `Task` is scheduled — abandoning phase 2 entirely,
-    /// with no durable trace that it was ever supposed to happen. This
-    /// alone is not what makes phase 1 itself durable across a crash or
-    /// a genuinely separate process — that is
-    /// ``AssetDiskCache/beginRetraction(_:token:)``'s own durable commit,
-    /// already `await`ed above before this `Task` is even created — but
-    /// it does close the narrower, still-real sub-case where phase 2's
-    /// own best-effort cleanup is abandoned purely because this one
-    /// process's own actor happened to deallocate first, strictly within
-    /// that same process's own lifetime.
-    private func retractUndeliveredMutation(_ key: AssetCacheKey, token: CacheToken) async throws {
-        retireIfCurrent(token, for: key)
-        markGenerationRetiring(token, for: key)
-        try await beginDurableRetractionIfApplied(key, token: token)
-        Task {
-            await self.completeDurableRetractionIfApplied(key, token: token)
-        }
     }
 }

@@ -77,7 +77,8 @@ final class FaultInjectionState: @unchecked Sendable {
     /// against `moveItem`'s destination URL.
     ///
     /// A *prefix*-based match deliberately excludes the per-key
-    /// issuance/applied ticket counter files (`.gen`/`.applied` — see
+    /// issuance/applied ticket counter files (`.gen`/`.applied`, and
+    /// `.applied`'s own redundant mirror copy `.applied-mirror` — see
     /// `AssetDiskCache+WriteGeneration.swift`): those share a key's
     /// content-file prefix purely as an implementation detail, but a
     /// test that installs `failPrefixes: ["<keyHash>."]` to model "this
@@ -87,12 +88,13 @@ final class FaultInjectionState: @unchecked Sendable {
     /// best-effort-disk-failure scenario also fail durable ticket
     /// issuance itself, which is a categorically different scenario a
     /// test must opt into explicitly via `failSuffixes: [".gen"]`/
-    /// `[".applied"]` instead.
+    /// `[".applied"]`/`[".applied-mirror"]` instead.
     func shouldFailTempWrite(tempName: String) -> Bool {
         let strippedName = tempName.hasSuffix(".tmp") ? String(tempName.dropLast(4)) : tempName
         return lock.withLock {
             _failSuffixes.contains { strippedName.hasSuffix($0) }
                 || (!strippedName.hasSuffix(".gen") && !strippedName.hasSuffix(".applied")
+                    && !strippedName.hasSuffix(".applied-mirror")
                     && _failPrefixes.contains { strippedName.hasPrefix($0) })
         }
     }

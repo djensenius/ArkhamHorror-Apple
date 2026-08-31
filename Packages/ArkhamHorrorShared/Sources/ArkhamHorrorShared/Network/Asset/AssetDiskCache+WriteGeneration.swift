@@ -105,6 +105,33 @@ extension AssetDiskCache {
         "\(key.digestHex).applied"
     }
 
+    /// `key`'s second, independently-stored copy of the exact same
+    /// ``KeyAuthorityRecord`` that lives at ``appliedTicketFilename(for:)``
+    /// — see `AssetDiskCache+Disposition.swift`'s own type-level doc
+    /// comment for why a *single*-file design, however merged its own
+    /// contents, still cannot by itself distinguish "this key has never
+    /// had a ticket issued" from "this key's one and only authority
+    /// record was independently lost, corrupted, or rolled back after
+    /// real prior use" — the exact ambiguity a review round explicitly
+    /// flagged against the merged-record design this file's own
+    /// type-level doc comment otherwise describes as closing every prior
+    /// finding. Keeping this second, redundant copy — written and
+    /// validated exactly like the first, at the same time, under the
+    /// same lock — means a single independent loss of *either* one alone
+    /// can never again be confused with a genuinely pristine key: the
+    /// surviving copy remains fully trustworthy, and the missing one is
+    /// self-healed the next time this key's record is read (see
+    /// ``AssetDiskCache/currentAuthorityRecordLocked(for:)``). This does
+    /// not eliminate every possible loss scenario — an independent loss
+    /// of *both* copies at once remains indistinguishable from a
+    /// genuinely pristine key, exactly as a single-file design always
+    /// was for its one file — but converts the single-file-loss defect
+    /// the review flagged into a requirement for a categorically less
+    /// likely double, simultaneous, independent loss.
+    func authorityRecordMirrorFilename(for key: AssetCacheKey) -> String {
+        "\(key.digestHex).applied-mirror"
+    }
+
     /// A single, atomic, cross-instance/cross-process issuance snapshot
     /// for `key`: the durable clear epoch and a freshly reserved,
     /// strictly-increasing, never-reused ticket for this key's own

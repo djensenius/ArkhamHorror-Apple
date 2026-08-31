@@ -264,8 +264,10 @@ extension AssetDiskCacheTests {
             // Excludes the cache's own reserved cross-process lock file,
             // durable root-authority-initialization marker, durable
             // clear-epoch counter, and this exact key's own durable
-            // disk-write-generation counters (`<hash>.gen`/`<hash>.applied`,
-            // see `AssetDiskCache+WriteGeneration.swift`): unlike the
+            // disk-write-generation authority record and its
+            // independently-stored mirror copy (`<hash>.gen`/
+            // `<hash>.applied`/`<hash>.applied-mirror`, see
+            // `AssetDiskCache+WriteGeneration.swift`): unlike the
             // payload/metadata pair a removal is actually responsible for
             // deleting, those counters are deliberately never removed by an
             // ordinary per-key `remove(_:token:)` -- see that file's own
@@ -283,6 +285,7 @@ extension AssetDiskCacheTests {
                         && $0 != SecureCacheDirectory.rootFreshnessWitnessFileName
                         && $0 != "\(cacheKey.digestHex).gen"
                         && $0 != "\(cacheKey.digestHex).applied"
+                        && $0 != "\(cacheKey.digestHex).applied-mirror"
                 }
             #expect(contents.isEmpty)
         }

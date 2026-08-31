@@ -95,25 +95,39 @@ extension AssetCacheService {
             await memoryCache.removeIfApplied(cacheKey, token: token)
             return .stale
         }
+        await testOnlyPauseBeforePublishFinalCAS?()
         guard await isAuthoritative(token, for: cacheKey) else {
-            // Same retraction, now for both layers: the disk write may
-            // also have landed under `token` before this suspension
-            // returned. Both retraction phases are awaited here, in
-            // sequence — unlike a cancelled waiter's own retraction
-            // (which must only await phase 1 before letting that waiter
-            // observe its outcome), this call site has no waiter to
-            // unblock early; awaiting phase 2 as well before returning
-            // keeps this method's own long-standing "fully retracted by
-            // the time `.stale` is returned" contract unchanged. This
-            // call already reports `.stale` unconditionally below
-            // regardless of phase 1's own outcome, so a thrown
-            // persistence failure is swallowed here (`try?`) rather than
-            // propagated -- `beginDurableRetractionIfApplied` itself
-            // already records it into `lastDiskPersistenceFailure`/
-            // `tombstonedKeys` before throwing, and this method has no
-            // waiter of its own to report a distinct typed outcome to.
-            try? await beginDurableRetractionIfApplied(cacheKey, token: token)
-            await completeDurableRetractionIfApplied(cacheKey, token: token)
+            // A more-recently-issued operation (or `evictAll()`) has
+            // already superseded `token` by the time this last
+            // suspension returned, even though the disk write itself
+            // just landed under it. Deliberately does **not** attempt
+            // its own retraction here — see this method's own doc
+            // comment for why: every caller of `publish(_:asset:token:)`
+            // is exclusively mediated by the coalesced-fetch/-
+            // revalidation waiter-acknowledgement ledger
+            // (`AssetCacheService+WaiterAcknowledgement.swift`), which
+            // *guarantees* its own group-level retraction eventually
+            // runs whenever this method's shared operation's `Result` is
+            // not a success for every one of its waiters (returning
+            // anything other than `.applied` here causes exactly that —
+            // see `AssetCacheService+Fetch.swift`/
+            // `+RevalidationCompletion.swift`). A prior revision
+            // additionally attempted its own, separate retraction right
+            // here via `try?`, swallowing any failure of *that* specific
+            // attempt — the exact defect a review round flagged: with
+            // two or more waiters coalesced onto this same operation,
+            // only the group's own last-finalizing waiter ever actually
+            // awaited a retraction's outcome, so an earlier-finalizing
+            // waiter could observe "stale" while this call's own,
+            // separately-swallowed retraction attempt silently failed
+            // and durable `content(token)` remained fully readable.
+            // Relying solely on the one, shared, now-properly-broadcast
+            // group-level retraction (every non-delivered waiter
+            // suspends until it resolves — see this file's own
+            // finalizeFetchWaiterOutcome(_:waiter:token:currentAuthority:resultIsSuccess:))
+            // removes this redundant, racy attempt entirely rather than
+            // trying to synchronize two independent retraction attempts
+            // against each other.
             return .stale
         }
         if lastDiskPersistenceFailure == nil {
@@ -162,23 +176,20 @@ extension AssetCacheService {
             // disowned bytes to every future in-process hit indefinitely,
             // entirely independent of what the shared disk cache itself
             // has since done — precisely the cross-instance authority gap
-            // a purely in-process token check alone cannot close. Retract
-            // it and report `.stale`, exactly as if this actor's own
-            // authority check had failed, rather than folding either into
-            // `lastDiskPersistenceFailure` as a soft failure the memory
-            // write survives. See ``AssetError/entryNoLongerCachedToTouch``'s
-            // own doc comment. This call already reports `.stale`
-            // unconditionally below regardless of phase 1's own
-            // outcome -- see ``publish(_:asset:token:)``'s identical
-            // `try?` for why swallowing a thrown persistence failure
-            // here is correct.
-            try? await beginDurableRetractionIfApplied(cacheKey, token: token)
-            await completeDurableRetractionIfApplied(cacheKey, token: token)
+            // a purely in-process token check alone cannot close.
+            // Deliberately does **not** attempt its own retraction here
+            // — see ``publish(_:asset:token:)``'s identical guard for
+            // why: the coalesced-fetch/-revalidation waiter-
+            // acknowledgement ledger's own group-level retraction, which
+            // every non-delivered waiter now suspends on until it
+            // resolves, already guarantees this key's mutation is
+            // retracted exactly once on behalf of the whole group; a
+            // second, separately-swallowed attempt right here is exactly
+            // the redundant, racy path a review round flagged.
             return .stale
         }
+        await testOnlyPauseBeforePublishFinalCAS?()
         guard await isAuthoritative(token, for: cacheKey) else {
-            try? await beginDurableRetractionIfApplied(cacheKey, token: token)
-            await completeDurableRetractionIfApplied(cacheKey, token: token)
             return .stale
         }
         return .applied

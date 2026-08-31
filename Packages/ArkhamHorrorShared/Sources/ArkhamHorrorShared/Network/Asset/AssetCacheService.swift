@@ -292,6 +292,15 @@ actor AssetCacheService {
     /// incidental actor-scheduling timing.
     var testOnlyPauseBeforeRevalidationRequest: (() async -> Void)?
 
+    /// Test-only hook awaited by `publish`/`touch` in
+    /// `AssetCacheService+Publish.swift`, right after the disk write
+    /// lands and right before the final `isAuthoritative(_:for:)`
+    /// re-check, which must rely on the shared waiter-acknowledgement
+    /// ledger's group retraction rather than its own. Always `nil` in
+    /// production; a test uses it to supersede `token` in this window so
+    /// every coalesced waiter observes the same broadcast retraction.
+    var testOnlyPauseBeforePublishFinalCAS: (() async -> Void)?
+
     /// Test-only hook awaited immediately after a `publish(_:asset:token:)`
     /// call has already returned ``MutationOutcome/applied`` — i.e. a
     /// resolved asset has already genuinely landed in both cache layers
