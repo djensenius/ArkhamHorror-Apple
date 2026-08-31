@@ -1,9 +1,0 @@
-Fix outdated revalidateDiskHit DocC symbol reference after extraction
-
-asset(for:)'s doc comment referenced revalidateDiskHit(_:key:cacheKey:candidates:token:),
-a stale signature carried over verbatim from before revalidateDiskHit
-dropped its token: parameter. Correct the DocC symbol link to match the
-actual current signature now that the comment lives in the new
-AssetCacheService+AssetLookup.swift file.
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
