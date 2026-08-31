@@ -9,8 +9,7 @@ struct AssetImageLoaderTests {
         transport: FakeAssetTransport = FakeAssetTransport(),
         _ body: (AssetImageLoader, FakeAssetTransport) async throws -> Void
     ) async throws {
-        let scratchContainer = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
+        let scratchContainer = FileManager.default.temporaryDirectory
             .appendingPathComponent("ImageLoaderScratch", isDirectory: true)
         try FileManager.default.createDirectory(
             at: scratchContainer,
