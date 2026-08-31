@@ -85,6 +85,26 @@ extension AssetCacheService {
         guard await isAuthoritative(token, for: cacheKey) else {
             throw AssetError.staleOperation
         }
+        // `token.durableClearEpoch`/`diskWriteGeneration` are `nil` only
+        // if this token's own durable epoch read/disk reservation failed
+        // at issuance time -- a case `isAuthoritative(_:for:)` already
+        // treats as permanently unacceptable everywhere this asset could
+        // ever be published, so this can never currently escape into a
+        // live cache entry. But these fields are the sole provenance
+        // stamps later revalidations trust to detect cache laundering
+        // (see `AssetCacheMetadata`'s own doc comment) -- silently
+        // substituting `0` here rather than failing this exact assembly
+        // step would weaken that invariant for any future caller that
+        // reaches this method with a differently gated token. Fail
+        // exactly like the authority check just above would have,
+        // rather than publishing an entry with a fabricated stamp; this
+        // matches `assembleRevalidatedAsset`'s identical gate.
+        guard
+            let clearEpochAtPublication = token.durableClearEpoch,
+            let writeGenerationAtPublication = token.diskWriteGeneration
+        else {
+            throw AssetError.staleOperation
+        }
         let asset = CachedAsset(
             payload: response.body,
             metadata: AssetCacheMetadata(
@@ -99,8 +119,8 @@ extension AssetCacheService {
                 resolvedURLString: url.absoluteString,
                 insertedAt: Date(),
                 accessSequence: AssetAccessSequence(0),
-                clearEpochAtPublication: token.durableClearEpoch ?? 0,
-                writeGenerationAtPublication: token.diskWriteGeneration ?? 0
+                clearEpochAtPublication: clearEpochAtPublication,
+                writeGenerationAtPublication: writeGenerationAtPublication
             ),
             durableClearEpoch: token.durableClearEpoch,
             writeGeneration: token.diskWriteGeneration
