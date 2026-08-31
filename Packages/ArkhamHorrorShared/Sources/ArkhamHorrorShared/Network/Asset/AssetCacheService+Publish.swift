@@ -53,7 +53,9 @@ extension AssetCacheService {
         asset: CachedAsset,
         token: CacheToken
     ) async -> MutationOutcome {
-        guard await isAuthoritative(token, for: cacheKey) else { return .stale }
+        guard await isAuthoritative(token, for: cacheKey) else {
+            return .stale
+        }
         await memoryCache.set(cacheKey, asset: asset, token: token)
         guard await isAuthoritative(token, for: cacheKey) else {
             // The memory write above landed (this actor's own token CAS

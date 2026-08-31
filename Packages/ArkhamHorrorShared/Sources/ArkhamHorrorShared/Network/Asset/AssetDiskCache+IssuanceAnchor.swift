@@ -129,20 +129,44 @@ extension AssetDiskCache {
 
     /// Cross-checks `reconciled` -- the already-reconciled primary/mirror
     /// result ``currentAuthorityRecordLocked(for:)`` is about to return
-    /// -- against `key`'s own durable issuance anchor, and returns the
-    /// value that is actually safe to trust. See this file's own
-    /// type-level doc comment for the full reasoning; in summary:
+    /// -- against `key`'s own durable issuance anchor, and returns both
+    /// the value that is actually safe to trust and whether this key's
+    /// anchor was *already*, independently, observed to be current-epoch
+    /// before this call's own opportunistic re-anchoring may have run --
+    /// the second half exists purely for
+    /// ``AssetDiskCache/enforceKeyUsageFloorLocked(_:for:)``'s own use
+    /// (see that method's own doc comment): it needs to distinguish "this
+    /// key has a real, current-epoch commit on record" from "this key's
+    /// anchor is merely being freshly (re)written by this very call, for
+    /// a key that has never actually been active in the current epoch at
+    /// all" -- a distinction this call's own opportunistic writes below
+    /// would otherwise erase by the time any later caller re-reads the
+    /// anchor file itself. See this file's own type-level doc comment for
+    /// the full reasoning; in summary:
     ///
     /// - **Anchor corrupt** (present, but unparsable or structurally
     ///   invalid): fails closed unconditionally, exactly like a corrupt
     ///   primary/mirror copy -- an untrustworthy anchor is itself active
     ///   evidence, never silently ignored.
-    /// - **Anchor absent, or present but stamped with a stale (no
-    ///   longer current) epoch**: not binding. If `reconciled` is
-    ///   non-pristine, this opportunistically (best-effort) writes a
-    ///   fresh, current-epoch anchor to match it, so a *future* read has
-    ///   one to cross-check against; a genuinely pristine key needs no
-    ///   anchor at all yet. Returns `reconciled` unchanged either way.
+    /// - **Anchor absent**: not binding. If `reconciled` is non-pristine
+    ///   (this key's very first commit, or a crash gap in
+    ///   ``AssetDiskCache/commitAuthorityRecordLocked(_:for:)``'s own
+    ///   three-file write sequence -- both cases where `reconciled` is
+    ///   already known to genuinely describe the *current* epoch), this
+    ///   opportunistically (best-effort) writes a fresh, current-epoch
+    ///   anchor to match it, so a *future* read has one to cross-check
+    ///   against; a genuinely pristine key needs no anchor at all yet.
+    ///   Returns `reconciled` unchanged either way, with
+    ///   `wasCurrentEpoch: false`.
+    /// - **Anchor present but stamped with a stale (no longer current)
+    ///   epoch**: not binding, and -- unlike the absent case just above --
+    ///   never opportunistically re-anchored here. `reconciled` here
+    ///   still describes the *pre-clear* world (see this method's own
+    ///   body for why durably re-stamping it as current-epoch would
+    ///   manufacture false evidence for the very next reader). Returns
+    ///   `reconciled` unchanged, with `wasCurrentEpoch: false`; only a
+    ///   fresh ``AssetDiskCache/issueTicketLocked(for:)`` commit may ever
+    ///   durably re-anchor this key at the current epoch.
     /// - **Anchor valid and current-epoch, `reconciled.revision` ahead
     ///   of the anchor's own recorded revision**: the ordinary, healthy
     ///   outcome of every uninterrupted commit (the anchor is always
@@ -168,7 +192,7 @@ extension AssetDiskCache {
     func enforceIssuanceAnchorLocked(
         _ reconciled: KeyAuthorityRecord,
         for key: AssetCacheKey
-    ) throws -> KeyAuthorityRecord {
+    ) throws -> (record: KeyAuthorityRecord, wasCurrentEpoch: Bool) {
         let anchorName = issuanceAnchorFilename(for: key)
         let anchorState = try readIssuanceAnchorCopyStateLocked(name: anchorName)
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
@@ -184,27 +208,49 @@ extension AssetDiskCache {
                     KeyIssuanceAnchor(epoch: currentEpoch, record: reconciled),
                     name: anchorName
                 )
+                opportunisticallySyncFloorLocked(reconciled, for: key, currentEpoch: currentEpoch)
             }
-            return reconciled
+            return (reconciled, false)
         }
         guard anchor.epoch == currentEpoch else {
             // A stale leftover from before a legitimate whole-cache
-            // clear -- not binding. Re-anchors at the current epoch so a
-            // future read has a current, binding witness.
-            if reconciled != .pristine {
-                _ = try? writeIssuanceAnchorFileLocked(
-                    KeyIssuanceAnchor(epoch: currentEpoch, record: reconciled),
-                    name: anchorName
-                )
-            }
-            return reconciled
+            // clear -- not binding, and *never* opportunistically
+            // re-anchored at the current epoch here (unlike the
+            // anchor-absent branch just above, which is safe to
+            // opportunistically write precisely because that branch
+            // only fires when `reconciled` is itself already known to
+            // be current-epoch-legitimate data -- this key's very first
+            // commit, or a crash gap in `commitAuthorityRecordLocked(_:for:)`'s
+            // own three-file write sequence). `reconciled` here is, by
+            // construction, still describing the *pre-clear* world (its
+            // own primary/mirror pair, and this now-stale anchor, were
+            // never touched by the clear that bumped `currentEpoch` --
+            // see ``AssetDiskCache/removeAll()``'s own doc comment for
+            // why every per-key file is swept best-effort, never
+            // specially reserved, so a partially-failed sweep can leave
+            // any of them fully intact). Durably re-stamping *this exact,
+            // still-stale* ticket/disposition pair as `epoch:
+            // currentEpoch` here would manufacture false evidence: the
+            // very next reader (this call's own eventual caller
+            // included, on a subsequent read before anything has
+            // actually been freshly re-issued/republished) would then
+            // see `wasCurrentEpoch: true` and wrongly treat this
+            // leftover's own stale ticket as a binding floor and its
+            // stale disposition as live, current-epoch content --
+            // exactly the resurrection this whole mechanism exists to
+            // prevent. Only ``AssetDiskCache/issueTicketLocked(for:)``'s
+            // own fresh commit (via ``commitAuthorityRecordLocked(_:for:)``,
+            // once a *new* ticket has actually been reserved and this
+            // key's own disposition reset to ``KeyDisposition/pristine``)
+            // may ever durably re-anchor this key at the current epoch.
+            return (reconciled, false)
         }
         if reconciled.revision > anchor.record.revision {
             _ = try? writeIssuanceAnchorFileLocked(
                 KeyIssuanceAnchor(epoch: currentEpoch, record: reconciled),
                 name: anchorName
             )
-            return reconciled
+            return (reconciled, true)
         }
         guard reconciled.revision == anchor.record.revision else {
             throw AssetError.cachePersistenceFailed(
@@ -219,6 +265,37 @@ extension AssetDiskCache {
                     " at the same revision, which can never legitimately arise."
             )
         }
-        return reconciled
+        return (reconciled, true)
+    }
+
+    /// Best-effort mirrors this method's own opportunistic anchor
+    /// (re)writes, above, into this cache's root-level key usage floor
+    /// index as well -- so a key this call has just (re)anchored at the
+    /// current epoch is never left with an anchor claiming current-epoch
+    /// standing while the floor index still has no entry for it at all.
+    ///
+    /// Without this, a *second*, later read of the exact same key (for
+    /// example ``currentKeyAuthority(for:)`` called after an earlier
+    /// ``currentKeyDisposition(for:)`` already ran this exact
+    /// opportunistic repair) would observe `wasCurrentEpoch: true` from
+    /// the now-freshly-written anchor, while
+    /// ``enforceKeyUsageFloorLocked(_:for:anchorWasCurrentEpoch:)``'s own
+    /// missing-entry branch requires exactly that flag to be `false` to
+    /// tolerate an absent floor entry -- permanently, spuriously
+    /// fail-closing a key this call itself just finished vouching for.
+    /// Failure here is silently tolerated exactly like every other
+    /// opportunistic repair in this file: it only ever improves a
+    /// *future* read's resilience, never a precondition for trusting the
+    /// value this call has already determined is safe.
+    private func opportunisticallySyncFloorLocked(
+        _ reconciled: KeyAuthorityRecord,
+        for key: AssetCacheKey,
+        currentEpoch: Int
+    ) {
+        _ = try? commitKeyUsageFloorLocked(
+            for: key,
+            issuedTicket: reconciled.issuedTicket,
+            epoch: currentEpoch
+        )
     }
 }

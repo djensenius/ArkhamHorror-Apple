@@ -45,6 +45,63 @@ extension AssetDiskCache {
         }
     }
 
+    /// Throttled counterpart to ``requireDiskWritesEnabledLocked()``,
+    /// used only by ``issueTicketLocked(for:)``'s own gate -- **never**
+    /// by ``set(_:payload:metadata:token:)``/``touch(_:metadata:token:)``,
+    /// which must keep proving the budget fresh on *every* actual content
+    /// write, exactly as before.
+    ///
+    /// A bare ticket reservation (as every ``remove(_:token:)``/
+    /// ``invalidate(_:token:)`` call for an unconditional, `token: nil`
+    /// caller performs, via ``resolvedMutationTicketLocked(for:token:)``)
+    /// never itself writes a payload -- it only durably records a handful
+    /// of small, fixed-shape per-key authority files (see
+    /// ``commitAuthorityRecordLocked(_:for:)``). Unconditionally running
+    /// ``evictIfNeeded()``'s own full directory listing and per-file
+    /// accounting pass -- proportional to this cache's *entire* current
+    /// file count -- before every single one of those small, cheap writes
+    /// would make a churn of many distinct, never-published keys (each
+    /// only ever reserving and then retracting a ticket) cost quadratic
+    /// total time in the number of such keys, purely from re-listing an
+    /// ever-growing directory on every call.
+    ///
+    /// Still refuses immediately, at negligible cost, whenever this
+    /// cache is *already* known to have disk writes disabled (the cheap
+    /// half of ``areDiskWritesDisabledLocked()``, a single small-file
+    /// stat, never a full listing) -- this round's finding #3 is
+    /// specifically that issuance previously ignored that marker
+    /// entirely, even when it was already set; this closes that
+    /// unconditionally, on every single call, at `O(1)` cost.
+    ///
+    /// The full, expensive re-proof (real directory listing, accounting,
+    /// and this cache's own root-level key-usage-floor-index compaction —
+    /// see ``compactKeyUsageFloorIfNeededLocked(names:)``) still runs
+    /// periodically -- every ``ticketIssuanceBudgetProofInterval``-th
+    /// call -- so a pure-churn workload that never calls
+    /// `set`/`touch` at all still has its own on-disk footprint bounded
+    /// and periodically re-checked against budget, at `O(1/interval)`
+    /// amortized full passes per ticket rather than one per ticket. The
+    /// counter driving this is purely in-memory and process-local (see
+    /// ``AssetDiskCache/ticketIssuancesSinceLastBudgetProof``'s own doc
+    /// comment) -- a fresh instance simply starts its own throttling
+    /// window over, which only ever means an *earlier*, not later, next
+    /// full re-proof for that instance, never a weaker guarantee.
+    static let ticketIssuanceBudgetProofInterval = 64
+
+    func requireDiskWritesEnabledThrottledLocked() throws {
+        guard !areDiskWritesDisabledLocked() else {
+            throw AssetError.cachePersistenceFailed(
+                "Disk writes are disabled: on-disk cache budget could not be confirmed"
+            )
+        }
+        ticketIssuancesSinceLastBudgetProof += 1
+        guard ticketIssuancesSinceLastBudgetProof >= Self.ticketIssuanceBudgetProofInterval else {
+            return
+        }
+        ticketIssuancesSinceLastBudgetProof = 0
+        try requireDiskWritesEnabledLocked()
+    }
+
     /// The compare half of this cache's durable, cross-instance/cross-
     /// process per-key token CAS: accepts `token` only if its durable
     /// clear epoch still *exactly* matches the value the caller already

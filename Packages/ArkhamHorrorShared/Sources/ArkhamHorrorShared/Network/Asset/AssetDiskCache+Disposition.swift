@@ -227,6 +227,33 @@ extension AssetDiskCache {
         return true
     }
 
+    /// This round's finding #4, closed: `revision` is bumped by exactly
+    /// one on every durable commit a key ever undergoes (see
+    /// ``KeyAuthorityRecord/revision``'s own doc comment), and a bare
+    /// `+ 1` at an already-`Int.max` value traps the whole process rather
+    /// than failing this one operation. Every call site that advances a
+    /// key's own revision (``commitDispositionLocked(_:for:)``,
+    /// ``issueTicketLocked(for:)``) routes through this one checked
+    /// helper instead, converting that trap into the identical typed,
+    /// fail-closed ``AssetError/cachePersistenceFailed(_:)`` every other
+    /// counter exhaustion in this cache already reports (see
+    /// ``issueTicketLocked(for:)``'s own pre-existing `issuedTicket <
+    /// Int.max` guard, and ``SecureCacheDirectory/bumpClearEpoch()``'s
+    /// identical contract for the durable clear-epoch counter) -- a
+    /// single key reaching `Int.max` commits in its own lifetime is
+    /// astronomically unlikely for a local, ephemeral disk cache, but
+    /// must still degrade to an ordinary typed error, never a crash.
+    func checkedAdvancedRevision(_ current: Int) throws -> Int {
+        let (next, overflowed) = current.addingReportingOverflow(1)
+        guard !overflowed else {
+            throw AssetError.cachePersistenceFailed(
+                "This key's own authority revision counter is exhausted; refusing to wrap or" +
+                    " crash on overflow."
+            )
+        }
+        return next
+    }
+
     /// The single, shared crash-consistency shape (write bounded temp
     /// file, `fsync`, rename into place, `fsync` the containing
     /// directory) both ``commitAuthorityRecordLocked(_:for:)``'s two

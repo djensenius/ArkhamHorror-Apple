@@ -126,21 +126,109 @@ extension AssetDiskCache {
     /// Guards against overflow: once already at `Int.max`, throws rather
     /// than silently colliding two genuinely different future tickets
     /// onto the same value.
+    ///
+    /// **Honors this cache's whole-cache disk-writes-disabled gate.**
+    /// This round's finding #3: a prior revision let issuance proceed
+    /// unconditionally, so a churn of unique, never-reused keys (each
+    /// issuing a ticket that durably writes three permanent per-key
+    /// authority files, plus this key's own floor-index entry) could
+    /// keep growing this cache's own physical on-disk footprint even
+    /// after ``requireDiskWritesEnabledLocked()`` had already durably
+    /// disabled every *content* write for being over budget -- issuance
+    /// itself was never gated the same way. Checking (and, periodically,
+    /// via ``requireDiskWritesEnabledThrottledLocked()``'s own call to
+    /// ``evictIfNeeded()``, re-proving) that gate here, as this method's
+    /// very first step, closes that: no new ticket -- and so no new
+    /// permanent per-key file -- can ever be durably reserved while this
+    /// cache's own disk budget is already known not to be confirmed, and
+    /// a pure-churn workload still has its own footprint bounded and
+    /// re-checked periodically even if it never calls
+    /// `set`/`touch` -- see that method's own doc comment for why the
+    /// re-proof itself is throttled rather than run on every single call.
+    ///
+    /// **Draws its value from this directory's single, global,
+    /// cross-key monotonic ticket sequence
+    /// (``SecureCacheDirectory/allocateGlobalTicket()``,
+    /// `SecureCacheDirectory+TicketSequence.swift`) rather than from this
+    /// one key's own `issuedTicket + 1`.** This is what makes reclaiming
+    /// (compacting away) a settled, cold key's own floor-index entry and
+    /// per-key files safe at all (see
+    /// `AssetDiskCache+KeyUsageFloor.swift`'s own type-level doc
+    /// comment): since every ticket this whole cache directory will ever
+    /// issue, for any key, is guaranteed strictly greater than every
+    /// ticket it has issued before, a *future* reissuance for a key
+    /// whose own past history has since been entirely forgotten can
+    /// never collide with a value that history once held, regardless of
+    /// what was forgotten. Still independently defended, never trusted
+    /// on faith alone: this key's own currently-known `issuedTicket`
+    /// (read fresh, from this key's own still-intact durable authority --
+    /// entirely unaffected by anything the global sequence file itself
+    /// may separately have lost or had reset) must be strictly less than
+    /// the freshly allocated value, or this fails closed rather than
+    /// ever durably recording a ticket this key's own record shows it
+    /// has already reached or passed.
+    ///
+    /// **That floor is relaxed to `0` -- and the freshly-committed
+    /// record's own `disposition` reset to ``KeyDisposition/pristine``
+    /// rather than carried forward -- whenever this key's own current
+    /// authority record is itself only a stale-epoch leftover (its
+    /// issuance anchor never independently proved a real *current*-epoch
+    /// commit landed; see
+    /// ``AssetDiskCache/currentAuthorityRecordStatusLocked(for:)``'s own
+    /// doc comment).** A whole-cache clear's durable epoch bump is what
+    /// already, separately renders such a leftover non-authoritative
+    /// (``AssetDiskCache/removeAll()`` durably bumps the clear epoch
+    /// *before* its own best-effort physical sweep, so every one of this
+    /// key's own three per-key files can survive a partially-failed
+    /// sweep fully intact yet already fenced off) -- this cache's own
+    /// single global ticket sequence is, by the same clear, legitimately
+    /// reset right alongside it (see
+    /// `SecureCacheDirectory+TicketSequence.swift`'s own doc comment for
+    /// why that reset is itself both safe and desirable). Requiring a
+    /// freshly allocated ticket to still exceed a leftover value the
+    /// clear already fenced off would incorrectly re-bind it, permanently
+    /// blocking every future re-issuance for any key a partially-failed
+    /// `removeAll()` could not physically delete. Carrying that leftover
+    /// record's own stale `disposition` (rather than resetting it) into
+    /// this freshly-issued, now current-epoch-anchored record would be an
+    /// even sharper hazard: ``commitAuthorityRecordLocked(_:for:)``
+    /// durably re-anchors the record it is given at the *current* epoch
+    /// unconditionally, so carrying forward a stale `.content` (or
+    /// `.retiring`) disposition here would make a sibling reader's very
+    /// next ``enforceIssuanceAnchorLocked(_:for:)`` call see a
+    /// current-epoch anchor vouching for pre-clear content that nothing
+    /// has actually republished under this fresh ticket at all --
+    /// resurrecting exactly the stale bytes this whole mechanism exists
+    /// to fence off. A key with no such leftover (`wasCurrentEpoch ==
+    /// true`, the ordinary case) is entirely unaffected: its own real
+    /// `issuedTicket`/`disposition` are used exactly as before.
     func issueTicketLocked(for key: AssetCacheKey) throws -> Int {
-        let current = try currentAuthorityRecordLocked(for: key)
+        try requireDiskWritesEnabledThrottledLocked()
+        let status = try currentAuthorityRecordStatusLocked(for: key)
+        let current = status.record
         guard current.issuedTicket < Int.max else {
             throw AssetError.cachePersistenceFailed(
                 "Write-generation counter is exhausted for this key"
             )
         }
-        let next = current.issuedTicket + 1
+        let next = try secureDirectory.allocateGlobalTicket()
+        let effectiveFloor = status.wasCurrentEpoch ? current.issuedTicket : 0
+        guard next > effectiveFloor else {
+            throw AssetError.cachePersistenceFailed(
+                "Globally allocated ticket does not exceed this key's own already-known" +
+                    " issued ticket; refusing to durably record a value this key's own" +
+                    " authority record shows has already been reached or passed."
+            )
+        }
+        let effectiveDisposition = status.wasCurrentEpoch ? current.disposition : .pristine
         try commitAuthorityRecordLocked(
             KeyAuthorityRecord(
                 issuedTicket: next,
-                disposition: current.disposition,
-                revision: current.revision + 1
+                disposition: effectiveDisposition,
+                revision: checkedAdvancedRevision(current.revision)
             ),
-            for: key
+            for: key,
+            priorIssuedTicket: effectiveFloor
         )
         return next
     }

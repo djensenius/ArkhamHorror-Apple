@@ -56,10 +56,18 @@ extension AssetDiskCache {
     /// prior revision of this method was always the primary --
     /// silently resurrecting a live `.content` disposition its own
     /// mirror had already begun retiring). The winning value is
-    /// re-committed to both copies before being returned, so a torn pair
-    /// self-heals on its very next read rather than persisting
-    /// indefinitely. Two individually-valid copies sharing the exact
-    /// same `revision` but disagreeing on anything else can never
+    /// re-committed to the primary and mirror copies *only* -- **never**
+    /// to the issuance anchor or the root-level key-usage floor index,
+    /// and only *before* this method's own final line cross-checks that
+    /// same winner against both of those (see this method's own body for
+    /// why a prior revision's repair, which durably rewrote every one of
+    /// this key's own witnesses including those outer two before either
+    /// ever got a chance to weigh in, was itself this round's finding
+    /// #2) -- so a torn pair self-heals on its very next read rather
+    /// than persisting indefinitely, without that repair ever being able
+    /// to downgrade evidence a genuinely newer floor/anchor value still
+    /// holds. Two individually-valid copies sharing the exact same
+    /// `revision` but disagreeing on anything else can never
     /// legitimately arise (each revision is written exactly once, by
     /// exactly one commit) and is itself a hard, typed, fail-closed
     /// failure rather than an arbitrary pick.
@@ -99,6 +107,32 @@ extension AssetDiskCache {
     /// because the two copies happen to agree with *each other* -- see
     /// that method's own doc comment for the full reasoning.
     func currentAuthorityRecordLocked(for key: AssetCacheKey) throws -> KeyAuthorityRecord {
+        try currentAuthorityRecordStatusLocked(for: key).record
+    }
+
+    /// Identical to ``currentAuthorityRecordLocked(for:)``, but also
+    /// exposes whether this key's own durable issuance anchor already,
+    /// independently proved a real *current-epoch* commit landed for it
+    /// (see ``enforceIssuanceAnchorLocked(_:for:)``'s own doc comment) --
+    /// every other caller uses the wrapper above and discards this flag;
+    /// only ``issueTicketLocked(for:)`` itself needs it, to correctly
+    /// treat a stale-epoch leftover record's own `issuedTicket` (and
+    /// `disposition`) as non-binding for its own floor check and the
+    /// freshly-issued record it commits, exactly the same tolerance
+    /// ``enforceKeyUsageFloorLocked(_:for:anchorWasCurrentEpoch:)``
+    /// already grants that identical leftover record for the floor
+    /// index's own entry-presence check -- without this, a key whose own
+    /// three per-key files a partially-failed
+    /// ``AssetDiskCache/removeAll()`` could not physically delete would
+    /// never be able to receive a fresh ticket again afterward, since the
+    /// global ticket sequence this cache root's own single monotonic
+    /// counter is durably, legitimately reset to along with every clear
+    /// (see `SecureCacheDirectory+TicketSequence.swift`'s own doc
+    /// comment) can never climb back past a leftover value the epoch
+    /// bump already, separately fenced off.
+    func currentAuthorityRecordStatusLocked(
+        for key: AssetCacheKey
+    ) throws -> (record: KeyAuthorityRecord, wasCurrentEpoch: Bool) {
         let primaryName = appliedTicketFilename(for: key)
         let mirrorName = authorityRecordMirrorFilename(for: key)
         let primary = try readAuthorityRecordCopyStateLocked(name: primaryName)
@@ -128,11 +162,48 @@ extension AssetDiskCache {
                 )
             } else {
                 let winner = lhs.revision > rhs.revision ? lhs : rhs
-                _ = try? commitAuthorityRecordLocked(winner, for: key)
+                // **Deliberately repairs only the primary/mirror pair
+                // here -- never the floor index or the issuance anchor --
+                // and does so *after* this switch has already produced
+                // `reconciled`, not before.** This round's finding #2: a
+                // prior revision instead called
+                // ``commitAuthorityRecordLocked(_:for:)`` directly from
+                // this exact branch, which durably (re)writes *every*
+                // one of this key's own witnesses -- the floor index and
+                // the issuance anchor included -- to `winner`'s own
+                // value, *before* either of those two independent
+                // witnesses (checked immediately below, by
+                // ``enforceKeyUsageFloorLocked(_:for:)``/
+                // ``enforceIssuanceAnchorLocked(_:for:)``, via this
+                // method's own final line) ever gets a chance to
+                // recognize `winner` itself might already be stale --
+                // durably overwriting a genuinely newer floor/anchor
+                // value with a torn-but-locally-reconciled `winner` that
+                // is actually *behind* it, permanently erasing the one
+                // piece of evidence that would otherwise have caught
+                // exactly that. Writing only the two files this repair
+                // actually concerns itself with -- and only after
+                // `reconciled` has already been independently checked
+                // against both of those outer witnesses -- means a
+                // stale `winner` can never itself downgrade either one:
+                // the floor/anchor check below still runs against the
+                // *original*, not-yet-repaired `winner` value exactly as
+                // if this repair had never happened, and only accepts or
+                // rejects it on its own, independent merits.
+                let primaryName = appliedTicketFilename(for: key)
+                let mirrorName = authorityRecordMirrorFilename(for: key)
+                _ = try? writeAuthorityRecordFileLocked(winner, name: mirrorName)
+                _ = try? writeAuthorityRecordFileLocked(winner, name: primaryName)
                 reconciled = winner
             }
         }
-        return try enforceIssuanceAnchorLocked(reconciled, for: key)
+        let anchorResult = try enforceIssuanceAnchorLocked(reconciled, for: key)
+        let record = try enforceKeyUsageFloorLocked(
+            anchorResult.record,
+            for: key,
+            anchorWasCurrentEpoch: anchorResult.wasCurrentEpoch
+        )
+        return (record, anchorResult.wasCurrentEpoch)
     }
 
     /// The three mutually-exclusive states a single named on-disk

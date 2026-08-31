@@ -204,6 +204,19 @@ extension AssetDiskCache {
         // begins: a caller must never observe "entries are already gone"
         // without the durable epoch having also already advanced.
         try secureDirectory.bumpClearEpoch()
+        // The root-level key-usage floor index (`AssetDiskCache+KeyUsageFloor.swift`)
+        // is reserved above (``isRemovableDuringClear(_:)``), unlike
+        // every per-key authority file, precisely because this index's
+        // own file identity must never disappear -- only its *contents*
+        // may ever legitimately reset, and only in this exact
+        // transaction, immediately after the epoch bump that
+        // legitimately authorizes every key's own authority (including
+        // this index's own recorded high-water marks) to restart clean.
+        // Committed here, before the removal pass below, so a crash
+        // between this call and that pass still leaves the index
+        // correctly reset for the new epoch, never stranded at the old
+        // one.
+        try resetKeyUsageFloorIndexLocked(epoch: secureDirectory.readPersistedClearEpoch())
         // Every per-key durable authority record file (`.applied`,
         // merging both the issuance ticket and applied disposition --
         // see `AssetDiskCache+Disposition.swift`) is deliberately *not*
@@ -281,6 +294,7 @@ extension AssetDiskCache {
             && name != SecureCacheDirectory.clearEpochFileName
             && name != SecureCacheDirectory.rootInitMarkerFileName
             && name != SecureCacheDirectory.rootFreshnessWitnessFileName
+            && name != AssetDiskCache.keyUsageFloorIndexFileName
     }
 
     /// The key hash embedded in every entry name currently present in the

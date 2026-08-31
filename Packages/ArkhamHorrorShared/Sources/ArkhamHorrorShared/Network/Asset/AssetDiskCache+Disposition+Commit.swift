@@ -39,22 +39,79 @@ extension AssetDiskCache {
     /// ``currentAuthorityRecordLocked(for:)``'s own reconciliation of two
     /// individually-valid-but-disagreeing copies always resolve
     /// correctly, by picking whichever copy has the higher `revision` —
-    /// see that method's own doc comment. The anchor-first half is what
-    /// makes a crash landing *before* either of those two writes even
-    /// begins provably, permanently detectable: since this key's own
-    /// exclusive lock (acquired by every caller before this method ever
-    /// runs) fully serializes every commit for this key, the *only* way
-    /// a future read can ever observe the mirror/primary pair behind
-    /// this exact anchor write is a crash landing inside this very call,
-    /// between the anchor write and whichever of the other two writes
-    /// comes next -- see `AssetDiskCache+IssuanceAnchor.swift`'s own
+    /// see that method's own doc comment. The anchor-then-mirror-then-
+    /// primary half is what makes a crash landing *before* any of the
+    /// remaining three writes even begins provably, permanently
+    /// detectable: since this key's own exclusive lock (acquired by
+    /// every caller before this method ever runs) fully serializes every
+    /// commit for this key, the *only* way a future read can ever
+    /// observe an earlier write in this sequence behind a later one is a
+    /// crash landing inside this very call, between two of its own
+    /// writes -- see `AssetDiskCache+IssuanceAnchor.swift`'s own
     /// type-level doc comment for why that specific window is left to
     /// fail closed rather than repaired.
+    ///
+    /// **Written floor-index-first, ahead of even the anchor.** The
+    /// root-level key-usage floor index (`AssetDiskCache+KeyUsageFloor.swift`)
+    /// is this whole authority design's own *fourth* witness, and the
+    /// only one not stored inside this key's own per-key namespace at
+    /// all -- see that file's type-level doc comment for why that
+    /// structural independence is what actually closes this review
+    /// round's finding #1 (all three of a key's own per-key files lost
+    /// or rolled back *together*), a failure mode no per-key witness,
+    /// however many redundant copies of itself, could ever detect on its
+    /// **Written floor-index-first, ahead of even the anchor -- but
+    /// only when `record.issuedTicket` is actually *new* relative to
+    /// `priorIssuedTicket` (this exact key's own issued-ticket value
+    /// immediately before this call, which every caller already has in
+    /// hand from its own prior read of ``currentAuthorityRecordLocked(for:)``,
+    /// the same read that already ran this key's own floor entry through
+    /// ``enforceKeyUsageFloorLocked(_:for:anchorWasCurrentEpoch:)``'s own
+    /// check).** The root-level key-usage floor index
+    /// (`AssetDiskCache+KeyUsageFloor.swift`) is this whole authority
+    /// design's own *fourth* witness, and the only one not stored inside
+    /// this key's own per-key namespace at all -- see that file's
+    /// type-level doc comment for why that structural independence is
+    /// what actually closes this review round's finding #1 (all three of
+    /// a key's own per-key files lost or rolled back *together*), a
+    /// failure mode no per-key witness, however many redundant copies of
+    /// itself, could ever detect on its own. Writing it first, ahead of
+    /// the anchor, extends this exact same key's already-existing
+    /// anchor-first crash-window guarantee one step further outward.
+    ///
+    /// **Skipping this step entirely when `record.issuedTicket <=
+    /// priorIssuedTicket` is provably safe, not merely an optimization
+    /// shortcut.** A disposition-only transition (``commitDispositionLocked(_:for:)``'s
+    /// retiring/tombstone commits, which always reuse an already-issued
+    /// ticket rather than minting a new one) never advances
+    /// `issuedTicket` beyond what an *earlier* call already durably
+    /// recorded in this exact same floor index, within the very same
+    /// already-held exclusive lock -- there is nothing new for the floor
+    /// to learn. Without this, every one of a single logical mutation's
+    /// *three* separate `commitAuthorityRecordLocked` calls (one to
+    /// reserve the ticket, one each for its `.retiring`/`.tombstone`
+    /// disposition commits — see ``commitRetractionLocked(for:token:destroy:)``)
+    /// would redundantly re-read, re-serialize, and re-`fsync` this
+    /// cache's *entire* shared, root-level, all-keys floor index — whose
+    /// own size scales with this whole directory's total distinct key
+    /// count, not with any one operation — three times over for a single
+    /// logical removal, turning what should be a handful of small,
+    /// fixed-size per-key writes into a cost that scales with (and, once
+    /// multiplied across many distinct keys, squares against) this
+    /// cache's entire key population.
     func commitAuthorityRecordLocked(
         _ record: KeyAuthorityRecord,
-        for key: AssetCacheKey
+        for key: AssetCacheKey,
+        priorIssuedTicket: Int
     ) throws {
         let epoch = try secureDirectory.readPersistedClearEpoch()
+        if record.issuedTicket > priorIssuedTicket {
+            try commitKeyUsageFloorLocked(
+                for: key,
+                issuedTicket: record.issuedTicket,
+                epoch: epoch
+            )
+        }
         try writeIssuanceAnchorFileLocked(
             KeyIssuanceAnchor(epoch: epoch, record: record),
             name: issuanceAnchorFilename(for: key)
@@ -83,9 +140,10 @@ extension AssetDiskCache {
             KeyAuthorityRecord(
                 issuedTicket: max(current.issuedTicket, disposition.ticket),
                 disposition: disposition,
-                revision: current.revision + 1
+                revision: checkedAdvancedRevision(current.revision)
             ),
-            for: key
+            for: key,
+            priorIssuedTicket: current.issuedTicket
         )
     }
 

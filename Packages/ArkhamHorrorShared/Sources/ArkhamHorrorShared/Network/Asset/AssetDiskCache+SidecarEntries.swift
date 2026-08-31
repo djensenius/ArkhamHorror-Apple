@@ -8,6 +8,25 @@ import Foundation
 /// package's `file_length` convention; still part of the same
 /// `AssetDiskCache` actor's isolated recovery/accounting subsystem.
 extension AssetDiskCache {
+    // MARK: - Names
+
+    /// The filename for `key`'s payload under `contentHash` — the caller
+    /// must have already validated `contentHash` via
+    /// ``isValidContentHash(_:)`` if it did not originate from a value
+    /// this cache computed itself (e.g. it was read back from an on-disk
+    /// metadata sidecar). Deliberately key-local (built only from a
+    /// validated key hash and a validated content hash, never from any
+    /// other input) and free of any path separator, so it is always a
+    /// single, traversal-proof leaf name inside the verified cache
+    /// directory — never a relative or absolute path segment.
+    func payloadFilename(keyHash: String, contentHash: String) -> String {
+        "\(keyHash).\(contentHash).bin"
+    }
+
+    func metadataFilename(for key: AssetCacheKey) -> String {
+        "\(key.digestHex).meta.json"
+    }
+
     func entries() -> [Entry] {
         guard let names = try? directoryAccess.listNames() else { return [] }
         return entries(names: names).entries

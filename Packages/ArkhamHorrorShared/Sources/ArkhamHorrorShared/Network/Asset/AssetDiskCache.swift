@@ -97,6 +97,47 @@ actor AssetDiskCache {
     /// conditions have improved.
     var writesDisabledLocal = false
 
+    /// Purely in-memory, best-effort throttle counter for
+    /// ``issueTicketLocked(for:)``'s own disk-writes-disabled gate (see
+    /// `AssetDiskCache+TokenCAS.swift`'s
+    /// ``requireDiskWritesEnabledThrottledLocked()``) -- never persisted,
+    /// safe to silently reset to `0` on every fresh instance. Exists
+    /// purely so a churn of many distinct, never-published keys (each
+    /// only ever reserving a ticket, e.g. via ``remove(_:token:)``/
+    /// ``invalidate(_:token:)``, never via ``set(_:payload:metadata:token:)``)
+    /// does not force a full ``evictIfNeeded()`` directory-listing-and-
+    /// accounting pass on *every single* ticket reservation, which would
+    /// make that one churn pattern's own total cost scale quadratically
+    /// with key count purely from repeatedly re-listing an ever-growing
+    /// directory. A cheap, already-known-disabled check still runs
+    /// unconditionally on every call; only the *full*, expensive re-proof
+    /// pass is throttled.
+    var ticketIssuancesSinceLastBudgetProof = 0
+
+    /// Purely in-memory, best-effort read-through cache of the root-level
+    /// key-usage floor index (`AssetDiskCache+KeyUsageFloor.swift`),
+    /// tagged with the exact on-disk identity (`inode` +
+    /// `modifiedAtNanoseconds`, from ``SecureCacheDirectory/attributes(name:)``)
+    /// it was decoded from or written as. Every read
+    /// (``readKeyUsageFloorIndexStateLocked()``) first does a cheap `stat`
+    /// and only falls back to a full decode of the (potentially large,
+    /// all-keys-shared) index file when the on-disk identity no longer
+    /// matches this cached copy -- i.e. only the *first* read in a fresh
+    /// actor instance, or one made stale by some *other* actor/process
+    /// having written to this exact root between two of this actor's own
+    /// calls, ever pays that cost again. Every write
+    /// (``writeKeyUsageFloorIndexLocked(_:)``) updates this cache directly
+    /// from the value it just durably wrote (plus a fresh, equally cheap
+    /// `stat` of the file it just renamed into place), so this actor's own
+    /// writes never force its own very next read to redundantly re-decode
+    /// what it just encoded. Never persisted, and never itself trusted as
+    /// authority -- it is purely a decode-avoidance cache over exactly the
+    /// same durable file every state transition here already reads
+    /// through `SecureCacheDirectory`; a foreign write silently
+    /// invalidates it via the identity mismatch rather than ever risking
+    /// a stale in-memory value being treated as ground truth.
+    var keyUsageFloorIndexCache: (identity: KeyUsageFloorIndexIdentity, index: KeyUsageFloorIndex)?
+
     /// This actor's own independent half of the token compare-and-swap
     /// described in `AssetCacheService+Epoch.swift` and mirrored by
     /// ``AssetMemoryCache``'s identical `appliedToken`/`acceptedGeneration`
@@ -149,29 +190,6 @@ actor AssetDiskCache {
         self.limits = limits
         self.fileManager = fileManager
         secureDirectory = try SecureCacheDirectory(directory: directory, fileManager: fileManager)
-    }
-
-    /// Test-only: installs ``testOnlyPauseBeforeReturningHit``. A plain
-    /// actor-isolated method (rather than exposing the stored property for
-    /// direct external assignment) so a test's call site reads as an
-    /// ordinary, obviously-`await`-requiring actor call.
-    func installTestOnlyPauseBeforeReturningHit(_ pause: @escaping () async -> Void) {
-        testOnlyPauseBeforeReturningHit = pause
-    }
-
-    /// Test-only: installs ``testOnlyPauseBeforeAcquiringWriteLock``. See
-    /// ``installTestOnlyPauseBeforeReturningHit(_:)`` for the rationale
-    /// behind exposing this as a method rather than a settable property.
-    func installTestOnlyPauseBeforeAcquiringWriteLock(_ pause: @escaping () async -> Void) {
-        testOnlyPauseBeforeAcquiringWriteLock = pause
-    }
-
-    /// Test-only: installs ``testOnlyPauseBeforeAcquiringRemovalLock``.
-    /// See ``installTestOnlyPauseBeforeReturningHit(_:)`` for the
-    /// rationale behind exposing this as a method rather than a settable
-    /// property.
-    func installTestOnlyPauseBeforeAcquiringRemovalLock(_ pause: @escaping () async -> Void) {
-        testOnlyPauseBeforeAcquiringRemovalLock = pause
     }
 
     /// The default production cache directory: a versioned subdirectory of
@@ -377,24 +395,5 @@ actor AssetDiskCache {
             )
         }
         return .applied
-    }
-
-    // MARK: - Names
-
-    /// The filename for `key`'s payload under `contentHash` — the caller
-    /// must have already validated `contentHash` via
-    /// ``isValidContentHash(_:)`` if it did not originate from a value
-    /// this cache computed itself (e.g. it was read back from an on-disk
-    /// metadata sidecar). Deliberately key-local (built only from a
-    /// validated key hash and a validated content hash, never from any
-    /// other input) and free of any path separator, so it is always a
-    /// single, traversal-proof leaf name inside the verified cache
-    /// directory — never a relative or absolute path segment.
-    func payloadFilename(keyHash: String, contentHash: String) -> String {
-        "\(keyHash).\(contentHash).bin"
-    }
-
-    func metadataFilename(for key: AssetCacheKey) -> String {
-        "\(key.digestHex).meta.json"
     }
 }

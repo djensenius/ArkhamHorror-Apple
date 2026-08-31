@@ -224,10 +224,11 @@ struct SecureCacheDirectoryLockingTests {
                 .contentsOfDirectory(atPath: directory.path)
             // The reserved lock file, the durable access-sequence counter
             // file, the durable cross-process clear-epoch counter file
-            // (see `SecureCacheDirectory+ClearEpoch.swift`), and the
-            // durable root-authority-initialization marker are the only
-            // entries expected to survive a `removeAll()` -- every actual
-            // cache entry must be gone. The clear-epoch file must survive
+            // (see `SecureCacheDirectory+ClearEpoch.swift`), the durable
+            // root-authority-initialization marker, and the root-level
+            // key usage floor index (see `AssetDiskCache+KeyUsageFloor.swift`)
+            // are the only entries expected to survive a `removeAll()` --
+            // every actual cache entry must be gone. The clear-epoch file must survive
             // *this exact clear* (rather than merely a later one) because
             // it durably records the clear that just happened, for any
             // other instance/process sharing this directory whose
@@ -242,7 +243,14 @@ struct SecureCacheDirectoryLockingTests {
             // because it records this exact root as already-initialized;
             // deleting it would let a later re-open of this same,
             // previously-cleared root be misclassified as genuinely
-            // pristine. The freshness witness, unlike the other four, is
+            // pristine. The key usage floor index's own *file* likewise
+            // survives (its contents are durably reset to this clear's
+            // new epoch, in the same transaction as the epoch bump --
+            // see `AssetDiskCache/removeAll()`'s own doc comment --
+            // rather than the file itself ever being deleted and
+            // recreated), since it is this cache root's own independent,
+            // non-replayable issuance authority and must never itself
+            // disappear. The freshness witness, unlike the other five, is
             // never expected to survive here: it is a one-shot
             // initialization token, consumed (removed) the moment any
             // instance/process first durably observes this root's real
@@ -259,6 +267,7 @@ struct SecureCacheDirectoryLockingTests {
                     SecureCacheDirectory.accessSequenceFileName,
                     SecureCacheDirectory.clearEpochFileName,
                     SecureCacheDirectory.rootInitMarkerFileName,
+                    AssetDiskCache.keyUsageFloorIndexFileName,
                 ]
             )
 

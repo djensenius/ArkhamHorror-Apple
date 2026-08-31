@@ -116,9 +116,31 @@ extension AssetDiskCache {
     func ensureRootAuthorityInitializedLocked() throws {
         guard !didEnsureRootAuthorityInitialized else { return }
         recoverOrphansIfNeeded(forceRetry: true)
+        // Peeked *before* delegating to
+        // `SecureCacheDirectory.ensureRootAuthorityInitializedLocked(isSurvivingEntryAcceptable:)`
+        // below, specifically so this instance can tell the difference
+        // between "this root already had a durable clear-epoch counter"
+        // and "that call itself is the one that just created it for the
+        // very first time" -- a distinction that call's own return type
+        // (`Void`) does not otherwise expose, and one
+        // ``AssetDiskCache/bootstrapKeyUsageFloorIndexIfGenuinelyFreshLocked(epoch:)``
+        // requires to stay safe: see that method's own doc comment (and
+        // `AssetDiskCache+KeyUsageFloor.swift`'s type-level one) for why
+        // bootstrapping this cache's own root-level key-usage floor index
+        // must only ever happen at genuine, independently-proven root
+        // freshness, never merely because the index file itself happens
+        // to be absent.
+        let epochExistedBefore = (try? secureDirectory.read(
+            name: SecureCacheDirectory.clearEpochFileName,
+            maxBytes: SecureCacheDirectory.clearEpochDigitWidth
+        )) != nil
         try secureDirectory.ensureRootAuthorityInitializedLocked(
             isSurvivingEntryAcceptable: { $0 == Self.diskWritesDisabledMarkerName }
         )
+        if !epochExistedBefore {
+            let epoch = try secureDirectory.readPersistedClearEpoch()
+            try bootstrapKeyUsageFloorIndexIfGenuinelyFreshLocked(epoch: epoch)
+        }
         didEnsureRootAuthorityInitialized = true
     }
 }

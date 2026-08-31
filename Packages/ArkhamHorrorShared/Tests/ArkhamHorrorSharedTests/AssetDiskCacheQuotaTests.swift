@@ -289,6 +289,8 @@ extension AssetDiskCacheTests {
                         && $0 != SecureCacheDirectory.clearEpochFileName
                         && $0 != SecureCacheDirectory.rootInitMarkerFileName
                         && $0 != SecureCacheDirectory.rootFreshnessWitnessFileName
+                        && $0 != AssetDiskCache.keyUsageFloorIndexFileName
+                        && $0 != SecureCacheDirectory.ticketSequenceFileName
                         && $0 != "\(cacheKey.digestHex).gen"
                         && $0 != "\(cacheKey.digestHex).applied"
                         && $0 != "\(cacheKey.digestHex).applied-mirror"
