@@ -176,7 +176,7 @@ extension AssetCacheServiceTests {
         ran (so both its "before" and "after" reads trivially agree), and cannot detect that the \
         disk bytes it is about to trust are the very ones a still-in-flight, not-yet-completed \
         retraction already decided must never be served again. Only \
-        writeGenerationIsRetiring(_:for:), checked directly against the disk-read entry's own \
+        authorityIsRetiring(_:for:), checked directly against the disk-read entry's own \
         stamped generation, closes this gap.
         """
     )
@@ -206,7 +206,7 @@ extension AssetCacheServiceTests {
             // above), fall through to the disk-hit branch, read the
             // still-present-on-disk abandoned entry, and *that* check
             // must reject it too -- via this file's new
-            // `writeGenerationIsRetiring` disk-hit guard -- rather than
+            // `authorityIsRetiring` disk-hit guard -- rather than
             // trusting it and issuing a conditional revalidation request
             // carrying the abandoned `"abandoned"` ETag.
             let freshBody = AssetImageFixtureBuilder.validAVIF(width: 7, height: 7)

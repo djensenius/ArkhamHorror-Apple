@@ -51,7 +51,7 @@ extension AssetCacheServiceTests {
         let authority = await service.beginIssuance(for: key)
         var token = await service.issueToken(for: key)
         token.durableClearEpoch = authority.clearEpoch
-        token.diskWriteGeneration = authority.diskWriteGeneration
+        token.diskAuthorityID = authority.diskAuthorityID
         return token
     }
 

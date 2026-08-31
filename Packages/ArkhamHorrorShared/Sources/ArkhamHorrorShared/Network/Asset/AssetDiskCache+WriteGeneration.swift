@@ -1,268 +1,177 @@
 import Foundation
 
-/// The durable, cross-instance/cross-process per-key **issuance** and
-/// **applied** ticket counters for `AssetDiskCache` — the disk-side half
-/// of the compare-and-swap that closes this package's most persistently-
-/// flagged review finding: a purely actor-local (in-memory) applied-token
-/// dictionary cannot tell two *independent* `AssetCacheService`/
+/// The durable, cross-instance/cross-process per-key **issuance**
+/// protocol for `AssetDiskCache` -- the disk-side half of the
+/// compare-and-swap that lets two independent `AssetCacheService`/
 /// `AssetDiskCache` instances (two OS processes, or two independently
 /// constructed instances in one process, each pointed at this same
-/// on-disk directory) apart at all — each keeps its own private in-memory
-/// state, so an older instance's delayed write/removal has no way to
-/// learn a newer instance already concluded for the exact same key, and
-/// vice versa.
+/// on-disk directory) agree on write ordering for the same key. A purely
+/// actor-local (in-memory) applied-token dictionary cannot: each
+/// instance keeps its own private state, so an older instance's delayed
+/// write or removal has no way to learn a newer instance already
+/// concluded for the exact same key.
 ///
-/// **One merged, atomically-written durable record per key, not two
-/// separate counter files.** An earlier revision of this mechanism used
-/// a single counter file, read (never reserved) at issuance time and
-/// compared for *exact* equality at publish time. That is completion-
-/// ordered, not issuance-ordered: two operations issued at nearly the
-/// same moment, before either has published, both read the *same*
-/// current value (nothing has changed yet), so whichever one happens to
-/// *complete* first "wins" the equality check and advances the counter —
-/// and the other, genuinely issued *after* it, then finds the counter
-/// has moved past its own stale snapshot and is wrongly rejected, even
-/// though it should be the one to win. A *later* revision fixed that by
-/// splitting issuance from application into two separately-reserved
-/// counters, but stored them as two independent files (`<hash>.gen` for
-/// issuance, `<hash>.applied` for disposition) — which introduced its
-/// own, subtler defect: any failure that struck exactly one of those two
-/// files independently (while leaving the other untouched) was
-/// indistinguishable, on its own, from a genuinely pristine key. This
-/// revision keeps both counters conceptually distinct but stores them as
-/// one atomically-written ``KeyAuthorityRecord`` (see
-/// `AssetDiskCache+Disposition.swift`'s own type-level doc comment for
-/// why), at the single `<hash>.applied` filename:
+/// **Why a cryptographically-random authority identifier, and why that
+/// deletes an entire subsystem.** Issuance mints a fresh
+/// ``AuthorityID`` -- 128 bits from `SecRandomCopyBytes` -- and durably
+/// records it as this key's `issuedAuthorityID`. Every mutation is then
+/// accepted only if the caller's own identifier is *exactly* that value.
+/// There is no ordering comparison anywhere in this design, and
+/// therefore nothing for a lost, reset, or rolled-back counter to
+/// replay.
 ///
-/// - ``issueTicketLocked(for:)`` (called by ``beginIssuance(for:)``):
-///   durably reserves a fresh, strictly-increasing, never-reused ticket
-///   for `key` the moment an operation is *issued* — before it ever
-///   suspends for network I/O or a decode — so two concurrently-issued
-///   operations for the same key always receive two distinct,
-///   totally-ordered tickets, never the same snapshot value.
-/// - ``currentAppliedTicketLocked(for:)``/``commitPublicationLocked(for:token:contentHash:)``:
-///   the record's own typed ``KeyDisposition`` half (see
-///   `AssetDiskCache+Disposition.swift`), so a retraction/removal can
-///   record *which kind* of disposition (`content`/`retiring`/`tombstone`)
-///   is currently applied, not merely a ticket number — recording the
-///   highest ticket any mutation for `key` has actually committed
-///   (published, touched, or removed).
-///   ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``
-///   itself compares an operation's own issued ticket by *exact equality*
-///   against the highest ticket ever *issued* for this key
-///   (``currentIssuedTicketLocked(for:)``), never against this applied
-///   counter directly — see that method's own doc comment for why
-///   issued, not applied, is the correct comparison target, and why
-///   exact equality, not `>=`, is required. A higher-ticketed
-///   (later-issued) operation always outranks a lower-ticketed one
-///   regardless of which one's network round trip or decode happens to
-///   finish first; an operation whose own ticket is no longer the
-///   single most recently issued one is unconditionally stale.
+/// That single property is what let four separate defensive mechanisms
+/// be deleted outright rather than patched further:
 ///
-/// This merged record lives entirely separate from the key's
+/// - a **mirror copy** of the per-key record, reconciled by revision,
+///   which existed so that losing one copy could not be mistaken for a
+///   pristine key;
+/// - a per-key **issuance anchor** witness file, which existed to prove
+///   the key's counter had never been reconstructed after loss;
+/// - a root-level **key usage floor index**, which existed to make a
+///   lost counter's replay range non-reusable;
+/// - a directory-global **monotonic ticket sequence**, which existed so
+///   a compacted-away key's future reissuance could not collide with its
+///   own forgotten history.
+///
+/// Every one of those was an answer to "what if the value we are about
+/// to hand out has been handed out before?" A freshly minted random
+/// identifier cannot have been: not for this key, not for any other key,
+/// not for any past epoch of this directory, and not for any sibling
+/// process -- with probability `2^-128`, independent of what durable
+/// state was lost first. So a **missing record at issuance time is now
+/// unambiguously safe** to treat as "no operation has ever been issued
+/// for this key," which is precisely the ambiguity every one of those
+/// four mechanisms was built to resolve. A missing record at *mutation*
+/// time is still a hard, typed failure -- see
+/// ``acceptToken(_:currentEpoch:currentIssued:)`` -- because only
+/// issuance may ever create a record.
+///
+/// The record lives entirely separate from the key's
 /// ``AssetCacheMetadata`` sidecar: that sidecar is deleted the instant a
 /// key's entry is definitively removed (a 404 invalidation, a failed
-/// re-validation quarantine), and reusing this record's storage there
-/// would let "no entry currently exists" collapse back to the exact same
-/// baseline value (`0`) an operation issued *before this key had ever
-/// been written at all* also captured — indistinguishable from a
-/// genuinely pristine key, and so wrongly able to resurrect content
-/// after a legitimate removal if that very first, still-suspended
-/// operation's own response happens to arrive after both a full write and
-/// a subsequent removal have already completed for the same key. This
-/// record is never deleted by an ordinary per-key
-/// ``AssetDiskCache/remove(_:token:)`` — only ``AssetDiskCache/removeAll()``
-/// (which is always paired with a durable clear-epoch bump any stale
-/// token is independently and unconditionally rejected by; see
-/// `SecureCacheDirectory+ClearEpoch.swift`) ever removes it, so a key's
-/// write-ordering history survives an ordinary content removal exactly as
-/// long as it needs to.
-///
-/// Every successful mutation (``AssetDiskCache/set(_:payload:metadata:token:)``,
-/// ``AssetDiskCache/touch(_:metadata:token:)``, ``AssetDiskCache/remove(_:token:)``)
-/// — even one called with no external `token` at all (test-only direct
-/// actor access) — reserves and commits its *own* fresh ticket via
-/// ``commitPublicationLocked(for:token:contentHash:)``/
-/// ``commitRetractionLocked(for:token:destroy:)`` immediately before (a
-/// content publication) or as part of (a retraction's own two-phase
-/// commit) it actually mutates disk state, and that freshly reserved
-/// ticket (always strictly greater than whatever was previously applied,
-/// by construction: a ticket is only ever reserved by bumping the same
-/// monotonic counter ``issueTicketLocked(for:)`` itself draws from)
-/// becomes the new applied value. This is what makes even an
-/// *unconditional* removal (no `token` supplied) permanently and
-/// correctly reject a later replay of a `token` issued before that
-/// removal: the replayed token's own ticket can never again be `>=` the
-/// applied ticket that removal itself just committed.
+/// re-validation quarantine), and storing authority there would let "no
+/// entry currently exists" collapse back to the same baseline a pristine
+/// key reports. It is never deleted by an ordinary per-key
+/// ``AssetDiskCache/remove(_:token:)`` -- only ``AssetDiskCache/removeAll()``
+/// (always paired with a durable clear-epoch bump that independently and
+/// unconditionally fences every previously issued token; see
+/// `SecureCacheDirectory+ClearEpoch.swift`) ever removes it.
 extension AssetDiskCache {
-    /// The fixed leaf name of `key`'s durable *applied* ticket counter
-    /// file — the highest ticket any mutation for `key` has actually
-    /// committed. Not directly consulted by
-    /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``,
-    /// which compares against the highest *issued* ticket instead — see
-    /// that method's own doc comment.
-    func appliedTicketFilename(for key: AssetCacheKey) -> String {
+    /// The fixed leaf name of `key`'s single canonical durable authority
+    /// record file. There is exactly one such file per key; nothing in
+    /// this cache writes, reads, or reconstructs a second copy of it.
+    func authorityRecordFilename(for key: AssetCacheKey) -> String {
         "\(key.digestHex).applied"
     }
 
-    /// `key`'s second, independently-stored copy of the exact same
-    /// ``KeyAuthorityRecord`` that lives at ``appliedTicketFilename(for:)``
-    /// — see `AssetDiskCache+Disposition.swift`'s own type-level doc
-    /// comment for why a *single*-file design, however merged its own
-    /// contents, still cannot by itself distinguish "this key has never
-    /// had a ticket issued" from "this key's one and only authority
-    /// record was independently lost, corrupted, or rolled back after
-    /// real prior use" — the exact ambiguity a review round explicitly
-    /// flagged against the merged-record design this file's own
-    /// type-level doc comment otherwise describes as closing every prior
-    /// finding. Keeping this second, redundant copy — written and
-    /// validated exactly like the first, at the same time, under the
-    /// same lock — means a single independent loss of *either* one alone
-    /// can never again be confused with a genuinely pristine key: the
-    /// surviving copy remains fully trustworthy, and the missing one is
-    /// self-healed the next time this key's record is read (see
-    /// ``AssetDiskCache/currentAuthorityRecordLocked(for:)``). This does
-    /// not eliminate every possible loss scenario — an independent loss
-    /// of *both* copies at once remains indistinguishable from a
-    /// genuinely pristine key, exactly as a single-file design always
-    /// was for its one file — but converts the single-file-loss defect
-    /// the review flagged into a requirement for a categorically less
-    /// likely double, simultaneous, independent loss.
-    func authorityRecordMirrorFilename(for key: AssetCacheKey) -> String {
-        "\(key.digestHex).applied-mirror"
-    }
-
     /// A single, atomic, cross-instance/cross-process issuance snapshot
-    /// for `key`: the durable clear epoch and a freshly reserved,
-    /// strictly-increasing, never-reused ticket for this key's own
-    /// durable issuance counter, read/reserved together under one
-    /// exclusive-lock acquisition. Called exactly once, as the very first
-    /// step of issuing a fresh (never coalesced-into) fetch/revalidation/
-    /// disk-hit operation — *before* the synchronous "check the
-    /// coalescing dictionary, else create and issue" decision that
-    /// follows it (see `AssetCacheService+Coalescing.swift`/
-    /// `AssetCacheService+Revalidation.swift`) — so the resulting
+    /// for `key`: the durable clear epoch, the freshly minted
+    /// ``AuthorityID`` now durably recorded as this key's most recently
+    /// issued authority, and the record revision that write landed at --
+    /// all captured together under one exclusive-lock acquisition.
+    ///
+    /// Taken exactly once, as the very first step of issuing a fresh
+    /// (never coalesced-into) fetch/revalidation/disk-hit operation --
+    /// *before* the synchronous "check the coalescing dictionary, else
+    /// create and issue" decision that follows it (see
+    /// `AssetCacheService+Coalescing.swift`/
+    /// `AssetCacheService+Revalidation.swift`) -- so the resulting
     /// ``AssetCacheService/CacheToken`` can be fully stamped,
     /// synchronously, at the moment it is actually issued, rather than
-    /// being restamped later from a value re-read after an unrelated
-    /// suspension (the exact TOCTOU gap a prior review specifically
-    /// flagged: "durable epoch captured after operation issuance").
-    ///
-    /// Unlike a prior revision, this *reserves* (durably bumps) the
-    /// ticket rather than merely reading the current value: two
-    /// operations issued concurrently, before either has published, now
-    /// always receive two distinct, totally-ordered tickets — never the
-    /// same snapshot — which is what lets a later-issued operation always
-    /// outrank an earlier-issued one regardless of completion order (see
-    /// this file's own type-level doc comment).
-    ///
-    /// Throws (fail closed) on any read/write failure for either value —
-    /// callers treat a failed snapshot identically to an unstamped token:
-    /// permanently non-authoritative, never a silent default.
-    struct IssuanceSnapshot: Sendable {
+    /// restamped later from a value re-read after an unrelated
+    /// suspension (the exact TOCTOU gap a prior review flagged:
+    /// "durable epoch captured after operation issuance").
+    struct IssuanceSnapshot: Sendable, Equatable {
         let clearEpoch: Int
-        let writeGeneration: Int
+        let authorityID: AuthorityID
+        let revision: Int
     }
 
+    /// Throws (fail closed) on any read/write failure -- callers treat a
+    /// failed snapshot identically to an unstamped token: permanently
+    /// non-authoritative, never a silent default.
     func beginIssuance(for key: AssetCacheKey) async throws -> IssuanceSnapshot {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
         let epoch = try secureDirectory.readPersistedClearEpoch()
-        let ticket = try issueTicketLocked(for: key)
-        return IssuanceSnapshot(clearEpoch: epoch, writeGeneration: ticket)
+        let issued = try issueAuthorityLocked(for: key)
+        return IssuanceSnapshot(
+            clearEpoch: epoch,
+            authorityID: issued.authorityID,
+            revision: issued.revision
+        )
     }
 
     /// The revalidation counterpart to ``beginIssuance(for:)``, used
     /// whenever the operation being issued is re-validating an *already
     /// cached* entry (rather than starting a brand-new, no-prior-bytes
-    /// fetch) — the memory-hit/disk-hit branches of
+    /// fetch) -- the memory-hit/disk-hit branches of
     /// `AssetCacheService+Revalidation.swift`/`+DiskHit.swift`/
     /// `+RevalidationDiskFetch.swift`.
     ///
     /// Two genuinely different concerns are resolved atomically, under
-    /// one lock hold, rather than being conflated into one value:
+    /// one lock hold, rather than conflated into one value:
     ///
     /// 1. **Provenance validation.** `expectedClearEpoch`/
-    ///    `expectedAppliedTicket` are the cached entry's own *historical*
+    ///    `expectedAuthorityID` are the cached entry's own *historical*
     ///    publication stamp (``AssetCacheMetadata/clearEpochAtPublication``/
-    ///    ``AssetCacheMetadata/writeGenerationAtPublication``, threaded
+    ///    ``AssetCacheMetadata/authorityIDAtPublication``, threaded
     ///    through from ``AssetMemoryCache/CachedAsset/durableClearEpoch``/
-    ///    ``AssetMemoryCache/CachedAsset/writeGeneration``) — fixed at the
+    ///    ``AssetMemoryCache/CachedAsset/authorityID``) -- fixed at the
     ///    moment those exact bytes were last confirmed good. Compared,
     ///    under this same lock, against the *current* durable epoch and
-    ///    this key's *currently applied* ticket
-    ///    (``currentAppliedTicketLocked(for:)``, not
-    ///    ``currentIssuedTicketLocked(for:)`` — provenance cares whether
-    ///    a mutation has actually *landed* for this key since, not
-    ///    merely whether some other operation has been issued but not yet
-    ///    applied). A mismatch on either half means this exact cached
-    ///    entry is no longer the durable state of record — a
-    ///    cross-instance clear, or a competing write for this same key,
-    ///    landed at some point after these bytes were last confirmed
-    ///    good — and this returns `nil` rather than any snapshot at all:
-    ///    the caller must treat that identically to "no trustworthy
-    ///    cached entry" and fall through to a full, uncached fetch,
-    ///    never attempt to revalidate (pair a conditional request/304
-    ///    with) bytes whose own provenance no longer matches durable
-    ///    reality.
+    ///    this key's *currently applied* disposition. A mismatch on
+    ///    either half means this exact cached entry is no longer the
+    ///    durable state of record -- a cross-instance clear, or a
+    ///    competing write for this same key, landed after these bytes
+    ///    were last confirmed good -- and this returns `nil` rather than
+    ///    any snapshot at all: the caller must treat that identically to
+    ///    "no trustworthy cached entry" and fall through to a full,
+    ///    uncached fetch.
     ///
     ///    Performed in the *same* lock acquisition, immediately before
-    ///    reserving a fresh ticket below, specifically so there is no
-    ///    separate suspending round trip between "confirm this entry's
-    ///    provenance still matches current durable state" and "reserve
-    ///    this operation's own fresh authority" for a cross-instance
-    ///    clear or competing write to land invisibly inside. A prior
-    ///    revision instead threaded the entry's *own* historical stamp
-    ///    through directly as the new operation's token authority — that
-    ///    closed the provenance-laundering gap this method closes, but at
-    ///    the cost of a different, more severe defect: a revalidation
-    ///    that reuses a stale, already-applied ticket verbatim as its own
-    ///    "freshly issued" authority is, by definition, *not* a value
-    ///    uniquely reserved for this operation, and ``removeIfApplied(_:token:)``'s
-    ///    exact-match cancellation-retraction contract silently breaks —
-    ///    it can no longer distinguish "this exact cancelled operation's
-    ///    own applied mutation" from "the entry's already-correct,
-    ///    untouched applied state," and would incorrectly retract a
-    ///    perfectly valid, unrelated entry the instant an in-flight
-    ///    revalidation that never itself wrote anything is cancelled.
+    ///    minting a fresh identifier below, specifically so there is no
+    ///    suspending round trip between "confirm this entry's provenance
+    ///    still matches durable state" and "issue this operation's own
+    ///    fresh authority" for a cross-instance clear or competing write
+    ///    to land invisibly inside.
     ///
-    /// 2. **Fresh per-operation authority.** Once provenance is confirmed
-    ///    unchanged, this reserves a genuinely fresh, strictly-increasing,
-    ///    never-reused ticket for `key` (``issueTicketLocked(for:)``) —
-    ///    identical in kind to ``beginIssuance(for:)``'s own reservation
-    ///    — so this operation's own token is always uniquely its own,
-    ///    never coincidentally equal to whatever is already the applied
-    ///    ticket, preserving every other CAS/cancellation-retraction
-    ///    invariant this file's type-level doc comment describes.
+    /// 2. **Fresh per-operation authority.** Once provenance is
+    ///    confirmed, this mints a genuinely fresh ``AuthorityID`` for
+    ///    `key`, identical in kind to ``beginIssuance(for:)``'s own -- so
+    ///    this operation's token is always uniquely its own, never
+    ///    coincidentally equal to whatever is already applied. Reusing
+    ///    the entry's historical identifier verbatim would silently break
+    ///    ``removeIfApplied(_:token:)``'s exact-match
+    ///    cancellation-retraction contract: it could no longer
+    ///    distinguish "this exact cancelled operation's own applied
+    ///    mutation" from "the entry's already-correct, untouched applied
+    ///    state," and would retract a perfectly valid, unrelated entry
+    ///    the instant an in-flight revalidation that never wrote anything
+    ///    was cancelled.
+    ///
+    /// **Compares `key`'s full durable disposition, not merely its
+    /// identifier.** ``commitRetractionLocked(for:token:destroy:)``
+    /// durably commits `.retiring`/`.tombstone` under *exactly* the same
+    /// identifier the content it is retracting was published under, so a
+    /// stale cached entry whose historical stamp equals that unchanged
+    /// identifier would otherwise still pass even though the content it
+    /// pointed at has since been definitively torn down. Requiring
+    /// ``KeyDispositionKind/content`` closes that window;
+    /// `expectedContentHash`, when supplied, is compared too, as a
+    /// further check against the exact bytes this stamp was captured
+    /// alongside.
     ///
     /// Throws (fail closed, exactly like ``beginIssuance(for:)``) on any
-    /// durable read/write failure; returns `nil` (a distinct, non-throwing
-    /// "safe to fall through, nothing durably wrong happened" outcome)
-    /// only for a genuine provenance mismatch.
-    /// **Compares `key`'s full durable disposition, not merely its
-    /// ticket.** A bare ticket-equality check here is unsound on its own:
-    /// ``AssetDiskCache/commitRetractionLocked(for:token:destroy:)``
-    /// durably commits a `.retiring`/`.tombstone` disposition for
-    /// *exactly* the same ticket the content it is retracting was
-    /// published under (a token-gated retraction reuses its own token's
-    /// already-issued ticket verbatim -- see that method's own doc
-    /// comment) -- so a stale cached entry whose historical stamp
-    /// happens to equal that unchanged ticket value would otherwise still
-    /// pass this check even though the content it once pointed to has
-    /// since been definitively torn down, letting a revalidation
-    /// (touch/304) proceed against -- and potentially resurrect
-    /// authority over -- content that is durably gone. Requiring
-    /// ``AssetDiskCache/KeyDispositionKind/content`` here closes that
-    /// window: only a disposition that is *still* a live content
-    /// publication, at exactly this ticket, can ever pass. `expectedContentHash`,
-    /// when supplied, is compared too, as a further belt-and-suspenders
-    /// check against the exact bytes this operation's own historical
-    /// stamp was captured alongside.
+    /// durable read/write failure; returns `nil` (a distinct,
+    /// non-throwing "safe to fall through, nothing durably wrong
+    /// happened" outcome) only for a genuine provenance mismatch.
     func beginRevalidationIssuance(
         for key: AssetCacheKey,
         expectedClearEpoch: Int,
-        expectedAppliedTicket: Int,
+        expectedAuthorityID: AuthorityID,
         expectedContentHash: String? = nil
     ) async throws -> IssuanceSnapshot? {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
@@ -273,12 +182,16 @@ extension AssetDiskCache {
         guard
             epoch == expectedClearEpoch,
             disposition.kind == .content,
-            disposition.ticket == expectedAppliedTicket,
+            disposition.authorityID == expectedAuthorityID,
             expectedContentHash == nil || disposition.contentHash == expectedContentHash
         else {
             return nil
         }
-        let ticket = try issueTicketLocked(for: key)
-        return IssuanceSnapshot(clearEpoch: epoch, writeGeneration: ticket)
+        let issued = try issueAuthorityLocked(for: key)
+        return IssuanceSnapshot(
+            clearEpoch: epoch,
+            authorityID: issued.authorityID,
+            revision: issued.revision
+        )
     }
 }

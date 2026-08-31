@@ -62,7 +62,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// revalidation at all — an ordinary cache *read* never touches
     /// these fields).
     ///
-    /// **A `304` legitimately advances `writeGenerationAtPublication`,
+    /// **A `304` legitimately advances `authorityIDAtPublication`,
     /// even though the payload bytes themselves are unchanged.** A prior
     /// revision left both fields frozen at their *original* full-publish
     /// values across every subsequent `304`, on the theory that they are
@@ -70,23 +70,23 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// its payload bytes remain unchanged" — but
     /// ``AssetDiskCache/touch(_:metadata:token:)`` (the disk write a
     /// `304` performs) always durably commits the *revalidating*
-    /// operation's own freshly issued ticket as this key's new disk
+    /// operation's own freshly issued identifier as this key's new disk
     /// applied disposition (``AssetDiskCache/commitPublicationLocked(for:token:contentHash:)``),
     /// regardless of what this metadata's own fields say. Leaving this
     /// field frozen therefore let it silently drift out of sync with the
-    /// disk's own applied-ticket counter after the very first `304`: a
+    /// disk's own applied disposition after the very first `304`: a
     /// *third*, subsequent revalidation attempt reads this frozen,
     /// now-stale field back as its own historical stamp and passes it to
     /// `AssetDiskCache.beginRevalidationIssuance`
-    /// as `expectedAppliedTicket` — which compares it against the disk's
-    /// *current* applied ticket (already advanced by the second `304`)
+    /// as `expectedAuthorityID` — which compares it against the disk's
+    /// *current* applied identifier (already advanced by the second `304`)
     /// and always finds a mismatch, permanently degrading every
     /// subsequent revalidation attempt for this key into an uncached
     /// full re-fetch the instant a single `304` has ever landed. Advancing
     /// this field in lockstep with every successful `304` (see
     /// ``AssetCacheService/RevalidationCoalescing/performRevalidation(_:)``'s
     /// `.notModified` case) keeps it exactly synchronized with the disk's
-    /// own applied-ticket counter, so this stays a correct — not merely a
+    /// own applied identifier, so this stays a correct — not merely a
     /// historical — provenance stamp for every subsequent revalidation.
     /// ``clearEpochAtPublication`` is left unchanged by a `304`: the
     /// operation performing it already had its own durable clear epoch
@@ -97,7 +97,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     ///
     /// This is what actually closes a review finding: a disk (or memory)
     /// hit's own authority must never be re-derived from whatever epoch/
-    /// ticket happens to be *current* at the moment the hit is read —
+    /// identifier happens to be *current* at the moment the hit is read —
     /// doing so lets bytes published under an old, already-superseded
     /// epoch be silently "relaundered" with a fresh-looking stamp the
     /// instant they are merely read back, entirely independent of
@@ -106,18 +106,18 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     /// instead validates these two fields — this entry's own historical
     /// stamp — against a freshly re-read *current* value, atomically
     /// under one disk-cache lock hold, alongside reserving that
-    /// operation's own fresh ticket (`beginRevalidationIssuance`);
+    /// operation's own fresh authority identifier (`beginRevalidationIssuance`);
     /// a mismatch fails closed (falls through to a full, uncached fetch)
     /// rather than ever revalidating bytes whose own provenance no
     /// longer matches durable reality. This historical stamp is
     /// deliberately never threaded through *verbatim* as the operation's
-    /// own token authority: doing so would make that token's ticket
+    /// own token authority: doing so would make that token's identifier
     /// indistinguishable, to ``AssetDiskCache/removeIfApplied(_:token:)``'s
     /// exact-match cancellation-retraction contract, from "this exact
     /// operation's own mutation is what is currently applied" even when
     /// this operation itself never applied anything.
     let clearEpochAtPublication: Int
-    var writeGenerationAtPublication: Int
+    var authorityIDAtPublication: AuthorityID
 
     static let currentSchemaVersion = 4
 
@@ -134,7 +134,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         insertedAt: Date,
         accessSequence: AssetAccessSequence,
         clearEpochAtPublication: Int = 0,
-        writeGenerationAtPublication: Int = 0
+        authorityIDAtPublication: AuthorityID = .pristine
     ) {
         schemaVersion = Self.currentSchemaVersion
         self.cacheKeyHex = cacheKeyHex
@@ -149,7 +149,7 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
         self.insertedAt = insertedAt
         self.accessSequence = accessSequence
         self.clearEpochAtPublication = clearEpochAtPublication
-        self.writeGenerationAtPublication = writeGenerationAtPublication
+        self.authorityIDAtPublication = authorityIDAtPublication
     }
 
     /// This metadata value's own real serialized-JSON byte count — the

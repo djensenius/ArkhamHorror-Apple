@@ -15,8 +15,8 @@ import Testing
 /// a plain `.stale`/`.failed` outcome that silently discards the failed
 /// retraction underneath it.
 ///
-/// Reproduces "ticket1 published, ticket2 reserved during the final
-/// check" via `AssetCacheService/issueToken(for:)` directly: a real,
+/// Reproduces "one authority published, a second issued during the
+/// final check" via `AssetCacheService/issueToken(for:)` directly: a real,
 /// in-process supersession of `keyLatestToken[cacheKey]` — exactly the
 /// same effect a second, independent fetch/revalidation issuance for
 /// this same key would have — without pre-emptively tombstoning disk
@@ -99,27 +99,25 @@ extension AssetCacheServiceTests {
 
             // Blocks inside `publish(_:asset:token:)` immediately after
             // its own disk write already landed (both cache layers now
-            // durably say `content(ticket1)`) and strictly before its
+            // durably say `content(authority1)`) and strictly before its
             // final `isAuthoritative(_:for:)` re-check.
             await gate.waitUntilStarted()
             #expect(await layers.memoryCache.get(cacheKey) != nil)
 
-            // "Ticket2 reserved during the final check": a fresh,
-            // in-process issuance for this exact key, purely bumping
-            // `keyLatestToken[cacheKey]` -- no disk write at all -- so
-            // `publish`'s own paused token (ticket1) is no longer the
-            // latest, but disk still durably says `content(ticket1)`,
+            // "A second authority issued during the final check": a
+            // fresh, in-process issuance for this exact key, purely
+            // bumping `keyLatestToken[cacheKey]` -- no disk write at all
+            // -- so `publish`'s own paused token is no longer the
+            // latest, but disk still durably says `content(authority1)`,
             // leaving genuine work for the group's own retraction to do.
             _ = await layers.service.issueToken(for: cacheKey)
 
-            // Fails only the *primary* copy's own write of the durable
-            // `.retiring` commit, installed before releasing the pause
-            // so it is unconditionally active by the time the group's
-            // retraction attempts it. The anchor and mirror copies
-            // (always written first) still durably land, which is what
-            // lets the reconciled disposition resolve forward to
-            // `.retiring` below rather than reverting to `.content`.
-            let appliedName = await layers.diskCache.appliedTicketFilename(for: cacheKey)
+            // Fails the durable `.retiring` commit's own write of the
+            // single canonical authority record, installed before
+            // releasing the pause so it is unconditionally active by the
+            // time the group's retraction attempts it. There is no
+            // second copy: the whole transition simply does not land.
+            let appliedName = await layers.diskCache.authorityRecordFilename(for: cacheKey)
             await layers.diskCache.directoryAccess.installFaultInjection(
                 failSuffixes: [appliedName]
             )
@@ -131,18 +129,18 @@ extension AssetCacheServiceTests {
             assertRetractionNotDurableFailure(firstResult, waiterLabel: "first")
             assertRetractionNotDurableFailure(secondResult, waiterLabel: "second")
 
-            // Disk must now durably report `.retiring`: the mirror's own
-            // write already durably landed before the primary's failed,
-            // so the reconciled authority record correctly resolves
-            // forward rather than reverting to `.content` -- and must
-            // never be servable in that state.
+            // Disk must still durably report exactly the pre-retraction
+            // `.content`: the atomic single-file authority write either
+            // lands whole or not at all, and this one did not land. Both
+            // waiters are told the retraction was not durable precisely
+            // so neither may assume otherwise.
             let disposition = try await layers.diskCache.currentKeyDisposition(for: cacheKey)
             #expect(
-                disposition.kind == .retiring,
-                "The mirror's own already-durable write must resolve forward, not revert"
+                disposition.kind == .content,
+                "A failed single-file authority write must never partially advance state"
             )
             let hit = try await layers.diskCache.get(cacheKey)
-            #expect(hit == nil, "An unresolved `.retiring` disposition must never be served")
+            #expect(hit != nil, "A retraction reported as not durable must not have happened")
         }
     }
 
@@ -190,11 +188,11 @@ extension AssetCacheServiceTests {
             // its final `isAuthoritative(_:for:)` re-check.
             await gate.waitUntilStarted()
 
-            // "Ticket2 reserved during the final check", identical in
-            // spirit to the fresh-fetch test above.
+            // "A second authority issued during the final check",
+            // identical in spirit to the fresh-fetch test above.
             _ = await layers.service.issueToken(for: cacheKey)
 
-            let appliedName = await layers.diskCache.appliedTicketFilename(for: cacheKey)
+            let appliedName = await layers.diskCache.authorityRecordFilename(for: cacheKey)
             await layers.diskCache.directoryAccess.installFaultInjection(
                 failSuffixes: [appliedName]
             )
@@ -206,19 +204,17 @@ extension AssetCacheServiceTests {
             assertRetractionNotDurableFailure(firstResult, waiterLabel: "first")
             assertRetractionNotDurableFailure(secondResult, waiterLabel: "second")
 
-            // The pre-existing entry's own disposition must now durably
-            // report `.retiring`: the mirror's own write already durably
-            // landed before the primary's failed, so the reconciled
-            // authority record correctly resolves forward rather than
-            // reverting to `.content` -- and must never be servable in
-            // that state.
+            // The pre-existing entry's own disposition must still
+            // durably report exactly the pre-retraction `.content`: the
+            // atomic single-file authority write either lands whole or
+            // not at all, and this one did not land.
             let disposition = try await layers.diskCache.currentKeyDisposition(for: cacheKey)
             #expect(
-                disposition.kind == .retiring,
-                "The mirror's own already-durable write must resolve forward, not revert"
+                disposition.kind == .content,
+                "A failed single-file authority write must never partially advance state"
             )
             let hit = try await layers.diskCache.get(cacheKey)
-            #expect(hit == nil, "An unresolved `.retiring` disposition must never be served")
+            #expect(hit != nil, "A retraction reported as not durable must not have happened")
         }
     }
 }

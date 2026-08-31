@@ -50,14 +50,14 @@ extension AssetCacheService {
             let stillUnchanged = await unchanged(since: memorySnapshot, for: cacheKey)
             let stillCurrentEpoch = await memoryEntryStillCurrent(
                 memoryHit.durableClearEpoch,
-                storedGeneration: memoryHit.writeGeneration,
+                storedAuthorityID: memoryHit.authorityID,
                 for: cacheKey
             )
             // Final synchronous, no-further-suspension re-check — see
             // ``localAuthorityStillMatchesSync(_:for:)``'s doc comment
             // for why this is required *in addition to* `stillUnchanged`
             // above: both `unchanged(since:for:)` and
-            // `memoryEntryStillCurrent(_:storedGeneration:for:)` each
+            // `memoryEntryStillCurrent(_:storedAuthorityID:for:)` each
             // suspend at least once on their own durable disk round
             // trips, and a same-actor invalidation completing entirely
             // during one of those suspensions (before its own durable

@@ -11,7 +11,7 @@ import Foundation
 extension AssetCacheService {
     /// `existing`'s own historical publication stamp
     /// (``AssetMemoryCache/CachedAsset/durableClearEpoch``/
-    /// ``AssetMemoryCache/CachedAsset/writeGeneration``) is the source of
+    /// ``AssetMemoryCache/CachedAsset/authorityID``) is the source of
     /// provenance to validate and, if it still checks out, reserve fresh
     /// authority from whenever `preIssuedAuthority` is `nil` — via
     /// ``resolveOrIssueRevalidation(expectedFormat:existing:slot:preIssuedAuthority:)``,

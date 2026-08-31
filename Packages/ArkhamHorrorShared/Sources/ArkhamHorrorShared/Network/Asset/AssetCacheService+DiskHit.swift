@@ -54,8 +54,8 @@ extension AssetCacheService {
         guard
             let cached = diskHit,
             await unchanged(since: snapshot, for: cacheKey),
-            !writeGenerationIsRetiring(
-                cached.writeGeneration,
+            !authorityIsRetiring(
+                cached.authorityID,
                 epoch: snapshot.durableClearEpoch,
                 for: cacheKey
             )
@@ -65,7 +65,7 @@ extension AssetCacheService {
             // exact key, or a disk hit whose own stamped generation has
             // already been decided (by some sibling cancellation/
             // retraction still in flight) to be retracted -- see
-            // ``writeGenerationIsRetiring(_:for:)``'s doc comment for why
+            // ``authorityIsRetiring(_:for:)``'s doc comment for why
             // ``unchanged(since:for:)`` alone cannot detect that last
             // case. All three fall through identically to a fresh
             // network fetch below, which issues (or joins) its own
@@ -178,8 +178,8 @@ extension AssetCacheService {
         )
         guard
             await unchanged(since: snapshot, for: cacheKey),
-            !writeGenerationIsRetiring(
-                revalidated.writeGeneration,
+            !authorityIsRetiring(
+                revalidated.authorityID,
                 epoch: snapshot.durableClearEpoch,
                 for: cacheKey
             ),

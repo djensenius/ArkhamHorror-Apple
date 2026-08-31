@@ -145,6 +145,7 @@ extension AssetCacheService {
             // once ``isAuthorityKeyBusy(_:)`` above has already confirmed
             // nothing live still depends on it.
             retiringGenerations[oldest] = nil
+            issuedAuthorityChain[oldest] = nil
         }
     }
 

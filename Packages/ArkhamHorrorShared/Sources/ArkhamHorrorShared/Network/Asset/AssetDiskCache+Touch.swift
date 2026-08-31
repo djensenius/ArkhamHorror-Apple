@@ -32,7 +32,7 @@ extension AssetDiskCache {
     ) throws -> AssetCacheService.MutationOutcome {
         try ensureRootAuthorityInitializedLocked()
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentIssued = try currentIssuedTicketLocked(for: key)
+        let currentIssued = try currentIssuedAuthorityLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
@@ -104,25 +104,25 @@ extension AssetDiskCache {
         )
         // Resolved exactly once and threaded through both the metadata
         // sidecar written below and this key's own disposition commit --
-        // see ``resolvedMutationTicketLocked(for:token:)``'s own doc
+        // see ``resolvedMutationAuthorityLocked(for:token:)``'s own doc
         // comment for why an unconditional (`token: nil`) caller's own
-        // freshly reserved ticket must never be independently re-derived
-        // a second time for one logical write. `clearEpochAtPublication`
+        // freshly minted authority identifier must never be
+        // independently re-derived a second time for one logical write. `clearEpochAtPublication`
         // is deliberately left untouched here (see
         // ``AssetCacheMetadata/clearEpochAtPublication``'s own doc
         // comment for why a touch/304 never changes it), only
-        // `writeGenerationAtPublication` advances.
-        let ticket = try resolvedMutationTicketLocked(for: key, token: token)
-        stamped.writeGenerationAtPublication = ticket
+        // `authorityIDAtPublication` advances.
+        let authorityID = try resolvedMutationAuthorityLocked(for: key, token: token)
+        stamped.authorityIDAtPublication = authorityID
         do {
             try persistMetadata(stamped, name: metadataFilename(for: key))
         } catch {
             throw AssetError.cachePersistenceFailed(String(describing: error))
         }
         // Same single-top-level-lock convention as ``set(_:payload:metadata:token:)``:
-        // commits the exact same `ticket` already stamped into `stamped`
-        // above (never independently re-resolved) — see
-        // ``resolvedMutationTicketLocked(for:token:)``'s own doc comment
+        // commits the exact same `authorityID` already stamped into
+        // `stamped` above (never independently re-resolved) — see
+        // ``resolvedMutationAuthorityLocked(for:token:)``'s own doc comment
         // for why conflating the two would break
         // ``removeIfApplied(_:token:)``'s exact-match retraction (and
         // desynchronize the metadata's own provenance stamp from this
@@ -131,7 +131,7 @@ extension AssetDiskCache {
         // hash the entry already carries.
         try commitPublicationLocked(
             for: key,
-            ticket: ticket,
+            authorityID: authorityID,
             contentHash: metadata.payloadSHA256Hex
         )
         return .applied

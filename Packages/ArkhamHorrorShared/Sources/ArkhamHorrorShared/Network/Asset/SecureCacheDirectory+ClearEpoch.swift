@@ -223,7 +223,7 @@ extension SecureCacheDirectory {
     ///   ``rejectSurvivingEntriesForPristineRootLocked(isSurvivingEntryAcceptable:)``
     ///   also finds no entry the caller's own `isSurvivingEntryAcceptable`
     ///   closure does not vouch for — any other name here (a
-    ///   `.meta.json`/`.bin`/`.gen`/`.applied`/`.tmp`, or even a durable
+    ///   `.meta.json`/`.bin`/`.applied`/`.tmp`, or even a durable
     ///   access-sequence counter with no clear-epoch counter beside it)
     ///   that closure does not explicitly accept is definite evidence of
     ///   prior real use whose true clear history this transaction cannot

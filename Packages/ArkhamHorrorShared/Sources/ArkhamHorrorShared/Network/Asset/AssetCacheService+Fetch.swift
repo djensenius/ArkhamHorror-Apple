@@ -85,8 +85,8 @@ extension AssetCacheService {
         guard await isAuthoritative(token, for: cacheKey) else {
             throw AssetError.staleOperation
         }
-        // `token.durableClearEpoch`/`diskWriteGeneration` are `nil` only
-        // if this token's own durable epoch read/disk reservation failed
+        // `token.durableClearEpoch`/`diskAuthorityID` are `nil` only
+        // if this token's own durable epoch read/disk issuance failed
         // at issuance time -- a case `isAuthoritative(_:for:)` already
         // treats as permanently unacceptable everywhere this asset could
         // ever be published, so this can never currently escape into a
@@ -101,7 +101,7 @@ extension AssetCacheService {
         // matches `assembleRevalidatedAsset`'s identical gate.
         guard
             let clearEpochAtPublication = token.durableClearEpoch,
-            let writeGenerationAtPublication = token.diskWriteGeneration
+            let authorityIDAtPublication = token.diskAuthorityID
         else {
             throw AssetError.staleOperation
         }
@@ -120,10 +120,10 @@ extension AssetCacheService {
                 insertedAt: Date(),
                 accessSequence: AssetAccessSequence(0),
                 clearEpochAtPublication: clearEpochAtPublication,
-                writeGenerationAtPublication: writeGenerationAtPublication
+                authorityIDAtPublication: authorityIDAtPublication
             ),
             durableClearEpoch: token.durableClearEpoch,
-            writeGeneration: token.diskWriteGeneration
+            authorityID: token.diskAuthorityID
         )
         try Task.checkCancellation()
         guard await isAuthoritative(token, for: cacheKey) else {

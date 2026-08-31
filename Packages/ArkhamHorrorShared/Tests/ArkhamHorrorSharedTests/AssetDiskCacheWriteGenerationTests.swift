@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 /// Proves ``AssetDiskCache``'s durable, cross-instance/cross-process
-/// per-key write-generation counter (`AssetDiskCache+WriteGeneration.swift`,
+/// per-key write authority (`AssetDiskCache+WriteGeneration.swift`,
 /// `AssetDiskCache+TokenCAS.swift`) — not merely this package's earlier,
 /// purely actor-local `keyLatestToken`/`keyClearGeneration` bookkeeping —
 /// is what makes two genuinely independent ``AssetDiskCache`` instances
@@ -18,7 +18,7 @@ import Testing
 /// same key, could freely overwrite or resurrect state the newer instance
 /// had already superseded, because neither instance's own token carried
 /// any value the *other* instance could compare against.
-@Suite("AssetDiskCache durable per-key write generation")
+@Suite("AssetDiskCache durable per-key write authority")
 struct AssetDiskCacheWriteGenerationTests {
     func withScratchDirectory(_ body: (URL) async throws -> Void) async throws {
         let rootParent = URL(fileURLWithPath: #filePath)
@@ -72,7 +72,7 @@ struct AssetDiskCacheWriteGenerationTests {
 
     /// A token stamped exactly the way every real ``AssetCacheService``
     /// call site now stamps one: both halves of its durable authority
-    /// (clear epoch, disk write generation) captured together via
+    /// (clear epoch, disk ``AuthorityID``) captured together via
     /// ``AssetDiskCache/beginIssuance(for:)`` at issuance time.
     func issuedToken(
         from cache: AssetDiskCache,
@@ -84,13 +84,13 @@ struct AssetDiskCacheWriteGenerationTests {
             issuance: 0,
             clearGeneration: 0,
             durableClearEpoch: snapshot.clearEpoch,
-            diskWriteGeneration: snapshot.writeGeneration
+            diskAuthorityID: snapshot.authorityID
         )
     }
 
     @Test(
         """
-        An older instance's delayed publish, issued (its durable write-generation snapshot \
+        An older instance's delayed publish, issued (its durable authority snapshot \
         captured) before a completely independent sibling instance -- sharing only the same \
         on-disk directory -- publishes its own newer write for the exact same key, must not \
         overwrite that newer instance's payload once it finally attempts to write, even \
@@ -122,7 +122,7 @@ struct AssetDiskCacheWriteGenerationTests {
 
             // A's write, using its *older* pre-captured token, must be
             // silently rejected as stale -- never overwriting B's
-            // already-published, newer generation.
+            // already-published, newer authority.
             let payloadA = Data([1, 1, 1])
             try await cacheA.set(
                 cacheKey,
@@ -166,7 +166,7 @@ struct AssetDiskCacheWriteGenerationTests {
             // A's own delayed removal -- e.g. modeling a stale,
             // now-superseded conditional-404 invalidation -- must not
             // remove the entry B just published under a strictly newer
-            // write generation.
+            // authority.
             try await cacheA.remove(cacheKey, token: tokenA)
 
             let fetched = try #require(try await cacheA.get(cacheKey))
@@ -200,7 +200,7 @@ struct AssetDiskCacheWriteGenerationTests {
             )
 
             // B issues its own token strictly *after* A's publish already
-            // landed, so B's snapshot reflects the generation A's write
+            // landed, so B's snapshot reflects the authority A's write
             // just advanced to.
             let tokenB = try await issuedToken(from: cacheB, for: cacheKey)
             try await cacheB.remove(cacheKey, token: tokenB)
@@ -212,13 +212,13 @@ struct AssetDiskCacheWriteGenerationTests {
 
     @Test(
         """
-        A key's durable write-generation counter file survives an ordinary per-key removal \
-        (it is not itself deleted the way the payload/metadata pair is), so a still-in-flight \
-        operation issued before that removal cannot later resurrect content for the same key \
-        by finding no generation history to compare against
+        A key's durable authority record survives an ordinary per-key removal (it is not \
+        itself deleted the way the payload/metadata pair is), so a still-in-flight operation \
+        issued before that removal cannot later resurrect content for the same key by finding \
+        no authority history to compare against
         """
     )
-    func writeGenerationSurvivesOrdinaryRemoval() async throws {
+    func authorityRecordSurvivesOrdinaryRemoval() async throws {
         try await withScratchDirectory { directory in
             let cacheKey = try key()
             let cache = try AssetDiskCache(directory: directory, limits: limits())
@@ -234,18 +234,16 @@ struct AssetDiskCacheWriteGenerationTests {
             try await cache.remove(cacheKey, token: nil)
 
             // A brand-new operation for this key, issued strictly after
-            // the removal, must capture a strictly greater write
-            // generation than `firstToken` did -- proving the removal
-            // itself durably advanced the counter rather than deleting it
-            // back to a baseline a still-suspended, pre-removal operation
-            // (like `firstToken`, if it had been held up rather than
-            // already applied) could still satisfy.
+            // the removal, mints a fresh random identifier that cannot
+            // equal `firstToken`'s -- so a still-suspended, pre-removal
+            // operation (like `firstToken`, if it had been held up rather
+            // than already applied) can never satisfy this key's CAS
+            // again, no matter what durable state the removal destroyed.
             let secondToken = try await issuedToken(from: cache, for: cacheKey)
             #expect(
-                secondToken.diskWriteGeneration != nil
-                    && firstToken.diskWriteGeneration != nil
-                    && secondToken.diskWriteGeneration! > firstToken.diskWriteGeneration!,
-                "A post-removal issuance must observe a strictly advanced write generation"
+                secondToken.diskAuthorityID != nil
+                    && secondToken.diskAuthorityID != firstToken.diskAuthorityID,
+                "A post-removal issuance must mint a brand-new authority identifier"
             )
 
             // `firstToken` itself, replayed now, must still be correctly

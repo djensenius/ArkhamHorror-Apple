@@ -87,19 +87,6 @@ extension AssetDiskCache {
             markDiskWritesDisabledLocked()
             return
         }
-        // This round's finding #3, closed: reclaims every confirmed-cold,
-        // confirmed-tombstoned key's own three permanent authority files
-        // (plus its own now-unneeded floor-index entry) once this
-        // directory's root-level key-usage floor index has grown past
-        // its own fixed bound -- see
-        // `AssetDiskCache+KeyUsageFloor.swift`'s own type-level doc
-        // comment for why this reclamation is safe at all. Folded into
-        // this exact pass (rather than run as its own separate directory
-        // listing) so a transient listing failure only ever has one, not
-        // several, chances to affect a single call, and so reclaimed
-        // bytes are immediately reflected in the very budget check this
-        // pass is about to perform.
-        accounted.total -= compactKeyUsageFloorIfNeededLocked(names: Set(names))
         if accounted.total > limits.highWaterMarkDiskBytes {
             accounted.entries.sort {
                 $0.metadata.accessSequence != $1.metadata.accessSequence

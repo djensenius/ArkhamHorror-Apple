@@ -8,7 +8,7 @@ import Testing
 /// - **A definitive 404's own durable tombstone must survive the
 ///   automatic retraction that follows it.** A revalidation whose
 ///   server response is a definitive 404 durably commits a tombstone
-///   (``AssetCacheService/invalidate(_:token:)``) for its own ticket,
+///   (``AssetCacheService/invalidate(_:token:)``) under its own authority,
 ///   then throws ``AssetError/candidatesExhausted`` — an overall
 ///   *failure* result every one of its waiters observes identically.
 ///   Since not one single waiter ever received a delivered success, the
@@ -19,22 +19,22 @@ import Testing
 ///   404's own token. Without ``AssetDiskCache/removeIfApplied(_:token:)``'s
 ///   own "was a metadata sidecar actually removed?" distinction (see
 ///   that method's doc comment), this would durably reset the tombstone's
-///   own applied ticket back to the unapplied sentinel `0` — erasing the
+///   own applied disposition back to the pristine sentinel — erasing the
 ///   one piece of durable state that protects this exact key from a
 ///   stale sibling entry being resurrected over it.
-/// - **A 304 revalidation must recompute `accountedByteCount`, not reuse
-///   the pre-304 entry's stale value**, including across a decimal-digit
-///   boundary in the serialized metadata size (`writeGenerationAtPublication`
-///   going from a single digit to two digits changes the metadata's own
-///   serialized byte length, which the entry's accounted cost must
-///   reflect).
+/// - **A 304 revalidation must recompute `accountedByteCount` from a
+///   fresh serialization of its own restamped metadata, not reuse the
+///   pre-304 entry's stale value**, and must restamp
+///   `authorityIDAtPublication` with that revalidation's own freshly
+///   minted ``AuthorityID`` rather than leaving the original publish's
+///   identifier frozen in place.
 extension AssetCacheServiceTests {
     @Test(
         """
-        A definitive 404's durable tombstone (committed at this exact revalidation's own ticket) \
+        A definitive 404's durable tombstone (committed under this revalidation's own authority) \
         must survive the automatic retraction that follows once every one of its waiters \
         observes the overall candidatesExhausted failure: removeIfApplied must not reset the \
-        tombstone's own applied ticket back to the unapplied sentinel 0, since that would erase \
+        tombstone's own applied disposition back to the pristine sentinel, since that would erase \
         the durable "confirmed absent" disposition a stale sibling entry's resurrection depends \
         on being absent.
         """
@@ -48,7 +48,7 @@ extension AssetCacheServiceTests {
             let cacheKey = AssetCacheKey(for: key, candidates: candidates)
             let layers = try makeService(directory: root, limits: limits)
 
-            // Seeds a real, validator-bearing entry (ticket 1) so the
+            // Seeds a real, validator-bearing entry so the
             // revalidation below has something to condition against.
             let seedBody = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
             await layers.transport.enqueue(
@@ -83,10 +83,11 @@ extension AssetCacheServiceTests {
 
             // The critical assertion: this key's durable applied
             // disposition must still exactly equal the tombstone's own
-            // ticket (2 -- the second ticket ever issued for this key,
-            // after the original seed's ticket 1) and its own
-            // ``AssetDiskCache/KeyDispositionKind/tombstone`` kind, never
-            // reset back to the unapplied pristine sentinel (ticket `0`)
+            // ``AuthorityID`` -- which, by construction of the CAS in
+            // ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``,
+            // is also this key's most-recently-*issued* identifier -- and
+            // its own ``AssetDiskCache/KeyDispositionKind/tombstone``
+            // kind, never reset back to the pristine sentinel
             // a naive retraction would have produced. Asserted directly
             // via ``AssetDiskCache/currentKeyDisposition(for:)`` -- a
             // test/diagnostic-only accessor for exactly this durable
@@ -95,15 +96,15 @@ extension AssetCacheServiceTests {
             // check now additionally requires
             // ``AssetDiskCache/KeyDispositionKind/content``, which a
             // tombstone's own disposition can never satisfy regardless of
-            // its ticket, so it is no longer a usable probe for this
+            // its authority, so it is no longer a usable probe for this
             // specific assertion.
             let disposition = try await layers.diskCache.currentKeyDisposition(for: cacheKey)
             #expect(
-                disposition.ticket == authorityAfterTombstone.issuedTicket,
+                disposition.authorityID == authorityAfterTombstone.issuedAuthorityID,
                 """
-                The tombstone's own ticket must still be the key's current applied disposition \
-                ticket after its own automatic retraction ran -- this key's durable "confirmed \
-                absent" disposition must never have been reset back to the unapplied pristine \
+                The tombstone's own authority must still be the key's current applied \
+                disposition after its own automatic retraction ran -- this key's durable \
+                "confirmed absent" disposition must never have been reset back to the pristine \
                 sentinel
                 """
             )
@@ -149,12 +150,12 @@ extension AssetCacheServiceTests {
     @Test(
         """
         A 304 revalidation must recompute CachedAsset.accountedByteCount from the entry's own \
-        freshly-serialized metadata, not reuse the pre-304 entry's stale accounted cost -- \
-        including across a decimal-digit boundary in writeGenerationAtPublication, which changes \
-        the metadata's own serialized byte length.
+        freshly-serialized metadata, not reuse the pre-304 entry's stale accounted cost, and \
+        must restamp authorityIDAtPublication with this revalidation's own freshly minted \
+        AuthorityID rather than leaving the original publish's identifier frozen in place.
         """
     )
-    func revalidation304RecomputesAccountedByteCountAcrossDigitBoundary() async throws {
+    func revalidation304RecomputesAccountedByteCountAndRestampsAuthority() async throws {
         try await withScratchDirectory { root in
             let limits = standardLimits()
             let key = try cardArtKey()
@@ -164,12 +165,6 @@ extension AssetCacheServiceTests {
             let layers = try makeService(directory: root, limits: limits)
 
             let body = AssetImageFixtureBuilder.validAVIF(width: 4, height: 4)
-
-            // Seeds ticket 1 (a single digit), then issues eight more
-            // ordinary successful revalidations (304s, each bumping the
-            // ticket by exactly one) so the *tenth* revalidation below
-            // crosses the single-digit -> two-digit boundary in its own
-            // `writeGenerationAtPublication` (9 -> 10).
             await layers.transport.enqueue(
                 .success(successResult(body: body, etag: "\"v1\"")),
                 for: urls[0]
@@ -177,32 +172,42 @@ extension AssetCacheServiceTests {
             let seeded = try await layers.service.asset(for: key)
             #expect(seeded.payload == body)
 
-            for _ in 0 ..< 8 {
+            var seenAuthorityIDs: Set<AuthorityID> = []
+            let seededEntry = try #require(await layers.memoryCache.get(cacheKey))
+            try seenAuthorityIDs.insert(#require(seededEntry.authorityID))
+
+            // Nine ordinary successful revalidations (304s). Every one of
+            // them must restamp this entry with its own freshly minted,
+            // never-before-seen identifier -- the predecessor design's
+            // consecutive integer counters made this observable as a
+            // monotonic count; a random identifier makes it observable
+            // as strict non-repetition, which is the property that
+            // actually mattered all along.
+            for _ in 0 ..< 9 {
                 await layers.transport.enqueue(.success(AssetHTTPResult.notModified), for: urls[0])
                 _ = try await layers.service.revalidate(for: key)
+                let entry = try #require(await layers.memoryCache.get(cacheKey))
+                let authorityID = try #require(entry.authorityID)
+                #expect(
+                    entry.metadata.authorityIDAtPublication == authorityID,
+                    "The sidecar stamp and the in-memory stamp must never diverge after a 304"
+                )
+                #expect(
+                    seenAuthorityIDs.insert(authorityID).inserted,
+                    "Every 304 must restamp with a freshly minted, never-reused AuthorityID"
+                )
+                // Reusing the pre-304 entry's stale accounted cost here
+                // would silently mis-bill this entry's true footprint
+                // against the memory cache's own quota from this point
+                // on. ``AuthorityID``'s fixed 32-hex-character encoding
+                // deliberately keeps the *serialized* length stable
+                // across restamps, so this assertion is now a direct
+                // equality against a fresh recomputation rather than an
+                // inequality against the previous value.
+                let expectedAccountedBytes = entry.payload.count
+                    + entry.metadata.metadataOverheadBytes
+                #expect(entry.accountedByteCount == expectedAccountedBytes)
             }
-
-            let beforeDigitBoundary = try #require(await layers.memoryCache.get(cacheKey))
-            #expect(beforeDigitBoundary.writeGeneration == 9)
-            let accountedBeforeDigitBoundary = beforeDigitBoundary.accountedByteCount
-
-            await layers.transport.enqueue(.success(AssetHTTPResult.notModified), for: urls[0])
-            _ = try await layers.service.revalidate(for: key)
-
-            let afterDigitBoundary = try #require(await layers.memoryCache.get(cacheKey))
-            #expect(afterDigitBoundary.writeGeneration == 10)
-
-            // The serialized metadata's own byte length must reflect the
-            // new (longer, by one ASCII digit)
-            // `writeGenerationAtPublication` value, and the accounted
-            // cost must track it exactly -- reusing the pre-304 entry's
-            // stale accounted cost here would silently under-count this
-            // entry's true footprint against the memory cache's own
-            // quota from this point on.
-            let expectedAccountedBytes = afterDigitBoundary.payload.count
-                + afterDigitBoundary.metadata.metadataOverheadBytes
-            #expect(afterDigitBoundary.accountedByteCount == expectedAccountedBytes)
-            #expect(afterDigitBoundary.accountedByteCount != accountedBeforeDigitBoundary)
         }
     }
 }

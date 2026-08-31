@@ -26,29 +26,30 @@ import Testing
 /// typed `AssetError`, never folded into an ordinary cancellation
 /// outcome.
 ///
-/// **Disk's own resulting state.** The fault this test installs only
-/// fails the primary copy's own write -- the mirror (always written
-/// first, see `AssetDiskCache+Disposition+Commit.swift`'s own doc
-/// comment) still durably lands every transition before the primary's
-/// own write fails. `cancelWaiter` fires phase 2
+/// **Disk's own resulting state.** There is exactly one canonical
+/// authority record per key, atomically replaced (temp + fsync + rename
+/// + directory fsync) and never mirrored, so a fault that fails that
+/// write fails the whole transition: no half of it lands, and the
+/// durable disposition is left *exactly* as it was, still `.content`.
+/// `cancelWaiter` does still fire phase 2
 /// (``AssetCacheService/completeDurableRetractionIfApplied(_:token:)``)
-/// unconditionally in its own detached `Task`, regardless of whether
-/// phase 1 threw to *this* caller -- unlike `retractUndeliveredMutation`
-/// (this suite's multi-waiter sibling tests), whose phase-1 throw
-/// prevents phase 2 from ever being scheduled at all. Phase 2 reads the
-/// disposition fresh, reconciles to the mirror's already-durable
-/// `.retiring`, and proceeds to commit `.tombstone`, whose primary write
-/// fails identically but whose mirror/anchor again durably land -- so
-/// the reconciled authority record ends this test at `.tombstone`, not
-/// `.retiring`.
+/// unconditionally in its own detached `Task`, but that phase reads the
+/// disposition fresh, correctly observes it is not `.retiring`, and
+/// therefore has nothing to complete. That is the *point* of collapsing
+/// to one file: a failed retraction is a clean no-op that fails closed
+/// with a typed error, never a torn state some second copy has to
+/// reconcile forward from. The caller is told `retractionNotDurable`
+/// precisely so it cannot assume the retraction happened -- and, equally,
+/// must not assume the prior publication was rolled back, because it
+/// verifiably was not.
 extension AssetCacheServiceTests {
     @Test(
         """
         Cancelling the sole waiter of an already-applied fetch whose durable `.retiring` \
         commit genuinely fails (a write failure, not a mere pause) must report the underlying \
-        typed error to the caller -- never plain cancellation -- and disk must resolve forward \
-        to `.tombstone` afterward, since phase 2's own unconditional detached cleanup durably \
-        completes via the mirror's own already-landed writes
+        typed error to the caller -- never plain cancellation -- and must leave the single \
+        canonical authority record exactly as it was, still `.content`, never torn or \
+        partially advanced
         """
     )
     func cancellationWithFailedRetiringCommitReportsTypedFailure() async throws {
@@ -81,17 +82,15 @@ extension AssetCacheServiceTests {
             await gate.waitUntilStarted()
             #expect(await layers.memoryCache.get(cacheKey) != nil)
 
-            // Fails only the *primary* copy's own write of the durable
-            // `.retiring` commit (`AssetDiskCache+Disposition.swift`'s
-            // merged authority record, at the `.applied` filename) --
-            // installed before cancellation so it is unconditionally
-            // active by the time the cancellation-triggered retraction
-            // attempts that write. The anchor and mirror copies (always
-            // written first -- see `AssetDiskCache+Disposition+Commit.swift`)
-            // still durably land, which is exactly what lets the
-            // reconciled disposition resolve forward to `.retiring`
-            // below rather than reverting to `.content`.
-            let appliedName = await layers.diskCache.appliedTicketFilename(for: cacheKey)
+            // Fails the durable `.retiring` commit's own write of the
+            // single canonical authority record
+            // (`AssetDiskCache+Disposition.swift`, at the `.applied`
+            // filename) -- installed before cancellation so it is
+            // unconditionally active by the time the
+            // cancellation-triggered retraction attempts that write.
+            // There is no second copy: the whole transition simply does
+            // not land.
+            let appliedName = await layers.diskCache.authorityRecordFilename(for: cacheKey)
             await layers.diskCache.directoryAccess.installFaultInjection(
                 failSuffixes: [appliedName]
             )
@@ -108,33 +107,33 @@ extension AssetCacheServiceTests {
                 "The genuine durable-commit write failure must be recorded for auditing"
             )
 
-            // Disk must now durably report `.tombstone`, not the pre-
-            // retraction `.content`: unlike this suite's multi-waiter
-            // sibling tests (which use `retractUndeliveredMutation` --
-            // whose phase-1 throw prevents phase 2 from ever being
-            // scheduled), `cancelWaiter` fires phase 2
-            // (``completeDurableRetractionIfApplied(_:token:)``)
-            // unconditionally in its own detached `Task`, regardless of
-            // whether phase 1 threw to *this* caller. Phase 2's own
-            // guard reads the disposition fresh -- reconciling to the
-            // mirror's already-durable `.retiring` (mirror-first write
-            // landed even though the primary's failed) -- so it proceeds
-            // to commit `.tombstone`, whose primary write fails
-            // identically but whose mirror/anchor again durably land,
-            // reconciling forward once more. A caller told
+            // Disk must still durably report exactly the pre-retraction
+            // `.content`: the atomic single-file write either lands
+            // whole or not at all, and this one did not land. Phase 2
+            // (``completeDurableRetractionIfApplied(_:token:)``) still
+            // fires unconditionally in its own detached `Task` after
+            // phase 1's local throw, but its own fresh disposition read
+            // correctly finds nothing in `.retiring` to complete, so it
+            // is a no-op rather than a second chance to advance state a
+            // failed write never reached. A caller told
             // `retractionNotDurable` must never assume content was
-            // safely rolled back, but it also must never assume the
-            // prior `.content` publication is still servable: both
-            // `.retiring` and `.tombstone` are unreadable exactly alike.
+            // safely rolled back -- here it verifiably was not.
             let disposition = try await layers.diskCache.currentKeyDisposition(for: cacheKey)
-            let dispositionMessage = """
-            Disk must report `.tombstone`: phase 2's own detached cleanup fires \
-            unconditionally after phase 1's local throw and durably completes via the \
-            mirror's own already-landed writes
-            """
-            #expect(disposition.kind == .tombstone, "\(dispositionMessage)")
+            #expect(
+                disposition.kind == .content,
+                """
+                A failed single-file authority write must leave the durable disposition \
+                exactly as it was -- never torn, never partially advanced
+                """
+            )
             let hit = try await layers.diskCache.get(cacheKey)
-            #expect(hit == nil, "An unresolved `.tombstone` disposition must never be served")
+            #expect(
+                hit != nil,
+                """
+                The prior publication remains readable precisely because its retraction was \
+                reported as not durable rather than silently assumed to have happened
+                """
+            )
         }
     }
 }

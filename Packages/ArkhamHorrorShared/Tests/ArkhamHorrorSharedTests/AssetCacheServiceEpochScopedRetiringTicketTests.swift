@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 /// Deterministic reproduction of a regression exposed while wiring
-/// ``AssetCacheService/writeGenerationIsRetiring(_:epoch:for:)`` into the
+/// ``AssetCacheService/authorityIsRetiring(_:epoch:for:)`` into the
 /// final waiter-delivery authority decision
 /// (`AssetCacheService+WaiterAcknowledgement.swift`'s
 /// `isTokenAuthoritative(_:for:currentAuthority:)`): a bare `Int` ticket,
@@ -21,7 +21,7 @@ import Testing
 /// wrongly poison a completely legitimate, freshly-issued ticket `1`
 /// *after* that same clear -- even though the two have nothing to do with
 /// each other. This test proves the fix
-/// (``AssetCacheService/RetiringTicket``, pairing the ticket with the
+/// (``AssetCacheService/RetiringAuthority``, pairing the ticket with the
 /// epoch it was retracted under) by reproducing the exact sequence that
 /// previously failed deterministically: abandon ticket 1 under epoch 0,
 /// force a whole-cache clear (bumping to epoch 1 and resetting this key's
@@ -68,7 +68,7 @@ extension AssetCacheServiceTests {
 
             // A fresh, entirely unrelated fetch for the *same* key,
             // post-clear: this reissues ticket 1, but now under epoch 1.
-            // Before the fix, `writeGenerationIsRetiring` compared only
+            // Before the fix, `authorityIsRetiring` compared only
             // the bare ticket number and would have found ticket 1 in
             // the (epoch-unscoped) retiring set left behind by the
             // abandoned pre-clear operation above, wrongly rejecting

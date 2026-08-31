@@ -5,7 +5,7 @@ import Foundation
 /// keep that file within this package's `file_length` convention.
 extension AssetDiskCache {
     /// Phase 1 of the two-phase retraction ``removeIfApplied(_:token:)``
-    /// composes: durably commits `.retiring(token's ticket)` -- and
+    /// composes: durably commits `.retiring` -- and
     /// **only** that transition, never the physical deletion or the
     /// final `.tombstone` commit ``completeRetraction(_:token:)`` below
     /// performs -- if `token` is still exactly the currently-applied
@@ -43,8 +43,8 @@ extension AssetDiskCache {
     /// have physically been removed yet.
     ///
     /// Returns ``AssetCacheService/MutationOutcome/stale`` (never
-    /// throwing) when `token` is no longer exactly the applied ticket
-    /// for `key`, or when this exact ticket's own disposition is already
+    /// throwing) when `token` is no longer exactly the applied identifier
+    /// for `key`, or when this exact identifier's own disposition is already
     /// a non-content kind — genuinely nothing to retract, not a failure
     /// — and ``AssetCacheService/MutationOutcome/applied`` once the
     /// `.retiring` transition (or the discovery that nothing needed one)
@@ -66,7 +66,7 @@ extension AssetDiskCache {
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
         guard
-            let issuedTicket = token.diskWriteGeneration,
+            let authorityID = token.diskAuthorityID,
             let issuedEpoch = token.durableClearEpoch
         else {
             return .stale
@@ -74,19 +74,19 @@ extension AssetDiskCache {
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
         guard currentEpoch == issuedEpoch else { return .stale }
         let disposition = try currentDispositionLocked(for: key)
-        guard disposition.ticket == issuedTicket else { return .stale }
+        guard disposition.authorityID == authorityID else { return .stale }
         guard disposition.kind == .content else {
-            // This exact ticket's own durable disposition is already a
+            // This exact identifier's own durable disposition is already a
             // deletion/retirement (a definitive 404's own `invalidate`
             // commit, a previously interrupted retraction of this very
-            // ticket, or this exact phase having already run once
+            // identifier, or this exact phase having already run once
             // before) — see this method's own doc comment. There is no
             // live content publication left here to roll back; simply
             // report this phase as already satisfied.
             return .applied
         }
         try commitDispositionLocked(
-            KeyDisposition(ticket: issuedTicket, kind: .retiring, contentHash: nil),
+            KeyDisposition(authorityID: authorityID, kind: .retiring, contentHash: nil),
             for: key
         )
         return .applied
@@ -96,11 +96,11 @@ extension AssetDiskCache {
     /// composes: performs the actual (best-effort once this transition
     /// itself durably lands — see ``AssetDiskCache/commitRetractionLocked(for:token:destroy:)``'s
     /// own doc comment) physical deletion and commits the final
-    /// `.tombstone(token's ticket)` disposition — but **only** if this
-    /// exact ticket's disposition is still exactly `.retiring`
+    /// `.tombstone` disposition — but **only** if this
+    /// exact identifier's disposition is still exactly `.retiring`
     /// (``beginRetraction(_:token:)`` already durably committed it, and
     /// nothing newer has since published over it). A silent no-op, not
-    /// an error, when this exact ticket's disposition has already moved
+    /// an error, when this exact identifier's disposition has already moved
     /// past `.retiring` — a fresh mutation for this key durably
     /// superseded it, or an earlier/concurrent call to this exact phase
     /// already finished it — since there is nothing left for *this* call
@@ -117,12 +117,12 @@ extension AssetDiskCache {
         _ key: AssetCacheKey,
         token: AssetCacheService.CacheToken
     ) async throws {
-        guard let issuedTicket = token.diskWriteGeneration else { return }
+        guard let authorityID = token.diskAuthorityID else { return }
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
         let disposition = try currentDispositionLocked(for: key)
-        guard disposition.kind == .retiring, disposition.ticket == issuedTicket else {
+        guard disposition.kind == .retiring, disposition.authorityID == authorityID else {
             return
         }
         let metadataWasPresent = try secureDirectory.remove(name: metadataFilename(for: key))
@@ -131,7 +131,7 @@ extension AssetDiskCache {
             cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
         }
         try commitDispositionLocked(
-            KeyDisposition(ticket: issuedTicket, kind: .tombstone, contentHash: nil),
+            KeyDisposition(authorityID: authorityID, kind: .tombstone, contentHash: nil),
             for: key
         )
     }

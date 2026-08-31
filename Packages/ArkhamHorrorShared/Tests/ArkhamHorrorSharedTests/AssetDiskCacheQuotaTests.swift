@@ -14,43 +14,31 @@ extension AssetDiskCacheTests {
     )
     func evictsLeastRecentlyAccessedEntryAtQuota() async throws {
         try await withScratchDirectory { directory in
-            // Each entry accounts for its 1000-byte payload plus the real
-            // on-disk size of its metadata sidecar (a few hundred bytes,
-            // for this schema and these short URLs), which the assertions
-            // below only depend on being large enough to be non-negligible
-            // relative to the payload — the exact eviction/survival
-            // outcome does not depend on its precise value. Budget/ratios
-            // mirror `AssetMemoryCacheTests`' exact-watermark scenario,
-            // with `diskBudgetBytes` given substantial extra headroom
-            // (disk-only, `memoryBudgetBytes` is untouched) over that
-            // memory-only scenario's value: unlike the memory cache, the
-            // disk cache also durably accounts for this directory's
-            // root-authority marker, clear-epoch file, and every key's
-            // own per-key issuance-ticket, disposition, and issuance-
-            // anchor bookkeeping files (which persist across an ordinary
-            // single-entry eviction by design, see
-            // `AssetDiskCache+WriteGeneration.swift`,
-            // `AssetDiskCache+Disposition.swift`'s typed, JSON-encoded
-            // `<hash>.applied`/`<hash>.applied-mirror` disposition
-            // records, and `AssetDiskCache+IssuanceAnchor.swift`'s
-            // `<hash>.issuance-anchor` -- together roughly 500 bytes per
-            // key across all three files, substantially larger than a
-            // bare fixed-width ticket integer would be), and that fixed
-            // overhead — persisting for all three keys regardless of
-            // which single entry is evicted — must not itself force
-            // evicting more than the one truly-least-recently-used entry
-            // this test expects. The margins below are deliberately wide
-            // (well over a thousand bytes on each side of the exact
-            // computed three-entries-present and one-entry-remaining
-            // totals) so this test remains robust to any future,
-            // similarly modest growth in that same fixed per-key
+            // Each entry accounts for its 1000-byte payload plus the
+            // real on-disk size of its metadata sidecar and its single
+            // canonical per-key authority record
+            // (`AssetDiskCache+Disposition.swift`'s typed, JSON-encoded
+            // `<hash>.applied`), which persists across an ordinary
+            // single-entry eviction by design -- roughly 1533 accounted
+            // bytes per key in total for this schema and these short
+            // URLs, of which ~1533 is the payload-plus-sidecar pair an
+            // eviction actually reclaims and the remainder is the
+            // authority record that deliberately survives it. The
+            // budget/ratios below are chosen so that two entries sit
+            // under the high water mark while three sit over it, and so
+            // that evicting exactly one entry lands under the low water
+            // MARK: roughly 500-1250 bytes of margin on either side of
+
+            // each of those three boundaries, which is at least a third
+            // of an entry's own accounted cost and therefore robust to
+            // any modest future growth in that fixed per-key
             // bookkeeping overhead.
             let limits = AssetCacheLimits(
                 maxEncodedBytes: 1_000_000,
                 maxDimension: 8192,
                 maxPixelCount: 32_000_000,
                 memoryBudgetBytes: 4000,
-                diskBudgetBytes: 10000,
+                diskBudgetBytes: 8800,
                 highWaterMarkRatio: 0.55,
                 lowWaterMarkRatio: 0.50
             )
@@ -267,15 +255,11 @@ extension AssetDiskCacheTests {
             #expect(fetched == nil)
             // Excludes the cache's own reserved cross-process lock file,
             // durable root-authority-initialization marker, durable
-            // clear-epoch counter, and this exact key's own durable
-            // disk-write-generation authority record, its
-            // independently-stored mirror copy, and its independent
-            // issuance anchor (`<hash>.gen`/`<hash>.applied`/
-            // `<hash>.applied-mirror`/`<hash>.issuance-anchor`, see
-            // `AssetDiskCache+WriteGeneration.swift`/
-            // `AssetDiskCache+IssuanceAnchor.swift`): unlike the
+            // clear-epoch counter, and this exact key's own single
+            // canonical durable authority record (`<hash>.applied`, see
+            // `AssetDiskCache+WriteGeneration.swift`): unlike the
             // payload/metadata pair a removal is actually responsible for
-            // deleting, those counters are deliberately never removed by an
+            // deleting, that record is deliberately never removed by an
             // ordinary per-key `remove(_:token:)` -- see that file's own
             // doc comment for why letting them survive an ordinary removal
             // (while still being fully reset by a whole-cache
@@ -289,12 +273,7 @@ extension AssetDiskCacheTests {
                         && $0 != SecureCacheDirectory.clearEpochFileName
                         && $0 != SecureCacheDirectory.rootInitMarkerFileName
                         && $0 != SecureCacheDirectory.rootFreshnessWitnessFileName
-                        && $0 != AssetDiskCache.keyUsageFloorIndexFileName
-                        && $0 != SecureCacheDirectory.ticketSequenceFileName
-                        && $0 != "\(cacheKey.digestHex).gen"
                         && $0 != "\(cacheKey.digestHex).applied"
-                        && $0 != "\(cacheKey.digestHex).applied-mirror"
-                        && $0 != "\(cacheKey.digestHex).issuance-anchor"
                 }
             #expect(contents.isEmpty)
         }

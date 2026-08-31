@@ -9,8 +9,8 @@ import Testing
 /// - **Finding #1**: retraction authority must be durable, not
 ///   process-local, and must never let a since-retracted publication be
 ///   mistaken for still-current merely because a stale historical stamp's
-///   ticket number happens to coincide with the retracted disposition's
-///   own unchanged ticket.
+///   identifier happens to coincide with the retracted disposition's
+///   own unchanged identifier.
 /// - **Finding #2**: a failed conditional-404 deletion must never be
 ///   reported `.applied` -- the disposition-commit transaction itself,
 ///   not mere physical cleanup, is what determines success.
@@ -34,15 +34,15 @@ extension AssetDiskCacheTests {
             generation: 0,
             issuance: 0,
             durableClearEpoch: snapshot.clearEpoch,
-            diskWriteGeneration: snapshot.writeGeneration
+            diskAuthorityID: snapshot.authorityID
         )
     }
 
     /// `metadata(for:payload:)`'s own `clearEpochAtPublication`/
-    /// `writeGenerationAtPublication` default to `0` -- fine for tests
+    /// `authorityIDAtPublication` default to `0` -- fine for tests
     /// that never touch the disposition model, but ``getLocked``'s own
-    /// disposition cross-check requires `writeGenerationAtPublication`
-    /// to exactly equal whatever ticket this disk cache's own
+    /// disposition cross-check requires `authorityIDAtPublication`
+    /// to exactly equal whatever identifier this disk cache's own
     /// `commitPublicationLocked(for:token:contentHash:)` actually commits
     /// for this exact write (see that method's doc comment): in
     /// production, ``AssetCacheService`` always stamps this itself
@@ -71,22 +71,24 @@ extension AssetDiskCacheTests {
             insertedAt: base.insertedAt,
             accessSequence: base.accessSequence,
             clearEpochAtPublication: issuance.clearEpoch,
-            writeGenerationAtPublication: issuance.writeGeneration
+            authorityIDAtPublication: issuance.authorityID
         )
     }
 
     @Test(
         """
-        A retraction's own disposition durably reuses its content's exact ticket -- so a stale \
+        A retraction's own disposition durably reuses its content's exact identifier -- so a \
+        stale \
         cached entry's historical stamp can coincide with a since-retracted disposition's \
-        ticket number. beginRevalidationIssuance must still reject it, even when both the \
-        ticket AND the content hash exactly match, because the durable disposition kind is no \
+        identifier. beginRevalidationIssuance must still reject it, even when both the \
+        identifier AND the content hash exactly match, because the durable disposition kind is \
+        no \
         longer `.content`. This is the concrete resurrection scenario finding #1 identified: a \
-        bare ticket-only (or ticket+hash-only) provenance check is unsound on its own once a \
-        retraction can reuse its own content's exact ticket.
+        bare identifier-only (or identifier+hash-only) provenance check is unsound on its own \
+        once a retraction can reuse its own content's exact identifier.
         """
     )
-    func retractedTicketCannotBeMistakenForCurrentDespiteExactHashMatch() async throws {
+    func retractedAuthorityCannotBeMistakenForCurrentDespiteExactHashMatch() async throws {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
             let cacheKey = try key("01001")
@@ -108,7 +110,7 @@ extension AssetDiskCacheTests {
 
             let dispositionAfterPublish = try await cache.currentKeyDisposition(for: cacheKey)
             #expect(dispositionAfterPublish.kind == .content)
-            #expect(dispositionAfterPublish.ticket == issuance.writeGeneration)
+            #expect(dispositionAfterPublish.authorityID == issuance.authorityID)
             #expect(dispositionAfterPublish.contentHash == entryMetadata.payloadSHA256Hex)
 
             // Confirms the entry is genuinely servable before retraction
@@ -119,7 +121,7 @@ extension AssetDiskCacheTests {
             #expect(hitBeforeRetraction?.payload == payload)
 
             // Retracts exactly this publication -- reusing its own
-            // already-accepted ticket verbatim, never a fresh one (see
+            // already-accepted identifier verbatim, never a fresh one (see
             // `removeIfApplied(_:token:)`'s own doc comment).
             let retractOutcome = try await cache.removeIfApplied(cacheKey, token: publishToken)
             #expect(retractOutcome == .applied)
@@ -127,27 +129,27 @@ extension AssetDiskCacheTests {
             let dispositionAfterRetraction = try await cache.currentKeyDisposition(for: cacheKey)
             #expect(dispositionAfterRetraction.kind == .tombstone)
             #expect(
-                dispositionAfterRetraction.ticket == issuance.writeGeneration,
-                "The retraction must reuse the exact same ticket its own content was published"
+                dispositionAfterRetraction.authorityID == issuance.authorityID,
+                "The retraction must reuse the exact identifier its own content was published"
             )
 
             // The critical assertion: a stale cached entry whose own
             // historical stamp captured this exact publication (same
-            // ticket, same content hash) must not be able to pass a
+            // identifier, same content hash) must not be able to pass a
             // fresh revalidation issuance check now that this exact
-            // ticket's disposition has since been retracted.
+            // identifier's disposition has since been retracted.
             let staleRevalidation = try await cache.beginRevalidationIssuance(
                 for: cacheKey,
                 expectedClearEpoch: issuance.clearEpoch,
-                expectedAppliedTicket: issuance.writeGeneration,
+                expectedAuthorityID: issuance.authorityID,
                 expectedContentHash: entryMetadata.payloadSHA256Hex
             )
             #expect(
                 staleRevalidation == nil,
                 """
                 A since-retracted disposition must never be mistaken for still-current \
-                content merely because a stale historical stamp's ticket (and even its \
-                content hash) happens to coincide with the retraction's own unchanged ticket
+                content merely because a stale historical stamp's identifier (and even its \
+                content hash) happens to coincide with the retraction's own unchanged identifier
                 """
             )
 
@@ -205,7 +207,7 @@ extension AssetDiskCacheTests {
 
             let stuckDisposition = try await cache.currentKeyDisposition(for: cacheKey)
             #expect(stuckDisposition.kind == .retiring)
-            #expect(stuckDisposition.ticket == issuance.writeGeneration)
+            #expect(stuckDisposition.authorityID == issuance.authorityID)
 
             // Unreadable in this exact same process/instance, with no
             // restart at all.
@@ -224,9 +226,9 @@ extension AssetDiskCacheTests {
             // Self-heals the instant a fresh, unrelated mutation for this
             // exact key durably lands. Uses an explicit token/issuance
             // here too (rather than an unconditional `set`) purely so the
-            // committed ticket is known in advance and the healed
+            // committed identifier is known in advance and the healed
             // entry's own metadata can be stamped to match it -- an
-            // unconditional `set`'s freshly *self*-reserved ticket would
+            // unconditional `set`'s freshly *self*-issued identifier would
             // be just as durably correct in production (where
             // ``AssetCacheService`` always stamps a fresh `beginIssuance`
             // snapshot into its own metadata before publishing), this is
@@ -287,12 +289,12 @@ extension AssetDiskCacheTests {
             //
             // Note this call passes no `token`, so `remove(_:token:)`'s
             // own unconditional branch must durably reserve a fresh
-            // ticket of its own first (see
-            // ``AssetDiskCache/resolvedMutationTicketLocked(for:token:)``) --
+            // identifier of its own first (see
+            // ``AssetDiskCache/resolvedMutationAuthorityLocked(for:token:)``) --
             // a *separate* commit that leaves `disposition` itself
             // completely untouched (still `.content`) -- strictly before
             // ever attempting the `.retiring` disposition transition this
-            // method's own doc comment describes. That earlier ticket-
+            // method's own doc comment describes. That earlier identifier-
             // reservation commit is exactly what this fault intercepts:
             // primary fails on that very first post-fault write, so the
             // `.retiring` transition itself is never even attempted, and

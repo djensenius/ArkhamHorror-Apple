@@ -88,7 +88,7 @@ extension AssetCacheService {
     /// Reserves a fresh disk-authority token, lazily and only now that a
     /// quarantine is actually needed, and invalidates `cacheKey`'s disk
     /// entry with it. `cached`'s historical stamp (`durableClearEpoch`/
-    /// `writeGeneration`/`payloadSHA256Hex`) is validated atomically
+    /// `authorityID`/`payloadSHA256Hex`) is validated atomically
     /// alongside this reservation via `beginRevalidationIssuance`.
     /// If that stamp is missing or no longer matches current durable
     /// reality (already superseded by a sibling clear/publish/retraction
@@ -106,11 +106,11 @@ extension AssetCacheService {
     private func quarantineDiskHit(_ cached: CachedAsset, cacheKey: AssetCacheKey) async {
         guard
             let historicalEpoch = cached.durableClearEpoch,
-            let historicalGeneration = cached.writeGeneration,
+            let historicalAuthorityID = cached.authorityID,
             let authority = await beginRevalidationIssuance(
                 for: cacheKey,
                 historicalClearEpoch: historicalEpoch,
-                historicalWriteGeneration: historicalGeneration,
+                historicalAuthorityID: historicalAuthorityID,
                 historicalContentHash: cached.metadata.payloadSHA256Hex
             )
         else {
@@ -118,7 +118,7 @@ extension AssetCacheService {
         }
         var token = issueToken(for: cacheKey)
         token.durableClearEpoch = authority.clearEpoch
-        token.diskWriteGeneration = authority.diskWriteGeneration
+        token.diskAuthorityID = authority.diskAuthorityID
         _ = try? await invalidate(cacheKey, token: token)
     }
 }

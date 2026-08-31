@@ -72,7 +72,7 @@ extension AssetCacheService {
             let stillUnchanged = await clearStateUnchanged(since: memorySnapshot, for: cacheKey)
             let stillCurrentEpoch = await memoryEntryStillCurrent(
                 memoryHit.durableClearEpoch,
-                storedGeneration: memoryHit.writeGeneration,
+                storedAuthorityID: memoryHit.authorityID,
                 for: cacheKey
             )
             // Final synchronous, no-further-suspension re-check — see
@@ -89,7 +89,7 @@ extension AssetCacheService {
         if let existing = memoryHit, memoryHitIsCurrent {
             // This entry's own *historical* publication stamp
             // (``AssetMemoryCache/CachedAsset/durableClearEpoch``/
-            // ``AssetMemoryCache/CachedAsset/writeGeneration``, fixed at
+            // ``AssetMemoryCache/CachedAsset/authorityID``, fixed at
             // the moment this exact memory entry was published or last
             // successfully revalidated) is validated -- atomically,
             // under this key's decision lock and one disk-cache lock
@@ -307,11 +307,11 @@ extension AssetCacheService {
         } else {
             guard
                 let historicalEpoch = existing.durableClearEpoch,
-                let historicalGeneration = existing.writeGeneration,
+                let historicalAuthorityID = existing.authorityID,
                 let resolvedAuthority = await beginRevalidationIssuance(
                     for: slot.cacheKey,
                     historicalClearEpoch: historicalEpoch,
-                    historicalWriteGeneration: historicalGeneration,
+                    historicalAuthorityID: historicalAuthorityID,
                     historicalContentHash: existing.metadata.payloadSHA256Hex
                 )
             else {
@@ -321,7 +321,7 @@ extension AssetCacheService {
         }
         var token = issueToken(for: slot.cacheKey)
         token.durableClearEpoch = authority.clearEpoch
-        token.diskWriteGeneration = authority.diskWriteGeneration
+        token.diskAuthorityID = authority.diskAuthorityID
         let revalidationRequest = RevalidationRequest(
             cacheKey: slot.cacheKey,
             url: slot.url,

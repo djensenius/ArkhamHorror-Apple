@@ -311,7 +311,7 @@ extension AssetCacheService {
             // land and never be reflected in this token's own authority.
             var issued = issueToken(for: cacheKey)
             issued.durableClearEpoch = authority.clearEpoch
-            issued.diskWriteGeneration = authority.diskWriteGeneration
+            issued.diskAuthorityID = authority.diskAuthorityID
             token = issued
             let newTask = Task { [weak self] in
                 guard let self else { throw CancellationError() }

@@ -299,8 +299,8 @@ extension AssetCacheService {
     /// The exact same synchronous authority check ``isAuthoritative(_:for:)``
     /// performs — except also requiring `token`'s own issued ticket to
     /// still be, or be entirely superseded only by abandoned tickets
-    /// (``ticketGapIsEntirelyAbandoned(from:downTo:for:)``, the exact
-    /// tolerance ``memoryEntryStillCurrent(_:storedGeneration:for:)``
+    /// (``authorityGapIsEntirelyAbandoned(from:downTo:for:)``, the exact
+    /// tolerance ``memoryEntryStillCurrent(_:storedAuthorityID:for:)``
     /// already applies to a memory-hit re-validation), the key's own
     /// current durable highest-*issued* ticket. `currentEpoch` alone
     /// (this method's prior signature) could never detect an
@@ -322,16 +322,16 @@ extension AssetCacheService {
             keyLatestToken[key] == token,
             token.clearGeneration == (keyClearGeneration[key] ?? 0),
             let tokenEpoch = token.durableClearEpoch,
-            let tokenTicket = token.diskWriteGeneration,
+            let tokenAuthorityID = token.diskAuthorityID,
             let currentAuthority,
             tokenEpoch == currentAuthority.clearEpoch,
-            !writeGenerationIsRetiring(tokenTicket, epoch: tokenEpoch, for: key)
+            !authorityIsRetiring(tokenAuthorityID, epoch: tokenEpoch, for: key)
         else {
             return false
         }
-        return ticketGapIsEntirelyAbandoned(
-            from: currentAuthority.issuedTicket,
-            downTo: tokenTicket,
+        return authorityGapIsEntirelyAbandoned(
+            from: currentAuthority.issuedAuthorityID,
+            downTo: tokenAuthorityID,
             epoch: currentAuthority.clearEpoch,
             for: key
         )

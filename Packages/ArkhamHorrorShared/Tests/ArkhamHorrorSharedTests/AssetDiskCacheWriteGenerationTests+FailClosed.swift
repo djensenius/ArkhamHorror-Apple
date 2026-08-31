@@ -2,44 +2,51 @@
 import Foundation
 import Testing
 
-/// Deterministic reproduction of this review round's finding #2 (the
-/// LATEST round: merging the previously-separate `.gen` issuance
-/// counter and `.applied` disposition file into one atomically-written
-/// ``AssetDiskCache/KeyAuthorityRecord`` -- see
-/// `AssetDiskCache+Disposition.swift`'s own type-level doc comment for
-/// the full reasoning behind the merge). The three tests this file
-/// previously contained directly manipulated a standalone `.gen` file
-/// (via a now-removed `writeGenerationFilename(for:)` helper) to
-/// reproduce "issuance counter lost while disposition survives" -- that
-/// exact scenario is now structurally impossible, since both halves are
-/// the same on-disk artifact and can no longer independently diverge.
-/// This file's tests instead prove the properties that specific merge
-/// actually delivers: (1) issuing a ticket with nothing yet published
-/// already durably anchors that ticket in the very same file a
-/// disposition would occupy, so a corruption at that exact point -- a
-/// window the prior two-file design left completely undetectable, since
-/// no `.applied` file existed yet at all -- is now provably detectable;
-/// and (2) a present-but-unparsable (torn/partial) authority record
-/// always fails closed rather than ever being treated as a clean
-/// absence. Split out of `AssetDiskCacheWriteGenerationTests.swift`
-/// purely to keep that file within this package's `file_length`/
-/// `type_body_length` conventions; reuses that file's own
-/// `withScratchDirectory`/`limits`/`key`/`metadata`/`issuedToken`
-/// helpers.
+/// Fail-closed coverage for the single canonical per-key
+/// ``AssetDiskCache/KeyAuthorityRecord`` file.
+///
+/// This cache stores exactly one authority artifact per key: issuance
+/// identifier, applied disposition, and transition revision live in one
+/// atomically-replaced file, with no mirror, anchor, floor index, or
+/// global sequence beside it to reconstruct from. That makes the
+/// contract these tests pin down very sharp:
+///
+/// - A record that is **absent** is unambiguously "no operation was ever
+///   issued for this key", because ``AssetDiskCache/beginIssuance(for:)``
+///   mints a fresh ``AuthorityID`` that cannot equal any identifier a
+///   stale in-flight caller might still hold. Issuance may therefore
+///   always create-if-absent.
+/// - A record that is **present but unparsable** (torn, truncated,
+///   tampered) is a hard, typed failure on every path — issuance,
+///   mutation, and read alike. It is never repaired, never reset to the
+///   pristine sentinel, and never silently treated as a clean absence.
+/// - **Mutation** additionally requires an existing record: only
+///   issuance may create one, so a mutation against an absent record can
+///   never conjure authority for itself.
+///
+/// Split out of `AssetDiskCacheWriteGenerationTests.swift` purely to keep
+/// that file within this package's `file_length`/`type_body_length`
+/// conventions; reuses that file's own `withScratchDirectory`/`limits`/
+/// `key`/`metadata`/`issuedToken` helpers.
 extension AssetDiskCacheWriteGenerationTests {
-    // MARK: - Merged authority record fail-closed (review round: HIGH #2)
+    private func corrupt(
+        _ cache: AssetDiskCache,
+        for cacheKey: AssetCacheKey,
+        with bytes: Data
+    ) async throws {
+        let name = await cache.authorityRecordFilename(for: cacheKey)
+        let access = await cache.directoryAccess
+        try access.writeTempAndFsync(tempName: name + ".tmp", data: bytes)
+        try access.renameAndFsyncDirectory(from: name + ".tmp", to: name)
+    }
 
     @Test(
         """
-        Before this round's merge, a ticket issued for a key with nothing yet published wrote \
-        *only* the bare `.gen` counter -- no `.applied` file existed for that key at all yet \
-        -- so a fault that struck that lone `.gen` file was indistinguishable, on its own, from \
-        a genuinely pristine key that had never had a ticket issued for it at all: reads would \
-        fall back to zero and a delayed/duplicate reservation could silently replay ticket 1. \
-        This round's merge closes that window: `beginIssuance` now durably writes the FULL \
-        merged authority record (the issued ticket alongside a still-pristine disposition) even \
-        when nothing has ever been published for this key, so a corruption at this exact point \
-        is now provably detectable rather than silently indistinguishable from a fresh key.
+        Issuing an authority for a key with nothing yet published durably writes the FULL \
+        canonical record (the freshly minted identifier alongside a still-pristine \
+        disposition), so a corruption striking at exactly that point is provably detectable \
+        rather than silently indistinguishable from a genuinely fresh key: every subsequent \
+        issuance, mutation, and authority read must fail closed with a typed error.
         """
     )
     func issuanceOnlyAuthorityRecordCorruptionFailsClosedRatherThanResettingToPristine(
@@ -49,15 +56,9 @@ extension AssetDiskCacheWriteGenerationTests {
             let cacheKey = try key()
 
             let snapshot = try await cache.beginIssuance(for: cacheKey)
-            #expect(snapshot.writeGeneration == 1)
+            #expect(snapshot.authorityID != AuthorityID.pristine)
 
-            // Corrupts the single merged authority record -- present,
-            // but unparsable -- immediately after issuance, strictly
-            // before any publish for this key has ever happened.
-            let name = await cache.appliedTicketFilename(for: cacheKey)
-            let access = await cache.directoryAccess
-            try access.writeTempAndFsync(tempName: name + ".tmp", data: Data("not json".utf8))
-            try access.renameAndFsyncDirectory(from: name + ".tmp", to: name)
+            try await corrupt(cache, for: cacheKey, with: Data("not json".utf8))
 
             await #expect(throws: AssetError.self) {
                 _ = try await cache.beginIssuance(for: cacheKey)
@@ -79,15 +80,10 @@ extension AssetDiskCacheWriteGenerationTests {
 
     @Test(
         """
-        A issues ticket 1 for a key (nothing published yet) and then this exact merged \
-        authority record is torn -- a partial/truncated fragment left behind, simulating a \
-        crash mid-write, never a clean absence. A fresh sibling instance's own subsequent \
-        reservation for the same key must fail closed rather than silently resuming from zero \
-        and reissuing ticket 1 again: under the prior, now-removed two-file design this exact \
-        corruption target (`.applied`) did not even exist yet at this point in the sequence, so \
-        a sibling's reservation would have silently succeeded with a fresh ticket 2, oblivious \
-        to the torn state -- this test only passes once the merge's write-on-issuance behavior \
-        is in place.
+        A torn/truncated authority record left behind by a crash mid-write is never mistaken \
+        for a clean absence by a brand-new sibling instance over the same directory: that \
+        sibling's own issuance must fail closed rather than silently starting this key over \
+        from the pristine sentinel.
         """
     )
     func tornAuthorityRecordAfterIssuanceOnlyFailsClosedForFreshSiblingReservation() async throws {
@@ -95,22 +91,9 @@ extension AssetDiskCacheWriteGenerationTests {
             let cache = try AssetDiskCache(directory: directory, limits: limits())
             let cacheKey = try key()
 
-            let snapshot = try await cache.beginIssuance(for: cacheKey)
-            #expect(snapshot.writeGeneration == 1)
+            _ = try await cache.beginIssuance(for: cacheKey)
+            try await corrupt(cache, for: cacheKey, with: Data("{\"issuedAuthorityID".utf8))
 
-            let name = await cache.appliedTicketFilename(for: cacheKey)
-            let access = await cache.directoryAccess
-            // Simulates a torn/partial write (not a clean absence) -- a
-            // crash mid-`fsync` that left a truncated fragment behind
-            // rather than either the old (nonexistent) or new complete
-            // value.
-            try access.writeTempAndFsync(tempName: name + ".tmp", data: Data("{\"issued".utf8))
-            try access.renameAndFsyncDirectory(from: name + ".tmp", to: name)
-
-            // A brand-new sibling instance over the same directory (an
-            // independent process, or this same process after a
-            // restart) must fail closed rather than silently reissuing
-            // ticket 1 again.
             let sibling = try AssetDiskCache(directory: directory, limits: limits())
             await #expect(throws: AssetError.self) {
                 _ = try await sibling.beginIssuance(for: cacheKey)
@@ -120,11 +103,39 @@ extension AssetDiskCacheWriteGenerationTests {
 
     @Test(
         """
-        The merged authority record's disposition half remains fully protected too: a \
-        `.content`/`.tombstone`/`.retiring` disposition surviving alongside a corrupted -- \
-        present but unparsable -- authority record still fails closed on every subsequent \
-        operation, exactly like the issuance-only case above, never silently treated as a \
-        pristine key.
+        A structurally well-formed record carrying an identifier that is not exactly 32 \
+        lowercase hex characters is rejected exactly like unparsable bytes: AuthorityID's \
+        decoder is the sole gate a tampered on-disk record has to pass, so a short, \
+        uppercase, or otherwise low-entropy identifier can never enter the CAS at all.
+        """
+    )
+    func malformedAuthorityIdentifierEncodingFailsClosed() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: limits())
+            let cacheKey = try key()
+
+            _ = try await cache.beginIssuance(for: cacheKey)
+
+            let tampered = """
+            {"issuedAuthorityID":"ABC","disposition":{"authorityID":"\
+            00000000000000000000000000000000","kind":"tombstone"},"transitionRevision":1}
+            """
+            try await corrupt(cache, for: cacheKey, with: Data(tampered.utf8))
+
+            await #expect(throws: AssetError.self) {
+                _ = try await cache.currentKeyAuthority(for: cacheKey)
+            }
+            await #expect(throws: AssetError.self) {
+                _ = try await cache.beginIssuance(for: cacheKey)
+            }
+        }
+    }
+
+    @Test(
+        """
+        A committed content disposition offers no protection against a corrupted record: a \
+        present-but-unparsable authority record still fails closed on issuance, publish, \
+        removal, and authority read alike, never silently treated as a pristine key.
         """
     )
     func corruptedAuthorityRecordWithSurvivingContentDispositionFailsClosed() async throws {
@@ -144,11 +155,9 @@ extension AssetDiskCacheWriteGenerationTests {
                 for: cacheKey
             )
             #expect(dispositionBeforeCorruption.kind == .content)
+            #expect(dispositionBeforeCorruption.authorityID == publishToken.diskAuthorityID)
 
-            let name = await cache.appliedTicketFilename(for: cacheKey)
-            let access = await cache.directoryAccess
-            try access.writeTempAndFsync(tempName: name + ".tmp", data: Data("not json".utf8))
-            try access.renameAndFsyncDirectory(from: name + ".tmp", to: name)
+            try await corrupt(cache, for: cacheKey, with: Data("not json".utf8))
 
             await #expect(throws: AssetError.self) {
                 _ = try await cache.beginIssuance(for: cacheKey)
@@ -173,10 +182,9 @@ extension AssetDiskCacheWriteGenerationTests {
 
     @Test(
         """
-        A genuinely pristine key -- one that has never had any ticket issued or disposition \
-        committed for it at all -- is unaffected by any of the fail-closed checks above: \
-        issuance still succeeds normally, starting from ticket 1, exactly as before this \
-        review round's fix
+        A genuinely pristine key -- one that has never had any authority issued or \
+        disposition committed for it -- is unaffected by every fail-closed check above: \
+        issuance succeeds and mints a fresh, non-sentinel identifier.
         """
     )
     func genuinelyPristineKeyIssuanceStillSucceedsNormally() async throws {
@@ -185,51 +193,70 @@ extension AssetDiskCacheWriteGenerationTests {
             let cacheKey = try key()
 
             let snapshot = try await cache.beginIssuance(for: cacheKey)
-            #expect(snapshot.writeGeneration == 1)
+            #expect(snapshot.authorityID != AuthorityID.pristine)
+            #expect(snapshot.authorityID.hexString.count == AuthorityID.byteCount * 2)
+            #expect(snapshot.revision == 1)
         }
     }
 
     @Test(
         """
-        `acceptToken(_:currentEpoch:currentIssued:)` requires *exact* equality between a \
-        token's own issued ticket and the currently-issued counter -- not merely `>=` -- so a \
-        ticket that (through corruption this review round's other fix should already prevent \
-        in practice) reports as strictly *greater* than the currently-issued counter is \
-        correctly rejected rather than wrongly accepted, unlike a prior revision's `>=` compare
+        acceptToken requires *exact* identifier equality against the key's currently-issued \
+        authority: a token carrying any other identifier -- including the reserved pristine \
+        sentinel, or an identifier that was genuinely current a moment ago -- is rejected. \
+        There is no ordering between two random identifiers, so there is deliberately no \
+        `>=`-style tolerance anywhere in this comparison.
         """
     )
-    func acceptTokenRequiresExactEqualityNotGreaterOrEqual() async throws {
+    func acceptTokenRequiresExactIdentifierEquality() async throws {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: limits())
-            let token = AssetCacheService.CacheToken(
-                generation: 0,
-                issuance: 0,
-                durableClearEpoch: 0,
-                diskWriteGeneration: 5
-            )
-            let exactMatch = await cache.acceptToken(token, currentEpoch: 0, currentIssued: 5)
-            #expect(
-                exactMatch,
-                "An exact match between a token's own ticket and the current counter must pass"
-            )
-            let greaterThanCurrent = await cache.acceptToken(
-                token,
+            let current = try AuthorityID.random()
+            let other = try AuthorityID.random()
+
+            func token(_ authorityID: AuthorityID?) -> AssetCacheService.CacheToken {
+                AssetCacheService.CacheToken(
+                    generation: 0,
+                    issuance: 0,
+                    durableClearEpoch: 0,
+                    diskAuthorityID: authorityID
+                )
+            }
+
+            let exact = await cache.acceptToken(
+                token(current),
                 currentEpoch: 0,
-                currentIssued: 3
+                currentIssued: current
             )
-            #expect(
-                !greaterThanCurrent,
-                """
-                A token whose own ticket is strictly greater than the current counter must be \
-                rejected -- a prior revision's `issuedTicket >= currentIssued` compare would \
-                have wrongly accepted this
-                """
+            #expect(exact, "A token whose identifier is the currently-issued one must pass")
+
+            let mismatched = await cache.acceptToken(
+                token(other),
+                currentEpoch: 0,
+                currentIssued: current
             )
-            let behindCurrent = await cache.acceptToken(token, currentEpoch: 0, currentIssued: 7)
-            #expect(
-                !behindCurrent,
-                "A token whose own ticket is strictly behind the current counter is rejected"
+            #expect(!mismatched, "Any other identifier must be rejected")
+
+            let sentinel = await cache.acceptToken(
+                token(.pristine),
+                currentEpoch: 0,
+                currentIssued: .pristine
             )
+            #expect(!sentinel, "The reserved pristine sentinel is never a usable authority")
+
+            let unstamped = await cache.acceptToken(
+                token(nil),
+                currentEpoch: 0,
+                currentIssued: current
+            )
+            #expect(!unstamped, "An unstamped token carries no authority at all")
+
+            let wrongEpoch = await cache.acceptToken(
+                token(current),
+                currentEpoch: 1,
+                currentIssued: current
+            )
+            #expect(!wrongEpoch, "A superseded durable clear epoch must reject the token")
         }
     }
 }

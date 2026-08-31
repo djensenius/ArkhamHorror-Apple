@@ -107,16 +107,16 @@ extension AssetCacheService {
     /// captured at the moment some prior call published or revalidated
     /// this exact memory entry — still *exactly* matches a **single,
     /// atomically-read** ``AssetDiskCache/currentKeyAuthority(for:)``
-    /// snapshot's clear epoch, **and** `storedGeneration` — that same
-    /// entry's own ``CachedAsset/writeGeneration`` — still *exactly*
-    /// matches that same snapshot's highest durably *issued* ticket for
-    /// `key`. `false` if any of `storedEpoch`/`storedGeneration`/the
+    /// snapshot's clear epoch, **and** `storedAuthorityID` — that same
+    /// entry's own ``CachedAsset/authorityID`` — still *exactly*
+    /// matches that same snapshot's most-recently-*issued* ``AuthorityID``
+    /// for `key`. `false` if any of `storedEpoch`/`storedAuthorityID`/the
     /// fresh durable snapshot itself is `nil` (an unstamped entry, or a
     /// durable read failure just now — both fail closed, the same
     /// reasoning ``isAuthoritative(_:for:)`` and ``unchanged(since:for:)``
     /// already apply to their own durable comparisons).
     ///
-    /// **Why the per-key generation check exists at all, alongside the
+    /// **Why the per-key authority check exists at all, alongside the
     /// epoch check.** `durableClearEpoch` only ever changes on a
     /// whole-cache clear (``AssetDiskCache/removeAll()``): it can never,
     /// by itself, detect a *sibling* ``AssetCacheService``/
@@ -139,38 +139,37 @@ extension AssetCacheService {
     /// lock acquisition/release — a torn read: a sibling instance/
     /// process's whole-cache clear landing in the exact window between
     /// those two calls could leave this check comparing a pre-clear epoch
-    /// against a post-clear ticket (or vice versa), neither half actually
+    /// against a post-clear authority (or vice versa), neither half actually
     /// describing the same durable moment in time.
     /// ``AssetDiskCache/currentKeyAuthority(for:)`` instead reads both
     /// under a single lock hold, so they always describe one consistent
     /// instant.
     ///
-    /// **Why exact equality against the highest *issued* ticket, never
-    /// `>=` against the highest *applied* one.** A prior revision
-    /// compared `storedGeneration >= currentAppliedTicket` instead — but a
-    /// sibling service/process can durably *issue* (reserve) a fresh
-    /// ticket for this exact key the moment it begins a fetch/
-    /// revalidation, strictly *before* that operation's own eventual
-    /// mutation actually lands and advances the *applied* counter; during
-    /// that whole window, an applied-ticket-only `>=` comparison would
-    /// keep reporting this memory entry "still current" even though a
-    /// strictly newer, already-in-flight operation for this exact key has
-    /// already been issued and may complete with entirely different
-    /// content (or a definitive removal) at any moment. Exact equality
-    /// against the highest *issued* ticket instead rejects this memory
-    /// hit the instant *any* newer operation for this key has been
-    /// issued anywhere, regardless of whether that operation has itself
+    /// **Why equality against the most-recently-*issued* authority, not
+    /// against the currently-*applied* one.** A sibling service/process
+    /// can durably issue a fresh ``AuthorityID`` for this exact key the
+    /// moment it begins a fetch/revalidation, strictly *before* that
+    /// operation's own eventual mutation actually lands and replaces the
+    /// applied disposition; during that whole window, an
+    /// applied-authority-only comparison would keep reporting this memory
+    /// entry "still current" even though a strictly newer,
+    /// already-in-flight operation for this exact key has already been
+    /// issued and may complete with entirely different content (or a
+    /// definitive removal) at any moment. Comparing against the
+    /// most-recently-issued identifier instead rejects this memory hit
+    /// the instant *any* newer operation for this key has been issued
+    /// anywhere, regardless of whether that operation has itself
     /// completed yet — the strictest safe comparison, and still exactly
     /// what a genuinely-current, untouched-since memory entry's own
-    /// stamped ticket will always continue to satisfy (nothing else has
-    /// ever been issued for this key since). This remains correct even
-    /// for a memory-only entry whose own disk write failed non-fatally
-    /// (``AssetCacheService+Publish.swift``'s documented best-effort
-    /// policy): ``AssetDiskCache/beginIssuance(for:)`` durably reserves
-    /// this operation's own issuance ticket *before* the write it gates
-    /// is even attempted, so that ticket is already durably the current
-    /// "highest issued" value for this key regardless of whether the
-    /// later write itself actually landed.
+    /// stamped identifier will always continue to satisfy (nothing else
+    /// has ever been issued for this key since). This remains correct
+    /// even for a memory-only entry whose own disk write failed
+    /// non-fatally (``AssetCacheService+Publish.swift``'s documented
+    /// best-effort policy): ``AssetDiskCache/beginIssuance(for:)``
+    /// durably records this operation's own identifier *before* the
+    /// write it gates is even attempted, so that identifier is already
+    /// durably this key's most-recently-issued authority regardless of
+    /// whether the later write itself actually landed.
     ///
     /// Deliberately *additive* to, not a replacement for, the existing
     /// ``unchanged(since:for:)``/``clearStateUnchanged(since:for:)``
@@ -180,23 +179,23 @@ extension AssetCacheService {
     /// call's own suspension window, between their own snapshot and
     /// recheck reads). What none of them can ever detect is a clear or a
     /// sibling per-key publish that already completed *before* this call
-    /// even began — comparing the entry's own *stored* epoch/generation
+    /// even began — comparing the entry's own *stored* epoch/authority
     /// (fixed at the moment it was written) against a fresh read here, on
     /// every hit, closes exactly that gap.
     func memoryEntryStillCurrent(
         _ storedEpoch: Int?,
-        storedGeneration: Int?,
+        storedAuthorityID: AuthorityID?,
         for key: AssetCacheKey
     ) async -> Bool {
         guard
             let storedEpoch,
-            let storedGeneration,
+            let storedAuthorityID,
             let currentAuthority = await currentDurableKeyAuthority(for: key)
         else {
             return false
         }
-        guard !writeGenerationIsRetiring(storedGeneration, epoch: storedEpoch, for: key) else {
-            // `storedGeneration`'s own mutation has already been decided
+        guard !authorityIsRetiring(storedAuthorityID, epoch: storedEpoch, for: key) else {
+            // `storedAuthorityID`'s own mutation has already been decided
             // to be retracted (see ``retiringGenerations``'s doc
             // comment) — even though its durable stamps still exactly
             // match current disk reality (nothing else has been issued
@@ -206,9 +205,9 @@ extension AssetCacheService {
             return false
         }
         guard storedEpoch == currentAuthority.clearEpoch else { return false }
-        return ticketGapIsEntirelyAbandoned(
-            from: currentAuthority.issuedTicket,
-            downTo: storedGeneration,
+        return authorityGapIsEntirelyAbandoned(
+            from: currentAuthority.issuedAuthorityID,
+            downTo: storedAuthorityID,
             epoch: currentAuthority.clearEpoch,
             for: key
         )
@@ -298,7 +297,7 @@ extension AssetCacheService {
     /// call and the caller's own `return`.** ``asset(for:)``'s and
     /// ``revalidate(for:)``'s memory-hit branches each call
     /// ``unchanged(since:for:)``/``clearStateUnchanged(since:for:)`` and
-    /// then ``memoryEntryStillCurrent(_:storedGeneration:for:)`` in
+    /// then ``memoryEntryStillCurrent(_:storedAuthorityID:for:)`` in
     /// sequence — both of the latter's own *internal* implementations
     /// suspend at least once more (a durable disk round trip) after the
     /// first check's own local-state comparison already ran. A same-actor

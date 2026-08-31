@@ -53,7 +53,7 @@ extension AssetCacheService {
         // already treat as permanently unacceptable everywhere this
         // asset could ever actually be published, so this can never
         // currently escape into a live cache entry. But
-        // `clearEpochAtPublication`/`writeGenerationAtPublication` are
+        // `clearEpochAtPublication`/`authorityIDAtPublication` are
         // the *sole* provenance stamps later revalidations trust to
         // detect cache laundering (see ``AssetCacheMetadata``'s own doc
         // comment) — silently substituting `0` here rather than failing
@@ -65,7 +65,7 @@ extension AssetCacheService {
         // a not-yet-authoritative asset with a fabricated stamp at all.
         guard
             let clearEpochAtPublication = request.token.durableClearEpoch,
-            let writeGenerationAtPublication = request.token.diskWriteGeneration
+            let authorityIDAtPublication = request.token.diskAuthorityID
         else {
             throw AssetError.staleOperation
         }
@@ -84,10 +84,10 @@ extension AssetCacheService {
                 insertedAt: request.existing.metadata.insertedAt,
                 accessSequence: AssetAccessSequence(0),
                 clearEpochAtPublication: clearEpochAtPublication,
-                writeGenerationAtPublication: writeGenerationAtPublication
+                authorityIDAtPublication: authorityIDAtPublication
             ),
             durableClearEpoch: request.token.durableClearEpoch,
-            writeGeneration: request.token.diskWriteGeneration
+            authorityID: request.token.diskAuthorityID
         )
     }
 

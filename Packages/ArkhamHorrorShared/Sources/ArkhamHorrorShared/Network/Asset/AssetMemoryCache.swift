@@ -33,18 +33,18 @@ struct CachedAsset: Sendable, Equatable {
     /// the entry has sat in memory since.
     var durableClearEpoch: Int?
 
-    /// This entry's own historical disk write generation (see
-    /// ``AssetCacheMetadata/writeGenerationAtPublication``), mirroring
+    /// This entry's own historical durable authority identifier (see
+    /// ``AssetCacheMetadata/authorityIDAtPublication``), mirroring
     /// ``durableClearEpoch``'s exact same in-memory-only, never-persisted
     /// treatment above -- read together with it wherever a revalidation
     /// path threads this entry's own historical authority through as an
-    /// operation's token, rather than re-deriving a fresh one at hit
-    /// time. A disk-read reconstruction populates this from
-    /// ``AssetCacheMetadata/writeGenerationAtPublication`` (that field's
-    /// own persisted, atomic-with-the-payload source of truth); a memory
-    /// hit already carries whatever value this struct itself was
-    /// constructed with at publish/touch time.
-    var writeGeneration: Int?
+    /// operation's provenance check, rather than re-deriving a fresh one
+    /// at hit time. A disk-read reconstruction populates this from
+    /// ``AssetCacheMetadata/authorityIDAtPublication`` (that field's own
+    /// persisted, atomic-with-the-payload source of truth); a memory hit
+    /// already carries whatever value this struct itself was constructed
+    /// with at publish/touch time.
+    var authorityID: AuthorityID?
 
     /// This entry's actual payload byte count plus
     /// ``AssetCacheMetadata/metadataOverheadBytes``, computed once here at
@@ -83,26 +83,26 @@ struct CachedAsset: Sendable, Equatable {
         payload: Data,
         metadata: AssetCacheMetadata,
         durableClearEpoch: Int? = nil,
-        writeGeneration: Int? = nil
+        authorityID: AuthorityID? = nil
     ) {
         self.payload = payload
         self.metadata = metadata
         self.durableClearEpoch = durableClearEpoch
-        self.writeGeneration = writeGeneration
+        self.authorityID = authorityID
         accountedByteCount = payload.count + metadata.metadataOverheadBytes
     }
 
-    /// Returns a copy of this entry with `metadata`/`writeGeneration`
+    /// Returns a copy of this entry with `metadata`/`authorityID`
     /// replaced and ``accountedByteCount`` *freshly recomputed* against
     /// the new metadata — never a plain field mutation on an existing
     /// value. `accountedByteCount` is a `let`, fixed once at construction
     /// time from whatever `metadata` this entry was *originally* built
     /// with; a caller that instead mutated a copy's `.metadata` fields
     /// directly (e.g. a `304` revalidation advancing
-    /// ``AssetCacheMetadata/writeGenerationAtPublication`` to a
-    /// freshly issued ticket — a plain, non-fixed-width `Int` whose own
-    /// serialized byte count can and does change, unlike
-    /// ``AssetCacheMetadata/accessSequence``'s fixed-width encoding) would
+    /// ``AssetCacheMetadata/authorityIDAtPublication`` to a freshly
+    /// issued identifier, or any other metadata-only field change whose
+    /// own serialized byte count can differ from the value it replaced)
+    /// would
     /// silently leave `accountedByteCount` billing this entry against
     /// ``AssetMemoryCache``'s quota using its *stale*, no-longer-accurate
     /// serialized size — exactly the "quota accounting cost stale after a
@@ -111,12 +111,15 @@ struct CachedAsset: Sendable, Equatable {
     /// re-derives `accountedByteCount` from whatever `metadata` this
     /// entry now actually carries, so ``AssetMemoryCache/totalAccountedBytes``
     /// can never drift out of sync with what is truly resident.
-    func withUpdatedMetadata(_ metadata: AssetCacheMetadata, writeGeneration: Int?) -> CachedAsset {
+    func withUpdatedMetadata(
+        _ metadata: AssetCacheMetadata,
+        authorityID: AuthorityID?
+    ) -> CachedAsset {
         CachedAsset(
             payload: payload,
             metadata: metadata,
             durableClearEpoch: durableClearEpoch,
-            writeGeneration: writeGeneration
+            authorityID: authorityID
         )
     }
 }

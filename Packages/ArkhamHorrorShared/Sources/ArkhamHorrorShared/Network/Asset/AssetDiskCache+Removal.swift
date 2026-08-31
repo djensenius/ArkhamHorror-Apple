@@ -39,7 +39,7 @@ extension AssetDiskCache {
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentIssued = try currentIssuedTicketLocked(for: key)
+        let currentIssued = try currentIssuedAuthorityLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
@@ -51,8 +51,8 @@ extension AssetDiskCache {
         }
         // Two-phase, crash-safe removal via
         // ``commitRetractionLocked(for:token:destroy:)``: durably commits
-        // `.retiring(ticket)` *before* this closure ever runs, then
-        // `.tombstone(ticket)` only once it returns. Physical deletion
+        // `.retiring` *before* this closure ever runs, then
+        // `.tombstone` only once it returns. Physical deletion
         // itself is deliberately best-effort (`try?`) here, never
         // propagated: once the final `.tombstone` commit below lands
         // durably, this key is unreadable by ``get(_:)`` regardless of
@@ -178,7 +178,24 @@ extension AssetDiskCache {
         do {
             try ensureRootAuthorityInitializedLocked()
         } catch let error as AssetError {
-            throw error
+            // Already the fence-specific case: rethrow verbatim rather
+            // than nesting one `clearFenceNotDurable` description inside
+            // another.
+            if case .clearFenceNotDurable = error {
+                throw error
+            }
+            // Every *other* typed failure here -- a bootstrap write or
+            // `fsync` that could not be confirmed durable, a root whose
+            // survivors cannot be proven harmless, an unenumerable
+            // listing -- happened strictly before the epoch bump below,
+            // so from ``AssetCacheService/evictAll()``'s perspective the
+            // durable fence simply does not exist. Reporting it as its
+            // raw underlying case would let a caller that only special-
+            // cases `clearFenceNotDurable` treat a fenceless clear as an
+            // ordinary, already-fenced persistence hiccup.
+            throw AssetError.clearFenceNotDurable(
+                "Root-authority initialization failed before the clear fence: \(error)"
+            )
         } catch {
             throw AssetError.clearFenceNotDurable(
                 "Root-authority initialization failed before the clear fence: \(error)"
@@ -204,33 +221,22 @@ extension AssetDiskCache {
         // begins: a caller must never observe "entries are already gone"
         // without the durable epoch having also already advanced.
         try secureDirectory.bumpClearEpoch()
-        // The root-level key-usage floor index (`AssetDiskCache+KeyUsageFloor.swift`)
-        // is reserved above (``isRemovableDuringClear(_:)``), unlike
-        // every per-key authority file, precisely because this index's
-        // own file identity must never disappear -- only its *contents*
-        // may ever legitimately reset, and only in this exact
-        // transaction, immediately after the epoch bump that
-        // legitimately authorizes every key's own authority (including
-        // this index's own recorded high-water marks) to restart clean.
-        // Committed here, before the removal pass below, so a crash
-        // between this call and that pass still leaves the index
-        // correctly reset for the new epoch, never stranded at the old
-        // one.
-        try resetKeyUsageFloorIndexLocked(epoch: secureDirectory.readPersistedClearEpoch())
-        // Every per-key durable authority record file (`.applied`,
-        // merging both the issuance ticket and applied disposition --
-        // see `AssetDiskCache+Disposition.swift`) is deliberately *not*
+        // Every per-key durable authority record file (`.applied`, the
+        // single canonical record carrying both this key's most recently
+        // issued ``AuthorityID`` and its applied disposition -- see
+        // `AssetDiskCache+Disposition.swift`) is deliberately *not*
         // specially reserved here the way the lock/access-sequence/
         // clear-epoch files are: this clear's own epoch bump above
         // already durably fences every token issued before it (any such
         // token's ``AssetCacheService/CacheToken/durableClearEpoch``
         // can never again match, regardless of what its
-        // ``AssetCacheService/CacheToken/diskWriteGeneration`` says), so
+        // ``AssetCacheService/CacheToken/diskAuthorityID`` says), so
         // letting the removal pass below sweep away every `.applied`
-        // file too is both safe and desirable: it lets every key restart
-        // from a clean ticket baseline after a real clear, rather than
-        // accumulating one small authority-record file per key ever
-        // written for the lifetime of this cache directory.
+        // file too is both safe and desirable: a key whose record is
+        // swept simply has a brand-new random identifier minted for it
+        // on its next issuance, which -- unlike the predecessor
+        // counter-based design -- can never replay a value any stale
+        // in-flight operation still holds.
         let names = try secureDirectory.listNames()
         var failureCount = 0
         for name in names where Self.isRemovableDuringClear(name) {
@@ -294,7 +300,6 @@ extension AssetDiskCache {
             && name != SecureCacheDirectory.clearEpochFileName
             && name != SecureCacheDirectory.rootInitMarkerFileName
             && name != SecureCacheDirectory.rootFreshnessWitnessFileName
-            && name != AssetDiskCache.keyUsageFloorIndexFileName
     }
 
     /// The key hash embedded in every entry name currently present in the

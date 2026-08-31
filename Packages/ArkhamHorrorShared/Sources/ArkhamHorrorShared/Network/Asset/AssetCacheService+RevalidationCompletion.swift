@@ -91,18 +91,18 @@ extension AssetCacheService {
             }
             var updatedMetadata = request.existing.metadata
             updatedMetadata.accessSequence = AssetAccessSequence(0)
-            // `writeGenerationAtPublication`/`writeGeneration` *are*
-            // advanced here, to `token`'s own freshly issued ticket —
+            // `authorityIDAtPublication`/`authorityID` *are*
+            // advanced here, to `token`'s own freshly issued identifier —
             // this 304 is itself a genuine, durable re-confirmation that
             // these exact bytes are still current, and
             // ``AssetDiskCache/touch(_:metadata:token:)`` (called below)
-            // always durably commits `token`'s ticket as this key's new
-            // disk *applied* ticket regardless of what this metadata
-            // says; leaving this field frozen at the original publish's
-            // ticket would silently drift it out of sync with that disk
-            // counter after this exact call, permanently poisoning every
+            // always durably commits `token`'s identifier as this key's
+            // new disk *applied* authority regardless of what this
+            // metadata says; leaving this field frozen at the original
+            // publish's identifier would silently drift it out of sync
+            // with that durable record after this exact call, permanently poisoning every
             // *subsequent* revalidation's own provenance check (see
-            // ``AssetCacheMetadata/writeGenerationAtPublication``'s own
+            // ``AssetCacheMetadata/authorityIDAtPublication``'s own
             // doc comment for the full "sequential 304" scenario this
             // closes). `clearEpochAtPublication`/`durableClearEpoch` are
             // deliberately left exactly as ``request.existing`` already
@@ -118,24 +118,23 @@ extension AssetCacheService {
             // ``AssetCacheMetadata/clearEpochAtPublication``'s own doc
             // comment for why this field is never restamped as a matter
             // of principle regardless.
-            guard let freshTicket = token.diskWriteGeneration else {
+            guard let freshAuthorityID = token.diskAuthorityID else {
                 throw AssetError.staleOperation
             }
-            updatedMetadata.writeGenerationAtPublication = freshTicket
-            // Built via ``CachedAsset/withUpdatedMetadata(_:writeGeneration:)``,
+            updatedMetadata.authorityIDAtPublication = freshAuthorityID
+            // Built via ``CachedAsset/withUpdatedMetadata(_:authorityID:)``,
             // never by mutating a copy of `request.existing` in place: a
             // plain field mutation would leave `accountedByteCount` frozen
             // at whatever `updatedMetadata`'s *previous* serialized size
             // was, silently under- or over-billing this entry against
-            // ``AssetMemoryCache``'s quota the instant
-            // `writeGenerationAtPublication`'s own digit count changes
-            // (e.g. a ticket advancing from `9` to `10`) — see that
+            // ``AssetMemoryCache``'s quota the instant a metadata-only
+            // field's own serialized size changes — see that
             // method's own doc comment for the exact "quota accounting
             // cost stale after a metadata-only mutation" defect this
             // closes.
             let refreshed = request.existing.withUpdatedMetadata(
                 updatedMetadata,
-                writeGeneration: freshTicket
+                authorityID: freshAuthorityID
             )
             // See the identical final ``MutationOutcome`` re-check on the
             // `.success` branch below for why a `.stale` result here must

@@ -45,7 +45,7 @@ extension AssetCacheServiceTests {
             issuance: issued.issuance,
             clearGeneration: issued.clearGeneration,
             durableClearEpoch: authority.clearEpoch,
-            diskWriteGeneration: authority.diskWriteGeneration
+            diskAuthorityID: authority.diskAuthorityID
         )
     }
 
@@ -88,7 +88,7 @@ extension AssetCacheServiceTests {
     @Test(
         """
         assembleRevalidatedAsset never fabricates clearEpochAtPublication/ \
-        writeGenerationAtPublication with 0 when the token's own durable epoch/ticket \
+        authorityIDAtPublication with 0 when the token's own durable epoch/ticket \
         is nil (a durable read/reservation failure at issuance time): it fails exactly like \
         isAuthoritative(_:for:) would have, rather than assembling a not-yet-authoritative \
         asset with a falsely-plausible provenance stamp
@@ -103,7 +103,7 @@ extension AssetCacheServiceTests {
                 issuance: issued.issuance,
                 clearGeneration: issued.clearGeneration,
                 durableClearEpoch: nil,
-                diskWriteGeneration: nil
+                diskAuthorityID: nil
             )
             let request = AssetCacheService.RevalidationRequest(
                 cacheKey: fixture.cacheKey,

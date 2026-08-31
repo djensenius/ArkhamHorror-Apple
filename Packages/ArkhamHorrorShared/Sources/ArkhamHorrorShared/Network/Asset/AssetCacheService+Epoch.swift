@@ -113,56 +113,60 @@ extension AssetCacheService {
         /// separately, against a *freshly re-read* current value, by
         /// every authority check.
         var durableClearEpoch: Int?
-        /// This key's durable, cross-instance/cross-process issuance
-        /// ticket (``AssetDiskCache/issueTicketLocked(for:)``'s return
-        /// value) reserved at the moment this token was issued (see
-        /// ``AssetDiskCache/beginIssuance(for:)`` and
+        /// This key's durable, cross-instance/cross-process
+        /// ``AuthorityID`` -- freshly minted at the moment this token was
+        /// issued (see ``AssetDiskCache/beginIssuance(for:)`` and
         /// `AssetDiskCache+WriteGeneration.swift`'s type-level doc
-        /// comment) — `nil` only if that durable reservation itself
+        /// comment) -- or `nil` only if that durable issuance itself
         /// failed at issuance time, which
         /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``
         /// treats as permanently unacceptable (fail closed), never a
         /// silent "no other write has ever happened for this key"
-        /// default. This is the disk-durable, cross-process half of the
-        /// per-key compare-and-swap: unlike `generation`/`clearGeneration`
-        /// /`durableClearEpoch` (all whole-cache concerns),
-        /// `AssetDiskCache` compares this globally-ordered issuance
-        /// ticket against the *currently issued* (not merely currently
-        /// *applied*) on-disk ticket for this exact key
-        /// (``AssetDiskCache/currentIssuedTicketLocked(for:)``),
-        /// independent of and in addition to any other instance/process's
-        /// own in-memory bookkeeping, which is what actually makes two
-        /// independently wired instances/processes sharing one disk
-        /// directory agree on write ordering for the same key: the
-        /// instant *any* newer ticket for this key is reserved — whether
-        /// or not that newer operation has actually applied its write
-        /// yet — this token is fenced, so an older, still-in-flight
-        /// operation can never win a race against a newer one merely by
-        /// finishing its own work first.
+        /// default.
+        ///
+        /// This is the disk-durable, cross-process half of the per-key
+        /// compare-and-swap: unlike `generation`/`clearGeneration`/
+        /// `durableClearEpoch` (all whole-cache concerns),
+        /// `AssetDiskCache` compares this identifier for *exact equality*
+        /// against the identifier this key's own durable record currently
+        /// names as most recently issued
+        /// (``AssetDiskCache/currentIssuedAuthorityLocked(for:)``),
+        /// independent of and in addition to any instance's own in-memory
+        /// bookkeeping. That is what makes two independently wired
+        /// instances/processes sharing one disk directory agree on write
+        /// ordering for the same key: the instant *any* newer authority
+        /// for this key is issued -- whether or not that newer operation
+        /// has actually applied its write yet -- this token is fenced, so
+        /// an older, still-in-flight operation can never win a race
+        /// against a newer one merely by finishing its own work first.
+        ///
+        /// There is no ordering comparison anywhere: two independently
+        /// minted 128-bit random identifiers are either equal or they are
+        /// not, which is exactly the property that makes this
+        /// non-replayable even if the durable record is lost or rolled
+        /// back (see ``AuthorityID``'s own doc comment).
         ///
         /// A revalidation of an existing memory/disk hit still always
-        /// reserves its own freshly-issued ticket here, exactly like a
-        /// genuinely new fetch (via `beginRevalidationIssuance`)
-        /// — never the hit's own historical stamp verbatim: a token
-        /// whose ticket merely repeats whatever is already the currently
-        /// -applied value is indistinguishable, to
+        /// mints its own fresh identifier here, exactly like a genuinely
+        /// new fetch (via `beginRevalidationIssuance`) -- never the hit's
+        /// own historical stamp verbatim: a token whose identifier merely
+        /// repeats whatever is already applied is indistinguishable, to
         /// ``AssetDiskCache/removeIfApplied(_:token:)``'s exact-match
         /// cancellation-retraction contract, from "this exact operation's
-        /// own mutation is what is currently applied" — even when this
+        /// own mutation is what is currently applied" -- even when this
         /// operation itself never applied anything at all, which would
         /// let cancelling an in-flight revalidation incorrectly retract a
         /// perfectly valid, unrelated entry. The hit's own historical
-        /// stamp (``AssetCacheMetadata/writeGenerationAtPublication``/
-        /// ``AssetMemoryCache/CachedAsset/writeGeneration``) is instead
-        /// only ever used to *validate*, atomically alongside this fresh
-        /// reservation, that current durable reality still agrees with
-        /// this entry's own true, possibly-long-superseded provenance
-        /// before a fresh ticket is reserved at all — see that method's
-        /// doc comment for the full reasoning.
+        /// stamp (``AssetCacheMetadata/authorityIDAtPublication``/
+        /// ``AssetMemoryCache/CachedAsset/authorityID``) is instead only
+        /// ever used to *validate*, atomically alongside this fresh
+        /// issuance, that current durable reality still agrees with this
+        /// entry's own true, possibly-long-superseded provenance.
+        ///
         /// Deliberately not part of `==`/`<`'s identity comparison, for
         /// the identical reason `clearGeneration`/`durableClearEpoch` are
         /// not.
-        var diskWriteGeneration: Int?
+        var diskAuthorityID: AuthorityID?
 
         static func == (lhs: CacheToken, rhs: CacheToken) -> Bool {
             lhs.generation == rhs.generation && lhs.issuance == rhs.issuance
@@ -220,13 +224,13 @@ extension AssetCacheService {
         keyLatestToken[key] = nil
     }
 
-    /// Synchronously records that `token`'s own disk write-generation
-    /// ticket for `key` is being retracted — see
+    /// Synchronously records that `token`'s own durable authority
+    /// identifier for `key` is being retracted — see
     /// ``AssetCacheService/retiringGenerations``'s own doc comment for
-    /// the full reasoning. A no-op if `token` never actually reserved a
-    /// durable ticket at all (`token.diskWriteGeneration == nil`): with
-    /// no ticket, no memory/disk entry could ever have been stamped from
-    /// it, so there is nothing any hit-authority check could mistakenly
+    /// the full reasoning. A no-op if `token` never actually issued a
+    /// durable authority at all (`token.diskAuthorityID == nil`): with
+    /// no identifier, no memory/disk entry could ever have been stamped
+    /// from it, so there is nothing any hit-authority check could mistakenly
     /// still consider current on its behalf. Must always be called
     /// strictly before the first `await` of the actual removal it
     /// precedes, at every one of this method's call sites (mirroring
@@ -234,19 +238,19 @@ extension AssetCacheService {
     ///
     /// **Deliberately permanent for `key`'s own bookkeeping lifetime —
     /// never individually reversed once the actual removal completes.**
-    /// A ticket, once retracted, can never legitimately become valid
-    /// again for this exact key within this exact durable clear epoch
-    /// (issuance tickets are strictly increasing and never reused within
-    /// one epoch — see `AssetDiskCache+WriteGeneration.swift`'s own doc
-    /// comment), so remembering it (scoped to the epoch it was retracted
-    /// under — see ``RetiringTicket``) costs nothing beyond one small
-    /// struct. Clearing it the instant the asynchronous removal
+    /// An authority identifier, once retracted, can never legitimately
+    /// become valid again for this exact key (identifiers are minted
+    /// fresh from a CSPRNG and never reused — see
+    /// `AssetDiskCache+WriteGeneration.swift`'s own doc comment), so
+    /// remembering it (scoped to the epoch it was retracted under — see
+    /// ``RetiringAuthority``) costs nothing beyond one small struct.
+    /// Clearing it the instant the asynchronous removal
     /// completes was an earlier, *unsound* revision of this fix: a
     /// concurrent reader that had already captured this exact entry from
     /// ``AssetMemoryCache/get(_:)`` (finding it still present, strictly
     /// before the removal actually ran) but was itself still suspended
     /// somewhere between that capture and its own
-    /// ``memoryEntryStillCurrent(_:storedGeneration:for:)`` check could
+    /// ``memoryEntryStillCurrent(_:storedAuthorityID:for:)`` check could
     /// otherwise still lose the race against this method's own eager
     /// clear — there is no bound on how long that reader's own
     /// suspension might last, so no fixed point after the removal
@@ -259,42 +263,38 @@ extension AssetCacheService {
     /// keeps a still-suspended reader's own snapshot from being pruned
     /// out from under it.
     ///
-    /// A no-op (beyond the existing `diskWriteGeneration == nil` guard)
+    /// A no-op (beyond the existing `diskAuthorityID == nil` guard)
     /// if `token.durableClearEpoch` is also `nil`: an unstamped epoch is
-    /// exactly as uninformative as an unstamped ticket — there is nothing
+    /// exactly as uninformative as an unstamped identifier — there is nothing
     /// scoped-and-meaningful to record either way.
     func markGenerationRetiring(_ token: CacheToken, for key: AssetCacheKey) {
         guard
-            let ticket = token.diskWriteGeneration,
+            let authorityID = token.diskAuthorityID,
             let epoch = token.durableClearEpoch
         else { return }
-        retiringGenerations[key, default: []].insert(RetiringTicket(epoch: epoch, ticket: ticket))
+        retiringGenerations[key, default: []].insert(
+            RetiringAuthority(epoch: epoch, authorityID: authorityID)
+        )
     }
 
-    /// `true` if `generation` under `epoch` — some entry's own stamped
-    /// ``CachedAsset/writeGeneration``/``AssetCacheMetadata/writeGenerationAtPublication``
+    /// `true` if `authorityID` under `epoch` — some entry's own stamped
+    /// ``CachedAsset/authorityID``/``AssetCacheMetadata/authorityIDAtPublication``
     /// paired with that same entry's own stamped
     /// ``CachedAsset/durableClearEpoch``/``AssetDiskCache/KeyAuthoritySnapshot/clearEpoch``
     /// — has already been decided (via ``markGenerationRetiring(_:for:)``)
     /// to be retracted for `key`, regardless of whether that entry was
     /// read from memory or freshly read from disk just now. `false` for a
-    /// `nil` generation or `nil` epoch (an unstamped entry never carries
+    /// `nil` identifier or `nil` epoch (an unstamped entry never carries
     /// any retiring decision to check against).
     ///
-    /// **Why `epoch` must always be passed, never a bare ticket alone.**
-    /// ``AssetDiskCache/removeAll()`` resets every key's own issuance
-    /// counter back to `1` as part of a whole-cache clear, so the exact
-    /// same `Int` ticket value can legitimately mean two entirely
-    /// different, unrelated mutations on either side of a clear boundary
-    /// — a fresh, perfectly legitimate post-clear ticket `1` must never
-    /// be confused with a stale pre-clear ticket `1` this method already
-    /// marked retiring. Every call site already has the exactly-current
-    /// epoch on hand at the point it calls this (having just verified,
-    /// via ``unchanged(since:for:)``/the caller's own durable-authority
-    /// comparison, that its own local epoch value *is* the current one),
-    /// so passing it through here costs nothing extra and closes that gap.
+    /// `epoch` is carried alongside the identifier purely so this
+    /// bookkeeping stays scoped to the durable clear epoch it was
+    /// recorded under: a whole-cache clear legitimately invalidates every
+    /// in-flight operation wholesale, and an entry stamped under a
+    /// different epoch is already rejected by every caller's own epoch
+    /// comparison before this is ever consulted.
     ///
-    /// Shared by ``memoryEntryStillCurrent(_:storedGeneration:for:)`` (a
+    /// Shared by ``memoryEntryStillCurrent(_:storedAuthorityID:for:)`` (a
     /// memory hit) *and* every disk-hit branch
     /// (``diskHitIfTrusted(key:cacheKey:candidates:)``/
     /// ``revalidateFromDiskOrFetch(key:cacheKey:candidates:)``) that reads
@@ -308,14 +308,14 @@ extension AssetCacheService {
     /// nothing in-process changed during this call's own suspension. Only
     /// this explicit, retraction-authored marker closes that gap for a
     /// disk read the same way it already does for a memory read.
-    func writeGenerationIsRetiring(
-        _ generation: Int?,
+    func authorityIsRetiring(
+        _ authorityID: AuthorityID?,
         epoch: Int?,
         for key: AssetCacheKey
     ) -> Bool {
-        guard let generation, let epoch else { return false }
+        guard let authorityID, let epoch else { return false }
         return retiringGenerations[key]?.contains(
-            RetiringTicket(epoch: epoch, ticket: generation)
+            RetiringAuthority(epoch: epoch, authorityID: authorityID)
         ) == true
     }
 
@@ -356,8 +356,8 @@ extension AssetCacheService {
     }
 
     /// A single, atomic, cross-instance/cross-process issuance snapshot
-    /// for `key`, combining the durable clear epoch and this key's own
-    /// durable disk write generation (see
+    /// for `key`, combining the durable clear epoch and this operation's
+    /// own freshly minted durable ``AuthorityID`` (see
     /// ``AssetDiskCache/beginIssuance(for:)``) — read together, under one
     /// exclusive-lock acquisition on the disk cache, so both halves of a
     /// freshly issued ``CacheToken`` reflect exactly the same moment in
@@ -367,6 +367,6 @@ extension AssetCacheService {
     /// which both fail closed on `nil`).
     struct PreIssuedAuthority: Sendable {
         let clearEpoch: Int?
-        let diskWriteGeneration: Int?
+        let diskAuthorityID: AuthorityID?
     }
 }

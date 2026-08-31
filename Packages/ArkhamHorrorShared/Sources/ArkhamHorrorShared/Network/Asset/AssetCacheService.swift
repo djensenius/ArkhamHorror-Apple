@@ -102,8 +102,7 @@ actor AssetCacheService {
     var keyClearGeneration: [AssetCacheKey: Int] = [:]
 
     /// Reference counts of currently-open "authority windows" per key —
-    /// see ``beginAuthorityWindow(for:)``/``endAuthorityWindow(for:)`` in
-    /// `AssetCacheService+Epoch.swift`.
+    /// see ``beginAuthorityWindow(for:)``/``endAuthorityWindow(for:)``.
     var openAuthorityWindows: [AssetCacheKey: Int] = [:]
 
     /// The maximum number of distinct keys' authority bookkeeping
@@ -126,14 +125,13 @@ actor AssetCacheService {
     /// under it purely due to unrelated keys' churn.
     static let maxTrackedAuthorityKeys = 4096
 
-    /// Defensive ceiling on how many strictly-increasing tickets
-    /// ``AssetCacheService/ticketGapIsEntirelyAbandoned(from:downTo:for:)``
-    /// will walk, one confirmed-retiring lookup at a time, for a single
-    /// cache key's own gap between a stored memory entry's ``CachedAsset/writeGeneration``
-    /// and that key's current durable highest-issued ticket — see that
-    /// method's own doc comment for why this walk exists at all. A gap
-    /// this wide for one key, within one durable clear epoch, would mean
-    /// thousands of distinct issue-then-abandon cycles for that exact
+    /// Defensive ceiling on how far back
+    /// ``AssetCacheService/authorityGapIsEntirelyAbandoned(from:downTo:epoch:for:)``
+    /// will walk this process's own recorded issuance chain for a single
+    /// cache key — see that method's own doc comment for why the walk
+    /// exists at all, and ``issuedAuthorityChain`` for what it walks. A
+    /// gap this wide for one key, within one durable clear epoch, would
+    /// mean hundreds of distinct issue-then-abandon cycles for that exact
     /// key alone; failing closed beyond it costs nothing but one
     /// unconditional live revalidation for a pathological key, never an
     /// unbounded synchronous walk.
@@ -187,11 +185,11 @@ actor AssetCacheService {
     /// applied to memory/disk strictly *before* the decision to retract
     /// was made. That already-applied entry's own durable stamps
     /// (``AssetCacheMetadata/clearEpochAtPublication``/
-    /// ``writeGenerationAtPublication``) are, by construction,
+    /// ``authorityIDAtPublication``) are, by construction,
     /// completely unaffected by retiring a token or by the fact that a
     /// retraction has been decided at all — nothing else has been issued
     /// for this key, so every durable authority check
-    /// (``memoryEntryStillCurrent(_:storedGeneration:for:)``,
+    /// (``memoryEntryStillCurrent(_:storedAuthorityID:for:)``,
     /// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``)
     /// would otherwise keep reporting that exact entry "still current"
     /// indefinitely — a window a concurrent ``asset(for:)``/
@@ -218,21 +216,23 @@ actor AssetCacheService {
     /// already refuses to prune any key with an open authority window or
     /// a live in-flight operation — the same protection that already
     /// keeps a still-suspended reader's own snapshot safe.
-    var retiringGenerations: [AssetCacheKey: Set<RetiringTicket>] = [:]
+    var retiringGenerations: [AssetCacheKey: Set<RetiringAuthority>] = [:]
 
-    /// A durable-clear-epoch-scoped ticket -- see
-    /// ``AssetCacheService/retiringGenerations``'s own doc comment for
-    /// why a bare `Int` ticket alone is unsound: issuance tickets reset
-    /// to `1` for every key the instant ``AssetDiskCache/removeAll()``
-    /// sweeps its per-key authority record away, so the exact same `Int`
-    /// value can legitimately mean two entirely different, unrelated
-    /// mutations across a whole-cache clear boundary -- a ticket retired
-    /// under one epoch must never be mistaken for a ticket of the same
-    /// number legitimately reissued under a later one.
-    struct RetiringTicket: Hashable, Sendable {
-        let epoch: Int
-        let ticket: Int
-    }
+    /// This process's own issuance-order record of every ``AuthorityID``
+    /// it has minted for a key, oldest first, capped at
+    /// ``maxRetiringGapWalk`` `+ 1` entries per key.
+    ///
+    /// Exists solely so ``authorityGapIsEntirelyAbandoned(from:downTo:epoch:for:)``
+    /// can still answer "was every operation issued for this key *after*
+    /// the one that published this entry abandoned?" now that authority
+    /// identifiers are unordered random values rather than consecutive
+    /// integers a walk could enumerate arithmetically. An identifier this
+    /// process never issued (minted by a sibling process, or since aged
+    /// out of the cap) is simply not found and the walk fails closed —
+    /// the same conservative outcome the predecessor integer walk gave
+    /// for a ticket it had no retiring record for. Purely in-memory and
+    /// pruned by `AssetCacheService+AuthorityPruning.swift`.
+    var issuedAuthorityChain: [AssetCacheKey: [AuthorityID]] = [:]
 
     /// Per-``AssetCacheKey`` FIFO mutex backing store for
     /// ``acquireIssuanceDecisionLock(for:)``/``releaseIssuanceDecisionLock(for:)``
@@ -326,7 +326,7 @@ actor AssetCacheService {
     /// Test-only hook awaited by ``asset(for:)``'s/``revalidate(for:)``'s
     /// memory-hit branches immediately after both of their own durable
     /// checks (``unchanged(since:for:)``/``clearStateUnchanged(since:for:)``
-    /// and ``memoryEntryStillCurrent(_:storedGeneration:for:)``) already
+    /// and ``memoryEntryStillCurrent(_:storedAuthorityID:for:)``) already
     /// completed, and immediately *before* the final synchronous
     /// ``localAuthorityStillMatchesSync(_:for:)``/
     /// ``localClearStateStillMatchesSync(_:for:)`` re-check. Always `nil`

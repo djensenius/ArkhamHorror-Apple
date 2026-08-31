@@ -76,29 +76,23 @@ final class FaultInjectionState: @unchecked Sendable {
     /// test actually cares about, exactly as `FailingFileManager` matched
     /// against `moveItem`'s destination URL.
     ///
-    /// A *prefix*-based match deliberately excludes the per-key
-    /// issuance/applied ticket counter files (`.gen`/`.applied`, and
-    /// `.applied`'s own redundant mirror copy `.applied-mirror`, plus
-    /// this key's own independent issuance anchor `.issuance-anchor` --
-    /// see `AssetDiskCache+WriteGeneration.swift`/
-    /// `AssetDiskCache+IssuanceAnchor.swift`): those share a key's
+    /// A *prefix*-based match deliberately excludes a key's single
+    /// canonical durable authority record (`.applied` -- see
+    /// `AssetDiskCache+WriteGeneration.swift`): it shares a key's
     /// content-file prefix purely as an implementation detail, but a
     /// test that installs `failPrefixes: ["<keyHash>."]` to model "this
     /// key's *content* persistence is failing" means the payload/
-    /// metadata write, not this key's internal issue-order bookkeeping —
+    /// metadata write, not this key's own durable write authority —
     /// conflating the two would make an ordinary, narrowly-scoped
-    /// best-effort-disk-failure scenario also fail durable ticket
+    /// best-effort-disk-failure scenario also fail durable authority
     /// issuance itself, which is a categorically different scenario a
-    /// test must opt into explicitly via `failSuffixes: [".gen"]`/
-    /// `[".applied"]`/`[".applied-mirror"]`/`[".issuance-anchor"]`
+    /// test must opt into explicitly via `failSuffixes: [".applied"]`
     /// instead.
     func shouldFailTempWrite(tempName: String) -> Bool {
         let strippedName = tempName.hasSuffix(".tmp") ? String(tempName.dropLast(4)) : tempName
         return lock.withLock {
             _failSuffixes.contains { strippedName.hasSuffix($0) }
-                || (!strippedName.hasSuffix(".gen") && !strippedName.hasSuffix(".applied")
-                    && !strippedName.hasSuffix(".applied-mirror")
-                    && !strippedName.hasSuffix(".issuance-anchor")
+                || (!strippedName.hasSuffix(".applied")
                     && _failPrefixes.contains { strippedName.hasPrefix($0) })
         }
     }

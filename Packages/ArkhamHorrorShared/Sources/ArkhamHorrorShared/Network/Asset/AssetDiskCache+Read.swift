@@ -86,7 +86,7 @@ extension AssetDiskCache {
         // deletion step failed or has simply not yet run — physical
         // cleanup is deliberately best-effort once the disposition itself
         // is durable; see ``commitRetractionLocked(for:token:destroy:)``'s
-        // own doc comment), or even after a *different*, newer ticket's
+        // own doc comment), or even after a *different*, newer authority's
         // own publication has since landed for this exact key. Without
         // this check, any reader that races ahead of best-effort physical
         // cleanup — a fresh service instance, an independent sibling
@@ -99,7 +99,7 @@ extension AssetDiskCache {
         guard
             let disposition = try? currentDispositionLocked(for: key),
             disposition.kind == .content,
-            disposition.ticket == metadata.writeGenerationAtPublication,
+            disposition.authorityID == metadata.authorityIDAtPublication,
             disposition.contentHash == metadata.payloadSHA256Hex
         else {
             quarantine(keyHash: key.digestHex, metadataName: metadataName)
@@ -130,7 +130,7 @@ extension AssetDiskCache {
         // Reconstructs this entry's own historical publication authority
         // directly from `metadata` -- read together with `payload` under
         // this exact locked call, never re-derived from whatever epoch/
-        // ticket happens to be current *now* -- so a revalidation of this
+        // identifier happens to be current *now* -- so a revalidation of this
         // exact hit can thread this entry's own historical stamp through
         // as its operation's token authority, rather than a freshly
         // re-read "current" one. See
@@ -139,7 +139,7 @@ extension AssetDiskCache {
             payload: payload,
             metadata: metadata,
             durableClearEpoch: metadata.clearEpochAtPublication,
-            writeGeneration: metadata.writeGenerationAtPublication
+            authorityID: metadata.authorityIDAtPublication
         )
     }
 

@@ -87,18 +87,19 @@ extension AssetCacheService {
     /// doc comment for that distinction.
     func beginIssuance(for key: AssetCacheKey) async -> PreIssuedAuthority {
         guard let snapshot = try? await diskCache.beginIssuance(for: key) else {
-            return PreIssuedAuthority(clearEpoch: nil, diskWriteGeneration: nil)
+            return PreIssuedAuthority(clearEpoch: nil, diskAuthorityID: nil)
         }
+        noteAuthorityIssued(snapshot.authorityID, for: key)
         return PreIssuedAuthority(
             clearEpoch: snapshot.clearEpoch,
-            diskWriteGeneration: snapshot.writeGeneration
+            diskAuthorityID: snapshot.authorityID
         )
     }
 
     /// The revalidation counterpart to ``beginIssuance(for:)`` — see
     /// `AssetDiskCache.beginRevalidationIssuance` for the full reasoning.
     /// `historicalClearEpoch`/
-    /// `historicalWriteGeneration`/`historicalContentHash` are the cached
+    /// `historicalAuthorityID`/`historicalContentHash` are the cached
     /// entry's own historical publication stamp; a `nil` return means
     /// either that durable read itself failed, *or* that stamp no longer
     /// matches durable reality (this entry has been superseded by a
@@ -109,33 +110,34 @@ extension AssetCacheService {
     /// belt-and-suspenders extra: every production caller already has
     /// this cached entry's own ``AssetCacheMetadata/payloadSHA256Hex``
     /// unconditionally available, and passing it lets the disk-cache
-    /// layer confirm not just that the ticket number still matches but
+    /// layer confirm not just that the identifier still matches but
     /// that the durable disposition is still genuinely
     /// ``AssetDiskCache/KeyDispositionKind/content`` for *this exact*
     /// payload — closing the window where a since-retracted disposition
     /// happens to still carry the same ticket a stale cached entry's own
     /// historical stamp captured (see `AssetDiskCache.beginRevalidationIssuance`'s
-    /// own doc comment). A non-`nil` return always carries a freshly,
-    /// uniquely reserved ticket for `key`, exactly like
+    /// own doc comment). A non-`nil` return always carries a freshly
+    /// minted, unique ``AuthorityID`` for `key`, exactly like
     /// ``beginIssuance(for:)``'s own result — never the historical value
     /// verbatim.
     func beginRevalidationIssuance(
         for key: AssetCacheKey,
         historicalClearEpoch: Int,
-        historicalWriteGeneration: Int,
+        historicalAuthorityID: AuthorityID,
         historicalContentHash: String
     ) async -> PreIssuedAuthority? {
         guard let snapshot = try? await diskCache.beginRevalidationIssuance(
             for: key,
             expectedClearEpoch: historicalClearEpoch,
-            expectedAppliedTicket: historicalWriteGeneration,
+            expectedAuthorityID: historicalAuthorityID,
             expectedContentHash: historicalContentHash
         ) else {
             return nil
         }
+        noteAuthorityIssued(snapshot.authorityID, for: key)
         return PreIssuedAuthority(
             clearEpoch: snapshot.clearEpoch,
-            diskWriteGeneration: snapshot.writeGeneration
+            diskAuthorityID: snapshot.authorityID
         )
     }
 
@@ -198,5 +200,10 @@ extension AssetCacheService {
         keyClearGeneration.removeAll()
         authorityKeyOrder.removeAll()
         trackedAuthorityKeys.removeAll()
+        // Dropped in the same sweep as the rest of this actor's per-key
+        // authority bookkeeping: every identifier it records belongs to
+        // an operation issued under the superseded clear epoch, and
+        // nothing after this point may consult them.
+        issuedAuthorityChain.removeAll()
     }
 }

@@ -34,7 +34,7 @@ extension AssetDiskCacheTests {
                 beforeAttributes[.modificationDate] as? Date
             )
 
-            var refreshedMetadata = try #require(await cache.get(cacheKey)).metadata
+            let refreshedMetadata = try #require(await cache.get(cacheKey)).metadata
             let sequenceBeforeTouch = refreshedMetadata.accessSequence
             try await cache.touch(cacheKey, metadata: refreshedMetadata)
 

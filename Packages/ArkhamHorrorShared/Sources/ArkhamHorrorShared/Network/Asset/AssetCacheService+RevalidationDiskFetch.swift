@@ -33,8 +33,8 @@ extension AssetCacheService {
         guard
             let onDisk = try await diskCache.get(cacheKey),
             await unchanged(since: snapshot, for: cacheKey),
-            !writeGenerationIsRetiring(
-                onDisk.writeGeneration,
+            !authorityIsRetiring(
+                onDisk.authorityID,
                 epoch: snapshot.durableClearEpoch,
                 for: cacheKey
             )
@@ -100,8 +100,8 @@ extension AssetCacheService {
         // function's own doc comment immediately above.
         guard
             await unchanged(since: snapshot, for: cacheKey),
-            !writeGenerationIsRetiring(
-                validated.writeGeneration,
+            !authorityIsRetiring(
+                validated.authorityID,
                 epoch: snapshot.durableClearEpoch,
                 for: cacheKey
             )
