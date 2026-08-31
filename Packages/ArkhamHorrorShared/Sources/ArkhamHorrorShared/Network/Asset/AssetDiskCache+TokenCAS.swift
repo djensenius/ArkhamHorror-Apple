@@ -89,10 +89,12 @@ extension AssetDiskCache {
     /// twice more under the very same token -- so a token-captured
     /// revision would be stale by construction at nearly every mutation
     /// site. The revision's job is to order this key's own durable commit
-    /// history and to make a rollback of the record file itself
-    /// detectable, which it does at the single commit choke point
-    /// (``commitAuthorityRecordLocked(_:for:)``'s checked increment), not
-    /// here.
+    /// history and to let the single commit choke point
+    /// (``commitAuthorityRecordLocked(_:for:)``'s checked increment)
+    /// assert, defensively, that a caller computed the next revision
+    /// correctly -- not to detect tampering, which
+    /// `AssetDiskCache+Disposition.swift`'s "Threat model" section
+    /// explicitly places out of scope.
     ///
     /// Must only ever be called while the caller already holds this
     /// instance's ``SecureCacheDirectory/acquireExclusiveLock()`` -- every

@@ -105,7 +105,10 @@ extension AssetDiskCache {
 
     /// Durably issues and returns a fresh ``AuthorityID`` for `key`:
     /// reads the current record, mints a brand-new 128-bit random
-    /// identifier, durably commits the record back with
+    /// identifier (via ``mintFreshAuthorityIDLocked(distinctFrom:)``,
+    /// which bounds its own retries and rejects the reserved pristine
+    /// sentinel as well as either identifier this key's record already
+    /// names), durably commits the record back with
     /// `issuedAuthorityID` replaced and `transitionRevision` advanced by
     /// exactly one (write, `fsync`, rename, directory `fsync`) while
     /// leaving `disposition` entirely untouched, and returns the new
@@ -150,7 +153,7 @@ extension AssetDiskCache {
     ) throws -> (authorityID: AuthorityID, revision: Int) {
         try requireDiskWritesEnabledLocked()
         let current = try currentAuthorityRecordLocked(for: key)
-        let authorityID = try AuthorityID.random()
+        let authorityID = try mintFreshAuthorityIDLocked(distinctFrom: current)
         let revision = try checkedAdvancedRevision(current.transitionRevision)
         try commitAuthorityRecordLocked(
             KeyAuthorityRecord(
@@ -161,5 +164,78 @@ extension AssetDiskCache {
             for: key
         )
         return (authorityID, revision)
+    }
+
+    /// How many times ``mintFreshAuthorityIDLocked(distinctFrom:)`` will
+    /// draw a fresh candidate before giving up with a typed failure.
+    ///
+    /// Eight is ample precisely *because* no real draw is ever expected
+    /// to be rejected: with 128 bits of entropy, a candidate colliding
+    /// with either of the two identifiers this key's record currently
+    /// names — or landing exactly on the reserved all-zero sentinel — is
+    /// a `2^-128`-per-attempt event, so the probability of eight
+    /// consecutive rejections is `2^-1024`-ish and is not a scenario this
+    /// bound is sized against. The bound exists solely to convert
+    /// "astronomically unlikely" into "provably terminates": a
+    /// compromised, stuck, or (in tests) deliberately forced source that
+    /// keeps returning a forbidden value must fail closed with an
+    /// ordinary error rather than spin forever while holding this
+    /// cache's cross-process exclusive lock.
+    static let authorityIDMintAttemptLimit = 8
+
+    /// Mints a brand-new ``AuthorityID`` for a key whose current durable
+    /// record is `current`, rejecting and re-drawing any candidate that
+    /// is not usable as a *fresh* authority.
+    ///
+    /// **This is the layer that enforces every candidate rule**, rather
+    /// than ``AuthorityID/random()`` (which is deliberately a thin,
+    /// policy-free wrapper over `SecRandomCopyBytes`): a candidate must
+    /// not be ``AuthorityID/pristine`` (the reserved all-zero sentinel,
+    /// which must only ever appear on a wholly pristine record and would
+    /// otherwise be silently accepted by every exact-equality compare in
+    /// this cache), must not equal the identifier already recorded as
+    /// most recently *issued*, and must not equal the identifier of the
+    /// currently *applied* disposition. The latter two matter for the
+    /// same reason a fresh revalidation never reuses an entry's
+    /// historical stamp: an issuance whose identifier coincides with an
+    /// already-applied one is indistinguishable, to
+    /// ``removeIfApplied(_:token:)``'s exact-match retraction contract,
+    /// from "this exact operation's own mutation is what is applied".
+    ///
+    /// Fails closed with a typed
+    /// ``AssetError/cachePersistenceFailed(_:)`` — never a trap, never an
+    /// unbounded loop — if the bound is exhausted, and propagates the
+    /// identical typed failure unchanged if the underlying random source
+    /// itself reports an error at any attempt.
+    func mintFreshAuthorityIDLocked(
+        distinctFrom current: KeyAuthorityRecord
+    ) throws -> AuthorityID {
+        for _ in 0 ..< Self.authorityIDMintAttemptLimit {
+            let candidate = try nextAuthorityIDCandidateLocked()
+            guard
+                candidate != .pristine,
+                candidate != current.issuedAuthorityID,
+                candidate != current.disposition.authorityID
+            else {
+                continue
+            }
+            return candidate
+        }
+        throw AssetError.cachePersistenceFailed(
+            "Could not mint a usable cache authority identifier in" +
+                " \(Self.authorityIDMintAttemptLimit) attempts; refusing to issue an operation" +
+                " without a unique durable authority."
+        )
+    }
+
+    /// One raw candidate draw: a test-forced value when this instance's
+    /// ``AuthorityIDFaultInjectionState`` has one queued (or its forced
+    /// hard failure), otherwise a genuine `SecRandomCopyBytes` draw. Inert
+    /// in production, where the queue is always empty.
+    private func nextAuthorityIDCandidateLocked() throws -> AuthorityID {
+        if let forced = try authorityIDFaultState.nextForcedIdentifier() {
+            return forced
+        }
+        return try AuthorityID.random()
     }
 }

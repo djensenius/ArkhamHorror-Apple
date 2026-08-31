@@ -151,4 +151,99 @@ struct AssetCacheLimitsTests {
         #expect(limits.highWaterMarkDiskBytes == 1800)
         #expect(limits.lowWaterMarkDiskBytes == 1500)
     }
+
+    @Test(
+        """
+        The authority-record count budget derives its water marks from the same ratios, by the \
+        same rule, as the byte \
+        budgets do -- including at a budget one below Int.max with a ratio just under 1, where a \
+        naive Double round- \
+        trip would exceed the budget it is supposed to bound.
+        """
+    )
+    func authorityRecordCountWaterMarksFollowTheByteBudgetRule() {
+        let ordinary = AssetCacheLimits(
+            maxEncodedBytes: 1024,
+            maxDimension: 64,
+            maxPixelCount: 4096,
+            memoryBudgetBytes: 1000,
+            diskBudgetBytes: 2000,
+            maxAuthorityRecordCount: 1000,
+            highWaterMarkRatio: 0.9,
+            lowWaterMarkRatio: 0.75
+        )
+        #expect(ordinary.highWaterMarkAuthorityRecordCount == 900)
+        #expect(ordinary.lowWaterMarkAuthorityRecordCount == 750)
+
+        let extreme = AssetCacheLimits(
+            maxEncodedBytes: 1024,
+            maxDimension: 64,
+            maxPixelCount: 4096,
+            memoryBudgetBytes: 1000,
+            diskBudgetBytes: 2000,
+            maxAuthorityRecordCount: .max - 1,
+            highWaterMarkRatio: 0.999_999_999_9,
+            lowWaterMarkRatio: 0.5
+        )
+        #expect(extreme.highWaterMarkAuthorityRecordCount <= extreme.maxAuthorityRecordCount)
+        #expect(
+            extreme.lowWaterMarkAuthorityRecordCount
+                <= extreme.highWaterMarkAuthorityRecordCount
+        )
+    }
+
+    @Test("A negative authority-record budget traps, exactly like a negative byte budget")
+    func negativeAuthorityRecordCountTraps() async {
+        await #expect(processExitsWith: .failure) {
+            _ = AssetCacheLimits(
+                maxEncodedBytes: 1024,
+                maxDimension: 64,
+                maxPixelCount: 4096,
+                memoryBudgetBytes: 2048,
+                diskBudgetBytes: 4096,
+                maxAuthorityRecordCount: -1
+            )
+        }
+    }
+
+    @Test(
+        """
+        The directory-entry flood ceiling leaves real headroom above everything the production \
+        budgets could \
+        themselves legitimately produce: every authority record at its own cap, plus every content \
+        entry the disk byte \
+        budget could hold even if each one were implausibly tiny, plus both of that entry's files.
+        """
+    )
+    func floodCeilingLeavesHeadroomAboveEveryLegitimateProductionPopulation() {
+        let production = AssetCacheLimits.production
+        let maximumContentEntries =
+            production.diskBudgetBytes / AssetCacheLimits.minimumAccountedContentEntryBytes
+        let legitimatePopulation =
+            production.maxAuthorityRecordCount + 2 * maximumContentEntries
+        #expect(production.maxAccountableDirectoryEntryCount > legitimatePopulation)
+        #expect(
+            production.maxAccountableDirectoryEntryCount >= 2 * legitimatePopulation,
+            "The ceiling is a generous multiple, not a value a full cache could brush against"
+        )
+    }
+
+    @Test(
+        """
+        The flood ceiling saturates rather than overflowing when the budgets it is derived from \
+        are themselves near \
+        Int.max.
+        """
+    )
+    func floodCeilingSaturatesAtExtremeBudgets() {
+        let limits = AssetCacheLimits(
+            maxEncodedBytes: 1024,
+            maxDimension: 64,
+            maxPixelCount: 4096,
+            memoryBudgetBytes: .max,
+            diskBudgetBytes: .max,
+            maxAuthorityRecordCount: .max
+        )
+        #expect(limits.maxAccountableDirectoryEntryCount == .max)
+    }
 }

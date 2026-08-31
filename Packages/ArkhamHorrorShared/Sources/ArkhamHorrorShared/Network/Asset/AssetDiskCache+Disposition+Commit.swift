@@ -30,21 +30,33 @@ extension AssetDiskCache {
     ///
     /// 1. `record.transitionRevision` must be *exactly* one past the
     ///    currently durable revision, via ``checkedAdvancedRevision(_:)``.
-    ///    A caller proposing an equal or lower revision is attempting to
-    ///    roll this key's own commit history backward -- the one thing a
-    ///    single-file design must still detect, since it is the only way
-    ///    a well-formed record can be semantically stale.
     /// 2. The proposed disposition must be a legal successor of the
     ///    currently applied one, per
     ///    ``isLegalDispositionTransition(from:to:)``.
     ///
-    /// Both fail closed with a typed
-    /// ``AssetError/cachePersistenceFailed(_:)``. Because the caller
-    /// already holds the cross-process exclusive lock for the whole
-    /// mutation, this re-read observes exactly the state the caller's own
-    /// earlier read saw in the healthy case; it costs one bounded
-    /// small-file read and turns every commit into a genuine durable
-    /// compare-and-swap rather than a blind overwrite.
+    /// **What guard 1 actually proves -- and what it does not.** The
+    /// caller already holds this directory's cross-process exclusive
+    /// lock for the whole mutation, and read the same record under that
+    /// same hold, so nothing else can have written this file in between:
+    /// this re-read observes exactly what the caller's own earlier read
+    /// saw. That makes the check a *defensive consistency assertion
+    /// against a same-call-site logic error* -- a caller that computed
+    /// the wrong next revision, or (if the lock were somehow not
+    /// genuinely exclusive, which would be a locking bug elsewhere) a
+    /// legitimate competing commit for this same key -- and nothing
+    /// more. It emphatically does **not** detect a rollback performed by
+    /// an external actor at an arbitrary point in time: such an actor
+    /// restores a self-consistent older record, which this check reads
+    /// as simply "the current state", and that whole class of tampering
+    /// is out of scope for this design anyway (see
+    /// `AssetDiskCache+Disposition.swift`'s "Threat model" section). The
+    /// check is kept because it is cheap (one bounded small-file read)
+    /// and catches real programming mistakes at the single choke point
+    /// every commit funnels through -- not because it proves anything
+    /// about tamper resistance.
+    ///
+    /// Both guards fail closed with a typed
+    /// ``AssetError/cachePersistenceFailed(_:)``.
     func commitAuthorityRecordLocked(
         _ record: KeyAuthorityRecord,
         for key: AssetCacheKey

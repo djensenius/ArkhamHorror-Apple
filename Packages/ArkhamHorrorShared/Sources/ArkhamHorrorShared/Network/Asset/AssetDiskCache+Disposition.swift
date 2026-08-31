@@ -66,6 +66,58 @@ import Foundation
 /// ``AssetError/cachePersistenceFailed(_:)``, an acceptable "treat this
 /// key as if it had never been written" cold-miss outcome for a local,
 /// ephemeral disk cache.
+///
+/// ## Threat model
+///
+/// Stating plainly what this design does and does not defend against,
+/// so no reader (or future reviewer) infers a guarantee that is not
+/// being made.
+///
+/// **In scope, and defended:**
+///
+/// - **Process crashes and unclean shutdowns mid-write.** Every durable
+///   write of this record follows one fixed atomic shape -- bounded temp
+///   file, `fsync`, rename into place, directory `fsync` (see
+///   ``AssetDiskCache/writeAuthorityRecordFileLocked(_:name:)``) -- so a
+///   crash at any instant leaves either the complete previous record or
+///   the complete new one, never a torn mixture.
+/// - **Concurrent access from independent instances and processes.**
+///   Every read and every commit happens inside this directory's own
+///   cross-process exclusive lock (see
+///   ``SecureCacheDirectory/acquireExclusiveLock()``), under ordinary
+///   filesystem semantics, so two services sharing one directory agree
+///   on write ordering for the same key.
+/// - **Missing or corrupt on-disk state.** A record that is absent is
+///   treated as "nothing has ever been issued for this key" -- safe
+///   only because the next issuance mints an unpredictable identifier
+///   (see ``AuthorityID``). A record that is present but untrustworthy
+///   (wrong file type, oversized, unparsable, or structurally
+///   impossible) is a hard, typed, fail-closed error. Neither is ever
+///   silently repaired, and there is no second copy anywhere to repair
+///   one from.
+///
+/// **Explicitly out of scope, and not claimed anywhere:** a privileged
+/// or same-user actor directly manipulating files in this cache's own
+/// directory, outside this cache's write path. That includes restoring
+/// an older, well-formed, fully-committed snapshot of a `<hash>.applied`
+/// file byte-for-byte (a backup or volume-snapshot rollback, a
+/// deliberate copy-back, a compromised filesystem). **No purely local,
+/// app-owned-filesystem storage scheme can detect that class of
+/// tampering**: any additional artifact introduced to witness it -- a
+/// mirror copy, an anchor, a witness file, a journal, a floor index --
+/// lives in the very same directory and is therefore restorable by the
+/// very same actor, in the very same way, so it moves the problem
+/// rather than solving it. Distinguishing "this file was never touched
+/// since we wrote it" from "this file was put back exactly as it looked
+/// before" requires external attestation this app does not have.
+/// (Restoring an old record is, in any case, no more powerful than
+/// deleting it: a restored older record still cannot authorize any
+/// token an attacker does not already hold, because
+/// ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``
+/// compares unpredictable 128-bit identifiers for exact equality.) An
+/// earlier revision of this subsystem grew four separate mechanisms
+/// chasing exactly this; they are deleted, and must not creep back in
+/// under a new name.
 extension AssetDiskCache {
     enum KeyDispositionKind: String, Codable, Sendable, Equatable {
         case content
@@ -114,10 +166,17 @@ extension AssetDiskCache {
         /// publish/touch, or either half of a two-phase retraction --
         /// never reset and never reused across two different commits.
         /// It totally orders this key's own commit history, which is
-        /// what lets a durable rollback to an older-but-well-formed
-        /// snapshot of this same record be detected (see
-        /// ``AssetDiskCache/commitAuthorityRecordLocked(_:for:expecting:)``'s
-        /// checked-increment contract) rather than silently accepted.
+        /// what makes ``AssetDiskCache/commitAuthorityRecordLocked(_:for:)``'s
+        /// checked-increment contract expressible at all, and what lets
+        /// reclaim order the least-recently-touched records first (see
+        /// ``AssetDiskCache/reconciledAuthorityRecordNames(_:)``).
+        ///
+        /// **It is not a tamper or rollback detector.** A durable
+        /// restore of an older, well-formed snapshot of this same file
+        /// by an actor outside this cache's write path is explicitly out
+        /// of scope (see this file's "Threat model" section); the
+        /// checked increment is a same-call-site consistency assertion,
+        /// not a security control.
         let transitionRevision: Int
 
         /// The record a key that has never had any authority issued or
@@ -148,8 +207,9 @@ extension AssetDiskCache {
     /// legitimately arise from this cache's own commit paths).
     ///
     /// **There is deliberately no cross-field check between
-    /// `issuedAuthorityID` and `disposition.authorityID`.** Two
-    /// independently-minted random identifiers have no ordering, so
+    /// `issuedAuthorityID` and `disposition.authorityID`** beyond each
+    /// one's own pristine-sentinel rule above. Two independently-minted
+    /// random identifiers have no ordering, so
     /// "issued is at least as new as applied" is not a statement this
     /// design can (or needs to) make: the two fields are simply
     /// independent, and are equal exactly when the currently-issued
@@ -166,6 +226,22 @@ extension AssetDiskCache {
     /// every other impossible pairing above.
     func isValidAuthorityRecord(_ record: KeyAuthorityRecord) -> Bool {
         guard record.transitionRevision >= 0 else { return false }
+        // The reserved all-zero sentinel may only ever appear on a record
+        // that is pristine *in its entirety*. Checking each identifier
+        // field against the whole-record pristine sentinel independently
+        // is what closes a shape the whole-record equality check below
+        // cannot see on its own: a record carrying
+        // `issuedAuthorityID == .pristine` alongside a live `.content`
+        // disposition and a nonzero revision is already `!= .pristine`
+        // *because of that disposition*, so `(revision == 0) == (record
+        // == .pristine)` is satisfied as `false == false` and the record
+        // sails through -- even though its issued identifier is
+        // illegally the one value no real mint can ever produce, and
+        // therefore the one value ``acceptToken(_:currentEpoch:currentIssued:)``
+        // relies on never matching a real caller's token.
+        if record.issuedAuthorityID == .pristine {
+            guard record == .pristine else { return false }
+        }
         if record.disposition.authorityID == .pristine {
             guard record.disposition == .pristine else { return false }
         }

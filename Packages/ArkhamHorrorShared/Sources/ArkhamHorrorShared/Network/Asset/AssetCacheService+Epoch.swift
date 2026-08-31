@@ -143,8 +143,13 @@ extension AssetCacheService {
         /// There is no ordering comparison anywhere: two independently
         /// minted 128-bit random identifiers are either equal or they are
         /// not, which is exactly the property that makes this
-        /// non-replayable even if the durable record is lost or rolled
-        /// back (see ``AuthorityID``'s own doc comment).
+        /// non-replayable by a *stale in-flight caller* even when the
+        /// durable record is lost and recreated -- a freshly minted
+        /// identifier cannot coincide with one anybody still holds (see
+        /// ``AuthorityID``'s own doc comment). It is deliberately not a
+        /// claim about an external actor restoring an older copy of that
+        /// record, which `AssetDiskCache+Disposition.swift`'s "Threat
+        /// model" section places explicitly out of scope.
         ///
         /// A revalidation of an existing memory/disk hit still always
         /// mints its own fresh identifier here, exactly like a genuinely

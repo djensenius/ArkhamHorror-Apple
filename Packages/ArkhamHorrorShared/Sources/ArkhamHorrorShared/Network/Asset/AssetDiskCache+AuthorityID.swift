@@ -61,6 +61,15 @@ struct AuthorityID: Sendable, Equatable, Hashable, Codable {
 
     /// Mints a brand-new identifier from the platform CSPRNG.
     ///
+    /// Deliberately policy-free: it draws bytes and nothing else. Every
+    /// rule about which drawn values are *usable* as a fresh authority --
+    /// rejecting the reserved ``pristine`` sentinel, and rejecting a
+    /// value equal to either identifier a key's record already names --
+    /// is enforced one layer up, in
+    /// ``AssetDiskCache/mintFreshAuthorityIDLocked(distinctFrom:)``,
+    /// which is the only place with the durable record in hand to compare
+    /// against and the only place that can bound its own retries.
+    ///
     /// Fails closed with a typed
     /// ``AssetError/cachePersistenceFailed(_:)`` — never a force-unwrap,
     /// never a fallback to a weaker source of randomness, and never a

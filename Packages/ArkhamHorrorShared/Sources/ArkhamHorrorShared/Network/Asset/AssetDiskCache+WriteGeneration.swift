@@ -53,16 +53,20 @@ import Foundation
 /// re-validation quarantine), and storing authority there would let "no
 /// entry currently exists" collapse back to the same baseline a pristine
 /// key reports. It is never deleted by an ordinary per-key
-/// ``AssetDiskCache/remove(_:token:)`` -- only ``AssetDiskCache/removeAll()``
-/// (always paired with a durable clear-epoch bump that independently and
-/// unconditionally fences every previously issued token; see
-/// `SecureCacheDirectory+ClearEpoch.swift`) ever removes it.
+/// ``AssetDiskCache/remove(_:token:)``. It *is* removed by
+/// ``AssetDiskCache/removeAll()`` (always paired with a durable
+/// clear-epoch bump that independently and unconditionally fences every
+/// previously issued token; see `SecureCacheDirectory+ClearEpoch.swift`),
+/// and, once this cache's authority-record *count* budget is exceeded, by
+/// the quota reclaim in `AssetDiskCache+AuthorityQuota.swift` — but only
+/// ever for a key whose disposition is already a settled `.tombstone`,
+/// never one that is live or mid-retraction.
 extension AssetDiskCache {
     /// The fixed leaf name of `key`'s single canonical durable authority
     /// record file. There is exactly one such file per key; nothing in
     /// this cache writes, reads, or reconstructs a second copy of it.
     func authorityRecordFilename(for key: AssetCacheKey) -> String {
-        "\(key.digestHex).applied"
+        "\(key.digestHex)\(Self.authorityRecordFilenameSuffix)"
     }
 
     /// A single, atomic, cross-instance/cross-process issuance snapshot

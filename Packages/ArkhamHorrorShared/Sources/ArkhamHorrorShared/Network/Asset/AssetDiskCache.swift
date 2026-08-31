@@ -144,6 +144,17 @@ actor AssetDiskCache {
     /// re-check.
     var testOnlyPauseBeforeAcquiringRemovalLock: (() async -> Void)?
 
+    /// Test-only deterministic control over the authority-identifier
+    /// source ``issueAuthorityLocked(for:)`` mints from -- inert in
+    /// production (an empty queue and a zero failure count fall straight
+    /// through to `SecRandomCopyBytes`), and deliberately *per-instance*
+    /// rather than a process-wide global so one test's forced identifiers
+    /// can never leak into an unrelated, concurrently-running cache. See
+    /// ``AuthorityIDFaultInjectionState``, which mirrors
+    /// ``FaultInjectionState``'s own lock-backed shape for the same
+    /// reason.
+    let authorityIDFaultState = AuthorityIDFaultInjectionState()
+
     init(directory: URL, limits: AssetCacheLimits, fileManager: FileManager = .default) throws {
         self.directory = directory
         self.limits = limits

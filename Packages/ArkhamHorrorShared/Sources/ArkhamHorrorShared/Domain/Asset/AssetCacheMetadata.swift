@@ -119,7 +119,18 @@ struct AssetCacheMetadata: Codable, Sendable, Equatable {
     let clearEpochAtPublication: Int
     var authorityIDAtPublication: AuthorityID
 
-    static let currentSchemaVersion = 4
+    /// Bumped to `5` when ``authorityIDAtPublication`` replaced the
+    /// predecessor `writeGenerationAtPublication: Int` field (see
+    /// ``AuthorityID``). Relying on the incidental `Codable` decode
+    /// failure that a renamed/retyped key happens to produce would make
+    /// rejection of an old sidecar an accident of the encoding rather
+    /// than an explicit, version-driven decision: every read path
+    /// (``AssetDiskCache/get(_:)``, `AssetDiskCache+Recovery.swift`,
+    /// `AssetDiskCache+SidecarEntries.swift`) already gates on
+    /// `schemaVersion == currentSchemaVersion` *before* any field is
+    /// trusted, so bumping the version is what actually makes a
+    /// schema-4 sidecar quarantined-as-corrupt by contract.
+    static let currentSchemaVersion = 5
 
     init(
         cacheKeyHex: String,

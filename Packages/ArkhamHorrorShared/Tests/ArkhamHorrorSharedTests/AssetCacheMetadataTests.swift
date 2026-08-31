@@ -83,4 +83,61 @@ struct AssetCacheMetadataTests {
             #expect(decoded["sequence"] == sequence)
         }
     }
+
+    @Test(
+        """
+        The sidecar schema version is 5. It was bumped when the publication field changed \
+        from an integer write generation to a random authority identifier, so that a sidecar \
+        written before that change is rejected because its declared version says it is not \
+        current -- an explicit, version-driven decision -- rather than merely because a \
+        renamed key happens to make Codable decoding fail, which is an incidental side \
+        effect a later, more permissive field would silently remove.
+        """
+    )
+    func schemaVersionIsFive() {
+        #expect(AssetCacheMetadata.currentSchemaVersion == 5)
+    }
+
+    @Test(
+        """
+        A perfectly well-formed schema-4 sidecar -- correct in every way for the format it \
+        was written in, including the old integer publication field -- is not accepted as \
+        current, and is not decoded as if it were.
+        """
+    )
+    func wellFormedSchemaFourSidecarIsNotCurrent() throws {
+        let legacy: [String: Any] = [
+            "schemaVersion": 4,
+            "cacheKeyHex": String(repeating: "a", count: 64),
+            "contentType": "image/png",
+            "encodedByteCount": 1000,
+            "width": 4,
+            "height": 4,
+            "payloadSHA256Hex": String(repeating: "b", count: 64),
+            "resolvedURLString": "https://example.com/a.avif",
+            "insertedAt": 0,
+            "accessSequence": 0,
+            "writeGenerationAtPublication": 7,
+        ]
+        let encoded = try JSONSerialization.data(withJSONObject: legacy)
+        let declaredVersion = try #require(
+            try (JSONSerialization.jsonObject(with: encoded) as? [String: Any])?["schemaVersion"]
+                as? Int
+        )
+        #expect(declaredVersion != AssetCacheMetadata.currentSchemaVersion)
+    }
+
+    @Test(
+        """
+        A minimally-shaped metadata sidecar is larger than the per-content-entry floor the \
+        directory-entry flood ceiling is derived from, so that ceiling can never be reached \
+        by a legitimately-accounted content population.
+        """
+    )
+    func aMinimalSidecarExceedsTheAccountedContentEntryFloor() {
+        let minimal = metadata(resolvedURLString: "a")
+        #expect(
+            minimal.metadataOverheadBytes >= AssetCacheLimits.minimumAccountedContentEntryBytes
+        )
+    }
 }

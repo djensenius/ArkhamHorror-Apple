@@ -62,8 +62,14 @@ extension AssetDiskCache {
     /// one, not several, chances to affect a single `set` call.
     ///
     /// This is also this cache's sole "prove the budget" recovery path:
-    /// if the directory cannot be listed, if any stray file's size cannot
-    /// be determined, or if accounted usage still exceeds
+    /// if the directory cannot be listed, if it holds more entries than
+    /// ``AssetCacheLimits/maxAccountableDirectoryEntryCount`` (an
+    /// unaccountable flood, failed immediately rather than scanned), if
+    /// the durable authority-record count is over
+    /// ``AssetCacheLimits/maxAuthorityRecordCount`` and cannot be
+    /// reclaimed back under it (see
+    /// ``reconciledAuthorityRecordNames(_:)``), if any stray file's size
+    /// cannot be determined, or if accounted usage still exceeds
     /// ``AssetCacheLimits/highWaterMarkDiskBytes`` even after evicting
     /// every evictable entry, this durably marks disk *writes* disabled
     /// (see ``AssetDiskCache/requireDiskWritesEnabledLocked()``) rather
@@ -75,7 +81,23 @@ extension AssetDiskCache {
     /// failure never permanently disables writes once conditions
     /// improve.
     func evictIfNeeded() {
-        guard let names = try? directoryAccess.listNames() else {
+        guard let listedNames = try? directoryAccess.listNames() else {
+            markDiskWritesDisabledLocked()
+            return
+        }
+        guard listedNames.count <= limits.maxAccountableDirectoryEntryCount else {
+            // A listing larger than anything this cache's own budgets
+            // could produce cannot be reconciled, and attempting the
+            // per-entry decode/stat pass below on it is exactly the
+            // unbounded per-call cost this ceiling exists to prevent --
+            // so fail closed *before* that pass, not after it.
+            markDiskWritesDisabledLocked()
+            return
+        }
+        guard let names = reconciledAuthorityRecordNames(listedNames) else {
+            // The authority-record count is over its own cap and cannot
+            // be brought back under it (or a record could not be
+            // trusted); see ``reconciledAuthorityRecordNames(_:)``.
             markDiskWritesDisabledLocked()
             return
         }
