@@ -1,10 +1,10 @@
 import Darwin
 import Foundation
 
-/// A per-issuance session whose advisory lock proves that an operation can
-/// still be completed by a live owner. It is created under the directory
-/// lock before its authority record can name it; after a crash, the
-/// kernel releases the lock without relying on elapsed time.
+/// A cache-session owner whose advisory lock proves that operations issued
+/// by this cache instance can still be completed. It is created under the
+/// directory lock before an authority record can name it; after a crash,
+/// the kernel releases the lock without relying on elapsed time.
 final class CacheIssuanceOwner: @unchecked Sendable {
     static let markerPrefix = ".arkham-cache-issuance-owner-"
     static let markerSuffix = ".lock"

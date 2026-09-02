@@ -123,6 +123,8 @@ extension AssetDiskCache {
         guard authorityID != .pristine else { return false }
         guard
             let ownerID = currentRecord.openIssuanceOwnerID,
+            ownerID != issuanceOwner?.identifier
+            || locallyOpenIssuanceAuthorityIDs.contains(authorityID),
             secureDirectory.isIssuanceOwnerLive(ownerID) == true
         else {
             return false
@@ -140,14 +142,18 @@ extension AssetDiskCache {
         _ key: AssetCacheKey,
         token: AssetCacheService.CacheToken
     ) async throws -> AssetCacheService.MutationOutcome {
-        if let authorityID = token.diskAuthorityID {
-            // Releasing before the awaited lock acquisition means a
-            // terminal operation cannot keep an owner live indefinitely
-            // if the durable settlement itself encounters an I/O failure.
-            releaseOpenIssuanceOwnerLocked(authorityID)
+        let releasedOwnerID = token.diskAuthorityID.flatMap {
+            retireLocallyOpenIssuanceBeforeLock($0)
         }
         let lockFD = try await secureDirectory.acquireExclusiveLock()
-        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        defer {
+            if let releasedOwnerID {
+                _ = try? secureDirectory.remove(
+                    name: CacheIssuanceOwner.markerName(for: releasedOwnerID)
+                )
+            }
+            secureDirectory.releaseExclusiveLock(lockFD)
+        }
         try ensureRootAuthorityInitializedLocked()
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
         let current = try currentAuthorityRecordLocked(for: key)
@@ -158,7 +164,7 @@ extension AssetDiskCache {
         else {
             return .stale
         }
-        guard let ownerID = current.openIssuanceOwnerID else {
+        guard current.openIssuanceOwnerID != nil else {
             return .applied
         }
         try commitAuthorityRecordLocked(
@@ -169,9 +175,6 @@ extension AssetDiskCache {
                 openIssuanceOwnerID: nil
             ),
             for: key
-        )
-        _ = try? secureDirectory.remove(
-            name: CacheIssuanceOwner.markerName(for: ownerID)
         )
         return .applied
     }

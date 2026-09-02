@@ -83,11 +83,12 @@ actor AssetDiskCache {
     /// entry point for the remainder of this instance's lifetime).
     var didEnsureRootAuthorityInitialized = false
 
-    /// Every locally-issued operation's held advisory owner marker,
-    /// retained only until the operation reaches a terminal outcome or is
-    /// superseded. Releasing the marker makes an otherwise-unsettleable
-    /// tombstone safely reclaimable after a failure.
-    var openIssuanceOwners: [AuthorityID: CacheIssuanceOwner] = [:]
+    /// This cache instance's live advisory owner marker, shared by all of
+    /// its current issued operations. `locallyOpenIssuanceAuthorityIDs`
+    /// distinguishes individual terminal/cancelled operations while this
+    /// session remains live for sibling operations.
+    var issuanceOwner: CacheIssuanceOwner?
+    var locallyOpenIssuanceAuthorityIDs: Set<AuthorityID> = []
 
     /// This process's own in-memory fail-closed half of the disk-writes-
     /// disabled marker (see `AssetDiskCache+Tombstone.swift`'s type-level

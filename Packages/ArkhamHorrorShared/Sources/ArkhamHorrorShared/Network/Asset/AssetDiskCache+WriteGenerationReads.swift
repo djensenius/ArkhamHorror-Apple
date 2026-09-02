@@ -156,21 +156,28 @@ extension AssetDiskCache {
         let current = try currentAuthorityRecordLocked(for: key)
         let authorityID = try mintFreshAuthorityIDLocked(distinctFrom: current)
         let revision = try checkedAdvancedRevision(current.transitionRevision)
-        let owner = trackingOpenIssuance ? try secureDirectory.makeIssuanceOwner() : nil
-        try commitAuthorityRecordLocked(
-            KeyAuthorityRecord(
-                issuedAuthorityID: authorityID,
-                disposition: current.disposition,
-                transitionRevision: revision,
-                openIssuanceOwnerID: owner?.identifier
-            ),
-            for: key
-        )
-        if let owner {
-            openIssuanceOwners[authorityID] = owner
+        let owner = trackingOpenIssuance ? try currentIssuanceOwnerLocked() : nil
+        let currentWasLocallyOpen = current.openIssuanceOwnerID != nil
+            && current.openIssuanceOwnerID == issuanceOwner?.identifier
+        do {
+            try commitAuthorityRecordLocked(
+                KeyAuthorityRecord(
+                    issuedAuthorityID: authorityID,
+                    disposition: current.disposition,
+                    transitionRevision: revision,
+                    openIssuanceOwnerID: owner?.identifier
+                ),
+                for: key
+            )
+        } catch {
+            releaseIssuanceOwnerIfUnusedLocked()
+            throw error
         }
-        if current.openIssuanceOwnerID != nil {
-            releaseOpenIssuanceOwnerLocked(current.issuedAuthorityID)
+        if trackingOpenIssuance {
+            locallyOpenIssuanceAuthorityIDs.insert(authorityID)
+        }
+        if currentWasLocallyOpen {
+            retireLocallyOpenIssuanceLocked(current.issuedAuthorityID)
         }
         return (authorityID, revision)
     }

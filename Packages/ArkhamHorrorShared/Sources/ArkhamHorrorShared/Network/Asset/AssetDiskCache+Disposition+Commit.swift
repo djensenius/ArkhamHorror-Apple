@@ -186,7 +186,7 @@ extension AssetDiskCache {
             for: key,
             settlingIssuance: true
         )
-        releaseOpenIssuanceOwnerLocked(authorityID)
+        retireLocallyOpenIssuanceLocked(authorityID)
         return authorityID
     }
 
@@ -220,7 +220,7 @@ extension AssetDiskCache {
             for: key,
             settlingIssuance: true
         )
-        releaseOpenIssuanceOwnerLocked(authorityID)
+        retireLocallyOpenIssuanceLocked(authorityID)
         try destroy()
         try commitDispositionLocked(
             KeyDisposition(authorityID: authorityID, kind: .tombstone, contentHash: nil),
@@ -229,12 +229,46 @@ extension AssetDiskCache {
         return authorityID
     }
 
-    /// Releases this cache instance's held marker for an operation that is
-    /// now terminal or superseded. Other cache instances retain their own
-    /// markers independently until their operations finish.
-    func releaseOpenIssuanceOwnerLocked(_ authorityID: AuthorityID) {
-        guard let owner = openIssuanceOwners.removeValue(forKey: authorityID) else { return }
+    /// Returns this cache's lazily-created session owner. Called only
+    /// while holding the root lock, so a concurrent orphan sweep cannot
+    /// observe the new marker before it is locked.
+    func currentIssuanceOwnerLocked() throws -> CacheIssuanceOwner {
+        if let issuanceOwner {
+            return issuanceOwner
+        }
+        let owner = try secureDirectory.makeIssuanceOwner()
+        issuanceOwner = owner
+        return owner
+    }
+
+    /// Retires one authority local to this cache. Once no local
+    /// operations remain, removes its session marker while still holding
+    /// the root lock; a failed removal merely leaves harmless crash
+    /// residue for startup recovery.
+    func retireLocallyOpenIssuanceLocked(_ authorityID: AuthorityID) {
+        locallyOpenIssuanceAuthorityIDs.remove(authorityID)
+        releaseIssuanceOwnerIfUnusedLocked()
+    }
+
+    /// Releases the shared session owner only when no local authority can
+    /// still lawfully publish under it.
+    func releaseIssuanceOwnerIfUnusedLocked() {
+        guard locallyOpenIssuanceAuthorityIDs.isEmpty, let owner = issuanceOwner else { return }
         _ = try? secureDirectory.remove(name: owner.markerName)
+        issuanceOwner = nil
+    }
+
+    /// Retires an operation before its terminal settlement acquires the
+    /// root lock. Returning the released owner lets that later locked
+    /// phase unlink its stale marker if no sibling operation still needs
+    /// the same session.
+    func retireLocallyOpenIssuanceBeforeLock(_ authorityID: AuthorityID) -> AuthorityID? {
+        locallyOpenIssuanceAuthorityIDs.remove(authorityID)
+        guard locallyOpenIssuanceAuthorityIDs.isEmpty, let owner = issuanceOwner else {
+            return nil
+        }
+        issuanceOwner = nil
+        return owner.identifier
     }
 
     /// Test/diagnostic-only: a single, lock-acquiring read of `key`'s
