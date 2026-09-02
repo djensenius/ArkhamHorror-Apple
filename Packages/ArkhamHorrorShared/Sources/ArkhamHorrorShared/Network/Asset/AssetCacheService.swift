@@ -153,7 +153,6 @@ actor AssetCacheService {
     /// forced to scan and requeue the same busy keys — costs the same
     /// constant amortized work per touch it always has, rather than
     /// `Array.removeFirst()`'s O(n) element shift turning that burst
-    /// quadratic. See ``noteAuthorityKeyTouched(_:)``.
     var authorityKeyOrder = AuthorityKeyQueue<AssetCacheKey>()
     var trackedAuthorityKeys: Set<AssetCacheKey> = []
 

@@ -44,6 +44,7 @@ extension AssetDiskCacheTests {
                         && $0 != SecureCacheDirectory.clearEpochFileName
                         && $0 != SecureCacheDirectory.rootInitMarkerFileName
                         && $0 != SecureCacheDirectory.rootFreshnessWitnessFileName
+                        && !SecureCacheDirectory.isIssuanceOwnerMarkerName($0)
                 }
             #expect(contents.isEmpty, "A rejected mismatched hash must write nothing at all")
             let fetched = try await cache.get(cacheKey)

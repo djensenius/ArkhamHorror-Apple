@@ -60,8 +60,10 @@ extension AssetCacheService {
         // `CancellationError()`).
         do {
             try await beginDurableRetractionIfApplied(key, token: fetch.token)
+            await settleIssuedOperationAfterTerminalOutcome(key, token: fetch.token)
             continuation.resume(returning: .failure(CancellationError()))
         } catch {
+            await settleIssuedOperationAfterTerminalOutcome(key, token: fetch.token)
             continuation.resume(returning: .failure(error))
         }
         Task { await self.completeDurableRetractionIfApplied(key, token: fetch.token) }

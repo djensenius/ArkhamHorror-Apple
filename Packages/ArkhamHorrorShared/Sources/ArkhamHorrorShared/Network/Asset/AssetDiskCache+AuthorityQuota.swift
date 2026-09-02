@@ -21,24 +21,12 @@ import Foundation
 /// slower without limit. Before this, nothing short of
 /// ``AssetDiskCache/removeAll()`` ever reclaimed one.
 ///
-/// **What is safe to reclaim, and why.** A record whose current
-/// ``AssetDiskCache/KeyDisposition/kind`` is
-/// ``AssetDiskCache/KeyDispositionKind/tombstone`` is fully settled:
-/// this key is confirmed absent, and nothing durably live refers to it.
-/// That covers both a key that was genuinely published and then removed,
-/// and a key that was only ever *issued* and never published (its
-/// disposition is still the pristine `.tombstone` sentinel it inherited).
-/// Deleting such a file collapses the key back to exactly the "no record
-/// on disk" baseline a brand-new key already has, which this branch's
-/// core invariant makes safe: the next issuance for that key mints a
-/// brand-new, never-reused 128-bit random ``AuthorityID`` regardless of
-/// what came before, so no future issuance can collide with a past one;
-/// and any operation still holding a now-deleted authority's identifier
-/// simply finds ``AssetDiskCache/acceptToken(_:currentEpoch:currentIssued:)``
-/// rejecting it (the record reads back pristine, whose sentinel
-/// identifier can never equal a real one) — the same safe "stale"
-/// outcome losing a race to a newer legitimate issuance already
-/// produces. A record whose kind is `.content` or `.retiring` is live or
+/// **What is safe to reclaim, and why.** A tombstone is reclaimable only
+/// after its issuance is explicitly settled or the issuing session's
+/// advisory lock is demonstrably orphaned. A fresh cache miss inherits a
+/// tombstone disposition, but its record retains a live owner until that
+/// operation succeeds, fails, or is cancelled; count pressure must never
+/// revoke it. A record whose kind is `.content` or `.retiring` is live or
 /// mid-retraction and is **never** reclaimed here.
 extension AssetDiskCache {
     /// The suffix of a key's single canonical durable authority record —
@@ -51,6 +39,11 @@ extension AssetDiskCache {
     private struct ReclaimCandidate {
         let name: String
         let revision: Int
+    }
+
+    enum AuthorityRecordQuotaState {
+        case withinLimit
+        case admissionBlocked
     }
 
     /// Enforces ``AssetCacheLimits/maxAuthorityRecordCount`` over an
@@ -99,11 +92,15 @@ extension AssetDiskCache {
     /// No directory `fsync` is issued here: ``evictIfNeeded()`` performs
     /// exactly one for the whole pass after this returns, and treats a
     /// failure of it as "not provably durable" for these removals too.
-    func reconciledAuthorityRecordNames(_ names: [String]) -> [String]? {
+    func reconciledAuthorityRecordNames(
+        _ names: [String]
+    ) -> (names: [String], state: AuthorityRecordQuotaState)? {
         var total = names.reduce(0) {
             $0 + ($1.hasSuffix(Self.authorityRecordFilenameSuffix) ? 1 : 0)
         }
-        guard total > limits.highWaterMarkAuthorityRecordCount else { return names }
+        guard total > limits.highWaterMarkAuthorityRecordCount else {
+            return (names, .withinLimit)
+        }
         guard let candidates = reclaimableAuthorityRecords(names: names) else { return nil }
         var reclaimed: Set<String> = []
         for candidate in candidates {
@@ -112,19 +109,27 @@ extension AssetDiskCache {
             reclaimed.insert(candidate.name)
             total -= 1
         }
-        guard total <= limits.highWaterMarkAuthorityRecordCount else { return nil }
-        guard !reclaimed.isEmpty else { return names }
-        return names.filter { !reclaimed.contains($0) }
+        let survivingNames = names.filter { !reclaimed.contains($0) }
+        guard total <= limits.highWaterMarkAuthorityRecordCount else {
+            return (survivingNames, .admissionBlocked)
+        }
+        return (survivingNames, .withinLimit)
     }
 
-    /// Every reclaimable (`.tombstone`) authority record in `names`,
-    /// already sorted into the order reclaim must consume them, or `nil`
-    /// if *any* `.applied` file could not be read, decoded, or validated.
+    /// Every reclaimable, settled-or-orphaned tombstone authority record
+    /// in `names`, already sorted into the order reclaim must consume
+    /// them, or `nil` if a record or owner proof cannot be trusted.
     private func reclaimableAuthorityRecords(names: [String]) -> [ReclaimCandidate]? {
         var candidates: [ReclaimCandidate] = []
         for name in names where name.hasSuffix(Self.authorityRecordFilenameSuffix) {
             guard let record = validatedAuthorityRecordLocked(name: name) else { return nil }
             guard record.disposition.kind == .tombstone else { continue }
+            if let ownerID = record.openIssuanceOwnerID {
+                guard let ownerIsLive = secureDirectory.isIssuanceOwnerLive(ownerID) else {
+                    return nil
+                }
+                guard !ownerIsLive else { continue }
+            }
             candidates.append(
                 ReclaimCandidate(name: name, revision: record.transitionRevision)
             )

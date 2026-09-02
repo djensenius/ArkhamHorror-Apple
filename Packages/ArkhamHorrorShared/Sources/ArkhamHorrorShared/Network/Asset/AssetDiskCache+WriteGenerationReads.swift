@@ -149,20 +149,29 @@ extension AssetDiskCache {
     /// ``set(_:payload:metadata:token:)`` already performs on every
     /// content write) and removes the gap entirely.
     func issueAuthorityLocked(
-        for key: AssetCacheKey
+        for key: AssetCacheKey,
+        trackingOpenIssuance: Bool = true
     ) throws -> (authorityID: AuthorityID, revision: Int) {
-        try requireDiskWritesEnabledLocked()
+        try requireDiskWritesEnabledLocked(requiringAuthorityRecordCapacity: true)
         let current = try currentAuthorityRecordLocked(for: key)
         let authorityID = try mintFreshAuthorityIDLocked(distinctFrom: current)
         let revision = try checkedAdvancedRevision(current.transitionRevision)
+        let owner = trackingOpenIssuance ? try secureDirectory.makeIssuanceOwner() : nil
         try commitAuthorityRecordLocked(
             KeyAuthorityRecord(
                 issuedAuthorityID: authorityID,
                 disposition: current.disposition,
-                transitionRevision: revision
+                transitionRevision: revision,
+                openIssuanceOwnerID: owner?.identifier
             ),
             for: key
         )
+        if let owner {
+            openIssuanceOwners[authorityID] = owner
+        }
+        if current.openIssuanceOwnerID != nil {
+            releaseOpenIssuanceOwnerLocked(current.issuedAuthorityID)
+        }
         return (authorityID, revision)
     }
 

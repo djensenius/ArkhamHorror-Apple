@@ -36,11 +36,19 @@ extension AssetDiskCache {
     /// genuinely cannot be confirmed or brought under budget right now,
     /// and this call's own new payload must not be allowed to make that
     /// unknown/over-budget state larger still.
-    func requireDiskWritesEnabledLocked() throws {
-        evictIfNeeded()
+    func requireDiskWritesEnabledLocked(requiringAuthorityRecordCapacity: Bool = false) throws {
+        let authorityRecordQuotaState = evictIfNeeded()
         guard !areDiskWritesDisabledLocked() else {
             throw AssetError.cachePersistenceFailed(
                 "Disk writes are disabled: on-disk cache budget could not be confirmed"
+            )
+        }
+        guard
+            !requiringAuthorityRecordCapacity
+            || authorityRecordQuotaState == .withinLimit
+        else {
+            throw AssetError.cachePersistenceFailed(
+                "Authority record capacity is occupied by live operations"
             )
         }
     }
@@ -51,7 +59,7 @@ extension AssetDiskCache {
     /// read (under the same already-held exclusive lock) via
     /// ``SecureCacheDirectory/readPersistedClearEpoch()``, **and** its own
     /// ``AssetCacheService/CacheToken/diskAuthorityID`` is *exactly* equal
-    /// to `key`'s currently-issued ``AuthorityID`` (`currentIssued`, read
+    /// to `key`'s currently-issued ``AuthorityID`` (`currentRecord`, read
     /// via ``currentIssuedAuthorityLocked(for:)``) -- never against any
     /// actor-local, in-memory bookkeeping, and never re-read internally
     /// here (the caller reads both exactly once, so it can reuse the same
@@ -104,7 +112,7 @@ extension AssetDiskCache {
     func acceptToken(
         _ token: AssetCacheService.CacheToken,
         currentEpoch: Int,
-        currentIssued: AuthorityID
+        currentRecord: KeyAuthorityRecord
     ) -> Bool {
         guard
             let expectedEpoch = token.durableClearEpoch,
@@ -113,7 +121,59 @@ extension AssetDiskCache {
             return false
         }
         guard authorityID != .pristine else { return false }
-        return currentEpoch == expectedEpoch && authorityID == currentIssued
+        guard
+            let ownerID = currentRecord.openIssuanceOwnerID,
+            secureDirectory.isIssuanceOwnerLive(ownerID) == true
+        else {
+            return false
+        }
+        return currentEpoch == expectedEpoch
+            && authorityID == currentRecord.issuedAuthorityID
+    }
+
+    /// Explicitly settles a token that reached terminal failure or
+    /// cancellation before a token-gated publish, touch, or removal could
+    /// settle it itself. A superseded token is already unable to publish,
+    /// so settlement is a harmless `.stale` no-op in that case.
+    @discardableResult
+    func settleIssuance(
+        _ key: AssetCacheKey,
+        token: AssetCacheService.CacheToken
+    ) async throws -> AssetCacheService.MutationOutcome {
+        if let authorityID = token.diskAuthorityID {
+            // Releasing before the awaited lock acquisition means a
+            // terminal operation cannot keep an owner live indefinitely
+            // if the durable settlement itself encounters an I/O failure.
+            releaseOpenIssuanceOwnerLocked(authorityID)
+        }
+        let lockFD = try await secureDirectory.acquireExclusiveLock()
+        defer { secureDirectory.releaseExclusiveLock(lockFD) }
+        try ensureRootAuthorityInitializedLocked()
+        let currentEpoch = try secureDirectory.readPersistedClearEpoch()
+        let current = try currentAuthorityRecordLocked(for: key)
+        guard
+            let tokenAuthorityID = token.diskAuthorityID,
+            tokenAuthorityID == current.issuedAuthorityID,
+            token.durableClearEpoch == currentEpoch
+        else {
+            return .stale
+        }
+        guard let ownerID = current.openIssuanceOwnerID else {
+            return .applied
+        }
+        try commitAuthorityRecordLocked(
+            KeyAuthorityRecord(
+                issuedAuthorityID: current.issuedAuthorityID,
+                disposition: current.disposition,
+                transitionRevision: checkedAdvancedRevision(current.transitionRevision),
+                openIssuanceOwnerID: nil
+            ),
+            for: key
+        )
+        _ = try? secureDirectory.remove(
+            name: CacheIssuanceOwner.markerName(for: ownerID)
+        )
+        return .applied
     }
 
     /// Removes `key`'s on-disk entry only if `token` is *exactly* the

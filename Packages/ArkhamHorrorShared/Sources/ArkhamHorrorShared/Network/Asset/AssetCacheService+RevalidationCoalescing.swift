@@ -239,8 +239,10 @@ extension AssetCacheService {
         // with the typed failure directly.
         do {
             try await beginDurableRetractionIfApplied(slot.cacheKey, token: fetch.token)
+            await settleIssuedOperationAfterTerminalOutcome(slot.cacheKey, token: fetch.token)
             continuation.resume(returning: .failure(CancellationError()))
         } catch {
+            await settleIssuedOperationAfterTerminalOutcome(slot.cacheKey, token: fetch.token)
             continuation.resume(returning: .failure(error))
         }
         Task {

@@ -18,7 +18,7 @@ import Testing
 /// ever-growing per-issuance cost.
 @Suite("AssetDiskCache authority record count quota")
 struct AssetDiskCacheAuthorityRecordQuotaTests {
-    private let fixtures = AssetDiskCacheAuthorityIssuanceTests()
+    let fixtures = AssetDiskCacheAuthorityIssuanceTests()
 
     func limits(
         maxAuthorityRecordCount: Int,
@@ -56,12 +56,14 @@ struct AssetDiskCacheAuthorityRecordQuotaTests {
         name: String,
         disposition: AssetDiskCache.KeyDisposition,
         issued: AuthorityID,
-        revision: Int
+        revision: Int,
+        openIssuanceOwnerID: AuthorityID? = nil
     ) throws {
         let record = AssetDiskCache.KeyAuthorityRecord(
             issuedAuthorityID: issued,
             disposition: disposition,
-            transitionRevision: revision
+            transitionRevision: revision,
+            openIssuanceOwnerID: openIssuanceOwnerID
         )
         try JSONEncoder.assetCache().encode(record)
             .write(to: directory.appendingPathComponent(name))
@@ -90,7 +92,9 @@ struct AssetDiskCacheAuthorityRecordQuotaTests {
     /// un-fenced resurrection rather than treated as pristine -- so a
     /// test that seeds files must first let the cache own its root.
     func bootstrapRoot(_ cache: AssetDiskCache, in directory: URL) async throws {
-        _ = try await cache.beginIssuance(for: fixtures.key("09999"))
+        let cacheKey = try fixtures.key("09999")
+        let snapshot = try await cache.beginIssuance(for: cacheKey)
+        _ = try await cache.settleIssuance(cacheKey, token: token(from: snapshot))
         for name in try recordNames(in: directory) {
             try FileManager.default.removeItem(at: directory.appendingPathComponent(name))
         }
@@ -100,6 +104,18 @@ struct AssetDiskCacheAuthorityRecordQuotaTests {
         try FileManager.default.contentsOfDirectory(atPath: directory.path)
             .filter { $0.hasSuffix(AssetDiskCache.authorityRecordFilenameSuffix) }
             .sorted()
+    }
+
+    func token(
+        from snapshot: AssetDiskCache.IssuanceSnapshot
+    ) -> AssetCacheService.CacheToken {
+        AssetCacheService.CacheToken(
+            generation: 0,
+            issuance: 0,
+            clearGeneration: 0,
+            durableClearEpoch: snapshot.clearEpoch,
+            diskAuthorityID: snapshot.authorityID
+        )
     }
 
     // MARK: - Exact boundary
@@ -131,6 +147,16 @@ struct AssetDiskCacheAuthorityRecordQuotaTests {
             #expect(
                 try recordNames(in: directory).count == 10,
                 "Exactly at the high-water mark, nothing is reclaimed"
+            )
+            _ = try await cache.settleIssuance(
+                fixtures.key("01001"),
+                token: AssetCacheService.CacheToken(
+                    generation: 0,
+                    issuance: 0,
+                    clearGeneration: 0,
+                    durableClearEpoch: first.clearEpoch,
+                    diskAuthorityID: first.authorityID
+                )
             )
 
             let second = try await cache.beginIssuance(for: fixtures.key("01002"))

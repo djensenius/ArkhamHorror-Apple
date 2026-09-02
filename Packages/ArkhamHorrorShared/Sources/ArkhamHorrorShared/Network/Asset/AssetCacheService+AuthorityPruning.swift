@@ -19,6 +19,7 @@ import Foundation
 struct AuthorityKeyQueue<Element: Sendable>: Sendable {
     private var storage: [Element] = []
     private var head = 0
+    private var nextPruningAttemptCount: Int?
 
     /// The compaction threshold below which a mostly-empty prefix is left
     /// alone rather than paying a compaction pass for a handful of
@@ -27,6 +28,10 @@ struct AuthorityKeyQueue<Element: Sendable>: Sendable {
     /// doing it too eagerly at tiny sizes would make *popping* the
     /// quadratic operation instead).
     private static var minimumCompactionHead: Int {
+        64
+    }
+
+    private static var deferredPruningOverflow: Int {
         64
     }
 
@@ -54,6 +59,19 @@ struct AuthorityKeyQueue<Element: Sendable>: Sendable {
     mutating func removeAll() {
         storage.removeAll()
         head = 0
+        nextPruningAttemptCount = nil
+    }
+
+    func shouldDeferPruning() -> Bool {
+        nextPruningAttemptCount.map { count < $0 } ?? false
+    }
+
+    mutating func deferPruning() {
+        nextPruningAttemptCount = count + Self.deferredPruningOverflow
+    }
+
+    mutating func clearDeferredPruning() {
+        nextPruningAttemptCount = nil
     }
 
     /// Reclaims consumed prefix slots once they make up at least half of
@@ -125,7 +143,11 @@ extension AssetCacheService {
     }
 
     private func pruneAuthorityKeysIfNeeded(protecting protectedKey: AssetCacheKey) {
-        guard authorityKeyOrder.count > Self.maxTrackedAuthorityKeys else { return }
+        guard authorityKeyOrder.count > Self.maxTrackedAuthorityKeys else {
+            authorityKeyOrder.clearDeferredPruning()
+            return
+        }
+        guard !authorityKeyOrder.shouldDeferPruning() else { return }
         var attemptsRemaining = authorityKeyOrder.count
         while authorityKeyOrder.count > Self.maxTrackedAuthorityKeys, attemptsRemaining > 0 {
             attemptsRemaining -= 1
@@ -146,6 +168,11 @@ extension AssetCacheService {
             // nothing live still depends on it.
             retiringGenerations[oldest] = nil
             issuedAuthorityChain[oldest] = nil
+        }
+        if attemptsRemaining == 0 {
+            authorityKeyOrder.deferPruning()
+        } else {
+            authorityKeyOrder.clearDeferredPruning()
         }
     }
 

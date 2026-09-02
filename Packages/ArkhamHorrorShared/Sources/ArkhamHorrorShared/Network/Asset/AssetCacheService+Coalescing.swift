@@ -313,15 +313,12 @@ extension AssetCacheService {
             issued.durableClearEpoch = authority.clearEpoch
             issued.diskAuthorityID = authority.diskAuthorityID
             token = issued
-            let newTask = Task { [weak self] in
-                guard let self else { throw CancellationError() }
-                return try await fetchAndValidate(
-                    key: key,
-                    cacheKey: cacheKey,
-                    candidates: candidates,
-                    token: issued
-                )
-            }
+            let newTask = issuedFetchTask(
+                key: key,
+                cacheKey: cacheKey,
+                candidates: candidates,
+                token: issued
+            )
             let newFetch = InFlightFetch(task: newTask, token: issued)
             inFlight[cacheKey] = newFetch
             fetchID = newFetch.id

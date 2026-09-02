@@ -211,8 +211,11 @@ extension AssetDiskCacheWriteGenerationTests {
     func acceptTokenRequiresExactIdentifierEquality() async throws {
         try await withScratchDirectory { directory in
             let cache = try AssetDiskCache(directory: directory, limits: limits())
-            let current = try AuthorityID.random()
+            let cacheKey = try key()
+            let snapshot = try await cache.beginIssuance(for: cacheKey)
+            let current = snapshot.authorityID
             let other = try AuthorityID.random()
+            let openRecord = try await cache.currentKeyRecord(for: cacheKey)
 
             func token(_ authorityID: AuthorityID?) -> AssetCacheService.CacheToken {
                 AssetCacheService.CacheToken(
@@ -226,35 +229,35 @@ extension AssetDiskCacheWriteGenerationTests {
             let exact = await cache.acceptToken(
                 token(current),
                 currentEpoch: 0,
-                currentIssued: current
+                currentRecord: openRecord
             )
             #expect(exact, "A token whose identifier is the currently-issued one must pass")
 
             let mismatched = await cache.acceptToken(
                 token(other),
                 currentEpoch: 0,
-                currentIssued: current
+                currentRecord: openRecord
             )
             #expect(!mismatched, "Any other identifier must be rejected")
 
             let sentinel = await cache.acceptToken(
                 token(.pristine),
                 currentEpoch: 0,
-                currentIssued: .pristine
+                currentRecord: openRecord
             )
             #expect(!sentinel, "The reserved pristine sentinel is never a usable authority")
 
             let unstamped = await cache.acceptToken(
                 token(nil),
                 currentEpoch: 0,
-                currentIssued: current
+                currentRecord: openRecord
             )
             #expect(!unstamped, "An unstamped token carries no authority at all")
 
             let wrongEpoch = await cache.acceptToken(
                 token(current),
                 currentEpoch: 1,
-                currentIssued: current
+                currentRecord: openRecord
             )
             #expect(!wrongEpoch, "A superseded durable clear epoch must reject the token")
         }

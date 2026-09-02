@@ -331,10 +331,7 @@ extension AssetCacheService {
             lastModified: slot.lastModified,
             token: token
         )
-        let newTask = Task { [weak self] in
-            guard let self else { throw CancellationError() }
-            return try await performRevalidation(revalidationRequest)
-        }
+        let newTask = issuedRevalidationTask(request: revalidationRequest, slot: slot)
         let newFetch = RevalidationFetch(task: newTask, token: token)
         setInFlightRevalidation(newFetch, for: slot)
         let fetchID = newFetch.id

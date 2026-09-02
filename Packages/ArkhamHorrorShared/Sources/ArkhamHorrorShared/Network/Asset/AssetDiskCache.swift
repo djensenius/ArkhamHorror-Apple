@@ -83,6 +83,12 @@ actor AssetDiskCache {
     /// entry point for the remainder of this instance's lifetime).
     var didEnsureRootAuthorityInitialized = false
 
+    /// Every locally-issued operation's held advisory owner marker,
+    /// retained only until the operation reaches a terminal outcome or is
+    /// superseded. Releasing the marker makes an otherwise-unsettleable
+    /// tombstone safely reclaimable after a failure.
+    var openIssuanceOwners: [AuthorityID: CacheIssuanceOwner] = [:]
+
     /// This process's own in-memory fail-closed half of the disk-writes-
     /// disabled marker (see `AssetDiskCache+Tombstone.swift`'s type-level
     /// doc comment). Set to `true` *before* ``markDiskWritesDisabledLocked()``
@@ -258,12 +264,12 @@ actor AssetDiskCache {
         // identifier, reused verbatim, or (with no `token`) a freshly
         // minted one — never a function of this read.
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentIssued = try currentIssuedAuthorityLocked(for: key)
+        let currentRecord = try currentAuthorityRecordLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
                 currentEpoch: currentEpoch,
-                currentIssued: currentIssued
+                currentRecord: currentRecord
             ) else {
                 return .stale
             }

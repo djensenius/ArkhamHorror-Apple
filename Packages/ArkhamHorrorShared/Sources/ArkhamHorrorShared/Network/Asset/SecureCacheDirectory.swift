@@ -189,6 +189,18 @@ final class SecureCacheDirectory: @unchecked Sendable {
         close(rootFD)
     }
 
+    /// Creates one live owner for an issuance while the caller already
+    /// holds this directory's exclusive lock. That ordering prevents a
+    /// concurrent orphan sweep from observing the marker before it is
+    /// locked and deleting it as crash residue.
+    func makeIssuanceOwner() throws -> CacheIssuanceOwner {
+        try CacheIssuanceOwner(
+            rootFD: rootFD,
+            rootOwnerUID: rootOwnerUID,
+            rootDevice: rootDevice
+        )
+    }
+
     /// Reads `name` bounded by `maxBytes`, requiring the opened descriptor
     /// to resolve (without following a symlink) to a regular file owned by
     /// the same user as the verified root directory, and whose size does

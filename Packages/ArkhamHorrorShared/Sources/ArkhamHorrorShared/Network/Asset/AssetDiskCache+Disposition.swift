@@ -1,5 +1,12 @@
 import Foundation
 
+private enum KeyAuthorityRecordCodingKeys: String, CodingKey {
+    case issuedAuthorityID
+    case disposition
+    case openIssuanceOwnerID
+    case transitionRevision
+}
+
 /// The durable, typed per-key **authority record** for ``AssetDiskCache``
 /// -- one canonical file per key (`<hash>.applied`), written atomically,
 /// carrying every piece of that key's own durable write-authority state
@@ -161,6 +168,12 @@ extension AssetDiskCache {
         let issuedAuthorityID: AuthorityID
         let disposition: KeyDisposition
 
+        /// The advisory-lock session that owns the most recent issuance,
+        /// or `nil` once that operation has reached a terminal outcome.
+        /// A tombstone with a live owner remains unreclaimable because its
+        /// operation may still lawfully publish.
+        let openIssuanceOwnerID: AuthorityID?
+
         /// A counter advanced by exactly one on *every* durable commit
         /// this key's record ever undergoes -- a fresh issuance, a
         /// publish/touch, or either half of a two-phase retraction --
@@ -179,12 +192,50 @@ extension AssetDiskCache {
         /// not a security control.
         let transitionRevision: Int
 
+        init(
+            issuedAuthorityID: AuthorityID,
+            disposition: KeyDisposition,
+            transitionRevision: Int,
+            openIssuanceOwnerID: AuthorityID? = nil
+        ) {
+            self.issuedAuthorityID = issuedAuthorityID
+            self.disposition = disposition
+            self.transitionRevision = transitionRevision
+            self.openIssuanceOwnerID = openIssuanceOwnerID
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: KeyAuthorityRecordCodingKeys.self)
+            issuedAuthorityID = try container.decode(
+                AuthorityID.self,
+                forKey: .issuedAuthorityID
+            )
+            disposition = try container.decode(
+                KeyDisposition.self,
+                forKey: .disposition
+            )
+            openIssuanceOwnerID = try container.decodeIfPresent(
+                AuthorityID.self,
+                forKey: .openIssuanceOwnerID
+            )
+            transitionRevision = try container.decode(Int.self, forKey: .transitionRevision)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: KeyAuthorityRecordCodingKeys.self)
+            try container.encode(issuedAuthorityID, forKey: .issuedAuthorityID)
+            try container.encode(disposition, forKey: .disposition)
+            try container.encodeIfPresent(openIssuanceOwnerID, forKey: .openIssuanceOwnerID)
+            try container.encode(transitionRevision, forKey: .transitionRevision)
+        }
+
         /// The record a key that has never had any authority issued or
         /// mutation committed for it implicitly has.
         static let pristine = KeyAuthorityRecord(
             issuedAuthorityID: .pristine,
             disposition: .pristine,
-            transitionRevision: 0
+            transitionRevision: 0,
+            openIssuanceOwnerID: nil
         )
     }
 
@@ -226,6 +277,17 @@ extension AssetDiskCache {
     /// every other impossible pairing above.
     func isValidAuthorityRecord(_ record: KeyAuthorityRecord) -> Bool {
         guard record.transitionRevision >= 0 else { return false }
+        guard hasValidAuthorityRecordIdentifiers(record) else { return false }
+        guard (record.transitionRevision == 0) == (record == .pristine) else { return false }
+        switch record.disposition.kind {
+        case .content:
+            return record.disposition.contentHash != nil
+        case .retiring, .tombstone:
+            return record.disposition.contentHash == nil
+        }
+    }
+
+    private func hasValidAuthorityRecordIdentifiers(_ record: KeyAuthorityRecord) -> Bool {
         // The reserved all-zero sentinel may only ever appear on a record
         // that is pristine *in its entirety*. Checking each identifier
         // field against the whole-record pristine sentinel independently
@@ -245,12 +307,8 @@ extension AssetDiskCache {
         if record.disposition.authorityID == .pristine {
             guard record.disposition == .pristine else { return false }
         }
-        guard (record.transitionRevision == 0) == (record == .pristine) else { return false }
-        switch record.disposition.kind {
-        case .content:
-            guard record.disposition.contentHash != nil else { return false }
-        case .retiring, .tombstone:
-            guard record.disposition.contentHash == nil else { return false }
+        if record.openIssuanceOwnerID == .pristine {
+            return false
         }
         return true
     }

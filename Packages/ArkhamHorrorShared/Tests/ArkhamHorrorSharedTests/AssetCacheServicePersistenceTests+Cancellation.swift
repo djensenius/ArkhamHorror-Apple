@@ -118,6 +118,63 @@ extension AssetCacheServiceTests {
         }
     }
 
+    @Test(
+        """
+        A failed fetch and a sole-waiter cancellation both settle their durable issuance before \
+        their terminal outcome is exposed, so neither leaves a live-owner tombstone that quota \
+        reclamation must preserve indefinitely.
+        """
+    )
+    func terminalFetchFailureAndCancellationSettleDurableIssuances() async throws {
+        try await withScratchDirectory { directory in
+            let limits = standardLimits()
+            let layers = try makeService(directory: directory, limits: limits)
+
+            let failedKey = try cardArtKey("01001")
+            let failedCandidates = AssetLocator.candidates(
+                for: failedKey,
+                digest: FakeDigestLookup()
+            )
+            let failedCacheKey = AssetCacheKey(for: failedKey, candidates: failedCandidates)
+            await layers.transport.enqueue(
+                .failure(AssetError.transportFailure("connection reset")),
+                for: failedCandidates[0].url(base: failedKey.source)
+            )
+            await #expect(throws: AssetError.transportFailure("ignored")) {
+                _ = try await layers.service.asset(for: failedKey)
+            }
+            #expect(
+                try await layers.diskCache.currentKeyRecord(for: failedCacheKey)
+                    .openIssuanceOwnerID == nil
+            )
+
+            let cancelledKey = try cardArtKey("01002")
+            let cancelledCandidates = AssetLocator.candidates(
+                for: cancelledKey,
+                digest: FakeDigestLookup()
+            )
+            let cancelledCacheKey = AssetCacheKey(
+                for: cancelledKey,
+                candidates: cancelledCandidates
+            )
+            let cancelledURL = cancelledCandidates[0].url(base: cancelledKey.source)
+            await layers.transport.hold(cancelledURL)
+            await layers.transport.enqueue(.success(successResult()), for: cancelledURL)
+
+            let task = Task { try await layers.service.asset(for: cancelledKey) }
+            await layers.transport.waitForCallCount(1, for: cancelledURL)
+            task.cancel()
+            await #expect(throws: CancellationError.self) {
+                _ = try await task.value
+            }
+            #expect(
+                try await layers.diskCache.currentKeyRecord(for: cancelledCacheKey)
+                    .openIssuanceOwnerID == nil
+            )
+            await layers.transport.release(cancelledURL)
+        }
+    }
+
     /// A tiny mutable box for a lock file descriptor, purely so
     /// ``cancellationWhileQueuedForDiskWriteLockIsNotRecordedAsPersistenceFailure()``
     /// can assign into it from inside an escaping, non-actor-isolated

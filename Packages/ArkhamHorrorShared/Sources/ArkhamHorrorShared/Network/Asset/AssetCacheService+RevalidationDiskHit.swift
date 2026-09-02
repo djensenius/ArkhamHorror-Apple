@@ -119,6 +119,12 @@ extension AssetCacheService {
         var token = issueToken(for: cacheKey)
         token.durableClearEpoch = authority.clearEpoch
         token.diskAuthorityID = authority.diskAuthorityID
-        _ = try? await invalidate(cacheKey, token: token)
+        do {
+            _ = try await invalidate(cacheKey, token: token)
+        } catch {
+            // Quarantine remains best-effort, but terminal issuance
+            // cleanup below is still attempted and recorded separately.
+        }
+        await settleIssuedOperationAfterTerminalOutcome(cacheKey, token: token)
     }
 }

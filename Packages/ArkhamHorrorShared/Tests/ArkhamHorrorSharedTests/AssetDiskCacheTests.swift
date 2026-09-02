@@ -158,6 +158,7 @@ struct AssetDiskCacheTests {
                     $0 != SecureCacheDirectory.lockFileName
                         && $0 != SecureCacheDirectory.clearEpochFileName
                         && $0 != SecureCacheDirectory.rootFreshnessWitnessFileName
+                        && !SecureCacheDirectory.isIssuanceOwnerMarkerName($0)
                 }.isEmpty
             )
         }

@@ -89,6 +89,7 @@ extension AssetDiskCache {
             return
         }
         didRecoverOrphans = true
+        _ = secureDirectory.reclaimOrphanedIssuanceOwnerMarkers(names)
 
         var referencedPayloadFilenames: Set<String> = []
         var highestAccessSequence: Int?

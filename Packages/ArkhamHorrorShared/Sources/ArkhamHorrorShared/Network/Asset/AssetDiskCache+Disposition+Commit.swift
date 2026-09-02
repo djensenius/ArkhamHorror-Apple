@@ -127,13 +127,18 @@ extension AssetDiskCache {
     /// one. The whole record is re-read first and rewritten as one
     /// atomic unit, so there is no window in which only part of this
     /// key's authority is durably updated.
-    func commitDispositionLocked(_ disposition: KeyDisposition, for key: AssetCacheKey) throws {
+    func commitDispositionLocked(
+        _ disposition: KeyDisposition,
+        for key: AssetCacheKey,
+        settlingIssuance: Bool = false
+    ) throws {
         let current = try currentAuthorityRecordLocked(for: key)
         try commitAuthorityRecordLocked(
             KeyAuthorityRecord(
                 issuedAuthorityID: current.issuedAuthorityID,
                 disposition: disposition,
-                transitionRevision: checkedAdvancedRevision(current.transitionRevision)
+                transitionRevision: checkedAdvancedRevision(current.transitionRevision),
+                openIssuanceOwnerID: settlingIssuance ? nil : current.openIssuanceOwnerID
             ),
             for: key
         )
@@ -157,7 +162,7 @@ extension AssetDiskCache {
         if let authorityID = token?.diskAuthorityID {
             return authorityID
         }
-        return try issueAuthorityLocked(for: key).authorityID
+        return try issueAuthorityLocked(for: key, trackingOpenIssuance: false).authorityID
     }
 
     /// Durably commits a `.content` disposition for `key` -- the
@@ -178,8 +183,10 @@ extension AssetDiskCache {
     ) throws -> AuthorityID {
         try commitDispositionLocked(
             KeyDisposition(authorityID: authorityID, kind: .content, contentHash: contentHash),
-            for: key
+            for: key,
+            settlingIssuance: true
         )
+        releaseOpenIssuanceOwnerLocked(authorityID)
         return authorityID
     }
 
@@ -210,14 +217,24 @@ extension AssetDiskCache {
         let authorityID = try resolvedMutationAuthorityLocked(for: key, token: token)
         try commitDispositionLocked(
             KeyDisposition(authorityID: authorityID, kind: .retiring, contentHash: nil),
-            for: key
+            for: key,
+            settlingIssuance: true
         )
+        releaseOpenIssuanceOwnerLocked(authorityID)
         try destroy()
         try commitDispositionLocked(
             KeyDisposition(authorityID: authorityID, kind: .tombstone, contentHash: nil),
             for: key
         )
         return authorityID
+    }
+
+    /// Releases this cache instance's held marker for an operation that is
+    /// now terminal or superseded. Other cache instances retain their own
+    /// markers independently until their operations finish.
+    func releaseOpenIssuanceOwnerLocked(_ authorityID: AuthorityID) {
+        guard let owner = openIssuanceOwners.removeValue(forKey: authorityID) else { return }
+        _ = try? secureDirectory.remove(name: owner.markerName)
     }
 
     /// Test/diagnostic-only: a single, lock-acquiring read of `key`'s

@@ -39,12 +39,12 @@ extension AssetDiskCache {
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentIssued = try currentIssuedAuthorityLocked(for: key)
+        let currentRecord = try currentAuthorityRecordLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
                 currentEpoch: currentEpoch,
-                currentIssued: currentIssued
+                currentRecord: currentRecord
             ) else {
                 return .stale
             }
@@ -300,6 +300,7 @@ extension AssetDiskCache {
             && name != SecureCacheDirectory.clearEpochFileName
             && name != SecureCacheDirectory.rootInitMarkerFileName
             && name != SecureCacheDirectory.rootFreshnessWitnessFileName
+            && !SecureCacheDirectory.isIssuanceOwnerMarkerName(name)
     }
 
     /// The key hash embedded in every entry name currently present in the

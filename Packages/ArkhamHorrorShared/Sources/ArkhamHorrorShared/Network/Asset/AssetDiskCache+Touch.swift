@@ -32,12 +32,12 @@ extension AssetDiskCache {
     ) throws -> AssetCacheService.MutationOutcome {
         try ensureRootAuthorityInitializedLocked()
         let currentEpoch = try secureDirectory.readPersistedClearEpoch()
-        let currentIssued = try currentIssuedAuthorityLocked(for: key)
+        let currentRecord = try currentAuthorityRecordLocked(for: key)
         if let token {
             guard acceptToken(
                 token,
                 currentEpoch: currentEpoch,
-                currentIssued: currentIssued
+                currentRecord: currentRecord
             ) else {
                 return .stale
             }

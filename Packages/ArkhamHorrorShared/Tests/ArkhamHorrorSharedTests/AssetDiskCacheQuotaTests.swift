@@ -274,6 +274,7 @@ extension AssetDiskCacheTests {
                         && $0 != SecureCacheDirectory.rootInitMarkerFileName
                         && $0 != SecureCacheDirectory.rootFreshnessWitnessFileName
                         && $0 != "\(cacheKey.digestHex).applied"
+                        && !SecureCacheDirectory.isIssuanceOwnerMarkerName($0)
                 }
             #expect(contents.isEmpty)
         }

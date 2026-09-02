@@ -80,10 +80,11 @@ extension AssetDiskCache {
     /// budget by the end) clears that marker again, so a transient
     /// failure never permanently disables writes once conditions
     /// improve.
-    func evictIfNeeded() {
+    @discardableResult
+    func evictIfNeeded() -> AuthorityRecordQuotaState {
         guard let listedNames = try? directoryAccess.listNames() else {
             markDiskWritesDisabledLocked()
-            return
+            return .withinLimit
         }
         guard listedNames.count <= limits.maxAccountableDirectoryEntryCount else {
             // A listing larger than anything this cache's own budgets
@@ -92,22 +93,22 @@ extension AssetDiskCache {
             // unbounded per-call cost this ceiling exists to prevent --
             // so fail closed *before* that pass, not after it.
             markDiskWritesDisabledLocked()
-            return
+            return .withinLimit
         }
-        guard let names = reconciledAuthorityRecordNames(listedNames) else {
+        guard let authorityReconciliation = reconciledAuthorityRecordNames(listedNames) else {
             // The authority-record count is over its own cap and cannot
-            // be brought back under it (or a record could not be
-            // trusted); see ``reconciledAuthorityRecordNames(_:)``.
+            // be trusted; see ``reconciledAuthorityRecordNames(_:)``.
             markDiskWritesDisabledLocked()
-            return
+            return .withinLimit
         }
+        let names = authorityReconciliation.names
         guard var accounted = accountedUsage(names: names) else {
             // Every individual "physical usage is not fully known" case
             // is documented on ``accountedUsage(names:)`` itself; all of
             // them must fail closed exactly the same way an unenumerable
             // directory listing does.
             markDiskWritesDisabledLocked()
-            return
+            return .withinLimit
         }
         if accounted.total > limits.highWaterMarkDiskBytes {
             accounted.entries.sort {
@@ -139,9 +140,10 @@ extension AssetDiskCache {
             // stay (or become) disabled until a future pass proves
             // otherwise.
             markDiskWritesDisabledLocked()
-            return
+            return .withinLimit
         }
         clearDiskWritesDisabledLocked()
+        return authorityReconciliation.state
     }
 
     /// Every currently-decodable entry plus the exact total accounted
@@ -186,21 +188,21 @@ extension AssetDiskCache {
     /// do not already account for — the whole-cache disabled-writes
     /// marker and the cross-process lock file — so ``evictIfNeeded()``'s
     /// budget accounting is never blind to any file this cache itself
-    /// creates. Returns `nil` (rather than silently under-counting) if
-    /// any such file's actual on-disk size could not be determined, or if
-    /// any of them turns out to be a **non-regular** entry (a directory,
-    /// FIFO, device node, or symlink occupying a name this cache
-    /// otherwise expects to be a plain reserved marker/lock file): such
-    /// an entry's true size (and, for a directory, its entire recursive
-    /// contents) cannot be safely determined without walking into it, so
-    /// it must never silently count as zero bytes.
+    /// creates. Valid issuance-owner marker names are deliberately
+    /// excluded: they are empty, randomly named advisory-lock control
+    /// files whose count remains bounded by the authority-record cap and
+    /// whose integrity is verified by every liveness probe. Returns `nil`
+    /// (rather than silently under-counting) if any other file's actual
+    /// on-disk size could not be determined, or if any of them turns out
+    /// to be a **non-regular** entry.
     private func accountedStrayCacheFileBytes(names: [String]) -> Int? {
         var total = 0
         var sawUncertain = false
         for name in names {
             let isAlreadyAccountedElsewhere =
                 name.hasSuffix(".meta.json") || name.hasSuffix(".tmp") || name.hasSuffix(".bin")
-            guard !isAlreadyAccountedElsewhere else { continue }
+            let isZeroByteOwnerMarker = SecureCacheDirectory.isIssuanceOwnerMarkerName(name)
+            guard !isAlreadyAccountedElsewhere, !isZeroByteOwnerMarker else { continue }
             guard let attributes = try? directoryAccess.attributes(name: name) else {
                 sawUncertain = true
                 continue
