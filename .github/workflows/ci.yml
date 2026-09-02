@@ -23,7 +23,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Install tools
-        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
         with:
           cache: true
       - name: Check formatting
@@ -55,7 +55,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Install tools
-        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
         with:
           cache: true
       - name: Run tests
@@ -72,7 +72,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Install tools
-        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
         with:
           cache: true
       - name: Verify vendored fixtures against pinned backend commit
@@ -101,7 +101,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Install tools
-        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
         with:
           cache: true
       - name: Build
