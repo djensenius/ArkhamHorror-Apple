@@ -121,9 +121,25 @@ extension AssetDiskCache {
         let lockFD = try await secureDirectory.acquireExclusiveLock()
         defer { secureDirectory.releaseExclusiveLock(lockFD) }
         try ensureRootAuthorityInitializedLocked()
-        let disposition = try currentDispositionLocked(for: key)
+        _ = try completeRetractionLocked(key, authorityID: authorityID)
+    }
+
+    /// The synchronous, already-locked completion shared by ordinary
+    /// phase two and orphaned-retiring reconciliation. Ordinary phase
+    /// two preserves any newer issued authority that inherited this
+    /// retiring disposition; only verified orphan recovery settles that
+    /// newer authority too. Returns `false` when this authority was
+    /// already superseded or completed.
+    @discardableResult
+    func completeRetractionLocked(
+        _ key: AssetCacheKey,
+        authorityID: AuthorityID,
+        settlingOrphanedIssuance: Bool = false
+    ) throws -> Bool {
+        let current = try currentAuthorityRecordLocked(for: key)
+        let disposition = current.disposition
         guard disposition.kind == .retiring, disposition.authorityID == authorityID else {
-            return
+            return false
         }
         let metadataWasPresent = try secureDirectory.remove(name: metadataFilename(for: key))
         try secureDirectory.fsyncRootDirectory()
@@ -132,7 +148,12 @@ extension AssetDiskCache {
         }
         try commitDispositionLocked(
             KeyDisposition(authorityID: authorityID, kind: .tombstone, contentHash: nil),
-            for: key
+            for: key,
+            settlingIssuance: settlingOrphanedIssuance
         )
+        if settlingOrphanedIssuance {
+            retireLocallyOpenIssuanceLocked(current.issuedAuthorityID)
+        }
+        return true
     }
 }

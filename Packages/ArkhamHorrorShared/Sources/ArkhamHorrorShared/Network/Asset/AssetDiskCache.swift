@@ -83,6 +83,11 @@ actor AssetDiskCache {
     /// entry point for the remainder of this instance's lifetime).
     var didEnsureRootAuthorityInitialized = false
 
+    /// A retryable startup reconciliation failure for an orphaned
+    /// `.retiring` record. New writes surface it explicitly, while
+    /// `removeAll()` remains able to clear the affected root.
+    var retiringReconciliationFailure: AssetError?
+
     /// This cache instance's live advisory owner marker, shared by all of
     /// its current issued operations. `locallyOpenIssuanceAuthorityIDs`
     /// distinguishes individual terminal/cancelled operations while this

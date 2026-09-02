@@ -37,6 +37,9 @@ extension AssetDiskCache {
     /// and this call's own new payload must not be allowed to make that
     /// unknown/over-budget state larger still.
     func requireDiskWritesEnabledLocked(requiringAuthorityRecordCapacity: Bool = false) throws {
+        if let retiringReconciliationFailure {
+            throw retiringReconciliationFailure
+        }
         let authorityRecordQuotaState = evictIfNeeded()
         guard !areDiskWritesDisabledLocked() else {
             throw AssetError.cachePersistenceFailed(

@@ -26,8 +26,9 @@ import Foundation
 /// advisory lock is demonstrably orphaned. A fresh cache miss inherits a
 /// tombstone disposition, but its record retains a live owner until that
 /// operation succeeds, fails, or is cancelled; count pressure must never
-/// revoke it. A record whose kind is `.content` or `.retiring` is live or
-/// mid-retraction and is **never** reclaimed here.
+/// revoke it. A `.retiring` record is preserved while its owner is live;
+/// otherwise this pass first completes its durable phase two, making the
+/// resulting tombstone eligible for ordinary reclaim.
 extension AssetDiskCache {
     /// The suffix of a key's single canonical durable authority record —
     /// see ``authorityRecordFilename(for:)``, which is the only place
@@ -101,6 +102,11 @@ extension AssetDiskCache {
         guard total > limits.highWaterMarkAuthorityRecordCount else {
             return (names, .withinLimit)
         }
+        do {
+            try reconcileOrphanedRetiringAuthoritiesLocked(names: names)
+        } catch {
+            return nil
+        }
         guard let candidates = reclaimableAuthorityRecords(names: names) else { return nil }
         var reclaimed: Set<String> = []
         for candidate in candidates {
@@ -148,7 +154,7 @@ extension AssetDiskCache {
     /// which is by-key and distinguishes a clean miss from a failure;
     /// here every non-record outcome is a failure, because the name came
     /// from a directory listing that just said the entry exists.
-    private func validatedAuthorityRecordLocked(name: String) -> KeyAuthorityRecord? {
+    func validatedAuthorityRecordLocked(name: String) -> KeyAuthorityRecord? {
         guard
             let data = try? directoryAccess.read(
                 name: name,

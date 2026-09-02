@@ -193,6 +193,10 @@ extension SecureCacheDirectory {
         CacheIssuanceOwner.isMarkerName(name)
     }
 
+    static func issuanceOwnerIdentifier(forMarkerName name: String) -> AuthorityID? {
+        CacheIssuanceOwner.identifier(fromMarkerName: name)
+    }
+
     /// Removes unlocked owner markers during one bounded startup-recovery
     /// scan. An unlocked marker is process-crash residue, not a lease that
     /// may expire while legitimate work is still running.

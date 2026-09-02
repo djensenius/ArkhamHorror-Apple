@@ -221,6 +221,12 @@ extension AssetDiskCache {
         // begins: a caller must never observe "entries are already gone"
         // without the durable epoch having also already advanced.
         try secureDirectory.bumpClearEpoch()
+        // Every locally-issued authority captured the previous epoch, so
+        // none can lawfully publish after this point. A new post-clear
+        // issuance must create a fresh owner marker, never reuse a stale
+        // descriptor whose directory entry this clear removes below.
+        locallyOpenIssuanceAuthorityIDs.removeAll()
+        issuanceOwner = nil
         // Every per-key durable authority record file (`.applied`, the
         // single canonical record carrying both this key's most recently
         // issued ``AuthorityID`` and its applied disposition -- see
@@ -239,7 +245,7 @@ extension AssetDiskCache {
         // in-flight operation still holds.
         let names = try secureDirectory.listNames()
         var failureCount = 0
-        for name in names where Self.isRemovableDuringClear(name) {
+        for name in names where isRemovableDuringClear(name) {
             do {
                 _ = try secureDirectory.remove(name: name)
             } catch {
@@ -267,6 +273,7 @@ extension AssetDiskCache {
                     "or the directory fsync failed"
             )
         }
+        retiringReconciliationFailure = nil
     }
 
     /// The current durable, cross-instance/cross-process clear-epoch
@@ -294,13 +301,21 @@ extension AssetDiskCache {
     /// regress below a value some other instance may already have
     /// observed, and an intact record of every clear that has ever
     /// happened.
-    private static func isRemovableDuringClear(_ name: String) -> Bool {
-        name != SecureCacheDirectory.lockFileName
-            && name != SecureCacheDirectory.accessSequenceFileName
-            && name != SecureCacheDirectory.clearEpochFileName
-            && name != SecureCacheDirectory.rootInitMarkerFileName
-            && name != SecureCacheDirectory.rootFreshnessWitnessFileName
-            && !SecureCacheDirectory.isIssuanceOwnerMarkerName(name)
+    private func isRemovableDuringClear(_ name: String) -> Bool {
+        guard
+            name != SecureCacheDirectory.lockFileName,
+            name != SecureCacheDirectory.accessSequenceFileName,
+            name != SecureCacheDirectory.clearEpochFileName,
+            name != SecureCacheDirectory.rootInitMarkerFileName,
+            name != SecureCacheDirectory.rootFreshnessWitnessFileName
+        else {
+            return false
+        }
+        guard let ownerID = SecureCacheDirectory.issuanceOwnerIdentifier(forMarkerName: name)
+        else {
+            return true
+        }
+        return secureDirectory.isIssuanceOwnerLive(ownerID) == false
     }
 
     /// The key hash embedded in every entry name currently present in the

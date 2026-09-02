@@ -114,19 +114,26 @@ extension AssetDiskCache {
     /// lacking that independent freshness proof still fails closed
     /// regardless of what this closure would have accepted.
     ///
-    /// **Any failure here happens strictly before -- and therefore
-    /// fences -- a clear's own durable epoch bump.** ``removeAll()``
-    /// calls this as its first locked step and maps *every* failure it
-    /// raises to ``AssetError/clearFenceNotDurable(_:)``, so
+    /// **Root-authority failures happen strictly before -- and therefore
+    /// fence -- a clear's own durable epoch bump.** ``removeAll()``
+    /// maps those failures to ``AssetError/clearFenceNotDurable(_:)`, so
     /// ``AssetCacheService/evictAll()`` can never report a clear as
     /// having succeeded when the durable fence was not actually
-    /// established.
+    /// established. An orphaned-retiring reconciliation failure is
+    /// different: it is retained as an explicit write-admission error
+    /// and retried on later locked entries, but never prevents the clear
+    /// that can remove the affected record.
     func ensureRootAuthorityInitializedLocked() throws {
-        guard !didEnsureRootAuthorityInitialized else { return }
+        guard !didEnsureRootAuthorityInitialized || retiringReconciliationFailure != nil else {
+            return
+        }
         recoverOrphansIfNeeded(forceRetry: true)
-        try secureDirectory.ensureRootAuthorityInitializedLocked(
-            isSurvivingEntryAcceptable: { $0 == Self.diskWritesDisabledMarkerName }
-        )
+        if !didEnsureRootAuthorityInitialized {
+            try secureDirectory.ensureRootAuthorityInitializedLocked(
+                isSurvivingEntryAcceptable: { $0 == Self.diskWritesDisabledMarkerName }
+            )
+        }
+        retiringReconciliationFailure = startupRetiringReconciliationFailureLocked()
         didEnsureRootAuthorityInitialized = true
     }
 }
