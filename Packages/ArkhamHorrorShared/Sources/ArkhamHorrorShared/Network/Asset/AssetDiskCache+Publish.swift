@@ -1,0 +1,168 @@
+import Foundation
+
+private extension AssetDiskCache {
+    /// Preserves an already-typed ``AssetError`` as-is (so a caller sees
+    /// the real underlying failure, e.g. a corrupt-entry or configuration
+    /// error surfaced by `SecureCacheDirectory`) and only wraps a foreign
+    /// error type in ``AssetError/cachePersistenceFailed(_:)``. Wrapping
+    /// unconditionally would re-wrap an already-`.cachePersistenceFailed`
+    /// error inside another one, producing a nested, less useful
+    /// diagnostic string (`cachePersistenceFailed("cachePersistenceFailed(...)")`)
+    /// and discarding whichever more specific `AssetError` case the
+    /// original failure actually was.
+    static func asCachePersistenceFailure(_ error: Error) -> AssetError {
+        if let assetError = error as? AssetError {
+            return assetError
+        }
+        return .cachePersistenceFailed(String(describing: error))
+    }
+}
+
+/// The crash-durable two-phase payload-write and metadata-pointer-commit
+/// steps behind ``AssetDiskCache/setLocked(_:payload:metadata:token:)``.
+/// Split out of the main actor file purely to stay under this package's
+/// file-length limit; every member here is still actor-isolated
+/// `AssetDiskCache` state/behavior.
+extension AssetDiskCache {
+    /// Step 1 of ``setLocked(_:payload:metadata:token:)``: writes the
+    /// payload generation's bounded temp file, fsyncs it, then
+    /// renames+fsyncs-directory to publish it under its permanent,
+    /// content-addressed name. A crash before this completes leaves only
+    /// an orphan temp file, cleaned up by the next
+    /// ``recoverOrphansIfNeeded()`` — the previous generation (if any) is
+    /// entirely untouched. A failure caught *within this process* (rather
+    /// than an actual crash) instead removes that leftover temp file
+    /// immediately, rather than deferring its cleanup to a future
+    /// restart's one-time orphan sweep. Factored out of `setLocked` purely
+    /// to stay under this package's `function_body_length` convention.
+    func writePayloadGenerationLocked(payloadName: String, payload: Data) throws {
+        do {
+            try secureDirectory.writeTempAndFsync(tempName: payloadName + ".tmp", data: payload)
+            try secureDirectory.renameAndFsyncDirectory(from: payloadName + ".tmp", to: payloadName)
+        } catch {
+            _ = try? secureDirectory.remove(name: payloadName + ".tmp")
+            throw Self.asCachePersistenceFailure(error)
+        }
+    }
+
+    /// Steps 2 and 3 of ``setLocked(_:payload:metadata:token:)``: commits
+    /// the metadata pointer, then — only once that commit is durably
+    /// confirmed — removes any now-superseded prior payload generation.
+    /// The pointer rename
+    /// and the subsequent directory `fsync` are deliberately two
+    /// separately-throwing calls (not the composite
+    /// ``SecureCacheDirectory/renameAndFsyncDirectory(from:to:)`` helper
+    /// other call sites use), because this call site's failure handling
+    /// *must* distinguish them: if the rename itself never took effect (or
+    /// the write/encode before it failed), the previous metadata sidecar
+    /// (still pointing at its own, untouched, differently-named payload
+    /// file) remains fully valid, and the payload just written above --
+    /// not yet referenced by anything -- is safe to roll back. But if the
+    /// rename *succeeded* and only the following directory `fsync` failed,
+    /// the metadata pointer has already, currently, actually been switched
+    /// to reference the new payload -- in this running process,
+    /// independent of any future crash -- so deleting that payload here
+    /// (as an unconditional "the commit failed, undo it" rollback would)
+    /// would immediately break a reference that is already live, not
+    /// merely leave a future crash free to resurrect stale state. In that
+    /// case this never throws directly -- the rename genuinely already
+    /// took effect and must never be treated as rolled back -- but its
+    /// `Bool` return reports `false` so
+    /// ``AssetDiskCache/setLocked(_:payload:metadata:token:)`` still
+    /// knows durability was not confirmed and must still surface a
+    /// thrown failure to *its own* caller, crucially only *after* it has
+    /// already gone on to commit this key's own disposition using the
+    /// exact same ticket already stamped into `metadata`: the metadata
+    /// pointer this call just switched to is, for this and every other
+    /// currently running process, already live, so leaving this key's
+    /// disposition uncommitted (by throwing here directly, the way a
+    /// confirmed-durability failure elsewhere does) would make a
+    /// perfectly valid, already-live entry unreadable by
+    /// ``AssetDiskCache/get(_:)``'s own disposition cross-check for no
+    /// reason -- not merely leave a future crash free to resurrect stale
+    /// state. At worst, a real crash before a later `fsync` reverts the
+    /// rename at the filesystem level, which the next startup's orphan
+    /// sweep already tolerates by design (the payload simply becomes an
+    /// unreferenced orphan, never a dangling reference). Factored out of
+    /// `setLocked` purely to stay under this package's
+    /// `function_body_length` convention.
+    @discardableResult
+    func commitMetadataPointerLocked(
+        _ key: AssetCacheKey,
+        metadata: AssetCacheMetadata,
+        payloadName: String,
+        payloadAlreadyExisted: Bool
+    ) throws -> Bool {
+        var stamped = metadata
+        let metadataName = metadataFilename(for: key)
+        // A best-effort read of whatever metadata sidecar currently
+        // occupies this exact name (if any): folded into
+        // ``SecureCacheDirectory/allocateAccessSequence(atLeastAfter:)``'s
+        // own durable, cross-instance/cross-process global counter (see
+        // that type's doc comment for why a purely local, per-actor
+        // counter is not sufficient on its own) purely as an extra floor
+        // for a freshly created cache root whose counter file does not
+        // exist yet. Any failure to read/decode the existing sidecar
+        // (including "does not exist yet") is treated identically to "no
+        // prior value": this is a monotonicity refinement, not a
+        // correctness precondition for the write itself.
+        stamped.accessSequence = try secureDirectory.allocateAccessSequence(
+            atLeastAfter: existingAccessSequence(metadataName: metadataName)
+        )
+        let metadataTempName = metadataName + ".tmp"
+        do {
+            let data = try JSONEncoder.assetCache().encode(stamped)
+            try secureDirectory.writeTempAndFsync(tempName: metadataTempName, data: data)
+            try secureDirectory.rename(from: metadataTempName, to: metadataName)
+        } catch {
+            _ = try? secureDirectory.remove(name: metadataTempName)
+            if !payloadAlreadyExisted {
+                _ = try? secureDirectory.remove(name: payloadName)
+            }
+            throw Self.asCachePersistenceFailure(error)
+        }
+        do {
+            try secureDirectory.fsyncRootDirectory()
+        } catch {
+            // Deliberately does NOT throw here -- see this method's own
+            // doc comment for why the rename already took effect and
+            // ``setLocked(_:payload:metadata:token:)`` must still go on
+            // to commit this key's disposition before it surfaces this
+            // unconfirmed-durability failure to its own caller. Cleanup
+            // of any now-superseded prior generation is skipped in this
+            // case, exactly as it always has been: only a *confirmed*
+            // durable pointer switch is treated as safe to delete the
+            // previous generation's payload out from under.
+            return false
+        }
+
+        // Only now that the new generation is durably referenced, remove
+        // any other, now-superseded payload generation for this key —
+        // including one left behind by an earlier crash between a prior
+        // payload write and its own metadata pointer commit — then fsync
+        // once more so that cleanup itself is durable.
+        cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: metadata.payloadSHA256Hex)
+        try? secureDirectory.fsyncRootDirectory()
+        return true
+    }
+
+    /// Best-effort read of the `accessSequence` currently stamped on
+    /// whatever metadata sidecar occupies `metadataName` right now, or
+    /// `nil` if none exists or it cannot be read/decoded. Only ever used
+    /// to seed ``AssetAccessSequenceAllocator/allocate(atLeastAfter:)``,
+    /// never as a correctness precondition, so any failure here
+    /// (including a genuine "does not exist yet" miss) is deliberately
+    /// folded into a single `nil` case rather than surfaced.
+    private func existingAccessSequence(metadataName: String) -> AssetAccessSequence? {
+        guard let existingData = try? secureDirectory.read(
+            name: metadataName,
+            maxBytes: SecureCacheDirectory.maxMetadataBytes
+        ) else {
+            return nil
+        }
+        return try? JSONDecoder.assetCache().decode(
+            AssetCacheMetadata.self,
+            from: existingData
+        ).accessSequence
+    }
+}
