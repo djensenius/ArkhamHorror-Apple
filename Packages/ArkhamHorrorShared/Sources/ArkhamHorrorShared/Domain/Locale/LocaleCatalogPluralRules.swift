@@ -21,17 +21,11 @@ enum LocaleCatalogPluralRules {
         guard case let .object(named) = variables else {
             return .failure(.missingVariable)
         }
-        if let count = named["count"] {
-            if case let .number(number) = count {
-                return select(number: number, caseCount: caseCount)
-            }
-            if case let .number(number)? = named["n"] {
-                return select(number: number, caseCount: caseCount)
-            }
-            return .failure(.unsupportedVariableValue)
-        }
-        guard case let .number(number)? = named["n"] else {
+        guard let selector = named["count"] ?? named["n"] else {
             return .failure(.missingVariable)
+        }
+        guard case let .number(number) = selector else {
+            return .failure(.unsupportedVariableValue)
         }
         return select(number: number, caseCount: caseCount)
     }

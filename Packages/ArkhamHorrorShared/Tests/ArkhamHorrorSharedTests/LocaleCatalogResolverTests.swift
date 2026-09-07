@@ -210,7 +210,11 @@ struct LocaleCatalogResolverTests {
             key: "story.plural", variables: .object([:])
         ) == .failure(.missingVariable))
         #expect(resolver.render(
-            key: "story.plural", variables: .object(["count": .string("two")])
+            key: "story.plural",
+            variables: .object(["count": .string("two"), "n": number("2")])
+        ) == .failure(.unsupportedVariableValue))
+        #expect(resolver.render(
+            key: "story.plural", variables: .object(["n": .string("two")])
         ) == .failure(.unsupportedVariableValue))
         #expect(resolver.render(
             key: "story.plural", variables: .object(["count": number("1.5")])
