@@ -123,8 +123,12 @@ extension LocaleCatalogSnapshot {
                 lowercasedLanguage, separator: 0x2D
             )
             while !subtags.isEmpty {
-                let candidateBytes = subtags.enumerated().flatMap { index, subtag in
-                    index == 0 ? subtag : [0x2D] + subtag
+                var candidateBytes: [UInt8] = []
+                for (index, subtag) in subtags.enumerated() {
+                    if index > 0 {
+                        candidateBytes.append(0x2D)
+                    }
+                    candidateBytes.append(contentsOf: subtag)
                 }
                 guard let candidate = String(bytes: candidateBytes, encoding: .utf8) else {
                     return defaultLocale
