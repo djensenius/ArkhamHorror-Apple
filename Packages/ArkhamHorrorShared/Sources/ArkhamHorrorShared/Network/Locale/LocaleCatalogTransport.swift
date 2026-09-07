@@ -45,6 +45,7 @@ protocol LocaleCatalogTransporting: Sendable {
 ///   so an unbounded or lying `Content-Length` can never force an unbounded allocation.
 struct URLSessionLocaleCatalogTransport: LocaleCatalogTransporting {
     private let session: URLSession
+    private let timeout: TimeInterval
 
     init(timeout: TimeInterval = LocaleCatalogLimits.requestTimeout) {
         let configuration = URLSessionConfiguration.ephemeral
@@ -61,15 +62,11 @@ struct URLSessionLocaleCatalogTransport: LocaleCatalogTransporting {
             delegate: RedirectRejectingURLSessionDelegate(),
             delegateQueue: nil
         )
+        self.timeout = timeout
     }
 
     func fetch(_ url: URL, maxBytes: Int) async throws -> LocaleCatalogResponse {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.httpShouldHandleCookies = false
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.timeoutInterval = LocaleCatalogLimits.requestTimeout
+        let request = request(for: url)
 
         let stream: URLSession.AsyncBytes
         let response: URLResponse
@@ -101,6 +98,16 @@ struct URLSessionLocaleCatalogTransport: LocaleCatalogTransporting {
             url: http.url,
             data: data
         )
+    }
+
+    func request(for url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpShouldHandleCookies = false
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = timeout
+        return request
     }
 
     /// Reads at most `maxBytes`, throwing ``LocaleCatalogFailure/tooLarge`` the moment one more

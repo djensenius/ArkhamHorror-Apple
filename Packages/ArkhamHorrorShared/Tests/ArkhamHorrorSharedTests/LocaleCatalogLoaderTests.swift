@@ -18,6 +18,13 @@ struct LocaleCatalogLoaderTests {
         return LocaleCatalogLoader(transport: transport)
     }
 
+    @Test("Production transport applies its configured timeout to each request")
+    func productionTransportUsesConfiguredTimeout() throws {
+        let url = try #require(URL(string: "https://catalog.example.test/manifest.json"))
+        let request = URLSessionLocaleCatalogTransport(timeout: 0.25).request(for: url)
+        #expect(request.timeoutInterval == 0.25)
+    }
+
     @Test("Loader accepts a complete manifest and exact chunk identity")
     func loaderAcceptsCompleteSyntheticCatalog() async throws {
         let documents = try SyntheticLocaleCatalogDocuments.make()
