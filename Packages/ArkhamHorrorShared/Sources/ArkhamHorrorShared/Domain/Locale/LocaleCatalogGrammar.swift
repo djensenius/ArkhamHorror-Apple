@@ -183,9 +183,11 @@ enum LocaleCatalogGrammar {
     /// translated source files, and the published grammar admits any other scalar. The
     /// exclusions are enforced on Unicode scalars rather than bytes for exactly that reason.
     static func isMessageKey(_ text: String) -> Bool {
-        guard !text.isEmpty, text.utf8.count <= 512 else { return false }
+        var scalarCount = 0
         var segmentLength = 0
         for scalar in text.unicodeScalars {
+            scalarCount += 1
+            guard scalarCount <= 512 else { return false }
             if scalar == "." {
                 guard segmentLength > 0 else { return false }
                 segmentLength = 0
@@ -194,7 +196,7 @@ enum LocaleCatalogGrammar {
             guard isMessageKeyScalar(scalar) else { return false }
             segmentLength += 1
         }
-        return segmentLength > 0
+        return scalarCount > 0 && segmentLength > 0
     }
 
     private static func isMessageKeyScalar(_ scalar: Unicode.Scalar) -> Bool {

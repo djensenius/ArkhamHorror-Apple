@@ -5,6 +5,9 @@ import Foundation
 // swiftlint:disable file_length
 
 extension FileLocaleCatalogStore {
+    private static let entryRecordName = "entry.json"
+    private static let entryRecordStagingName = "entry-update.json"
+
     struct DiskEntry: Sendable, Equatable {
         let endpoint: String
         let catalogRevision: String
@@ -57,6 +60,11 @@ extension FileLocaleCatalogStore {
             return nil
         }
         defer { LocaleCatalogPOSIX.closeDescriptor(directoryFD) }
+        guard LocaleCatalogPOSIX.removeIfPresent(
+            parent: directoryFD, name: Self.entryRecordStagingName
+        ) else {
+            return nil
+        }
         guard let record = readEntryRecord(rootFD: rootFD, name: Self.directoryName(for: identity)),
               record.identity == identity,
               let manifestBytes = LocaleCatalogPOSIX.readRegular(
@@ -146,27 +154,42 @@ extension FileLocaleCatalogStore {
                 }
                 continue
             }
-            guard let size = LocaleCatalogPOSIX.directorySize(
-                parent: rootFD, name: name, fileLimit: Self.maxEntryFiles
-            ) else {
+            guard let entry = scannedEntry(rootFD: rootFD, name: name) else {
                 guard LocaleCatalogPOSIX.remove(parent: rootFD, name: name) else {
                     return nil
                 }
                 continue
             }
-            guard let entry = readEntryRecord(rootFD: rootFD, name: name, byteCount: size)
-            else {
-                guard LocaleCatalogPOSIX.remove(parent: rootFD, name: name) else {
-                    return nil
-                }
-                continue
-            }
+            let size = entry.byteCount
             let nextBytes = scan.occupiedBytes.addingReportingOverflow(size)
             guard !nextBytes.overflow else { return nil }
             scan.occupiedBytes = nextBytes.partialValue
             scan.entries.append(entry)
         }
         return pruneScan(scan, rootFD: rootFD)
+    }
+
+    private func scannedEntry(rootFD: Int32, name: String) -> DiskEntry? {
+        guard removeStaleEntryRecordStaging(rootFD: rootFD, entryName: name),
+              let size = LocaleCatalogPOSIX.directorySize(
+                  parent: rootFD, name: name, fileLimit: Self.maxEntryFiles
+              )
+        else {
+            return nil
+        }
+        return readEntryRecord(rootFD: rootFD, name: name, byteCount: size)
+    }
+
+    private func removeStaleEntryRecordStaging(rootFD: Int32, entryName: String) -> Bool {
+        guard let directoryFD = LocaleCatalogPOSIX.openDirectory(
+            parent: rootFD, name: entryName
+        ) else {
+            return false
+        }
+        defer { LocaleCatalogPOSIX.closeDescriptor(directoryFD) }
+        return LocaleCatalogPOSIX.removeIfPresent(
+            parent: directoryFD, name: Self.entryRecordStagingName
+        )
     }
 
     private func pruneScan(_ initialScan: DiskScan, rootFD: Int32) -> DiskScan? {
@@ -341,7 +364,7 @@ extension FileLocaleCatalogStore {
         }
         defer { LocaleCatalogPOSIX.closeDescriptor(directoryFD) }
         guard let bytes = LocaleCatalogPOSIX.readRegular(
-            parent: directoryFD, name: "entry.json", maxBytes: 4096
+            parent: directoryFD, name: Self.entryRecordName, maxBytes: 4096
         ), let value = try? LosslessJSONParser.parse(bytes, maxByteCount: 4096),
         case let .object(object) = value,
         Set(object.keys) == [
@@ -366,7 +389,11 @@ extension FileLocaleCatalogStore {
         )
     }
 
-    private func writeEntryRecord(identity: LocaleCatalogIdentity, directoryFD: Int32) -> Bool {
+    private func writeEntryRecord(
+        identity: LocaleCatalogIdentity,
+        directoryFD: Int32,
+        name: String = FileLocaleCatalogStore.entryRecordName
+    ) -> Bool {
         let timestamp = max(Int(clock.now.timeIntervalSince1970), 0)
         let record = """
         {"endpoint":\(jsonString(identity.endpoint)),\
@@ -376,7 +403,7 @@ extension FileLocaleCatalogStore {
         "accessedAt":\(timestamp)}
         """
         return LocaleCatalogPOSIX.writeRegular(
-            Data(record.utf8), parent: directoryFD, name: "entry.json"
+            Data(record.utf8), parent: directoryFD, name: name
         )
     }
 
@@ -389,8 +416,23 @@ extension FileLocaleCatalogStore {
             return false
         }
         defer { LocaleCatalogPOSIX.closeDescriptor(directoryFD) }
-        _ = LocaleCatalogPOSIX.removeIfPresent(parent: directoryFD, name: "entry.json")
-        return writeEntryRecord(identity: identity, directoryFD: directoryFD)
+        defer {
+            _ = LocaleCatalogPOSIX.removeIfPresent(
+                parent: directoryFD, name: Self.entryRecordStagingName
+            )
+        }
+        guard writeEntryRecord(
+            identity: identity,
+            directoryFD: directoryFD,
+            name: Self.entryRecordStagingName
+        ), LocaleCatalogPOSIX.replace(
+            parent: directoryFD,
+            from: Self.entryRecordStagingName,
+            to: Self.entryRecordName
+        ) else {
+            return false
+        }
+        return LocaleCatalogPOSIX.syncDirectory(directoryFD)
     }
 
     private func isEntryName(_ name: String) -> Bool {
@@ -416,9 +458,11 @@ extension FileLocaleCatalogStore {
 
 enum LocaleCatalogPOSIX {
     typealias MoveGate = @Sendable (_ source: String, _ destination: String) -> Bool
+    typealias WriteGate = @Sendable (_ name: String) -> Bool
 
     @TaskLocal static var tracker: LocaleCatalogDescriptorTracker?
     @TaskLocal static var moveGate: MoveGate?
+    @TaskLocal static var writeGate: WriteGate?
 
     static func openDirectory(path: String) -> Int32? {
         guard let normalizedPath = normalizedDirectoryPath(path) else {
@@ -565,6 +609,7 @@ enum LocaleCatalogPOSIX {
     }
 
     static func writeRegular(_ data: Data, parent: Int32, name: String) -> Bool {
+        guard writeGate?(name) ?? true else { return false }
         let descriptor = openat(parent, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
         guard descriptor >= 0 else { return false }
         opened(descriptor)
@@ -681,6 +726,13 @@ enum LocaleCatalogPOSIX {
         let result = closedir(directory)
         let closeErrno = errno
         tracker?.closed(descriptor, succeeded: result == 0, errorCode: closeErrno)
+    }
+}
+
+extension LocaleCatalogPOSIX {
+    static func replace(parent: Int32, from source: String, to destination: String) -> Bool {
+        guard moveGate?(source, destination) ?? true else { return false }
+        return renameat(parent, source, parent, destination) == 0
     }
 }
 

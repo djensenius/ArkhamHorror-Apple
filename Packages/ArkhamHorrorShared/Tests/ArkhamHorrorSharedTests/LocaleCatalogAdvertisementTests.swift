@@ -125,6 +125,15 @@ struct LocaleCatalogAdvertisementTests {
         )
     }
 
+    @Test("Message-key maxLength counts Unicode scalars rather than UTF-8 bytes")
+    func messageKeyLengthUsesUnicodeScalars() {
+        let scalar = "\u{754C}"
+        let maximum = String(repeating: scalar, count: 512)
+        #expect(maximum.utf8.count > 512)
+        #expect(LocaleCatalogGrammar.isMessageKey(maximum))
+        #expect(!LocaleCatalogGrammar.isMessageKey(maximum + scalar))
+    }
+
     @Test("Language-resolution keys reject ASCII-normalized collisions")
     func languageResolutionRejectsNormalizedCollisions() throws {
         let documents = try SyntheticLocaleCatalogDocuments.make()

@@ -279,6 +279,55 @@ struct LocaleCatalogStoreTests {
 }
 
 extension LocaleCatalogStoreTests {
+    @Test("Access-record refresh failures and interruptions preserve the disk entry")
+    func accessRecordRefreshFailuresPreserveEntry() async throws {
+        let catalog = try await validatedCatalog()
+        let manager = FileManager.default
+        let root = scratchDirectory()
+        defer { try? manager.removeItem(at: root) }
+        let writer = FileLocaleCatalogStore(root: root)
+        await persist(writer, catalog: catalog)
+
+        let entry = await writer.entryURL(for: catalog.snapshot.identity)
+        let record = entry.appending(path: "entry.json")
+        let originalRecord = try Data(contentsOf: record)
+        let coldStore = FileLocaleCatalogStore(root: root)
+        let writeGate: LocaleCatalogPOSIX.WriteGate = { _ in false }
+        let writeFailureSnapshot = await LocaleCatalogPOSIX.$writeGate.withValue(writeGate) {
+            await coldStore.load(
+                identity: catalog.snapshot.identity,
+                manifest: catalog.manifest
+            )
+        }
+
+        #expect(writeFailureSnapshot == catalog.snapshot)
+        #expect(try Data(contentsOf: record) == originalRecord)
+        #expect(!manager.fileExists(atPath: entry.appending(path: "entry-update.json").path()))
+        let moveGate: LocaleCatalogPOSIX.MoveGate = { source, target in
+            !(source == "entry-update.json" && target == "entry.json")
+        }
+        let renameFailureStore = FileLocaleCatalogStore(root: root)
+        let renameFailureSnapshot = await LocaleCatalogPOSIX.$moveGate.withValue(moveGate) {
+            await renameFailureStore.load(
+                identity: catalog.snapshot.identity,
+                manifest: catalog.manifest
+            )
+        }
+
+        #expect(renameFailureSnapshot == catalog.snapshot)
+        #expect(try Data(contentsOf: record) == originalRecord)
+        #expect(!manager.fileExists(atPath: entry.appending(path: "entry-update.json").path()))
+        let staging = entry.appending(path: "entry-update.json")
+        try manager.copyItem(at: record, to: staging)
+        let interruptedStore = FileLocaleCatalogStore(root: root)
+
+        #expect(await interruptedStore.load(
+            identity: catalog.snapshot.identity,
+            manifest: catalog.manifest
+        ) == catalog.snapshot)
+        #expect(!manager.fileExists(atPath: staging.path()))
+    }
+
     @Test("An interrupted atomic replacement keeps a canonical entry")
     func interruptedReplacementKeepsCanonicalEntry() async throws {
         let catalog = try await validatedCatalog()
