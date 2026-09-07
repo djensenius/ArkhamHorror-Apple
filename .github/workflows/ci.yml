@@ -77,6 +77,8 @@ jobs:
           cache: true
       - name: Verify vendored fixtures against pinned backend commit
         run: mise run contract-provenance
+      - name: Verify locale-catalog artifacts against pinned backend commit
+        run: mise run locale-catalog-provenance
 
   build:
     name: Build ${{ matrix.name }}

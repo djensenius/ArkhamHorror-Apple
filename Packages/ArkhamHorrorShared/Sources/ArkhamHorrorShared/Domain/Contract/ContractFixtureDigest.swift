@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "d917963b6743e0915b90947c5fc1755d4ab20d9f90c789a837dae95d9e05e0c1"
+            sha256Hex: "0bdff62c5d06472a41d5121359f98ca034d871ae24274cb1cd1fadd7cbdbde84"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "cc0e1fb442d945c677267823201e87680687a329aeb00fa62f8b7ebd2fe9bd41"
+            sha256Hex: "2052a56676207fc6be48d77b8a088375d063209100640188ff24d8f513aeb617"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",

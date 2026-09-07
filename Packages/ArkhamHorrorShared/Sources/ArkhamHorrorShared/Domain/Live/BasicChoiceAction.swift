@@ -55,10 +55,40 @@ enum BasicChoiceActionPhase: Sendable, Equatable {
 struct BasicChoicePromptPresentation: Sendable, Equatable {
     let identity: BasicChoicePromptIdentity
     let question: BasicChoiceQuestionState
+    /// The complete story outcome captured from one immutable catalog snapshot. This exact
+    /// value drives rendering, focus, accessibility, controller dispatch, and send fencing.
+    let storyResolution: StoryResolution?
     let readOnlyReason: BasicChoiceReadOnlyReason?
     let actionPhase: BasicChoiceActionPhase?
     let actionChoiceIndex: Int?
     let serverFeedback: String?
+    let catalogRetry: BasicChoiceCatalogRetryPresentation?
+
+    init(
+        identity: BasicChoicePromptIdentity,
+        question: BasicChoiceQuestionState,
+        storyResolution: StoryResolution? = nil,
+        readOnlyReason: BasicChoiceReadOnlyReason?,
+        actionPhase: BasicChoiceActionPhase?,
+        actionChoiceIndex: Int?,
+        serverFeedback: String?,
+        catalogRetry: BasicChoiceCatalogRetryPresentation? = nil
+    ) {
+        self.identity = identity
+        self.question = question
+        self.storyResolution = storyResolution ?? question.supportedQuestion?.story.map {
+            StoryNarrativeLocalization.resolve(
+                $0.flavorText,
+                resolver: nil,
+                catalogUnavailability: .catalog(.notAdvertised)
+            )
+        }
+        self.readOnlyReason = readOnlyReason
+        self.actionPhase = actionPhase
+        self.actionChoiceIndex = actionChoiceIndex
+        self.serverFeedback = serverFeedback
+        self.catalogRetry = catalogRetry
+    }
 
     var ownerID: PlayerID {
         identity.ownerID
@@ -76,8 +106,13 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         readOnlyReason == nil
     }
 
+    var isStoryAvailable: Bool {
+        guard question.supportedQuestion?.kind == .read else { return true }
+        return storyResolution?.isResolved == true
+    }
+
     var canSubmit: Bool {
-        guard isAuthorized else { return false }
+        guard isAuthorized, isStoryAvailable else { return false }
         switch actionPhase {
         case .sending, .awaitingSnapshot, .uncertain:
             return false
@@ -105,6 +140,9 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         case nil:
             break
         }
+        if let reason = storyResolution?.unavailableReason {
+            return reason.announcement
+        }
         switch readOnlyReason {
         case .spectator:
             return "Spectators can view this prompt but cannot answer it."
@@ -122,12 +160,23 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     }
 
     var canRetry: Bool {
-        guard readOnlyReason == nil else { return false }
+        guard readOnlyReason == nil, isStoryAvailable else { return false }
         if case .retryable = actionPhase {
             return true
         }
         return false
     }
+
+    var canRetryCatalog: Bool {
+        catalogRetry != nil
+    }
+}
+
+/// Fences a catalog retry to one profile, load generation, and still-current prompt.
+struct BasicChoiceCatalogRetryPresentation: Sendable, Equatable {
+    let profileID: UUID
+    let catalogGeneration: Int
+    let promptKey: BasicChoicePromptKey
 }
 
 enum BasicChoiceSubmitResult: Sendable, Equatable {

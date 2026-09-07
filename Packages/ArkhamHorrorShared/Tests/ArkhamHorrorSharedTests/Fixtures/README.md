@@ -3,8 +3,8 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@52c7ee3b730c87129907e26b91acc3933da841cd` (through PR #51),
-schema revision `0.1.22`.
+`djensenius/ArkhamHorror@c567f4881219ccb883b49b72003a8e82e9f207f8` (through PR #57),
+schema revision `0.1.26`.
 
 These twenty-five files, and only these twenty-five, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via

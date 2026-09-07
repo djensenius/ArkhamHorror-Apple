@@ -6,6 +6,7 @@ private enum BasicChoiceSendPreparation {
 }
 
 extension AppModel {
+    // swiftlint:disable:next function_body_length
     func basicChoicePresentation(for gameID: GameID) -> BasicChoicePromptPresentation? {
         guard let projection = liveGameStates[gameID]?.lastKnownProjection else { return nil }
         let identity = liveGameParticipantIdentities[gameID]
@@ -49,13 +50,19 @@ extension AppModel {
         } else {
             nil
         }
+        let storyResolution = storyResolution(for: payload.state.supportedQuestion?.story)
         return BasicChoicePromptPresentation(
             identity: promptIdentity,
             question: payload.state,
+            storyResolution: storyResolution,
             readOnlyReason: readOnlyReason,
             actionPhase: phase,
             actionChoiceIndex: isSamePrompt ? record?.choiceIndex : nil,
-            serverFeedback: basicChoiceServerFeedback[gameID]
+            serverFeedback: basicChoiceServerFeedback[gameID],
+            catalogRetry: catalogRetryPresentation(
+                storyResolution: storyResolution,
+                promptKey: promptIdentity.promptKey
+            )
         )
     }
 
@@ -139,7 +146,7 @@ extension AppModel {
                 }
             }
         }
-        guard isRetry ? presentation.readOnlyReason == nil : presentation.canSubmit else {
+        guard presentation.isAuthorized else {
             return .reject(.readOnly)
         }
         // Revalidated against the current authoritative projection immediately before
@@ -151,9 +158,12 @@ extension AppModel {
         guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
               let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
               projection.isChoiceActionable(
-                  choice, story: presentation.question.supportedQuestion?.story
+                  choice, storyResolution: presentation.storyResolution
               )
         else { return .reject(.unsupportedChoice) }
+        guard isRetry || presentation.canSubmit else {
+            return .reject(.readOnly)
+        }
         guard let connection = liveGameConnections[identity.gameID],
               liveGameSessions[identity.gameID]?.attemptID == connection.attemptID
         else { return .reject(.readOnly) }
@@ -305,7 +315,10 @@ extension AppModel {
               let choiceIndex = basicChoiceActions[gameID]?.choiceIndex,
               let question = current?.supportedQuestion,
               let originalChoice = question.choices.first(where: { $0.index == choiceIndex }),
-              !projection.isChoiceActionable(originalChoice, story: question.story)
+              !projection.isChoiceActionable(
+                  originalChoice,
+                  storyResolution: storyResolution(for: question.story)
+              )
         else { return }
         basicChoiceActions[gameID] = nil
     }

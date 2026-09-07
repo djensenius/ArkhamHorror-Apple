@@ -125,7 +125,7 @@ extension AppModelLiveGameTests {
 
         let storyPresentation = try #require(model.basicChoicePresentation(for: gameID))
         #expect(storyPresentation.questionVersion == envelope.game.scenarioSteps + 1)
-        #expect(storyPresentation.canSubmit)
+        #expect(!storyPresentation.canSubmit)
         #expect(storyPresentation.actionPhase == nil)
         let storyQuestion = try #require(storyPresentation.question.supportedQuestion)
         #expect(storyQuestion.kind == .read)

@@ -60,16 +60,17 @@ enum BoardDisplayFormatting {
     static func choiceAccessibilityHint(
         for choice: BasicChoice,
         in projection: BoardProjection,
-        story: ReadStoryContent? = nil,
+        storyResolution: StoryResolution?,
         canSubmit: Bool,
         statusMessage: String?
     ) -> String {
         guard choice.isSupported else {
             return "This choice requires a newer app version."
         }
-        guard projection.isChoiceActionable(choice, story: story) else {
+        guard projection.isChoiceActionable(choice, storyResolution: storyResolution) else {
             if case .continueReading = choice.content {
-                return "This story text requires a future app update to display."
+                return storyResolution?.unavailableReason?.announcement
+                    ?? "This story text is not currently available."
             }
             return "This location isn't currently available."
         }
@@ -77,6 +78,29 @@ enum BoardDisplayFormatting {
             return "Activates choice \(choice.index + 1)."
         }
         return statusMessage ?? "This choice is currently read-only."
+    }
+
+    static func choiceAccessibilityHint(
+        for choice: BasicChoice,
+        in projection: BoardProjection,
+        story: ReadStoryContent? = nil,
+        canSubmit: Bool,
+        statusMessage: String?
+    ) -> String {
+        let resolution = story.map {
+            StoryNarrativeLocalization.resolve(
+                $0.flavorText,
+                resolver: nil,
+                catalogUnavailability: .catalog(.notAdvertised)
+            )
+        }
+        return choiceAccessibilityHint(
+            for: choice,
+            in: projection,
+            storyResolution: resolution,
+            canSubmit: canSubmit,
+            statusMessage: statusMessage
+        )
     }
 
     /// `name.subtitle`, trimmed to `nil` if blank (rather than showing an empty subtitle).

@@ -4,7 +4,8 @@ import Testing
 
 /// Production-fixture-driven coverage for the `Read`/`BasicReadChoices` story-continue
 /// prompt and the `ChooseOne`/`TargetLabel(LocationTarget)` starting-location prompt (issue
-/// djensenius/ArkhamHorror-Apple#35), pinned to backend commit `52c7ee3b`, schema `0.1.22`.
+/// djensenius/ArkhamHorror-Apple#35), first governed at backend commit `52c7ee3b`, schema
+/// `0.1.22`.
 @Suite("Read story and location choice contract")
 struct ReadStoryQuestionTests {
     func fixture(_ name: String) throws -> Data {
