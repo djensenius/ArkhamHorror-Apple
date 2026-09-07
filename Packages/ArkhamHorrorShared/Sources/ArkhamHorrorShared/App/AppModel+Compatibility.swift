@@ -15,12 +15,22 @@ extension AppModel {
 
         let compatibility: ServerCompatibility
         switch outcome {
-        case let .compatible(capabilities):
+        case let .compatible(capabilities, localeCatalog):
             compatibility = .modern(capabilities: capabilities)
+            // Bound to the exact profile this probe ran against, and installed before any
+            // token work, so a story key can start resolving as soon as a catalog arrives
+            // without waiting on authentication. A later profile switch advances
+            // `generation`, which is what makes the stale-completion guard below discard a
+            // catalog whose own probe has been superseded.
+            adoptLocaleCatalogAdvertisement(
+                localeCatalog, profile: profile, generation: generation
+            )
         case .legacyFallback:
             compatibility = .legacy
+            adoptLocaleCatalogAdvertisement(nil, profile: profile, generation: generation)
         case let .incompatible(reason):
             guard isCurrent(generation) else { return }
+            adoptLocaleCatalogAdvertisement(nil, profile: profile, generation: generation)
             sessionState = .incompatible(profile: profile, reason: reason)
             return
         }

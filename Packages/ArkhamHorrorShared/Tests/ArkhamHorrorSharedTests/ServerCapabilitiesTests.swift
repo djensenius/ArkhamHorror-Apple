@@ -20,7 +20,7 @@ struct ServerCapabilitiesTests {
     @Test("Canonical vendored fixture decodes correctly")
     func canonicalFixtureDecodes() throws {
         let caps = try loadFixture()
-        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 22))
+        #expect(caps.schemaRevision == ContractRevision.literal(major: 0, minor: 1, patch: 26))
         #expect(caps.status == .baselineIncomplete)
         #expect(caps.apiBasePath == "/api/v1")
         let expectedClientMin = ContractRevision.literal(major: 0, minor: 1, patch: 0)
@@ -191,6 +191,39 @@ struct ServerCapabilitiesTests {
         """
         #expect(throws: (any Error).self) {
             try ContractJSON.decode(ServerCapabilities.self, from: Data(json.utf8))
+        }
+    }
+
+    @Test("Malformed optional locale metadata does not invalidate required capabilities")
+    func malformedLocaleCatalogIsIgnored() throws {
+        let cases = [
+            """
+            "capabilities": [],
+            "localeCatalog": {"manifestUrl":"/locale-catalog/manifest.json"}
+            """,
+            """
+            "capabilities": ["i18n.locale-catalog.v1"]
+            """,
+            """
+            "capabilities": ["i18n.locale-catalog.v1"],
+            "localeCatalog": {"manifestUrl":42}
+            """,
+        ]
+        for fields in cases {
+            let json = """
+            {
+                "schemaRevision": "0.1.23",
+                "status": "baseline-incomplete",
+                "apiBasePath": "/api/v1",
+                "nativeClientMinimumRevision": "0.1.0",
+                \(fields)
+            }
+            """
+            let capabilities = try ContractJSON.decode(
+                ServerCapabilities.self, from: Data(json.utf8)
+            )
+            #expect(capabilities.localeCatalog == nil)
+            #expect(capabilities.schemaRevision == .literal(major: 0, minor: 1, patch: 23))
         }
     }
 }

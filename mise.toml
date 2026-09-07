@@ -40,6 +40,10 @@ run = "Scripts/verify-contract-fixture-provenance.sh"
 description = "Offline self-test of verify-contract-fixture-provenance.sh's own logic against disposable scratch git repos (no network, part of the offline test suite)"
 run = "Scripts/test-verify-contract-fixture-provenance.sh"
 
+[tasks.locale-catalog-provenance]
+description = "Verify vendored locale-catalog artifacts against the pinned backend commit"
+run = "Scripts/verify-locale-catalog-provenance.sh"
+
 [tasks.build]
 description = "Build every application target"
 run = """

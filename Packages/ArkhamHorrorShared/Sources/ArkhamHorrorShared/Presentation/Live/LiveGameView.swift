@@ -163,6 +163,9 @@ struct LiveGameView: View {
             onRetryChoice: {
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.retryBasicChoice(identity) }
+            },
+            onCatalogRetry: { retry in
+                model.retryLocaleCatalog(for: gameID, retry: retry)
             }
         )
     }

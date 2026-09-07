@@ -289,6 +289,29 @@ final class AppModel {
     /// Sanitized room-wide feedback, never treated as correlated answer rejection.
     var basicChoiceServerFeedback: [GameID: String] = [:]
 
+    // MARK: - Locale catalog state (see `AppModel+LocaleCatalog.swift`)
+
+    /// The verified catalog shared by every scene, atomically replaced by revision.
+    var localeCatalog: LocaleCatalogSnapshot?
+    /// A definite catalog failure distinct from an in-progress load.
+    var localeCatalogFailure: LocaleCatalogFailure?
+    /// Whether a catalog load is in flight for the selected profile.
+    var isLocaleCatalogLoading = false
+
+    /// The advertisement and profile the published (or in-flight) catalog belongs to.
+    /// Compared before any catalog is offered to a reader, so a snapshot can never outlive
+    /// the profile whose probe produced it.
+    @ObservationIgnored var localeCatalogRequest: LocaleCatalogRequest?
+    /// The in-flight catalog load, cancelled by any endpoint switch or newer advertisement.
+    @ObservationIgnored var localeCatalogTask: Task<Void, Never>?
+    /// A monotonically increasing counter guarding stale catalog completions, independent of
+    /// ``generation`` since a catalog load neither cancels nor is cancelled by the auth flow.
+    @ObservationIgnored var localeCatalogGeneration = 0
+    /// The injectable catalog fetch/verify pipeline. See ``LocaleCatalogLoader``.
+    @ObservationIgnored let localeCatalogLoader: LocaleCatalogLoader
+    /// The injectable Apple preferred-language input catalog locale selection reads.
+    @ObservationIgnored let preferredLanguagesProvider: any PreferredLanguagesProviding
+
     init(
         profileStore: any ServerProfileStore = UserDefaultsServerProfileStore(),
         tokenStore: any TokenStore = KeychainTokenStore(),
@@ -298,7 +321,9 @@ final class AppModel {
         gameLifecycleService: any GameLifecycleServicing = GameLifecycleService(),
         liveGameSocketFactory: any GameSocketFactory = URLSessionGameSocketFactory(),
         liveGameClock: any LiveGameClock = SystemLiveGameClock(),
-        liveGameRandomSource: any LiveGameRandomSource = SystemLiveGameRandomSource()
+        liveGameRandomSource: any LiveGameRandomSource = SystemLiveGameRandomSource(),
+        localeCatalogLoader: LocaleCatalogLoader = .production(),
+        preferredLanguagesProvider: any PreferredLanguagesProviding = SystemPreferredLanguages()
     ) {
         self.profileStore = profileStore
         self.tokenStore = tokenStore
@@ -309,6 +334,8 @@ final class AppModel {
         self.liveGameSocketFactory = liveGameSocketFactory
         self.liveGameClock = liveGameClock
         self.liveGameRandomSource = liveGameRandomSource
+        self.localeCatalogLoader = localeCatalogLoader
+        self.preferredLanguagesProvider = preferredLanguagesProvider
         startLaunchFlow()
     }
 }

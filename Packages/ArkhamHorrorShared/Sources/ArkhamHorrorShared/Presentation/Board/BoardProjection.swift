@@ -294,13 +294,27 @@ struct BoardProjection: Sendable, Equatable {
     /// story) on every call -- never cached or baked into the wire parser, which stays
     /// entirely projection-agnostic -- so a stale rendered choice is always revalidated
     /// immediately before it could be claimed or sent.
-    func isChoiceActionable(_ choice: BasicChoice, story: ReadStoryContent? = nil) -> Bool {
+    func isChoiceActionable(
+        _ choice: BasicChoice, storyResolution: StoryResolution?
+    ) -> Bool {
         guard choice.isSupported else { return false }
         if case .continueReading = choice.content {
-            guard let story else { return false }
-            return StoryNarrativeLocalization.resolvedStory(for: story.flavorText) != nil
+            return storyResolution?.isResolved == true
         }
         guard let locationID = choice.locationID else { return true }
         return locations.contains { $0.id == locationID }
+    }
+
+    /// Compatibility overload for projection-only callers. Production prompt surfaces must
+    /// pass their captured `StoryResolution` instead so they cannot separately resolve text.
+    func isChoiceActionable(_ choice: BasicChoice, story: ReadStoryContent? = nil) -> Bool {
+        let resolution = story.map {
+            StoryNarrativeLocalization.resolve(
+                $0.flavorText,
+                resolver: nil,
+                catalogUnavailability: .catalog(.notAdvertised)
+            )
+        }
+        return isChoiceActionable(choice, storyResolution: resolution)
     }
 }

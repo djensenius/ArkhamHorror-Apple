@@ -13,7 +13,7 @@ import Observation
 /// adds no new command vocabulary.
 @MainActor
 @Observable
-final class BoardCommandController {
+final class BoardCommandController { // swiftlint:disable:this type_body_length
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
     private(set) var layout: BoardLayout
@@ -37,6 +37,7 @@ final class BoardCommandController {
     private(set) var lastCommand: SemanticCommand?
     private var onChoice: (Int) -> Void
     private var onRetry: () -> Void
+    private var onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
     static let zoomRange: ClosedRange<CGFloat> = 0.5 ... 3
     private static let zoomStep: CGFloat = 0.25
@@ -45,12 +46,14 @@ final class BoardCommandController {
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
-        onRetry: @escaping () -> Void = {}
+        onRetry: @escaping () -> Void = {},
+        onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
         self.projection = projection
         self.prompt = prompt
         self.onChoice = onChoice
         self.onRetry = onRetry
+        self.onCatalogRetry = onCatalogRetry
         let layout = BoardLayoutBuilder.makeLayout(
             locations: projection.locations,
             preferredRootID: Self.activeLocationID(in: projection)
@@ -107,6 +110,12 @@ final class BoardCommandController {
         onRetry = handler
     }
 
+    func updateCatalogRetryHandler(
+        _ handler: @escaping (BasicChoiceCatalogRetryPresentation) -> Void
+    ) {
+        onCatalogRetry = handler
+    }
+
     /// Reconciles this already-existing controller against the projection its owning
     /// ``BoardView`` was just handed on re-appearance. `.onChange(of: projection)` only
     /// fires while a view is part of the rendered tree, so a replacement snapshot that
@@ -131,6 +140,9 @@ final class BoardCommandController {
 
     @discardableResult
     func handle(focusID: SemanticFocusID?, _ outcome: SemanticDispatchOutcome) -> Bool {
+        if let focusID, coordinator.graph.node(for: focusID) == nil {
+            return false
+        }
         coordinator.syncExternalFocus(focusID)
         switch outcome {
         case .reservedBack:
@@ -180,6 +192,9 @@ final class BoardCommandController {
     private func applyPromptCommand(_ command: SemanticCommand) -> Bool {
         switch command {
         case .primaryAction:
+            if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
+                return activatePromptCatalogRetry()
+            }
             if coordinator.currentFocus == BoardFocusID.promptRetry {
                 return activatePromptRetry()
             }
@@ -279,10 +294,13 @@ final class BoardCommandController {
             coordinator.syncExternalFocus(BoardFocusID.promptRetry)
             return true
         }
-        let story = prompt?.question.supportedQuestion?.story
+        if prompt?.canRetryCatalog == true {
+            coordinator.syncExternalFocus(BoardFocusID.promptCatalogRetry)
+            return true
+        }
         guard prompt?.canSubmit == true,
               let choice = prompt?.choices.first(where: {
-                  projection.isChoiceActionable($0, story: story)
+                  projection.isChoiceActionable($0, storyResolution: prompt?.storyResolution)
               })
         else { return false }
         coordinator.syncExternalFocus(BoardFocusID.promptChoice(choice.index))
@@ -294,7 +312,7 @@ final class BoardCommandController {
         guard prompt?.canSubmit == true,
               let choice = prompt?.choices.first(where: { $0.index == index }),
               projection.isChoiceActionable(
-                  choice, story: prompt?.question.supportedQuestion?.story
+                  choice, storyResolution: prompt?.storyResolution
               )
         else { return false }
         onChoice(index)
@@ -305,6 +323,13 @@ final class BoardCommandController {
     func activatePromptRetry() -> Bool {
         guard prompt?.canRetry == true else { return false }
         onRetry()
+        return true
+    }
+
+    @discardableResult
+    func activatePromptCatalogRetry() -> Bool {
+        guard let retry = prompt?.catalogRetry else { return false }
+        onCatalogRetry(retry)
         return true
     }
 

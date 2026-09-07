@@ -81,7 +81,12 @@ struct CapabilityProbe: Sendable {
         switch httpResponse.statusCode {
         case 200 ... 299:
             do {
-                let capabilities = try JSONDecoder().decode(ServerCapabilities.self, from: data)
+                // Decoded through this module's lossless parser, never Foundation's, so a
+                // duplicate object key, invalid UTF-8, or trailing data in the negotiated
+                // response is a rejection rather than a silently normalized "last value wins"
+                // -- which matters most for the optional `localeCatalog` pointer, whose digest
+                // and URL a duplicate key could otherwise quietly replace.
+                let capabilities = try ContractJSON.decode(ServerCapabilities.self, from: data)
                 outcome = evaluator.evaluate(capabilities)
             } catch {
                 try Task.checkCancellation()

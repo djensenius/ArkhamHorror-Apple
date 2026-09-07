@@ -18,6 +18,7 @@ struct BoardView: View {
     let prompt: BasicChoicePromptPresentation?
     let onChoice: (Int) -> Void
     let onRetryChoice: () -> Void
+    let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
     @State private var controller: BoardCommandController?
     @FocusState private var focusedID: SemanticFocusID?
@@ -30,12 +31,14 @@ struct BoardView: View {
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
-        onRetryChoice: @escaping () -> Void = {}
+        onRetryChoice: @escaping () -> Void = {},
+        onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
         self.projection = projection
         self.prompt = prompt
         self.onChoice = onChoice
         self.onRetryChoice = onRetryChoice
+        self.onCatalogRetry = onCatalogRetry
     }
 
     var body: some View {
@@ -51,6 +54,7 @@ struct BoardView: View {
             if let controller {
                 controller.updateChoiceHandler(onChoice)
                 controller.updateRetryHandler(onRetryChoice)
+                controller.updateCatalogRetryHandler(onCatalogRetry)
                 activeController = controller
                 // Catches a replacement snapshot that arrived while this view was
                 // off-screen and `.onChange(of: projection)` therefore couldn't fire; see
@@ -62,7 +66,8 @@ struct BoardView: View {
                     projection: projection,
                     prompt: prompt,
                     onChoice: onChoice,
-                    onRetry: onRetryChoice
+                    onRetry: onRetryChoice,
+                    onCatalogRetry: onCatalogRetry
                 )
                 controller = newController
                 activeController = newController
@@ -78,11 +83,13 @@ struct BoardView: View {
         .onChange(of: projection) { _, newValue in
             controller?.updateChoiceHandler(onChoice)
             controller?.updateRetryHandler(onRetryChoice)
+            controller?.updateCatalogRetryHandler(onCatalogRetry)
             controller?.applySnapshot(newValue, prompt: prompt)
         }
         .onChange(of: prompt) { _, newValue in
             controller?.updateChoiceHandler(onChoice)
             controller?.updateRetryHandler(onRetryChoice)
+            controller?.updateCatalogRetryHandler(onCatalogRetry)
             controller?.applyPrompt(newValue)
         }
     }

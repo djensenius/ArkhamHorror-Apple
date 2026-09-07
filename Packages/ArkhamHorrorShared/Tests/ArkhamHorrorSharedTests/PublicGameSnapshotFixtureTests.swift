@@ -2,11 +2,11 @@
 import Foundation
 import Testing
 
-/// Decodes the exact, non-empty production `get-game`/`game-update` fixtures (pinned to
-/// backend commit `52c7ee3b730c87129907e26b91acc3933da841cd`, schema revision `0.1.22`)
-/// through production `ContractJSON`, and asserts the REST and WebSocket envelopes decode
-/// to an equal ``PublicGameSnapshot`` plus representative nonempty maps/entities/mode/
-/// turn/counters, matching this contract slice's core invariant.
+/// Decodes the exact, non-empty production `get-game`/`game-update` fixtures first
+/// governed at backend commit `52c7ee3b730c87129907e26b91acc3933da841cd`, schema revision
+/// `0.1.22`, through production `ContractJSON`, and asserts the REST and WebSocket
+/// envelopes decode to an equal ``PublicGameSnapshot`` plus representative nonempty
+/// maps/entities/mode/turn/counters, matching this contract slice's core invariant.
 @Suite("PublicGameSnapshot fixture decode")
 struct PublicGameSnapshotFixtureTests {
     private func fixtureData(named fileName: String) throws -> Data {

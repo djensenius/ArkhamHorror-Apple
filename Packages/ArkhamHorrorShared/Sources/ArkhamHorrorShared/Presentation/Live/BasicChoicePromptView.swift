@@ -66,6 +66,19 @@ struct BasicChoicePromptView: View {
                 .accessibilityHint("Sends the same choice again with version checking.")
                 .accessibilityIdentifier("liveGame.prompt.retry")
             }
+
+            if presentation.canRetryCatalog {
+                SemanticActionControl(
+                    accessibilityLabel: Text("Retry story download"),
+                    semanticFocusID: BoardFocusID.promptCatalogRetry,
+                    onOutcome: { controller.handle(focusID: $0, $1) },
+                    label: { Text("Retry story download") }
+                )
+                .buttonStyle(.borderedProminent)
+                .focused(focusBinding, equals: BoardFocusID.promptCatalogRetry)
+                .accessibilityHint("Downloads and verifies this server's story catalog again.")
+                .accessibilityIdentifier("liveGame.prompt.catalogRetry")
+            }
         }
         .padding(isCompact ? 14 : 18)
         .frame(maxWidth: isCompact ? .infinity : 360, alignment: .leading)
@@ -79,29 +92,28 @@ struct BasicChoicePromptView: View {
     private var story: some View {
         if let content = presentation.question.supportedQuestion?.story {
             VStack(alignment: .leading, spacing: 8) {
-                if let resolved = StoryNarrativeLocalization.resolvedStory(
-                    for: content.flavorText
-                ) {
+                if let resolved = presentation.storyResolution?.story {
                     if let title = resolved.title {
                         Text(title)
                             .font(.callout.monospaced())
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("liveGame.prompt.story.title")
                     }
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(resolved.body.enumerated()), id: \.offset) { _, entry in
-                            ResolvedStoryEntryView(entry: entry)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 6) {
+                            ForEach(
+                                Array(resolved.body.enumerated()), id: \.offset
+                            ) { _, entry in
+                                ResolvedStoryEntryView(entry: entry)
+                            }
                         }
                     }
+                    .frame(maxHeight: isCompact ? 240 : 420)
                     .accessibilityIdentifier("liveGame.prompt.story.body")
                 } else {
-                    // No lawful localization source is in scope for this key/title (see
-                    // `StoryNarrativeLocalization`'s own documentation): this app must
-                    // never display a raw i18n key as though it were finished narrative,
-                    // so it shows this explicit, honest notice instead and (via
-                    // `BoardProjection.isChoiceActionable(_:story:)`) disables Continue.
                     Label(
-                        "This story text requires a future app update to display.",
+                        presentation.storyResolution?.unavailableReason?.announcement
+                            ?? "This story text is not currently available.",
                         systemImage: "exclamationmark.triangle.fill"
                     )
                     .foregroundStyle(.orange)
@@ -111,7 +123,7 @@ struct BasicChoicePromptView: View {
                     readCardsSummary(readCards)
                 }
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("liveGame.prompt.story")
         }
     }
@@ -131,13 +143,12 @@ struct BasicChoicePromptView: View {
     }
 
     private var choices: some View {
-        let story = presentation.question.supportedQuestion?.story
-        return VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(presentation.choices) { choice in
                 let focusID = BoardFocusID.promptChoice(choice.index)
                 let title = displayTitle(for: choice)
                 let isActionable = controller.projection.isChoiceActionable(
-                    choice, story: story
+                    choice, storyResolution: presentation.storyResolution
                 )
                 SemanticActionControl(
                     accessibilityLabel: Text(title),
@@ -192,51 +203,10 @@ struct BasicChoicePromptView: View {
         BoardDisplayFormatting.choiceAccessibilityHint(
             for: choice,
             in: controller.projection,
-            story: presentation.question.supportedQuestion?.story,
+            storyResolution: presentation.storyResolution,
             canSubmit: presentation.canSubmit,
             statusMessage: presentation.statusMessage
         )
-    }
-}
-
-/// Renders a single ``ResolvedStoryEntry``: every entry reaching this view already went
-/// through ``StoryNarrativeLocalization/resolvedStory(for:vocabulary:)``, so `.text` is
-/// always finished, human-readable narrative -- never a raw i18n key.
-private struct ResolvedStoryEntryView: View {
-    let entry: ResolvedStoryEntry
-
-    var body: some View {
-        switch entry {
-        case let .text(text):
-            Text(text)
-        case let .list(items):
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    ResolvedStoryListItemView(item: item)
-                }
-            }
-        }
-    }
-}
-
-private struct ResolvedStoryListItemView: View {
-    let item: ResolvedStoryListItem
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 6) {
-                Text("•")
-                ResolvedStoryEntryView(entry: item.entry)
-            }
-            if !item.nested.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(item.nested.enumerated()), id: \.offset) { _, nested in
-                        ResolvedStoryListItemView(item: nested)
-                    }
-                }
-                .padding(.leading, 16)
-            }
-        }
     }
 }
 

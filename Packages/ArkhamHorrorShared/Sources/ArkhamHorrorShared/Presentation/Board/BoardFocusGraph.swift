@@ -40,6 +40,7 @@ enum BoardFocusID {
     /// that a SwiftUI `.onChange` fails to observe.
     static let inspectorClose: SemanticFocusID = "board.inspector.close"
     static let promptRetry: SemanticFocusID = "board.prompt.retry"
+    static let promptCatalogRetry: SemanticFocusID = "board.prompt.catalogRetry"
 
     static func promptChoice(_ index: Int) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.prompt.choice.\(index)")
@@ -83,11 +84,13 @@ enum BoardFocusGraphBuilder {
         nodes.append(FocusNode(id: BoardFocusID.scenarioHeader, zone: BoardFocusZone.scenario))
         zoneEntryPoints[BoardFocusZone.scenario] = BoardFocusID.scenarioHeader
 
-        let promptStory = prompt?.question.supportedQuestion?.story
+        let storyResolution = prompt?.storyResolution
         let promptChoices: [SemanticFocusID] = if prompt?.canSubmit == true {
             prompt?.choices
-                .filter { projection.isChoiceActionable($0, story: promptStory) }
+                .filter { projection.isChoiceActionable($0, storyResolution: storyResolution) }
                 .map { BoardFocusID.promptChoice($0.index) } ?? []
+        } else if prompt?.canRetryCatalog == true {
+            [BoardFocusID.promptCatalogRetry]
         } else if prompt?.canRetry == true {
             [BoardFocusID.promptRetry]
         } else {
@@ -148,9 +151,10 @@ enum BoardFocusGraphBuilder {
     ) -> [SemanticFocusZone] {
         var populated: Set<SemanticFocusZone> = [BoardFocusZone.scenario, BoardFocusZone.chaosBag]
         let hasActionableChoice = prompt?.choices.contains {
-            projection.isChoiceActionable($0, story: prompt?.question.supportedQuestion?.story)
+            projection.isChoiceActionable($0, storyResolution: prompt?.storyResolution)
         } == true
-        let hasPromptFocus = prompt?.canRetry == true
+        let hasPromptFocus = prompt?.canRetryCatalog == true
+            || prompt?.canRetry == true
             || (prompt?.canSubmit == true && hasActionableChoice)
         if hasPromptFocus {
             populated.insert(BoardFocusZone.prompt)

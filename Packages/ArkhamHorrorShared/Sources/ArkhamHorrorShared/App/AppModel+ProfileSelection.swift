@@ -127,6 +127,11 @@ extension AppModel {
         // not; any game-lifecycle/lobby content it had loaded must not survive into
         // the fresh flow this starts. A no-op when already empty.
         resetGameLifecycleState()
+        // A locale catalog is bound to one server endpoint, so a switch, retry, or in-place
+        // endpoint edit must drop it here -- before the new profile's own probe has even run
+        // -- rather than leaving the previous server's verified catalog momentarily readable
+        // by a scene that is already rendering against the new profile.
+        invalidateLocaleCatalog()
         sessionState = .checkingCompatibility(profile: profile)
         flowTask = Task { [weak self] in
             await self?.probeAndRestore(profile: profile, generation: generation)
