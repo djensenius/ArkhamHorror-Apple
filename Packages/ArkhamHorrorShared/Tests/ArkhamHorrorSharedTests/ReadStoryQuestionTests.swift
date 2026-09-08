@@ -4,8 +4,8 @@ import Testing
 
 /// Production-fixture-driven coverage for the `Read`/`BasicReadChoices` story-continue
 /// prompt and the `ChooseOne`/`TargetLabel(LocationTarget)` starting-location prompt (issue
-/// djensenius/ArkhamHorror-Apple#35), first governed at backend commit `52c7ee3b`, schema
-/// `0.1.22`.
+/// djensenius/ArkhamHorror-Apple#35), first governed at backend commit `52c7ee3b` and
+/// extended with production `HeaderEntry` support at `d3e4c993`, schema `0.1.27`.
 @Suite("Read story and location choice contract")
 struct ReadStoryQuestionTests {
     func fixture(_ name: String) throws -> Data {
@@ -74,6 +74,27 @@ struct ReadStoryQuestionTests {
         #expect(story.flavorText.title == nil)
         #expect(story.flavorText.body == [.basic(text: "Contract fixture flavor text.")])
         #expect(story.readCards == [BoardTestFixtures.cardCode("c01159")])
+    }
+
+    @Test(
+        "HeaderEntry accepts only governed integer heading levels and preserves its catalog key",
+        arguments: [
+            (1, FlavorTextHeadingLevel.level1),
+            (3, FlavorTextHeadingLevel.level3),
+        ]
+    )
+    func headerEntryDecodes(level: Int, expected: FlavorTextHeadingLevel) throws {
+        let bytes = Data(
+            """
+            {"tag":"Read","flavorText":{"title":null,"body":[\
+            {"tag":"HeaderEntry","level":\(level),"key":"story.heading"}]},\
+            "readChoices":{"tag":"BasicReadChoices","contents":[\
+            {"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}
+            """.utf8
+        )
+        let payload = try ContractJSON.decode(BasicChoiceQuestionPayload.self, from: bytes)
+        let story = try #require(payload.supportedQuestion?.story)
+        #expect(story.flavorText.body == [.header(level: expected, key: "story.heading")])
     }
 
     // MARK: - question-choose-one-location.json / -multiple.json
@@ -155,12 +176,22 @@ struct ReadStoryQuestionTests {
             #"{"tag":"Read","flavorText":{"title":null,"body":[]},"readChoices":{"tag":"BasicReadChoices","contents":[]},"readCards":null}"#,
             // flavorText missing its required "title" key.
             #"{"tag":"Read","flavorText":{"body":[]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
-            // flavorTextEntry: unknown/unsupported constructor (real backend HeaderEntry).
+            // HeaderEntry missing its governed level/key fields.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","text":"x"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
+            // HeaderEntry level must be a JSON integer.
+            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":"1","key":"story.heading"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
+            // HeaderEntry level 2 is not emitted or governed.
+            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":2,"key":"story.heading"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
+            // HeaderEntry keys follow the catalog message-key grammar.
+            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":1,"key":"story/bad"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
+            // HeaderEntry is closed against additional fields.
+            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":1,"key":"story.heading","extra":true}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // I18nEntry missing required "variables" key.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"I18nEntry","key":"x"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // I18nEntry key must be non-empty.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"I18nEntry","key":"","variables":{}}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
+            // I18nEntry keys use the same canonical catalog message-key grammar as headings.
+            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"I18nEntry","key":"story..bad","variables":{}}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // Nested ListEntry item with a malformed inner entry fails the whole question.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"ListEntry","list":[{"entry":{"tag":"BogusEntry"},"nested":[]}]}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // Unexpected additional top-level key.

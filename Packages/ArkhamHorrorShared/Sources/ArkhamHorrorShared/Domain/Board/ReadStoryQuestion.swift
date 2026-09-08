@@ -4,27 +4,34 @@ import Foundation
 /// encoded with the backend's `flavor`-field prefix stripped (`Arkham/Json.hs`'s
 /// `aesonOptions`).
 ///
-/// `title` and every `I18nEntry.key` are literal i18n lookup keys, never rendered narrative
-/// text on the wire (the pinned schema's own documentation: "it is never rendered narrative
-/// text on the wire") — this domain type preserves them exactly as decoded, completely
-/// losslessly, but never presents them directly: ``StoryNarrativeLocalization`` is this
-/// client's sole narrow, fail-closed boundary that resolves a `FlavorText` into
-/// human-readable presentation text (or `nil`, when no lawful resolution is possible),
-/// rather than fabricating, translating, or otherwise inventing Arkham Horror LCG flavor
-/// prose.
+/// `title`, every `HeaderEntry.key`, and every `I18nEntry.key` are literal i18n lookup keys,
+/// never rendered narrative text on the wire (the pinned schema's own documentation: "it is
+/// never rendered narrative text on the wire") — this domain type preserves them exactly as
+/// decoded, completely losslessly, but never presents them directly:
+/// ``StoryNarrativeLocalization`` is this client's sole narrow, fail-closed boundary that
+/// resolves a `FlavorText` into human-readable presentation text (or `nil`, when no lawful
+/// resolution is possible), rather than fabricating, translating, or otherwise inventing
+/// Arkham Horror LCG flavor prose.
 struct FlavorText: Sendable, Equatable, Hashable {
     let title: String?
     let body: [FlavorTextEntry]
 }
 
-/// Only the three `FlavorTextEntry` (`Arkham/Text.hs`) constructors the governed contract
-/// slice actually exercises. Every other real constructor (`HeaderEntry`, `ModifyEntry`,
-/// `CompositeEntry`, `ColumnEntry`, `CardEntry`, `TarotEntry`, `ChaosTokenEntry`,
-/// `ChaosTokenMorphEntry`, `EntrySplit`) has no case here and fails the containing `Read`
-/// question closed (see `BasicChoiceParser.parseFlavorTextEntry`) — never silently dropped
-/// or normalized into one of these three.
+/// The two heading levels the governed `HeaderEntry` contract permits.
+enum FlavorTextHeadingLevel: Int, Sendable, Equatable, Hashable {
+    case level1 = 1
+    case level3 = 3
+}
+
+/// Only the four `FlavorTextEntry` (`Arkham/Text.hs`) constructors the governed contract
+/// slice actually exercises. Every other real constructor (`ModifyEntry`, `CompositeEntry`,
+/// `ColumnEntry`, `CardEntry`, `TarotEntry`, `ChaosTokenEntry`, `ChaosTokenMorphEntry`,
+/// `EntrySplit`) has no case here and fails the containing `Read` question closed (see
+/// `BasicChoiceParser.parseFlavorTextEntry`) — never silently dropped or normalized into
+/// one of these four.
 indirect enum FlavorTextEntry: Sendable, Equatable, Hashable {
     case basic(text: String)
+    case header(level: FlavorTextHeadingLevel, key: String)
     /// `variables` is preserved losslessly and opaque (the schema itself only requires it
     /// be a JSON object) — this client never interprets or substitutes it.
     case i18n(key: String, variables: JSONValue)
@@ -126,30 +133,75 @@ extension BasicChoiceParser {
         }
         switch tag {
         case "BasicEntry":
-            guard Set(object.keys) == ["tag", "text"],
-                  case let .string(text)? = object["text"]
-            else { return nil }
-            return .basic(text: text)
+            return parseBasicFlavorTextEntry(object)
+        case "HeaderEntry":
+            return parseHeaderFlavorTextEntry(object)
         case "I18nEntry":
-            guard Set(object.keys) == ["tag", "key", "variables"],
-                  case let .string(key)? = object["key"],
-                  !key.isEmpty,
-                  case let .object(variables)? = object["variables"]
-            else { return nil }
-            return .i18n(key: key, variables: .object(variables))
+            return parseI18nFlavorTextEntry(object)
         case "ListEntry":
-            guard Set(object.keys) == ["tag", "list"],
-                  case let .array(rawList)? = object["list"]
-            else { return nil }
-            var items: [FlavorTextListItem] = []
-            items.reserveCapacity(rawList.count)
-            for value in rawList {
-                guard let item = parseFlavorTextListItem(value) else { return nil }
-                items.append(item)
-            }
-            return .list(items: items)
+            return parseListFlavorTextEntry(object)
         default:
             return nil
+        }
+    }
+
+    private static func parseBasicFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        guard Set(object.keys) == ["tag", "text"],
+              case let .string(text)? = object["text"]
+        else { return nil }
+        return .basic(text: text)
+    }
+
+    private static func parseHeaderFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        guard Set(object.keys) == ["tag", "level", "key"],
+              let level = parseFlavorTextHeadingLevel(object["level"]),
+              case let .string(key)? = object["key"],
+              LocaleCatalogGrammar.isMessageKey(key)
+        else { return nil }
+        return .header(level: level, key: key)
+    }
+
+    private static func parseI18nFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        guard Set(object.keys) == ["tag", "key", "variables"],
+              case let .string(key)? = object["key"],
+              LocaleCatalogGrammar.isMessageKey(key),
+              case let .object(variables)? = object["variables"]
+        else { return nil }
+        return .i18n(key: key, variables: .object(variables))
+    }
+
+    private static func parseListFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        guard Set(object.keys) == ["tag", "list"],
+              case let .array(rawList)? = object["list"]
+        else { return nil }
+        var items: [FlavorTextListItem] = []
+        items.reserveCapacity(rawList.count)
+        for value in rawList {
+            guard let item = parseFlavorTextListItem(value) else { return nil }
+            items.append(item)
+        }
+        return .list(items: items)
+    }
+
+    private static func parseFlavorTextHeadingLevel(
+        _ value: JSONValue?
+    ) -> FlavorTextHeadingLevel? {
+        guard case let .number(number)? = value,
+              number.sign == .plus,
+              let magnitude = number.wholeNumberMagnitude
+        else { return nil }
+        switch magnitude {
+        case "1": return .level1
+        case "3": return .level3
+        default: return nil
         }
     }
 
