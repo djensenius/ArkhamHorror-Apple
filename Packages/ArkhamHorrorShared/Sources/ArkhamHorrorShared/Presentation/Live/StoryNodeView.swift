@@ -55,6 +55,10 @@ struct ResolvedStoryEntryView: View {
             Text(text)
         case let .nodes(nodes):
             StoryNodeSequenceView(nodes: nodes)
+        case let .heading(level, nodes):
+            StoryNodeChildrenView(children: nodes)
+                .font(StoryHeadingPresentation.font(for: level.rawValue))
+                .accessibilityAddTraits(.isHeader)
         case let .list(items):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
@@ -184,7 +188,8 @@ private struct StoryNodeView: View {
             StoryNodeChildrenView(children: children)
         case let .heading(level, children):
             StoryNodeChildrenView(children: children)
-                .font(headingFont(level))
+                .font(StoryHeadingPresentation.font(for: level))
+                .accessibilityAddTraits(.isHeader)
         case let .emphasis(style, children):
             emphasized(children, style: style)
         case let .list(ordered, items):
@@ -249,14 +254,6 @@ private struct StoryNodeView: View {
         return label.isEmpty ? "Card \(code)" : label
     }
 
-    private func headingFont(_ level: Int) -> Font {
-        switch level {
-        case 1: .title2
-        case 2: .title3
-        default: .headline
-        }
-    }
-
     private func assetRoleLabel(_ role: LocaleCatalogAssetRole) -> String {
         switch role {
         case .encounterSet: "Encounter set"
@@ -274,6 +271,16 @@ private struct StoryNodeView: View {
         case .encounterSet, .card: "rectangle.stack"
         case .token, .chaosToken: "seal.fill"
         case .campaign, .homebrew, .extra, .other: "photo"
+        }
+    }
+}
+
+enum StoryHeadingPresentation {
+    static func font(for level: Int) -> Font {
+        switch level {
+        case 1: .title2
+        case 2: .title3
+        default: .headline
         }
     }
 }

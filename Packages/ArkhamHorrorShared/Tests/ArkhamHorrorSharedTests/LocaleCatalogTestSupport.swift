@@ -13,6 +13,8 @@ struct SyntheticLocaleCatalogDocuments {
     static func make(
         manifestPath: String = "/locale-catalog/manifest.json",
         declaredChunkBytes: Int? = nil,
+        pack: String = "story",
+        entryKeys: [String] = ["story.body"],
         chunkEntries: String = """
         {"story.body":{"form":"message","nodes":[{"type":"text","value":"Synthetic body"}],\
         "variables":[]}}
@@ -25,12 +27,16 @@ struct SyntheticLocaleCatalogDocuments {
         let revision = "1.0123456789abcdef0123456789abcdef"
         let chunkBytes = Data(
             """
-            {"schemaVersion":"1.0.0","locale":"en","fallback":null,"pack":"story","entries":\
+            {"schemaVersion":"1.0.0","locale":"en","fallback":null,"pack":"\(pack)","entries":\
             \(chunkEntries)}
             """.utf8
         )
         let chunkDigest = LocaleCatalogLoader.sha256Hex(chunkBytes)
         let expectedChunkBytes = declaredChunkBytes ?? chunkBytes.count
+        let fixtureKeyBytes = try JSONEncoder().encode(entryKeys)
+        guard let fixtureKeys = String(data: fixtureKeyBytes, encoding: .utf8) else {
+            throw TestFailure()
+        }
         let manifestBytes = Data(
             """
             {"schemaVersion":"1.0.0","catalogRevision":"\(revision)",\
@@ -38,18 +44,20 @@ struct SyntheticLocaleCatalogDocuments {
             "revisionManifestPath":"/locale-catalog/r/\(revision)/manifest.json",\
             "chunkPathPrefix":"/locale-catalog/c/","digestAlgorithm":"sha256",\
             "defaultLocale":"en","languageResolution":[{"tag":"en","locale":"en"}],\
-            "locales":[{"locale":"en","fallback":null,"chunks":[{"pack":"story",\
+            "locales":[{"locale":"en","fallback":null,"chunks":[{"pack":"\(pack)",\
             "path":"/locale-catalog/c/\(chunkDigest).json","bytes":\(expectedChunkBytes),\
-            "sha256":"\(chunkDigest)","keys":1,"unsupportedKeys":0}],"keys":1,\
+            "sha256":"\(chunkDigest)","keys":\(entryKeys.count),"unsupportedKeys":0}],\
+            "keys":\(entryKeys.count),\
             "bytes":\(expectedChunkBytes)}],"totals":{"locales":1,"chunks":1,\
-            "bytes":\(expectedChunkBytes),"keys":1,"unsupportedKeys":0},\
+            "bytes":\(expectedChunkBytes),"keys":\(entryKeys.count),"unsupportedKeys":0},\
             "backend":{"artifactPath":"fixtures/synthetic.json","artifactSha256":"\(hex)",\
-            "sourceSha256":"\(hex)","emittedKeys":1,"requiredKeys":1,\
+            "sourceSha256":"\(hex)","emittedKeys":\(entryKeys.count),\
+            "requiredKeys":\(entryKeys.count),\
             "untranslatedKeys":[],"variableGaps":[],"dynamicSites":0,\
             "unknownVariableTypes":[]},\
             "provenance":{"sha256":"\(hex)","outputSha256":"\(hex)",\
             "generator":{"name":"arkham-locale-catalog","version":"1.0.0"},\
-            "contractRevision":"0.1.23","fixtureKeys":["story.body"],\
+            "contractRevision":"0.1.23","fixtureKeys":\(fixtureKeys),\
             "localeSourceFiles":1,"localeSourcesSha256":"\(hex)",\
             "schemasSha256":"\(hex)","generatorSha256":"\(hex)"}}
             """.utf8
@@ -101,6 +109,23 @@ struct SyntheticLocaleCatalogDocuments {
             url: url,
             data: data
         )
+    }
+
+    func loader() -> LocaleCatalogLoader {
+        LocaleCatalogLoader(transport: FixtureLocaleCatalogTransport(responses: [
+            manifestURL: response(data: manifestBytes, url: manifestURL),
+            chunkURL: response(data: chunkBytes, url: chunkURL),
+        ]))
+    }
+
+    func loadSnapshot(
+        preferredLanguages: [String] = ["en"]
+    ) async throws -> LocaleCatalogSnapshot {
+        try await loader().load(
+            advertisement: advertisement,
+            profile: profile,
+            preferredLanguages: preferredLanguages
+        ).get()
     }
 }
 

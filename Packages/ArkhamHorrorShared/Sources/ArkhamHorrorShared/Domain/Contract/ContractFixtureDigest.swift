@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "0bdff62c5d06472a41d5121359f98ca034d871ae24274cb1cd1fadd7cbdbde84"
+            sha256Hex: "ef832ddbce141bc13d92bad82c8a05113e302cebfcf78d61381e6d8778b0ab01"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "2052a56676207fc6be48d77b8a088375d063209100640188ff24d8f513aeb617"
+            sha256Hex: "f6191d3d758d25819e9b7538b802f5a04bf557e8c65eca3285445034a6ef1e83"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -103,6 +103,10 @@ enum ContractFixtureDigests {
         VendoredFixtureDigest(
             fileName: "question-read",
             sha256Hex: "e7397b59c9a714a003a0edac3f584b284c5cab03e75b59c1e9b4a84d86964006"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-read-scenario-intro",
+            sha256Hex: "98cac0992deff7f08005fc25a0227ef62b9aedde00c3b6dcceb25e503d671fd3"
         ),
         VendoredFixtureDigest(
             fileName: "question-read-with-cards",

@@ -62,7 +62,7 @@ struct CapabilityProbeTests {
     func compatibleCapabilitiesForwarded() async throws {
         let json = """
         {
-            "schemaRevision": "0.1.26",
+            "schemaRevision": "0.1.27",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
