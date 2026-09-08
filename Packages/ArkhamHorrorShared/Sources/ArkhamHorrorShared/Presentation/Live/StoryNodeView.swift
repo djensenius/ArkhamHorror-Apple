@@ -58,7 +58,7 @@ struct ResolvedStoryEntryView: View {
         case let .heading(level, nodes):
             StoryNodeChildrenView(children: nodes)
                 .font(StoryHeadingPresentation.font(for: level.rawValue))
-                .accessibilityAddTraits(.isHeader)
+                .addingStoryHeadingTrait()
         case let .list(items):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
@@ -189,7 +189,7 @@ private struct StoryNodeView: View {
         case let .heading(level, children):
             StoryNodeChildrenView(children: children)
                 .font(StoryHeadingPresentation.font(for: level))
-                .accessibilityAddTraits(.isHeader)
+                .addingStoryHeadingTrait()
         case let .emphasis(style, children):
             emphasized(children, style: style)
         case let .list(ordered, items):
@@ -275,13 +275,24 @@ private struct StoryNodeView: View {
     }
 }
 
-enum StoryHeadingPresentation {
+private enum StoryHeadingPresentation {
     static func font(for level: Int) -> Font {
         switch level {
         case 1: .title2
         case 2: .title3
         default: .headline
         }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func addingStoryHeadingTrait() -> some View {
+        #if os(iOS) || os(macOS) || os(visionOS)
+            accessibilityAddTraits(.isHeader)
+        #else
+            self
+        #endif
     }
 }
 
