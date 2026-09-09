@@ -13,7 +13,7 @@ import Observation
 /// adds no new command vocabulary.
 @MainActor
 @Observable
-final class BoardCommandController { // swiftlint:disable:this type_body_length
+final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
     private(set) var layout: BoardLayout
@@ -294,15 +294,15 @@ final class BoardCommandController { // swiftlint:disable:this type_body_length
             coordinator.syncExternalFocus(BoardFocusID.promptRetry)
             return true
         }
-        if prompt?.canRetryCatalog == true {
+        guard prompt?.canSubmit == true,
+              let choice = prompt?.choices.first(where: {
+                  prompt?.isChoiceActionable($0, in: projection) == true
+              })
+        else {
+            guard prompt?.canRetryCatalog == true else { return false }
             coordinator.syncExternalFocus(BoardFocusID.promptCatalogRetry)
             return true
         }
-        guard prompt?.canSubmit == true,
-              let choice = prompt?.choices.first(where: {
-                  projection.isChoiceActionable($0, storyResolution: prompt?.storyResolution)
-              })
-        else { return false }
         coordinator.syncExternalFocus(BoardFocusID.promptChoice(choice.index))
         return true
     }
@@ -311,9 +311,7 @@ final class BoardCommandController { // swiftlint:disable:this type_body_length
     func activatePromptChoice(_ index: Int) -> Bool {
         guard prompt?.canSubmit == true,
               let choice = prompt?.choices.first(where: { $0.index == index }),
-              projection.isChoiceActionable(
-                  choice, storyResolution: prompt?.storyResolution
-              )
+              prompt?.isChoiceActionable(choice, in: projection) == true
         else { return false }
         onChoice(index)
         return true

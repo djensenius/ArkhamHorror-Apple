@@ -26,24 +26,34 @@ enum BoardDisplayFormatting {
         return trimmed.isEmpty ? fallback : trimmed
     }
 
-    /// A choice's display title. `.chooseLocation` resolves the real starting-location
-    /// label from the authoritative board `projection`. When the projection doesn't yet
-    /// (or no longer) carry that location -- for example if the prompt arrives before
-    /// that location's own reveal is reflected in the snapshot -- this falls back to a
-    /// deterministic, concise "Unavailable location" placeholder disambiguated by the
-    /// choice's own original 1-based position, never the location's raw UUID text: this
-    /// is presentation-layer content shown to the player, and the wire identifier is an
-    /// internal implementation detail that must never leak into it. Every other content
-    /// kind uses its static per-kind ``BasicChoice/title``, unchanged. Such a choice is
-    /// also not currently actionable -- see ``BoardProjection/isChoiceActionable(_:story:)``.
+    /// A choice's display title, resolving only presentation data proven by the matching
+    /// immutable projection and catalog snapshot. Missing location/card authority and
+    /// missing localized labels use deterministic placeholders that never expose wire IDs
+    /// or raw localization keys.
     static func choiceDisplayTitle(
-        for choice: BasicChoice, in projection: BoardProjection
+        for choice: BasicChoice,
+        in projection: BoardProjection,
+        ownerID: PlayerID? = nil,
+        labelResolution: BasicChoiceLabelResolution? = nil
     ) -> String {
-        guard let locationID = choice.locationID else { return choice.title }
-        if let node = projection.locations.first(where: { $0.id == locationID }) {
-            return node.displayLabel
+        switch choice.content {
+        case let .chooseLocation(locationID, _):
+            if let node = projection.locations.first(where: { $0.id == locationID }) {
+                return node.displayLabel
+            }
+            return "Unavailable location (choice \(choice.index + 1))"
+        case let .chooseHandCard(cardID, _):
+            if let ownerID, let card = projection.handCardsByPlayer[ownerID]?[cardID] {
+                return "Replace \(card.displayLabel)"
+            }
+            return "Unavailable card (choice \(choice.index + 1))"
+        case .finishMulligan:
+            return labelResolution?.title
+                ?? "Unavailable action (choice \(choice.index + 1))"
+        case .gainResource, .drawCard, .endTurn, .investigate, .continueReading,
+             .unsupported:
+            return choice.title
         }
-        return "Unavailable location (choice \(choice.index + 1))"
     }
 
     /// A choice's VoiceOver/accessibility hint, distinguishing the three reasons a
@@ -60,19 +70,35 @@ enum BoardDisplayFormatting {
     static func choiceAccessibilityHint(
         for choice: BasicChoice,
         in projection: BoardProjection,
+        ownerID: PlayerID? = nil,
         storyResolution: StoryResolution?,
+        labelResolution: BasicChoiceLabelResolution? = nil,
         canSubmit: Bool,
         statusMessage: String?
     ) -> String {
         guard choice.isSupported else {
             return "This choice requires a newer app version."
         }
-        guard projection.isChoiceActionable(choice, storyResolution: storyResolution) else {
-            if case .continueReading = choice.content {
+        guard projection.isChoiceActionable(
+            choice,
+            ownerID: ownerID,
+            storyResolution: storyResolution,
+            labelResolution: labelResolution
+        ) else {
+            switch choice.content {
+            case .continueReading:
                 return storyResolution?.unavailableReason?.announcement
                     ?? "This story text is not currently available."
+            case .finishMulligan:
+                return labelResolution?.announcement
+                    ?? "The text for this choice is not currently available."
+            case .chooseHandCard:
+                return "This card isn't currently available in your hand."
+            case .chooseLocation:
+                return "This location isn't currently available."
+            case .gainResource, .drawCard, .endTurn, .investigate, .unsupported:
+                return "This choice is not currently available."
             }
-            return "This location isn't currently available."
         }
         if canSubmit {
             return "Activates choice \(choice.index + 1)."
@@ -97,7 +123,9 @@ enum BoardDisplayFormatting {
         return choiceAccessibilityHint(
             for: choice,
             in: projection,
+            ownerID: nil,
             storyResolution: resolution,
+            labelResolution: nil,
             canSubmit: canSubmit,
             statusMessage: statusMessage
         )

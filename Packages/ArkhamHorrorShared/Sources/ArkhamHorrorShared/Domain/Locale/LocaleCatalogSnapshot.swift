@@ -1,5 +1,10 @@
 import Foundation
 
+private struct LocaleCatalogEntryKey: Sendable, Equatable, Hashable {
+    let locale: String
+    let key: String
+}
+
 /// A complete, internally coherent, immutable view of one catalog revision, bound to exactly
 /// one server endpoint, one catalog revision, one selected locale, one manifest digest, and
 /// the complete verified chunk set that locale needs.
@@ -21,6 +26,10 @@ struct LocaleCatalogSnapshot: Sendable, Equatable {
     let manifest: LocaleCatalogManifest
     /// Every verified chunk, keyed by `(locale, pack)`.
     private let chunks: [LocaleCatalogChunkKey: LocaleCatalogChunk]
+    /// Lookup follows the verified chunks themselves rather than guessing a pack from a
+    /// dotted key. This is required for core namespaces such as `label.*`.
+    private let entries: [LocaleCatalogEntryKey: LocaleCatalogEntry]
+    private let duplicateEntryKeys: Set<LocaleCatalogEntryKey>
 
     init(
         identity: LocaleCatalogIdentity,
@@ -30,6 +39,18 @@ struct LocaleCatalogSnapshot: Sendable, Equatable {
         self.identity = identity
         self.manifest = manifest
         self.chunks = chunks
+        var entries: [LocaleCatalogEntryKey: LocaleCatalogEntry] = [:]
+        var duplicates: Set<LocaleCatalogEntryKey> = []
+        for chunk in chunks.values {
+            for (key, entry) in chunk.entries {
+                let entryKey = LocaleCatalogEntryKey(locale: chunk.locale, key: key)
+                if entries.updateValue(entry, forKey: entryKey) != nil {
+                    duplicates.insert(entryKey)
+                }
+            }
+        }
+        self.entries = entries
+        duplicateEntryKeys = duplicates
     }
 
     /// The locale chain a lookup walks: the selected locale, then its fallbacks, ending at
@@ -40,15 +61,9 @@ struct LocaleCatalogSnapshot: Sendable, Equatable {
     }
 
     func entry(for key: String, locale: String) -> LocaleCatalogEntry? {
-        chunks[LocaleCatalogChunkKey(locale: locale, pack: LocaleCatalogSnapshot.pack(for: key))]?
-            .entries[key]
-    }
-
-    /// A key's pack: its first dotted segment, or `core` for a top-level key without one.
-    static func pack(for key: String) -> String {
-        guard let separator = key.firstIndex(of: ".") else { return "core" }
-        let candidate = String(key[key.startIndex ..< separator])
-        return LocaleCatalogGrammar.isPackIdentifier(candidate) ? candidate : "core"
+        let entryKey = LocaleCatalogEntryKey(locale: locale, key: key)
+        guard !duplicateEntryKeys.contains(entryKey) else { return nil }
+        return entries[entryKey]
     }
 
     /// Whether this snapshot holds every chunk the manifest lists for every locale in its own
@@ -59,10 +74,15 @@ struct LocaleCatalogSnapshot: Sendable, Equatable {
             guard let record = manifest.record(for: locale) else { return false }
             for descriptor in record.chunks {
                 let key = LocaleCatalogChunkKey(locale: locale, pack: descriptor.pack)
-                guard chunks[key] != nil else { return false }
+                guard let chunk = chunks[key],
+                      chunk.locale == key.locale,
+                      chunk.pack == key.pack
+                else { return false }
             }
         }
-        return !chunks.isEmpty && chunks.count <= LocaleCatalogLimits.maxSnapshotChunks
+        return !chunks.isEmpty
+            && chunks.count <= LocaleCatalogLimits.maxSnapshotChunks
+            && duplicateEntryKeys.isEmpty
     }
 }
 

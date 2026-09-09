@@ -60,6 +60,50 @@ struct BasicChoiceQuestionTests {
         #expect(rawAbility["type"] != nil)
     }
 
+    @Test("The production mulligan fixture preserves done-first and authoritative hand order")
+    func mulliganFixtureDecodes() throws {
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: fixture("question-mulligan")
+        )
+        let question = try #require(payload.supportedQuestion)
+        #expect(question.kind == .chooseOne)
+        #expect(question.choices.map(\.index) == [0, 1, 2, 3])
+        #expect(question.choices.map(\.isSupported) == [true, true, true, true])
+
+        guard case let .finishMulligan(label, doneMessages) = question.choices[0].content else {
+            Issue.record("Expected the done-with-mulligan Label at source index zero")
+            return
+        }
+        #expect(label == "$label.doneWithMulligan")
+        #expect(question.choices[0].localizationKey == "label.doneWithMulligan")
+        #expect(doneMessages.first == .object([
+            "tag": .string("FinishedWithMulligan"),
+            "contents": .string("c01001"),
+        ]))
+
+        let expectedIDs = [
+            "00000000-0000-0000-0000-0000000003c0",
+            "00000000-0000-0000-0000-0000000003c1",
+            "00000000-0000-0000-0000-0000000003c2",
+        ]
+        #expect(question.choices.dropFirst().map {
+            $0.cardID?.codingKey.stringValue
+        } == expectedIDs)
+        for choice in question.choices.dropFirst() {
+            guard case let .chooseHandCard(_, messages) = choice.content else {
+                Issue.record("Expected CardIdTarget")
+                continue
+            }
+            #expect(messages.compactMap { message -> String? in
+                guard case let .object(fields) = message,
+                      case let .string(tag)? = fields["tag"]
+                else { return nil }
+                return tag
+            } == ["DiscardCard", "InvestigatorMessage"])
+        }
+    }
+
     // Governed malformed JSON remains legible as exact one-line token streams.
     // swiftlint:disable line_length
     @Test(
@@ -73,6 +117,12 @@ struct BasicChoiceQuestionTests {
             #"{"tag":"AbilityLabel","investigatorId":"c01001","ability":{"source":{},"cardCode":"c01111","index":103,"type":{"tag":"ActionAbility","actions":{"tag":"SingleAction","contents":"Fight"}}},"windows":[],"before":[],"messages":[]}"#,
             #"{"tag":"AbilityLabel","investigatorId":"c01001","ability":{"source":{},"cardCode":"c01111","index":-1,"type":{"tag":"ActionAbility","actions":{"tag":"SingleAction","contents":"Investigate"}}},"windows":[],"before":[],"messages":[]}"#,
             #"{"tag":"AbilityLabel","investigatorId":"c01001","ability":{"source":{},"cardCode":"c01111","index":-0,"type":{"tag":"ActionAbility","actions":{"tag":"SingleAction","contents":"Investigate"}}},"windows":[],"before":[],"messages":[]}"#,
+            #"{"tag":"Label","label":"$label.futureMulligan","messages":[]}"#,
+            #"{"tag":"Label","label":"label.doneWithMulligan","messages":[]}"#,
+            #"{"tag":"Label","label":"$label.doneWithMulligan","messages":[],"extra":true}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"CardIdTarget","contents":"00000000-0000-0000-0000-0000000003C0"},"messages":[]}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"CardIdTarget","contents":"00000000-0000-0000-0000-0000000003c0","extra":true},"messages":[]}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"CardTarget","contents":"00000000-0000-0000-0000-0000000003c0"},"messages":[]}"#,
             #"{"tag":"FutureChoice","messages":[{"tag":"DoSomething"}]}"#,
         ]
     )
@@ -111,6 +161,8 @@ struct BasicChoiceQuestionTests {
             #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"00000000-0000-0000-0000-000000000001"},"messages":[null]}"#,
             #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"00000000-0000-0000-0000-000000000001"},"messages":[{"contents":1}]}"#,
             #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"00000000-0000-0000-0000-000000000001"},"messages":[{"tag":"","contents":1}]}"#,
+            #"{"tag":"Label","label":"$label.doneWithMulligan","messages":[42]}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"CardIdTarget","contents":"00000000-0000-0000-0000-0000000003c0"},"messages":[null]}"#,
         ]
     )
     func malformedMessageArrayElementsFailClosed(choiceJSON: String) throws {

@@ -149,12 +149,8 @@ extension LocaleCatalogChunk {
                 count += 1
             }
         }
-        let packsMatch = entries.keys.allSatisfy {
-            LocaleCatalogSnapshot.pack(for: $0) == expectedPack
-        }
         guard entries.count == expectedKeys,
-              unsupportedKeys == expectedUnsupportedKeys,
-              packsMatch
+              unsupportedKeys == expectedUnsupportedKeys
         else {
             return .failure(.malformedChunk)
         }

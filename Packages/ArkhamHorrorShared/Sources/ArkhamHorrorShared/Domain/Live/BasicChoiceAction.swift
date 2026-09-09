@@ -52,12 +52,53 @@ enum BasicChoiceActionPhase: Sendable, Equatable {
     case retryable(BasicChoiceRetryReason)
 }
 
+/// One localized choice label captured from the same immutable catalog snapshot used by
+/// every prompt surface. Raw wire keys are never a presentation fallback.
+enum BasicChoiceLabelResolution: Sendable, Equatable {
+    case resolved(String)
+    case unavailable(StoryUnavailableReason)
+
+    var title: String? {
+        guard case let .resolved(value) = self else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var unavailableReason: StoryUnavailableReason? {
+        guard case let .unavailable(reason) = self else { return nil }
+        return reason
+    }
+
+    var isResolved: Bool {
+        title != nil
+    }
+
+    var announcement: String {
+        guard case let .unavailable(reason) = self else { return "" }
+        switch reason {
+        case .loading:
+            return "The text for this choice is still loading."
+        case .catalog:
+            return "The text for this choice is unavailable from this server."
+        case .missingKey, .unsupportedEntry:
+            return "This server publishes no usable text for this choice."
+        case .linkCycle, .tooComplex:
+            return "The text for this choice could not be safely displayed."
+        case .missingVariable, .unsupportedVariableValue:
+            return "The text for this choice needs a value this app cannot display."
+        }
+    }
+}
+
 struct BasicChoicePromptPresentation: Sendable, Equatable {
     let identity: BasicChoicePromptIdentity
     let question: BasicChoiceQuestionState
     /// The complete story outcome captured from one immutable catalog snapshot. This exact
     /// value drives rendering, focus, accessibility, controller dispatch, and send fencing.
     let storyResolution: StoryResolution?
+    /// Localized labels keyed by authoritative source index. Missing entries fail closed for
+    /// choices whose wire constructor requires deployment-owned text.
+    let choiceLabelResolutions: [Int: BasicChoiceLabelResolution]
     let readOnlyReason: BasicChoiceReadOnlyReason?
     let actionPhase: BasicChoiceActionPhase?
     let actionChoiceIndex: Int?
@@ -68,6 +109,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         identity: BasicChoicePromptIdentity,
         question: BasicChoiceQuestionState,
         storyResolution: StoryResolution? = nil,
+        choiceLabelResolutions: [Int: BasicChoiceLabelResolution]? = nil,
         readOnlyReason: BasicChoiceReadOnlyReason?,
         actionPhase: BasicChoiceActionPhase?,
         actionChoiceIndex: Int?,
@@ -82,6 +124,18 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
                 resolver: nil,
                 catalogUnavailability: .catalog(.notAdvertised)
             )
+        }
+        if let choiceLabelResolutions {
+            self.choiceLabelResolutions = choiceLabelResolutions
+        } else {
+            var defaults: [Int: BasicChoiceLabelResolution] = [:]
+            let localizableChoices = question.supportedQuestion?.choices.filter {
+                $0.localizationKey != nil
+            } ?? []
+            for choice in localizableChoices {
+                defaults[choice.index] = .unavailable(.catalog(.notAdvertised))
+            }
+            self.choiceLabelResolutions = defaults
         }
         self.readOnlyReason = readOnlyReason
         self.actionPhase = actionPhase
@@ -104,6 +158,15 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
 
     var isAuthorized: Bool {
         readOnlyReason == nil
+    }
+
+    func isChoiceActionable(_ choice: BasicChoice, in projection: BoardProjection) -> Bool {
+        projection.isChoiceActionable(
+            choice,
+            ownerID: ownerID,
+            storyResolution: storyResolution,
+            labelResolution: choiceLabelResolutions[choice.index]
+        )
     }
 
     var isStoryAvailable: Bool {

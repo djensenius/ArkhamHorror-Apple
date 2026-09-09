@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "ef832ddbce141bc13d92bad82c8a05113e302cebfcf78d61381e6d8778b0ab01"
+            sha256Hex: "165542045b90c8a9b01061917a4d661af405ff0f380919ee83eea0737da9bc89"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "f6191d3d758d25819e9b7538b802f5a04bf557e8c65eca3285445034a6ef1e83"
+            sha256Hex: "dccaeca0e25b84ece7924fb5f274e1c83242dedffcbc3f5d0b4862a29819b470"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -119,6 +119,10 @@ enum ContractFixtureDigests {
         VendoredFixtureDigest(
             fileName: "question-choose-one-location-multiple",
             sha256Hex: "25751cccc02dc18de38e0cbebf71acb5303d47df3705367f0c14089853bcbe07"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-mulligan",
+            sha256Hex: "88249e7206671dbb5f43a8187c9fa6e0cbbee1859e06957ca1a454455d156029"
         ),
     ]
 }
