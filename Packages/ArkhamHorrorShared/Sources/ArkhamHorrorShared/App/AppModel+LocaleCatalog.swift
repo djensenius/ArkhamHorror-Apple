@@ -54,18 +54,21 @@ extension AppModel {
         startLocaleCatalogLoad(request, profile: profile)
     }
 
-    /// Retries a catalog-only transient failure without restarting compatibility, token, or
-    /// profile flows. The profile and advertisement must still be the selected request.
+    /// Retries the failed catalog or image dependency without restarting the session.
+    /// An already-verified catalog is never discarded for an image-only failure.
     func retryLocaleCatalog() {
         guard let request = localeCatalogRequest,
               request.profileID == selectedProfile.id,
-              localeCatalog == nil,
-              let failure = localeCatalogFailure,
-              failure.isRetryable
+              !isLocaleCatalogLoading,
+              localeCatalogRetryReason != nil
         else {
             return
         }
-        startLocaleCatalogLoad(request, profile: selectedProfile)
+        if localeCatalogFailure == nil, localeCatalog != nil {
+            retryStoryAssetSource(request, profile: selectedProfile)
+        } else {
+            startLocaleCatalogLoad(request, profile: selectedProfile)
+        }
     }
 
     func retryLocaleCatalog(
@@ -86,24 +89,20 @@ extension AppModel {
         localizationReasons: [StoryUnavailableReason],
         promptKey: BasicChoicePromptKey
     ) -> BasicChoiceCatalogRetryPresentation? {
-        let retryableFailures = localizationReasons.compactMap { reason -> LocaleCatalogFailure? in
-            guard case let .catalog(failure) = reason, failure.isRetryable else { return nil }
-            return failure
-        }
-        guard let failure = retryableFailures.first,
-              localeCatalog == nil,
+        guard let reason = localeCatalogRetryReason,
+              localizationReasons.contains(reason),
               !isLocaleCatalogLoading,
               let request = localeCatalogRequest,
-              request.profileID == selectedProfile.id,
-              localeCatalogFailure == failure,
-              failure.isRetryable
+              request.profileID == selectedProfile.id
         else {
             return nil
         }
         return BasicChoiceCatalogRetryPresentation(
             profileID: request.profileID,
             catalogGeneration: localeCatalogGeneration,
-            promptKey: promptKey
+            promptKey: promptKey,
+            scope: reason == .imagePipelineUnavailable ? .localImagePipeline
+                : (localeCatalogFailure == nil ? .images : .catalog)
         )
     }
 
@@ -114,18 +113,33 @@ extension AppModel {
         localeCatalogGeneration += 1
         let catalogGeneration = localeCatalogGeneration
         localeCatalog = nil
+        storyAssetSource = nil
+        storyAssetSourceFailure = nil
         localeCatalogFailure = nil
         isLocaleCatalogLoading = true
         let loader = localeCatalogLoader
+        let sourceLoader = storyAssetSourceLoader
+        let hasImagePipeline = prepareStoryAssetCache()
         let languages = preferredLanguagesProvider.preferredLanguages
         localeCatalogTask = Task { [weak self] in
-            let result = await loader.load(
+            async let catalogResult = loader.load(
                 advertisement: request.advertisement,
                 profile: profile,
                 preferredLanguages: languages
             )
+            var source: AssetSourceNamespace?
+            var sourceFailure: LocaleCatalogFailure?
+            do {
+                source = try await hasImagePipeline ? sourceLoader.load(for: profile) : nil
+            } catch is CancellationError {
+                return
+            } catch {
+                sourceFailure = (error as? LocaleCatalogFailure) ?? .transportFailure
+            }
+            let result = await catalogResult
             self?.applyLocaleCatalogResult(
-                result, request: request, catalogGeneration: catalogGeneration
+                result, request: request, catalogGeneration: catalogGeneration,
+                assetSource: source, assetSourceFailure: sourceFailure
             )
         }
     }
@@ -139,7 +153,9 @@ extension AppModel {
     func applyLocaleCatalogResult(
         _ result: Result<LocaleCatalogSnapshot, LocaleCatalogFailure>,
         request: LocaleCatalogRequest,
-        catalogGeneration: Int
+        catalogGeneration: Int,
+        assetSource: AssetSourceNamespace? = nil,
+        assetSourceFailure: LocaleCatalogFailure? = nil
     ) {
         guard catalogGeneration == localeCatalogGeneration,
               localeCatalogRequest == request,
@@ -149,9 +165,13 @@ extension AppModel {
         switch result {
         case let .success(snapshot):
             localeCatalog = snapshot
+            storyAssetSource = assetCacheService == nil ? nil : assetSource
+            storyAssetSourceFailure = assetSourceFailure
             localeCatalogFailure = nil
         case let .failure(failure):
             localeCatalog = nil
+            storyAssetSource = nil
+            storyAssetSourceFailure = nil
             localeCatalogFailure = failure
         }
     }
@@ -169,6 +189,8 @@ extension AppModel {
         localeCatalogRequest = nil
         localeCatalogGeneration += 1
         localeCatalog = nil
+        storyAssetSource = nil
+        storyAssetSourceFailure = nil
         localeCatalogFailure = failure
         isLocaleCatalogLoading = false
     }
@@ -186,7 +208,10 @@ extension AppModel {
               request.advertisement.catalogRevision == snapshot.identity.catalogRevision,
               request.advertisement.manifestSha256 == snapshot.identity.manifestSha256
         else { return nil }
-        return LocaleCatalogResolver(snapshot: snapshot)
+        return LocaleCatalogResolver(
+            snapshot: snapshot, assetSource: assetCacheService == nil ? nil : storyAssetSource,
+            assetUnavailability: storyAssetUnavailability
+        )
     }
 
     /// Why no resolver is available, for a presentation that must say so rather than fail

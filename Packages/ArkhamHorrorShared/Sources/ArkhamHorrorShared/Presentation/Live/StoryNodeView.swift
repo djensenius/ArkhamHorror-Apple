@@ -204,11 +204,7 @@ private struct StoryNodeView: View {
         case .rule:
             Divider()
         case let .image(reference):
-            Label(
-                reference.alt ?? assetRoleLabel(reference.role),
-                systemImage: assetRoleSymbol(reference.role)
-            )
-            .accessibilityLabel(reference.alt ?? assetRoleLabel(reference.role))
+            StoryAssetImageView(reference: reference)
         case let .cardReference(code, children):
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "rectangle.portrait.on.rectangle.portrait")
@@ -252,26 +248,6 @@ private struct StoryNodeView: View {
     private func cardReferenceLabel(code: String, children: [StoryNode]) -> String {
         let label = StoryNodePresentation.accessibilityLabel(for: children)
         return label.isEmpty ? "Card \(code)" : label
-    }
-
-    private func assetRoleLabel(_ role: LocaleCatalogAssetRole) -> String {
-        switch role {
-        case .encounterSet: "Encounter set"
-        case .card: "Card image"
-        case .token: "Token"
-        case .chaosToken: "Chaos token"
-        case .campaign: "Campaign image"
-        case .homebrew: "Homebrew image"
-        case .extra, .other: "Game image"
-        }
-    }
-
-    private func assetRoleSymbol(_ role: LocaleCatalogAssetRole) -> String {
-        switch role {
-        case .encounterSet, .card: "rectangle.stack"
-        case .token, .chaosToken: "seal.fill"
-        case .campaign, .homebrew, .extra, .other: "photo"
-        }
     }
 }
 

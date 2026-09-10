@@ -88,6 +88,8 @@ enum AssetLocator {
             return (["homebrew", campaign.rawValue, "boxes", "\(campaign.rawValue).jpg"], .jpeg)
         case let .slotIcon(icon):
             return (["tokens", "\(icon.rawValue).png"], .png)
+        case let .catalogImage(image):
+            return (image.segments, image.format)
         case .card, .homebrewCard:
             preconditionFailure(
                 "card/homebrewCard are always handled by candidates(for:digest:) directly"
