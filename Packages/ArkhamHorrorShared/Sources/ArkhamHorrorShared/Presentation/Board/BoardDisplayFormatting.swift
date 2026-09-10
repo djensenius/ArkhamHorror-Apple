@@ -50,6 +50,13 @@ enum BoardDisplayFormatting {
         case .finishMulligan:
             return labelResolution?.title
                 ?? "Unavailable action (choice \(choice.index + 1))"
+        case let .resolveEnemyAttack(_, investigatorID, _):
+            if let investigator = projection.investigators.first(
+                where: { $0.id == investigatorID }
+            ) {
+                return "Resolve enemy attack against \(investigator.displayName)"
+            }
+            return choice.title
         case .gainResource, .drawCard, .endTurn, .investigate, .continueReading,
              .skipTriggers, .startSkillTest, .applySkillTestResults, .drawEncounterCard,
              .unsupported:
@@ -97,6 +104,8 @@ enum BoardDisplayFormatting {
                 return "This card isn't currently available in your hand."
             case .chooseLocation:
                 return "This location isn't currently available."
+            case .resolveEnemyAttack:
+                return "The enemy or investigator for this attack isn't currently available."
             case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
                  .startSkillTest, .applySkillTestResults, .drawEncounterCard, .unsupported:
                 return "This choice is not currently available."

@@ -29,6 +29,9 @@ enum BasicChoiceContent: Sendable, Equatable, Hashable {
     case gainResource(investigatorID: InvestigatorID, messages: [JSONValue])
     case drawCard(investigatorID: InvestigatorID, messages: [JSONValue])
     case drawEncounterCard(investigatorID: InvestigatorID, messages: [JSONValue])
+    case resolveEnemyAttack(
+        enemyID: EnemyID, investigatorID: InvestigatorID, messages: [JSONValue]
+    )
     case endTurn(investigatorID: InvestigatorID, messages: [JSONValue])
     case investigate(BasicChoiceAbility)
     case continueReading(messages: [JSONValue])
@@ -66,6 +69,8 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .drawCard: "Draw a card"
         // Backend basic-choice-question.schema.json: encounterDeckDrawLabel.title.
         case .drawEncounterCard: "Draw encounter card"
+        // Backend basic-choice-question.schema.json: chooseOneAtATimeEnemyAttackQuestion.title.
+        case .resolveEnemyAttack: "Resolve enemy attack"
         case .endTurn: "End turn"
         case .investigate: "Investigate"
         case .continueReading: "Continue"
@@ -83,6 +88,7 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         switch content {
         case .gainResource: "circle.fill"
         case .drawCard, .drawEncounterCard: "rectangle.stack"
+        case .resolveEnemyAttack: "shield.fill"
         case .endTurn: "forward.end"
         case .investigate: "magnifyingglass"
         case .continueReading: "arrow.right.circle.fill"

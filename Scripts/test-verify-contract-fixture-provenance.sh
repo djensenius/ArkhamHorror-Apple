@@ -32,7 +32,8 @@ question-read-with-cards.json \
 question-choose-one-location.json question-choose-one-location-multiple.json \
 question-mulligan.json question-investigate-fast-window.json \
 question-investigate-commit.json question-investigate-reveal-window.json \
-question-investigate-apply-results.json question-encounter-deck-draw.json"
+question-investigate-apply-results.json question-encounter-deck-draw.json \
+question-enemy-attack.json answer-enemy-attack.json"
 
 failures=0
 scenario_count=0
@@ -116,7 +117,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.30",'
+    echo '  "schemaRevision": "0.1.31",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
