@@ -112,6 +112,10 @@ question-read-with-cards.json:contracts/fixtures/question-read-with-cards.json
 question-choose-one-location.json:contracts/fixtures/question-choose-one-location.json
 question-choose-one-location-multiple.json:contracts/fixtures/question-choose-one-location-multiple.json
 question-mulligan.json:contracts/fixtures/question-mulligan.json
+question-investigate-fast-window.json:contracts/fixtures/question-investigate-fast-window.json
+question-investigate-commit.json:contracts/fixtures/question-investigate-commit.json
+question-investigate-reveal-window.json:contracts/fixtures/question-investigate-reveal-window.json
+question-investigate-apply-results.json:contracts/fixtures/question-investigate-apply-results.json
 "
 
 # Rejects an absolute path or any `..` path-traversal component in a (script-controlled,

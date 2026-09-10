@@ -3,10 +3,10 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@c7e24d23f5ef992038802d9fb28ceb8fc8121ccf` (through PR #65),
-schema revision `0.1.28`.
+`djensenius/ArkhamHorror@ee5fe7f917262f0592ba0578e7e6bf6b34256feb` (through PR #66),
+schema revision `0.1.29`.
 
-These twenty-seven files, and only these twenty-seven, live under `Fixtures/Contract/` — a
+These thirty-one files, and only these thirty-one, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -46,9 +46,13 @@ and its sibling non-null `readCards` branch); `question-choose-one-location.json
 "Study" starting location and three real "The Gathering" locations proving backend choice
 order and zero-based `Answer.choice` index stability. `question-mulligan.json` is the
 production opening-hand `ChooseOne` prompt with its localized done action at source index
-zero and three `TargetLabel(CardIdTarget)` choices in authoritative hand order. See
-`basic-choice-question.schema.json` in the backend repository for the governed shape these
-five fixtures exercise.
+zero and three `TargetLabel(CardIdTarget)` choices in authoritative hand order.
+`question-investigate-fast-window.json`, `question-investigate-commit.json`,
+`question-investigate-reveal-window.json`, and `question-investigate-apply-results.json`
+are the production basic-investigation prompt sequence, preserving the backend's exact
+card/control source indices through both fast windows, card commitment, test start, and
+result application. See `basic-choice-question.schema.json` in the backend repository for
+the governed shape these nine fixtures exercise.
 
 
 ## token.json / whoami.json

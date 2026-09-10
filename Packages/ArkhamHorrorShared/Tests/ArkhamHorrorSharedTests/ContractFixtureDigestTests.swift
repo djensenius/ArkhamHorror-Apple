@@ -89,6 +89,8 @@ struct ContractFixtureDigestTests {
             "question-read-with-cards",
             "question-choose-one-location", "question-choose-one-location-multiple",
             "question-mulligan",
+            "question-investigate-fast-window", "question-investigate-commit",
+            "question-investigate-reveal-window", "question-investigate-apply-results",
         ])
     }
 
@@ -154,7 +156,7 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "c7e24d23f5ef992038802d9fb28ceb8fc8121ccf"
+            ContractPin.current.backendCommit == "ee5fe7f917262f0592ba0578e7e6bf6b34256feb"
         )
     }
 }

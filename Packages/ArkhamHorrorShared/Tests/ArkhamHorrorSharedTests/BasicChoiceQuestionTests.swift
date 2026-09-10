@@ -91,10 +91,11 @@ struct BasicChoiceQuestionTests {
             $0.cardID?.codingKey.stringValue
         } == expectedIDs)
         for choice in question.choices.dropFirst() {
-            guard case let .chooseHandCard(_, messages) = choice.content else {
+            guard case let .chooseHandCard(_, purpose, messages) = choice.content else {
                 Issue.record("Expected CardIdTarget")
                 continue
             }
+            #expect(purpose == .replace)
             #expect(messages.compactMap { message -> String? in
                 guard case let .object(fields) = message,
                       case let .string(tag)? = fields["tag"]

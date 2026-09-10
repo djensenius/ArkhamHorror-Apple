@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "165542045b90c8a9b01061917a4d661af405ff0f380919ee83eea0737da9bc89"
+            sha256Hex: "a7fd8cb7b92e2dffeb207f5355bd7e1d057fcd7463f32fe1117420900c38d5e6"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "dccaeca0e25b84ece7924fb5f274e1c83242dedffcbc3f5d0b4862a29819b470"
+            sha256Hex: "fc31aa05174312a27835af3931e9fa5ff303aebc4fa839c1c4db7e48ee6c8116"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -123,6 +123,22 @@ enum ContractFixtureDigests {
         VendoredFixtureDigest(
             fileName: "question-mulligan",
             sha256Hex: "88249e7206671dbb5f43a8187c9fa6e0cbbee1859e06957ca1a454455d156029"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-investigate-fast-window",
+            sha256Hex: "faa049601d544817746c3621e6865a119c5a38c5eba8daf477da2728a250a913"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-investigate-commit",
+            sha256Hex: "0cef8bb88be1ac2feb7cd2d37b952bf54fa47b4ea7d83474326baf9da7fb9b18"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-investigate-reveal-window",
+            sha256Hex: "faa049601d544817746c3621e6865a119c5a38c5eba8daf477da2728a250a913"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-investigate-apply-results",
+            sha256Hex: "ca3834a719c64a263c31982cfb5987c08da40ec3494d2380ccffaebb46e11774"
         ),
     ]
 }

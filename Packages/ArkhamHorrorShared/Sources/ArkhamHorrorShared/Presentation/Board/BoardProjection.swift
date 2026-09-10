@@ -252,8 +252,9 @@ struct BoardCounters: Sendable, Equatable {
 /// A typed, immutable, deterministic presentation projection built from a decoded
 /// ``PublicGameSnapshot``. This is not a second rules engine: every field here is either
 /// copied verbatim from the snapshot or is a purely cosmetic display-string derived from a
-/// closed/known wire tag. No field infers legality, resolves a matcher, or interprets a
-/// broad ``JSONValue`` payload's semantic meaning.
+/// closed/known wire tag. The narrow skill-test summary copies only the backend's current
+/// step, display values, and explicit success verdict. No field infers legality, resolves
+/// a matcher, evaluates token effects, or recomputes a game outcome.
 ///
 /// Two independently-decoded snapshots with equal field values always produce an equal
 /// ``BoardProjection`` (see ``BoardProjectionBuilder``), which is what lets the REST and
@@ -282,6 +283,7 @@ struct BoardProjection: Sendable, Equatable {
     let handCardsByPlayer: [PlayerID: [WireCardID: BoardHandCardNode]]
     let chaosBag: BoardChaosBagState
     let counters: BoardCounters
+    let skillTest: BoardSkillTestProjection?
     /// Exact player-keyed prompts. Choice arrays retain their authoritative wire order.
     let questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>
 
@@ -322,10 +324,11 @@ struct BoardProjection: Sendable, Equatable {
             return labelResolution?.isResolved == true
         case let .chooseLocation(locationID, _):
             return locations.contains { $0.id == locationID }
-        case let .chooseHandCard(cardID, _):
+        case let .chooseHandCard(cardID, _, _):
             guard let ownerID else { return false }
             return handCardsByPlayer[ownerID]?[cardID] != nil
-        case .gainResource, .drawCard, .endTurn, .investigate:
+        case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
+             .startSkillTest, .applySkillTestResults:
             return true
         case .unsupported:
             return false
