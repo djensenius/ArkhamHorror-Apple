@@ -37,6 +37,11 @@ enum BoardTestFixtures {
         LocationID(UUID(uuidString: "00000000-0000-0000-0000-\(uuidSuffix)")!)
     }
 
+    static func enemyID(_ uuidSuffix: String) -> EnemyID {
+        // swiftlint:disable:next force_unwrapping
+        EnemyID(UUID(uuidString: "00000000-0000-0000-0000-\(uuidSuffix)")!)
+    }
+
     static func gameID(_ uuidSuffix: String = "000000000900") -> GameID {
         // swiftlint:disable:next force_unwrapping
         GameID(UUID(uuidString: "00000000-0000-0000-0000-\(uuidSuffix)")!)

@@ -112,6 +112,7 @@ extension BoardTestFixtures {
         totalDoom: Int = 0,
         totalClues: Int = 0,
         enemyCount: Int = 0,
+        enemyValues: [EnemyID: JSONValue] = [:],
         assetCount: Int = 0,
         treacheryCount: Int = 0,
         eventCount: Int = 0,
@@ -146,13 +147,17 @@ extension BoardTestFixtures {
         for _ in 0 ..< cardCount {
             cards[WireCardID(UUID())] = .null
         }
+        var enemies = UUIDKeyedMap<EnemyIDTag, JSONValue>(enemyValues)
+        for _ in 0 ..< enemyCount {
+            enemies[EnemyID(UUID())] = .null
+        }
 
         return PublicGameSnapshot(
             name: name, id: BoardTestFixtures.gameID(), log: [], git: "test",
             settings: gameSettings(), gameSettings: gameSettings(), mode: mode, modifiers: [],
             encounterDeckSize: 0, locations: locationMap, investigators: investigators,
             otherInvestigators: otherInvestigators, killedInvestigators: killedInvestigators,
-            enemies: entityMap(count: enemyCount), assets: entityMap(count: assetCount),
+            enemies: enemies, assets: entityMap(count: assetCount),
             acts: acts, agendas: agendas, treacheries: entityMap(count: treacheryCount),
             events: entityMap(count: eventCount), concealed: entityMap(count: concealedCount),
             skills: entityMap(count: skillCount), stories: [:], scarletKeys: [:],

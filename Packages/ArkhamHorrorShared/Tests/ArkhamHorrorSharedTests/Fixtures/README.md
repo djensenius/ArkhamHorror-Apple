@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@39b580ff5e28a091acaf78aa2a0ed5ec29b1435b`,
-schema revision `0.1.30`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@33b5bdc5cef6eff57d0b8d4446b1279829892452`,
+schema revision `0.1.31`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These thirty-three files, and only these thirty-three, live under `Fixtures/Contract/` — a
+These thirty-five files, and only these thirty-five, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -66,6 +66,17 @@ Fixture-driven tests apply all 47 encounter negatives from the unmodified manife
 in memory, plus client numeric, required-field, source-index, focus, pending, stale,
 and reconnect/retry boundaries. Both the digest registry and the backend manifest's
 `artifactHashes` bind the vendored fixture and schema bytes.
+
+`question-enemy-attack.json` is the production enemy-phase `ChooseOneAtATime` prompt:
+its only source-index-zero choice is the exact closed regular attack published by
+`chooseOneAtATimeEnemyAttackQuestion`, titled **Resolve enemy attack**. The client checks
+the repeated enemy UUID and investigator identities dynamically, retains the original
+message as opaque data, and requires both identities in the newest board projection before
+submitting `answer-enemy-attack.json`'s unchanged versioned index. All other
+`ChooseOneAtATime`, enemy target, attack target/type/source/damage variants, extra choices,
+and malformed shapes remain update-required. Fixture-driven tests apply all 86 published
+enemy-attack negative mutations in memory and cover stale identity, focus/controller,
+pending, replacement, reconnect/manual retry, and uncertain-error behavior.
 
 ## token.json / whoami.json
 

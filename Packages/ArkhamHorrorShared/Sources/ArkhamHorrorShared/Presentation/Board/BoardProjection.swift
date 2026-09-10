@@ -276,6 +276,9 @@ struct BoardProjection: Sendable, Equatable {
     /// Ordered by `PublicGame.playerOrder`, then any remaining investigators (not named in
     /// `playerOrder`) by raw card-code text.
     let investigators: [BoardInvestigatorNode]
+    /// Opaque enemy values remain out of scope; their canonical IDs are sorted by raw UUID
+    /// text so identity-based prompt actionability is deterministic.
+    let enemyIDs: [EnemyID]
     let otherInvestigatorCount: Int
     let killedInvestigatorCount: Int
     /// Narrow, immutable player-hand presentation authority. Raw card payloads never leave
@@ -327,6 +330,9 @@ struct BoardProjection: Sendable, Equatable {
         case let .chooseHandCard(cardID, _, _):
             guard let ownerID else { return false }
             return handCardsByPlayer[ownerID]?[cardID] != nil
+        case let .resolveEnemyAttack(enemyID, investigatorID, _):
+            return enemyIDs.contains(enemyID)
+                && investigators.contains { $0.id == investigatorID }
         case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
              .startSkillTest, .applySkillTestResults, .drawEncounterCard:
             return true

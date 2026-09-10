@@ -2,6 +2,7 @@ import Foundation
 
 enum BasicChoiceQuestionKind: String, Sendable {
     case chooseOne = "ChooseOne"
+    case chooseOneAtATime = "ChooseOneAtATime"
     case playerWindowChooseOne = "PlayerWindowChooseOne"
     case windowChooseOne = "WindowChooseOne"
     case read = "Read"
@@ -71,6 +72,9 @@ enum BasicChoiceParser {
         }
         if kind == .read {
             return parseReadQuestion(object, rawValue: value)
+        }
+        if kind == .chooseOneAtATime {
+            return parseEnemyAttackQuestion(object, rawValue: value)
         }
         guard Set(object.keys) == ["tag", "choices"],
               case let .array(rawChoices)? = object["choices"],
