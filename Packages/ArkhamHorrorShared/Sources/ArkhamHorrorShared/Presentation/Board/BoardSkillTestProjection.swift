@@ -36,11 +36,25 @@ struct BoardSkillTestResult: Sendable, Equatable {
     let succeeded: Bool
 }
 
+struct BoardSkillTestVerdict: Sendable, Equatable {
+    let succeeded: Bool
+    let amount: Int
+    let automatic: Bool
+
+    var displayLabel: String {
+        let result = succeeded ? "Succeeded" : "Failed"
+        return automatic
+            ? "Automatically \(result.lowercased()) by \(amount)"
+            : "\(result) by \(amount)"
+    }
+}
+
 struct BoardSkillTestSummary: Sendable, Equatable {
     let investigatorID: InvestigatorID
     let step: BoardSkillTestStep
     let modifiedSkillValue: Int
     let modifiedDifficulty: Int
+    let verdict: BoardSkillTestVerdict?
     let result: BoardSkillTestResult?
 }
 
@@ -50,8 +64,9 @@ enum BoardSkillTestProjection: Sendable, Equatable {
 }
 
 /// Extracts only the backend's current skill-test display values. This deliberately has
-/// no arithmetic or rules logic: `succeeded` comes directly from
-/// `skillTestResultsSuccess`, and any unknown required shape becomes `.unavailable`.
+/// no arithmetic or rules logic: the verdict comes directly from `skillTest.result`,
+/// the optional breakdown comes from `skillTestResults`, and any unknown required
+/// shape or disagreement between those surfaces becomes `.unavailable`.
 enum BoardSkillTestProjectionBuilder {
     static func makeProjection(
         skillTest: JSONValue?, results: JSONValue?
@@ -66,7 +81,9 @@ enum BoardSkillTestProjectionBuilder {
               let step = BoardSkillTestStep(rawValue: rawStep),
               let modifiedSkillValue = integer(object["modifiedSkillValue"]),
               let modifiedDifficulty = integer(object["modifiedDifficulty"]),
-              let result = parseResult(results)
+              let verdict = parseVerdict(object["result"]),
+              let result = parseResult(results),
+              verdict?.succeeded == result?.succeeded || verdict == nil || result == nil
         else {
             return .unavailable
         }
@@ -75,7 +92,34 @@ enum BoardSkillTestProjectionBuilder {
             step: step,
             modifiedSkillValue: modifiedSkillValue,
             modifiedDifficulty: modifiedDifficulty,
+            verdict: verdict,
             result: result
+        ))
+    }
+
+    private static func parseVerdict(_ value: JSONValue?) -> BoardSkillTestVerdict?? {
+        guard let value else { return .some(nil) }
+        if value == .null {
+            return .some(nil)
+        }
+        guard case let .object(object) = value,
+              case let .string(tag)? = object["tag"]
+        else { return nil }
+        if tag == "Unrun" {
+            return object["contents"] == nil ? .some(nil) : nil
+        }
+        guard tag == "SucceededBy" || tag == "FailedBy",
+              case let .array(contents)? = object["contents"],
+              contents.count == 2,
+              case let .string(resultType) = contents[0],
+              resultType == "Automatic" || resultType == "NonAutomatic",
+              let amount = integer(contents[1]),
+              amount >= 0
+        else { return nil }
+        return .some(BoardSkillTestVerdict(
+            succeeded: tag == "SucceededBy",
+            amount: amount,
+            automatic: resultType == "Automatic"
         ))
     }
 
