@@ -50,6 +50,8 @@ enum LocaleCatalogFailure: Error, Sendable, Equatable, Hashable {
     case localeUnavailable
     /// A cached entry was present but not usable, and was discarded rather than trusted.
     case cacheCorrupted
+    /// The selected server's asset setting cannot authorize a safe native image source.
+    case untrustedAssetSource
 
     /// A short, player-facing sentence explaining why the story cannot be shown.
     var announcement: String {
@@ -69,6 +71,8 @@ enum LocaleCatalogFailure: Error, Sendable, Equatable, Hashable {
             "This server publishes no story text for your language."
         case .cacheCorrupted:
             "The saved story text was discarded because it could not be verified."
+        case .untrustedAssetSource:
+            "The server's story image source could not be verified."
         }
     }
 
@@ -82,7 +86,7 @@ enum LocaleCatalogFailure: Error, Sendable, Equatable, Hashable {
              .unacceptableContentType, .tooLarge, .manifestDigestMismatch,
              .chunkDigestMismatch, .malformedJSON, .malformedManifest,
              .malformedChunk, .advertisementMismatch, .localeUnavailable,
-             .cacheCorrupted:
+             .cacheCorrupted, .untrustedAssetSource:
             false
         }
     }
@@ -98,6 +102,10 @@ enum StoryUnavailableReason: Error, Sendable, Equatable, Hashable {
     case catalog(LocaleCatalogFailure)
     /// The catalog for this server is still being fetched and verified.
     case loading
+    /// This app could not initialize its local bounded image pipeline.
+    case imagePipelineUnavailable
+    /// Only the image-source request is in flight; verified story text remains usable.
+    case imageSourceLoading
     /// The key is absent from the selected locale, its fallback chain, and the default
     /// locale.
     case missingKey
@@ -119,6 +127,10 @@ enum StoryUnavailableReason: Error, Sendable, Equatable, Hashable {
             failure.announcement
         case .loading:
             "The story text is still loading from this server."
+        case .imagePipelineUnavailable:
+            "This app could not initialize its local image cache. Retry image support to continue."
+        case .imageSourceLoading:
+            "The story image source is still loading."
         case .missingKey, .unsupportedEntry:
             "This server publishes no usable story text for this passage."
         case .linkCycle, .tooComplex:

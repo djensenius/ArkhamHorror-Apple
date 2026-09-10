@@ -12,7 +12,7 @@ struct LocaleCatalogResponse: Sendable, Equatable {
     let data: Data
 }
 
-/// The catalog's own transport seam.
+/// The bounded public JSON transport seam for catalog documents and site settings.
 ///
 /// Deliberately **not** ``HTTPTransport``: this boundary is unauthenticated by construction
 /// and must never share mutable state with the authenticated session transport. Modelling it
@@ -36,7 +36,7 @@ protocol LocaleCatalogTransporting: Sendable {
 ///   or cached response can be read from or written to any shared store. A catalog fetch can
 ///   therefore never reuse the authenticated transport's mutable state, and never seed it.
 /// - No `Authorization` header is ever set. The catalog routes are served unauthenticated
-///   static JSON and carry no cookies, tokens, or request-specific data.
+/// static JSON (or public site settings) and carry no cookies, tokens, or request-specific data.
 /// - Redirects are refused outright by the delegate, so a 3xx is surfaced as a response this
 ///   client rejects rather than followed to a host the advertisement never named.
 /// - TLS validation is never bypassed; the configuration inherits the default trust policy.

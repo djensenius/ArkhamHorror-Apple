@@ -7,7 +7,7 @@ import Foundation
 /// outside this file is ``AssetCandidateFactory/make(segments:localeRoot:format:)``,
 /// which is `internal` (module-wide), not restricted to ``AssetLocator``
 /// specifically. In practice only ``AssetLocator`` calls it today, from
-/// already-validated ``AssetIdentifier`` segments, so callers can never
+/// already-validated ``AssetIdentifier`` or ``CatalogImageAsset`` segments, so callers can never
 /// construct a request for an arbitrary relative path — but that guarantee
 /// comes from this module never exposing an unvalidated-segments entry
 /// point publicly, not from Swift access control naming a single caller.
@@ -15,7 +15,7 @@ struct AssetCandidate: Sendable, Equatable, Hashable {
     /// Path segments relative to the CDN's `img/arkham/` root, in order
     /// (e.g. `["cards", "01001.avif"]`). Never contains `/`, and never
     /// contains `..` or an empty segment: each was built from a validated
-    /// ``AssetIdentifier`` or a fixed literal.
+    /// ``AssetIdentifier``, ``CatalogImageAsset``, or a fixed literal.
     let segments: [String]
     /// The locale root folder to insert directly after `img/arkham/`, or
     /// `nil` for the base (English/non-localized) path.
@@ -70,7 +70,7 @@ struct AssetCandidate: Sendable, Equatable, Hashable {
 /// upholds is: no caller, anywhere, can build an `AssetCandidate` from an
 /// arbitrary/unvalidated relative path string; every call site that exists
 /// today (``AssetLocator``) only ever passes segments that already came from
-/// a validated ``AssetIdentifier`` or a fixed literal.
+/// a validated ``AssetIdentifier``, ``CatalogImageAsset``, or a fixed literal.
 enum AssetCandidateFactory {
     static func make(
         segments: [String],

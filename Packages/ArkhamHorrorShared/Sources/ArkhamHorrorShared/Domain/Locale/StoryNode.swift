@@ -2,11 +2,10 @@ import Foundation
 
 /// The typed, safe presentation tree a catalog entry renders to.
 ///
-/// Nothing here can carry HTML, CSS, a script, or a URL. An `image` is a *semantic* asset
-/// reference (role plus a path relative to the deployment's own `/img/arkham/` root), a card
+/// Nothing here can carry HTML, CSS, a script, or a catalog-selected URL. An `image` is a
+/// semantic asset reference bound to the separately validated deployment asset source, a card
 /// reference carries only a card code, and every text position holds already-substituted
-/// literal text. A renderer walking this tree therefore cannot be made to execute or fetch
-/// anything the catalog chose.
+/// literal text. Catalog paths can only select validated files inside closed artwork families.
 indirect enum StoryNode: Sendable, Equatable {
     case text(String)
     case paragraph([StoryNode])
@@ -29,14 +28,45 @@ indirect enum StoryNode: Sendable, Equatable {
     case table(head: [StoryTableRow], body: [StoryTableRow])
 }
 
-/// A semantic reference to artwork the deployment already serves, never a URL this client
-/// constructs or follows.
+/// A semantic reference to artwork on the deployment's validated asset source.
 struct StoryAssetReference: Sendable, Equatable, Hashable {
     let role: LocaleCatalogAssetRole
-    /// A path relative to `/img/arkham/`, already proven free of `..` segments and of any
-    /// scheme, host, or query.
+    /// Relative to `/img/arkham/`; revalidated by `assetKey` before any representation or fetch.
     let assetPath: String
     let alt: String?
+    let source: AssetSourceNamespace?
+
+    init(
+        role: LocaleCatalogAssetRole, assetPath: String, alt: String?,
+        source: AssetSourceNamespace? = nil
+    ) {
+        self.role = role
+        self.assetPath = assetPath
+        self.alt = alt
+        self.source = source
+    }
+
+    var assetKey: AssetKey? {
+        guard let source,
+              let image = CatalogImageAsset(role: role, assetPath: assetPath)
+        else { return nil }
+        return AssetKey(source: source, category: .catalogImage(image))
+    }
+
+    var accessibleDescription: String {
+        if let alt, !alt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return alt
+        }
+        switch role {
+        case .encounterSet: return "Encounter set"
+        case .card: return "Card image"
+        case .token: return "Token"
+        case .chaosToken: return "Chaos token"
+        case .campaign: return "Campaign image"
+        case .homebrew: return "Homebrew image"
+        case .extra, .other: return "Game image"
+        }
+    }
 }
 
 struct StoryTableRow: Sendable, Equatable {
@@ -61,7 +91,8 @@ extension StoryNode {
         case let .list(_, items): items.map { $0.map(\.plainText).joined() }.joined(separator: " ")
         case .lineBreak: " "
         case let .icon(name): StoryNode.spokenIconLabel(name)
-        case .rule, .image, .table: ""
+        case let .image(reference): reference.accessibleDescription
+        case .rule, .table: ""
         }
     }
 

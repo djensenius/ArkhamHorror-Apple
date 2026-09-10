@@ -1,6 +1,8 @@
 import Foundation
 import Observation
 
+// swiftlint:disable file_length
+
 /// The shared, `@MainActor` session coordinator for every Arkham Horror platform target.
 ///
 /// On launch, `AppModel` loads persisted server profiles, seeds the canonical hosted
@@ -130,6 +132,11 @@ final class AppModel {
     @ObservationIgnored let liveGameClock: any LiveGameClock
     /// The injectable reconnect-backoff jitter source. See ``LiveGameReconnectPolicy``.
     @ObservationIgnored let liveGameRandomSource: any LiveGameRandomSource
+    var assetCacheService: AssetCacheService?
+    @ObservationIgnored let assetCacheFactory: @MainActor () -> AssetCacheService?
+    @ObservationIgnored let storyAssetSourceLoader: StoryAssetSourceLoader
+    var storyAssetSource: AssetSourceNamespace?
+    var storyAssetSourceFailure: LocaleCatalogFailure?
 
     @ObservationIgnored var selectedProfile: ServerProfile = .hosted
     @ObservationIgnored var generation = 0
@@ -298,18 +305,13 @@ final class AppModel {
     /// Whether a catalog load is in flight for the selected profile.
     var isLocaleCatalogLoading = false
 
-    /// The advertisement and profile the published (or in-flight) catalog belongs to.
-    /// Compared before any catalog is offered to a reader, so a snapshot can never outlive
-    /// the profile whose probe produced it.
+    /// The advertisement/profile binding checked before any catalog is offered to a reader.
     @ObservationIgnored var localeCatalogRequest: LocaleCatalogRequest?
     /// The in-flight catalog load, cancelled by any endpoint switch or newer advertisement.
     @ObservationIgnored var localeCatalogTask: Task<Void, Never>?
-    /// A monotonically increasing counter guarding stale catalog completions, independent of
-    /// ``generation`` since a catalog load neither cancels nor is cancelled by the auth flow.
+    /// Guards stale catalog completions independently of the authentication flow's generation.
     @ObservationIgnored var localeCatalogGeneration = 0
-    /// The injectable catalog fetch/verify pipeline. See ``LocaleCatalogLoader``.
     @ObservationIgnored let localeCatalogLoader: LocaleCatalogLoader
-    /// The injectable Apple preferred-language input catalog locale selection reads.
     @ObservationIgnored let preferredLanguagesProvider: any PreferredLanguagesProviding
 
     init(
@@ -323,7 +325,10 @@ final class AppModel {
         liveGameClock: any LiveGameClock = SystemLiveGameClock(),
         liveGameRandomSource: any LiveGameRandomSource = SystemLiveGameRandomSource(),
         localeCatalogLoader: LocaleCatalogLoader = .production(),
-        preferredLanguagesProvider: any PreferredLanguagesProviding = SystemPreferredLanguages()
+        preferredLanguagesProvider: any PreferredLanguagesProviding = SystemPreferredLanguages(),
+        assetCacheService: AssetCacheService? = nil,
+        assetCacheFactory: @escaping @MainActor () -> AssetCacheService? = { nil },
+        storyAssetSourceLoader: StoryAssetSourceLoader = StoryAssetSourceLoader()
     ) {
         self.profileStore = profileStore
         self.tokenStore = tokenStore
@@ -336,6 +341,9 @@ final class AppModel {
         self.liveGameRandomSource = liveGameRandomSource
         self.localeCatalogLoader = localeCatalogLoader
         self.preferredLanguagesProvider = preferredLanguagesProvider
+        self.assetCacheService = assetCacheService
+        self.assetCacheFactory = assetCacheFactory
+        self.storyAssetSourceLoader = storyAssetSourceLoader
         startLaunchFlow()
     }
 }

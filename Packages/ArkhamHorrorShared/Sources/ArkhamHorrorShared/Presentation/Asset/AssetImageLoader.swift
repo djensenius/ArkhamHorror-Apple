@@ -15,9 +15,8 @@ import Observation
 /// nothing non-`Sendable` ever needs to cross an actor boundary; a view
 /// converts the published `CGImage` to `Image(decorative:scale:)` (or
 /// `Image(_:scale:label:)`, pairing the caller-supplied accessible
-/// description) only at display time. This type is intentionally not
-/// referenced from any app navigation, `RootView`, or session composition
-/// code; it is a standalone presentation building block.
+/// description) only at display time. Story image views inject the shared
+/// session cache and own one cancellable loader per displayed reference.
 @MainActor
 @Observable
 final class AssetImageLoader {
