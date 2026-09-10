@@ -64,6 +64,34 @@ struct BoardSkillTestVerdictProjectionTests {
         #expect(summary.verdict?.displayLabel == "Automatically failed by 2")
     }
 
+    @Test("Treats the backend's Unrun form as no verdict")
+    func projectsUnrunWithoutVerdict() throws {
+        let skillTest = try value(
+            """
+            {
+              "investigator": "c01001",
+              "step": "CommitCardsFromHandToSkillTestStep",
+              "modifiedSkillValue": 3,
+              "modifiedDifficulty": 2,
+              "result": {
+                "tag": "Unrun"
+              }
+            }
+            """
+        )
+        let projection = BoardSkillTestProjectionBuilder.makeProjection(
+            skillTest: skillTest,
+            results: nil
+        )
+
+        guard case let .available(summary)? = projection else {
+            Issue.record("Expected Unrun to preserve the in-progress projection")
+            return
+        }
+        #expect(summary.verdict == nil)
+        #expect(summary.result == nil)
+    }
+
     @Test("A malformed embedded verdict fails closed")
     func malformedVerdictFailsClosed() throws {
         let skillTest = try value(
