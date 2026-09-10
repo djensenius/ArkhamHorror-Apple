@@ -78,7 +78,7 @@ struct StoryAssetReference: Sendable, Equatable, Hashable {
     private var explicitAccessibleDescription: String? {
         guard let alt else { return nil }
         let trimmed = alt.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : alt
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Encounter-set filenames are a closed, descriptive family used as symbols beside

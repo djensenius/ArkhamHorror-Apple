@@ -99,6 +99,12 @@ struct CatalogImageAssetTests {
         #expect(reference.accessibleDescription == "Ratten")
         #expect(image.losesInstructionWhenFlattened)
         #expect(!StoryNodePresentation.isInline(image))
+        let paddedReference = StoryAssetReference(
+            role: .encounterSet, assetPath: "encounter-sets/rats.png",
+            alt: " \nRatten\t ", source: .hosted
+        )
+        #expect(paddedReference.accessibleDescription == "Ratten")
+        #expect(paddedReference.hasMeaningfulAccessibleDescription)
         #expect(StoryNodePresentation.flow([.text("Sammle "), image, .text(".")]) == [
             .inline([.text("Sammle ")]), .block(image), .inline([.text(".")]),
         ])
