@@ -62,7 +62,7 @@ struct CapabilityProbeTests {
     func compatibleCapabilitiesForwarded() async throws {
         let json = """
         {
-            "schemaRevision": "0.1.27",
+            "schemaRevision": "0.1.28",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
             "nativeClientMinimumRevision": "0.1.0",
@@ -72,7 +72,10 @@ struct CapabilityProbeTests {
         let transport = stub(data: Data(json.utf8), status: 200)
         let probe = CapabilityProbe(transport: transport)
         let outcome = try await probe.probe(defaultProfile)
-        #expect(outcome == .compatible(capabilities: ["websockets.authorization-header"]))
+        #expect(outcome == .compatible(
+            capabilities: ["websockets.authorization-header"],
+            localeCatalog: nil
+        ))
     }
 
     // MARK: - Legacy fallback (HTTP 404)

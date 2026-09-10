@@ -57,6 +57,27 @@ extension StoryNarrativeLocalization {
         }
     }
 
+    static func resolveProductionChoiceLabel(
+        _ wireLabel: String,
+        resolver: LocaleCatalogResolver?,
+        catalogUnavailability: StoryUnavailableReason
+    ) -> Result<String, StoryUnavailableReason> {
+        guard wireLabel.hasPrefix("$") else { return .failure(.unsupportedEntry) }
+        switch resolveProductionTitle(
+            wireLabel,
+            resolver: resolver,
+            catalogUnavailability: catalogUnavailability
+        ) {
+        case let .failure(reason):
+            return .failure(reason)
+        case let .success(label):
+            guard let label else { return .failure(.unsupportedEntry) }
+            let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
+            return .success(trimmed)
+        }
+    }
+
     static func resolveProductionEntry(
         _ entry: FlavorTextEntry,
         resolver: LocaleCatalogResolver?,

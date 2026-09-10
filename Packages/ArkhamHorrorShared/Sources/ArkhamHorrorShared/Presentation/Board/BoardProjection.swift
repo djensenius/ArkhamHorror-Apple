@@ -147,6 +147,17 @@ struct BoardInvestigatorNode: Sendable, Equatable, Identifiable {
     let placementSummary: String
 }
 
+/// A player card proven to be both in one unambiguous investigator's current hand and in
+/// `PublicGame.cards` with the same canonical instance ID and card code.
+struct BoardHandCardNode: Sendable, Equatable, Identifiable {
+    let id: WireCardID
+    let cardCode: CardCode
+
+    var displayLabel: String {
+        "Card \(cardCode.rawValue)"
+    }
+}
+
 /// The scenario's chaos bag, summarized as face-grouped counts rather than a card-by-card
 /// listing.
 struct BoardChaosBagSummary: Sendable, Equatable {
@@ -266,6 +277,9 @@ struct BoardProjection: Sendable, Equatable {
     let investigators: [BoardInvestigatorNode]
     let otherInvestigatorCount: Int
     let killedInvestigatorCount: Int
+    /// Narrow, immutable player-hand presentation authority. Raw card payloads never leave
+    /// ``BoardProjectionBuilder``.
+    let handCardsByPlayer: [PlayerID: [WireCardID: BoardHandCardNode]]
     let chaosBag: BoardChaosBagState
     let counters: BoardCounters
     /// Exact player-keyed prompts. Choice arrays retain their authoritative wire order.
@@ -295,14 +309,27 @@ struct BoardProjection: Sendable, Equatable {
     /// entirely projection-agnostic -- so a stale rendered choice is always revalidated
     /// immediately before it could be claimed or sent.
     func isChoiceActionable(
-        _ choice: BasicChoice, storyResolution: StoryResolution?
+        _ choice: BasicChoice,
+        ownerID: PlayerID? = nil,
+        storyResolution: StoryResolution?,
+        labelResolution: BasicChoiceLabelResolution? = nil
     ) -> Bool {
         guard choice.isSupported else { return false }
-        if case .continueReading = choice.content {
+        switch choice.content {
+        case .continueReading:
             return storyResolution?.isResolved == true
+        case .finishMulligan:
+            return labelResolution?.isResolved == true
+        case let .chooseLocation(locationID, _):
+            return locations.contains { $0.id == locationID }
+        case let .chooseHandCard(cardID, _):
+            guard let ownerID else { return false }
+            return handCardsByPlayer[ownerID]?[cardID] != nil
+        case .gainResource, .drawCard, .endTurn, .investigate:
+            return true
+        case .unsupported:
+            return false
         }
-        guard let locationID = choice.locationID else { return true }
-        return locations.contains { $0.id == locationID }
     }
 
     /// Compatibility overload for projection-only callers. Production prompt surfaces must

@@ -22,7 +22,9 @@ enum BasicChoiceContent: Sendable, Equatable, Hashable {
     case endTurn(investigatorID: InvestigatorID, messages: [JSONValue])
     case investigate(BasicChoiceAbility)
     case continueReading(messages: [JSONValue])
+    case finishMulligan(label: String, messages: [JSONValue])
     case chooseLocation(locationID: LocationID, messages: [JSONValue])
+    case chooseHandCard(cardID: WireCardID, messages: [JSONValue])
     case unsupported(tag: String?)
 }
 
@@ -50,7 +52,9 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .endTurn: "End turn"
         case .investigate: "Investigate"
         case .continueReading: "Continue"
+        case .finishMulligan: "Unavailable action"
         case .chooseLocation: "Choose starting location"
+        case .chooseHandCard: "Unavailable card"
         case .unsupported: "Update required"
         }
     }
@@ -62,7 +66,9 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .endTurn: "forward.end"
         case .investigate: "magnifyingglass"
         case .continueReading: "arrow.right.circle.fill"
+        case .finishMulligan: "checkmark.circle.fill"
         case .chooseLocation: "mappin.and.ellipse"
+        case .chooseHandCard: "rectangle.portrait"
         case .unsupported: "exclamationmark.triangle"
         }
     }
@@ -75,6 +81,18 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
     var locationID: LocationID? {
         guard case let .chooseLocation(locationID, _) = content else { return nil }
         return locationID
+    }
+
+    var cardID: WireCardID? {
+        guard case let .chooseHandCard(cardID, _) = content else { return nil }
+        return cardID
+    }
+
+    var localizationKey: String? {
+        guard case let .finishMulligan(label, _) = content,
+              label.first == "$"
+        else { return nil }
+        return String(label.dropFirst())
     }
 }
 
@@ -129,6 +147,8 @@ extension BasicChoiceQuestionPayload: Codable {
 }
 
 enum BasicChoiceParser {
+    private static let doneWithMulliganLabel = "$label.doneWithMulligan"
+
     static func parseQuestion(_ value: JSONValue) -> BasicChoiceQuestionState {
         guard case let .object(object) = value,
               case let .string(tag)? = object["tag"]
@@ -168,6 +188,8 @@ enum BasicChoiceParser {
             return parseEndTurn(object) ?? .unsupported(tag: tag)
         case "AbilityLabel":
             return parseAbilityLabel(object) ?? .unsupported(tag: tag)
+        case "Label":
+            return parseLabel(object) ?? .unsupported(tag: tag)
         case "TargetLabel":
             return parseTargetLabel(object) ?? .unsupported(tag: tag)
         default:
@@ -208,16 +230,34 @@ enum BasicChoiceParser {
         return .endTurn(investigatorID: investigatorID, messages: messages)
     }
 
+    private static func parseLabel(_ object: [String: JSONValue]) -> BasicChoiceContent? {
+        guard Set(object.keys) == ["tag", "label", "messages"],
+              object["label"] == .string(doneWithMulliganLabel),
+              let messages = messages(object["messages"])
+        else { return nil }
+        return .finishMulligan(label: doneWithMulliganLabel, messages: messages)
+    }
+
     private static func parseTargetLabel(_ object: [String: JSONValue]) -> BasicChoiceContent? {
         guard Set(object.keys) == ["tag", "target", "messages"],
               let messages = messages(object["messages"]),
               case let .object(target)? = object["target"],
-              Set(target.keys) == ["tag", "contents"],
-              target["tag"] == .string("LocationTarget"),
-              case let .string(rawLocationID)? = target["contents"],
-              let locationID = canonicalLocationID(rawLocationID)
+              Set(target.keys) == ["tag", "contents"]
         else { return nil }
-        return .chooseLocation(locationID: locationID, messages: messages)
+        switch target["tag"] {
+        case .string("LocationTarget"):
+            guard case let .string(rawLocationID)? = target["contents"],
+                  let locationID = canonicalLocationID(rawLocationID)
+            else { return nil }
+            return .chooseLocation(locationID: locationID, messages: messages)
+        case .string("CardIdTarget"):
+            guard case let .string(rawCardID)? = target["contents"],
+                  let cardID = canonicalCardID(rawCardID)
+            else { return nil }
+            return .chooseHandCard(cardID: cardID, messages: messages)
+        default:
+            return nil
+        }
     }
 
     private static func parseAbilityLabel(
@@ -293,6 +333,10 @@ enum BasicChoiceParser {
         LocationID(codingKey: AnyCodingKey(stringValue: raw))
     }
 
+    private static func canonicalCardID(_ raw: String) -> WireCardID? {
+        WireCardID(codingKey: AnyCodingKey(stringValue: raw))
+    }
+
     private static func isCanonicalInteger(_ value: JSONValue?) -> Bool {
         guard case let .number(number)? = value,
               number.sign == .plus,
@@ -305,81 +349,9 @@ enum BasicChoiceParser {
     }
 }
 
-private extension Character {
+extension Character {
     var isASCIIWholeNumber: Bool {
         wholeNumberValue != nil && unicodeScalars.count == 1
             && unicodeScalars.first.map { (48 ... 57).contains($0.value) } == true
-    }
-}
-
-struct BasicChoiceAnswer: Sendable, Equatable {
-    let choice: Int
-    let playerID: PlayerID
-    let questionVersion: Int
-}
-
-extension BasicChoiceAnswer: Codable {
-    private enum CodingKeys: String, CodingKey {
-        case tag
-        case contents
-    }
-
-    private enum ContentsKeys: String, CodingKey {
-        case choice
-        case playerID = "playerId"
-        case questionVersion
-    }
-
-    init(from decoder: any Decoder) throws {
-        let value = try JSONValue(from: decoder)
-        guard case let .object(root) = value,
-              Set(root.keys) == ["tag", "contents"],
-              root["tag"] == .string("Answer"),
-              case let .object(contents)? = root["contents"],
-              Set(contents.keys) == ["choice", "playerId", "questionVersion"],
-              let choice = Self.nonNegativeInteger(contents["choice"]),
-              let questionVersion = Self.nonNegativeInteger(contents["questionVersion"]),
-              case let .string(playerText)? = contents["playerId"],
-              let playerKey = Identifier<PlayerIDTag>(
-                  codingKey: AnyCodingKey(stringValue: playerText)
-              )
-        else {
-            throw DecodingError.dataCorrupted(
-                .init(codingPath: decoder.codingPath, debugDescription: "Invalid Answer envelope")
-            )
-        }
-        self.choice = choice
-        playerID = playerKey
-        self.questionVersion = questionVersion
-    }
-
-    func encode(to encoder: any Encoder) throws {
-        guard choice >= 0, questionVersion >= 0 else {
-            throw EncodingError.invalidValue(
-                self,
-                .init(
-                    codingPath: encoder.codingPath,
-                    debugDescription: "Answer integers must be non-negative"
-                )
-            )
-        }
-        var root = encoder.container(keyedBy: CodingKeys.self)
-        try root.encode("Answer", forKey: .tag)
-        var contents = root.nestedContainer(keyedBy: ContentsKeys.self, forKey: .contents)
-        try contents.encode(choice, forKey: .choice)
-        try contents.encode(playerID, forKey: .playerID)
-        try contents.encode(questionVersion, forKey: .questionVersion)
-    }
-
-    private static func nonNegativeInteger(_ value: JSONValue?) -> Int? {
-        guard case let .number(number)? = value,
-              number.sign == .plus,
-              let raw = number.rawToken,
-              raw.allSatisfy(\.isASCIIWholeNumber),
-              raw == "0" || raw.first != "0",
-              let integer = Int(raw),
-              integer >= 0
-        else { return nil }
-        return integer
     }
 }

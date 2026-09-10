@@ -84,17 +84,17 @@ enum BoardFocusGraphBuilder {
         nodes.append(FocusNode(id: BoardFocusID.scenarioHeader, zone: BoardFocusZone.scenario))
         zoneEntryPoints[BoardFocusZone.scenario] = BoardFocusID.scenarioHeader
 
-        let storyResolution = prompt?.storyResolution
-        let promptChoices: [SemanticFocusID] = if prompt?.canSubmit == true {
-            prompt?.choices
-                .filter { projection.isChoiceActionable($0, storyResolution: storyResolution) }
-                .map { BoardFocusID.promptChoice($0.index) } ?? []
-        } else if prompt?.canRetryCatalog == true {
-            [BoardFocusID.promptCatalogRetry]
-        } else if prompt?.canRetry == true {
-            [BoardFocusID.promptRetry]
-        } else {
-            []
+        var promptChoices: [SemanticFocusID] = []
+        if let prompt, prompt.canSubmit {
+            promptChoices = prompt.choices
+                .filter { prompt.isChoiceActionable($0, in: projection) }
+                .map { BoardFocusID.promptChoice($0.index) }
+        }
+        if prompt?.canRetry == true {
+            promptChoices = [BoardFocusID.promptRetry]
+        }
+        if prompt?.canRetryCatalog == true {
+            promptChoices.append(BoardFocusID.promptCatalogRetry)
         }
         appendVerticalChain(
             promptChoices, zone: BoardFocusZone.prompt,
@@ -151,7 +151,7 @@ enum BoardFocusGraphBuilder {
     ) -> [SemanticFocusZone] {
         var populated: Set<SemanticFocusZone> = [BoardFocusZone.scenario, BoardFocusZone.chaosBag]
         let hasActionableChoice = prompt?.choices.contains {
-            projection.isChoiceActionable($0, storyResolution: prompt?.storyResolution)
+            prompt?.isChoiceActionable($0, in: projection) == true
         } == true
         let hasPromptFocus = prompt?.canRetryCatalog == true
             || prompt?.canRetry == true

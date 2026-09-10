@@ -136,6 +136,54 @@ struct LocaleCatalogResolverTests {
         ) == .failure(.missingVariable))
     }
 
+    @Test("Production choice labels trim text and fail closed for unsafe output or catalog errors")
+    func productionChoiceLabelsFailClosed() {
+        let resolved = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.doneWithMulligan": message([.text("  Done replacing cards \n")]),
+        ]))
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.doneWithMulligan",
+            resolver: resolved,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .success("Done replacing cards"))
+
+        let blank = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.doneWithMulligan": message([.text(" \n\t")]),
+        ]))
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.doneWithMulligan",
+            resolver: blank,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.unsupportedEntry))
+
+        let structured = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.doneWithMulligan": message([
+                .image(role: .card, assetPath: "cards/example.png", alt: "Example"),
+            ]),
+        ]))
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.doneWithMulligan",
+            resolver: structured,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.unsupportedEntry))
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.doneWithMulligan",
+            resolver: LocaleCatalogResolver(snapshot: snapshot(english: [:])),
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.missingKey))
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.doneWithMulligan",
+            resolver: nil,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.catalog(.transportFailure)))
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.doneWithMulligan",
+            resolver: nil,
+            catalogUnavailability: .catalog(.manifestDigestMismatch)
+        ) == .failure(.catalog(.manifestDigestMismatch)))
+    }
+
     @Test("Fallback parent links retain their supplying locale instead of restarting at selection")
     func fallbackParentLinkKeepsParentLocale() {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(

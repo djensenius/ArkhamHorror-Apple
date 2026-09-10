@@ -23,12 +23,14 @@ extension BoardTestFixtures {
         engagedEnemies: [EnemyID] = [],
         assets: [AssetID] = [],
         events: [EventID] = [],
+        hand: [JSONValue] = [],
         treacheries: [TreacheryID] = [],
         skills: [SkillID] = [],
         scarletKeys: [CardCode] = [],
         tokens: [TokenCount] = [],
         movement: Movement? = nil,
-        placement: Placement = BoardTestFixtures.placement()
+        placement: Placement = BoardTestFixtures.placement(),
+        playerID: PlayerID = BoardTestFixtures.playerID()
     ) -> Investigator {
         Investigator(
             actionsPerformed: [], actionsTaken: [], additionalActions: [], agility: 3,
@@ -40,11 +42,12 @@ extension BoardTestFixtures {
             discard: [], discarding: nil, discover: nil, drawing: nil, drawnCards: [],
             drivenInsane: drivenInsane, eliminated: eliminated, endedTurn: false,
             engagedEnemies: engagedEnemies, events: events, excludeFromMulligan: [], form: .null,
-            formMeta: .null, hand: [], handSize: 0, health: health, horrorHealed: 0, id: id,
+            formMeta: .null, hand: hand, handSize: hand.count, health: health, horrorHealed: 0,
+            id: id,
             intellect: 3, keys: [], killed: killed, log: .null, mentalTrauma: mentalTrauma,
             meta: .null, modifiers: [], movement: movement, mulligansTaken: 0, mutated: .null,
             name: name, physicalTrauma: physicalTrauma, placement: placement,
-            playerID: BoardTestFixtures.playerID(), previousLocation: nil,
+            playerID: playerID, previousLocation: nil,
             remainingActions: remainingActions, resigned: resigned, sanity: sanity,
             scarletKeys: scarletKeys, sealedChaosTokens: [], seals: [], search: nil,
             settings: .null, sideDeck: .null, skills: skills, skippedWindow: false, slots: [],
@@ -95,6 +98,8 @@ extension BoardTestFixtures {
         mode: GameMode = .scenarioOnly(BoardTestFixtures.scenario()),
         locations: [(LocationID, Location)] = [],
         investigators: [InvestigatorID: Investigator] = [:],
+        otherInvestigators: [InvestigatorID: Investigator] = [:],
+        killedInvestigators: [InvestigatorID: Investigator] = [:],
         acts: [ActID: Act] = [:],
         agendas: [AgendaID: Agenda] = [:],
         playerOrder: [InvestigatorID] = [],
@@ -113,6 +118,7 @@ extension BoardTestFixtures {
         skillCount: Int = 0,
         concealedCount: Int = 0,
         cardCount: Int = 0,
+        cardValues: [WireCardID: JSONValue] = [:],
         questionCount: Int = 0
     ) -> PublicGameSnapshot {
         var locationMap = UUIDKeyedMap<LocationIDTag, Location>()
@@ -136,17 +142,24 @@ extension BoardTestFixtures {
         let resolvedLeadInvestigatorID = investigators[leadInvestigatorID] != nil
             ? leadInvestigatorID
             : (sortedInvestigatorIDs.first ?? leadInvestigatorID)
+        var cards = UUIDKeyedMap<WireCardIDTag, JSONValue>(cardValues)
+        for _ in 0 ..< cardCount {
+            cards[WireCardID(UUID())] = .null
+        }
 
         return PublicGameSnapshot(
             name: name, id: BoardTestFixtures.gameID(), log: [], git: "test",
             settings: gameSettings(), gameSettings: gameSettings(), mode: mode, modifiers: [],
             encounterDeckSize: 0, locations: locationMap, investigators: investigators,
-            otherInvestigators: [:], killedInvestigators: [:],
+            otherInvestigators: otherInvestigators, killedInvestigators: killedInvestigators,
             enemies: entityMap(count: enemyCount), assets: entityMap(count: assetCount),
             acts: acts, agendas: agendas, treacheries: entityMap(count: treacheryCount),
             events: entityMap(count: eventCount), concealed: entityMap(count: concealedCount),
             skills: entityMap(count: skillCount), stories: [:], scarletKeys: [:],
-            playerCount: max(investigators.count, 1),
+            playerCount: max(
+                investigators.count + otherInvestigators.count + killedInvestigators.count,
+                1
+            ),
             activeInvestigatorID: resolvedActiveInvestigatorID,
             activePlayerID: BoardTestFixtures.playerID(),
             turnPlayerInvestigatorID: turnPlayerInvestigatorID,
@@ -156,7 +169,7 @@ extension BoardTestFixtures {
             focusedChaosTokens: [], activeCard: nil, removedFromPlay: [], gameState: gameState,
             inSetup: false, skillTestResults: nil,
             question: basicChoiceQuestions(count: questionCount),
-            cards: entityMap(count: cardCount), totalDoom: totalDoom, totalClues: totalClues,
+            cards: cards, totalDoom: totalDoom, totalClues: totalClues,
             scenarioSteps: 0, undoActionStep: nil, undoTurnStep: nil, undoPhaseStep: nil,
             undoRoundStep: nil, roundHistory: [:], phaseHistory: [:], turnHistory: [:],
             enemyAttackTargets: []

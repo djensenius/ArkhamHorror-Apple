@@ -69,14 +69,14 @@ struct BasicChoicePromptView: View {
 
             if presentation.canRetryCatalog {
                 SemanticActionControl(
-                    accessibilityLabel: Text("Retry story download"),
+                    accessibilityLabel: Text("Retry prompt text"),
                     semanticFocusID: BoardFocusID.promptCatalogRetry,
                     onOutcome: { controller.handle(focusID: $0, $1) },
-                    label: { Text("Retry story download") }
+                    label: { Text("Retry prompt text") }
                 )
                 .buttonStyle(.borderedProminent)
                 .focused(focusBinding, equals: BoardFocusID.promptCatalogRetry)
-                .accessibilityHint("Downloads and verifies this server's story catalog again.")
+                .accessibilityHint("Downloads and verifies this server's text catalog again.")
                 .accessibilityIdentifier("liveGame.prompt.catalogRetry")
             }
         }
@@ -147,8 +147,8 @@ struct BasicChoicePromptView: View {
             ForEach(presentation.choices) { choice in
                 let focusID = BoardFocusID.promptChoice(choice.index)
                 let title = displayTitle(for: choice)
-                let isActionable = controller.projection.isChoiceActionable(
-                    choice, storyResolution: presentation.storyResolution
+                let isActionable = presentation.isChoiceActionable(
+                    choice, in: controller.projection
                 )
                 SemanticActionControl(
                     accessibilityLabel: Text(title),
@@ -196,14 +196,21 @@ struct BasicChoicePromptView: View {
     /// ``BoardDisplayFormatting/choiceDisplayTitle(for:in:)`` against the current
     /// authoritative board projection.
     private func displayTitle(for choice: BasicChoice) -> String {
-        BoardDisplayFormatting.choiceDisplayTitle(for: choice, in: controller.projection)
+        BoardDisplayFormatting.choiceDisplayTitle(
+            for: choice,
+            in: controller.projection,
+            ownerID: presentation.ownerID,
+            labelResolution: presentation.choiceLabelResolutions[choice.index]
+        )
     }
 
     private func accessibilityHint(for choice: BasicChoice) -> String {
         BoardDisplayFormatting.choiceAccessibilityHint(
             for: choice,
             in: controller.projection,
+            ownerID: presentation.ownerID,
             storyResolution: presentation.storyResolution,
+            labelResolution: presentation.choiceLabelResolutions[choice.index],
             canSubmit: presentation.canSubmit,
             statusMessage: presentation.statusMessage
         )

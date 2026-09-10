@@ -50,17 +50,22 @@ extension AppModel {
         } else {
             nil
         }
-        let storyResolution = storyResolution(for: payload.state.supportedQuestion?.story)
+        let supportedQuestion = payload.state.supportedQuestion
+        let storyResolution = storyResolution(for: supportedQuestion?.story)
+        let labelResolutions = choiceLabelResolutions(for: supportedQuestion)
+        let localizationReasons = [storyResolution?.unavailableReason].compactMap(\.self)
+            + labelResolutions.values.compactMap(\.unavailableReason)
         return BasicChoicePromptPresentation(
             identity: promptIdentity,
             question: payload.state,
             storyResolution: storyResolution,
+            choiceLabelResolutions: labelResolutions,
             readOnlyReason: readOnlyReason,
             actionPhase: phase,
             actionChoiceIndex: isSamePrompt ? record?.choiceIndex : nil,
             serverFeedback: basicChoiceServerFeedback[gameID],
             catalogRetry: catalogRetryPresentation(
-                storyResolution: storyResolution,
+                localizationReasons: localizationReasons,
                 promptKey: promptIdentity.promptKey
             )
         )
@@ -157,9 +162,7 @@ extension AppModel {
         // replacement can never be claimed/answered on the wire.
         guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
               let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
-              projection.isChoiceActionable(
-                  choice, storyResolution: presentation.storyResolution
-              )
+              presentation.isChoiceActionable(choice, in: projection)
         else { return .reject(.unsupportedChoice) }
         guard isRetry || presentation.canSubmit else {
             return .reject(.readOnly)
@@ -297,10 +300,10 @@ extension AppModel {
     /// provably never advanced the game. That is exactly the fingerprint/version/projection
     /// evidence needed to safely retire a record whose originally-targeted choice this
     /// fresh authoritative `projection` (never a stale local rendering) no longer considers
-    /// actionable -- for example a `.chooseLocation` choice whose `LocationTarget` has
-    /// meanwhile stopped being known to the board, or a `.continueReading` choice whose
-    /// story has stopped resolving -- so a different, currently-actionable choice isn't
-    /// permanently blocked behind it (see independent-review blocker 2 on PR #36).
+    /// actionable -- for example a target location/card disappearing, or required
+    /// deployment-owned text stopping resolution -- so a different, currently-actionable
+    /// choice isn't permanently blocked behind it (see independent-review blocker 2 on
+    /// PR #36).
     ///
     /// Deliberately never applied to `.sending`/`.awaitingSnapshot`/`.uncertain`: while a
     /// send might still be in flight or its outcome is still genuinely unknown, retiring
@@ -317,7 +320,9 @@ extension AppModel {
               let originalChoice = question.choices.first(where: { $0.index == choiceIndex }),
               !projection.isChoiceActionable(
                   originalChoice,
-                  storyResolution: storyResolution(for: question.story)
+                  ownerID: basicChoiceActions[gameID]?.identity.ownerID,
+                  storyResolution: storyResolution(for: question.story),
+                  labelResolution: choiceLabelResolutions(for: question)[choiceIndex]
               )
         else { return }
         basicChoiceActions[gameID] = nil

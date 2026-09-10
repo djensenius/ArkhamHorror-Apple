@@ -3,10 +3,10 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@c567f4881219ccb883b49b72003a8e82e9f207f8` (through PR #57),
-schema revision `0.1.26`.
+`djensenius/ArkhamHorror@c7e24d23f5ef992038802d9fb28ceb8fc8121ccf` (through PR #65),
+schema revision `0.1.28`.
 
-These twenty-five files, and only these twenty-five, live under `Fixtures/Contract/` — a
+These twenty-seven files, and only these twenty-seven, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -44,8 +44,11 @@ and its sibling non-null `readCards` branch); `question-choose-one-location.json
 `question-choose-one-location-multiple.json` are the `startAt` starting-location
 `ChooseOne`/`TargetLabel(LocationTarget)` prompt with, respectively, the single real
 "Study" starting location and three real "The Gathering" locations proving backend choice
-order and zero-based `Answer.choice` index stability. See `basic-choice-question.schema.json`
-in the backend repository for the governed shape these four fixtures exercise.
+order and zero-based `Answer.choice` index stability. `question-mulligan.json` is the
+production opening-hand `ChooseOne` prompt with its localized done action at source index
+zero and three `TargetLabel(CardIdTarget)` choices in authoritative hand order. See
+`basic-choice-question.schema.json` in the backend repository for the governed shape these
+five fixtures exercise.
 
 
 ## token.json / whoami.json

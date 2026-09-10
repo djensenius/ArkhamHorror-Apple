@@ -83,10 +83,14 @@ extension AppModel {
     }
 
     func catalogRetryPresentation(
-        storyResolution: StoryResolution?,
+        localizationReasons: [StoryUnavailableReason],
         promptKey: BasicChoicePromptKey
     ) -> BasicChoiceCatalogRetryPresentation? {
-        guard case let .unavailable(.catalog(failure)) = storyResolution,
+        let retryableFailures = localizationReasons.compactMap { reason -> LocaleCatalogFailure? in
+            guard case let .catalog(failure) = reason, failure.isRetryable else { return nil }
+            return failure
+        }
+        guard let failure = retryableFailures.first,
               localeCatalog == nil,
               !isLocaleCatalogLoading,
               let request = localeCatalogRequest,
@@ -212,5 +216,30 @@ extension AppModel {
             resolver: localeCatalogResolver,
             catalogUnavailability: localeCatalogUnavailability
         )
+    }
+
+    /// Resolves every deployment-owned choice label against one current catalog snapshot,
+    /// retaining authoritative source indices so unresolved entries stay visible in place.
+    func choiceLabelResolutions(
+        for question: BasicChoiceQuestion?
+    ) -> [Int: BasicChoiceLabelResolution] {
+        guard let question else { return [:] }
+        let resolver = localeCatalogResolver
+        let unavailability = localeCatalogUnavailability ?? .catalog(.notAdvertised)
+        var result: [Int: BasicChoiceLabelResolution] = [:]
+        for choice in question.choices {
+            guard case let .finishMulligan(label, _) = choice.content else { continue }
+            switch StoryNarrativeLocalization.resolveProductionChoiceLabel(
+                label,
+                resolver: resolver,
+                catalogUnavailability: unavailability
+            ) {
+            case let .success(value):
+                result[choice.index] = .resolved(value)
+            case let .failure(reason):
+                result[choice.index] = .unavailable(reason)
+            }
+        }
+        return result
     }
 }
