@@ -13,7 +13,7 @@ struct StoryAssetImageView: View {
             LoadedStoryAssetView(
                 key: key, description: reference.accessibleDescription, cacheService: cacheService
             )
-            .id(reference)
+            .id(key)
         } else {
             Label("Story image unavailable", systemImage: "exclamationmark.triangle")
                 .accessibilityLabel("\(reference.accessibleDescription): unavailable")
@@ -37,8 +37,8 @@ private struct LoadedStoryAssetView: View {
             switch loader.state {
             case .idle, .loading:
                 ProgressView("Loading \(description)")
-            case let .success(image, accessibleDescription):
-                Image(image, scale: 1, label: Text(verbatim: accessibleDescription))
+            case let .success(image, _):
+                Image(image, scale: 1, label: Text(verbatim: description))
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: 480, maxHeight: 320, alignment: .leading)

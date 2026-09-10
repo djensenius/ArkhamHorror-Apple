@@ -74,6 +74,11 @@ struct CatalogImageAssetTests {
             role: .encounterSet, assetPath: "encounter-sets/rats.png", alt: "Rats", source: .hosted
         )
         let key = try #require(reference.assetKey)
+        let relabeled = StoryAssetReference(
+            role: .encounterSet, assetPath: "encounter-sets/rats.png", alt: "Ratten",
+            source: .hosted
+        )
+        #expect(relabeled.assetKey == reference.assetKey)
         func cacheKey(_ key: AssetKey) -> AssetCacheKey {
             AssetCacheKey(for: key, candidates: AssetLocator.candidates(for: key))
         }
