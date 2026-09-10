@@ -100,6 +100,8 @@ enum AssetCategory: Sendable, Equatable, Hashable {
     case homebrewCampaignBox(campaign: AssetIdentifier)
     /// `tokens/<slot>.png`.
     case slotIcon(SlotIcon)
+    /// An exact, validated semantic image from a locale catalog.
+    case catalogImage(CatalogImageAsset)
 }
 
 extension AssetCategory {
@@ -118,6 +120,8 @@ extension AssetCategory {
             .jpeg
         case .chaosToken, .homebrewChaosToken, .setIcon, .homebrewSetIcon, .slotIcon:
             .png
+        case let .catalogImage(image):
+            image.format
         }
     }
 

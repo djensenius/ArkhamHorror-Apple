@@ -13,6 +13,18 @@ private struct LocaleCatalogResolutionKey: Hashable {
 /// Resolves an entry against one immutable snapshot without crossing locale contexts.
 struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_length
     let snapshot: LocaleCatalogSnapshot
+    let assetSource: AssetSourceNamespace?
+    let assetUnavailability: StoryUnavailableReason
+
+    init(
+        snapshot: LocaleCatalogSnapshot,
+        assetSource: AssetSourceNamespace? = nil,
+        assetUnavailability: StoryUnavailableReason = .unsupportedEntry
+    ) {
+        self.snapshot = snapshot
+        self.assetSource = assetSource
+        self.assetUnavailability = assetUnavailability
+    }
 
     func render(
         key: String, variables: JSONValue
@@ -161,11 +173,8 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
                 visiting: visiting,
                 budget: &budget
             )
-        case .image:
-            // The current native app has no trusted asset resolver for catalog asset paths.
-            // A generic SF Symbol would discard the referenced game asset, so reject the
-            // complete story rather than claim it was faithfully represented.
-            .failure(.unsupportedEntry)
+        case let .image(role, assetPath, alt):
+            renderImage(role: role, assetPath: assetPath, alt: alt)
         case let .cardReference(code, children):
             mapChildren(children, locale, variables, visiting, &budget) {
                 .cardReference(code: code, children: $0)
@@ -180,6 +189,22 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
                 budget: &budget
             )
         }
+    }
+
+    private func renderImage(
+        role: LocaleCatalogAssetRole, assetPath: String, alt: String?
+    ) -> Result<[StoryNode], StoryUnavailableReason> {
+        guard CatalogImageAsset(role: role, assetPath: assetPath) != nil else {
+            return .failure(.unsupportedEntry)
+        }
+        let reference = StoryAssetReference(
+            role: role, assetPath: assetPath, alt: alt, source: assetSource
+        )
+        guard reference.hasMeaningfulAccessibleDescription else {
+            return .failure(.unsupportedEntry)
+        }
+        guard reference.assetKey != nil else { return .failure(assetUnavailability) }
+        return .success([.image(reference)])
     }
 
     // swiftlint:disable:next function_parameter_count

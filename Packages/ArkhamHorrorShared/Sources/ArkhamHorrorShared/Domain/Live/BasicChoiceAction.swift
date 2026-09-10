@@ -80,6 +80,8 @@ enum BasicChoiceLabelResolution: Sendable, Equatable {
             return "The text for this choice is still loading."
         case .catalog:
             return "The text for this choice is unavailable from this server."
+        case .imagePipelineUnavailable, .imageSourceLoading:
+            return reason.announcement
         case .missingKey, .unsupportedEntry:
             return "This server publishes no usable text for this choice."
         case .linkCycle, .tooComplex:
@@ -237,9 +239,43 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
 
 /// Fences a catalog retry to one profile, load generation, and still-current prompt.
 struct BasicChoiceCatalogRetryPresentation: Sendable, Equatable {
+    enum Scope: Sendable, Equatable {
+        case catalog
+        case images
+        case localImagePipeline
+    }
+
     let profileID: UUID
     let catalogGeneration: Int
     let promptKey: BasicChoicePromptKey
+    let scope: Scope
+
+    init(
+        profileID: UUID, catalogGeneration: Int, promptKey: BasicChoicePromptKey,
+        scope: Scope = .catalog
+    ) {
+        self.profileID = profileID
+        self.catalogGeneration = catalogGeneration
+        self.promptKey = promptKey
+        self.scope = scope
+    }
+
+    var title: String {
+        switch scope {
+        case .catalog: "Retry prompt text"
+        case .images: "Retry story images"
+        case .localImagePipeline: "Retry image support"
+        }
+    }
+
+    var accessibilityHint: String {
+        switch scope {
+        case .catalog: "Downloads and verifies this server's text catalog again."
+        case .images: "Reloads the story image source without downloading the verified text again."
+        case .localImagePipeline:
+            "Initializes this app's local image cache and reloads the story image source."
+        }
+    }
 }
 
 enum BasicChoiceSubmitResult: Sendable, Equatable {

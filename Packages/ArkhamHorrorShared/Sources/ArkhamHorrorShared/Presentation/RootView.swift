@@ -28,7 +28,7 @@ public struct RootView: View {
     /// previews and tests can inject a fake one instead of touching this shared,
     /// side-effectful instance.
     @MainActor
-    private static let productionModel = AppModel()
+    private static let productionModel = AppModel(assetCacheFactory: { .production() })
 
     @State private var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -63,6 +63,7 @@ public struct RootView: View {
                 #endif
             }
         }
+        .environment(\.storyAssetCache, model.assetCacheService)
         .animation(reduceMotion ? nil : .default, value: route)
     }
 

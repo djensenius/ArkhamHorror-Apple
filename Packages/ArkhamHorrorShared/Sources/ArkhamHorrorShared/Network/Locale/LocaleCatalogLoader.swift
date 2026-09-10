@@ -276,6 +276,19 @@ struct LocaleCatalogLoader: Sendable {
     /// misrouted request could be answered with the SPA shell, and without `nosniff` the
     /// server has not asserted that its own type declaration is authoritative.
     static func isAcceptableJSONResponse(_ response: LocaleCatalogResponse) -> Bool {
+        guard isAcceptableJSONMediaType(response) else { return false }
+        guard let options = response.contentTypeOptions,
+              LocaleCatalogGrammar.isASCII(options),
+              options.lowercased().split(separator: ",").contains(where: {
+                  $0.trimmingCharacters(in: .whitespaces) == "nosniff"
+              })
+        else { return false }
+        return true
+    }
+
+    /// The shared JSON media-type grammar. Same-origin API responses can reuse this without
+    /// inheriting the static catalog's separate `nosniff` deployment requirement.
+    static func isAcceptableJSONMediaType(_ response: LocaleCatalogResponse) -> Bool {
         guard let contentType = response.contentType else { return false }
         let mediaType = contentType
             .split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
@@ -286,12 +299,6 @@ struct LocaleCatalogLoader: Sendable {
         guard normalized == "application/json" || normalized.hasSuffix("+json") else {
             return false
         }
-        guard let options = response.contentTypeOptions,
-              LocaleCatalogGrammar.isASCII(options),
-              options.lowercased().split(separator: ",").contains(where: {
-                  $0.trimmingCharacters(in: .whitespaces) == "nosniff"
-              })
-        else { return false }
         return true
     }
 

@@ -71,16 +71,16 @@ struct BasicChoicePromptView: View {
                 .accessibilityIdentifier("liveGame.prompt.retry")
             }
 
-            if presentation.canRetryCatalog {
+            if let retry = presentation.catalogRetry {
                 SemanticActionControl(
-                    accessibilityLabel: Text("Retry prompt text"),
+                    accessibilityLabel: Text(retry.title),
                     semanticFocusID: BoardFocusID.promptCatalogRetry,
                     onOutcome: { controller.handle(focusID: $0, $1) },
-                    label: { Text("Retry prompt text") }
+                    label: { Text(retry.title) }
                 )
                 .buttonStyle(.borderedProminent)
                 .focused(focusBinding, equals: BoardFocusID.promptCatalogRetry)
-                .accessibilityHint("Downloads and verifies this server's text catalog again.")
+                .accessibilityHint(retry.accessibilityHint)
                 .accessibilityIdentifier("liveGame.prompt.catalogRetry")
             }
         }
