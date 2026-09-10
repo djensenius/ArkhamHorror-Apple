@@ -24,18 +24,20 @@ struct SkillTestSummaryView: View {
                 )
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(.secondary)
-                if let result = summary.result {
+                if let succeeded = summary.verdict?.succeeded ?? summary.result?.succeeded {
                     Divider()
                     Label(
-                        result.succeeded ? "Succeeded" : "Failed",
-                        systemImage: result.succeeded
+                        verdictLabel(summary),
+                        systemImage: succeeded
                             ? "checkmark.circle.fill" : "xmark.circle.fill"
                     )
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(result.succeeded ? .green : .red)
-                    Text(resultBreakdown(result))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                    .foregroundStyle(succeeded ? .green : .red)
+                    if let result = summary.result {
+                        Text(resultBreakdown(result))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -43,6 +45,13 @@ struct SkillTestSummaryView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("liveGame.skillTest")
+    }
+
+    private func verdictLabel(_ summary: BoardSkillTestSummary) -> String {
+        guard let verdict = summary.verdict else {
+            return summary.result?.succeeded == true ? "Succeeded" : "Failed"
+        }
+        return verdict.displayLabel
     }
 
     private func resultBreakdown(_ result: BoardSkillTestResult) -> String {

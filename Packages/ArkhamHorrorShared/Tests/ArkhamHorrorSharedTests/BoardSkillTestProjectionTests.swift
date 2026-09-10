@@ -13,6 +13,10 @@ struct BoardSkillTestProjectionTests {
               "step": "ApplySkillTestResultsStep",
               "modifiedSkillValue": 8,
               "modifiedDifficulty": 2,
+              "result": {
+                "tag": "FailedBy",
+                "contents": ["NonAutomatic", 3]
+              },
               "futureField": {"tag": "Additive"}
             }
             """
@@ -43,6 +47,7 @@ struct BoardSkillTestProjectionTests {
         #expect(summary.step == .applyResults)
         #expect(summary.modifiedSkillValue == 8)
         #expect(summary.modifiedDifficulty == 2)
+        #expect(summary.verdict == .init(succeeded: false, amount: 3, automatic: false))
         let result = try #require(summary.result)
         #expect(result.skillValue == 8)
         #expect(result.iconValue == 3)
@@ -78,6 +83,7 @@ struct BoardSkillTestProjectionTests {
         #expect(summary.step == .commitCards)
         #expect(summary.modifiedSkillValue == 4)
         #expect(summary.modifiedDifficulty == 3)
+        #expect(summary.verdict == nil)
         #expect(summary.result == nil)
     }
 
