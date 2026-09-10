@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "9aab847c46453a08f8ca03896809002548759142f2afe3db83f0811ff97a67db"
+            sha256Hex: "4eec60bb863d9381b40a49be92e27b40db41a940fd5a2e41e46c0833e774edd7"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "764869f1d8f0d1f05e00644ca4dadccb8cbd83fb3bc47c65c45364f233645a3d"
+            sha256Hex: "81e1e8c889ae9712781597df639849a52d6d1dc78bfc84b20011ad6ead053dbd"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -153,8 +153,20 @@ enum ContractFixtureDigests {
             sha256Hex: "d99928af1d38ffe97adbeea9861e8f5edc43b937a309e90e27f5fb6071b555b4"
         ),
         VendoredFixtureDigest(
+            fileName: "question-enemy-attack-damage-assignment",
+            sha256Hex: "36d20df58661bb583dfbe5350519d164d751f5ddc85924a0f8e2917ce1bbbdff"
+        ),
+        VendoredFixtureDigest(
+            fileName: "answer-enemy-attack-assign-damage",
+            sha256Hex: "5111ec20fa5af6e53f7558715529085f2a17e8f2941510ea0ca6c9439cd6ebc7"
+        ),
+        VendoredFixtureDigest(
+            fileName: "answer-enemy-attack-assign-horror",
+            sha256Hex: "0799759424dbcec2420a41c8e800e0d41a5eee5bc2e4f032027837503fcc85d6"
+        ),
+        VendoredFixtureDigest(
             fileName: "basic-choice-question.schema",
-            sha256Hex: "2aa91bdd3de9a20a503b80cc6c12bca2206a23ec0358b99b42e366736ab16107"
+            sha256Hex: "8b957d89e981eda141324d9bac90d4e3f8d80c998b971937f8b13b93fece41d8"
         ),
     ]
 }

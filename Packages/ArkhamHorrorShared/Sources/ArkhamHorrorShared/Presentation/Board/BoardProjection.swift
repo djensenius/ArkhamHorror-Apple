@@ -333,6 +333,9 @@ struct BoardProjection: Sendable, Equatable {
         case let .resolveEnemyAttack(enemyID, investigatorID, _):
             return enemyIDs.contains(enemyID)
                 && investigators.contains { $0.id == investigatorID }
+        case let .assignEnemyAttackDamage(assignment):
+            return enemyIDs.contains(assignment.enemyID)
+                && investigators.contains { $0.id == assignment.investigatorID }
         case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
              .startSkillTest, .applySkillTestResults, .drawEncounterCard:
             return true

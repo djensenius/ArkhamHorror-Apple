@@ -119,6 +119,9 @@ question-investigate-apply-results.json:contracts/fixtures/question-investigate-
 question-encounter-deck-draw.json:contracts/fixtures/question-encounter-deck-draw.json
 question-enemy-attack.json:contracts/fixtures/question-enemy-attack.json
 answer-enemy-attack.json:contracts/fixtures/answer-enemy-attack.json
+question-enemy-attack-damage-assignment.json:contracts/fixtures/question-enemy-attack-damage-assignment.json
+answer-enemy-attack-assign-damage.json:contracts/fixtures/answer-enemy-attack-assign-damage.json
+answer-enemy-attack-assign-horror.json:contracts/fixtures/answer-enemy-attack-assign-horror.json
 basic-choice-question.schema.json:contracts/schemas/basic-choice-question.schema.json
 "
 

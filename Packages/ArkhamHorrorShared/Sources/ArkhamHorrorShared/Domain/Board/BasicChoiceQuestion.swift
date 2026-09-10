@@ -6,6 +6,7 @@ enum BasicChoiceQuestionKind: String, Sendable {
     case playerWindowChooseOne = "PlayerWindowChooseOne"
     case windowChooseOne = "WindowChooseOne"
     case read = "Read"
+    case questionWithSource = "QuestionWithSource"
 }
 
 struct BasicChoiceQuestion: Sendable, Equatable, Hashable {
@@ -75,6 +76,9 @@ enum BasicChoiceParser {
         }
         if kind == .chooseOneAtATime {
             return parseEnemyAttackQuestion(object, rawValue: value)
+        }
+        if kind == .questionWithSource {
+            return parseEnemyAttackDamageAssignmentQuestion(object, rawValue: value)
         }
         guard Set(object.keys) == ["tag", "choices"],
               case let .array(rawChoices)? = object["choices"],
@@ -321,7 +325,9 @@ enum BasicChoiceParser {
         WireCardID(codingKey: AnyCodingKey(stringValue: raw))
     }
 
-    private static func isCanonicalInteger(_ value: JSONValue?) -> Bool {
+    /// Shared with exact closed parsers that additionally compare the retained token to a
+    /// governed integer value.
+    static func isCanonicalInteger(_ value: JSONValue?) -> Bool {
         guard case let .number(number)? = value,
               number.sign == .plus,
               let token = number.rawToken
