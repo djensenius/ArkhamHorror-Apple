@@ -50,8 +50,10 @@ private struct LoadedStoryAssetView: View {
                 }
             }
         }
-        .onAppear(perform: load)
-        .onDisappear { loader.cancel() }
+        .onAppear {
+            loader.loadIfIdle(key, accessibleDescription: description)
+        }
+        .onDisappear { loader.cancelInFlight() }
     }
 
     private func load() {

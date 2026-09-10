@@ -157,6 +157,18 @@ final class AssetImageLoader {
         }
     }
 
+    /// Starts a lifecycle-driven load only when no result is already visible.
+    func loadIfIdle(_ key: AssetKey, accessibleDescription: String) {
+        guard case .idle = state else { return }
+        load(key, accessibleDescription: accessibleDescription)
+    }
+
+    /// Cancels work that is still loading without discarding a visible success or failure.
+    func cancelInFlight() {
+        guard case .loading = state else { return }
+        cancel()
+    }
+
     /// Cancels any in-flight load and resets to ``AssetLoadState/idle``.
     func cancel() {
         loadTask?.cancel()

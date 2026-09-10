@@ -16,6 +16,10 @@ extension AssetImageLoaderTests {
             loader.load(key, accessibleDescription: reference.accessibleDescription)
             await waitForSettledState(loader)
             #expect(loader.state == .failure(.candidatesExhausted, accessibleDescription: "Rats"))
+            loader.cancelInFlight()
+            loader.loadIfIdle(key, accessibleDescription: "Ratten")
+            #expect(loader.state == .failure(.candidatesExhausted, accessibleDescription: "Rats"))
+            #expect(await transport.callCount(for: url) == 1)
             await transport.enqueue(.success(.success(AssetHTTPResponse(
                 body: AssetImageFixtureBuilder.validPNG(), contentType: "image/png",
                 etag: nil, lastModified: nil
@@ -35,6 +39,10 @@ extension AssetImageLoaderTests {
                 return
             }
             #expect(loader.state.accessibleDescription == "Ratten")
+            let successfulState = loader.state
+            loader.cancelInFlight()
+            loader.loadIfIdle(key, accessibleDescription: "Rats")
+            #expect(loader.state == successfulState)
             #expect(await transport.callCount(for: url) == 2)
         }
     }
@@ -75,7 +83,7 @@ extension AssetImageLoaderTests {
             ))), for: url)
             loader.load(key, accessibleDescription: "Encounter set")
             await transport.waitForCallCount(1, for: url)
-            loader.cancel()
+            loader.cancelInFlight()
             #expect(loader.state == .idle)
             #expect(loader.loadTask == nil)
             await transport.release(url)
