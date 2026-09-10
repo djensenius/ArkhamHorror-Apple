@@ -58,14 +58,17 @@ enum LocaleCatalogFailure: Error, Sendable, Equatable, Hashable {
         switch self {
         case .notAdvertised:
             "This server does not publish the story text this app needs."
-        case .unresolvableManifestURL, .redirected, .unacceptableContentType,
-             .unexpectedStatus, .transportFailure:
+        case .unresolvableManifestURL:
             "The story text could not be downloaded from this server."
+        case .redirected, .unacceptableContentType, .unexpectedStatus, .transportFailure:
+            "The story content could not be downloaded from this server."
         case .tooLarge:
-            "The story text this server published is larger than this app accepts."
+            "The story content this server published is larger than this app accepts."
         case .manifestDigestMismatch, .chunkDigestMismatch:
             "The story text did not match the checksum this server published."
-        case .malformedJSON, .malformedManifest, .malformedChunk, .advertisementMismatch:
+        case .malformedJSON:
+            "The story content this server published could not be verified."
+        case .malformedManifest, .malformedChunk, .advertisementMismatch:
             "The story text this server published could not be verified."
         case .localeUnavailable:
             "This server publishes no story text for your language."

@@ -6,13 +6,13 @@ import Testing
 struct StoryAssetSourceLoaderTests {
     private func load(
         _ body: String, status: Int = 200, contentType: String = "application/json",
-        redirected: Bool = false
+        contentTypeOptions: String? = "nosniff", redirected: Bool = false
     ) async throws -> AssetSourceNamespace {
         let documents = try SyntheticLocaleCatalogDocuments.make()
         let url = documents.profile.endpointURL(path: "/site-settings")
         let response = documents.response(
             data: Data(body.utf8), status: status, contentType: contentType,
-            contentTypeOptions: nil,
+            contentTypeOptions: contentTypeOptions,
             url: redirected ? URL(string: "https://evil.test/site-settings") : url
         )
         let transport = FixtureLocaleCatalogTransport(responses: [url: response])
@@ -50,6 +50,20 @@ struct StoryAssetSourceLoaderTests {
             AssetSourceNamespace(rawAssetBase: "http://127.0.0.1:8080"))
     }
 
+    @Test("Settings reuse the catalog JSON MIME and nosniff policy")
+    func responseTypePolicy() async throws {
+        #expect(try await load(
+            "{}", contentType: "application/vnd.arkham.settings+json",
+            contentTypeOptions: "NoSniff"
+        ) == .hosted)
+        await #expect(throws: LocaleCatalogFailure.unacceptableContentType) {
+            try await load("{}", contentTypeOptions: nil)
+        }
+        await #expect(throws: LocaleCatalogFailure.unacceptableContentType) {
+            try await load("{}", contentTypeOptions: "no-sniff")
+        }
+    }
+
     @Test("Unsafe settings never fall back to a success CDN", arguments: [
         "http://remote.example.test", "https://user:secret@cdn.example.test",
         "https://cdn.example.test/?next=evil", "https://cdn.example.test/#fragment",
@@ -85,6 +99,18 @@ struct StoryAssetSourceLoaderTests {
         }
         await #expect(throws: LocaleCatalogFailure.tooLarge) {
             try await load(String(repeating: " ", count: 16385))
+        }
+    }
+
+    @Test("Failures shared with image settings use neutral story-content announcements")
+    func sharedFailureAnnouncements() {
+        let failures: [LocaleCatalogFailure] = [
+            .redirected, .unexpectedStatus(503), .unacceptableContentType, .tooLarge,
+            .transportFailure, .malformedJSON,
+        ]
+        for failure in failures {
+            #expect(failure.announcement.contains("story content"))
+            #expect(!failure.announcement.contains("story text"))
         }
     }
 

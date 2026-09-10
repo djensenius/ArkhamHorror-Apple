@@ -24,9 +24,9 @@ struct StoryAssetSourceLoader: Sendable {
             throw LocaleCatalogFailure.unexpectedStatus(response.statusCode)
         }
         guard response.data.count <= Self.maxBytes else { throw LocaleCatalogFailure.tooLarge }
-        guard response.contentType?.split(separator: ";").first?
-            .trimmingCharacters(in: .whitespaces).lowercased() == "application/json"
-        else { throw LocaleCatalogFailure.unacceptableContentType }
+        guard LocaleCatalogLoader.isAcceptableJSONResponse(response) else {
+            throw LocaleCatalogFailure.unacceptableContentType
+        }
     }
 
     private func assetHost(in data: Data) throws -> String? {
