@@ -25,6 +25,32 @@ enum BasicChoiceHandCardPurpose: Sendable, Equatable, Hashable {
     }
 }
 
+enum EnemyAttackAssignmentKind: Sendable, Equatable, Hashable {
+    case damage
+    case horror
+
+    var actionTitle: String {
+        switch self {
+        case .damage: "Assign 1 damage"
+        case .horror: "Assign 1 horror"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .damage: "heart.slash.fill"
+        case .horror: "brain.head.profile"
+        }
+    }
+}
+
+struct EnemyAttackDamageAssignment: Sendable, Equatable, Hashable {
+    let kind: EnemyAttackAssignmentKind
+    let enemyID: EnemyID
+    let investigatorID: InvestigatorID
+    let messages: [JSONValue]
+}
+
 enum BasicChoiceContent: Sendable, Equatable, Hashable {
     case gainResource(investigatorID: InvestigatorID, messages: [JSONValue])
     case drawCard(investigatorID: InvestigatorID, messages: [JSONValue])
@@ -32,6 +58,7 @@ enum BasicChoiceContent: Sendable, Equatable, Hashable {
     case resolveEnemyAttack(
         enemyID: EnemyID, investigatorID: InvestigatorID, messages: [JSONValue]
     )
+    case assignEnemyAttackDamage(EnemyAttackDamageAssignment)
     case endTurn(investigatorID: InvestigatorID, messages: [JSONValue])
     case investigate(BasicChoiceAbility)
     case continueReading(messages: [JSONValue])
@@ -71,6 +98,7 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .drawEncounterCard: "Draw encounter card"
         // Backend basic-choice-question.schema.json: chooseOneAtATimeEnemyAttackQuestion.title.
         case .resolveEnemyAttack: "Resolve enemy attack"
+        case let .assignEnemyAttackDamage(assignment): assignment.kind.actionTitle
         case .endTurn: "End turn"
         case .investigate: "Investigate"
         case .continueReading: "Continue"
@@ -89,6 +117,7 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .gainResource: "circle.fill"
         case .drawCard, .drawEncounterCard: "rectangle.stack"
         case .resolveEnemyAttack: "shield.fill"
+        case let .assignEnemyAttackDamage(assignment): assignment.kind.systemImage
         case .endTurn: "forward.end"
         case .investigate: "magnifyingglass"
         case .continueReading: "arrow.right.circle.fill"

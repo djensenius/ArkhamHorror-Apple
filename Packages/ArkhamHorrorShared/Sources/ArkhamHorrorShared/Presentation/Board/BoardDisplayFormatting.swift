@@ -57,6 +57,13 @@ enum BoardDisplayFormatting {
                 return "Resolve enemy attack against \(investigator.displayName)"
             }
             return choice.title
+        case let .assignEnemyAttackDamage(assignment):
+            if let investigator = projection.investigators.first(
+                where: { $0.id == assignment.investigatorID }
+            ) {
+                return "\(assignment.kind.actionTitle) to \(investigator.displayName)"
+            }
+            return choice.title
         case .gainResource, .drawCard, .endTurn, .investigate, .continueReading,
              .skipTriggers, .startSkillTest, .applySkillTestResults, .drawEncounterCard,
              .unsupported:
@@ -106,6 +113,9 @@ enum BoardDisplayFormatting {
                 return "This location isn't currently available."
             case .resolveEnemyAttack:
                 return "The enemy or investigator for this attack isn't currently available."
+            case .assignEnemyAttackDamage:
+                return
+                    "The enemy or investigator for this assignment isn't currently available."
             case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
                  .startSkillTest, .applySkillTestResults, .drawEncounterCard, .unsupported:
                 return "This choice is not currently available."

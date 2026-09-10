@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@33b5bdc5cef6eff57d0b8d4446b1279829892452`,
-schema revision `0.1.31`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@1a844092e7914ac538778910a99bcf8d4f856990`,
+schema revision `0.1.32`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These thirty-five files, and only these thirty-five, live under `Fixtures/Contract/` — a
+These thirty-eight files, and only these thirty-eight, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -77,6 +77,16 @@ submitting `answer-enemy-attack.json`'s unchanged versioned index. All other
 and malformed shapes remain update-required. Fixture-driven tests apply all 86 published
 enemy-attack negative mutations in memory and cover stale identity, focus/controller,
 pending, replacement, reconnect/manual retry, and uncertain-error behavior.
+
+`question-enemy-attack-damage-assignment.json` is the exact production follow-up from a
+Ghoul Minion's one-damage/one-horror regular attack. It is a closed
+`QuestionWithSource(EnemyAttackSource) -> QuestionLabel -> ChooseOne` wrapper with source
+index zero assigning damage first and source index one assigning horror first. The client
+checks every repeated enemy source, investigator component/message/target identity, amount
+tuple, strategy, asset matcher, and candidate array before granting either semantic action.
+Both identities must still exist in the newest board projection immediately before
+submission. The two dedicated answer fixtures preserve source indices `0` and `1` and
+question version `6`; all 114 backend-published negative mutations remain update-required.
 
 ## token.json / whoami.json
 
