@@ -79,7 +79,10 @@ enum BasicChoiceParser {
             return .updateRequired(tag: tag)
         }
         let parsedChoices = rawChoices.enumerated().map { index, choice in
-            BasicChoice(index: index, rawValue: choice, content: parseChoice(choice))
+            BasicChoice(
+                index: index, rawValue: choice,
+                content: parseChoice(choice, kind: kind, index: index)
+            )
         }
         let choices = contextualizeHandCardChoices(parsedChoices, kind: kind)
         return .supported(
@@ -87,7 +90,9 @@ enum BasicChoiceParser {
         )
     }
 
-    private static func parseChoice(_ value: JSONValue) -> BasicChoiceContent {
+    private static func parseChoice(
+        _ value: JSONValue, kind: BasicChoiceQuestionKind, index: Int
+    ) -> BasicChoiceContent {
         guard case let .object(object) = value,
               case let .string(tag)? = object["tag"]
         else {
@@ -103,7 +108,7 @@ enum BasicChoiceParser {
         case "Label":
             return parseLabel(object) ?? .unsupported(tag: tag)
         case "TargetLabel":
-            return parseTargetLabel(object) ?? .unsupported(tag: tag)
+            return parseTargetLabel(object, kind: kind, index: index) ?? .unsupported(tag: tag)
         case "SkipTriggersButton":
             return parseInvestigatorControl(object, tag: tag).map {
                 .skipTriggers(investigatorID: $0)
@@ -207,7 +212,12 @@ enum BasicChoiceParser {
         return .finishMulligan(label: doneWithMulliganLabel, messages: messages)
     }
 
-    private static func parseTargetLabel(_ object: [String: JSONValue]) -> BasicChoiceContent? {
+    private static func parseTargetLabel(
+        _ object: [String: JSONValue], kind: BasicChoiceQuestionKind, index: Int
+    ) -> BasicChoiceContent? {
+        if let draw = parseEncounterDeckDraw(object, kind: kind, index: index) {
+            return draw
+        }
         guard Set(object.keys) == ["tag", "target", "messages"],
               let messages = messages(object["messages"]),
               case let .object(target)? = object["target"],
@@ -267,7 +277,8 @@ enum BasicChoiceParser {
     /// stand in for one (see `manifest.json`'s `message` schemaBranch negatives). Only the
     /// `tag` field's shape is validated here; every other field (including an entirely
     /// opaque `contents`) is returned completely unmodified and lossless, since this
-    /// client never executes or interprets engine messages.
+    /// client never executes engine messages. The encounter-deck choice separately
+    /// validates its closed nested draw contract before granting action authority.
     private static func messages(_ value: JSONValue?) -> [JSONValue]? {
         guard case let .array(values)? = value, values.allSatisfy(isValidMessage) else {
             return nil

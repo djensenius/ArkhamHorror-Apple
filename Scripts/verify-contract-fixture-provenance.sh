@@ -116,6 +116,8 @@ question-investigate-fast-window.json:contracts/fixtures/question-investigate-fa
 question-investigate-commit.json:contracts/fixtures/question-investigate-commit.json
 question-investigate-reveal-window.json:contracts/fixtures/question-investigate-reveal-window.json
 question-investigate-apply-results.json:contracts/fixtures/question-investigate-apply-results.json
+question-encounter-deck-draw.json:contracts/fixtures/question-encounter-deck-draw.json
+basic-choice-question.schema.json:contracts/schemas/basic-choice-question.schema.json
 "
 
 # Rejects an absolute path or any `..` path-traversal component in a (script-controlled,
@@ -328,16 +330,18 @@ for entry in $fixture_paths; do
     failures=$((failures + 1))
     continue
   fi
-  # Every fixture other than the manifest itself must actually be *listed* by the pinned
+  # Every artifact other than the manifest itself must actually be *listed* by the pinned
   # backend's own manifest.json (never only by this script's local map): a fixture that is
   # byte-identical to a path at the pinned commit, but which that commit's own manifest does
   # not (or no longer) claims as a governed fixture, is not actually an authoritative
   # contract artifact -- it could be any incidental file that happens to still exist at that
   # path.
   if [ "$local_name" != "manifest.json" ] && [ -f "$backend_manifest" ]; then
-    if ! grep -q "\"path\" *: *\"$backend_path\"" "$backend_manifest"; then
+    manifest_key="path"
+    case "$backend_path" in contracts/schemas/*) manifest_key="schema" ;; esac
+    if ! grep -q "\"$manifest_key\" *: *\"$backend_path\"" "$backend_manifest"; then
       echo "DRIFT: $backend_path is vendored and byte-identical, but the pinned backend's" \
-        "own manifest.json does not list it as a fixture" >&2
+        "own manifest.json does not list it as a fixture or schema" >&2
       failures=$((failures + 1))
       continue
     fi

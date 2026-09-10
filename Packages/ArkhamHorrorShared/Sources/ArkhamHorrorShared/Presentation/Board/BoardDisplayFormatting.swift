@@ -51,7 +51,8 @@ enum BoardDisplayFormatting {
             return labelResolution?.title
                 ?? "Unavailable action (choice \(choice.index + 1))"
         case .gainResource, .drawCard, .endTurn, .investigate, .continueReading,
-             .skipTriggers, .startSkillTest, .applySkillTestResults, .unsupported:
+             .skipTriggers, .startSkillTest, .applySkillTestResults, .drawEncounterCard,
+             .unsupported:
             return choice.title
         }
     }
@@ -97,7 +98,7 @@ enum BoardDisplayFormatting {
             case .chooseLocation:
                 return "This location isn't currently available."
             case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
-                 .startSkillTest, .applySkillTestResults, .unsupported:
+                 .startSkillTest, .applySkillTestResults, .drawEncounterCard, .unsupported:
                 return "This choice is not currently available."
             }
         }

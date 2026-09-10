@@ -3,17 +3,19 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@ee5fe7f917262f0592ba0578e7e6bf6b34256feb` (through PR #66),
-schema revision `0.1.29`.
+`djensenius/ArkhamHorror@39b580ff5e28a091acaf78aa2a0ed5ec29b1435b`,
+schema revision `0.1.30`. Local validation can use the exact backend worktree as
+`PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These thirty-one files, and only these thirty-one, live under `Fixtures/Contract/` — a
+These thirty-three files, and only these thirty-three, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
 `ContractFixtureDigests.all`, not by maintaining a second hardcoded list. The full backend
 contract manifest references many additional schema documents (OpenAPI, AsyncAPI, JSON
-Schemas) that are **not** reproduced. See the backend repository for the authoritative
-contract documents and the complete manifest.
+Schemas) that are **not** reproduced. The basic-choice schema is vendored here to bind
+the encounter draw's semantic label and closed nested shape to the same immutable pin.
+See the backend repository for the remaining authoritative contract documents.
 
 `ContractFixtureDigests.all` binds each file's SHA-256 digest to
 `ContractPin.current.backendCommit`; `ContractFixtureDigestTests` recomputes and compares
@@ -51,9 +53,19 @@ zero and three `TargetLabel(CardIdTarget)` choices in authoritative hand order.
 `question-investigate-reveal-window.json`, and `question-investigate-apply-results.json`
 are the production basic-investigation prompt sequence, preserving the backend's exact
 card/control source indices through both fast windows, card commitment, test start, and
-result application. See `basic-choice-question.schema.json` in the backend repository for
-the governed shape these nine fixtures exercise.
+result application.
 
+`question-encounter-deck-draw.json` is the production Mythos `ChooseOne` prompt:
+source index zero is `TargetLabel(EncounterDeckTarget)` with one closed `DrawCards`
+message. The vendored `basic-choice-question.schema.json` publishes its semantic title,
+**Draw encounter card**, under `encounterDeckDrawLabel.title`. The client validates only
+this one-card, unresolved, standard, top-of-encounter-deck draw from `GameSource`,
+preserves the message bytes as data, and submits the unchanged versioned answer index.
+Other draw shapes remain unsupported; no game rules execute on the client.
+Fixture-driven tests apply all 47 encounter negatives from the unmodified manifest
+in memory, plus client numeric, required-field, source-index, focus, pending, stale,
+and reconnect/retry boundaries. Both the digest registry and the backend manifest's
+`artifactHashes` bind the vendored fixture and schema bytes.
 
 ## token.json / whoami.json
 

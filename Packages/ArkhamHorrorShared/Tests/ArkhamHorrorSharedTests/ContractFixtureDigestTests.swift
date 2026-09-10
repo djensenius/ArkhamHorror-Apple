@@ -91,6 +91,7 @@ struct ContractFixtureDigestTests {
             "question-mulligan",
             "question-investigate-fast-window", "question-investigate-commit",
             "question-investigate-reveal-window", "question-investigate-apply-results",
+            "question-encounter-deck-draw", "basic-choice-question.schema",
         ])
     }
 
@@ -133,6 +134,7 @@ struct ContractFixtureDigestTests {
     func registeredFixturesMatchManifestPaths() throws {
         struct ManifestFixtureEntry: Decodable {
             let path: String
+            let schema: String
         }
         struct ManifestFixture: Decodable {
             let fixtures: [ManifestFixtureEntry]
@@ -140,7 +142,9 @@ struct ContractFixtureDigestTests {
         let manifestData = try fixtureData(named: "manifest")
         let manifest = try JSONDecoder().decode(ManifestFixture.self, from: manifestData)
         let manifestBasenames = Set(
-            manifest.fixtures.map { ($0.path as NSString).lastPathComponent }
+            manifest.fixtures.flatMap {
+                [($0.path as NSString).lastPathComponent, ($0.schema as NSString).lastPathComponent]
+            }
         )
         for entry in ContractFixtureDigests.all where entry.fileName != "manifest" {
             #expect(
@@ -156,7 +160,20 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "ee5fe7f917262f0592ba0578e7e6bf6b34256feb"
+            ContractPin.current.backendCommit == "39b580ff5e28a091acaf78aa2a0ed5ec29b1435b"
         )
+    }
+
+    @Test("Registered fixture and schema digests match the backend manifest's artifact hashes")
+    func registeredDigestsMatchManifestHashes() throws {
+        struct Manifest: Decodable {
+            let artifactHashes: [String: String]
+        }
+        let manifest = try JSONDecoder().decode(Manifest.self, from: fixtureData(named: "manifest"))
+        for entry in ContractFixtureDigests.all where entry.fileName != "manifest" {
+            let directory = entry.fileName.hasSuffix(".schema") ? "schemas" : "fixtures"
+            let path = "contracts/\(directory)/\(entry.fileName).json"
+            #expect(manifest.artifactHashes[path] == entry.sha256Hex, "Digest drift at \(path)")
+        }
     }
 }
