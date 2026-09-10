@@ -30,6 +30,10 @@ struct BasicChoicePromptView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if let skillTest = controller.projection.skillTest {
+                SkillTestSummaryView(projection: skillTest)
+            }
+
             if presentation.question.supportedQuestion == nil {
                 Label("Update required", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)

@@ -7,95 +7,6 @@ enum BasicChoiceQuestionKind: String, Sendable {
     case read = "Read"
 }
 
-struct BasicChoiceAbility: Sendable, Equatable, Hashable {
-    let investigatorID: InvestigatorID
-    let cardCode: CardCode
-    let rawAbility: JSONValue
-    let windows: [JSONValue]
-    let before: [JSONValue]
-    let messages: [JSONValue]
-}
-
-enum BasicChoiceContent: Sendable, Equatable, Hashable {
-    case gainResource(investigatorID: InvestigatorID, messages: [JSONValue])
-    case drawCard(investigatorID: InvestigatorID, messages: [JSONValue])
-    case endTurn(investigatorID: InvestigatorID, messages: [JSONValue])
-    case investigate(BasicChoiceAbility)
-    case continueReading(messages: [JSONValue])
-    case finishMulligan(label: String, messages: [JSONValue])
-    case chooseLocation(locationID: LocationID, messages: [JSONValue])
-    case chooseHandCard(cardID: WireCardID, messages: [JSONValue])
-    case unsupported(tag: String?)
-}
-
-struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
-    let index: Int
-    let rawValue: JSONValue
-    let content: BasicChoiceContent
-
-    var id: Int {
-        index
-    }
-
-    var isSupported: Bool {
-        if case .unsupported = content {
-            false
-        } else {
-            true
-        }
-    }
-
-    var title: String {
-        switch content {
-        case .gainResource: "Gain a resource"
-        case .drawCard: "Draw a card"
-        case .endTurn: "End turn"
-        case .investigate: "Investigate"
-        case .continueReading: "Continue"
-        case .finishMulligan: "Unavailable action"
-        case .chooseLocation: "Choose starting location"
-        case .chooseHandCard: "Unavailable card"
-        case .unsupported: "Update required"
-        }
-    }
-
-    var systemImage: String {
-        switch content {
-        case .gainResource: "circle.fill"
-        case .drawCard: "rectangle.stack"
-        case .endTurn: "forward.end"
-        case .investigate: "magnifyingglass"
-        case .continueReading: "arrow.right.circle.fill"
-        case .finishMulligan: "checkmark.circle.fill"
-        case .chooseLocation: "mappin.and.ellipse"
-        case .chooseHandCard: "rectangle.portrait"
-        case .unsupported: "exclamationmark.triangle"
-        }
-    }
-
-    var ability: BasicChoiceAbility? {
-        guard case let .investigate(ability) = content else { return nil }
-        return ability
-    }
-
-    var locationID: LocationID? {
-        guard case let .chooseLocation(locationID, _) = content else { return nil }
-        return locationID
-    }
-
-    var cardID: WireCardID? {
-        guard case let .chooseHandCard(cardID, _) = content else { return nil }
-        return cardID
-    }
-
-    var localizationKey: String? {
-        guard case let .finishMulligan(label, _) = content,
-              label.first == "$"
-        else { return nil }
-        return String(label.dropFirst())
-    }
-}
-
 struct BasicChoiceQuestion: Sendable, Equatable, Hashable {
     let kind: BasicChoiceQuestionKind
     let choices: [BasicChoice]
@@ -167,9 +78,10 @@ enum BasicChoiceParser {
         else {
             return .updateRequired(tag: tag)
         }
-        let choices = rawChoices.enumerated().map { index, choice in
+        let parsedChoices = rawChoices.enumerated().map { index, choice in
             BasicChoice(index: index, rawValue: choice, content: parseChoice(choice))
         }
+        let choices = contextualizeHandCardChoices(parsedChoices, kind: kind)
         return .supported(
             BasicChoiceQuestion(kind: kind, choices: choices, story: nil, rawValue: value)
         )
@@ -192,8 +104,56 @@ enum BasicChoiceParser {
             return parseLabel(object) ?? .unsupported(tag: tag)
         case "TargetLabel":
             return parseTargetLabel(object) ?? .unsupported(tag: tag)
+        case "SkipTriggersButton":
+            return parseInvestigatorControl(object, tag: tag).map {
+                .skipTriggers(investigatorID: $0)
+            } ?? .unsupported(tag: tag)
+        case "StartSkillTestButton":
+            return parseInvestigatorControl(object, tag: tag).map {
+                .startSkillTest(investigatorID: $0)
+            } ?? .unsupported(tag: tag)
+        case "SkillTestApplyResultsButton":
+            return Set(object.keys) == ["tag"] ? .applySkillTestResults : .unsupported(tag: tag)
         default:
             return .unsupported(tag: tag)
+        }
+    }
+
+    private static func contextualizeHandCardChoices(
+        _ choices: [BasicChoice], kind: BasicChoiceQuestionKind
+    ) -> [BasicChoice] {
+        let purpose: BasicChoiceHandCardPurpose = if choices.contains(where: {
+            if case .finishMulligan = $0.content {
+                true
+            } else {
+                false
+            }
+        }) {
+            .replace
+        } else if choices.contains(where: {
+            if case .startSkillTest = $0.content {
+                true
+            } else {
+                false
+            }
+        }) {
+            .commit
+        } else if kind == .playerWindowChooseOne || kind == .windowChooseOne {
+            .play
+        } else {
+            .choose
+        }
+        return choices.map { choice in
+            guard case let .chooseHandCard(cardID, _, messages) = choice.content else {
+                return choice
+            }
+            return BasicChoice(
+                index: choice.index,
+                rawValue: choice.rawValue,
+                content: .chooseHandCard(
+                    cardID: cardID, purpose: purpose, messages: messages
+                )
+            )
         }
     }
 
@@ -230,6 +190,15 @@ enum BasicChoiceParser {
         return .endTurn(investigatorID: investigatorID, messages: messages)
     }
 
+    private static func parseInvestigatorControl(
+        _ object: [String: JSONValue], tag: String
+    ) -> InvestigatorID? {
+        guard Set(object.keys) == ["tag", "investigatorId"],
+              object["tag"] == .string(tag)
+        else { return nil }
+        return investigatorID(object["investigatorId"])
+    }
+
     private static func parseLabel(_ object: [String: JSONValue]) -> BasicChoiceContent? {
         guard Set(object.keys) == ["tag", "label", "messages"],
               object["label"] == .string(doneWithMulliganLabel),
@@ -254,7 +223,7 @@ enum BasicChoiceParser {
             guard case let .string(rawCardID)? = target["contents"],
                   let cardID = canonicalCardID(rawCardID)
             else { return nil }
-            return .chooseHandCard(cardID: cardID, messages: messages)
+            return .chooseHandCard(cardID: cardID, purpose: .choose, messages: messages)
         default:
             return nil
         }

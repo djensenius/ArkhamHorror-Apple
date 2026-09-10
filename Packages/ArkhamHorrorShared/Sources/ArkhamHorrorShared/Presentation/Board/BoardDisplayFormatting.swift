@@ -42,16 +42,16 @@ enum BoardDisplayFormatting {
                 return node.displayLabel
             }
             return "Unavailable location (choice \(choice.index + 1))"
-        case let .chooseHandCard(cardID, _):
+        case let .chooseHandCard(cardID, purpose, _):
             if let ownerID, let card = projection.handCardsByPlayer[ownerID]?[cardID] {
-                return "Replace \(card.displayLabel)"
+                return "\(purpose.actionTitle) \(card.displayLabel)"
             }
             return "Unavailable card (choice \(choice.index + 1))"
         case .finishMulligan:
             return labelResolution?.title
                 ?? "Unavailable action (choice \(choice.index + 1))"
         case .gainResource, .drawCard, .endTurn, .investigate, .continueReading,
-             .unsupported:
+             .skipTriggers, .startSkillTest, .applySkillTestResults, .unsupported:
             return choice.title
         }
     }
@@ -96,7 +96,8 @@ enum BoardDisplayFormatting {
                 return "This card isn't currently available in your hand."
             case .chooseLocation:
                 return "This location isn't currently available."
-            case .gainResource, .drawCard, .endTurn, .investigate, .unsupported:
+            case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
+                 .startSkillTest, .applySkillTestResults, .unsupported:
                 return "This choice is not currently available."
             }
         }

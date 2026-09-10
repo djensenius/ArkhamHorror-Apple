@@ -34,6 +34,9 @@ enum BoardProjectionBuilder {
             handCardsByPlayer: makeHandCards(from: snapshot),
             chaosBag: makeChaosBag(from: snapshot.mode),
             counters: makeCounters(from: snapshot),
+            skillTest: BoardSkillTestProjectionBuilder.makeProjection(
+                skillTest: snapshot.skillTest, results: snapshot.skillTestResults
+            ),
             questions: snapshot.question
         )
     }
