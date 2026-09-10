@@ -32,7 +32,7 @@ question-read-with-cards.json \
 question-choose-one-location.json question-choose-one-location-multiple.json \
 question-mulligan.json question-investigate-fast-window.json \
 question-investigate-commit.json question-investigate-reveal-window.json \
-question-investigate-apply-results.json"
+question-investigate-apply-results.json question-encounter-deck-draw.json"
 
 failures=0
 scenario_count=0
@@ -100,7 +100,7 @@ assert_outcome() {
 # needed.
 backend_repo="$harness_root/backend"
 rm -rf "$backend_repo"
-mkdir -p "$backend_repo/contracts/fixtures"
+mkdir -p "$backend_repo/contracts/fixtures" "$backend_repo/contracts/schemas"
 git init -q "$backend_repo"
 git -C "$backend_repo" config user.email "test@example.com"
 git -C "$backend_repo" config user.name "Provenance Test"
@@ -116,13 +116,13 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.29",'
+    echo '  "schemaRevision": "0.1.30",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
       if [ "$first" -eq 0 ]; then echo ','; fi
       first=0
-      printf '    {"path": "contracts/fixtures/%s"}' "$name"
+      printf '    {"path": "contracts/fixtures/%s", "schema": "contracts/schemas/basic-choice-question.schema.json"}' "$name"
     done
     echo ''
     echo '  ]'
@@ -133,6 +133,7 @@ write_backend_manifest() {
 for name in $fixture_names; do
   echo "{\"fixture\": \"$name\", \"value\": 1}" >"$backend_repo/contracts/fixtures/$name"
 done
+echo '{"type":"object"}' >"$backend_repo/contracts/schemas/basic-choice-question.schema.json"
 # shellcheck disable=SC2086
 write_backend_manifest "$backend_repo/contracts/manifest.json" $fixture_names
 git -C "$backend_repo" add -A
@@ -179,6 +180,7 @@ reset_local_good_state() {
   for name in $fixture_names; do
     cp "$backend_repo/contracts/fixtures/$name" "$local_fixture_dir/$name"
   done
+  cp "$backend_repo/contracts/schemas/basic-choice-question.schema.json" "$local_fixture_dir/"
   write_backend_manifest "$local_fixture_dir/manifest.json" $fixture_names
   rm -rf "$local_repo/.git"
   git init -q "$local_repo"

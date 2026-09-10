@@ -328,7 +328,7 @@ struct BoardProjection: Sendable, Equatable {
             guard let ownerID else { return false }
             return handCardsByPlayer[ownerID]?[cardID] != nil
         case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
-             .startSkillTest, .applySkillTestResults:
+             .startSkillTest, .applySkillTestResults, .drawEncounterCard:
             return true
         case .unsupported:
             return false

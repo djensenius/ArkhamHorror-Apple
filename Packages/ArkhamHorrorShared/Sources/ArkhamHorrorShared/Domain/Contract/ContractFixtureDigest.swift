@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "a7fd8cb7b92e2dffeb207f5355bd7e1d057fcd7463f32fe1117420900c38d5e6"
+            sha256Hex: "f4700217d86069c21e7dd09782e4548cd383ee437de41cac88c0d230c6370887"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "fc31aa05174312a27835af3931e9fa5ff303aebc4fa839c1c4db7e48ee6c8116"
+            sha256Hex: "7697f96b016226fb6f322b002721fbb12ae407b8b4937bb192fb13ebd6fe8bff"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -139,6 +139,14 @@ enum ContractFixtureDigests {
         VendoredFixtureDigest(
             fileName: "question-investigate-apply-results",
             sha256Hex: "ca3834a719c64a263c31982cfb5987c08da40ec3494d2380ccffaebb46e11774"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-encounter-deck-draw",
+            sha256Hex: "fb341f57cba32fd0d01e3d67098fa7684cd51b6b2b008c65fea61db5487ac703"
+        ),
+        VendoredFixtureDigest(
+            fileName: "basic-choice-question.schema",
+            sha256Hex: "f7973e1d1f1382570287e15673fcb550ed3bec94e12f54384a072839909ebf7e"
         ),
     ]
 }
