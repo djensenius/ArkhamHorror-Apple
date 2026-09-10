@@ -24,7 +24,10 @@ struct StoryAssetSourceLoader: Sendable {
             throw LocaleCatalogFailure.unexpectedStatus(response.statusCode)
         }
         guard response.data.count <= Self.maxBytes else { throw LocaleCatalogFailure.tooLarge }
-        guard LocaleCatalogLoader.isAcceptableJSONResponse(response) else {
+        // Existing same-origin Arkham API deployments do not add the static catalog's
+        // `nosniff` header to this API response. Reuse its closed JSON media-type grammar
+        // without making that separate static-serving policy a compatibility requirement.
+        guard LocaleCatalogLoader.isAcceptableJSONMediaType(response) else {
             throw LocaleCatalogFailure.unacceptableContentType
         }
     }

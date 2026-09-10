@@ -13,14 +13,26 @@ struct StoryCatalogImageTests {
     static let gatheringKey = "nightOfTheZealot.theGathering.setup.gatherSets"
 
     static func documents(
-        lastPath: String = "encounter-sets/chilling-cold.png"
+        lastPath: String = "encounter-sets/chilling-cold.png",
+        lastRole: String = "encounterSet",
+        lastAlt: String? = nil
     ) throws -> SyntheticLocaleCatalogDocuments {
         let paths = gatheringSets.dropLast().map { "encounter-sets/\($0).png" } + [lastPath]
+        let imageNodes = paths.enumerated().map { index, path -> [String: Any] in
+            var node: [String: Any] = [
+                "type": "image",
+                "role": index == paths.count - 1 ? lastRole : "encounterSet",
+                "assetPath": path,
+                "styles": [],
+            ]
+            if index == paths.count - 1, let lastAlt {
+                node["alt"] = lastAlt
+            }
+            return node
+        }
         let nodes: [[String: Any]] = [
             ["type": "text", "value": "Collect these encounter sets: "],
-        ] + paths.map { [
-            "type": "image", "role": "encounterSet", "assetPath": $0, "styles": [],
-        ] } + [["type": "text", "value": " Then continue."]]
+        ] + imageNodes + [["type": "text", "value": " Then continue."]]
         let entries: [String: Any] = [
             "setup": [
                 "form": "message",
@@ -97,6 +109,14 @@ struct StoryCatalogImageTests {
         #expect(references.map(\.assetPath) == Self.gatheringSets
             .map { "encounter-sets/\($0).png" })
         #expect(references.allSatisfy { $0.assetKey != nil })
+        #expect(references.map(\.accessibleDescription) == [
+            "The Gathering encounter set symbol",
+            "Rats encounter set symbol",
+            "Ghouls encounter set symbol",
+            "Striking Fear encounter set symbol",
+            "Ancient Evils encounter set symbol",
+            "Chilling Cold encounter set symbol",
+        ])
         let prompt = try Self.prompt(resolver: resolver)
         #expect(prompt.canSubmit)
         var submitted: [Int] = []
@@ -133,6 +153,33 @@ struct StoryCatalogImageTests {
             prompt: prompt
         )
         #expect(!controller.activatePromptChoice(0))
+    }
+
+    @Test("Instructional image families require authored alternatives")
+    func instructionalImagesRequireAlt() async throws {
+        let inaccessible = try await Self.documents(
+            lastPath: "extra/patrol-layout.png", lastRole: "extra"
+        ).loadSnapshot()
+        let inaccessibleResolver = LocaleCatalogResolver(
+            snapshot: inaccessible, assetSource: .hosted
+        )
+        #expect(inaccessibleResolver.render(
+            key: Self.gatheringKey, variables: .object([:])
+        ) == .failure(.unsupportedEntry))
+
+        let accessible = try await Self.documents(
+            lastPath: "extra/patrol-layout.png", lastRole: "extra",
+            lastAlt: "Patrol layout with routes between the casino rooms"
+        ).loadSnapshot()
+        let accessibleResolver = LocaleCatalogResolver(snapshot: accessible, assetSource: .hosted)
+        let nodes = try accessibleResolver.render(
+            key: Self.gatheringKey, variables: .object([:])
+        ).get()
+        let descriptions = nodes.compactMap { node -> String? in
+            guard case let .image(reference) = node else { return nil }
+            return reference.accessibleDescription
+        }
+        #expect(descriptions.last == "Patrol layout with routes between the casino rooms")
     }
 
     @Test("Malformed and unknown-role catalog nodes never reach native presentation", arguments: [

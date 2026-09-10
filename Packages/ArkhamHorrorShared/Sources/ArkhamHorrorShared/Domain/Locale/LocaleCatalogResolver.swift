@@ -200,6 +200,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         let reference = StoryAssetReference(
             role: role, assetPath: assetPath, alt: alt, source: assetSource
         )
+        guard reference.hasMeaningfulAccessibleDescription else {
+            return .failure(.unsupportedEntry)
+        }
         guard reference.assetKey != nil else { return .failure(assetUnavailability) }
         return .success([.image(reference)])
     }

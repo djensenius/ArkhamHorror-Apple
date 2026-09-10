@@ -50,18 +50,14 @@ struct StoryAssetSourceLoaderTests {
             AssetSourceNamespace(rawAssetBase: "http://127.0.0.1:8080"))
     }
 
-    @Test("Settings reuse the catalog JSON MIME and nosniff policy")
+    @Test("Settings reuse the JSON media-type grammar without requiring catalog-only nosniff")
     func responseTypePolicy() async throws {
         #expect(try await load(
             "{}", contentType: "application/vnd.arkham.settings+json",
-            contentTypeOptions: "NoSniff"
+            contentTypeOptions: nil
         ) == .hosted)
-        await #expect(throws: LocaleCatalogFailure.unacceptableContentType) {
-            try await load("{}", contentTypeOptions: nil)
-        }
-        await #expect(throws: LocaleCatalogFailure.unacceptableContentType) {
-            try await load("{}", contentTypeOptions: "no-sniff")
-        }
+        #expect(try await load("{}", contentTypeOptions: nil) == .hosted)
+        #expect(try await load("{}", contentTypeOptions: "no-sniff") == .hosted)
     }
 
     @Test("Unsafe settings never fall back to a success CDN", arguments: [

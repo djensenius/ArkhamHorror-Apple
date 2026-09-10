@@ -22,8 +22,8 @@ enum LocaleCatalogFailure: Error, Sendable, Equatable, Hashable {
     case redirected
     /// The response status was not 200.
     case unexpectedStatus(Int)
-    /// The response was not typed as JSON, or was served without `X-Content-Type-Options:
-    /// nosniff`.
+    /// The response was not typed as JSON, or a static catalog response was served without
+    /// `X-Content-Type-Options: nosniff`.
     case unacceptableContentType
     /// The response exceeded the byte ceiling for its kind before it was fully read.
     case tooLarge

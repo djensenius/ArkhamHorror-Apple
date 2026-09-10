@@ -104,14 +104,26 @@ struct CatalogImageAssetTests {
         ])
         #expect(StoryNodePresentation
             .accessibilityLabel(for: [.text("Sammle "), image]) == "Sammle Ratten")
+        let inferred = StoryAssetReference(
+            role: .encounterSet, assetPath: "encounter-sets/the-gathering.png",
+            alt: nil, source: .hosted
+        )
+        #expect(inferred.hasMeaningfulAccessibleDescription)
+        #expect(inferred.accessibleDescription == "The Gathering encounter set symbol")
+        let instructional = StoryAssetReference(
+            role: .extra, assetPath: "extra/patrol-layout.png", alt: nil, source: .hosted
+        )
+        #expect(!instructional.hasMeaningfulAccessibleDescription)
+        #expect(instructional.accessibleDescription == "Game image")
         let labels = [
             "Encounter set", "Card image", "Token", "Chaos token",
             "Campaign image", "Homebrew image", "Game image", "Game image",
         ]
         for (role, label) in zip(LocaleCatalogAssetRole.allCases, labels) {
             for alt in [nil, "", " \n"] {
-                #expect(StoryAssetReference(role: role, assetPath: "", alt: alt)
-                    .accessibleDescription == label)
+                let fallback = StoryAssetReference(role: role, assetPath: "", alt: alt)
+                #expect(fallback.accessibleDescription == label)
+                #expect(!fallback.hasMeaningfulAccessibleDescription)
             }
         }
     }

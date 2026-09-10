@@ -53,9 +53,16 @@ struct StoryAssetReference: Sendable, Equatable, Hashable {
         return AssetKey(source: source, category: .catalogImage(image))
     }
 
+    var hasMeaningfulAccessibleDescription: Bool {
+        explicitAccessibleDescription != nil || inferredEncounterSetDescription != nil
+    }
+
     var accessibleDescription: String {
-        if let alt, !alt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return alt
+        if let explicitAccessibleDescription {
+            return explicitAccessibleDescription
+        }
+        if let inferredEncounterSetDescription {
+            return inferredEncounterSetDescription
         }
         switch role {
         case .encounterSet: return "Encounter set"
@@ -66,6 +73,31 @@ struct StoryAssetReference: Sendable, Equatable, Hashable {
         case .homebrew: return "Homebrew image"
         case .extra, .other: return "Game image"
         }
+    }
+
+    private var explicitAccessibleDescription: String? {
+        guard let alt else { return nil }
+        let trimmed = alt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : alt
+    }
+
+    /// Encounter-set filenames are a closed, descriptive family used as symbols beside
+    /// already-readable set names. Other image families can contain instructional diagrams
+    /// and therefore require authored alternatives instead of a generic role label.
+    private var inferredEncounterSetDescription: String? {
+        guard role == .encounterSet,
+              let image = CatalogImageAsset(role: role, assetPath: assetPath),
+              let filename = image.segments.last,
+              let dot = filename.lastIndex(of: ".")
+        else { return nil }
+        let stem = filename[..<dot]
+        let words = stem.split { $0 == "-" || $0 == "_" }
+        guard !words.isEmpty else { return nil }
+        let label = words.map { word in
+            guard let first = word.first else { return "" }
+            return String(first).uppercased() + String(word.dropFirst())
+        }.joined(separator: " ")
+        return label.isEmpty ? nil : "\(label) encounter set symbol"
     }
 }
 
