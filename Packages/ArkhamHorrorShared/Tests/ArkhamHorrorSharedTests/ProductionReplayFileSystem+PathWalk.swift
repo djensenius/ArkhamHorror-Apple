@@ -1,6 +1,11 @@
 import Darwin
 import Foundation
 
+struct ProductionReplayVerifiedPathComponent {
+    let name: String
+    let permitsTrustedStickyDirectory: Bool
+}
+
 extension ProductionReplayFileSystem {
     static func normalizedFileURL(_ url: URL) throws -> URL {
         guard url.isFileURL, url.path.hasPrefix("/") else {
@@ -24,12 +29,14 @@ extension ProductionReplayFileSystem {
         do {
             var currentInfo = try verifiedRootInfo(descriptor: rootDescriptor)
             for component in verifiedPathComponents(parentURL) {
-                guard isSafeComponent(component) else {
+                guard isSafeComponent(component.name) else {
                     throw ProductionReplayDriverError.invalidResultParent
                 }
                 let nextDescriptor = try openVerifiedComponent(
-                    component,
-                    parentDescriptor: currentDescriptor
+                    component.name,
+                    parentDescriptor: currentDescriptor,
+                    permitsTrustedStickyDirectory:
+                    component.permitsTrustedStickyDirectory
                 )
                 close(currentDescriptor)
                 currentDescriptor = nextDescriptor
@@ -54,15 +61,31 @@ extension ProductionReplayFileSystem {
 
     /// Rewrites only Darwin's fixed top-level compatibility aliases. Every
     /// resulting component still passes through the strict no-follow walk.
-    static func verifiedPathComponents(_ parentURL: URL) -> [String] {
+    static func verifiedPathComponents(
+        _ parentURL: URL
+    ) -> [ProductionReplayVerifiedPathComponent] {
         var components = parentURL.pathComponents.filter { $0 != "/" }
+        var stickyDirectoryIndex: Int?
         guard let first = components.first,
               let replacement = resolvedTrustedPlatformRootAlias(first)
         else {
-            return components
+            return components.map {
+                ProductionReplayVerifiedPathComponent(
+                    name: $0,
+                    permitsTrustedStickyDirectory: false
+                )
+            }
         }
         components.replaceSubrange(0 ... 0, with: replacement)
-        return components
+        if first == "tmp" {
+            stickyDirectoryIndex = 1
+        }
+        return components.enumerated().map { index, name in
+            ProductionReplayVerifiedPathComponent(
+                name: name,
+                permitsTrustedStickyDirectory: index == stickyDirectoryIndex
+            )
+        }
     }
 
     static func resolvedTrustedPlatformRootAlias(_ name: String) -> [String]? {
@@ -97,7 +120,8 @@ extension ProductionReplayFileSystem {
 
     static func openVerifiedComponent(
         _ name: String,
-        parentDescriptor: Int32
+        parentDescriptor: Int32,
+        permitsTrustedStickyDirectory: Bool
     ) throws -> Int32 {
         let descriptor = openat(
             parentDescriptor,
@@ -112,8 +136,13 @@ extension ProductionReplayFileSystem {
             close(descriptor)
             throw ProductionReplayDriverError.invalidResultParent
         }
-        guard info.st_uid == 0 || info.st_uid == geteuid(),
-              hasSafePermissions(info)
+        let hasTrustedOwner = info.st_uid == 0 || info.st_uid == geteuid()
+        let isTrustedStickyDirectory =
+            permitsTrustedStickyDirectory &&
+            info.st_uid == 0 &&
+            info.st_mode & S_ISVTX == S_ISVTX
+        guard hasTrustedOwner,
+              hasSafePermissions(info) || isTrustedStickyDirectory
         else {
             close(descriptor)
             throw ProductionReplayDriverError.unsafeResultParent
