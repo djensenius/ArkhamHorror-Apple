@@ -217,12 +217,15 @@ typealias ProductionReplayDeadlineRunner = (
     _ hostArguments: [String]
 ) throws -> SubprocessDeadlineGuardOutcome
 
+typealias ProductionReplayArtifactValidator = (Data) throws -> Void
+
 enum ProductionReplayDriver {
     static func run(
         victim: ProductionReplayVictim,
         input: ProductionReplayInput<some ProductionReplayCheckpoint>,
         deadlineSeconds: Double,
         hostArguments: [String] = CommandLine.arguments,
+        artifactValidator: ProductionReplayArtifactValidator = { _ in },
         deadlineRunner: ProductionReplayDeadlineRunner = runDeadlineGuard
     ) throws -> ProductionReplayRunResult {
         guard deadlineSeconds.isFinite, deadlineSeconds > 0 else {
@@ -261,6 +264,12 @@ enum ProductionReplayDriver {
         try ProductionReplayFileSystem.validateStagingArtifact(
             staging,
             parent: destination.parent
+        )
+        try artifactValidator(
+            ProductionReplayFileSystem.readStagingArtifact(
+                staging,
+                parent: destination.parent
+            )
         )
         try ProductionReplayFileSystem.publish(
             staging,

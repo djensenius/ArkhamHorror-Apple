@@ -225,6 +225,40 @@ struct ProductionReplayDriverMechanicsTests {
         #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
     }
 
+    @Test("Artifact validation happens before publication")
+    func invalidArtifactDoesNotReplaceFinalResult() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try Data("stable".utf8).write(to: scratch.result)
+        var observedStagingURL: URL?
+
+        #expect(throws: ProductionReplayDriverError.resultUnavailable) {
+            _ = try ProductionReplayDriver.run(
+                victim: makeVictim(),
+                input: makeInput(resultURL: scratch.result),
+                deadlineSeconds: 1,
+                artifactValidator: { data in
+                    #expect(data == Data("invalid".utf8))
+                    throw ProductionReplayDriverError.resultUnavailable
+                },
+                deadlineRunner: { _, environment, _, _ in
+                    let staging = try URL(fileURLWithPath: #require(
+                        environment[ProductionReplayEnvironmentKey.resultPath]
+                    ))
+                    observedStagingURL = staging
+                    try Data("invalid".utf8).write(to: staging)
+                    return .completed
+                }
+            )
+        }
+
+        #expect(try Data(contentsOf: scratch.result) == Data("stable".utf8))
+        #expect(observedStagingURL.map {
+            !FileManager.default.fileExists(atPath: $0.path)
+        } == true)
+        #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
+    }
+
     @Test("A real child publishes only after its sentinel-proven success")
     func realChildCompletesWithReusableResult() throws {
         let scratch = try makeScratch()

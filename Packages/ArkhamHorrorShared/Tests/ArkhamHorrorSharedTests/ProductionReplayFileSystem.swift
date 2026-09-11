@@ -219,4 +219,24 @@ enum ProductionReplayFileSystem {
         )
         return try readAll(from: descriptor)
     }
+
+    static func readStagingArtifact(
+        _ staging: ProductionReplayStagingDestination,
+        parent: ProductionReplayDirectoryHandle
+    ) throws -> Data {
+        let descriptor = openat(
+            parent.descriptor,
+            staging.name,
+            O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC
+        )
+        guard descriptor >= 0 else {
+            throw ProductionReplayDriverError.resultMissingOrNotRegular
+        }
+        defer { close(descriptor) }
+        try validateRegularArtifact(
+            descriptor: descriptor,
+            parentIdentity: parent.identity
+        )
+        return try readAll(from: descriptor)
+    }
 }
