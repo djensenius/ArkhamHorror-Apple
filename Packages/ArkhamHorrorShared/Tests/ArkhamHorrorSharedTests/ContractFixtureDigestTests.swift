@@ -3,6 +3,34 @@ import CryptoKit
 import Foundation
 import Testing
 
+private struct GovernedContractManifestFixture: Decodable {
+    let path: String
+    let schema: String
+}
+
+private struct GovernedContractMutationOperation: Decodable {
+    let operation: String
+    let pointer: String
+    let value: JSONValue?
+
+    private enum CodingKeys: String, CodingKey {
+        case operation = "op"
+        case pointer
+        case value
+    }
+}
+
+private struct GovernedContractNegativeFixture: Decodable {
+    let basePositiveFixture: String
+    let basePointer: String
+    let mutation: GovernedContractMutationOperation
+}
+
+private struct GovernedContractManifest: Decodable {
+    let fixtures: [GovernedContractManifestFixture]
+    let negativeFixtures: [GovernedContractNegativeFixture]
+}
+
 @Suite("ContractFixtureDigest")
 struct ContractFixtureDigestTests {
     /// The one subdirectory holding fixtures vendored from `ContractPin.current`'s pinned
@@ -94,6 +122,10 @@ struct ContractFixtureDigestTests {
             "question-encounter-deck-draw", "question-enemy-attack", "answer-enemy-attack",
             "question-enemy-attack-damage-assignment",
             "answer-enemy-attack-assign-damage", "answer-enemy-attack-assign-horror",
+            "question-enemy-attack-remaining-damage-assignment",
+            "question-enemy-attack-remaining-horror-assignment",
+            "answer-enemy-attack-assign-remaining-damage",
+            "answer-enemy-attack-assign-remaining-horror",
             "basic-choice-question.schema",
         ])
     }
@@ -163,8 +195,44 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "1a844092e7914ac538778910a99bcf8d4f856990"
+            ContractPin.current.backendCommit == "5acc0237b216e3b70ebe30af1559ab0e627e4f56"
         )
+    }
+
+    @Test("The immutable manifest governs 32 assignment negatives within 362 total")
+    func assignmentFamilyManifestCoverage() throws {
+        let manifest = try ContractJSON.decode(
+            GovernedContractManifest.self,
+            from: fixtureData(named: "manifest")
+        )
+        #expect(manifest.negativeFixtures.count == 362)
+        let fixtureSchemas = Dictionary(
+            uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
+        )
+        var assignmentNegativeCount = 0
+
+        for fixture in AssignmentContinuationFixture.allCases {
+            let questionPath = "contracts/fixtures/\(fixture.questionFixture).json"
+            let answerPath = "contracts/fixtures/\(fixture.answerFixture).json"
+            #expect(fixtureSchemas[questionPath]
+                == "contracts/schemas/basic-choice-question.schema.json")
+            #expect(fixtureSchemas[answerPath]
+                == "contracts/schemas/client-answer.schema.json")
+
+            let negatives = manifest.negativeFixtures.filter {
+                $0.basePositiveFixture == questionPath
+            }
+            #expect(negatives.count == 16)
+            #expect(negatives.count {
+                $0.basePointer == "/question/question/choices/0/messages/1"
+                    && $0.mutation.operation == "replace"
+                    && $0.mutation.pointer == "/contents/contents/3/tag"
+                    && $0.mutation.value == .string("AssetWithTitle")
+            } == 1)
+            assignmentNegativeCount += negatives.count
+        }
+
+        #expect(assignmentNegativeCount == 32)
     }
 
     @Test("Registered fixture and schema digests match the backend manifest's artifact hashes")

@@ -78,7 +78,7 @@ enum BasicChoiceParser {
             return parseEnemyAttackQuestion(object, rawValue: value)
         }
         if kind == .questionWithSource {
-            return parseEnemyAttackDamageAssignmentQuestion(object, rawValue: value)
+            return parseEnemyAttackAssignmentQuestion(object, rawValue: value)
         }
         guard Set(object.keys) == ["tag", "choices"],
               case let .array(rawChoices)? = object["choices"],
