@@ -23,7 +23,7 @@ extension ProductionReplayFileSystem {
 
         do {
             var currentInfo = try verifiedRootInfo(descriptor: rootDescriptor)
-            for component in parentURL.pathComponents.dropFirst() {
+            for component in verifiedPathComponents(parentURL) {
                 guard isSafeComponent(component) else {
                     throw ProductionReplayDriverError.invalidResultParent
                 }
@@ -50,6 +50,38 @@ extension ProductionReplayFileSystem {
             close(currentDescriptor)
             throw error
         }
+    }
+
+    /// Rewrites only Darwin's fixed top-level compatibility aliases. Every
+    /// resulting component still passes through the strict no-follow walk.
+    static func verifiedPathComponents(_ parentURL: URL) -> [String] {
+        var components = parentURL.pathComponents.filter { $0 != "/" }
+        guard let first = components.first,
+              let replacement = resolvedTrustedPlatformRootAlias(first)
+        else {
+            return components
+        }
+        components.replaceSubrange(0 ... 0, with: replacement)
+        return components
+    }
+
+    static func resolvedTrustedPlatformRootAlias(_ name: String) -> [String]? {
+        guard ["tmp", "var", "etc"].contains(name) else { return nil }
+        var info = stat()
+        guard lstat("/\(name)", &info) == 0,
+              info.st_mode & S_IFMT == S_IFLNK
+        else {
+            return nil
+        }
+        var buffer = [Int8](repeating: 0, count: Int(PATH_MAX) + 1)
+        let length = readlink("/\(name)", &buffer, buffer.count - 1)
+        guard length > 0 else { return nil }
+        buffer[length] = 0
+        let target = buffer.withUnsafeBufferPointer {
+            String(cString: $0.baseAddress!)
+        }
+        guard target == "private/\(name)" else { return nil }
+        return ["private", name]
     }
 
     static func verifiedRootInfo(descriptor: Int32) throws -> stat {

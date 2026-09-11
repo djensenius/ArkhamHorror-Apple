@@ -203,10 +203,11 @@ enum ProductionReplayFileSystem {
     static func readPublishedArtifact(
         _ destination: ProductionReplayDestination
     ) throws -> Data {
+        // A substituted FIFO must not block before descriptor validation rejects it.
         let descriptor = openat(
             destination.parent.descriptor,
             destination.finalName,
-            O_RDONLY | O_NOFOLLOW | O_CLOEXEC
+            O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC
         )
         guard descriptor >= 0 else {
             throw ProductionReplayDriverError.resultMissingOrNotRegular

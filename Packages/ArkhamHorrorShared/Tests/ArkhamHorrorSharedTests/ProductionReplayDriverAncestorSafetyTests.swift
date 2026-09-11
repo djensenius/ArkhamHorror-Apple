@@ -2,6 +2,130 @@ import Darwin
 import Foundation
 import Testing
 
+private enum ReplayDriverFIFOTestEnvironmentKey {
+    static let trigger = "ARKHAM_PRODUCTION_REPLAY_FIFO_READ_SELFTEST"
+}
+
+private func replayTemporaryDirectoryThroughVarAlias() -> URL {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+    let physicalPrefix = "/private/var"
+    guard temporaryDirectory.path == physicalPrefix ||
+        temporaryDirectory.path.hasPrefix(physicalPrefix + "/")
+    else {
+        return temporaryDirectory
+    }
+    return URL(
+        fileURLWithPath: "/var" + String(
+            temporaryDirectory.path.dropFirst(physicalPrefix.count)
+        ),
+        isDirectory: true
+    )
+}
+
+@Suite("Production replay FIFO victim")
+struct ReplayDriverFIFOVictimSuite {
+    @Test("Post-publication FIFO substitution is nonblocking")
+    func productionReplayFIFOReadVictim() throws {
+        guard ProcessInfo.processInfo.environment[
+            ReplayDriverFIFOTestEnvironmentKey.trigger
+        ] == "1" else {
+            return
+        }
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        let result = try ProductionReplayDriver.run(
+            victim: makeVictim(),
+            input: makeInput(resultURL: scratch.result),
+            deadlineSeconds: 1,
+            deadlineRunner: { _, environment, _, _ in
+                let staging = try URL(fileURLWithPath: #require(
+                    environment[ProductionReplayEnvironmentKey.resultPath]
+                ))
+                try Data("published".utf8).write(to: staging)
+                return .completed
+            }
+        )
+        try FileManager.default.removeItem(at: scratch.result)
+        try #require(mkfifo(scratch.result.path, 0o600) == 0)
+
+        #expect(throws: ProductionReplayDriverError.resultMissingOrNotRegular) {
+            _ = try result.resultData()
+        }
+        SubprocessDeadlineGuard.recordVictimCompletion()
+    }
+}
+
+@Suite("Production replay driver read safety")
+struct ReplayDriverReadSafetyTests {
+    @Test("Published FIFO substitution fails within the subprocess deadline")
+    func publishedFIFOSubstitutionFailsPromptly() throws {
+        let victim = try ProductionReplayVictim(
+            moduleName: "ArkhamHorrorSharedTests",
+            suiteName: "ReplayDriverFIFOVictimSuite",
+            functionName: "productionReplayFIFOReadVictim"
+        )
+        let outcome = try SubprocessDeadlineGuard.runFiltered(
+            victimFilter: victim.exactFilter,
+            additionalEnvironment: [
+                ReplayDriverFIFOTestEnvironmentKey.trigger: "1",
+            ],
+            deadlineSeconds: 2,
+            hostArguments: CommandLine.arguments
+        )
+        #expect(outcome == .completed)
+    }
+}
+
+@Suite("Production replay driver platform paths")
+struct ReplayDriverPlatformPathTests {
+    @Test("Platform temporary paths work while nested symlinks still fail")
+    func temporaryDirectoryAliasIsNarrowlyCanonicalized() throws {
+        let directory = replayTemporaryDirectoryThroughVarAlias()
+            .appendingPathComponent(
+                "production-replay-alias-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        let resultURL = directory.appendingPathComponent("result.json")
+        let result = try ProductionReplayDriver.run(
+            victim: makeVictim(),
+            input: makeInput(resultURL: resultURL),
+            deadlineSeconds: 1,
+            deadlineRunner: { _, environment, _, _ in
+                let staging = try URL(fileURLWithPath: #require(
+                    environment[ProductionReplayEnvironmentKey.resultPath]
+                ))
+                try Data("temporary".utf8).write(to: staging)
+                return .completed
+            }
+        )
+        #expect(try result.resultData() == Data("temporary".utf8))
+
+        let target = directory.appendingPathComponent(
+            "target",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: target.appendingPathComponent("nested", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let link = directory.appendingPathComponent("attacker-link")
+        try FileManager.default.createSymbolicLink(
+            at: link,
+            withDestinationURL: target
+        )
+        #expect(throws: ProductionReplayDriverError.invalidResultParent) {
+            _ = try makeInput(
+                resultURL: link.appendingPathComponent("nested/result.json")
+            )
+        }
+    }
+}
+
 @Suite("Production replay driver ancestor safety")
 struct ReplayDriverAncestorSafetyTests {
     @Test("Symlinked ancestors at multiple depths fail closed")
