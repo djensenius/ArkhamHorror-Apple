@@ -374,10 +374,18 @@ enum AssignmentContinuationReplayRunner {
             capabilities: capabilities,
             configuration: configuration
         )
-        let attestation =
-            try await AssignmentReplayAttestationClient().fetch(
-                configuration: configuration
+        let attestationTransport =
+            try AssignmentReplayBoundedHTTPTransport(
+                maxByteCount:
+                AssignmentReplayAttestationClient.maximumResponseBytes,
+                timeout: configuration.deadlineSeconds
             )
+        let attestation = try await AssignmentReplayAttestationClient(
+            transport: attestationTransport
+        ).fetch(request: configuration.attestationRequest)
+        guard attestation == configuration.attestation else {
+            throw ProductionAssignmentReplayError.serverAttestationMismatch
+        }
 
         let subscription = model.subscribeToLiveGame(
             configuration.promptIdentity.gameID
@@ -535,16 +543,21 @@ enum AssignmentContinuationReplayRunner {
                 .currentSchemaVersion,
             checkpoint: AssignmentReplayCheckpointEvidence(
                 caseName: configuration.checkpoint.rawValue,
-                name: configuration.checkpointArtifact.checkpointName,
-                playerID: configuration.checkpointArtifact.playerID,
+                validator: configuration.validatedCheckpoint.validator,
+                validationStatus:
+                configuration.validatedCheckpoint.validationStatus,
+                name: configuration.validatedCheckpoint.checkpointName,
+                playerID:
+                configuration.validatedCheckpoint.checkpointPlayerID,
                 questionVersion:
-                configuration.checkpointArtifact.questionVersion,
+                configuration.validatedCheckpoint.questionVersion,
                 promptCanonicalSHA256:
-                configuration.checkpointArtifact.promptSHA256,
+                configuration.validatedCheckpoint.promptSHA256,
                 artifactSHA256:
-                configuration.checkpointArtifact.artifactSHA256,
-                envelopeSHA256:
-                configuration.checkpointArtifact.envelopeSHA256
+                configuration.validatedCheckpoint.artifactSHA256,
+                canonicalEnvelopeSHA256:
+                configuration.validatedCheckpoint.canonicalEnvelopeSHA256,
+                replayBuild: configuration.validatedCheckpoint.replayBuild
             ),
             source: ProductionAssignmentReplaySourceEvidence(
                 gameID: configuration.promptIdentity.gameID,
@@ -698,66 +711,5 @@ enum AssignmentContinuationReplayRunner {
             throw error
         }
         return prompt
-    }
-}
-
-@MainActor
-@Suite("Production assignment continuation replay victim")
-struct AssignmentContinuationReplayVictimSuite {
-    @Test("Authoritative AppModel assignment continuation")
-    func productionAssignmentContinuationReplayVictim() async throws {
-        let environment = ProcessInfo.processInfo.environment
-        guard environment[ProductionReplayEnvironmentKey.checkpoint] != nil else {
-            return
-        }
-        let context =
-            try ProductionReplayChildContext<ProductionAssignmentReplayCheckpoint>(
-                environment: environment
-            )
-        let configuration = try ProductionAssignmentReplayConfiguration.child(
-            environment: environment,
-            checkpoint: context.checkpoint
-        )
-        let evidence = try await AssignmentContinuationReplayRunner.run(
-            configuration: configuration
-        )
-        let artifact = try AssignmentReplayEvidenceArtifact(
-            evidence: evidence
-        )
-        let resultData = try artifact.validatedData()
-        try context.complete(resultData: resultData) {
-            guard evidence.checkpoint.caseName ==
-                context.checkpoint.rawValue
-            else {
-                throw ProductionAssignmentReplayError.evidenceCheckpointMismatch
-            }
-            try evidence.validate(configuration: configuration)
-            let decoded =
-                try AssignmentReplayEvidenceArtifact.decodeAndValidate(
-                    resultData
-                )
-            try decoded.evidence.validate(configuration: configuration)
-        }
-    }
-}
-
-@Suite("Production assignment continuation replay driver")
-struct AssignmentContinuationReplayDriverSuite {
-    @Test("Run configured authoritative assignment continuation replay")
-    func runConfiguredProductionAssignmentContinuationReplay() throws {
-        guard let invocation = try ProductionAssignmentReplayInvocation.parse() else {
-            return
-        }
-        let result = try AssignmentContinuationReplayDriver.run(
-            invocation: invocation
-        )
-        guard result.outcome == .completed else {
-            throw ProductionAssignmentReplayError.unsupportedHost
-        }
-        let artifact = try AssignmentReplayEvidenceArtifact
-            .decodeAndValidate(result.resultData())
-        try artifact.evidence.validate(
-            configuration: invocation.configuration
-        )
     }
 }

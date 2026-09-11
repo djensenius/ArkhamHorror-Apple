@@ -38,53 +38,42 @@ struct AssignmentReplayServerBuildIdentity: Codable, Equatable, Sendable {
     }
 }
 
+struct AssignmentReplayAttestationRequest: Sendable {
+    let serverProfile: ServerProfile
+    let authToken: String
+    let gameID: GameID
+    let playerID: PlayerID
+    let checkpointArtifactSHA256: String
+}
+
 struct ProductionAssignmentReplayAttestation: Codable, Equatable, Sendable {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
 
     let schemaVersion: Int
     let gameID: GameID
     let playerID: PlayerID
-    let checkpointPlayerID: PlayerID
     let serverBuild: AssignmentReplayServerBuildIdentity
     let gameRevision: String
-    let checkpointArtifactSHA256: String
-    let checkpointEnvelopeSHA256: String
-    let contractRevision: String
-    let checkpointName: String
+    let checkpointValidation: AssignmentReplayValidatedCheckpoint
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
         case gameID = "gameId"
         case playerID = "playerId"
-        case checkpointPlayerID = "checkpointPlayerId"
         case serverBuild
         case gameRevision
-        case checkpointArtifactSHA256 = "checkpointArtifactSha256"
-        case checkpointEnvelopeSHA256 = "checkpointEnvelopeSha256"
-        case contractRevision
-        case checkpointName
+        case checkpointValidation
     }
 
-    func validate(
-        configuration: ProductionAssignmentReplayConfiguration
-    ) throws {
-        let checkpoint = configuration.checkpointArtifact
+    func validate(request: AssignmentReplayAttestationRequest) throws {
         try serverBuild.validate()
+        try checkpointValidation.validate(runningServerBuild: serverBuild)
         guard schemaVersion == Self.schemaVersion,
-              gameID == configuration.promptIdentity.gameID,
-              playerID == configuration.promptIdentity.ownerID,
-              checkpointPlayerID == checkpoint.playerID,
-              ProductionAssignmentReplayConfiguration.isLowercaseHex(
-                  gameRevision,
-                  count: 40
-              ),
-              gameRevision == checkpoint.sourceGameRevision,
-              checkpointArtifactSHA256 == checkpoint.artifactSHA256,
-              checkpointEnvelopeSHA256 == checkpoint.envelopeSHA256,
-              contractRevision ==
-              ContractPin.current.supportedSchemaRevision.description,
-              contractRevision == checkpoint.contractRevision,
-              checkpointName == checkpoint.checkpointName
+              gameID == request.gameID,
+              playerID == request.playerID,
+              checkpointValidation.artifactSHA256 ==
+              request.checkpointArtifactSHA256,
+              gameRevision == checkpointValidation.sourceGameRevision
         else {
             throw ProductionAssignmentReplayError.serverAttestationMismatch
         }
@@ -92,7 +81,7 @@ struct ProductionAssignmentReplayAttestation: Codable, Equatable, Sendable {
 }
 
 struct AssignmentReplayAttestationClient: Sendable {
-    private static let maximumResponseBytes = 256 * 1024
+    static let maximumResponseBytes = 256 * 1024
 
     let transport: any HTTPTransport
 
@@ -101,15 +90,16 @@ struct AssignmentReplayAttestationClient: Sendable {
     }
 
     func fetch(
-        configuration: ProductionAssignmentReplayConfiguration
+        request context: AssignmentReplayAttestationRequest
     ) async throws -> ProductionAssignmentReplayAttestation {
-        let url = try Self.attestationURL(configuration: configuration)
+        let url = try Self.attestationURL(context: context)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.httpShouldHandleCookies = false
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(
-            "Token \(configuration.authToken)",
+            "Token \(context.authToken)",
             forHTTPHeaderField: "Authorization"
         )
 
@@ -117,7 +107,10 @@ struct AssignmentReplayAttestationClient: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await transport.data(for: request)
+        } catch let cancellation as CancellationError {
+            throw cancellation
         } catch {
+            try Task.checkCancellation()
             throw ProductionAssignmentReplayError.serverAttestationUnavailable
         }
         guard let httpResponse = response as? HTTPURLResponse,
@@ -144,7 +137,7 @@ struct AssignmentReplayAttestationClient: Sendable {
         } catch {
             throw ProductionAssignmentReplayError.serverAttestationMalformed
         }
-        try attestation.validate(configuration: configuration)
+        try attestation.validate(request: context)
         return attestation
     }
 
@@ -164,25 +157,41 @@ struct AssignmentReplayAttestationClient: Sendable {
                   "schemaVersion",
                   "gameId",
                   "playerId",
-                  "checkpointPlayerId",
                   "serverBuild",
                   "gameRevision",
-                  "checkpointArtifactSha256",
-                  "checkpointEnvelopeSha256",
-                  "contractRevision",
-                  "checkpointName",
+                  "checkpointValidation",
               ],
-              case let .object(serverBuild)? = root["serverBuild"],
-              Set(serverBuild.keys) == [
-                  "gitRevision",
-                  "gitTree",
-                  "sourceSha256",
-                  "sourceClean",
-                  "attestation",
-              ]
+              Self.hasExactBuildShape(root["serverBuild"]),
+              case let .object(validation)? = root["checkpointValidation"],
+              Set(validation.keys) == [
+                  "validator",
+                  "validationStatus",
+                  "artifactSha256",
+                  "canonicalEnvelopeSha256",
+                  "replayBuild",
+                  "contractRevision",
+                  "sourceGameRevision",
+                  "checkpointName",
+                  "checkpointPlayerId",
+                  "questionVersion",
+                  "promptTag",
+                  "promptSha256",
+              ],
+              Self.hasExactBuildShape(validation["replayBuild"])
         else {
             throw ProductionAssignmentReplayError.serverAttestationMalformed
         }
+    }
+
+    private static func hasExactBuildShape(_ value: JSONValue?) -> Bool {
+        guard case let .object(build)? = value else { return false }
+        return Set(build.keys) == [
+            "gitRevision",
+            "gitTree",
+            "sourceSha256",
+            "sourceClean",
+            "attestation",
+        ]
     }
 
     private static func isJSONContentType(_ rawValue: String?) -> Bool {
@@ -203,13 +212,13 @@ struct AssignmentReplayAttestationClient: Sendable {
     }
 
     private static func attestationURL(
-        configuration: ProductionAssignmentReplayConfiguration
+        context: AssignmentReplayAttestationRequest
     ) throws -> URL {
         do {
             return try GameLifecycleService.gameURL(
-                configuration.promptIdentity.gameID,
+                context.gameID,
                 suffix: "/replay-attestation",
-                on: configuration.serverProfile,
+                on: context.serverProfile,
                 pin: .current
             )
         } catch {

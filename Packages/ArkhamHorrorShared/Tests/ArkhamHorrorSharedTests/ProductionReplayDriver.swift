@@ -15,6 +15,9 @@ enum ProductionReplayDriverError: Error, Equatable {
     case resultWriteFailed(Int32)
     case resultPublishFailed(Int32)
     case resultUnavailable
+    case inputAlreadyRead
+    case privateDirectoryUnavailable
+    case unexpectedDirectoryEntry(String)
     case invalidDeadline
     case missingCheckpoint
     case unsupportedCheckpoint(String)
@@ -218,14 +221,18 @@ typealias ProductionReplayDeadlineRunner = (
 ) throws -> SubprocessDeadlineGuardOutcome
 
 typealias ProductionReplayArtifactValidator = (Data) throws -> Void
+typealias ProductionReplayDeadlineValidator = () throws -> Void
 
 enum ProductionReplayDriver {
+    // swiftlint:disable:next function_body_length
     static func run(
         victim: ProductionReplayVictim,
         input: ProductionReplayInput<some ProductionReplayCheckpoint>,
         deadlineSeconds: Double,
         hostArguments: [String] = CommandLine.arguments,
         artifactValidator: ProductionReplayArtifactValidator = { _ in },
+        completionDeadlineValidator:
+        ProductionReplayDeadlineValidator = {},
         deadlineRunner: ProductionReplayDeadlineRunner = runDeadlineGuard
     ) throws -> ProductionReplayRunResult {
         guard deadlineSeconds.isFinite, deadlineSeconds > 0 else {
@@ -261,6 +268,7 @@ enum ProductionReplayDriver {
             )
         }
 
+        try completionDeadlineValidator()
         try ProductionReplayFileSystem.validateStagingArtifact(
             staging,
             parent: destination.parent
@@ -271,10 +279,12 @@ enum ProductionReplayDriver {
                 parent: destination.parent
             )
         )
+        try completionDeadlineValidator()
         try ProductionReplayFileSystem.publish(
             staging,
             to: destination
         )
+        try completionDeadlineValidator()
         return ProductionReplayRunResult(
             outcome: outcome,
             destination: destination

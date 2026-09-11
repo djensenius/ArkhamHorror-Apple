@@ -86,38 +86,41 @@ bridge.
 
 ### Current backend gate
 
-As of September 11, 2026, backend PR
-`djensenius/ArkhamHorror#76` is still unmerged at
+As of Friday, September 11, 2026, backend
+`djensenius/ArkhamHorror#76` is still open at
 `0d1bb54d1b40d48b742c7c796b577c92339bf2ea`, and its Stack check is failing.
 It advances the native contract to `0.1.34`. This repository must therefore
 remain pinned to backend
 `5acc0237b216e3b70ebe30af1559ab0e627e4f56` / contract `0.1.33` until that PR
 actually merges.
 
-PR #76 adds checkpoint generation and validation, but it does **not** provide
-the immutable production authority the live Apple proof now requires. The
-production importer decodes an `ArkhamExport` and discards
-`replayCheckpoint` provenance. It also does not attest the executable serving
-the imported game. Consequently, a live run currently fails closed before any
-controller command.
+That PR defines checkpoint generation, `ReplayBuildIdentity`,
+`validateCheckpointExport`, and the canonical checkpoint-envelope digest, but
+the production importer still discards their validation result. It neither
+binds the exact multipart file bytes to the imported game nor exposes immutable
+authority for the executable serving that game. Consequently, the Apple replay
+currently fails closed before any controller command.
 
 The backend must additionally:
 
-1. Hash the exact uploaded checkpoint bytes before decoding them.
-2. Persist immutable import metadata bound to the new game, authenticated
-   imported player, remapped checkpoint player, and embedded checkpoint
-   envelope.
-3. Embed the running server executable revision at build time. `PublicGame.git`
-   is the imported **game** revision and is not server build identity.
-4. Expose an authenticated, game-bound
+1. Hash the exact uploaded multipart file-part bytes before decoding.
+2. Run the exact backend checkpoint-envelope validator used by
+   `validateCheckpointExport`; reject a tampered export, provenance object,
+   canonical envelope, or replay build.
+3. Persist the validator result with the new game, authenticated imported
+   player, remapped checkpoint player, server-computed canonical envelope
+   digest, and full checkpoint `ReplayBuildIdentity`.
+4. Embed and expose the clean running server executable build identity.
+   `PublicGame.git` remains the imported **game** revision and is not server
+   executable identity.
+5. Expose an authenticated, game-bound
    `GET /api/v1/arkham/games/:id/replay-attestation` response:
 
    ```json
    {
-     "schemaVersion": 1,
+     "schemaVersion": 2,
      "gameId": "<imported game UUID>",
      "playerId": "<authenticated imported player UUID>",
-     "checkpointPlayerId": "<player UUID in checkpoint provenance>",
      "serverBuild": {
        "gitRevision": "<40 lowercase hex executable revision>",
        "gitTree": "<40 lowercase hex tree>",
@@ -126,29 +129,46 @@ The backend must additionally:
        "attestation": "git-clean"
      },
      "gameRevision": "<40 lowercase hex imported game revision>",
-     "checkpointArtifactSha256": "<SHA-256 of exact uploaded file bytes>",
-     "checkpointEnvelopeSha256": "<replayCheckpoint.envelopeSha256>",
-     "contractRevision": "0.1.34",
-     "checkpointName": "<provenance checkpoint name>"
+     "checkpointValidation": {
+       "validator": "arkham-replay-checkpoint-envelope-v1",
+       "validationStatus": "validated",
+       "artifactSha256": "<SHA-256 of exact uploaded file bytes>",
+       "canonicalEnvelopeSha256": "<server-computed canonical digest>",
+       "replayBuild": {
+         "gitRevision": "<same clean pinned executable revision>",
+         "gitTree": "<same tree>",
+         "sourceSha256": "<same compiled-source digest>",
+         "sourceClean": true,
+         "attestation": "git-clean"
+       },
+       "contractRevision": "0.1.34",
+       "sourceGameRevision": "<40 lowercase hex source game revision>",
+       "checkpointName": "<validated checkpoint name>",
+       "checkpointPlayerId": "<validated source player UUID>",
+       "questionVersion": "<validated prompt version>",
+       "promptTag": "QuestionWithSource",
+       "promptSha256": "<server-validated canonical prompt SHA-256>"
+     }
    }
    ```
 
-The response must come only from server-owned persisted import metadata, never
-request parameters or caller-provided expected values. The Apple driver
-requires a clean build attestation, compares `serverBuild.gitRevision` to
-`ContractPin.current`, binds both checkpoint digests to a securely reopened
-local file, and compares `gameRevision` to both the checkpoint and
-authoritative REST/WebSocket snapshots. A missing, redirected, malformed, or
-mismatched response aborts the run. Do not add a client-side receipt or
-direct-answer workaround.
+The response must come only from the persisted result of that server validator,
+never request parameters, the export's embedded `envelopeSha256` by itself, a
+stored echo, or caller-provided expected values. Apple requires
+`checkpointValidation.replayBuild == serverBuild`, requires the build to be
+clean and pinned by `ContractPin.current.backendCommit`, and requires
+`gameRevision == checkpointValidation.sourceGameRevision`. A missing,
+redirected, malformed, stale, dirty, or mismatched response aborts the run. Do
+not add a client-side authority receipt or direct-answer workaround.
 
 ### Produce and import the authoritative checkpoint
 
-After PR #76 **and** the attested import service above merge:
+After `djensenius/ArkhamHorror#76` **and** the attested import service above
+merge:
 
 1. Update `ContractPin.current` to the final immutable backend commit containing
    both changes and to `0.1.34`, then build the backend replay executable and
-   production server from that exact clean revision. Do not pin #76's current
+   production server from that exact clean revision. Do not pin the current
    unmerged head.
 2. Obtain a normal authenticated backend game export whose retained state can
    be replayed to the combined enemy-attack assignment prompt.
@@ -174,40 +194,68 @@ After PR #76 **and** the attested import service above merge:
    make api.watch
    ```
 
-5. Preserve `assignment.checkpoint.json` byte-for-byte. The wrapper imports this
-   same file twice through the production `WithFriends` route, reads both games
-   through the authenticated production GET, and requires the attestation
-   endpoint for each imported game before Apple submits anything.
+5. Preserve `assignment.checkpoint.json` byte-for-byte. The coordinator imports
+   this exact byte sequence twice through the production `WithFriends` route. The
+   importer must run the validator and persist its receipt before returning.
+   Apple then reads each imported game through the authenticated production GET
+   and requires schema-2 attestation before submitting anything.
 
 ### Run both Apple cases
 
 The Apple worktree must be clean because the driver invokes `/usr/bin/git` with
-a fixed environment, verifies the canonical repository root, rejects tracked
-and untracked changes, and checks its exact `HEAD`.
+a compile-time repository anchor and empty environment, verifies the canonical
+repository root, rejects tracked and untracked changes, and records its exact
+`HEAD`. Inherited `GIT_DIR`, `GIT_WORK_TREE`, config, object-directory, and
+namespace overrides cannot influence this check.
 
-Create a caller-owned mode-0600 token file without placing the credential in
-curl's argument vector:
+The production launcher is fixed to:
+
+```text
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift
+```
+
+It verifies the Apple Xcode signature and pinned path, rejects executable and
+toolchain overrides, and launches under `env -i` with a fixed `PATH`. There is
+no production `curl`, Python, Git, filter, or dependency-injection override.
+Install/select Xcode at that path before running.
+
+Create a private mode-0600 token file. The credential is never placed in an
+argument vector or subprocess environment:
 
 ```sh
 set +x
-TOKEN_FILE="${HOME}/.arkham-horror-replay-token"
+TOKEN_DIRECTORY="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/arkham-replay-token.XXXXXX")"
+TOKEN_FILE="${TOKEN_DIRECTORY}/token"
+cleanup_replay_token() {
+  /bin/rm -f -- "${TOKEN_FILE}"
+  /bin/rmdir -- "${TOKEN_DIRECTORY}" 2>/dev/null || true
+  unset TOKEN_FILE TOKEN_DIRECTORY REPLAY_TOKEN
+}
+trap cleanup_replay_token EXIT
+trap 'exit 130' HUP INT TERM
 (umask 077; : >"${TOKEN_FILE}")
-chmod 600 "${TOKEN_FILE}"
+/bin/chmod 600 "${TOKEN_FILE}"
 IFS= read -r -s -p 'Backend token: ' REPLAY_TOKEN
 printf '\n'
 printf '%s\n' "${REPLAY_TOKEN}" >"${TOKEN_FILE}"
 unset REPLAY_TOKEN
 ```
 
-Then invoke the fail-fast wrapper. The output directory must not already exist;
-the wrapper creates it mode 0700:
+The server URL is parsed canonically before either input is opened. HTTPS is
+accepted; HTTP is accepted only for the literal numeric loopback authorities
+in the strict four-octet `127.0.0.0/8` form or `[::1]`. `localhost`, remote
+cleartext, userinfo, query, fragment, default-port aliases, percent-encoded
+authorities, and normalized spellings are rejected.
+
+Invoke the launcher. The output directory must be an absolute path that does
+not already exist:
 
 ```sh
 set +x
 export ARKHAM_REPLAY_BASE_URL='http://127.0.0.1:3000'
 export ARKHAM_REPLAY_INVESTIGATOR_ID='c01234'
 export ARKHAM_REPLAY_ENEMY_ID='<exact enemy wire identity>'
-export ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION='0.1.34'
+export ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION='<ContractPin.current revision>'
 export ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION='<capabilities localeCatalog.catalogRevision>'
 export ARKHAM_REPLAY_DEADLINE_SECONDS=60
 
@@ -218,30 +266,43 @@ Scripts/run-production-assignment-replay.sh \
   "${CHECKPOINT}" \
   "${OUTPUT_DIRECTORY}" \
   "${TOKEN_FILE}"
-
-rm -f "${TOKEN_FILE}"
-unset TOKEN_FILE
 ```
 
-The wrapper uses `set -euo pipefail`. It stops before the second case if the
-first fails, removes a newly created output directory on failure, and succeeds
-only when two fresh compact canonical artifacts exist and independently verify
-against the exact checkpoint bytes. It writes a generated authorization header
-to a mode-0600 file and passes only that file path to curl, then removes the
-header and intermediate import/GET responses and unsets the child token on
-every exit path. The caller-owned token file is never deleted implicitly.
+The shell only forwards non-secret configuration and the three paths. One
+globally bounded Swift coordinator then:
 
-Prompt version and canonical digest come from checkpoint provenance, not
-caller-provided values. Server executable identity comes only from the
-authenticated server attestation. The two final files are:
+1. Creates and retains the mode-0700 output directory through descriptor-bound,
+   no-follow filesystem operations.
+2. Opens the checkpoint and mode-0600 token through verified ancestor
+   descriptors and reads each retained file descriptor exactly once.
+3. Imports, authenticates, and attests the damage-first case; runs the real
+   `AppModel` and controller; validates and persists its evidence.
+4. Proceeds to the horror-first case only after complete first-case success.
+5. Requires both imports to be distinct and to return identical validator and
+   clean server-build authority for the exact uploaded bytes.
+6. Publishes success only after both compact canonical artifacts independently
+   decode, digest, and validate; otherwise it removes partial anchored output.
+
+The same outer `ProductionReplayDriver` deadline bounds both imports, both
+authenticated GETs and attestations, capability/catalog/asset/session startup,
+controller actions, reconciliation, and output publication. Setup networking
+uses redirect-rejecting, cookie/credential/cache-free production `URLSession`
+transports with remaining-time request/resource timeouts and incremental
+response-size ceilings.
+
+Prompt version, prompt digest, canonical checkpoint-envelope digest, and
+checkpoint replay build come only from the authenticated server validator
+attestation. The exact two final files are:
 
 - `damage-first.json`
 - `horror-first.json`
 
 Each is published only after the exact controller command path, one canonical
 versioned `Answer`, authoritative before/after state, assignment delta, next
-prompt, checkpoint full-file/envelope digests, Apple revision, server build
-revision, game revision, contract, and catalog assertions pass.
+prompt/version/digest, checkpoint full-file and server-canonical envelope
+digests, checkpoint replay build, running server build, Apple revision, game
+revision, contract, and catalog assertions pass. Evidence schema `3.0.0`
+records all of those identities.
 
 ## Commands
 

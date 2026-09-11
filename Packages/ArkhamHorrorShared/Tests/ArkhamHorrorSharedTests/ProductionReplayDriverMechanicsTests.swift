@@ -44,6 +44,7 @@ struct ReplayDriverAmbiguousSelfTestSuite {
 }
 
 @Suite("Production replay driver mechanics")
+// swiftlint:disable:next type_body_length
 struct ProductionReplayDriverMechanicsTests {
     @Test("Victim filters match one complete module, suite, and function identifier")
     func victimFilterIsFullyAnchored() throws {
@@ -257,6 +258,56 @@ struct ProductionReplayDriverMechanicsTests {
             !FileManager.default.fileExists(atPath: $0.path)
         } == true)
         #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
+    }
+
+    @Test("Completion deadline gates validation and publication")
+    func completionDeadlineGatesPublication() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try Data("stable".utf8).write(to: scratch.result)
+        var failedChecks = 0
+
+        #expect(throws: ProductionReplayDriverError.invalidDeadline) {
+            _ = try ProductionReplayDriver.run(
+                victim: makeVictim(),
+                input: makeInput(resultURL: scratch.result),
+                deadlineSeconds: 1,
+                completionDeadlineValidator: {
+                    failedChecks += 1
+                    if failedChecks == 2 {
+                        throw ProductionReplayDriverError.invalidDeadline
+                    }
+                },
+                deadlineRunner: { _, environment, _, _ in
+                    let staging = try URL(fileURLWithPath: #require(
+                        environment[ProductionReplayEnvironmentKey.resultPath]
+                    ))
+                    try Data("late".utf8).write(to: staging)
+                    return .completed
+                }
+            )
+        }
+        #expect(failedChecks == 2)
+        #expect(try Data(contentsOf: scratch.result) == Data("stable".utf8))
+
+        var successfulChecks = 0
+        let result = try ProductionReplayDriver.run(
+            victim: makeVictim(),
+            input: makeInput(resultURL: scratch.result),
+            deadlineSeconds: 1,
+            completionDeadlineValidator: {
+                successfulChecks += 1
+            },
+            deadlineRunner: { _, environment, _, _ in
+                let staging = try URL(fileURLWithPath: #require(
+                    environment[ProductionReplayEnvironmentKey.resultPath]
+                ))
+                try Data("fresh".utf8).write(to: staging)
+                return .completed
+            }
+        )
+        #expect(successfulChecks == 3)
+        #expect(try result.resultData() == Data("fresh".utf8))
     }
 
     @Test("A real child publishes only after its sentinel-proven success")
