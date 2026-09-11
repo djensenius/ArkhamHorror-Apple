@@ -94,18 +94,62 @@ remain pinned to backend
 `5acc0237b216e3b70ebe30af1559ab0e627e4f56` / contract `0.1.33` until that PR
 actually merges.
 
-The production checkpoint import route already exists, but there is currently
-no merged `0.1.34` replay executable, committed assignment-specific checkpoint,
-or fixture service that seeds the exact live combined damage/horror prompt.
-Consequently, the two external live runs are blocked. Do not fabricate client
-state or bypass `AppModel` to work around this gate.
+PR #76 adds checkpoint generation and validation, but it does **not** provide
+the immutable production authority the live Apple proof now requires. The
+production importer decodes an `ArkhamExport` and discards
+`replayCheckpoint` provenance. It also does not attest the executable serving
+the imported game. Consequently, a live run currently fails closed before any
+controller command.
+
+The backend must additionally:
+
+1. Hash the exact uploaded checkpoint bytes before decoding them.
+2. Persist immutable import metadata bound to the new game, authenticated
+   imported player, remapped checkpoint player, and embedded checkpoint
+   envelope.
+3. Embed the running server executable revision at build time. `PublicGame.git`
+   is the imported **game** revision and is not server build identity.
+4. Expose an authenticated, game-bound
+   `GET /api/v1/arkham/games/:id/replay-attestation` response:
+
+   ```json
+   {
+     "schemaVersion": 1,
+     "gameId": "<imported game UUID>",
+     "playerId": "<authenticated imported player UUID>",
+     "checkpointPlayerId": "<player UUID in checkpoint provenance>",
+     "serverBuild": {
+       "gitRevision": "<40 lowercase hex executable revision>",
+       "gitTree": "<40 lowercase hex tree>",
+       "sourceSha256": "<64 lowercase hex compiled-source digest>",
+       "sourceClean": true,
+       "attestation": "git-clean"
+     },
+     "gameRevision": "<40 lowercase hex imported game revision>",
+     "checkpointArtifactSha256": "<SHA-256 of exact uploaded file bytes>",
+     "checkpointEnvelopeSha256": "<replayCheckpoint.envelopeSha256>",
+     "contractRevision": "0.1.34",
+     "checkpointName": "<provenance checkpoint name>"
+   }
+   ```
+
+The response must come only from server-owned persisted import metadata, never
+request parameters or caller-provided expected values. The Apple driver
+requires a clean build attestation, compares `serverBuild.gitRevision` to
+`ContractPin.current`, binds both checkpoint digests to a securely reopened
+local file, and compares `gameRevision` to both the checkpoint and
+authoritative REST/WebSocket snapshots. A missing, redirected, malformed, or
+mismatched response aborts the run. Do not add a client-side receipt or
+direct-answer workaround.
 
 ### Produce and import the authoritative checkpoint
 
-After backend PR #76 merges:
+After PR #76 **and** the attested import service above merge:
 
-1. Update `ContractPin.current` to the immutable merged backend commit and
-   `0.1.34`, then build the backend replay executable from that clean revision.
+1. Update `ContractPin.current` to the final immutable backend commit containing
+   both changes and to `0.1.34`, then build the backend replay executable and
+   production server from that exact clean revision. Do not pin #76's current
+   unmerged head.
 2. Obtain a normal authenticated backend game export whose retained state can
    be replayed to the combined enemy-attack assignment prompt.
 3. Create an exact answer plan whose `stopAt` binds the prompt player, version,
@@ -130,110 +174,74 @@ After backend PR #76 merges:
    make api.watch
    ```
 
-5. Import the *same* checkpoint twice through the production authenticated
-   route. `WithFriends` plus the exact investigator card code gives each import
-   a new authenticated player identity while retaining the authoritative
-   checkpoint:
-
-   ```sh
-   set +x
-   export ARKHAM_REPLAY_BASE_URL=http://127.0.0.1:3000
-   export ARKHAM_REPLAY_TOKEN='<production Token credential>'
-   export ARKHAM_REPLAY_INVESTIGATOR_ID='c01234'
-
-   import_checkpoint() {
-     curl --fail-with-body --silent --show-error \
-       -H "Authorization: Token ${ARKHAM_REPLAY_TOKEN}" \
-       -F "debugFile=@assignment.checkpoint.json;type=application/json" \
-       -F "investigatorId=${ARKHAM_REPLAY_INVESTIGATOR_ID}" \
-       "${ARKHAM_REPLAY_BASE_URL}/api/v1/arkham/games/import?multiplayerVariant=WithFriends"
-   }
-
-   import_checkpoint > damage-first.import.json
-   import_checkpoint > horror-first.import.json
-   ```
-
-   Keep the original checkpoint and its full-file SHA-256. The production
-   importer intentionally persists only the typed game export, not replay
-   provenance.
-
-6. Read each imported game through the production authenticated GET before any
-   answer is submitted:
-
-   ```sh
-   DAMAGE_GAME_ID="$(jq -er '.id' damage-first.import.json)"
-   HORROR_GAME_ID="$(jq -er '.id' horror-first.import.json)"
-
-   curl --fail-with-body --silent --show-error \
-     -H "Authorization: Token ${ARKHAM_REPLAY_TOKEN}" \
-     "${ARKHAM_REPLAY_BASE_URL}/api/v1/arkham/games/${DAMAGE_GAME_ID}" \
-     > damage-first.game.json
-   curl --fail-with-body --silent --show-error \
-     -H "Authorization: Token ${ARKHAM_REPLAY_TOKEN}" \
-     "${ARKHAM_REPLAY_BASE_URL}/api/v1/arkham/games/${HORROR_GAME_ID}" \
-     > horror-first.game.json
-
-   DAMAGE_PLAYER_ID="$(jq -er '.playerId' damage-first.game.json)"
-   HORROR_PLAYER_ID="$(jq -er '.playerId' horror-first.game.json)"
-   ```
-
-   Verify both GETs expose the expected `.game.git`, one owner prompt, exact
-   question version, `EnemyAttackSource`, enemy/investigator identities, and
-   canonical prompt digest. Read the catalog revision from
-   `/api/v1/capabilities`. These values are inputs to the fail-closed Apple
-   driver; none are inferred or normalized.
+5. Preserve `assignment.checkpoint.json` byte-for-byte. The wrapper imports this
+   same file twice through the production `WithFriends` route, reads both games
+   through the authenticated production GET, and requires the attestation
+   endpoint for each imported game before Apple submits anything.
 
 ### Run both Apple cases
 
-The Apple worktree must be clean because the driver verifies its exact `HEAD`.
-Create a private result directory outside the repository, do not enable shell
-tracing, and run one isolated imported game per case:
+The Apple worktree must be clean because the driver invokes `/usr/bin/git` with
+a fixed environment, verifies the canonical repository root, rejects tracked
+and untracked changes, and checks its exact `HEAD`.
+
+Create a caller-owned mode-0600 token file without placing the credential in
+curl's argument vector:
 
 ```sh
 set +x
-install -d -m 700 "${HOME}/.arkham-horror-replay"
-
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_DEADLINE_SECONDS=60
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_SERVER_BASE_URL="${ARKHAM_REPLAY_BASE_URL}"
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_SERVER_PROFILE_ID='00000000-0000-0000-0000-000000000777'
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_AUTH_TOKEN="${ARKHAM_REPLAY_TOKEN}"
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_EXPECTED_BACKEND_REVISION='<merged commit pinned by ContractPin>'
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_EXPECTED_APPLE_REVISION="$(git rev-parse HEAD)"
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_EXPECTED_CONTRACT_REVISION='0.1.34'
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_EXPECTED_CATALOG_REVISION='<capabilities localeCatalog.catalogRevision>'
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_EXPECTED_STARTING_PROMPT_ENEMY_ID='<exact enemy UUID>'
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_EXPECTED_STARTING_PROMPT_INVESTIGATOR_ID="${ARKHAM_REPLAY_INVESTIGATOR_ID}"
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_EXPECTED_STARTING_PROMPT_DIGEST='<64 lowercase hex>'
-export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_EXPECTED_STARTING_PROMPT_VERSION='<canonical nonnegative integer>'
-
-run_assignment_replay() {
-  export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_CASE="$1"
-  export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_GAME_ID="$2"
-  export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_PLAYER_ID="$3"
-  export ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_RESULT_PATH="$4"
-  swift test --package-path Packages/ArkhamHorrorShared --no-parallel \
-    --filter AssignmentContinuationReplayDriverSuite
-}
-
-run_assignment_replay \
-  damage-first-then-remaining-horror \
-  "${DAMAGE_GAME_ID}" \
-  "${DAMAGE_PLAYER_ID}" \
-  "${HOME}/.arkham-horror-replay/damage-first.json"
-
-run_assignment_replay \
-  horror-first-then-remaining-damage \
-  "${HORROR_GAME_ID}" \
-  "${HORROR_PLAYER_ID}" \
-  "${HOME}/.arkham-horror-replay/horror-first.json"
+TOKEN_FILE="${HOME}/.arkham-horror-replay-token"
+(umask 077; : >"${TOKEN_FILE}")
+chmod 600 "${TOKEN_FILE}"
+IFS= read -r -s -p 'Backend token: ' REPLAY_TOKEN
+printf '\n'
+printf '%s\n' "${REPLAY_TOKEN}" >"${TOKEN_FILE}"
+unset REPLAY_TOKEN
 ```
 
-Do not set
-`ARKHAM_PRODUCTION_ASSIGNMENT_REPLAY_OBSERVED_APPLE_REVISION`; the parent
-injects it only after verifying the worktree. A successful run atomically
-publishes one compact canonical JSON evidence file only after all controller,
-submitted-answer, authoritative before/after, assignment-delta, continuation,
-revision, and digest assertions pass.
+Then invoke the fail-fast wrapper. The output directory must not already exist;
+the wrapper creates it mode 0700:
+
+```sh
+set +x
+export ARKHAM_REPLAY_BASE_URL='http://127.0.0.1:3000'
+export ARKHAM_REPLAY_INVESTIGATOR_ID='c01234'
+export ARKHAM_REPLAY_ENEMY_ID='<exact enemy wire identity>'
+export ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION='0.1.34'
+export ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION='<capabilities localeCatalog.catalogRevision>'
+export ARKHAM_REPLAY_DEADLINE_SECONDS=60
+
+CHECKPOINT="$(pwd -P)/assignment.checkpoint.json"
+OUTPUT_DIRECTORY="${HOME}/.arkham-horror-replay/run-001"
+
+Scripts/run-production-assignment-replay.sh \
+  "${CHECKPOINT}" \
+  "${OUTPUT_DIRECTORY}" \
+  "${TOKEN_FILE}"
+
+rm -f "${TOKEN_FILE}"
+unset TOKEN_FILE
+```
+
+The wrapper uses `set -euo pipefail`. It stops before the second case if the
+first fails, removes a newly created output directory on failure, and succeeds
+only when two fresh compact canonical artifacts exist and independently verify
+against the exact checkpoint bytes. It writes a generated authorization header
+to a mode-0600 file and passes only that file path to curl, then removes the
+header and intermediate import/GET responses and unsets the child token on
+every exit path. The caller-owned token file is never deleted implicitly.
+
+Prompt version and canonical digest come from checkpoint provenance, not
+caller-provided values. Server executable identity comes only from the
+authenticated server attestation. The two final files are:
+
+- `damage-first.json`
+- `horror-first.json`
+
+Each is published only after the exact controller command path, one canonical
+versioned `Answer`, authoritative before/after state, assignment delta, next
+prompt, checkpoint full-file/envelope digests, Apple revision, server build
+revision, game revision, contract, and catalog assertions pass.
 
 ## Commands
 
@@ -243,6 +251,7 @@ mise run project-check
 mise run format-check
 mise run lint
 mise run test
+mise run production-assignment-replay-selftest
 mise run build
 ```
 

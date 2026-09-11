@@ -5,6 +5,7 @@ import Testing
 // swiftlint:disable file_length
 
 enum ProductionAssignmentReplayError: Error, Equatable {
+    case invalidCheckpointArtifact
     case appleRevisionUnavailable
     case appleSourceDirty
     case unsupportedHost
@@ -14,6 +15,9 @@ enum ProductionAssignmentReplayError: Error, Equatable {
     case serverNotModern
     case capabilitiesUnavailable
     case serverContractRevisionMismatch
+    case serverAttestationUnavailable
+    case serverAttestationMalformed
+    case serverAttestationMismatch
     case catalogAdvertisementMismatch
     case catalogSnapshotMismatch
     case storyAssetSourceUnavailable
@@ -24,7 +28,7 @@ enum ProductionAssignmentReplayError: Error, Equatable {
     case nextAuthoritativeObservationMissing
     case authoritativeGameIdentityMismatch
     case authoritativePlayerIdentityMismatch
-    case authoritativeBackendRevisionMismatch
+    case authoritativeGameRevisionMismatch
     case authoritativeProjectionMismatch
     case startingPromptMissing
     case startingPromptIdentityMismatch
@@ -60,6 +64,51 @@ struct AssignmentReplayStartingObservation {
 struct AssignmentReplayNextObservation {
     let assignmentAfter: AssignmentReplayFields
     let promptDigest: String
+
+    fileprivate init(
+        assignmentAfter: AssignmentReplayFields,
+        promptDigest: String
+    ) {
+        self.assignmentAfter = assignmentAfter
+        self.promptDigest = promptDigest
+    }
+}
+
+struct AssignmentReplayCanonicalSendProof: Sendable {
+    fileprivate init() {}
+}
+
+enum AssignmentReplaySubmissionValidator {
+    static func proveCanonicalSend(
+        sentAnswers: [Data],
+        expectedData: Data,
+        expectedAnswer: BasicChoiceAnswer
+    ) throws -> AssignmentReplayCanonicalSendProof {
+        guard sentAnswers.count == 1 else {
+            throw ProductionAssignmentReplayError.sentAnswerCountMismatch
+        }
+        guard sentAnswers[0] == expectedData,
+              try ContractJSON.decode(
+                  BasicChoiceAnswer.self,
+                  from: sentAnswers[0]
+              ) == expectedAnswer
+        else {
+            throw ProductionAssignmentReplayError.sentAnswerMismatch
+        }
+        return AssignmentReplayCanonicalSendProof()
+    }
+
+    static func validateResolvedSubmission(
+        _ result: BasicChoiceSubmitResult,
+        sendProof _: AssignmentReplayCanonicalSendProof,
+        nextProof _: AssignmentReplayNextObservation
+    ) throws {
+        guard result == .sentAwaitingSnapshot ||
+            result == .retryableFailure
+        else {
+            throw ProductionAssignmentReplayError.answerSubmissionFailed
+        }
+    }
 }
 
 enum AssignmentReplayAuthoritativeValidator {
@@ -67,16 +116,16 @@ enum AssignmentReplayAuthoritativeValidator {
         _ observation: AssignmentReplayAuthoritativeObservation,
         projection: BoardProjection,
         configuration: ProductionAssignmentReplayConfiguration,
+        attestation: ProductionAssignmentReplayAttestation,
         requiresPlayerIdentity: Bool
     ) throws {
         guard observation.gameID == configuration.promptIdentity.gameID else {
             throw ProductionAssignmentReplayError.authoritativeGameIdentityMismatch
         }
-        guard observation.backendRevision
-            == configuration.expectedBackendRevision
+        guard observation.gameRevision == attestation.gameRevision
         else {
             throw ProductionAssignmentReplayError
-                .authoritativeBackendRevisionMismatch
+                .authoritativeGameRevisionMismatch
         }
         if requiresPlayerIdentity || observation.playerID != nil {
             guard observation.playerID == configuration.promptIdentity.ownerID else {
@@ -325,6 +374,10 @@ enum AssignmentContinuationReplayRunner {
             capabilities: capabilities,
             configuration: configuration
         )
+        let attestation =
+            try await AssignmentReplayAttestationClient().fetch(
+                configuration: configuration
+            )
 
         let subscription = model.subscribeToLiveGame(
             configuration.promptIdentity.gameID
@@ -346,6 +399,7 @@ enum AssignmentContinuationReplayRunner {
             startingAuthority,
             projection: startingProjection,
             configuration: configuration,
+            attestation: attestation,
             requiresPlayerIdentity: true
         )
         guard model.liveGameParticipantIdentities[
@@ -415,9 +469,7 @@ enum AssignmentContinuationReplayRunner {
         guard let submissionTask else {
             throw ProductionAssignmentReplayError.controllerSubmissionMissing
         }
-        guard await submissionTask.value == .sentAwaitingSnapshot else {
-            throw ProductionAssignmentReplayError.answerSubmissionFailed
-        }
+        let submissionResult = await submissionTask.value
 
         let expectedAnswer = BasicChoiceAnswer(
             choice: configuration.checkpoint.sourceIndex,
@@ -425,18 +477,13 @@ enum AssignmentContinuationReplayRunner {
             questionVersion: configuration.expectedPromptVersion
         )
         let expectedAnswerData = try ContractJSON.encode(expectedAnswer)
-        let sentAnswers = await socketRecorder.snapshot()
-        guard sentAnswers.count == 1 else {
-            throw ProductionAssignmentReplayError.sentAnswerCountMismatch
-        }
-        guard sentAnswers[0] == expectedAnswerData,
-              try ContractJSON.decode(
-                  BasicChoiceAnswer.self,
-                  from: sentAnswers[0]
-              ) == expectedAnswer
-        else {
-            throw ProductionAssignmentReplayError.sentAnswerMismatch
-        }
+        let sentAnswers = socketRecorder.snapshot()
+        let sendProof =
+            try AssignmentReplaySubmissionValidator.proveCanonicalSend(
+                sentAnswers: sentAnswers,
+                expectedData: expectedAnswerData,
+                expectedAnswer: expectedAnswer
+            )
 
         let nextProjection = try await waitForNextProjection(
             model: model,
@@ -453,6 +500,7 @@ enum AssignmentContinuationReplayRunner {
             nextAuthority,
             projection: nextProjection,
             configuration: configuration,
+            attestation: attestation,
             requiresPlayerIdentity: false
         )
         guard model.liveGameParticipantIdentities[
@@ -477,10 +525,27 @@ enum AssignmentContinuationReplayRunner {
                 after: next.assignmentAfter,
                 checkpoint: configuration.checkpoint
             )
-        return ProductionAssignmentReplayEvidence(
+        try AssignmentReplaySubmissionValidator.validateResolvedSubmission(
+            submissionResult,
+            sendProof: sendProof,
+            nextProof: next
+        )
+        let evidence = ProductionAssignmentReplayEvidence(
             schemaVersion: ProductionAssignmentReplayEvidence
                 .currentSchemaVersion,
-            checkpoint: configuration.checkpoint.rawValue,
+            checkpoint: AssignmentReplayCheckpointEvidence(
+                caseName: configuration.checkpoint.rawValue,
+                name: configuration.checkpointArtifact.checkpointName,
+                playerID: configuration.checkpointArtifact.playerID,
+                questionVersion:
+                configuration.checkpointArtifact.questionVersion,
+                promptCanonicalSHA256:
+                configuration.checkpointArtifact.promptSHA256,
+                artifactSHA256:
+                configuration.checkpointArtifact.artifactSHA256,
+                envelopeSHA256:
+                configuration.checkpointArtifact.envelopeSHA256
+            ),
             source: ProductionAssignmentReplaySourceEvidence(
                 gameID: configuration.promptIdentity.gameID,
                 playerID: configuration.promptIdentity.ownerID,
@@ -514,12 +579,18 @@ enum AssignmentContinuationReplayRunner {
                 canonicalSHA256: next.promptDigest
             ),
             revisions: AssignmentReplayRevisionEvidence(
-                backend: startingAuthority.backendRevision,
+                serverBuild: attestation.serverBuild,
+                game: attestation.gameRevision,
                 apple: configuration.expectedAppleRevision,
                 contract: configuration.expectedContractRevision,
                 catalog: configuration.expectedCatalogRevision
             )
         )
+        try evidence.validate(
+            configuration: configuration,
+            attestation: attestation
+        )
+        return evidence
     }
 
     private static func validateBoot(
@@ -655,7 +726,9 @@ struct AssignmentContinuationReplayVictimSuite {
         )
         let resultData = try artifact.validatedData()
         try context.complete(resultData: resultData) {
-            guard evidence.checkpoint == context.checkpoint.rawValue else {
+            guard evidence.checkpoint.caseName ==
+                context.checkpoint.rawValue
+            else {
                 throw ProductionAssignmentReplayError.evidenceCheckpointMismatch
             }
             try evidence.validate(configuration: configuration)

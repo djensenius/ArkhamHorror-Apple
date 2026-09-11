@@ -38,7 +38,7 @@ enum AssignmentReplayObservationSource: Sendable, Equatable {
 struct AssignmentReplayAuthoritativeObservation: Sendable, Equatable {
     let source: AssignmentReplayObservationSource
     let gameID: GameID
-    let backendRevision: String
+    let gameRevision: String
     let playerID: PlayerID?
     let projection: BoardProjection
 }
@@ -50,7 +50,7 @@ actor AssignmentReplayAuthoritativeRecorder {
         observations.append(AssignmentReplayAuthoritativeObservation(
             source: .rest,
             gameID: envelope.game.id,
-            backendRevision: envelope.game.git,
+            gameRevision: envelope.game.git,
             playerID: envelope.playerID,
             projection: BoardProjectionBuilder.makeProjection(from: envelope.game)
         ))
@@ -60,7 +60,7 @@ actor AssignmentReplayAuthoritativeRecorder {
         observations.append(AssignmentReplayAuthoritativeObservation(
             source: .socket,
             gameID: snapshot.id,
-            backendRevision: snapshot.git,
+            gameRevision: snapshot.git,
             playerID: nil,
             projection: BoardProjectionBuilder.makeProjection(from: snapshot)
         ))
@@ -120,15 +120,20 @@ private func replayGameEnvelope(
     )
 }
 
-actor ProductionAssignmentReplaySocketRecorder {
+final class ProductionAssignmentReplaySocketRecorder: @unchecked Sendable {
+    private let lock = NSLock()
     private var successfulSends: [Data] = []
 
     func recordSuccessfulSend(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
         successfulSends.append(data)
     }
 
     func snapshot() -> [Data] {
-        successfulSends
+        lock.lock()
+        defer { lock.unlock() }
+        return successfulSends
     }
 }
 
@@ -174,7 +179,7 @@ private struct AssignmentReplaySocketConnection: GameSocketConnection {
 
     func send(_ data: Data) async throws {
         try await base.send(data)
-        await recorder.recordSuccessfulSend(data)
+        recorder.recordSuccessfulSend(data)
     }
 
     func close(code: URLSessionWebSocketTask.CloseCode, reason: Data?) {
@@ -195,80 +200,6 @@ private func replaySnapshot(
         return nil
     }
     return snapshot
-}
-
-enum ProductionAssignmentReplayGitRevision {
-    static func current(
-        startingAt startURL: URL = URL(
-            fileURLWithPath: FileManager.default.currentDirectoryPath,
-            isDirectory: true
-        )
-    ) throws -> String {
-        let root = try repositoryRoot(startingAt: startURL)
-        let revisionData = try runGit(
-            ["rev-parse", "HEAD"],
-            in: root
-        )
-        guard let raw = String(data: revisionData, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-            isLowercaseGitRevision(raw)
-        else {
-            throw ProductionAssignmentReplayError.appleRevisionUnavailable
-        }
-        let status = try runGit(
-            ["status", "--porcelain=v1", "--untracked-files=normal"],
-            in: root
-        )
-        guard status.isEmpty else {
-            throw ProductionAssignmentReplayError.appleSourceDirty
-        }
-        return raw
-    }
-
-    private static func runGit(
-        _ arguments: [String],
-        in root: URL
-    ) throws -> Data {
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", root.path] + arguments
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            throw ProductionAssignmentReplayError.appleRevisionUnavailable
-        }
-        process.waitUntilExit()
-        guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-            throw ProductionAssignmentReplayError.appleRevisionUnavailable
-        }
-        return output.fileHandleForReading.readDataToEndOfFile()
-    }
-
-    private static func repositoryRoot(startingAt startURL: URL) throws -> URL {
-        var candidate = startURL.standardizedFileURL
-        while true {
-            if FileManager.default.fileExists(
-                atPath: candidate.appendingPathComponent(".git").path
-            ) {
-                return candidate
-            }
-            let parent = candidate.deletingLastPathComponent()
-            guard parent.path != candidate.path else {
-                throw ProductionAssignmentReplayError.appleRevisionUnavailable
-            }
-            candidate = parent
-        }
-    }
-
-    private static func isLowercaseGitRevision(_ value: String) -> Bool {
-        value.utf8.count == 40
-            && value.utf8.allSatisfy {
-                (0x30 ... 0x39).contains($0) || (0x61 ... 0x66).contains($0)
-            }
-    }
 }
 
 enum AssignmentContinuationReplayDriver {

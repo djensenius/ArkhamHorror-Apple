@@ -64,6 +64,10 @@ run = "Scripts/verify-locale-digest-provenance.sh"
 description = "Offline self-test of verify-locale-digest-provenance.sh's own logic against disposable scratch git repos (no network, part of the offline test suite)"
 run = "Scripts/test-verify-locale-digest-provenance.sh"
 
+[tasks.production-assignment-replay-selftest]
+description = "Offline self-test of the fail-fast two-case production assignment replay wrapper"
+run = "Scripts/test-run-production-assignment-replay.sh"
+
 [tasks.build]
 description = "Build every application target"
 run = """

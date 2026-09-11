@@ -95,16 +95,16 @@ enum ProductionAssignmentReplayEnvironmentKey {
     static let authToken = prefix + "AUTH_TOKEN"
     static let gameID = prefix + "GAME_ID"
     static let playerID = prefix + "PLAYER_ID"
-    static let expectedBackendRevision = prefix + "EXPECTED_BACKEND_REVISION"
     static let expectedAppleRevision = prefix + "EXPECTED_APPLE_REVISION"
     static let expectedContractRevision = prefix + "EXPECTED_CONTRACT_REVISION"
     static let expectedCatalogRevision = prefix + "EXPECTED_CATALOG_REVISION"
     static let expectedPromptEnemyID = prefix + "EXPECTED_STARTING_PROMPT_ENEMY_ID"
     static let expectedPromptInvestigatorID =
         prefix + "EXPECTED_STARTING_PROMPT_INVESTIGATOR_ID"
-    static let expectedPromptDigest = prefix + "EXPECTED_STARTING_PROMPT_DIGEST"
-    static let expectedPromptVersion = prefix + "EXPECTED_STARTING_PROMPT_VERSION"
+    static let checkpointArtifactPath = prefix + "CHECKPOINT_ARTIFACT_PATH"
     static let observedAppleRevision = prefix + "OBSERVED_APPLE_REVISION"
+    static let observedCheckpointArtifactSHA256 =
+        prefix + "OBSERVED_CHECKPOINT_ARTIFACT_SHA256"
 
     static let known = Set([
         checkpoint,
@@ -115,15 +115,14 @@ enum ProductionAssignmentReplayEnvironmentKey {
         authToken,
         gameID,
         playerID,
-        expectedBackendRevision,
         expectedAppleRevision,
         expectedContractRevision,
         expectedCatalogRevision,
         expectedPromptEnemyID,
         expectedPromptInvestigatorID,
-        expectedPromptDigest,
-        expectedPromptVersion,
+        checkpointArtifactPath,
         observedAppleRevision,
+        observedCheckpointArtifactSHA256,
     ])
 }
 
@@ -133,9 +132,10 @@ enum AssignmentReplayConfigurationError: Error, Equatable {
     case forbiddenEnvironmentKey(String)
     case invalidEnvironmentValue(String)
     case checkpointMismatch
-    case backendRevisionMismatch
     case appleRevisionMismatch
     case contractRevisionMismatch
+    case invalidCheckpointArtifact
+    case checkpointArtifactIdentityMismatch
 }
 
 // swiftlint:disable:next type_body_length
@@ -147,12 +147,18 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
     let serverProfile: ServerProfile
     let authToken: String
     let promptIdentity: ProductionAssignmentReplayPromptIdentity
-    let expectedBackendRevision: String
     let expectedAppleRevision: String
     let expectedContractRevision: ContractRevision
     let expectedCatalogRevision: String
-    let expectedPromptDigest: String
-    let expectedPromptVersion: Int
+    let checkpointArtifact: AssignmentReplayCheckpointArtifact
+
+    var expectedPromptDigest: String {
+        checkpointArtifact.promptSHA256
+    }
+
+    var expectedPromptVersion: Int {
+        checkpointArtifact.questionVersion
+    }
 
     init(
         checkpoint: ProductionAssignmentReplayCheckpoint,
@@ -160,43 +166,37 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
         serverProfile: ServerProfile,
         authToken: String,
         promptIdentity: ProductionAssignmentReplayPromptIdentity,
-        expectedBackendRevision: String,
         expectedAppleRevision: String,
         expectedContractRevision: ContractRevision,
         expectedCatalogRevision: String,
-        expectedPromptDigest: String,
-        expectedPromptVersion: Int
+        checkpointArtifact: AssignmentReplayCheckpointArtifact
     ) throws {
         try Self.validateRuntimeValues(
             deadlineSeconds: deadlineSeconds,
             authToken: authToken,
-            promptDigest: expectedPromptDigest,
-            promptVersion: expectedPromptVersion
+            checkpointArtifact: checkpointArtifact
         )
         try Self.validateExpectedRevisions(
-            backend: expectedBackendRevision,
             apple: expectedAppleRevision,
             contract: expectedContractRevision,
-            catalog: expectedCatalogRevision
+            catalog: expectedCatalogRevision,
+            checkpointContract: checkpointArtifact.contractRevision
         )
         self.checkpoint = checkpoint
         self.deadlineSeconds = deadlineSeconds
         self.serverProfile = serverProfile
         self.authToken = authToken
         self.promptIdentity = promptIdentity
-        self.expectedBackendRevision = expectedBackendRevision
         self.expectedAppleRevision = expectedAppleRevision
         self.expectedContractRevision = expectedContractRevision
         self.expectedCatalogRevision = expectedCatalogRevision
-        self.expectedPromptDigest = expectedPromptDigest
-        self.expectedPromptVersion = expectedPromptVersion
+        self.checkpointArtifact = checkpointArtifact
     }
 
     private static func validateRuntimeValues(
         deadlineSeconds: Double,
         authToken: String,
-        promptDigest: String,
-        promptVersion: Int
+        checkpointArtifact: AssignmentReplayCheckpointArtifact
     ) throws {
         guard deadlineSeconds.isFinite,
               deadlineSeconds.rounded(.towardZero) == deadlineSeconds,
@@ -213,29 +213,41 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
                 ProductionAssignmentReplayEnvironmentKey.authToken
             )
         }
-        guard LocaleCatalogGrammar.isSHA256Hex(promptDigest) else {
+        guard LocaleCatalogGrammar.isSHA256Hex(
+            checkpointArtifact.promptSHA256
+        ),
+            LocaleCatalogGrammar.isSHA256Hex(
+                checkpointArtifact.artifactSHA256
+            ),
+            LocaleCatalogGrammar.isSHA256Hex(
+                checkpointArtifact.envelopeSHA256
+            )
+        else {
             throw AssignmentReplayConfigurationError.invalidEnvironmentValue(
-                ProductionAssignmentReplayEnvironmentKey.expectedPromptDigest
+                ProductionAssignmentReplayEnvironmentKey.checkpointArtifactPath
             )
         }
-        guard promptVersion >= 0, promptVersion < Int.max else {
+        guard checkpointArtifact.questionVersion > 0,
+              checkpointArtifact.questionVersion < Int.max,
+              checkpointArtifact.promptTag ==
+              BasicChoiceQuestionKind.questionWithSource.rawValue,
+              isLowercaseHex(
+                  checkpointArtifact.sourceGameRevision,
+                  count: 40
+              )
+        else {
             throw AssignmentReplayConfigurationError.invalidEnvironmentValue(
-                ProductionAssignmentReplayEnvironmentKey.expectedPromptVersion
+                ProductionAssignmentReplayEnvironmentKey.checkpointArtifactPath
             )
         }
     }
 
     private static func validateExpectedRevisions(
-        backend: String,
         apple: String,
         contract: ContractRevision,
-        catalog: String
+        catalog: String,
+        checkpointContract: String
     ) throws {
-        guard isLowercaseHex(backend, count: 40) else {
-            throw AssignmentReplayConfigurationError.invalidEnvironmentValue(
-                ProductionAssignmentReplayEnvironmentKey.expectedBackendRevision
-            )
-        }
         guard isLowercaseHex(apple, count: 40) else {
             throw AssignmentReplayConfigurationError.invalidEnvironmentValue(
                 ProductionAssignmentReplayEnvironmentKey.expectedAppleRevision
@@ -246,10 +258,9 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
                 ProductionAssignmentReplayEnvironmentKey.expectedCatalogRevision
             )
         }
-        guard backend == ContractPin.current.backendCommit else {
-            throw AssignmentReplayConfigurationError.backendRevisionMismatch
-        }
-        guard contract == ContractPin.current.supportedSchemaRevision else {
+        guard contract == ContractPin.current.supportedSchemaRevision,
+              checkpointContract == contract.description
+        else {
             throw AssignmentReplayConfigurationError.contractRevisionMismatch
         }
     }
@@ -275,6 +286,17 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
         guard observed == values.configuration.expectedAppleRevision else {
             throw AssignmentReplayConfigurationError.appleRevisionMismatch
         }
+        let checkpointSHA256 = try required(
+            ProductionAssignmentReplayEnvironmentKey
+                .observedCheckpointArtifactSHA256,
+            in: environment
+        )
+        guard checkpointSHA256 ==
+            values.configuration.checkpointArtifact.artifactSHA256
+        else {
+            throw AssignmentReplayConfigurationError
+                .checkpointArtifactIdentityMismatch
+        }
         return values.configuration
     }
 
@@ -295,8 +317,6 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
                 promptIdentity.gameID.codingKey.stringValue,
             ProductionAssignmentReplayEnvironmentKey.playerID:
                 promptIdentity.ownerID.codingKey.stringValue,
-            ProductionAssignmentReplayEnvironmentKey.expectedBackendRevision:
-                expectedBackendRevision,
             ProductionAssignmentReplayEnvironmentKey.expectedAppleRevision:
                 expectedAppleRevision,
             ProductionAssignmentReplayEnvironmentKey.expectedContractRevision:
@@ -307,12 +327,13 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
                 promptIdentity.enemyID.codingKey.stringValue,
             ProductionAssignmentReplayEnvironmentKey.expectedPromptInvestigatorID:
                 promptIdentity.investigatorID.codingKey.stringValue,
-            ProductionAssignmentReplayEnvironmentKey.expectedPromptDigest:
-                expectedPromptDigest,
-            ProductionAssignmentReplayEnvironmentKey.expectedPromptVersion:
-                String(expectedPromptVersion),
+            ProductionAssignmentReplayEnvironmentKey.checkpointArtifactPath:
+                checkpointArtifact.fileURL.path,
             ProductionAssignmentReplayEnvironmentKey.observedAppleRevision:
                 observedAppleRevision,
+            ProductionAssignmentReplayEnvironmentKey
+                .observedCheckpointArtifactSHA256:
+                checkpointArtifact.artifactSHA256,
         ]
     }
 
@@ -415,10 +436,6 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
                 ProductionAssignmentReplayEnvironmentKey.expectedPromptInvestigatorID
             )
         }
-        let backendRevision = try gitRevision(
-            ProductionAssignmentReplayEnvironmentKey.expectedBackendRevision,
-            environment: environment
-        )
         let appleRevision = try gitRevision(
             ProductionAssignmentReplayEnvironmentKey.expectedAppleRevision,
             environment: environment
@@ -449,20 +466,27 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
                 ProductionAssignmentReplayEnvironmentKey.expectedCatalogRevision
             )
         }
-        let promptDigest = try required(
-            ProductionAssignmentReplayEnvironmentKey.expectedPromptDigest,
+        let checkpointPath = try required(
+            ProductionAssignmentReplayEnvironmentKey.checkpointArtifactPath,
             in: environment
         )
-        guard LocaleCatalogGrammar.isSHA256Hex(promptDigest) else {
+        guard checkpointPath.hasPrefix("/") else {
             throw AssignmentReplayConfigurationError.invalidEnvironmentValue(
-                ProductionAssignmentReplayEnvironmentKey.expectedPromptDigest
+                ProductionAssignmentReplayEnvironmentKey.checkpointArtifactPath
             )
         }
-        let promptVersion = try canonicalInteger(
-            ProductionAssignmentReplayEnvironmentKey.expectedPromptVersion,
-            in: environment,
-            allowed: 0 ... (Int.max - 1)
-        )
+        let checkpointArtifact: AssignmentReplayCheckpointArtifact
+        do {
+            checkpointArtifact =
+                try AssignmentReplayCheckpointArtifact.load(
+                    from: URL(
+                        fileURLWithPath: checkpointPath,
+                        isDirectory: false
+                    )
+                )
+        } catch {
+            throw AssignmentReplayConfigurationError.invalidCheckpointArtifact
+        }
         let configuration = try ProductionAssignmentReplayConfiguration(
             checkpoint: checkpoint,
             deadlineSeconds: Double(deadline),
@@ -474,12 +498,10 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
                 enemyID: enemyID,
                 investigatorID: investigatorID
             ),
-            expectedBackendRevision: backendRevision,
             expectedAppleRevision: appleRevision,
             expectedContractRevision: contractRevision,
             expectedCatalogRevision: catalogRevision,
-            expectedPromptDigest: promptDigest,
-            expectedPromptVersion: promptVersion
+            checkpointArtifact: checkpointArtifact
         )
         return (
             configuration,
@@ -568,10 +590,12 @@ struct ProductionAssignmentReplayInvocation: Sendable {
             return nil
         }
         try ProductionAssignmentReplayConfiguration.validateKnownKeys(environment)
-        if environment[ProductionAssignmentReplayEnvironmentKey.observedAppleRevision] != nil {
-            throw AssignmentReplayConfigurationError.forbiddenEnvironmentKey(
-                ProductionAssignmentReplayEnvironmentKey.observedAppleRevision
-            )
+        for key in [
+            ProductionAssignmentReplayEnvironmentKey.observedAppleRevision,
+            ProductionAssignmentReplayEnvironmentKey
+                .observedCheckpointArtifactSHA256,
+        ] where environment[key] != nil {
+            throw AssignmentReplayConfigurationError.forbiddenEnvironmentKey(key)
         }
         let values = try ProductionAssignmentReplayConfiguration
             .parseExternalValues(environment)

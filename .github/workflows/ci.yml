@@ -64,6 +64,8 @@ jobs:
         run: mise run contract-provenance-selftest
       - name: Self-test locale-digest provenance script (offline)
         run: mise run locale-digest-provenance-selftest
+      - name: Self-test production assignment replay wrapper (offline)
+        run: mise run production-assignment-replay-selftest
 
   contract-provenance:
     name: Contract fixture provenance

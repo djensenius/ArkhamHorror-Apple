@@ -6,6 +6,12 @@ import Testing
 
 private let replayAppleRevision = String(repeating: "a", count: 40)
 private let replayCatalogRevision = "1." + String(repeating: "b", count: 32)
+private let replayGameRevision = String(repeating: "c", count: 40)
+private let replayServerTree = String(repeating: "1", count: 40)
+private let replayServerSourceSHA256 = String(repeating: "2", count: 64)
+private let replayCheckpointArtifactSHA256 = String(repeating: "d", count: 64)
+private let replayCheckpointEnvelopeSHA256 = String(repeating: "e", count: 64)
+private let replayCheckpointName = "enemy-attack-assignment-continuation"
 
 @Suite("Production assignment replay configuration")
 struct AssignmentReplayConfigurationTests {
@@ -35,7 +41,25 @@ struct AssignmentReplayConfigurationTests {
             == DamageAssignmentFixtures.enemyID)
         #expect(invocation.configuration.expectedContractRevision
             == ContractPin.current.supportedSchemaRevision)
+        #expect(invocation.configuration.checkpointArtifact.questionVersion == 6)
+        let expectedPromptDigest =
+            try ProductionAssignmentReplayCanonicalJSON.promptDigest(
+                DamageAssignmentFixtures.value()
+            )
+        #expect(invocation.configuration.checkpointArtifact.promptSHA256
+            == expectedPromptDigest)
         #expect(invocation.resultURL == scratch.result)
+
+        var remappedPlayer = environment
+        remappedPlayer[ProductionAssignmentReplayEnvironmentKey.playerID] =
+            BoardTestFixtures.playerID("000000000002").codingKey.stringValue
+        let remappedInvocation = try #require(
+            try ProductionAssignmentReplayInvocation.parse(
+                environment: remappedPlayer
+            )
+        )
+        #expect(remappedInvocation.configuration.promptIdentity.ownerID
+            != remappedInvocation.configuration.checkpointArtifact.playerID)
 
         var missingToken = environment
         missingToken.removeValue(
@@ -48,20 +72,6 @@ struct AssignmentReplayConfigurationTests {
         ) {
             _ = try ProductionAssignmentReplayInvocation.parse(
                 environment: missingToken
-            )
-        }
-
-        var malformedDigest = environment
-        malformedDigest[
-            ProductionAssignmentReplayEnvironmentKey.expectedPromptDigest
-        ] = String(repeating: "A", count: 64)
-        expectConfigurationError(
-            .invalidEnvironmentValue(
-                ProductionAssignmentReplayEnvironmentKey.expectedPromptDigest
-            )
-        ) {
-            _ = try ProductionAssignmentReplayInvocation.parse(
-                environment: malformedDigest
             )
         }
 
@@ -90,13 +100,15 @@ struct AssignmentReplayConfigurationTests {
             )
         }
 
-        var wrongBackend = environment
-        wrongBackend[
-            ProductionAssignmentReplayEnvironmentKey.expectedBackendRevision
-        ] = String(repeating: "c", count: 40)
-        expectConfigurationError(.backendRevisionMismatch) {
+        var callerClaimedServerBuild = environment
+        let removedBackendKey =
+            ProductionAssignmentReplayEnvironmentKey.prefix +
+            "EXPECTED_BACKEND_REVISION"
+        callerClaimedServerBuild[removedBackendKey] =
+            ContractPin.current.backendCommit
+        expectConfigurationError(.unknownEnvironmentKey(removedBackendKey)) {
             _ = try ProductionAssignmentReplayInvocation.parse(
-                environment: wrongBackend
+                environment: callerClaimedServerBuild
             )
         }
 
@@ -107,20 +119,6 @@ struct AssignmentReplayConfigurationTests {
         expectConfigurationError(.contractRevisionMismatch) {
             _ = try ProductionAssignmentReplayInvocation.parse(
                 environment: wrongContract
-            )
-        }
-
-        var overflowingVersion = environment
-        overflowingVersion[
-            ProductionAssignmentReplayEnvironmentKey.expectedPromptVersion
-        ] = String(Int.max)
-        expectConfigurationError(
-            .invalidEnvironmentValue(
-                ProductionAssignmentReplayEnvironmentKey.expectedPromptVersion
-            )
-        ) {
-            _ = try ProductionAssignmentReplayInvocation.parse(
-                environment: overflowingVersion
             )
         }
 
@@ -137,6 +135,39 @@ struct AssignmentReplayConfigurationTests {
                 environment: spoofedChildRevision
             )
         }
+
+        var spoofedCheckpointIdentity = environment
+        spoofedCheckpointIdentity[
+            ProductionAssignmentReplayEnvironmentKey
+                .observedCheckpointArtifactSHA256
+        ] = String(repeating: "f", count: 64)
+        expectConfigurationError(
+            .forbiddenEnvironmentKey(
+                ProductionAssignmentReplayEnvironmentKey
+                    .observedCheckpointArtifactSHA256
+            )
+        ) {
+            _ = try ProductionAssignmentReplayInvocation.parse(
+                environment: spoofedCheckpointIdentity
+            )
+        }
+
+        let malformedURL = scratch.directory.appendingPathComponent(
+            "malformed-checkpoint.json"
+        )
+        try writeProductionAssignmentReplayCheckpoint(
+            to: malformedURL,
+            promptDigest: String(repeating: "A", count: 64)
+        )
+        var malformedCheckpoint = environment
+        malformedCheckpoint[
+            ProductionAssignmentReplayEnvironmentKey.checkpointArtifactPath
+        ] = malformedURL.path
+        expectConfigurationError(.invalidCheckpointArtifact) {
+            _ = try ProductionAssignmentReplayInvocation.parse(
+                environment: malformedCheckpoint
+            )
+        }
     }
 
     @Test("Child checkpoint and observed Apple revision must match the parent")
@@ -146,9 +177,18 @@ struct AssignmentReplayConfigurationTests {
         var environment = try productionAssignmentReplayEnvironment(
             resultURL: scratch.result
         )
+        let parent = try #require(
+            try ProductionAssignmentReplayInvocation.parse(
+                environment: environment
+            )
+        )
         environment[
             ProductionAssignmentReplayEnvironmentKey.observedAppleRevision
         ] = replayAppleRevision
+        environment[
+            ProductionAssignmentReplayEnvironmentKey
+                .observedCheckpointArtifactSHA256
+        ] = parent.configuration.checkpointArtifact.artifactSHA256
         let configuration = try ProductionAssignmentReplayConfiguration.child(
             environment: environment,
             checkpoint: .damageFirstThenRemainingHorror
@@ -169,6 +209,115 @@ struct AssignmentReplayConfigurationTests {
             _ = try ProductionAssignmentReplayConfiguration.child(
                 environment: environment,
                 checkpoint: .damageFirstThenRemainingHorror
+            )
+        }
+    }
+
+    @Test("Child rejects a checkpoint substituted after parent validation")
+    func childRejectsCheckpointSubstitution() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        var environment = try productionAssignmentReplayEnvironment(
+            resultURL: scratch.result
+        )
+        let parent = try #require(
+            try ProductionAssignmentReplayInvocation.parse(
+                environment: environment
+            )
+        )
+        environment[
+            ProductionAssignmentReplayEnvironmentKey.observedAppleRevision
+        ] = replayAppleRevision
+        environment[
+            ProductionAssignmentReplayEnvironmentKey
+                .observedCheckpointArtifactSHA256
+        ] = parent.configuration.checkpointArtifact.artifactSHA256
+        let checkpointURL = try URL(fileURLWithPath: #require(
+            environment[
+                ProductionAssignmentReplayEnvironmentKey.checkpointArtifactPath
+            ]
+        ))
+        try writeProductionAssignmentReplayCheckpoint(
+            to: checkpointURL,
+            envelopeDigest: String(repeating: "f", count: 64)
+        )
+        expectConfigurationError(.checkpointArtifactIdentityMismatch) {
+            _ = try ProductionAssignmentReplayConfiguration.child(
+                environment: environment,
+                checkpoint: .damageFirstThenRemainingHorror
+            )
+        }
+    }
+}
+
+@Suite("Production assignment replay checkpoint artifact")
+struct AssignmentReplayCheckpointArtifactTests {
+    @Test("Exact file bytes and embedded envelope identity are digest-bound")
+    func exactArtifactDigest() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        let checkpointURL = scratch.directory.appendingPathComponent(
+            "checkpoint.json"
+        )
+        try writeProductionAssignmentReplayCheckpoint(to: checkpointURL)
+        let bytes = try Data(contentsOf: checkpointURL)
+        let artifact =
+            try AssignmentReplayCheckpointArtifact.load(
+                from: checkpointURL
+            )
+        let expectedArtifactDigest =
+            LocaleCatalogLoader.sha256Hex(bytes)
+        #expect(artifact.artifactSHA256 == expectedArtifactDigest)
+        #expect(artifact.envelopeSHA256 == replayCheckpointEnvelopeSHA256)
+        #expect(artifact.checkpointName == replayCheckpointName)
+        #expect(artifact.questionVersion == 6)
+        #expect(artifact.playerID
+            == BoardTestFixtures.playerID("000000000001"))
+        #expect(artifact.sourceGameRevision == replayGameRevision)
+
+        var changedBytes = bytes
+        changedBytes.append(0x0A)
+        try changedBytes.write(to: checkpointURL)
+        let changed =
+            try AssignmentReplayCheckpointArtifact.load(
+                from: checkpointURL
+            )
+        #expect(changed.artifactSHA256 != artifact.artifactSHA256)
+        #expect(changed.envelopeSHA256 == artifact.envelopeSHA256)
+    }
+
+    @Test("Symlinks and duplicate-key checkpoint documents fail closed")
+    func unsafeOrAmbiguousArtifact() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        let checkpointURL = scratch.directory.appendingPathComponent(
+            "checkpoint.json"
+        )
+        try writeProductionAssignmentReplayCheckpoint(to: checkpointURL)
+        let linkURL = scratch.directory.appendingPathComponent("link.json")
+        try FileManager.default.createSymbolicLink(
+            at: linkURL,
+            withDestinationURL: checkpointURL
+        )
+        #expect(
+            throws: ProductionAssignmentReplayError.invalidCheckpointArtifact
+        ) {
+            _ = try AssignmentReplayCheckpointArtifact.load(
+                from: linkURL
+            )
+        }
+
+        let duplicateURL = scratch.directory.appendingPathComponent(
+            "duplicate.json"
+        )
+        try Data(
+            #"{"replayCheckpoint":null,"replayCheckpoint":null}"#.utf8
+        ).write(to: duplicateURL)
+        #expect(
+            throws: ProductionAssignmentReplayError.invalidCheckpointArtifact
+        ) {
+            _ = try AssignmentReplayCheckpointArtifact.load(
+                from: duplicateURL
             )
         }
     }
@@ -248,6 +397,58 @@ struct AssignmentReplayCheckpointTests {
             ) == checkpoint.assignmentDelta
         )
     }
+
+    @MainActor
+    @Test("Retryable fast reconciliation requires exact send and next-state proofs")
+    func retryableResolutionProofs() throws {
+        let starting = try productionAssignmentStartingFixture()
+        let expectedAnswer = BasicChoiceAnswer(
+            choice: starting.configuration.checkpoint.sourceIndex,
+            playerID: starting.configuration.promptIdentity.ownerID,
+            questionVersion: starting.configuration.expectedPromptVersion
+        )
+        let expectedData = try ContractJSON.encode(expectedAnswer)
+        let sendProof =
+            try AssignmentReplaySubmissionValidator.proveCanonicalSend(
+                sentAnswers: [expectedData],
+                expectedData: expectedData,
+                expectedAnswer: expectedAnswer
+            )
+        let nextFixture = try productionAssignmentNextFixture(
+            checkpoint: starting.configuration.checkpoint
+        )
+        let nextProof =
+            try ProductionAssignmentReplayValidator.validateNextPrompt(
+                nextFixture.prompt,
+                projection: nextFixture.projection,
+                configuration: starting.configuration
+            )
+
+        try AssignmentReplaySubmissionValidator.validateResolvedSubmission(
+            .retryableFailure,
+            sendProof: sendProof,
+            nextProof: nextProof
+        )
+        #expect(
+            throws: ProductionAssignmentReplayError.sentAnswerCountMismatch
+        ) {
+            _ = try AssignmentReplaySubmissionValidator.proveCanonicalSend(
+                sentAnswers: [],
+                expectedData: expectedData,
+                expectedAnswer: expectedAnswer
+            )
+        }
+        #expect(
+            throws: ProductionAssignmentReplayError.answerSubmissionFailed
+        ) {
+            try AssignmentReplaySubmissionValidator
+                .validateResolvedSubmission(
+                    .alreadyPending,
+                    sendProof: sendProof,
+                    nextProof: nextProof
+                )
+        }
+    }
 }
 
 @Suite("Production assignment replay evidence")
@@ -268,6 +469,13 @@ struct ProductionAssignmentReplayEvidenceTests {
         let decoded =
             try AssignmentReplayEvidenceArtifact.decodeAndValidate(first)
         #expect(decoded == artifact)
+        #expect(decoded.evidence.checkpoint.artifactSHA256
+            == replayCheckpointArtifactSHA256)
+        #expect(decoded.evidence.checkpoint.envelopeSHA256
+            == replayCheckpointEnvelopeSHA256)
+        #expect(decoded.evidence.revisions.serverBuild.gitRevision
+            == ContractPin.current.backendCommit)
+        #expect(decoded.evidence.revisions.game == replayGameRevision)
 
         var unknownFieldValue = try ContractJSON.decode(
             JSONValue.self,
@@ -363,15 +571,18 @@ struct ProductionAssignmentReplayIdentityTests {
         }
     }
 
-    @Test("Backend, game, and authenticated player identity fail closed")
+    @Test("Game revision, game, and authenticated player identity fail closed")
     // swiftlint:disable:next function_body_length
     func authoritativeIdentity() throws {
         let fixture = try productionAssignmentStartingFixture()
         let configuration = fixture.configuration
+        let attestation = productionAssignmentReplayAttestation(
+            configuration: configuration
+        )
         let valid = AssignmentReplayAuthoritativeObservation(
             source: .rest,
             gameID: configuration.promptIdentity.gameID,
-            backendRevision: configuration.expectedBackendRevision,
+            gameRevision: configuration.checkpointArtifact.sourceGameRevision,
             playerID: configuration.promptIdentity.ownerID,
             projection: fixture.projection
         )
@@ -379,24 +590,26 @@ struct ProductionAssignmentReplayIdentityTests {
             valid,
             projection: fixture.projection,
             configuration: configuration,
+            attestation: attestation,
             requiresPlayerIdentity: true
         )
 
-        let wrongBackend = AssignmentReplayAuthoritativeObservation(
+        let wrongRevision = AssignmentReplayAuthoritativeObservation(
             source: .rest,
             gameID: valid.gameID,
-            backendRevision: String(repeating: "c", count: 40),
+            gameRevision: String(repeating: "f", count: 40),
             playerID: valid.playerID,
             projection: valid.projection
         )
         #expect(
             throws: ProductionAssignmentReplayError
-                .authoritativeBackendRevisionMismatch
+                .authoritativeGameRevisionMismatch
         ) {
             try AssignmentReplayAuthoritativeValidator.validate(
-                wrongBackend,
+                wrongRevision,
                 projection: fixture.projection,
                 configuration: configuration,
+                attestation: attestation,
                 requiresPlayerIdentity: true
             )
         }
@@ -404,7 +617,7 @@ struct ProductionAssignmentReplayIdentityTests {
         let wrongGame = AssignmentReplayAuthoritativeObservation(
             source: .rest,
             gameID: BoardTestFixtures.gameID("000000000901"),
-            backendRevision: valid.backendRevision,
+            gameRevision: valid.gameRevision,
             playerID: valid.playerID,
             projection: valid.projection
         )
@@ -416,6 +629,7 @@ struct ProductionAssignmentReplayIdentityTests {
                 wrongGame,
                 projection: fixture.projection,
                 configuration: configuration,
+                attestation: attestation,
                 requiresPlayerIdentity: true
             )
         }
@@ -423,7 +637,7 @@ struct ProductionAssignmentReplayIdentityTests {
         let wrongPlayer = AssignmentReplayAuthoritativeObservation(
             source: .rest,
             gameID: valid.gameID,
-            backendRevision: valid.backendRevision,
+            gameRevision: valid.gameRevision,
             playerID: BoardTestFixtures.playerID("000000000002"),
             projection: valid.projection
         )
@@ -435,8 +649,229 @@ struct ProductionAssignmentReplayIdentityTests {
                 wrongPlayer,
                 projection: fixture.projection,
                 configuration: configuration,
+                attestation: attestation,
                 requiresPlayerIdentity: true
             )
+        }
+    }
+}
+
+@Suite("Production assignment replay server attestation")
+struct AssignmentReplayAttestationTests {
+    @Test("Authenticated game-bound attestation is required and validated")
+    func validAttestation() async throws {
+        let promptDigest =
+            try ProductionAssignmentReplayCanonicalJSON.promptDigest(
+                DamageAssignmentFixtures.value()
+            )
+        let configuration = try productionAssignmentReplayConfiguration(
+            promptDigest: promptDigest,
+            playerID: BoardTestFixtures.playerID("000000000002"),
+            checkpointPlayerID:
+            BoardTestFixtures.playerID("000000000001")
+        )
+        let expected = productionAssignmentReplayAttestation(
+            configuration: configuration
+        )
+        let url = try GameLifecycleService.gameURL(
+            configuration.promptIdentity.gameID,
+            suffix: "/replay-attestation",
+            on: configuration.serverProfile,
+            pin: .current
+        )
+        let response = try #require(HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        ))
+        let transport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(expected),
+            response: response
+        )
+        let actual =
+            try await AssignmentReplayAttestationClient(
+                transport: transport
+            ).fetch(configuration: configuration)
+        #expect(actual == expected)
+        let request = try #require(await transport.capturedRequest)
+        #expect(request.url == url)
+        #expect(request.httpMethod == "GET")
+        #expect(request.httpShouldHandleCookies == false)
+        #expect(request.value(forHTTPHeaderField: "Authorization")
+            == "Token unit-test-token")
+    }
+
+    @Test("Missing and malformed authority fail closed")
+    func unavailableOrMalformedAttestation() async throws {
+        let promptDigest =
+            try ProductionAssignmentReplayCanonicalJSON.promptDigest(
+                DamageAssignmentFixtures.value()
+            )
+        let configuration = try productionAssignmentReplayConfiguration(
+            promptDigest: promptDigest
+        )
+        let url = try GameLifecycleService.gameURL(
+            configuration.promptIdentity.gameID,
+            suffix: "/replay-attestation",
+            on: configuration.serverProfile,
+            pin: .current
+        )
+        let unavailableResponse = try #require(HTTPURLResponse(
+            url: url,
+            statusCode: 404,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        ))
+        let unavailable = GameLifecycleRecordingTransport(
+            data: Data("{}".utf8),
+            response: unavailableResponse
+        )
+        await #expect(
+            throws: ProductionAssignmentReplayError
+                .serverAttestationUnavailable
+        ) {
+            _ = try await AssignmentReplayAttestationClient(
+                transport: unavailable
+            ).fetch(configuration: configuration)
+        }
+
+        let malformedResponse = try #require(HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        ))
+        let malformed = GameLifecycleRecordingTransport(
+            data: Data(#"{"schemaVersion":1}"#.utf8),
+            response: malformedResponse
+        )
+        await #expect(
+            throws: ProductionAssignmentReplayError
+                .serverAttestationMalformed
+        ) {
+            _ = try await AssignmentReplayAttestationClient(
+                transport: malformed
+            ).fetch(configuration: configuration)
+        }
+    }
+
+    @Test("Caller-spoofed or dirty server authority fails closed")
+    func spoofedAttestation() throws {
+        let promptDigest =
+            try ProductionAssignmentReplayCanonicalJSON.promptDigest(
+                DamageAssignmentFixtures.value()
+            )
+        let configuration = try productionAssignmentReplayConfiguration(
+            promptDigest: promptDigest
+        )
+        let spoofed = productionAssignmentReplayAttestation(
+            configuration: configuration,
+            serverBuild: productionAssignmentReplayServerBuild(
+                gitRevision: String(repeating: "f", count: 40)
+            )
+        )
+        #expect(
+            throws: ProductionAssignmentReplayError
+                .serverAttestationMismatch
+        ) {
+            try spoofed.validate(configuration: configuration)
+        }
+        let dirtyBuild = productionAssignmentReplayAttestation(
+            configuration: configuration,
+            serverBuild: productionAssignmentReplayServerBuild(
+                sourceClean: false,
+                attestation: "unattested"
+            )
+        )
+        #expect(
+            throws: ProductionAssignmentReplayError
+                .serverAttestationMismatch
+        ) {
+            try dirtyBuild.validate(configuration: configuration)
+        }
+    }
+
+    @Test("Attestation rejects unknown fields")
+    func unknownAttestationField() async throws {
+        let promptDigest =
+            try ProductionAssignmentReplayCanonicalJSON.promptDigest(
+                DamageAssignmentFixtures.value()
+            )
+        let configuration = try productionAssignmentReplayConfiguration(
+            promptDigest: promptDigest
+        )
+        let expected = productionAssignmentReplayAttestation(
+            configuration: configuration
+        )
+        let url = try GameLifecycleService.gameURL(
+            configuration.promptIdentity.gameID,
+            suffix: "/replay-attestation",
+            on: configuration.serverProfile,
+            pin: .current
+        )
+        let jsonResponse = try #require(HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        ))
+        var value = try ContractJSON.decode(
+            JSONValue.self,
+            from: ContractJSON.encode(expected)
+        )
+        guard case var .object(root) = value else {
+            throw TestFailure()
+        }
+        root["callerProof"] = .string("untrusted")
+        value = .object(root)
+        let unknownField = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(value),
+            response: jsonResponse
+        )
+        await #expect(
+            throws: ProductionAssignmentReplayError.serverAttestationMalformed
+        ) {
+            _ = try await AssignmentReplayAttestationClient(
+                transport: unknownField
+            ).fetch(configuration: configuration)
+        }
+    }
+
+    @Test("Attestation rejects misleading media types")
+    func misleadingAttestationMediaType() async throws {
+        let promptDigest =
+            try ProductionAssignmentReplayCanonicalJSON.promptDigest(
+                DamageAssignmentFixtures.value()
+            )
+        let configuration = try productionAssignmentReplayConfiguration(
+            promptDigest: promptDigest
+        )
+        let expected = productionAssignmentReplayAttestation(
+            configuration: configuration
+        )
+        let url = try GameLifecycleService.gameURL(
+            configuration.promptIdentity.gameID,
+            suffix: "/replay-attestation",
+            on: configuration.serverProfile,
+            pin: .current
+        )
+        let misleadingResponse = try #require(HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/jsonp"]
+        ))
+        let misleadingMediaType = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(expected),
+            response: misleadingResponse
+        )
+        await #expect(
+            throws: ProductionAssignmentReplayError.serverAttestationMalformed
+        ) {
+            _ = try await AssignmentReplayAttestationClient(
+                transport: misleadingMediaType
+            ).fetch(configuration: configuration)
         }
     }
 }
@@ -460,7 +895,9 @@ struct AssignmentReplayDriverWiringTests {
         )
         let artifactData = try AssignmentReplayEvidenceArtifact(
             evidence: productionAssignmentReplayEvidence(
-                checkpoint: .horrorFirstThenRemainingDamage
+                checkpoint: .horrorFirstThenRemainingDamage,
+                checkpointArtifact:
+                invocation.configuration.checkpointArtifact
             )
         ).validatedData()
         let expectedFilter =
@@ -485,6 +922,10 @@ struct AssignmentReplayDriverWiringTests {
                     ProductionAssignmentReplayEnvironmentKey.observedAppleRevision
                 ] == replayAppleRevision)
                 #expect(childEnvironment[
+                    ProductionAssignmentReplayEnvironmentKey
+                        .observedCheckpointArtifactSHA256
+                ] == invocation.configuration.checkpointArtifact.artifactSHA256)
+                #expect(childEnvironment[
                     ProductionAssignmentReplayEnvironmentKey.authToken
                 ] == "unit-test-token")
                 #expect(childEnvironment[
@@ -505,7 +946,9 @@ struct AssignmentReplayDriverWiringTests {
         let wrongIdentityData = try AssignmentReplayEvidenceArtifact(
             evidence: productionAssignmentReplayEvidence(
                 checkpoint: .horrorFirstThenRemainingDamage,
-                gameID: BoardTestFixtures.gameID("000000000901")
+                gameID: BoardTestFixtures.gameID("000000000901"),
+                checkpointArtifact:
+                invocation.configuration.checkpointArtifact
             )
         ).validatedData()
         #expect(
@@ -566,13 +1009,13 @@ struct AssignmentReplayDriverWiringTests {
             questionVersion: envelope.game.scenarioSteps,
             source: .socket
         )
-        #expect(observation?.backendRevision == envelope.game.git)
+        #expect(observation?.gameRevision == envelope.game.git)
         #expect(observation?.playerID == nil)
 
         let answer = Data(#"{"tag":"Answer"}"#.utf8)
         try await connection.send(answer)
         #expect(await baseConnection.sentData == [answer])
-        #expect(await recorder.snapshot() == [answer])
+        #expect(recorder.snapshot() == [answer])
 
         await baseConnection.enqueueSendResult(
             .failure(GameSocketTransportError())
@@ -581,7 +1024,7 @@ struct AssignmentReplayDriverWiringTests {
             try await connection.send(Data("failed".utf8))
             Issue.record("Expected the delegated send failure.")
         } catch is GameSocketTransportError {
-            #expect(await recorder.snapshot() == [answer])
+            #expect(recorder.snapshot() == [answer])
         }
     }
 
@@ -616,7 +1059,7 @@ struct AssignmentReplayDriverWiringTests {
             questionVersion: envelope.game.scenarioSteps,
             source: .rest
         )
-        #expect(observation?.backendRevision == envelope.game.git)
+        #expect(observation?.gameRevision == envelope.game.git)
         #expect(observation?.playerID == envelope.playerID)
     }
 }
@@ -626,8 +1069,12 @@ private func productionAssignmentReplayEnvironment(
     checkpoint: ProductionAssignmentReplayCheckpoint =
         .damageFirstThenRemainingHorror
 ) throws -> [String: String] {
-    let promptDigest = try ProductionAssignmentReplayCanonicalJSON.promptDigest(
-        DamageAssignmentFixtures.value()
+    let checkpointURL = resultURL.deletingLastPathComponent()
+        .appendingPathComponent(
+            "checkpoint-\(UUID().uuidString).json"
+        )
+    try writeProductionAssignmentReplayCheckpoint(
+        to: checkpointURL
     )
     return [
         ProductionAssignmentReplayEnvironmentKey.checkpoint: checkpoint.rawValue,
@@ -642,8 +1089,6 @@ private func productionAssignmentReplayEnvironment(
             BoardTestFixtures.gameID().codingKey.stringValue,
         ProductionAssignmentReplayEnvironmentKey.playerID:
             BoardTestFixtures.playerID("000000000001").codingKey.stringValue,
-        ProductionAssignmentReplayEnvironmentKey.expectedBackendRevision:
-            ContractPin.current.backendCommit,
         ProductionAssignmentReplayEnvironmentKey.expectedAppleRevision:
             replayAppleRevision,
         ProductionAssignmentReplayEnvironmentKey.expectedContractRevision:
@@ -654,9 +1099,8 @@ private func productionAssignmentReplayEnvironment(
             DamageAssignmentFixtures.enemyID.codingKey.stringValue,
         ProductionAssignmentReplayEnvironmentKey.expectedPromptInvestigatorID:
             DamageAssignmentFixtures.investigatorID.codingKey.stringValue,
-        ProductionAssignmentReplayEnvironmentKey.expectedPromptDigest:
-            promptDigest,
-        ProductionAssignmentReplayEnvironmentKey.expectedPromptVersion: "6",
+        ProductionAssignmentReplayEnvironmentKey.checkpointArtifactPath:
+            checkpointURL.path,
     ]
 }
 
@@ -789,6 +1233,7 @@ private func productionAssignmentReplayConfiguration(
     promptVersion: Int = 6,
     gameID: GameID = BoardTestFixtures.gameID(),
     playerID: PlayerID = BoardTestFixtures.playerID("000000000001"),
+    checkpointPlayerID: PlayerID? = nil,
     enemyID: EnemyID = DamageAssignmentFixtures.enemyID
 ) throws -> ProductionAssignmentReplayConfiguration {
     let profile = try ServerProfile.custom(
@@ -798,6 +1243,12 @@ private func productionAssignmentReplayConfiguration(
         displayName: "Production assignment replay",
         rawURL: "http://127.0.0.1:3002"
     )
+    let checkpointArtifact =
+        productionAssignmentReplayCheckpointArtifact(
+            promptDigest: promptDigest,
+            promptVersion: promptVersion,
+            playerID: checkpointPlayerID ?? playerID
+        )
     return try ProductionAssignmentReplayConfiguration(
         checkpoint: checkpoint,
         deadlineSeconds: 30,
@@ -809,27 +1260,41 @@ private func productionAssignmentReplayConfiguration(
             enemyID: enemyID,
             investigatorID: DamageAssignmentFixtures.investigatorID
         ),
-        expectedBackendRevision: ContractPin.current.backendCommit,
         expectedAppleRevision: replayAppleRevision,
         expectedContractRevision: ContractPin.current.supportedSchemaRevision,
         expectedCatalogRevision: replayCatalogRevision,
-        expectedPromptDigest: promptDigest,
-        expectedPromptVersion: promptVersion
+        checkpointArtifact: checkpointArtifact
     )
 }
 
+// swiftlint:disable:next function_body_length
 private func productionAssignmentReplayEvidence(
     checkpoint: ProductionAssignmentReplayCheckpoint =
         .damageFirstThenRemainingHorror,
-    gameID: GameID = BoardTestFixtures.gameID()
+    gameID: GameID = BoardTestFixtures.gameID(),
+    checkpointArtifact:
+    AssignmentReplayCheckpointArtifact? = nil
 ) throws -> ProductionAssignmentReplayEvidence {
     let playerID = BoardTestFixtures.playerID("000000000001")
     let startDigest = try ProductionAssignmentReplayCanonicalJSON.promptDigest(
         DamageAssignmentFixtures.value()
     )
+    let checkpointArtifact = checkpointArtifact ??
+        productionAssignmentReplayCheckpointArtifact(
+            promptDigest: startDigest,
+            playerID: playerID
+        )
     return ProductionAssignmentReplayEvidence(
         schemaVersion: ProductionAssignmentReplayEvidence.currentSchemaVersion,
-        checkpoint: checkpoint.rawValue,
+        checkpoint: AssignmentReplayCheckpointEvidence(
+            caseName: checkpoint.rawValue,
+            name: checkpointArtifact.checkpointName,
+            playerID: checkpointArtifact.playerID,
+            questionVersion: checkpointArtifact.questionVersion,
+            promptCanonicalSHA256: checkpointArtifact.promptSHA256,
+            artifactSHA256: checkpointArtifact.artifactSHA256,
+            envelopeSHA256: checkpointArtifact.envelopeSHA256
+        ),
         source: ProductionAssignmentReplaySourceEvidence(
             gameID: gameID,
             playerID: playerID,
@@ -866,11 +1331,117 @@ private func productionAssignmentReplayEvidence(
             canonicalSHA256: String(repeating: "e", count: 64)
         ),
         revisions: AssignmentReplayRevisionEvidence(
-            backend: ContractPin.current.backendCommit,
+            serverBuild: productionAssignmentReplayServerBuild(),
+            game: checkpointArtifact.sourceGameRevision,
             apple: replayAppleRevision,
             contract: ContractPin.current.supportedSchemaRevision,
             catalog: replayCatalogRevision
         )
+    )
+}
+
+private func productionAssignmentReplayCheckpointArtifact(
+    promptDigest: String,
+    promptVersion: Int = 6,
+    playerID: PlayerID = BoardTestFixtures.playerID("000000000001")
+) -> AssignmentReplayCheckpointArtifact {
+    AssignmentReplayCheckpointArtifact(
+        fileURL: URL(
+            fileURLWithPath: FileManager.default.currentDirectoryPath,
+            isDirectory: true
+        )
+        .appendingPathComponent(".build", isDirectory: true)
+        .appendingPathComponent("assignment-replay-checkpoint.json"),
+        artifactSHA256: replayCheckpointArtifactSHA256,
+        envelopeSHA256: replayCheckpointEnvelopeSHA256,
+        checkpointName: replayCheckpointName,
+        questionVersion: promptVersion,
+        playerID: playerID,
+        promptTag: BasicChoiceQuestionKind.questionWithSource.rawValue,
+        promptSHA256: promptDigest,
+        contractRevision:
+        ContractPin.current.supportedSchemaRevision.description,
+        sourceGameRevision: replayGameRevision
+    )
+}
+
+private func productionAssignmentReplayAttestation(
+    configuration: ProductionAssignmentReplayConfiguration,
+    serverBuild: AssignmentReplayServerBuildIdentity =
+        productionAssignmentReplayServerBuild()
+) -> ProductionAssignmentReplayAttestation {
+    ProductionAssignmentReplayAttestation(
+        schemaVersion: ProductionAssignmentReplayAttestation.schemaVersion,
+        gameID: configuration.promptIdentity.gameID,
+        playerID: configuration.promptIdentity.ownerID,
+        checkpointPlayerID: configuration.checkpointArtifact.playerID,
+        serverBuild: serverBuild,
+        gameRevision: configuration.checkpointArtifact.sourceGameRevision,
+        checkpointArtifactSHA256:
+        configuration.checkpointArtifact.artifactSHA256,
+        checkpointEnvelopeSHA256:
+        configuration.checkpointArtifact.envelopeSHA256,
+        contractRevision:
+        configuration.expectedContractRevision.description,
+        checkpointName: configuration.checkpointArtifact.checkpointName
+    )
+}
+
+private func productionAssignmentReplayServerBuild(
+    gitRevision: String = ContractPin.current.backendCommit,
+    sourceClean: Bool = true,
+    attestation: String = "git-clean"
+) -> AssignmentReplayServerBuildIdentity {
+    AssignmentReplayServerBuildIdentity(
+        gitRevision: gitRevision,
+        gitTree: replayServerTree,
+        sourceSHA256: replayServerSourceSHA256,
+        sourceClean: sourceClean,
+        attestation: attestation
+    )
+}
+
+private func writeProductionAssignmentReplayCheckpoint(
+    to url: URL,
+    promptDigest: String? = nil,
+    promptVersion: Int = 6,
+    envelopeDigest: String = replayCheckpointEnvelopeSHA256
+) throws {
+    let promptDigest = try promptDigest ??
+        ProductionAssignmentReplayCanonicalJSON.promptDigest(
+            DamageAssignmentFixtures.value()
+        )
+    let playerID =
+        BoardTestFixtures.playerID("000000000001").codingKey.stringValue
+    let value = JSONValue.object([
+        "replayCheckpoint": .object([
+            "type": .string("arkham-replay-checkpoint"),
+            "provenance": .object([
+                "schemaVersion": .number(.integer(1)),
+                "contractSchemaRevision": .string(
+                    ContractPin.current.supportedSchemaRevision.description
+                ),
+                "sourceGameGitRevision": .string(replayGameRevision),
+                "checkpoint": .object([
+                    "type": .string("question"),
+                    "name": .string(replayCheckpointName),
+                    "questionVersion": .number(
+                        .integer(Int64(promptVersion))
+                    ),
+                    "playerId": .string(playerID),
+                    "promptTag": .string(
+                        BasicChoiceQuestionKind.questionWithSource.rawValue
+                    ),
+                    "promptSha256": .string(promptDigest),
+                ]),
+            ]),
+            "envelopeSha256": .string(envelopeDigest),
+        ]),
+    ])
+    try LosslessJSONSerializer.serialize(value).write(to: url)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600],
+        ofItemAtPath: url.path
     )
 }
 
