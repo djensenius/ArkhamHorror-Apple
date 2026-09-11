@@ -63,17 +63,19 @@ extension SubprocessDeadlineGuard {
         )
     }
 
-    private static func spawnExecutable(
+    static func spawnExecutable(
         executablePath: String,
         arguments: [String],
-        environmentEntries: [String]
+        environmentEntries: [String],
+        afterSpawn: (pid_t) throws -> Void = { _ in }
     ) throws -> SubprocessDeadlineChild {
         try withCStringArray(arguments) { argumentPointer in
             try withCStringArray(environmentEntries) { environmentPointer in
                 try spawnConfiguredChild(
                     executablePath: executablePath,
                     argumentPointer: argumentPointer,
-                    environmentPointer: environmentPointer
+                    environmentPointer: environmentPointer,
+                    afterSpawn: afterSpawn
                 )
             }
         }
@@ -85,34 +87,14 @@ extension SubprocessDeadlineGuard {
     ) throws -> SubprocessDeadlineWaitResult {
         let deadline = ContinuousClock.now + .seconds(deadlineSeconds)
         if let exit = try observeExit(of: child, until: deadline) {
+            try terminateSurvivingDescendants(of: child)
             try reap(child)
             return .exited(exit)
         }
 
-        try sendSignal(SIGTERM, to: child)
-        let graceDeadline = ContinuousClock.now +
-            .seconds(terminationGraceSeconds)
-        if try observeTerminatedProcessGroup(
-            child,
-            until: graceDeadline
-        ) {
-            try reap(child)
-            return .timedOut(.exitedDuringGrace)
-        }
-
-        try sendSignal(SIGKILL, to: child)
-        let killDeadline = ContinuousClock.now +
-            .seconds(killObservationSeconds)
-        guard try observeTerminatedProcessGroup(
-            child,
-            until: killDeadline
-        ) else {
-            throw SubprocessDeadlineGuardError.terminationUnconfirmed(
-                pid: child.pid
-            )
-        }
+        let termination = try terminateProcessGroup(child)
         try reap(child)
-        return .timedOut(.killedAfterGrace)
+        return .timedOut(termination)
     }
 
     static func bestEffortCleanup(_ child: SubprocessDeadlineChild) {
@@ -121,16 +103,19 @@ extension SubprocessDeadlineGuard {
         _ = kill(child.pid, SIGKILL)
         let deadline = ContinuousClock.now +
             .seconds(emergencyCleanupSeconds)
-        while ContinuousClock.now < deadline {
-            var status: Int32 = 0
-            let result = waitpid(child.pid, &status, WNOHANG)
-            if result == child.pid || (result < 0 && errno == ECHILD) {
-                child.isReaped = true
-                return
+        while true {
+            if (try? processGroupHasMembersOtherThanLeader(child)) == false {
+                var status: Int32 = 0
+                let result = waitpid(child.pid, &status, WNOHANG)
+                if result == child.pid || (result < 0 && errno == ECHILD) {
+                    child.isReaped = true
+                    return
+                }
+                if result < 0, errno != EINTR {
+                    return
+                }
             }
-            if result < 0, errno != EINTR {
-                return
-            }
+            guard ContinuousClock.now < deadline else { return }
             Thread.sleep(forTimeInterval: pollIntervalSeconds)
         }
     }
@@ -221,6 +206,40 @@ extension SubprocessDeadlineGuard {
             guard ContinuousClock.now < deadline else { return false }
             Thread.sleep(forTimeInterval: pollIntervalSeconds)
         }
+    }
+
+    private static func terminateSurvivingDescendants(
+        of child: SubprocessDeadlineChild
+    ) throws {
+        guard try processGroupHasMembersOtherThanLeader(child) else { return }
+        _ = try terminateProcessGroup(child)
+    }
+
+    private static func terminateProcessGroup(
+        _ child: SubprocessDeadlineChild
+    ) throws -> SubprocessDeadlineTermination {
+        try sendSignal(SIGTERM, to: child)
+        let graceDeadline = ContinuousClock.now +
+            .seconds(terminationGraceSeconds)
+        if try observeTerminatedProcessGroup(
+            child,
+            until: graceDeadline
+        ) {
+            return .exitedDuringGrace
+        }
+
+        try sendSignal(SIGKILL, to: child)
+        let killDeadline = ContinuousClock.now +
+            .seconds(killObservationSeconds)
+        guard try observeTerminatedProcessGroup(
+            child,
+            until: killDeadline
+        ) else {
+            throw SubprocessDeadlineGuardError.terminationUnconfirmed(
+                pid: child.pid
+            )
+        }
+        return .killedAfterGrace
     }
 
     private static func processGroupHasMembersOtherThanLeader(

@@ -4,7 +4,8 @@ extension SubprocessDeadlineGuard {
     static func spawnConfiguredChild(
         executablePath: String,
         argumentPointer: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
-        environmentPointer: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+        environmentPointer: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
+        afterSpawn: (pid_t) throws -> Void = { _ in }
     ) throws -> SubprocessDeadlineChild {
         let nullDescriptor = open("/dev/null", O_WRONLY | O_CLOEXEC)
         guard nullDescriptor >= 0 else {
@@ -34,10 +35,17 @@ extension SubprocessDeadlineGuard {
             pid: pid,
             processGroupID: pid
         )
-        guard getpgid(pid) == child.processGroupID else {
+        do {
+            try afterSpawn(pid)
+        } catch {
             bestEffortCleanup(child)
-            throw SubprocessDeadlineGuardError.launchFailed(code: EPERM)
+            throw error
         }
+        // A successful spawn with POSIX_SPAWN_SETPGROUP and pgroup 0 created
+        // pid's process group before the child began executing. Do not verify
+        // that invariant with getpgid: a fast child can already be exited and
+        // waitable here, in which case Darwin reports ESRCH despite the spawn
+        // having succeeded.
         return child
     }
 

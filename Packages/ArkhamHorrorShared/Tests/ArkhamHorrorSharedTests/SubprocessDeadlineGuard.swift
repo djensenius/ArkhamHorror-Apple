@@ -84,7 +84,10 @@ enum SubprocessDeadlineGuardOutcome: Equatable {
 /// interrupts that work. On timeout this guard sends SIGTERM, allows a short bounded grace,
 /// then escalates to SIGKILL and performs a separately bounded reap. Running the victim in
 /// a child process whose exact identity remains retained until reap therefore bounds the
-/// *test's own* worst-case wall-clock cost even if the victim ignores SIGTERM.
+/// *test's own* worst-case wall-clock cost even if the victim ignores SIGTERM. If the
+/// process-group leader exits first, the guard applies the same bounded teardown to any
+/// surviving members before reaping the leader, so neither a successful nor failed victim
+/// can leak background descendants.
 ///
 /// The child is launched by literally replaying this process's own `CommandLine.arguments`
 /// (as captured at the moment this function is called) with only the `--filter` value
@@ -156,6 +159,8 @@ enum SubprocessDeadlineGuard {
     /// with a nonzero status (its own `#expect`s failed, or it crashed); or
     /// `.completionUnproven` if the child exited 0 but never wrote the completion-sentinel
     /// file, meaning its intended code path is not proven to have actually executed.
+    /// Any surviving members of the retained child's process group are terminated and
+    /// observed gone before these normal-exit outcomes are returned.
     /// Returns ``SubprocessDeadlineGuardOutcome/completed`` only if the filtered victim
     /// test(s) all passed within the deadline *and* proved they actually ran.
     static func runFiltered(
