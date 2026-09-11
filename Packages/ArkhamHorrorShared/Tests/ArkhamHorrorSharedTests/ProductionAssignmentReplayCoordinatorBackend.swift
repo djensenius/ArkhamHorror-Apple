@@ -21,7 +21,7 @@ protocol AssignmentReplayCoordinatorBackend: Sendable {
 }
 
 struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
-    private static let maximumImportResponseBytes = 64 * 1024
+    static let maximumImportResponseBytes = 64 * 1024 * 1024
     private static let maximumGameResponseBytes = 64 * 1024 * 1024
 
     let deadline: AssignmentReplayCoordinatorDeadline
@@ -59,27 +59,7 @@ struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
             maxByteCount: Self.maximumImportResponseBytes,
             failure: .importFailed
         )
-        do {
-            let value = try ContractJSON.decode(
-                JSONValue.self,
-                from: response,
-                maxByteCount: Self.maximumImportResponseBytes
-            )
-            guard case let .object(root) = value,
-                  Set(root.keys) == ["id"]
-            else {
-                throw ProductionAssignmentReplayCoordinatorError
-                    .importedGameMalformed
-            }
-            return try ContractJSON.decode(
-                ImportedGameIdentity.self,
-                from: response,
-                maxByteCount: Self.maximumImportResponseBytes
-            ).id
-        } catch {
-            throw ProductionAssignmentReplayCoordinatorError
-                .importedGameMalformed
-        }
+        return try Self.decodeImportedGameID(from: response)
     }
 
     func getGame(
@@ -231,10 +211,31 @@ struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
             .lowercased()
         return mediaType == "application/json"
     }
-}
 
-private struct ImportedGameIdentity: Decodable {
-    let id: GameID
+    static func decodeImportedGameID(
+        from response: Data,
+        maxByteCount: Int = maximumImportResponseBytes
+    ) throws -> GameID {
+        do {
+            let game = try ContractJSON.decode(
+                PublicGameSnapshot.self,
+                from: response,
+                maxByteCount: maxByteCount
+            )
+            let original = try LosslessJSONParser.parse(response)
+            let reencoded = try LosslessJSONParser.parse(
+                ContractJSON.encode(game)
+            )
+            guard original == reencoded else {
+                throw ProductionAssignmentReplayCoordinatorError
+                    .importedGameMalformed
+            }
+            return game.id
+        } catch {
+            throw ProductionAssignmentReplayCoordinatorError
+                .importedGameMalformed
+        }
+    }
 }
 
 private extension Data {

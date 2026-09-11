@@ -668,6 +668,7 @@ struct AssignmentReplayCasesAndEvidenceTests {
 
 @MainActor
 @Suite("Production assignment replay self-test harness")
+// swiftlint:disable:next type_body_length
 struct AssignmentReplayCoordinatorSelfTestSuite {
     @Test("Two cases are fresh, ordered, and credential-free outside Swift")
     func successfulTwoCaseRun() async throws {
@@ -767,6 +768,32 @@ struct AssignmentReplayCoordinatorSelfTestSuite {
             )
         }
         #expect(await backend.importCount == 1)
+    }
+
+    @Test("Imported game ID must match the authoritative snapshot")
+    func importedGameIdentityMismatch() async throws {
+        let fixture = try coordinatorHarnessFixture()
+        defer { fixture.cleanup() }
+        let backend = FakeAssignmentReplayCoordinatorBackend(
+            approvedCheckpoint: fixture.checkpointBytes,
+            mismatchesFirstGameIdentity: true
+        )
+        await #expect(
+            throws: ProductionAssignmentReplayCoordinatorError
+                .importedGameIdentityMismatch
+        ) {
+            _ = try await AssignmentReplayCoordinatorSelfTestHarness.run(
+                child: fixture.child,
+                backend: backend,
+                caseRunner: { try replayEvidence(configuration: $0) }
+            )
+        }
+        #expect(await backend.importCount == 1)
+        #expect(
+            try ProductionReplayFileSystem.listOwnedDirectoryNames(
+                fixture.output
+            ).isEmpty
+        )
     }
 
     @Test("Duplicate games and divergent validator receipts fail closed")
@@ -1002,17 +1029,20 @@ private actor FakeAssignmentReplayCoordinatorBackend: AssignmentReplayCoordinato
     let approvedCheckpoint: Data
     let duplicateGame: Bool
     let divergesSecondAuthority: Bool
+    let mismatchesFirstGameIdentity: Bool
     private(set) var importCount = 0
     private var games: [GameID: GetGameEnvelope] = [:]
 
     init(
         approvedCheckpoint: Data,
         duplicateGame: Bool = false,
-        divergesSecondAuthority: Bool = false
+        divergesSecondAuthority: Bool = false,
+        mismatchesFirstGameIdentity: Bool = false
     ) {
         self.approvedCheckpoint = approvedCheckpoint
         self.duplicateGame = duplicateGame
         self.divergesSecondAuthority = divergesSecondAuthority
+        self.mismatchesFirstGameIdentity = mismatchesFirstGameIdentity
     }
 
     func importCheckpoint(
@@ -1033,8 +1063,12 @@ private actor FakeAssignmentReplayCoordinatorBackend: AssignmentReplayCoordinato
         let playerID = BoardTestFixtures.playerID(
             importCount == 1 ? "000000000201" : "000000000202"
         )
+        let authoritativeGameID =
+            mismatchesFirstGameIdentity && importCount == 1
+                ? BoardTestFixtures.gameID("000000000199")
+                : gameID
         games[gameID] = try await replayImportedGame(
-            gameID: gameID,
+            gameID: authoritativeGameID,
             playerID: playerID
         )
         return gameID

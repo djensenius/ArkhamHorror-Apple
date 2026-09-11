@@ -195,18 +195,34 @@ merge:
    ```
 
 5. Preserve `assignment.checkpoint.json` byte-for-byte. The coordinator imports
-   this exact byte sequence twice through the production `WithFriends` route. The
-   importer must run the validator and persist its receipt before returning.
-   Apple then reads each imported game through the authenticated production GET
-   and requires schema-2 attestation before submitting anything.
+   this exact byte sequence twice through the production `WithFriends` route.
+   That route returns the complete bare `PublicGame` snapshot, not an `{ "id":
+   ... }` receipt. Apple accepts only the exact non-redirected 2xx JSON response
+   under a 64 MiB ceiling, decodes it through the governed
+   `PublicGameSnapshot` contract, and requires semantic decode/re-encode
+   equality so ignored or unknown structure cannot supply the imported game ID.
+   The importer must run the checkpoint validator and persist its separate
+   attestation receipt before returning. Apple then reads each imported game
+   through the authenticated production GET and requires schema-2 attestation
+   before submitting anything.
 
 ### Run both Apple cases
 
-The Apple worktree must be clean because the driver invokes `/usr/bin/git` with
-a compile-time repository anchor and empty environment, verifies the canonical
-repository root, rejects tracked and untracked changes, and records its exact
-`HEAD`. Inherited `GIT_DIR`, `GIT_WORK_TREE`, config, object-directory, and
-namespace overrides cannot influence this check.
+Invoke the production launcher only through its canonical committed regular-file
+path; launcher symlinks and copies beside another Swift package are rejected.
+Before any checkpoint, output, or token path is placed in a subprocess
+environment, the launcher invokes fixed `/usr/bin/git` under `env -i`, verifies
+the exact canonical repository top-level and origin, requires the clean
+worktree's `HEAD` to be the audited follow-up commit that owns this launcher,
+and binds the committed `ArkhamHorrorShared` package tree and manifest bytes.
+Inherited `GIT_DIR`, `GIT_WORK_TREE`, config, object-directory, replacement-ref,
+attribute, and namespace overrides cannot influence these checks.
+
+The launcher then builds and lists the exact fixed replay driver without any
+credential paths, revalidates the repository and package identities, and only
+then runs the already-built test with `--skip-build`. The Swift driver performs
+its independent compile-time repository-root, clean-worktree, and `HEAD`
+verification before recording the Apple revision.
 
 The production launcher is fixed to:
 
@@ -275,11 +291,12 @@ globally bounded Swift coordinator then:
    no-follow filesystem operations.
 2. Opens the checkpoint and mode-0600 token through verified ancestor
    descriptors and reads each retained file descriptor exactly once.
-3. Imports, authenticates, and attests the damage-first case; runs the real
-   `AppModel` and controller; validates and persists its evidence.
-4. Proceeds to the horror-first case only after complete first-case success.
-5. Requires both imports to be distinct and to return identical validator and
+3. Imports, authenticates, and attests both fresh games before either controller
+   can submit an answer.
+4. Requires both imports to be distinct and to return identical validator and
    clean server-build authority for the exact uploaded bytes.
+5. Runs and persists the damage-first case, then proceeds to the horror-first
+   `AppModel` and controller only after complete first-case success.
 6. Publishes success only after both compact canonical artifacts independently
    decode, digest, and validate; otherwise it removes partial anchored output.
 
