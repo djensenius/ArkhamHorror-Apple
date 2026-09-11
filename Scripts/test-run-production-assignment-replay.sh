@@ -6,6 +6,7 @@ readonly toolchain_bin="$xcode_developer_dir/Toolchains/XcodeDefault.xctoolchain
 readonly swift_bin="$toolchain_bin/swift"
 readonly selftest_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorSelfTestSuite/'
 readonly expected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator()'
+readonly injected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinatorInjected()'
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -37,9 +38,19 @@ readonly copied_attack_log="$harness_root/copied-attack.log"
 readonly sensitive_checkpoint="$harness_root/private-checkpoint-path"
 readonly sensitive_output="$harness_root/private-output-path"
 readonly sensitive_token="$harness_root/private-token-path"
+readonly ignored_derived_data_root="$package_path/Tests/ArkhamHorrorSharedTests/DerivedData"
+readonly ignored_source_root="$ignored_derived_data_root/production-assignment-replay-selftest.$$"
+readonly ignored_source="$ignored_source_root/InjectedReplayDriver.swift"
+readonly ignored_source_leak="$harness_root/ignored-source-leak"
 created_build_root=0
+created_ignored_derived_data_root=0
 
 cleanup() {
+  /bin/rm -f -- "$ignored_source"
+  /bin/rmdir -- "$ignored_source_root" 2>/dev/null || true
+  if [[ "$created_ignored_derived_data_root" == 1 ]]; then
+    /bin/rmdir -- "$ignored_derived_data_root" 2>/dev/null || true
+  fi
   /bin/rm -rf -- "$harness_root"
   if [[ "$created_build_root" == 1 ]]; then
     /bin/rmdir -- "$build_root" 2>/dev/null || true
@@ -214,6 +225,68 @@ do
 done
 printf 'PASS: launcher aliases cannot select a fake Swift package\n'
 
+if [[ ! -e "$ignored_derived_data_root" ]]; then
+  /bin/mkdir -m 700 "$ignored_derived_data_root"
+  created_ignored_derived_data_root=1
+fi
+[[ -d "$ignored_derived_data_root" && ! -L "$ignored_derived_data_root" ]] ||
+  fail "ignored source fixture parent is not a regular directory"
+[[ ! -e "$ignored_source_root" && ! -L "$ignored_source_root" ]] ||
+  fail "ignored source fixture path already exists"
+/bin/mkdir -m 700 "$ignored_source_root"
+/bin/cat >"$ignored_source" <<EOF
+import Darwin
+import Foundation
+import Testing
+
+extension AssignmentReplayCoordinatorDriverSuite {
+    @Test("Ignored source injection must never execute")
+    func runConfiguredProductionAssignmentReplayCoordinatorInjected() {
+        let environment = ProcessInfo.processInfo.environment
+        let leaked = [
+            environment[
+                "ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_CHECKPOINT_PATH"
+            ] ?? "",
+            environment[
+                "ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_OUTPUT_DIRECTORY"
+            ] ?? "",
+            environment[
+                "ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_TOKEN_PATH"
+            ] ?? "",
+        ].joined(separator: "\\n")
+        try? Data(leaked.utf8).write(
+            to: URL(fileURLWithPath: "$ignored_source_leak")
+        )
+        _exit(0)
+    }
+}
+EOF
+/usr/bin/git -C "$repository_root" check-ignore -q -- "$ignored_source" ||
+  fail "adversarial Swift source is not ignored"
+[[ -z "$(/usr/bin/git -C "$repository_root" status --porcelain=v1)" ]] ||
+  fail "adversarial Swift source unexpectedly dirtied Git status"
+
+readonly mutable_test_list="$(
+  /usr/bin/env -i \
+    DEVELOPER_DIR="$xcode_developer_dir" \
+    GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_CONFIG_NOSYSTEM=1 \
+    GIT_TERMINAL_PROMPT=0 \
+    HOME=/var/empty \
+    LANG=C \
+    LC_ALL=C \
+    PATH="$toolchain_bin:/usr/bin:/bin" \
+    TMPDIR=/tmp \
+    "$swift_bin" test list \
+    --package-path "$package_path" \
+    --disable-sandbox
+)"
+[[ "$mutable_test_list" == *"$injected_driver_identifier"* ]] ||
+  fail "adversarial ignored Swift source was not discovered by SwiftPM"
+readonly worktree_list_before="$(
+  /usr/bin/git -C "$repository_root" worktree list --porcelain
+)"
+
 if PATH="$harness_root" \
   ARKHAM_REPLAY_BASE_URL="http://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
@@ -230,6 +303,8 @@ then
 fi
 [[ ! -e "$marker" ]] ||
   fail "poisoned PATH selected a fake Swift executable"
+[[ ! -e "$ignored_source_leak" ]] ||
+  fail "production compiled or executed an ignored Swift source"
 [[ ! -e "$harness_root/output" ]] ||
   fail "invalid server URL reached credential or output handling"
 if /usr/bin/grep -F "No matching test cases" "$production_log" >/dev/null; then
@@ -239,7 +314,21 @@ fi
   'Suite "Production assignment replay coordinator driver" started.' \
   "$production_log" >/dev/null ||
   fail "production launcher did not execute the fixed coordinator driver"
-printf 'PASS: production uses the fixed sanitized Swift coordinator path\n'
+for sensitive_path in \
+  "$sensitive_checkpoint" \
+  "$sensitive_output" \
+  "$sensitive_token"
+do
+  if /usr/bin/grep -F "$sensitive_path" "$production_log" >/dev/null; then
+    fail "production launcher exposed a credential path in output"
+  fi
+done
+readonly worktree_list_after="$(
+  /usr/bin/git -C "$repository_root" worktree list --porcelain
+)"
+[[ "$worktree_list_after" == "$worktree_list_before" ]] ||
+  fail "production launcher left a private worktree registered"
+printf 'PASS: production isolates ignored Swift sources in a committed checkout\n'
 
 readonly test_list="$(
   /usr/bin/env -i \

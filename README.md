@@ -218,11 +218,24 @@ and binds the committed `ArkhamHorrorShared` package tree and manifest bytes.
 Inherited `GIT_DIR`, `GIT_WORK_TREE`, config, object-directory, replacement-ref,
 attribute, and namespace overrides cannot influence these checks.
 
-The launcher then builds and lists the exact fixed replay driver without any
-credential paths, revalidates the repository and package identities, and only
-then runs the already-built test with `--skip-build`. The Swift driver performs
+The launcher never builds or runs the credentialed driver from that mutable
+working tree. It creates a fresh private mode-0700 detached Git worktree from
+the verified commit under a fixed trusted scratch parent, then independently
+requires the materialized checkout's canonical top-level, commit, tree, index,
+package tree, and detached state to match. Before building, its status includes
+ignored paths and must be completely empty, so target-local ignored Swift
+sources such as `DerivedData/*.swift` cannot enter the compilation.
+
+The launcher builds and lists tests only in that committed checkout without any
+credential paths. It requires exactly one complete driver identifier, rejects
+any additional identifier sharing the driver prefix, revalidates both source
+and materialized identities, and only then runs the already-built test with an
+anchored complete-function filter and `--skip-build`. The Swift driver performs
 its independent compile-time repository-root, clean-worktree, and `HEAD`
-verification before recording the Apple revision.
+verification before recording the Apple revision. On every exit, the launcher
+checks the recorded scratch and checkout device/inode identities before using
+fixed `/usr/bin/git worktree remove`; it removes only that registered worktree
+and its now-empty private parent.
 
 The production launcher is fixed to:
 
