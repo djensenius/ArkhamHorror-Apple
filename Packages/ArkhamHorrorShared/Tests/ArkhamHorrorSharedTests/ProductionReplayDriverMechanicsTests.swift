@@ -85,10 +85,20 @@ struct ProductionReplayDriverMechanicsTests {
         defer { try? FileManager.default.removeItem(at: scratch.directory) }
         let input = try makeInput(resultURL: scratch.result)
         let staging = scratch.directory.appendingPathComponent("child.staging")
-        let environment = input.environmentVariables(stagingResultURL: staging)
+        let environment = try input.environmentVariables(
+            stagingResultURL: staging
+        )
         #expect(environment[ProductionReplayEnvironmentKey.checkpoint]
             == ReplayDriverSelfTestCheckpoint.assignmentContinuation.rawValue)
         #expect(environment[ProductionReplayEnvironmentKey.resultPath] == staging.path)
+        #expect(
+            Int32(environment[ProductionReplayEnvironmentKey.parentDevice] ?? "")
+                != nil
+        )
+        #expect(
+            UInt64(environment[ProductionReplayEnvironmentKey.parentInode] ?? "")
+                != nil
+        )
         #expect(environment[ReplayDriverSelfTestEnvironmentKey.evidence] == "injected")
 
         let child = try ProductionReplayChildContext<ReplayDriverSelfTestCheckpoint>(
@@ -96,14 +106,14 @@ struct ProductionReplayDriverMechanicsTests {
         )
         #expect(child.checkpoint == .assignmentContinuation)
         #expect(child.resultURL == staging)
-        #expect(throws: ProductionReplayDriverError.self) {
-            _ = try ProductionReplayInput(
-                checkpoint: ReplayDriverSelfTestCheckpoint.assignmentContinuation,
-                resultURL: scratch.result,
-                additionalEnvironment: [
-                    ProductionReplayEnvironmentKey.checkpoint: "collision",
-                ]
-            )
+        for key in ProductionReplayEnvironmentKey.reserved {
+            #expect(throws: ProductionReplayDriverError.reservedEnvironmentKey(key)) {
+                _ = try ProductionReplayInput(
+                    checkpoint: ReplayDriverSelfTestCheckpoint.assignmentContinuation,
+                    resultURL: scratch.result,
+                    additionalEnvironment: [key: "collision"]
+                )
+            }
         }
     }
 
@@ -139,6 +149,34 @@ struct ProductionReplayDriverMechanicsTests {
                         ReplayDriverSelfTestCheckpoint.assignmentContinuation.rawValue,
                     ProductionReplayEnvironmentKey.resultPath: "relative/result.json",
                 ]
+            )
+        }
+    }
+
+    @Test("Missing and malformed parent identity fail closed")
+    func malformedParentIdentityFailsClosed() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        let environment = try makeInput(resultURL: scratch.result)
+            .environmentVariables(
+                stagingResultURL: scratch.directory.appendingPathComponent(
+                    "child.staging"
+                )
+            )
+        #expect(throws: ProductionReplayDriverError.missingParentIdentity) {
+            var missingIdentity = environment
+            missingIdentity.removeValue(
+                forKey: ProductionReplayEnvironmentKey.parentDevice
+            )
+            _ = try ProductionReplayChildContext<ReplayDriverSelfTestCheckpoint>(
+                environment: missingIdentity
+            )
+        }
+        #expect(throws: ProductionReplayDriverError.invalidParentIdentity) {
+            var invalidIdentity = environment
+            invalidIdentity[ProductionReplayEnvironmentKey.parentInode] = "NaN"
+            _ = try ProductionReplayChildContext<ReplayDriverSelfTestCheckpoint>(
+                environment: invalidIdentity
             )
         }
     }

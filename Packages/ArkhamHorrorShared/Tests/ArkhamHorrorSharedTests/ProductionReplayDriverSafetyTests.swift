@@ -219,7 +219,9 @@ struct ProductionReplayDriverSafetyTests {
         let staging = scratch.directory.appendingPathComponent("assertion.staging")
         let input = try makeInput(resultURL: scratch.result)
         let context = try ProductionReplayChildContext<ReplayDriverSelfTestCheckpoint>(
-            environment: input.environmentVariables(stagingResultURL: staging)
+            environment: input.environmentVariables(
+                stagingResultURL: staging
+            )
         )
         #expect(throws: ReplayDriverSafetyTestError.assertionFailed) {
             try context.complete(resultData: Data("untrusted".utf8)) {
