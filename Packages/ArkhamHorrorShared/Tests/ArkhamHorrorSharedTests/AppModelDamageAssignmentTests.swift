@@ -194,10 +194,19 @@ extension AppModelLiveGameTests {
         )
     }
 
-    private func damageAssignmentEnvelope() throws -> GetGameEnvelope {
+    func damageAssignmentEnvelope(
+        rawQuestion: JSONValue? = nil,
+        scenarioSteps: Int = 6,
+        enemyID: EnemyID = DamageAssignmentFixtures.enemyID
+    ) throws -> GetGameEnvelope {
         let base = try loadGetGame()
         let update = try damageAssignmentUpdate(
-            from: base, scenarioSteps: 6, includeEnemy: true, includeInvestigator: true
+            from: base,
+            scenarioSteps: scenarioSteps,
+            rawQuestion: rawQuestion,
+            enemyID: enemyID,
+            includeEnemy: true,
+            includeInvestigator: true
         )
         guard case let .snapshot(snapshot) = update else { throw TestFailure() }
         return GetGameEnvelope(
@@ -208,10 +217,11 @@ extension AppModelLiveGameTests {
         )
     }
 
-    private func damageAssignmentUpdate(
+    func damageAssignmentUpdate(
         from envelope: GetGameEnvelope,
         scenarioSteps: Int,
         rawQuestion: JSONValue? = nil,
+        enemyID: EnemyID = DamageAssignmentFixtures.enemyID,
         includeEnemy: Bool,
         includeInvestigator: Bool
     ) throws -> BoardSnapshotUpdate {
@@ -229,7 +239,7 @@ extension AppModelLiveGameTests {
         object["question"] = .object(questions)
 
         guard case var .object(enemies)? = object["enemies"] else { throw TestFailure() }
-        let enemy = DamageAssignmentFixtures.enemyID.codingKey.stringValue
+        let enemy = enemyID.codingKey.stringValue
         if includeEnemy {
             enemies[enemy] = .null
         } else {
@@ -253,7 +263,7 @@ extension AppModelLiveGameTests {
         return .snapshot(snapshot)
     }
 
-    private func damageAssignmentAnswer(_ fixture: String) throws -> Data {
+    func damageAssignmentAnswer(_ fixture: String) throws -> Data {
         let published = try ContractJSON.decode(
             BasicChoiceAnswer.self,
             from: DamageAssignmentFixtures.data(fixture)

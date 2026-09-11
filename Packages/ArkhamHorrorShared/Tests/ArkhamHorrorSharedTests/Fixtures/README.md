@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@1a844092e7914ac538778910a99bcf8d4f856990`,
-schema revision `0.1.32`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@5acc0237b216e3b70ebe30af1559ab0e627e4f56`,
+schema revision `0.1.33`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These thirty-eight files, and only these thirty-eight, live under `Fixtures/Contract/` — a
+These forty-two files, and only these forty-two, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -87,6 +87,28 @@ tuple, strategy, asset matcher, and candidate array before granting either seman
 Both identities must still exist in the newest board projection immediately before
 submission. The two dedicated answer fixtures preserve source indices `0` and `1` and
 question version `6`; all 114 backend-published negative mutations remain update-required.
+
+## Governed assignment continuations
+
+The revision `0.1.33` manifest and basic-choice schema, both remaining-assignment
+questions, and both dedicated Answers are exact artifacts from the immutable #75 merge
+commit. Unlike the former replay-derived draft, these questions are generated through the
+real backend game engine, registered in the manifest, schema-validated, and each backed by
+16 published single-mutation negatives.
+
+Both continuations retain the governed Ghoul Minion and Roland identities. Choosing damage
+first produces the sole source-index-zero `Assign 1 horror`/`HorrorToken` continuation;
+choosing horror first produces the symmetric `Assign 1 damage`/`DamageToken` continuation.
+Each sends its exact direct amount followed by the production `(0 damage, 0 horror)`
+completion message with both accumulated investigator-target arrays populated. Their
+Answers preserve source index `0`, player UUID `00000000-0000-0000-0000-000000000001`,
+and question version `7`. The 32 assignment-family negatives within the manifest's 362
+total mutations now explicitly replace each continuation's required `AnyAsset` matcher
+with `AssetWithTitle`; Apple applies those mutations in memory and remains fail-closed.
+
+`ContractFixtureDigestTests` binds the assignment-family artifacts to
+`ContractPin.current`, verifies their exact digest registry entries and manifest hashes,
+and checks the fixture/schema links, immutable commit, revision, and mutation counts.
 
 ## token.json / whoami.json
 

@@ -122,6 +122,10 @@ answer-enemy-attack.json:contracts/fixtures/answer-enemy-attack.json
 question-enemy-attack-damage-assignment.json:contracts/fixtures/question-enemy-attack-damage-assignment.json
 answer-enemy-attack-assign-damage.json:contracts/fixtures/answer-enemy-attack-assign-damage.json
 answer-enemy-attack-assign-horror.json:contracts/fixtures/answer-enemy-attack-assign-horror.json
+question-enemy-attack-remaining-damage-assignment.json:contracts/fixtures/question-enemy-attack-remaining-damage-assignment.json
+question-enemy-attack-remaining-horror-assignment.json:contracts/fixtures/question-enemy-attack-remaining-horror-assignment.json
+answer-enemy-attack-assign-remaining-damage.json:contracts/fixtures/answer-enemy-attack-assign-remaining-damage.json
+answer-enemy-attack-assign-remaining-horror.json:contracts/fixtures/answer-enemy-attack-assign-remaining-horror.json
 basic-choice-question.schema.json:contracts/schemas/basic-choice-question.schema.json
 "
 
@@ -161,8 +165,8 @@ expected_local_names=$(
 )
 if [ -d "$local_fixture_dir" ]; then
   actual_local_names=$(
-    find "$local_fixture_dir" -mindepth 1 -maxdepth 1 -name '*.json' -print \
-      | xargs -n1 basename \
+    find "$local_fixture_dir" -mindepth 1 -maxdepth 1 -name '*.json' \
+      -exec basename {} \; \
       | sort
   )
 else

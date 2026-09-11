@@ -1,18 +1,35 @@
 import Foundation
 
+enum SubprocessDeadlineTermination: Equatable {
+    case exitedDuringGrace
+    case killedAfterGrace
+}
+
 /// Errors surfaced by ``SubprocessDeadlineGuard``.
 enum SubprocessDeadlineGuardError: Error, CustomStringConvertible {
-    case timedOut(afterSeconds: Double)
+    case timedOut(
+        afterSeconds: Double,
+        termination: SubprocessDeadlineTermination
+    )
     case childFailed(exitCode: Int32)
     case completionUnproven
+    case launchFailed(code: Int32)
+    case signalFailed(signal: Int32, code: Int32)
+    case waitFailed(code: Int32)
+    case reapTimedOut(pid: Int32, afterSeconds: Double)
+    case terminationUnconfirmed(pid: Int32)
 
     var description: String {
         switch self {
-        case let .timedOut(afterSeconds):
-            "Subprocess exceeded the \(afterSeconds)s deadline and was forcibly terminated. " +
-                "This is the expected failure mode for a reintroduced quadratic-time " +
-                "normalization loop -- the fixed (linear) implementation must comfortably " +
-                "finish within this deadline."
+        case let .timedOut(afterSeconds, termination):
+            switch termination {
+            case .exitedDuringGrace:
+                "Subprocess exceeded the \(afterSeconds)s deadline and exited during the " +
+                    "bounded SIGTERM grace period."
+            case .killedAfterGrace:
+                "Subprocess exceeded the \(afterSeconds)s deadline, ignored SIGTERM, and " +
+                    "was killed with SIGKILL after the bounded grace period."
+            }
         case let .childFailed(exitCode):
             "Subprocess's own test assertions failed or it crashed (exit code \(exitCode))."
         case .completionUnproven:
@@ -22,6 +39,19 @@ enum SubprocessDeadlineGuardError: Error, CustomStringConvertible {
                 "environment-variable trigger was missing/mismatched -- both exit 0 " +
                 "immediately without doing any of the work this deadline is supposed to be " +
                 "timing, which would otherwise be silently misreported as a genuine pass."
+        case let .launchFailed(code):
+            "Subprocess could not be launched (error code \(code))."
+        case let .signalFailed(signal, code):
+            "Could not send signal \(signal) to the retained child process group " +
+                "(error code \(code))."
+        case let .waitFailed(code):
+            "Could not observe or reap the retained child process (error code \(code))."
+        case let .reapTimedOut(pid, afterSeconds):
+            "Child process \(pid) exited but could not be reaped within " +
+                "\(afterSeconds)s."
+        case let .terminationUnconfirmed(pid):
+            "SIGKILL was sent to child process \(pid), but its termination could not be " +
+                "confirmed within the bounded SIGKILL observation window."
         }
     }
 }
@@ -50,12 +80,14 @@ enum SubprocessDeadlineGuardOutcome: Equatable {
 /// it cannot reliably *stop* a still-running, non-cooperatively-cancellable, tight
 /// synchronous loop (Swift's structured-concurrency cancellation is cooperative and a loop
 /// that never checks `Task.isCancelled` simply keeps consuming a CPU core regardless of any
-/// in-process "race" against a timer). Only OS-level process termination (`SIGTERM`, whose
-/// default disposition is to end the process immediately, even mid-loop) genuinely
-/// interrupts that work. Running the victim in a child process we can kill also bounds the
-/// *test's own* worst-case wall-clock cost to the configured deadline, regardless of how
-/// pathologically slow a reintroduced quadratic (or worse) implementation would actually be
-/// at the chosen input size.
+/// in-process "race" against a timer). Only OS-level process termination genuinely
+/// interrupts that work. On timeout this guard sends SIGTERM, allows a short bounded grace,
+/// then escalates to SIGKILL and performs a separately bounded reap. Running the victim in
+/// a child process whose exact identity remains retained until reap therefore bounds the
+/// *test's own* worst-case wall-clock cost even if the victim ignores SIGTERM. If the
+/// process-group leader exits first, the guard applies the same bounded teardown to any
+/// surviving members before reaping the leader, so neither a successful nor failed victim
+/// can leak background descendants.
 ///
 /// The child is launched by literally replaying this process's own `CommandLine.arguments`
 /// (as captured at the moment this function is called) with only the `--filter` value
@@ -127,6 +159,8 @@ enum SubprocessDeadlineGuard {
     /// with a nonzero status (its own `#expect`s failed, or it crashed); or
     /// `.completionUnproven` if the child exited 0 but never wrote the completion-sentinel
     /// file, meaning its intended code path is not proven to have actually executed.
+    /// Any surviving members of the retained child's process group are terminated and
+    /// observed gone before these normal-exit outcomes are returned.
     /// Returns ``SubprocessDeadlineGuardOutcome/completed`` only if the filtered victim
     /// test(s) all passed within the deadline *and* proved they actually ran.
     static func runFiltered(
@@ -148,19 +182,26 @@ enum SubprocessDeadlineGuard {
             .appendingPathComponent("subprocess-deadline-guard-\(UUID().uuidString).sentinel")
         defer { try? FileManager.default.removeItem(at: sentinelURL) }
 
-        let process = makeProcess(
+        let child = try spawnChild(
             hostArguments: hostArguments,
             victimFilter: victimFilter,
             additionalEnvironment: additionalEnvironment,
             sentinelURL: sentinelURL
         )
-        try process.run()
+        defer { bestEffortCleanup(child) }
 
-        if waitWithDeadline(process, deadlineSeconds: deadlineSeconds) {
-            throw SubprocessDeadlineGuardError.timedOut(afterSeconds: deadlineSeconds)
-        }
-        guard process.terminationStatus == 0 else {
-            throw SubprocessDeadlineGuardError.childFailed(exitCode: process.terminationStatus)
+        switch try waitWithDeadline(child, deadlineSeconds: deadlineSeconds) {
+        case let .timedOut(termination):
+            throw SubprocessDeadlineGuardError.timedOut(
+                afterSeconds: deadlineSeconds,
+                termination: termination
+            )
+        case let .exited(exit):
+            guard exit.exitedNormally, exit.status == 0 else {
+                throw SubprocessDeadlineGuardError.childFailed(
+                    exitCode: exit.status
+                )
+            }
         }
         guard FileManager.default.fileExists(atPath: sentinelURL.path) else {
             throw SubprocessDeadlineGuardError.completionUnproven
@@ -179,56 +220,6 @@ enum SubprocessDeadlineGuard {
             "selects tests via XCTestBundlePath/XCTestConfigurationFilePath environment " +
             "state rather than CLI arguments, and this guard has no verified way to " +
             "reconstruct or replay that selection"
-    }
-
-    /// Builds (but does not launch) the child `Process` that replays `hostArguments` with
-    /// `--filter` substituted for `victimFilter`, merging `additionalEnvironment` and the
-    /// completion-sentinel path over this process's own environment, with output discarded.
-    private static func makeProcess(
-        hostArguments: [String],
-        victimFilter: String,
-        additionalEnvironment: [String: String],
-        sentinelURL: URL
-    ) -> Process {
-        let childArguments = replacingFilterArgument(
-            in: Array(hostArguments.dropFirst()),
-            with: victimFilter
-        )
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: hostArguments[0])
-        process.arguments = childArguments
-
-        var environment = ProcessInfo.processInfo.environment
-        for (key, value) in additionalEnvironment {
-            environment[key] = value
-        }
-        environment[completionSentinelEnvironmentKey] = sentinelURL.path
-        process.environment = environment
-
-        // Only the exit status matters here; discarding output avoids any risk of this
-        // process blocking on a full pipe buffer while we are busy polling for the deadline
-        // below (a pipe we never drained could otherwise deadlock the child).
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        return process
-    }
-
-    /// Polls `process` until it exits or `deadlineSeconds` elapses, forcibly terminating
-    /// (and returning `true` for) the latter case so no orphaned CPU-bound work remains.
-    private static func waitWithDeadline(_ process: Process, deadlineSeconds: Double) -> Bool {
-        let deadline = Date().addingTimeInterval(deadlineSeconds)
-        var timedOut = false
-        while process.isRunning {
-            if Date() >= deadline {
-                timedOut = true
-                process.terminate()
-                break
-            }
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        process.waitUntilExit()
-        return timedOut
     }
 
     /// Call this as the very last step of a victim test's body, strictly after all of its

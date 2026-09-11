@@ -35,7 +35,11 @@ question-investigate-commit.json question-investigate-reveal-window.json \
 question-investigate-apply-results.json question-encounter-deck-draw.json \
 question-enemy-attack.json answer-enemy-attack.json \
 question-enemy-attack-damage-assignment.json \
-answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json"
+answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json \
+question-enemy-attack-remaining-damage-assignment.json \
+question-enemy-attack-remaining-horror-assignment.json \
+answer-enemy-attack-assign-remaining-damage.json \
+answer-enemy-attack-assign-remaining-horror.json"
 
 failures=0
 scenario_count=0
@@ -119,7 +123,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.32",'
+    echo '  "schemaRevision": "0.1.33",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
@@ -184,6 +188,7 @@ reset_local_good_state() {
     cp "$backend_repo/contracts/fixtures/$name" "$local_fixture_dir/$name"
   done
   cp "$backend_repo/contracts/schemas/basic-choice-question.schema.json" "$local_fixture_dir/"
+  # shellcheck disable=SC2086
   write_backend_manifest "$local_fixture_dir/manifest.json" $fixture_names
   rm -rf "$local_repo/.git"
   git init -q "$local_repo"

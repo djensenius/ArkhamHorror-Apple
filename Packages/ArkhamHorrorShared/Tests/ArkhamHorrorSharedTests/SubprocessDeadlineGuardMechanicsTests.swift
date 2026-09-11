@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -8,6 +9,8 @@ import Testing
 /// - **HIGH**: an unsupported host (Apple's classic bare `xctest` agent under `xcodebuild
 ///   test`, fingerprinted by a `CommandLine.arguments` of length 1) must be detected and
 ///   skipped *before* any subprocess is launched, never mistaken for a genuine timeout.
+/// - **HIGH**: a timed-out child must leave its retained process group during a bounded
+///   SIGTERM grace or be escalated to SIGKILL and reaped within a second fixed bound.
 /// - **LOW**: a bare zero exit code must never be trusted as proof the victim's intended
 ///   code path actually ran; a missing/mismatched trigger environment-variable key, or a
 ///   `--filter` that matches zero tests, must both be caught by the completion-sentinel
@@ -17,14 +20,16 @@ private enum SelfTestVictimEnvironmentKey {
     /// -- this key only tells the self-test victim *what to do*; the sentinel key (shared,
     /// typed, and owned by `SubprocessDeadlineGuard` itself) is how it proves it did it.
     static let mode = "SUBPROCESS_DEADLINE_GUARD_SELFTEST_MODE"
+    static let readyPath = "SUBPROCESS_DEADLINE_GUARD_SELFTEST_READY_PATH"
 }
 
 private enum SelfTestVictimMode: String {
     /// Finishes immediately and records completion -- the expected "everything worked" path.
     case succeed
-    /// Spins forever; only OS-level termination by the parent's deadline can end this, the
-    /// same non-cooperative-cancellation problem `SubprocessDeadlineGuard` exists to solve.
-    case hang
+    /// Keeps running with the spawn-normalized default SIGTERM disposition.
+    case exitDuringGrace
+    /// Ignores SIGTERM and spins until the guard escalates to SIGKILL.
+    case ignoreSIGTERM
     /// Fails its own assertion, so the child process exits nonzero on its own.
     case fail
 }
@@ -45,13 +50,29 @@ func subprocessDeadlineGuardSelfTestVictim() {
     switch mode {
     case .succeed:
         SubprocessDeadlineGuard.recordVictimCompletion()
-    case .hang:
+    case .exitDuringGrace:
+        recordSelfTestVictimReady()
+        while true {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+    case .ignoreSIGTERM:
+        _ = signal(SIGTERM, SIG_IGN)
+        recordSelfTestVictimReady()
         while true {
             Thread.sleep(forTimeInterval: 0.05)
         }
     case .fail:
         #expect(Bool(false), "Intentional self-test failure to exercise child-failure detection.")
     }
+}
+
+private func recordSelfTestVictimReady() {
+    guard let path = ProcessInfo.processInfo.environment[
+        SelfTestVictimEnvironmentKey.readyPath
+    ] else {
+        return
+    }
+    FileManager.default.createFile(atPath: path, contents: Data())
 }
 
 @Suite("SubprocessDeadlineGuard mechanics")
@@ -105,6 +126,48 @@ struct SubprocessDeadlineGuardMechanicsTests {
         )
     }
 
+    private func expectBoundedTimeout(
+        mode: SelfTestVictimMode,
+        expectedTermination: SubprocessDeadlineTermination,
+        deadlineSeconds: Double = 2
+    ) {
+        let readyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("subprocess-deadline-ready-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: readyURL) }
+        let startedAt = Date()
+        do {
+            let outcome = try SubprocessDeadlineGuard.runFiltered(
+                victimFilter: "subprocessDeadlineGuardSelfTestVictim",
+                additionalEnvironment: [
+                    SelfTestVictimEnvironmentKey.mode: mode.rawValue,
+                    SelfTestVictimEnvironmentKey.readyPath: readyURL.path,
+                ],
+                deadlineSeconds: deadlineSeconds
+            )
+            if case let .skippedUnsupportedHost(reason) = outcome {
+                recordSkippedHostWarning(reason)
+                return
+            }
+            Issue.record("Expected .timedOut, got \(outcome) instead.")
+        } catch let error as SubprocessDeadlineGuardError {
+            guard case let .timedOut(observedDeadline, termination) = error else {
+                Issue.record("Expected .timedOut, got \(error) instead.")
+                return
+            }
+            #expect(observedDeadline == deadlineSeconds)
+            #expect(termination == expectedTermination)
+            #expect(FileManager.default.fileExists(atPath: readyURL.path))
+            #expect(
+                Date().timeIntervalSince(startedAt) <
+                    deadlineSeconds +
+                    SubprocessDeadlineGuard.maximumTerminationOverheadSeconds +
+                    1
+            )
+        } catch {
+            Issue.record("Expected .timedOut, got \(error) instead.")
+        }
+    }
+
     // MARK: - Host detection (round 8 HIGH)
 
     @Test("isSupportedReExecHost requires more than a bare single-argument argv")
@@ -132,14 +195,15 @@ struct SubprocessDeadlineGuardMechanicsTests {
 
     @Test("An unsupported host is skipped cleanly, without ever attempting to launch a subprocess")
     func unsupportedHostSkipsWithoutLaunchingSubprocess() throws {
-        // If the host-support check were bypassed, `Process.run()` would throw synchronously
+        // If the host-support check were bypassed, `posix_spawn()` would fail synchronously
         // for this nonexistent executable path rather than hang -- so a clean, non-throwing
         // `.skippedUnsupportedHost` return (rather than a caught launch-failure error) is
         // itself deterministic proof no subprocess launch was attempted.
         let outcome = try SubprocessDeadlineGuard.runFiltered(
             victimFilter: "subprocessDeadlineGuardSelfTestVictim",
             additionalEnvironment: [
-                SelfTestVictimEnvironmentKey.mode: SelfTestVictimMode.hang.rawValue,
+                SelfTestVictimEnvironmentKey.mode:
+                    SelfTestVictimMode.ignoreSIGTERM.rawValue,
             ],
             deadlineSeconds: 20,
             hostArguments: ["/no/such/executable/on/this/machine"]
@@ -169,26 +233,19 @@ struct SubprocessDeadlineGuardMechanicsTests {
         #expect(outcome == .completed)
     }
 
-    @Test("A victim that hangs past the deadline is terminated and reported as timed out")
-    func victimThatHangsIsTimedOut() {
-        expectGuardError(
-            ".timedOut",
-            matches: {
-                if case .timedOut = $0 {
-                    true
-                } else {
-                    false
-                }
-            },
-            body: {
-                try SubprocessDeadlineGuard.runFiltered(
-                    victimFilter: "subprocessDeadlineGuardSelfTestVictim",
-                    additionalEnvironment: [
-                        SelfTestVictimEnvironmentKey.mode: SelfTestVictimMode.hang.rawValue,
-                    ],
-                    deadlineSeconds: 2
-                )
-            }
+    @Test("A child that handles SIGTERM exits within the bounded grace period")
+    func childExitsDuringTerminationGrace() {
+        expectBoundedTimeout(
+            mode: .exitDuringGrace,
+            expectedTermination: .exitedDuringGrace
+        )
+    }
+
+    @Test("A victim that ignores SIGTERM is killed and reaped within a fixed bound")
+    func victimIgnoringSIGTERMIsKilledAndReaped() {
+        expectBoundedTimeout(
+            mode: .ignoreSIGTERM,
+            expectedTermination: .killedAfterGrace
         )
     }
 
