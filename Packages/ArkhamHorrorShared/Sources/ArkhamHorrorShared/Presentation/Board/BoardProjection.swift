@@ -306,7 +306,7 @@ struct BoardProjection: Sendable, Equatable {
     ///   supplied by the caller (from the same question the choice belongs to) whenever
     ///   the choice being checked might be a `.continueReading` choice; omitting it makes
     ///   any such choice fail closed rather than silently defaulting to actionable.
-    /// - A `.fight` or `.evade` choice remains actionable only while its authoritative
+    /// - A `.fight`, `.evade`, or `.engage` choice remains actionable only while its authoritative
     ///   `EnemySource` identity is still present in this projection.
     ///
     /// Such a choice stays visible at its exact original index (never filtered/reindexed)
@@ -332,7 +332,7 @@ struct BoardProjection: Sendable, Equatable {
         case let .chooseHandCard(cardID, _, _):
             guard let ownerID else { return false }
             return handCardsByPlayer[ownerID]?[cardID] != nil
-        case .resolveEnemyAttack, .assignEnemyAttackDamage, .fight, .evade:
+        case .resolveEnemyAttack, .assignEnemyAttackDamage, .fight, .evade, .engage:
             return isEnemyChoiceActionable(choice.content)
         case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
              .startSkillTest, .applySkillTestResults, .drawEncounterCard:
@@ -350,7 +350,7 @@ struct BoardProjection: Sendable, Equatable {
         case let .assignEnemyAttackDamage(assignment):
             enemyIDs.contains(assignment.enemyID)
                 && investigators.contains { $0.id == assignment.investigatorID }
-        case let .fight(_, enemyID), let .evade(_, enemyID):
+        case let .fight(_, enemyID), let .evade(_, enemyID), let .engage(_, enemyID):
             enemyIDs.contains(enemyID)
         default:
             false
