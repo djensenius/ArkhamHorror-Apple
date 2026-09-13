@@ -78,7 +78,7 @@ enum BasicChoiceParser {
             return parseEnemyAttackQuestion(object, rawValue: value)
         }
         if kind == .questionWithSource {
-            return parseEnemyAttackAssignmentQuestion(object, rawValue: value)
+            return parseQuestionWithSource(object, rawValue: value)
         }
         guard Set(object.keys) == ["tag", "choices"],
               case let .array(rawChoices)? = object["choices"],
@@ -93,6 +93,9 @@ enum BasicChoiceParser {
             )
         }
         let choices = contextualizeHandCardChoices(parsedChoices, kind: kind)
+        guard validateRoundTransitionQuestion(kind: kind, choices: choices) else {
+            return .updateRequired(tag: tag)
+        }
         return .supported(
             BasicChoiceQuestion(kind: kind, choices: choices, story: nil, rawValue: value)
         )
@@ -214,10 +217,12 @@ enum BasicChoiceParser {
 
     private static func parseLabel(_ object: [String: JSONValue]) -> BasicChoiceContent? {
         guard Set(object.keys) == ["tag", "label", "messages"],
-              object["label"] == .string(doneWithMulliganLabel),
               let messages = messages(object["messages"])
         else { return nil }
-        return .finishMulligan(label: doneWithMulliganLabel, messages: messages)
+        if object["label"] == .string(doneWithMulliganLabel) {
+            return .finishMulligan(label: doneWithMulliganLabel, messages: messages)
+        }
+        return parseAgendaConsequenceLabel(object, messages: messages)
     }
 
     private static func parseTargetLabel(
@@ -242,6 +247,8 @@ enum BasicChoiceParser {
                   let cardID = canonicalCardID(rawCardID)
             else { return nil }
             return .chooseHandCard(cardID: cardID, purpose: .choose, messages: messages)
+        case .string("AgendaTarget"):
+            return parseAdvanceAgendaTarget(target, messages: messages)
         default:
             return nil
         }
@@ -312,6 +319,9 @@ private extension BasicChoiceParser {
     static func parseAbilityLabel(
         _ object: [String: JSONValue]
     ) -> BasicChoiceContent? {
+        if let forced = parseRoundEndForcedAbility(object) {
+            return forced
+        }
         guard Set(object.keys) == [
             "tag", "investigatorId", "ability", "windows", "before", "messages",
         ],

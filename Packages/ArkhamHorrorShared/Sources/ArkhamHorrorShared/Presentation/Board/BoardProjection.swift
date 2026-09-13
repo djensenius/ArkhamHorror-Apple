@@ -279,6 +279,8 @@ struct BoardProjection: Sendable, Equatable {
     /// Opaque enemy values remain out of scope; their canonical IDs are sorted by raw UUID
     /// text so identity-based prompt actionability is deterministic.
     let enemyIDs: [EnemyID]
+    /// Retains canonical treachery IDs so forced abilities fail closed after cards leave play.
+    let treacheryIDs: [TreacheryID]
     let otherInvestigatorCount: Int
     let killedInvestigatorCount: Int
     /// Narrow, immutable player-hand presentation authority. Raw card payloads never leave
@@ -327,6 +329,9 @@ struct BoardProjection: Sendable, Equatable {
             return storyResolution?.isResolved == true
         case .finishMulligan:
             return labelResolution?.isResolved == true
+        case .resolveForcedAbility, .advanceAgenda, .chooseAgendaConsequence,
+             .assignAgendaHorror:
+            return isRoundChoiceActionable(choice.content, labelResolution: labelResolution)
         case let .chooseLocation(locationID, _):
             return locations.contains { $0.id == locationID }
         case let .chooseHandCard(cardID, _, _):
@@ -339,6 +344,29 @@ struct BoardProjection: Sendable, Equatable {
             return true
         case .unsupported:
             return false
+        }
+    }
+
+    private func isRoundChoiceActionable(
+        _ content: BasicChoiceContent, labelResolution: BasicChoiceLabelResolution?
+    ) -> Bool {
+        switch content {
+        case let .resolveForcedAbility(forced):
+            treacheryIDs.contains(forced.treacheryID)
+                && investigators.contains { $0.id == forced.ability.investigatorID }
+        case let .advanceAgenda(agendaID, _):
+            agendas.contains { $0.id == agendaID }
+        case let .chooseAgendaConsequence(consequence):
+            labelResolution?.isResolved == true
+                && agendas.contains { $0.id == consequence.agendaID }
+                && consequence.investigatorID.map { investigatorID in
+                    investigators.contains { $0.id == investigatorID }
+                } != false
+        case let .assignAgendaHorror(assignment):
+            agendas.contains { $0.id == assignment.agendaID }
+                && investigators.contains { $0.id == assignment.investigatorID }
+        default:
+            false
         }
     }
 

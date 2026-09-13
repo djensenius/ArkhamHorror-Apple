@@ -47,29 +47,41 @@ enum BoardDisplayFormatting {
                 return "\(purpose.actionTitle) \(card.displayLabel)"
             }
             return "Unavailable card (choice \(choice.index + 1))"
-        case .finishMulligan:
+        case .finishMulligan, .chooseAgendaConsequence:
             return labelResolution?.title
                 ?? "Unavailable action (choice \(choice.index + 1))"
-        case let .resolveEnemyAttack(_, investigatorID, _):
-            if let investigator = projection.investigators.first(
-                where: { $0.id == investigatorID }
-            ) {
-                return "Resolve enemy attack against \(investigator.displayName)"
-            }
-            return choice.title
-        case let .assignEnemyAttackDamage(assignment):
-            if let investigator = projection.investigators.first(
-                where: { $0.id == assignment.investigatorID }
-            ) {
-                return "\(assignment.kind.actionTitle) to \(investigator.displayName)"
-            }
-            return choice.title
+        case .resolveEnemyAttack, .assignEnemyAttackDamage, .assignAgendaHorror:
+            return investigatorChoiceDisplayTitle(for: choice, in: projection)
         case .gainResource, .drawCard, .endTurn, .investigate, .fight, .evade, .engage,
-             .continueReading,
+             .resolveForcedAbility, .advanceAgenda, .continueReading,
              .skipTriggers, .startSkillTest, .applySkillTestResults, .drawEncounterCard,
              .unsupported:
             return choice.title
         }
+    }
+
+    private static func investigatorChoiceDisplayTitle(
+        for choice: BasicChoice, in projection: BoardProjection
+    ) -> String {
+        let investigatorID: InvestigatorID
+        let prefix: String
+        switch choice.content {
+        case let .resolveEnemyAttack(_, id, _):
+            investigatorID = id
+            prefix = "Resolve enemy attack against"
+        case let .assignEnemyAttackDamage(assignment):
+            investigatorID = assignment.investigatorID
+            prefix = "\(assignment.kind.actionTitle) to"
+        case let .assignAgendaHorror(assignment):
+            investigatorID = assignment.investigatorID
+            prefix = "Assign 2 horror to"
+        default:
+            return choice.title
+        }
+        guard let investigator = projection.investigators.first(
+            where: { $0.id == investigatorID }
+        ) else { return choice.title }
+        return "\(prefix) \(investigator.displayName)"
     }
 
     /// A choice's VoiceOver/accessibility hint, distinguishing the three reasons a
@@ -311,7 +323,7 @@ private enum BasicChoiceAvailabilityFormatting {
         case .continueReading:
             storyResolution?.unavailableReason?.announcement
                 ?? "This story text is not currently available."
-        case .finishMulligan:
+        case .finishMulligan, .chooseAgendaConsequence:
             labelResolution?.announcement
                 ?? "The text for this choice is not currently available."
         case .chooseHandCard:
@@ -322,10 +334,27 @@ private enum BasicChoiceAvailabilityFormatting {
             "The enemy or investigator for this attack isn't currently available."
         case .assignEnemyAttackDamage:
             "The enemy or investigator for this assignment isn't currently available."
+        case .resolveForcedAbility, .advanceAgenda, .assignAgendaHorror:
+            roundTransitionAnnouncement(for: choice.content)
         case .fight, .evade, .engage:
             "This enemy isn't currently available."
         case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
              .startSkillTest, .applySkillTestResults, .drawEncounterCard, .unsupported:
+            "This choice is not currently available."
+        }
+    }
+
+    private static func roundTransitionAnnouncement(
+        for content: BasicChoiceContent
+    ) -> String {
+        switch content {
+        case .resolveForcedAbility:
+            "The treachery or investigator for this ability isn't currently available."
+        case .advanceAgenda:
+            "This agenda isn't currently available."
+        case .assignAgendaHorror:
+            "The agenda or investigator for this assignment isn't currently available."
+        default:
             "This choice is not currently available."
         }
     }
