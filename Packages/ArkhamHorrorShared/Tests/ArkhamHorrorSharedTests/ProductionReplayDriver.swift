@@ -187,13 +187,16 @@ struct ProductionReplayChildContext<Checkpoint: ProductionReplayCheckpoint>: Sen
 struct ProductionReplayRunResult: Equatable {
     let outcome: SubprocessDeadlineGuardOutcome
     private let destination: ProductionReplayDestination
+    private let publishedArtifact: ProductionReplayPublishedArtifact?
 
     init(
         outcome: SubprocessDeadlineGuardOutcome,
-        destination: ProductionReplayDestination
+        destination: ProductionReplayDestination,
+        publishedArtifact: ProductionReplayPublishedArtifact? = nil
     ) {
         self.outcome = outcome
         self.destination = destination
+        self.publishedArtifact = publishedArtifact
     }
 
     var resultURL: URL {
@@ -201,10 +204,13 @@ struct ProductionReplayRunResult: Equatable {
     }
 
     func resultData() throws -> Data {
-        guard outcome == .completed else {
+        guard outcome == .completed, let publishedArtifact else {
             throw ProductionReplayDriverError.resultUnavailable
         }
-        return try ProductionReplayFileSystem.readPublishedArtifact(destination)
+        return try ProductionReplayFileSystem.readPublishedArtifact(
+            destination,
+            expected: publishedArtifact
+        )
     }
 
     static func == (
@@ -224,6 +230,7 @@ typealias ProductionReplayDeadlineRunner = (
 
 typealias ProductionReplayArtifactValidator = (Data) throws -> Void
 typealias ProductionReplayDeadlineValidator = () throws -> Void
+typealias ProductionReplayPublicationHook = () throws -> Void
 
 enum ProductionReplayDriver {
     static func run(
@@ -234,6 +241,8 @@ enum ProductionReplayDriver {
         artifactValidator: ProductionReplayArtifactValidator = { _ in },
         completionDeadlineValidator:
         ProductionReplayDeadlineValidator = {},
+        beforePublicationMove:
+        ProductionReplayPublicationHook = {},
         deadlineRunner: ProductionReplayDeadlineRunner = runDeadlineGuard
     ) throws -> ProductionReplayRunResult {
         guard deadlineSeconds.isFinite, deadlineSeconds > 0 else {
@@ -268,26 +277,23 @@ enum ProductionReplayDriver {
                 destination: destination
             )
         }
-
         try completionDeadlineValidator()
-        try ProductionReplayFileSystem.validateStagingArtifact(
+        let artifact = try ProductionReplayFileSystem.openStagingArtifact(
             staging,
             parent: destination.parent
         )
-        try artifactValidator(
-            ProductionReplayFileSystem.readStagingArtifact(
-                staging,
-                parent: destination.parent
-            )
-        )
+        try artifactValidator(artifact.data)
         try completionDeadlineValidator()
-        try ProductionReplayFileSystem.publish(
-            staging,
-            to: destination
+        let publishedArtifact = try ProductionReplayFileSystem.publish(
+            artifact,
+            from: staging,
+            to: destination,
+            beforeMove: beforePublicationMove
         )
         return ProductionReplayRunResult(
             outcome: outcome,
-            destination: destination
+            destination: destination,
+            publishedArtifact: publishedArtifact
         )
     }
 
