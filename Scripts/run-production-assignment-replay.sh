@@ -11,8 +11,8 @@ readonly driver_identifier_prefix='ArkhamHorrorSharedTests.AssignmentReplayCoord
 readonly expected_driver_identifier="${driver_identifier_prefix}()"
 readonly driver_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator\(\)(/[^/]+)?$'
 readonly launcher_relative_path="Scripts/run-production-assignment-replay.sh"
-readonly trusted_base_revision="2257ec333e2da9a995a6ff01c807a6840e2ade0e"
-readonly expected_package_tree="f42e0d33f47b1b963303fdb38980a1b77838ab75"
+readonly trusted_base_revision="e15047c6c3690bc6f2b75331465b637ca1f81189"
+readonly expected_package_tree="f416f0d9694e54538a712dde6d229da17315c00f"
 readonly trusted_scratch_parent="/private/tmp"
 readonly git_bin="/usr/bin/git"
 
