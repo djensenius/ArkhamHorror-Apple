@@ -306,6 +306,8 @@ struct BoardProjection: Sendable, Equatable {
     ///   supplied by the caller (from the same question the choice belongs to) whenever
     ///   the choice being checked might be a `.continueReading` choice; omitting it makes
     ///   any such choice fail closed rather than silently defaulting to actionable.
+    /// - A `.fight` or `.evade` choice remains actionable only while its authoritative
+    ///   `EnemySource` identity is still present in this projection.
     ///
     /// Such a choice stays visible at its exact original index (never filtered/reindexed)
     /// but cannot be actioned until it is authoritatively resolvable. Recomputed fresh
@@ -330,17 +332,28 @@ struct BoardProjection: Sendable, Equatable {
         case let .chooseHandCard(cardID, _, _):
             guard let ownerID else { return false }
             return handCardsByPlayer[ownerID]?[cardID] != nil
-        case let .resolveEnemyAttack(enemyID, investigatorID, _):
-            return enemyIDs.contains(enemyID)
-                && investigators.contains { $0.id == investigatorID }
-        case let .assignEnemyAttackDamage(assignment):
-            return enemyIDs.contains(assignment.enemyID)
-                && investigators.contains { $0.id == assignment.investigatorID }
+        case .resolveEnemyAttack, .assignEnemyAttackDamage, .fight, .evade:
+            return isEnemyChoiceActionable(choice.content)
         case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
              .startSkillTest, .applySkillTestResults, .drawEncounterCard:
             return true
         case .unsupported:
             return false
+        }
+    }
+
+    private func isEnemyChoiceActionable(_ content: BasicChoiceContent) -> Bool {
+        switch content {
+        case let .resolveEnemyAttack(enemyID, investigatorID, _):
+            enemyIDs.contains(enemyID)
+                && investigators.contains { $0.id == investigatorID }
+        case let .assignEnemyAttackDamage(assignment):
+            enemyIDs.contains(assignment.enemyID)
+                && investigators.contains { $0.id == assignment.investigatorID }
+        case let .fight(_, enemyID), let .evade(_, enemyID):
+            enemyIDs.contains(enemyID)
+        default:
+            false
         }
     }
 

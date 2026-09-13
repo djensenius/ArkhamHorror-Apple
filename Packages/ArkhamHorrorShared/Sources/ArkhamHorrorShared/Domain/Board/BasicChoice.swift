@@ -61,6 +61,8 @@ enum BasicChoiceContent: Sendable, Equatable, Hashable {
     case assignEnemyAttackDamage(EnemyAttackDamageAssignment)
     case endTurn(investigatorID: InvestigatorID, messages: [JSONValue])
     case investigate(BasicChoiceAbility)
+    case fight(BasicChoiceAbility, enemyID: EnemyID)
+    case evade(BasicChoiceAbility, enemyID: EnemyID)
     case continueReading(messages: [JSONValue])
     case finishMulligan(label: String, messages: [JSONValue])
     case chooseLocation(locationID: LocationID, messages: [JSONValue])
@@ -101,6 +103,8 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case let .assignEnemyAttackDamage(assignment): assignment.kind.actionTitle
         case .endTurn: "End turn"
         case .investigate: "Investigate"
+        case .fight: "Fight"
+        case .evade: "Evade"
         case .continueReading: "Continue"
         case .finishMulligan: "Unavailable action"
         case .chooseLocation: "Choose starting location"
@@ -120,6 +124,8 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case let .assignEnemyAttackDamage(assignment): assignment.kind.systemImage
         case .endTurn: "forward.end"
         case .investigate: "magnifyingglass"
+        case .fight: "burst.fill"
+        case .evade: "figure.run"
         case .continueReading: "arrow.right.circle.fill"
         case .finishMulligan: "checkmark.circle.fill"
         case .chooseLocation: "mappin.and.ellipse"
@@ -132,8 +138,12 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
     }
 
     var ability: BasicChoiceAbility? {
-        guard case let .investigate(ability) = content else { return nil }
-        return ability
+        switch content {
+        case let .investigate(ability), let .fight(ability, _), let .evade(ability, _):
+            ability
+        default:
+            nil
+        }
     }
 
     var locationID: LocationID? {
