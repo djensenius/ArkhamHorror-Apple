@@ -60,7 +60,7 @@ one observed cache instance for the rest of the session, without requiring relau
 The 26.0 deployment floor is intentional: the client targets the current
 public Apple OS generation across every platform rather than carrying
 compatibility branches for older SDKs. Required CI therefore runs on
-`macos-26`; the beta Xcode path below is used for next-generation validation.
+`macos-26`.
 
 Install the pinned XcodeGen, SwiftFormat, and SwiftLint versions:
 
@@ -68,11 +68,10 @@ Install the pinned XcodeGen, SwiftFormat, and SwiftLint versions:
 mise install
 ```
 
-For the local beta Xcode installation, select the developer directory once per
-shell:
+Select the stable Xcode developer directory once per shell:
 
 ```sh
-export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 ```
 
 ## External production assignment replay
@@ -84,92 +83,96 @@ catalog, asset, REST, and WebSocket paths, and sends
 construct game state, implement assignment rules, or call a direct answer
 bridge.
 
-### Current backend gate
+### Backend replay authority
 
-As of Friday, September 11, 2026, backend
-`djensenius/ArkhamHorror#76` is still open at
-`0d1bb54d1b40d48b742c7c796b577c92339bf2ea`, and its Stack check is failing.
-It advances the native contract to `0.1.34`. This repository must therefore
-remain pinned to backend
-`5acc0237b216e3b70ebe30af1559ab0e627e4f56` / contract `0.1.33` until that PR
-actually merges.
+As of Sunday, September 13, 2026, backend
+`djensenius/ArkhamHorror#76` is squash-merged as
+`21503e7dc82954b66ac9c24e7d34d9d1517549b8`. This repository is pinned to that
+exact immutable commit and contract revision `0.1.34`. The merge defines
+cross-client prompt SHA-256 over compact JSON with recursively sorted object
+keys and bounds every replay CLI message drain.
 
-That PR defines checkpoint generation, `ReplayBuildIdentity`,
-`validateCheckpointExport`, and the canonical checkpoint-envelope digest, but
-the production importer still discards their validation result. It neither
-binds the exact multipart file bytes to the imported game nor exposes immutable
-authority for the executable serving that game. Consequently, the Apple replay
-currently fails closed before any controller command.
+It also defines deterministic checkpoint generation and validation, hashes the
+exact uploaded multipart file bytes, persists an import receipt and player
+remapping, embeds the clean running-server build identity, and exposes the
+result through authenticated
+`GET /api/v1/arkham/games/:id/replay-attestation`.
 
-The backend must additionally:
-
-1. Hash the exact uploaded multipart file-part bytes before decoding.
-2. Run the exact backend checkpoint-envelope validator used by
-   `validateCheckpointExport`; reject a tampered export, provenance object,
-   canonical envelope, or replay build.
-3. Persist the validator result with the new game, authenticated imported
-   player, remapped checkpoint player, server-computed canonical envelope
-   digest, and full checkpoint `ReplayBuildIdentity`.
-4. Embed and expose the clean running server executable build identity.
-   `PublicGame.git` remains the imported **game** revision and is not server
-   executable identity.
-5. Expose an authenticated, game-bound
-   `GET /api/v1/arkham/games/:id/replay-attestation` response:
+The governed response uses schema version 1:
 
    ```json
    {
-     "schemaVersion": 2,
+     "schemaVersion": 1,
      "gameId": "<imported game UUID>",
-     "playerId": "<authenticated imported player UUID>",
-     "serverBuild": {
+     "gameGitRevision": "<40 lowercase hex source game revision>",
+     "checkpointSha256": "<SHA-256 of exact uploaded file bytes>",
+     "canonicalEnvelopeSha256": "<server-computed canonical digest>",
+     "validatedCheckpoint": {
+       "schemaVersion": 1,
+       "contractSchemaRevision": "0.1.34",
+       "prompt": {
+         "questionVersion": "<validated prompt version>",
+         "playerId": "<validated source player UUID>",
+         "promptTag": "QuestionWithSource",
+         "promptSha256": "<server-validated canonical prompt SHA-256>"
+       },
+       "checkpointGameSha256": "<canonical checkpoint-game digest>",
+       "checkpointQueueSha256": "<canonical checkpoint-queue digest>"
+     },
+     "runningServerBuild": {
        "gitRevision": "<40 lowercase hex executable revision>",
        "gitTree": "<40 lowercase hex tree>",
        "sourceSha256": "<64 lowercase hex compiled-source digest>",
        "sourceClean": true,
        "attestation": "git-clean"
      },
-     "gameRevision": "<40 lowercase hex imported game revision>",
-     "checkpointValidation": {
-       "validator": "arkham-replay-checkpoint-envelope-v1",
-       "validationStatus": "validated",
-       "artifactSha256": "<SHA-256 of exact uploaded file bytes>",
-       "canonicalEnvelopeSha256": "<server-computed canonical digest>",
-       "replayBuild": {
-         "gitRevision": "<same clean pinned executable revision>",
-         "gitTree": "<same tree>",
-         "sourceSha256": "<same compiled-source digest>",
-         "sourceClean": true,
-         "attestation": "git-clean"
-       },
-       "contractRevision": "0.1.34",
-       "sourceGameRevision": "<40 lowercase hex source game revision>",
-       "checkpointName": "<validated checkpoint name>",
-       "checkpointPlayerId": "<validated source player UUID>",
-       "questionVersion": "<validated prompt version>",
-       "promptTag": "QuestionWithSource",
-       "promptSha256": "<server-validated canonical prompt SHA-256>"
+     "importReceipt": {
+       "schemaVersion": 1,
+       "gameId": "<same imported game UUID>",
+       "gameGitRevision": "<same source game revision>",
+       "backendBuild": "<same object as runningServerBuild>",
+       "checkpointSha256": "<same uploaded-file digest>",
+       "canonicalEnvelopeSha256": "<same canonical digest>",
+       "validatedCheckpoint": "<same validated checkpoint object>",
+       "playerRemappings": [
+         {
+           "investigatorId": "<selected investigator>",
+           "checkpointPlayerId": "<checkpoint player UUID>",
+           "importedPlayerId": "<authenticated imported player UUID>",
+           "livePlayerId": "<authenticated imported player UUID>",
+           "stateRemapped": true
+         }
+       ],
+       "receiptSha256": "<canonical receipt digest>"
      }
    }
    ```
 
-The response must come only from the persisted result of that server validator,
-never request parameters, the export's embedded `envelopeSha256` by itself, a
-stored echo, or caller-provided expected values. Apple requires
-`checkpointValidation.replayBuild == serverBuild`, requires the build to be
-clean and pinned by `ContractPin.current.backendCommit`, and requires
-`gameRevision == checkpointValidation.sourceGameRevision`. A missing,
-redirected, malformed, stale, dirty, or mismatched response aborts the run. Do
-not add a client-side authority receipt or direct-answer workaround.
+The response comes only from the persisted result of the server validator,
+never request parameters, an embedded digest by itself, or caller-provided
+expected values. Apple requires lossless decode/re-encode equality, recomputes
+the receipt digest from canonical sorted JSON, checks every duplicated
+identifier and digest across the top level, validated checkpoint, build, and
+receipt, requires the clean running backend build to match
+`ContractPin.current.backendCommit`, and binds the single `WithFriends`
+remapping to the selected investigator and authenticated live player. A
+missing, redirected, malformed, stale, dirty, lossy, or mismatched response
+aborts the run before any controller command.
+
+The canonical-envelope digest binds the exact imported export plus generation
+metadata, but does not authenticate caller-reported replay history. The
+receipt and evidence therefore expose only state the server independently
+validates: contract revision, prompt identity and digest, decoded game and
+retained-queue digests, imported bytes, build identity, and player remapping.
 
 ### Produce and import the authoritative checkpoint
 
-After `djensenius/ArkhamHorror#76` **and** the attested import service above
-merge:
+Using the immutable backend merge above:
 
-1. Update `ContractPin.current` to the final immutable backend commit containing
-   both changes and to `0.1.34`, then build the backend replay executable and
-   production server from that exact clean revision. Do not pin the current
-   unmerged head.
+1. Confirm `ContractPin.current` is
+   `21503e7dc82954b66ac9c24e7d34d9d1517549b8` / `0.1.34`, then build the
+   backend replay executable and production server from that exact clean
+   revision.
 2. Obtain a normal authenticated backend game export whose retained state can
    be replayed to the combined enemy-attack assignment prompt.
 3. Create an exact answer plan whose `stopAt` binds the prompt player, version,
@@ -190,21 +193,23 @@ merge:
    authentication, locale catalog, and asset settings configured:
 
    ```sh
-   cd backend
-   make api.watch
+   cd backend/arkham-api
+   stack build --test --no-run-tests --pedantic --fast arkham-api
+   DEVELOPMENT=true stack exec arkham-api
    ```
 
 5. Preserve `assignment.checkpoint.json` byte-for-byte. The coordinator imports
-   this exact byte sequence twice through the production `WithFriends` route.
-   That route returns the complete bare `PublicGame` snapshot, not an `{ "id":
-   ... }` receipt. Apple accepts only the exact non-redirected 2xx JSON response
-   under a 64 MiB ceiling, decodes it through the governed
+   this exact byte sequence twice without a `multiplayerVariant` query
+   override; the checkpoint's retained multiplayer mode must already be
+   `WithFriends`. The route returns the complete bare `PublicGame` snapshot,
+   not an `{ "id": ... }` receipt. Apple accepts only the exact non-redirected
+   2xx JSON response under a 64 MiB ceiling, decodes it through the governed
    `PublicGameSnapshot` contract, and requires semantic decode/re-encode
-   equality so ignored or unknown structure cannot supply the imported game ID.
-   The importer must run the checkpoint validator and persist its separate
+   equality so ignored or unknown structure cannot supply the imported game
+   ID. The importer must run the checkpoint validator and persist its separate
    attestation receipt before returning. Apple then reads each imported game
-   through the authenticated production GET and requires schema-2 attestation
-   before submitting anything.
+   through the authenticated production GET and requires schema-version-1
+   attestation before submitting anything.
 
 ### Run both Apple cases
 
@@ -320,9 +325,10 @@ uses redirect-rejecting, cookie/credential/cache-free production `URLSession`
 transports with remaining-time request/resource timeouts and incremental
 response-size ceilings.
 
-Prompt version, prompt digest, canonical checkpoint-envelope digest, and
-checkpoint replay build come only from the authenticated server validator
-attestation. The exact two final files are:
+Prompt version, prompt digest, checkpoint Game/queue digests, exact artifact
+digest, canonical checkpoint-envelope identity, and the clean validator/import
+backend build come only from the authenticated server attestation. The exact
+two final files are:
 
 - `damage-first.json`
 - `horror-first.json`
@@ -330,9 +336,10 @@ attestation. The exact two final files are:
 Each is published only after the exact controller command path, one canonical
 versioned `Answer`, authoritative before/after state, assignment delta, next
 prompt/version/digest, checkpoint full-file and server-canonical envelope
-digests, checkpoint replay build, running server build, Apple revision, game
-revision, contract, and catalog assertions pass. Evidence schema `3.0.0`
-records all of those identities.
+digests, checkpoint Game/queue digests, validator/import server build, Apple
+revision, game revision, contract, and catalog assertions pass. Evidence
+schema `4.0.0` records all of those identities without claiming the
+caller-authored generation history is authenticated.
 
 ## Commands
 

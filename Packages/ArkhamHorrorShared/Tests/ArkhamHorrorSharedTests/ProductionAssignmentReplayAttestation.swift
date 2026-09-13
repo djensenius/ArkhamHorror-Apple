@@ -1,6 +1,8 @@
 @testable import ArkhamHorrorShared
 import Foundation
 
+// swiftlint:disable file_length
+
 struct AssignmentReplayServerBuildIdentity: Codable, Equatable, Sendable {
     let gitRevision: String
     let gitTree: String
@@ -38,42 +40,282 @@ struct AssignmentReplayServerBuildIdentity: Codable, Equatable, Sendable {
     }
 }
 
+struct AssignmentReplayServerValidatedPrompt: Codable, Equatable, Sendable {
+    let questionVersion: Int
+    let playerID: PlayerID
+    let promptTag: String
+    let promptSHA256: String
+
+    private enum CodingKeys: String, CodingKey {
+        case questionVersion
+        case playerID = "playerId"
+        case promptTag
+        case promptSHA256 = "promptSha256"
+    }
+
+    func validate() throws {
+        guard questionVersion > 0,
+              questionVersion < Int.max,
+              promptTag == BasicChoiceQuestionKind.questionWithSource.rawValue,
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  promptSHA256,
+                  count: 64
+              )
+        else {
+            throw ProductionAssignmentReplayError.serverAttestationMismatch
+        }
+    }
+}
+
+// swiftlint:disable:next type_name
+struct AssignmentReplayServerValidatedCheckpoint: Codable, Equatable, Sendable {
+    static let schemaVersion = 1
+
+    let schemaVersion: Int
+    let contractSchemaRevision: String
+    let prompt: AssignmentReplayServerValidatedPrompt
+    let checkpointGameSHA256: String
+    let checkpointQueueSHA256: String
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case contractSchemaRevision
+        case prompt
+        case checkpointGameSHA256 = "checkpointGameSha256"
+        case checkpointQueueSHA256 = "checkpointQueueSha256"
+    }
+
+    func validate() throws {
+        try prompt.validate()
+        guard schemaVersion == Self.schemaVersion,
+              contractSchemaRevision ==
+              ContractPin.current.supportedSchemaRevision.description,
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  checkpointGameSHA256,
+                  count: 64
+              ),
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  checkpointQueueSHA256,
+                  count: 64
+              )
+        else {
+            throw ProductionAssignmentReplayError.serverAttestationMismatch
+        }
+    }
+}
+
 struct AssignmentReplayAttestationRequest: Sendable {
     let serverProfile: ServerProfile
     let authToken: String
     let gameID: GameID
     let playerID: PlayerID
+    let investigatorID: InvestigatorID
     let checkpointArtifactSHA256: String
 }
 
-struct ProductionAssignmentReplayAttestation: Codable, Equatable, Sendable {
-    static let schemaVersion = 2
+struct AssignmentReplayPlayerRemapping: Codable, Equatable, Sendable {
+    let investigatorID: InvestigatorID
+    let checkpointPlayerID: PlayerID
+    let importedPlayerID: PlayerID
+    let livePlayerID: PlayerID
+    let stateRemapped: Bool
 
+    private enum CodingKeys: String, CodingKey {
+        case investigatorID = "investigatorId"
+        case checkpointPlayerID = "checkpointPlayerId"
+        case importedPlayerID = "importedPlayerId"
+        case livePlayerID = "livePlayerId"
+        case stateRemapped
+    }
+
+    func validate() throws {
+        guard stateRemapped
+            ? livePlayerID == importedPlayerID
+            : livePlayerID == checkpointPlayerID
+        else {
+            throw ProductionAssignmentReplayError.serverAttestationMismatch
+        }
+    }
+}
+
+private struct ReplayReceiptDigestPayload: Encodable {
     let schemaVersion: Int
     let gameID: GameID
-    let playerID: PlayerID
-    let serverBuild: AssignmentReplayServerBuildIdentity
-    let gameRevision: String
-    let checkpointValidation: AssignmentReplayValidatedCheckpoint
+    let gameGitRevision: String
+    let backendBuild: AssignmentReplayServerBuildIdentity
+    let checkpointSHA256: String
+    let canonicalEnvelopeSHA256: String
+    let validatedCheckpoint: AssignmentReplayServerValidatedCheckpoint
+    let playerRemappings: [AssignmentReplayPlayerRemapping]
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
         case gameID = "gameId"
-        case playerID = "playerId"
-        case serverBuild
-        case gameRevision
-        case checkpointValidation
+        case gameGitRevision
+        case backendBuild
+        case checkpointSHA256 = "checkpointSha256"
+        case canonicalEnvelopeSHA256 = "canonicalEnvelopeSha256"
+        case validatedCheckpoint
+        case playerRemappings
+    }
+}
+
+struct AssignmentReplayImportReceipt: Codable, Equatable, Sendable {
+    static let schemaVersion = 1
+
+    let schemaVersion: Int
+    let gameID: GameID
+    let gameGitRevision: String
+    let backendBuild: AssignmentReplayServerBuildIdentity
+    let checkpointSHA256: String
+    let canonicalEnvelopeSHA256: String
+    let validatedCheckpoint: AssignmentReplayServerValidatedCheckpoint
+    let playerRemappings: [AssignmentReplayPlayerRemapping]
+    let receiptSHA256: String
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case gameID = "gameId"
+        case gameGitRevision
+        case backendBuild
+        case checkpointSHA256 = "checkpointSha256"
+        case canonicalEnvelopeSHA256 = "canonicalEnvelopeSha256"
+        case validatedCheckpoint
+        case playerRemappings
+        case receiptSHA256 = "receiptSha256"
+    }
+
+    func computedSHA256() throws -> String {
+        try LocaleCatalogLoader.sha256Hex(
+            ContractJSON.encode(
+                ReplayReceiptDigestPayload(
+                    schemaVersion: schemaVersion,
+                    gameID: gameID,
+                    gameGitRevision: gameGitRevision,
+                    backendBuild: backendBuild,
+                    checkpointSHA256: checkpointSHA256,
+                    canonicalEnvelopeSHA256: canonicalEnvelopeSHA256,
+                    validatedCheckpoint: validatedCheckpoint,
+                    playerRemappings: playerRemappings
+                )
+            )
+        )
+    }
+
+    func validate(
+        request: AssignmentReplayAttestationRequest,
+        runningServerBuild: AssignmentReplayServerBuildIdentity
+    ) throws {
+        try backendBuild.validate()
+        try validatedCheckpoint.validate()
+        try playerRemappings.forEach { try $0.validate() }
+
+        let investigatorIDs = playerRemappings.map(\.investigatorID)
+        let checkpointPlayerIDs = playerRemappings.map(\.checkpointPlayerID)
+        let expectedReceiptSHA256 = try computedSHA256()
+        guard schemaVersion == Self.schemaVersion,
+              gameID == request.gameID,
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  gameGitRevision,
+                  count: 40
+              ),
+              backendBuild == runningServerBuild,
+              checkpointSHA256 == request.checkpointArtifactSHA256,
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  checkpointSHA256,
+                  count: 64
+              ),
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  canonicalEnvelopeSHA256,
+                  count: 64
+              ),
+              playerRemappings.count == 1,
+              Set(investigatorIDs).count == investigatorIDs.count,
+              Set(checkpointPlayerIDs).count == checkpointPlayerIDs.count,
+              checkpointPlayerIDs.contains(
+                  validatedCheckpoint.prompt.playerID
+              ),
+              playerRemappings[0].investigatorID == request.investigatorID,
+              playerRemappings[0].checkpointPlayerID ==
+              validatedCheckpoint.prompt.playerID,
+              playerRemappings[0].importedPlayerID == request.playerID,
+              playerRemappings[0].livePlayerID == request.playerID,
+              playerRemappings[0].stateRemapped,
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  receiptSHA256,
+                  count: 64
+              ),
+              receiptSHA256 == expectedReceiptSHA256
+        else {
+            throw ProductionAssignmentReplayError.serverAttestationMismatch
+        }
+    }
+}
+
+struct ProductionAssignmentReplayAttestation: Codable, Equatable, Sendable {
+    static let schemaVersion = 1
+
+    let schemaVersion: Int
+    let gameID: GameID
+    let gameGitRevision: String
+    let checkpointSHA256: String
+    let canonicalEnvelopeSHA256: String
+    let validatedCheckpoint: AssignmentReplayServerValidatedCheckpoint
+    let runningServerBuild: AssignmentReplayServerBuildIdentity
+    let importReceipt: AssignmentReplayImportReceipt
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case gameID = "gameId"
+        case gameGitRevision
+        case checkpointSHA256 = "checkpointSha256"
+        case canonicalEnvelopeSHA256 = "canonicalEnvelopeSha256"
+        case validatedCheckpoint
+        case runningServerBuild
+        case importReceipt
+    }
+
+    var serverBuild: AssignmentReplayServerBuildIdentity {
+        runningServerBuild
+    }
+
+    var gameRevision: String {
+        gameGitRevision
+    }
+
+    var checkpointValidation: AssignmentReplayValidatedCheckpoint {
+        AssignmentReplayValidatedCheckpoint(attestation: self)
     }
 
     func validate(request: AssignmentReplayAttestationRequest) throws {
-        try serverBuild.validate()
-        try checkpointValidation.validate(runningServerBuild: serverBuild)
+        try runningServerBuild.validate()
+        try validatedCheckpoint.validate()
+        try importReceipt.validate(
+            request: request,
+            runningServerBuild: runningServerBuild
+        )
         guard schemaVersion == Self.schemaVersion,
               gameID == request.gameID,
-              playerID == request.playerID,
-              checkpointValidation.artifactSHA256 ==
-              request.checkpointArtifactSHA256,
-              gameRevision == checkpointValidation.sourceGameRevision
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  gameGitRevision,
+                  count: 40
+              ),
+              checkpointSHA256 == request.checkpointArtifactSHA256,
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  checkpointSHA256,
+                  count: 64
+              ),
+              ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                  canonicalEnvelopeSHA256,
+                  count: 64
+              ),
+              importReceipt.gameID == gameID,
+              importReceipt.gameGitRevision == gameGitRevision,
+              importReceipt.backendBuild == runningServerBuild,
+              importReceipt.checkpointSHA256 == checkpointSHA256,
+              importReceipt.canonicalEnvelopeSHA256 ==
+              canonicalEnvelopeSHA256,
+              importReceipt.validatedCheckpoint == validatedCheckpoint
         else {
             throw ProductionAssignmentReplayError.serverAttestationMismatch
         }
@@ -103,6 +345,16 @@ struct AssignmentReplayAttestationClient: Sendable {
             forHTTPHeaderField: "Authorization"
         )
 
+        let data = try await responseData(for: request, expectedURL: url)
+        let attestation = try Self.decodeAttestation(data)
+        try attestation.validate(request: context)
+        return attestation
+    }
+
+    private func responseData(
+        for request: URLRequest,
+        expectedURL: URL
+    ) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -114,7 +366,7 @@ struct AssignmentReplayAttestationClient: Sendable {
             throw ProductionAssignmentReplayError.serverAttestationUnavailable
         }
         guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.url == url,
+              httpResponse.url == expectedURL,
               (200 ... 299).contains(httpResponse.statusCode)
         else {
             throw ProductionAssignmentReplayError.serverAttestationUnavailable
@@ -126,72 +378,34 @@ struct AssignmentReplayAttestationClient: Sendable {
         else {
             throw ProductionAssignmentReplayError.serverAttestationMalformed
         }
-        try Self.validateJSONShape(data)
-        let attestation: ProductionAssignmentReplayAttestation
-        do {
-            attestation = try ContractJSON.decode(
-                ProductionAssignmentReplayAttestation.self,
-                from: data,
-                maxByteCount: Self.maximumResponseBytes
-            )
-        } catch {
-            throw ProductionAssignmentReplayError.serverAttestationMalformed
-        }
-        try attestation.validate(request: context)
-        return attestation
+        return data
     }
 
-    private static func validateJSONShape(_ data: Data) throws {
-        let value: JSONValue
+    private static func decodeAttestation(
+        _ data: Data
+    ) throws -> ProductionAssignmentReplayAttestation {
         do {
-            value = try ContractJSON.decode(
-                JSONValue.self,
+            let original = try LosslessJSONParser.parse(
+                data,
+                maxByteCount: maximumResponseBytes
+            )
+            let attestation = try ContractJSON.decode(
+                ProductionAssignmentReplayAttestation.self,
                 from: data,
                 maxByteCount: maximumResponseBytes
             )
+            let reencoded = try LosslessJSONParser.parse(
+                ContractJSON.encode(attestation),
+                maxByteCount: maximumResponseBytes
+            )
+            guard original == reencoded else {
+                throw ProductionAssignmentReplayError
+                    .serverAttestationMalformed
+            }
+            return attestation
         } catch {
             throw ProductionAssignmentReplayError.serverAttestationMalformed
         }
-        guard case let .object(root) = value,
-              Set(root.keys) == [
-                  "schemaVersion",
-                  "gameId",
-                  "playerId",
-                  "serverBuild",
-                  "gameRevision",
-                  "checkpointValidation",
-              ],
-              Self.hasExactBuildShape(root["serverBuild"]),
-              case let .object(validation)? = root["checkpointValidation"],
-              Set(validation.keys) == [
-                  "validator",
-                  "validationStatus",
-                  "artifactSha256",
-                  "canonicalEnvelopeSha256",
-                  "replayBuild",
-                  "contractRevision",
-                  "sourceGameRevision",
-                  "checkpointName",
-                  "checkpointPlayerId",
-                  "questionVersion",
-                  "promptTag",
-                  "promptSha256",
-              ],
-              Self.hasExactBuildShape(validation["replayBuild"])
-        else {
-            throw ProductionAssignmentReplayError.serverAttestationMalformed
-        }
-    }
-
-    private static func hasExactBuildShape(_ value: JSONValue?) -> Bool {
-        guard case let .object(build)? = value else { return false }
-        return Set(build.keys) == [
-            "gitRevision",
-            "gitTree",
-            "sourceSha256",
-            "sourceClean",
-            "attestation",
-        ]
     }
 
     private static func isJSONContentType(_ rawValue: String?) -> Bool {

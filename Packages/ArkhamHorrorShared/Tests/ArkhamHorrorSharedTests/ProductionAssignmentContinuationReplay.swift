@@ -546,7 +546,6 @@ enum AssignmentContinuationReplayRunner {
                 validator: configuration.validatedCheckpoint.validator,
                 validationStatus:
                 configuration.validatedCheckpoint.validationStatus,
-                name: configuration.validatedCheckpoint.checkpointName,
                 playerID:
                 configuration.validatedCheckpoint.checkpointPlayerID,
                 questionVersion:
@@ -557,7 +556,11 @@ enum AssignmentContinuationReplayRunner {
                 configuration.validatedCheckpoint.artifactSHA256,
                 canonicalEnvelopeSHA256:
                 configuration.validatedCheckpoint.canonicalEnvelopeSHA256,
-                replayBuild: configuration.validatedCheckpoint.replayBuild
+                backendBuild: configuration.validatedCheckpoint.backendBuild,
+                checkpointGameSHA256:
+                configuration.validatedCheckpoint.checkpointGameSHA256,
+                checkpointQueueSHA256:
+                configuration.validatedCheckpoint.checkpointQueueSHA256
             ),
             source: ProductionAssignmentReplaySourceEvidence(
                 gameID: configuration.promptIdentity.gameID,

@@ -66,18 +66,21 @@ extension ProductionReplayFileSystem {
     ) -> [ProductionReplayVerifiedPathComponent] {
         var components = parentURL.pathComponents.filter { $0 != "/" }
         var stickyDirectoryIndex: Int?
-        guard let first = components.first,
-              let replacement = resolvedTrustedPlatformRootAlias(first)
-        else {
-            return components.map {
-                ProductionReplayVerifiedPathComponent(
-                    name: $0,
-                    permitsTrustedStickyDirectory: false
-                )
+        let replacement = components.first.flatMap(
+            resolvedTrustedPlatformRootAlias
+        )
+        let hasCanonicalPrivateTmpPrefix =
+            components.starts(with: ["private", "tmp"])
+        let canonicalTmpAliasIsTrusted =
+            resolvedTrustedPlatformRootAlias("tmp") == ["private", "tmp"]
+        let permitsCanonicalPrivateTmp =
+            hasCanonicalPrivateTmpPrefix && canonicalTmpAliasIsTrusted
+        if let first = components.first, let replacement {
+            components.replaceSubrange(0 ... 0, with: replacement)
+            if first == "tmp" {
+                stickyDirectoryIndex = 1
             }
-        }
-        components.replaceSubrange(0 ... 0, with: replacement)
-        if first == "tmp" {
+        } else if permitsCanonicalPrivateTmp {
             stickyDirectoryIndex = 1
         }
         return components.enumerated().map { index, name in

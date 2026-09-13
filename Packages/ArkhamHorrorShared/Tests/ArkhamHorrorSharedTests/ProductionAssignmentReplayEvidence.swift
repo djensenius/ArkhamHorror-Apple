@@ -34,13 +34,14 @@ struct AssignmentReplayCheckpointEvidence: Codable, Equatable, Sendable {
     let caseName: String
     let validator: String
     let validationStatus: String
-    let name: String
     let playerID: PlayerID
     let questionVersion: Int
     let promptCanonicalSHA256: String
     let artifactSHA256: String
     let canonicalEnvelopeSHA256: String
-    let replayBuild: AssignmentReplayServerBuildIdentity
+    let backendBuild: AssignmentReplayServerBuildIdentity
+    let checkpointGameSHA256: String
+    let checkpointQueueSHA256: String
 }
 
 struct AssignmentReplayRevisionEvidence: Codable, Equatable, Sendable {
@@ -52,7 +53,7 @@ struct AssignmentReplayRevisionEvidence: Codable, Equatable, Sendable {
 }
 
 struct ProductionAssignmentReplayEvidence: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = "3.0.0"
+    static let currentSchemaVersion = "4.0.0"
 
     let schemaVersion: String
     let checkpoint: AssignmentReplayCheckpointEvidence
@@ -79,10 +80,6 @@ struct ProductionAssignmentReplayEvidence: Codable, Equatable, Sendable {
             AssignmentReplayValidatedCheckpoint.validator,
             checkpoint.validationStatus ==
             AssignmentReplayValidatedCheckpoint.validationStatus,
-            !checkpoint.name.isEmpty,
-            checkpoint.name == checkpoint.name.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            ),
             checkpoint.questionVersion > 0,
             checkpoint.questionVersion < Int.max,
             ProductionAssignmentReplayConfiguration.isLowercaseHex(
@@ -97,7 +94,15 @@ struct ProductionAssignmentReplayEvidence: Codable, Equatable, Sendable {
                 checkpoint.canonicalEnvelopeSHA256,
                 count: 64
             ),
-            checkpoint.replayBuild == revisions.serverBuild,
+            ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                checkpoint.checkpointGameSHA256,
+                count: 64
+            ),
+            ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                checkpoint.checkpointQueueSHA256,
+                count: 64
+            ),
+            checkpoint.backendBuild == revisions.serverBuild,
             checkpoint.questionVersion == source.promptVersion,
             checkpoint.promptCanonicalSHA256 ==
             source.promptCanonicalSHA256
@@ -207,14 +212,17 @@ struct ProductionAssignmentReplayEvidence: Codable, Equatable, Sendable {
         guard checkpoint.caseName == configuration.checkpoint.rawValue,
               checkpoint.validator == authority.validator,
               checkpoint.validationStatus == authority.validationStatus,
-              checkpoint.name == authority.checkpointName,
               checkpoint.playerID == authority.checkpointPlayerID,
               checkpoint.questionVersion == authority.questionVersion,
               checkpoint.promptCanonicalSHA256 == authority.promptSHA256,
               checkpoint.artifactSHA256 == authority.artifactSHA256,
               checkpoint.canonicalEnvelopeSHA256 ==
               authority.canonicalEnvelopeSHA256,
-              checkpoint.replayBuild == authority.replayBuild,
+              checkpoint.backendBuild == authority.backendBuild,
+              checkpoint.checkpointGameSHA256 ==
+              authority.checkpointGameSHA256,
+              checkpoint.checkpointQueueSHA256 ==
+              authority.checkpointQueueSHA256,
               source.gameID == configuration.promptIdentity.gameID,
               source.playerID == configuration.promptIdentity.ownerID,
               source.enemyID == configuration.promptIdentity.enemyID,
@@ -225,7 +233,7 @@ struct ProductionAssignmentReplayEvidence: Codable, Equatable, Sendable {
               == configuration.expectedPromptDigest,
               revisions.serverBuild.gitRevision ==
               ContractPin.current.backendCommit,
-              revisions.game == authority.sourceGameRevision,
+              revisions.game == authority.gameRevision,
               revisions.apple == configuration.expectedAppleRevision,
               revisions.contract == configuration.expectedContractRevision,
               revisions.catalog == configuration.expectedCatalogRevision

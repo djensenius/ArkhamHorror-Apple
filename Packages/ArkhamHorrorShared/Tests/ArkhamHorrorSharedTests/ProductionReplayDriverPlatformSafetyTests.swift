@@ -249,6 +249,33 @@ struct ReplayDriverPlatformPathTests {
         }
     }
 
+    @Test("Canonical private tmp permits a caller-owned destination")
+    func canonicalPrivateTmpPermitsCallerOwnedDestination() throws {
+        var template = Array(
+            "/private/tmp/production-replay-mkdtemp-XXXXXX".utf8CString
+        )
+        let createdPath: String? = template.withUnsafeMutableBufferPointer {
+            guard let baseAddress = $0.baseAddress,
+                  let created = mkdtemp(baseAddress)
+            else {
+                return nil
+            }
+            return String(cString: created)
+        }
+        let path = try #require(createdPath)
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: directory.path
+        )
+        let result = try runSuccessfulReplay(
+            to: directory.appendingPathComponent("result.json"),
+            data: Data("private-tmp".utf8)
+        )
+        #expect(try result.resultData() == Data("private-tmp".utf8))
+    }
+
     @Test("Platform temporary paths work while nested symlinks still fail")
     func temporaryDirectoryAliasIsNarrowlyCanonicalized() throws {
         let directory = replayTemporaryDirectoryThroughVarAlias()

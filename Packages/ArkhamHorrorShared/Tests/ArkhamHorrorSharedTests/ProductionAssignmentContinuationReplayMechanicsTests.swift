@@ -10,7 +10,8 @@ private let replayCatalogRevision = "1." + String(repeating: "b", count: 32)
 private let replayGameRevision = String(repeating: "c", count: 40)
 private let replayCheckpointArtifactSHA256 = String(repeating: "d", count: 64)
 private let replayCheckpointEnvelopeSHA256 = String(repeating: "e", count: 64)
-private let replayCheckpointName = "enemy-attack-assignment-continuation"
+private let replayBackendPromptSHA256 =
+    "ffba40384536b2ed6ba5c3af3f765806c15c957fc8165754fc198c5cafe47c0a"
 
 @Suite("Production assignment replay coordinator configuration")
 // swiftlint:disable:next type_name
@@ -243,19 +244,54 @@ struct AssignmentReplaySecureInputTests {
 
 @Suite("Production assignment replay server authority")
 struct AssignmentReplayServerAuthorityTests {
+    @Test("Governed schema-v1 attestation decodes without structural loss")
+    func governedAuthorityFixture() throws {
+        let fixtureURL = try #require(
+            Bundle.module.url(
+                forResource: "replay-attestation",
+                withExtension: "json",
+                subdirectory: "Fixtures/Contract"
+            )
+        )
+        let data = try Data(contentsOf: fixtureURL)
+        let original = try LosslessJSONParser.parse(data)
+        let attestation = try ContractJSON.decode(
+            ProductionAssignmentReplayAttestation.self,
+            from: data
+        )
+        let reencoded = try LosslessJSONParser.parse(
+            ContractJSON.encode(attestation)
+        )
+
+        #expect(original == reencoded)
+        guard case let .object(root) = original else {
+            throw TestFailure()
+        }
+        #expect(root["checkpointProvenance"] == nil)
+        #expect(root["validatedCheckpoint"] != nil)
+        #expect(
+            try attestation.importReceipt.computedSHA256()
+                == attestation.importReceipt.receiptSHA256
+        )
+        #expect(
+            attestation.schemaVersion ==
+                ProductionAssignmentReplayAttestation.schemaVersion
+        )
+    }
+
     @Test("Pinned server validator authority is accepted")
     func validAuthority() throws {
         let request = try replayAttestationRequest()
         let attestation = try replayAttestation(request: request)
         try attestation.validate(request: request)
-        #expect(attestation.checkpointValidation.replayBuild
+        #expect(attestation.checkpointValidation.backendBuild
             == attestation.serverBuild)
         #expect(attestation.checkpointValidation.canonicalEnvelopeSHA256
             == replayCheckpointEnvelopeSHA256)
     }
 
-    @Test("Artifact echo, dirty build, and mismatched replay build fail closed")
-    func invalidAuthority() throws {
+    @Test("Artifact echo and dirty build fail closed")
+    func invalidBuildAuthority() throws {
         let request = try replayAttestationRequest()
         #expect(
             throws: ProductionAssignmentReplayError
@@ -276,8 +312,21 @@ struct AssignmentReplayServerAuthorityTests {
             )
             try replayAttestation(
                 request: request,
-                serverBuild: dirty,
-                replayBuild: dirty
+                serverBuild: dirty
+            ).validate(request: request)
+        }
+    }
+
+    @Test("Mismatched live player, validated state, and receipt digest fail closed")
+    func invalidImportReceiptAuthority() throws {
+        let request = try replayAttestationRequest()
+        #expect(
+            throws: ProductionAssignmentReplayError
+                .serverAttestationMismatch
+        ) {
+            try replayAttestation(
+                request: request,
+                livePlayerID: BoardTestFixtures.playerID("000000000002")
             ).validate(request: request)
         }
         #expect(
@@ -286,8 +335,17 @@ struct AssignmentReplayServerAuthorityTests {
         ) {
             try replayAttestation(
                 request: request,
-                replayBuild: replayServerBuild(
-                    sourceSHA256: String(repeating: "f", count: 64)
+                receiptSHA256: String(repeating: "f", count: 64)
+            ).validate(request: request)
+        }
+        #expect(
+            throws: ProductionAssignmentReplayError
+                .serverAttestationMismatch
+        ) {
+            try replayAttestation(
+                request: request,
+                receiptValidatedCheckpoint: replayValidatedCheckpoint(
+                    promptDigest: String(repeating: "f", count: 64)
                 )
             ).validate(request: request)
         }
@@ -384,6 +442,15 @@ struct AssignmentReplayCasesAndEvidenceTests {
             assignedHealthDamage: 0,
             assignedSanityDamage: 1
         ))
+    }
+
+    @Test("Canonical prompt digest matches the backend golden vector")
+    func promptDigestMatchesBackendVector() throws {
+        #expect(
+            try ProductionAssignmentReplayCanonicalJSON.promptDigest(
+                DamageAssignmentFixtures.value()
+            ) == replayBackendPromptSHA256
+        )
     }
 
     @MainActor
@@ -628,12 +695,12 @@ struct AssignmentReplayCasesAndEvidenceTests {
             try AssignmentReplayEvidenceArtifact.decodeAndValidate(data)
                 == artifact
         )
-        #expect(evidence.schemaVersion == "3.0.0")
+        #expect(evidence.schemaVersion == "4.0.0")
         #expect(evidence.checkpoint.validator
             == AssignmentReplayValidatedCheckpoint.validator)
         #expect(evidence.checkpoint.canonicalEnvelopeSHA256
             == replayCheckpointEnvelopeSHA256)
-        #expect(evidence.checkpoint.replayBuild
+        #expect(evidence.checkpoint.backendBuild
             == evidence.revisions.serverBuild)
 
         var trailingNewline = data
@@ -1236,31 +1303,25 @@ private func replayServerBuild(
 }
 
 private func replayValidatedCheckpoint(
-    artifactSHA256: String = replayCheckpointArtifactSHA256,
-    canonicalEnvelopeSHA256: String =
-        replayCheckpointEnvelopeSHA256,
     promptDigest: String,
     promptVersion: Int = 6,
     checkpointPlayerID: PlayerID =
-        BoardTestFixtures.playerID("000000000001"),
-    replayBuild: AssignmentReplayServerBuildIdentity =
-        replayServerBuild()
-) -> AssignmentReplayValidatedCheckpoint {
-    AssignmentReplayValidatedCheckpoint(
-        validator: AssignmentReplayValidatedCheckpoint.validator,
-        validationStatus:
-        AssignmentReplayValidatedCheckpoint.validationStatus,
-        artifactSHA256: artifactSHA256,
-        canonicalEnvelopeSHA256: canonicalEnvelopeSHA256,
-        replayBuild: replayBuild,
-        contractRevision:
+        BoardTestFixtures.playerID("000000000001")
+) -> AssignmentReplayServerValidatedCheckpoint {
+    AssignmentReplayServerValidatedCheckpoint(
+        schemaVersion:
+        AssignmentReplayServerValidatedCheckpoint.schemaVersion,
+        contractSchemaRevision:
         ContractPin.current.supportedSchemaRevision.description,
-        sourceGameRevision: replayGameRevision,
-        checkpointName: replayCheckpointName,
-        checkpointPlayerID: checkpointPlayerID,
-        questionVersion: promptVersion,
-        promptTag: BasicChoiceQuestionKind.questionWithSource.rawValue,
-        promptSHA256: promptDigest
+        prompt: AssignmentReplayServerValidatedPrompt(
+            questionVersion: promptVersion,
+            playerID: checkpointPlayerID,
+            promptTag:
+            BasicChoiceQuestionKind.questionWithSource.rawValue,
+            promptSHA256: promptDigest
+        ),
+        checkpointGameSHA256: String(repeating: "5", count: 64),
+        checkpointQueueSHA256: String(repeating: "6", count: 64)
     )
 }
 
@@ -1268,6 +1329,8 @@ private func replayAttestationRequest(
     gameID: GameID = BoardTestFixtures.gameID(),
     playerID: PlayerID =
         BoardTestFixtures.playerID("000000000001"),
+    investigatorID: InvestigatorID =
+        DamageAssignmentFixtures.investigatorID,
     artifactSHA256: String = replayCheckpointArtifactSHA256
 ) throws -> AssignmentReplayAttestationRequest {
     try AssignmentReplayAttestationRequest(
@@ -1275,8 +1338,19 @@ private func replayAttestationRequest(
         authToken: "unit-test-token",
         gameID: gameID,
         playerID: playerID,
+        investigatorID: investigatorID,
         checkpointArtifactSHA256: artifactSHA256
     )
+}
+
+private struct ReplayReceiptFixtureInput {
+    let request: AssignmentReplayAttestationRequest
+    let artifactSHA256: String?
+    let serverBuild: AssignmentReplayServerBuildIdentity
+    let canonicalEnvelopeSHA256: String
+    let validatedCheckpoint: AssignmentReplayServerValidatedCheckpoint
+    let livePlayerID: PlayerID?
+    let receiptSHA256: String?
 }
 
 private func replayAttestation(
@@ -1284,33 +1358,83 @@ private func replayAttestation(
     artifactSHA256: String? = nil,
     serverBuild: AssignmentReplayServerBuildIdentity =
         replayServerBuild(),
-    replayBuild: AssignmentReplayServerBuildIdentity? = nil,
     canonicalEnvelopeSHA256: String =
         replayCheckpointEnvelopeSHA256,
     promptDigest: String? = nil,
-    promptVersion: Int = 6
+    promptVersion: Int = 6,
+    validatedCheckpoint: AssignmentReplayServerValidatedCheckpoint? = nil,
+    receiptValidatedCheckpoint:
+    AssignmentReplayServerValidatedCheckpoint? = nil,
+    livePlayerID: PlayerID? = nil,
+    receiptSHA256: String? = nil
 ) throws -> ProductionAssignmentReplayAttestation {
-    let digest: String = if let promptDigest {
-        promptDigest
-    } else {
-        try ProductionAssignmentReplayCanonicalJSON.promptDigest(
-            DamageAssignmentFixtures.value()
+    let digest = promptDigest ?? replayBackendPromptSHA256
+    let checkpoint = validatedCheckpoint ?? replayValidatedCheckpoint(
+        promptDigest: digest,
+        promptVersion: promptVersion
+    )
+    let receipt = try replayImportReceipt(
+        ReplayReceiptFixtureInput(
+            request: request,
+            artifactSHA256: artifactSHA256,
+            serverBuild: serverBuild,
+            canonicalEnvelopeSHA256: canonicalEnvelopeSHA256,
+            validatedCheckpoint:
+            receiptValidatedCheckpoint ?? checkpoint,
+            livePlayerID: livePlayerID,
+            receiptSHA256: receiptSHA256
         )
-    }
+    )
     return ProductionAssignmentReplayAttestation(
         schemaVersion: ProductionAssignmentReplayAttestation.schemaVersion,
         gameID: request.gameID,
-        playerID: request.playerID,
-        serverBuild: serverBuild,
-        gameRevision: replayGameRevision,
-        checkpointValidation: replayValidatedCheckpoint(
-            artifactSHA256:
-            artifactSHA256 ?? request.checkpointArtifactSHA256,
-            canonicalEnvelopeSHA256: canonicalEnvelopeSHA256,
-            promptDigest: digest,
-            promptVersion: promptVersion,
-            replayBuild: replayBuild ?? serverBuild
-        )
+        gameGitRevision: replayGameRevision,
+        checkpointSHA256:
+        artifactSHA256 ?? request.checkpointArtifactSHA256,
+        canonicalEnvelopeSHA256: canonicalEnvelopeSHA256,
+        validatedCheckpoint: checkpoint,
+        runningServerBuild: serverBuild,
+        importReceipt: receipt
+    )
+}
+
+private func replayImportReceipt(
+    _ input: ReplayReceiptFixtureInput
+) throws -> AssignmentReplayImportReceipt {
+    let remappings = [
+        AssignmentReplayPlayerRemapping(
+            investigatorID: input.request.investigatorID,
+            checkpointPlayerID: input.validatedCheckpoint.prompt.playerID,
+            importedPlayerID: input.request.playerID,
+            livePlayerID: input.livePlayerID ?? input.request.playerID,
+            stateRemapped: true
+        ),
+    ]
+    let receiptWithoutDigest = AssignmentReplayImportReceipt(
+        schemaVersion: AssignmentReplayImportReceipt.schemaVersion,
+        gameID: input.request.gameID,
+        gameGitRevision: replayGameRevision,
+        backendBuild: input.serverBuild,
+        checkpointSHA256:
+        input.artifactSHA256 ?? input.request.checkpointArtifactSHA256,
+        canonicalEnvelopeSHA256: input.canonicalEnvelopeSHA256,
+        validatedCheckpoint: input.validatedCheckpoint,
+        playerRemappings: remappings,
+        receiptSHA256: ""
+    )
+    return try AssignmentReplayImportReceipt(
+        schemaVersion: receiptWithoutDigest.schemaVersion,
+        gameID: receiptWithoutDigest.gameID,
+        gameGitRevision: receiptWithoutDigest.gameGitRevision,
+        backendBuild: receiptWithoutDigest.backendBuild,
+        checkpointSHA256: receiptWithoutDigest.checkpointSHA256,
+        canonicalEnvelopeSHA256:
+        receiptWithoutDigest.canonicalEnvelopeSHA256,
+        validatedCheckpoint:
+        receiptWithoutDigest.validatedCheckpoint,
+        playerRemappings: receiptWithoutDigest.playerRemappings,
+        receiptSHA256:
+        input.receiptSHA256 ?? receiptWithoutDigest.computedSHA256()
     )
 }
 
@@ -1330,10 +1454,7 @@ private func replayConfiguration(
         playerID: playerID,
         artifactSHA256: artifactSHA256
     )
-    let digest = try promptDigest ??
-        ProductionAssignmentReplayCanonicalJSON.promptDigest(
-            DamageAssignmentFixtures.value()
-        )
+    let digest = promptDigest ?? replayBackendPromptSHA256
     return try ProductionAssignmentReplayConfiguration(
         checkpoint: checkpoint,
         deadlineSeconds: 30,
@@ -1370,13 +1491,14 @@ private func replayEvidence(
             caseName: checkpoint.rawValue,
             validator: authority.validator,
             validationStatus: authority.validationStatus,
-            name: authority.checkpointName,
             playerID: authority.checkpointPlayerID,
             questionVersion: authority.questionVersion,
             promptCanonicalSHA256: authority.promptSHA256,
             artifactSHA256: authority.artifactSHA256,
             canonicalEnvelopeSHA256: authority.canonicalEnvelopeSHA256,
-            replayBuild: authority.replayBuild
+            backendBuild: authority.backendBuild,
+            checkpointGameSHA256: authority.checkpointGameSHA256,
+            checkpointQueueSHA256: authority.checkpointQueueSHA256
         ),
         source: ProductionAssignmentReplaySourceEvidence(
             gameID: configuration.promptIdentity.gameID,
@@ -1442,8 +1564,7 @@ private func replayStartingFixture(
     let payload = try DamageAssignmentFixtures.payload(raw)
     let configuration = try replayConfiguration(
         checkpoint: checkpoint,
-        promptDigest:
-        ProductionAssignmentReplayCanonicalJSON.promptDigest(raw),
+        promptDigest: replayBackendPromptSHA256,
         playerID: playerID
     )
     return AssignmentReplayStartingFixture(

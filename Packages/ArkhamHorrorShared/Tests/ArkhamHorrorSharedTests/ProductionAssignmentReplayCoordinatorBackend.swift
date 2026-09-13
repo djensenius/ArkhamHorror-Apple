@@ -32,7 +32,7 @@ struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
         profile: ServerProfile,
         token: String
     ) async throws -> GameID {
-        let url = try importURL(profile: profile)
+        let url = Self.importURL(profile: profile)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.httpShouldHandleCookies = false
@@ -150,27 +150,11 @@ struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
         return data
     }
 
-    private func importURL(profile: ServerProfile) throws -> URL {
-        let base = profile.endpointURL(
+    static func importURL(profile: ServerProfile) -> URL {
+        profile.endpointURL(
             path: "/arkham/games/import",
             pin: .current
         )
-        guard var components = URLComponents(
-            url: base,
-            resolvingAgainstBaseURL: false
-        ) else {
-            throw ProductionAssignmentReplayCoordinatorError.importFailed
-        }
-        components.queryItems = [
-            URLQueryItem(
-                name: "multiplayerVariant",
-                value: RequestMultiplayerVariant.withFriends.rawValue
-            ),
-        ]
-        guard let url = components.url else {
-            throw ProductionAssignmentReplayCoordinatorError.importFailed
-        }
-        return url
     }
 
     private func multipartBody(

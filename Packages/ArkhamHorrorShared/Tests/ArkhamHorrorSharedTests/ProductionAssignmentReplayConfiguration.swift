@@ -92,6 +92,17 @@ enum AssignmentReplayConfigurationError: Error, Equatable {
     case serverAttestationMismatch
 }
 
+private struct ReplayConfigurationValidation {
+    let deadlineSeconds: Double
+    let serverProfile: ServerProfile
+    let authToken: String
+    let promptIdentity: ProductionAssignmentReplayPromptIdentity
+    let expectedAppleRevision: String
+    let expectedContractRevision: ContractRevision
+    let expectedCatalogRevision: String
+    let attestation: ProductionAssignmentReplayAttestation
+}
+
 struct ProductionAssignmentReplayConfiguration: Sendable {
     static let maximumDeadlineSeconds = 300.0
 
@@ -128,47 +139,18 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
         expectedCatalogRevision: String,
         attestation: ProductionAssignmentReplayAttestation
     ) throws {
-        guard deadlineSeconds.isFinite,
-              deadlineSeconds > 0,
-              deadlineSeconds <= Self.maximumDeadlineSeconds
-        else {
-            throw AssignmentReplayConfigurationError.invalidDeadline
-        }
-        guard (1 ... 4096).contains(authToken.utf8.count),
-              authToken.utf8.allSatisfy({ (0x21 ... 0x7E).contains($0) })
-        else {
-            throw AssignmentReplayConfigurationError.invalidAuthToken
-        }
-        guard Self.isLowercaseHex(expectedAppleRevision, count: 40) else {
-            throw AssignmentReplayConfigurationError.appleRevisionMismatch
-        }
-        guard expectedContractRevision ==
-            ContractPin.current.supportedSchemaRevision
-        else {
-            throw AssignmentReplayConfigurationError.contractRevisionMismatch
-        }
-        guard LocaleCatalogGrammar.isCatalogRevision(expectedCatalogRevision)
-        else {
-            throw AssignmentReplayConfigurationError.catalogRevisionMismatch
-        }
-        let attestationRequest = AssignmentReplayAttestationRequest(
-            serverProfile: serverProfile,
-            authToken: authToken,
-            gameID: promptIdentity.gameID,
-            playerID: promptIdentity.ownerID,
-            checkpointArtifactSHA256:
-            attestation.checkpointValidation.artifactSHA256
+        try Self.validate(
+            ReplayConfigurationValidation(
+                deadlineSeconds: deadlineSeconds,
+                serverProfile: serverProfile,
+                authToken: authToken,
+                promptIdentity: promptIdentity,
+                expectedAppleRevision: expectedAppleRevision,
+                expectedContractRevision: expectedContractRevision,
+                expectedCatalogRevision: expectedCatalogRevision,
+                attestation: attestation
+            )
         )
-        do {
-            try attestation.validate(request: attestationRequest)
-        } catch {
-            throw AssignmentReplayConfigurationError.serverAttestationMismatch
-        }
-        guard attestation.checkpointValidation.contractRevision ==
-            expectedContractRevision.description
-        else {
-            throw AssignmentReplayConfigurationError.contractRevisionMismatch
-        }
 
         self.checkpoint = checkpoint
         self.deadlineSeconds = deadlineSeconds
@@ -181,12 +163,64 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
         self.attestation = attestation
     }
 
+    private static func validate(
+        _ input: ReplayConfigurationValidation
+    ) throws {
+        guard input.deadlineSeconds.isFinite,
+              input.deadlineSeconds > 0,
+              input.deadlineSeconds <= maximumDeadlineSeconds
+        else {
+            throw AssignmentReplayConfigurationError.invalidDeadline
+        }
+        guard (1 ... 4096).contains(input.authToken.utf8.count),
+              input.authToken.utf8.allSatisfy({
+                  (0x21 ... 0x7E).contains($0)
+              })
+        else {
+            throw AssignmentReplayConfigurationError.invalidAuthToken
+        }
+        guard isLowercaseHex(input.expectedAppleRevision, count: 40) else {
+            throw AssignmentReplayConfigurationError.appleRevisionMismatch
+        }
+        guard input.expectedContractRevision ==
+            ContractPin.current.supportedSchemaRevision
+        else {
+            throw AssignmentReplayConfigurationError.contractRevisionMismatch
+        }
+        guard LocaleCatalogGrammar.isCatalogRevision(
+            input.expectedCatalogRevision
+        )
+        else {
+            throw AssignmentReplayConfigurationError.catalogRevisionMismatch
+        }
+        let attestationRequest = AssignmentReplayAttestationRequest(
+            serverProfile: input.serverProfile,
+            authToken: input.authToken,
+            gameID: input.promptIdentity.gameID,
+            playerID: input.promptIdentity.ownerID,
+            investigatorID: input.promptIdentity.investigatorID,
+            checkpointArtifactSHA256:
+            input.attestation.checkpointValidation.artifactSHA256
+        )
+        do {
+            try input.attestation.validate(request: attestationRequest)
+        } catch {
+            throw AssignmentReplayConfigurationError.serverAttestationMismatch
+        }
+        guard input.attestation.checkpointValidation.contractRevision ==
+            input.expectedContractRevision.description
+        else {
+            throw AssignmentReplayConfigurationError.contractRevisionMismatch
+        }
+    }
+
     var attestationRequest: AssignmentReplayAttestationRequest {
         AssignmentReplayAttestationRequest(
             serverProfile: serverProfile,
             authToken: authToken,
             gameID: promptIdentity.gameID,
             playerID: promptIdentity.ownerID,
+            investigatorID: promptIdentity.investigatorID,
             checkpointArtifactSHA256:
             attestation.checkpointValidation.artifactSHA256
         )

@@ -4,6 +4,28 @@ import Testing
 
 @Suite("Production assignment replay import response")
 struct AssignmentReplayImportResponseTests {
+    @Test("Checkpoint import omits the ordinary-export multiplayer override")
+    func checkpointImportURLHasNoVariantOverride() throws {
+        let profile = try ServerProfile.custom(
+            id: #require(
+                UUID(
+                    uuidString:
+                    "00000000-0000-0000-0000-000000000777"
+                )
+            ),
+            displayName: "Production assignment replay",
+            rawURL: "http://127.0.0.1:3002"
+        )
+        let url = ProductionAssignmentReplayBackend.importURL(profile: profile)
+        let components = try #require(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)
+        )
+
+        #expect(components.path == "/api/v1/arkham/games/import")
+        #expect(components.query == nil)
+        #expect(components.queryItems == nil)
+    }
+
     @Test("Governed production PublicGame fixture returns its canonical game ID")
     func governedPublicGameDecodes() throws {
         let response = try governedPublicGameData()

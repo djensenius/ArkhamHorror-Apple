@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@5acc0237b216e3b70ebe30af1559ab0e627e4f56`,
-schema revision `0.1.33`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@21503e7dc82954b66ac9c24e7d34d9d1517549b8`,
+schema revision `0.1.34`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These forty-two files, and only these forty-two, live under `Fixtures/Contract/` — a
+These forty-four files, and only these forty-four, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -90,11 +90,11 @@ question version `6`; all 114 backend-published negative mutations remain update
 
 ## Governed assignment continuations
 
-The revision `0.1.33` manifest and basic-choice schema, both remaining-assignment
-questions, and both dedicated Answers are exact artifacts from the immutable #75 merge
-commit. Unlike the former replay-derived draft, these questions are generated through the
-real backend game engine, registered in the manifest, schema-validated, and each backed by
-16 published single-mutation negatives.
+The revision `0.1.34` manifest and basic-choice schema, both remaining-assignment
+questions, and both dedicated Answers are exact artifacts from the immutable
+`djensenius/ArkhamHorror#76` merge commit. Unlike the former replay-derived draft, these
+questions are generated through the real backend game engine, registered in the manifest,
+schema-validated, and each backed by 16 published single-mutation negatives.
 
 Both continuations retain the governed Ghoul Minion and Roland identities. Choosing damage
 first produces the sole source-index-zero `Assign 1 horror`/`HorrorToken` continuation;
@@ -109,6 +109,12 @@ with `AssetWithTitle`; Apple applies those mutations in memory and remains fail-
 `ContractFixtureDigestTests` binds the assignment-family artifacts to
 `ContractPin.current`, verifies their exact digest registry entries and manifest hashes,
 and checks the fixture/schema links, immutable commit, revision, and mutation counts.
+
+`replay-attestation.json` and `replay-attestation.schema.json` govern the durable
+server authority returned after an authenticated checkpoint import. The production
+replay coordinator uses that contract to bind the imported game, player remapping,
+checkpoint bytes, backend build identity, and canonical replay envelope before
+submitting any native action.
 
 ## token.json / whoami.json
 

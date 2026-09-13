@@ -259,6 +259,7 @@ private enum AssignmentReplayCoordinatorEngine {
             authToken: token,
             gameID: gameID,
             playerID: playerID,
+            investigatorID: input.investigatorID,
             checkpointArtifactSHA256: checkpoint.artifactSHA256
         )
         let attestation = try await backend.fetchAttestation(
