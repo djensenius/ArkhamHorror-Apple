@@ -126,6 +126,8 @@ struct ContractFixtureDigestTests {
             "question-enemy-attack-remaining-horror-assignment",
             "answer-enemy-attack-assign-remaining-damage",
             "answer-enemy-attack-assign-remaining-horror",
+            "replay-attestation",
+            "replay-attestation.schema",
             "basic-choice-question.schema",
         ])
     }
@@ -195,7 +197,7 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "5acc0237b216e3b70ebe30af1559ab0e627e4f56"
+            ContractPin.current.backendCommit == "21503e7dc82954b66ac9c24e7d34d9d1517549b8"
         )
     }
 

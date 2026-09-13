@@ -39,7 +39,8 @@ answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json \
 question-enemy-attack-remaining-damage-assignment.json \
 question-enemy-attack-remaining-horror-assignment.json \
 answer-enemy-attack-assign-remaining-damage.json \
-answer-enemy-attack-assign-remaining-horror.json"
+answer-enemy-attack-assign-remaining-horror.json \
+replay-attestation.json"
 
 failures=0
 scenario_count=0
@@ -123,13 +124,17 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.33",'
+    echo '  "schemaRevision": "0.1.34",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
       if [ "$first" -eq 0 ]; then echo ','; fi
       first=0
-      printf '    {"path": "contracts/fixtures/%s", "schema": "contracts/schemas/basic-choice-question.schema.json"}' "$name"
+      schema="contracts/schemas/basic-choice-question.schema.json"
+      if [ "$name" = "replay-attestation.json" ]; then
+        schema="contracts/schemas/replay-attestation.schema.json"
+      fi
+      printf '    {"path": "contracts/fixtures/%s", "schema": "%s"}' "$name" "$schema"
     done
     echo ''
     echo '  ]'
@@ -141,6 +146,8 @@ for name in $fixture_names; do
   echo "{\"fixture\": \"$name\", \"value\": 1}" >"$backend_repo/contracts/fixtures/$name"
 done
 echo '{"type":"object"}' >"$backend_repo/contracts/schemas/basic-choice-question.schema.json"
+echo '{"title":"replay-attestation","type":"object"}' \
+  >"$backend_repo/contracts/schemas/replay-attestation.schema.json"
 # shellcheck disable=SC2086
 write_backend_manifest "$backend_repo/contracts/manifest.json" $fixture_names
 git -C "$backend_repo" add -A
@@ -188,6 +195,7 @@ reset_local_good_state() {
     cp "$backend_repo/contracts/fixtures/$name" "$local_fixture_dir/$name"
   done
   cp "$backend_repo/contracts/schemas/basic-choice-question.schema.json" "$local_fixture_dir/"
+  cp "$backend_repo/contracts/schemas/replay-attestation.schema.json" "$local_fixture_dir/"
   # shellcheck disable=SC2086
   write_backend_manifest "$local_fixture_dir/manifest.json" $fixture_names
   rm -rf "$local_repo/.git"

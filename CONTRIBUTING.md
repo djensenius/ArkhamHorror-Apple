@@ -26,7 +26,7 @@ mise install
 Use the selected Xcode installation and run the focused checks:
 
 ```sh
-export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 mise run format-check
 mise run lint
 mise run test

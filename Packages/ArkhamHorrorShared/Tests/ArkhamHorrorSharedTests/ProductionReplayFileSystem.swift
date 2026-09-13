@@ -55,6 +55,8 @@ struct ProductionReplayStagingDestination: Sendable {
 }
 
 enum ProductionReplayFileSystem {
+    static let maximumArtifactByteCount = 1024 * 1024
+
     static func validateFinalDestination(
         _ resultURL: URL
     ) throws -> ProductionReplayDestination {
@@ -149,45 +151,6 @@ enum ProductionReplayFileSystem {
         shouldRemove = false
     }
 
-    static func validateStagingArtifact(
-        _ staging: ProductionReplayStagingDestination,
-        parent: ProductionReplayDirectoryHandle
-    ) throws {
-        var info = stat()
-        guard fstatat(
-            parent.descriptor,
-            staging.name,
-            &info,
-            AT_SYMLINK_NOFOLLOW
-        ) == 0,
-            isRegular(info),
-            info.st_dev == parent.identity.device,
-            info.st_uid == geteuid(),
-            info.st_nlink == 1
-        else {
-            throw ProductionReplayDriverError.resultMissingOrNotRegular
-        }
-    }
-
-    static func publish(
-        _ staging: ProductionReplayStagingDestination,
-        to destination: ProductionReplayDestination
-    ) throws {
-        let currentDestination = try validateFinalDestination(destination.finalURL)
-        guard currentDestination.parent.identity == destination.parent.identity else {
-            throw ProductionReplayDriverError.unsafeResultParent
-        }
-        guard renameat(
-            destination.parent.descriptor,
-            staging.name,
-            destination.parent.descriptor,
-            destination.finalName
-        ) == 0 else {
-            throw ProductionReplayDriverError.resultPublishFailed(errno)
-        }
-        try validatePublishedArtifact(destination)
-    }
-
     static func removeStagingIfPresent(
         _ staging: ProductionReplayStagingDestination,
         parent: ProductionReplayDirectoryHandle
@@ -198,25 +161,5 @@ enum ProductionReplayFileSystem {
             return
         }
         _ = unlinkat(parent.descriptor, staging.name, AT_REMOVEDIR)
-    }
-
-    static func readPublishedArtifact(
-        _ destination: ProductionReplayDestination
-    ) throws -> Data {
-        // A substituted FIFO must not block before descriptor validation rejects it.
-        let descriptor = openat(
-            destination.parent.descriptor,
-            destination.finalName,
-            O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC
-        )
-        guard descriptor >= 0 else {
-            throw ProductionReplayDriverError.resultMissingOrNotRegular
-        }
-        defer { close(descriptor) }
-        try validateRegularArtifact(
-            descriptor: descriptor,
-            parentIdentity: destination.parent.identity
-        )
-        return try readAll(from: descriptor)
     }
 }

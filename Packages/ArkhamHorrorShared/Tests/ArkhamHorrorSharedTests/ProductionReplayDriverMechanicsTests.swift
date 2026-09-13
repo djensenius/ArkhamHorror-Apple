@@ -1,6 +1,8 @@
 import Foundation
 import Testing
 
+// swiftlint:disable file_length
+
 enum ReplayDriverSelfTestCheckpoint: String, ProductionReplayCheckpoint {
     case assignmentContinuation = "assignment-continuation"
 }
@@ -44,6 +46,7 @@ struct ReplayDriverAmbiguousSelfTestSuite {
 }
 
 @Suite("Production replay driver mechanics")
+// swiftlint:disable:next type_body_length
 struct ProductionReplayDriverMechanicsTests {
     @Test("Victim filters match one complete module, suite, and function identifier")
     func victimFilterIsFullyAnchored() throws {
@@ -64,7 +67,7 @@ struct ProductionReplayDriverMechanicsTests {
                 "productionReplayDriverSelfTestVictim()/case"
         ))
         #expect(!matches(regex, "productionReplayDriverSelfTestVictim()"))
-        #expect(!matches(regex, victim.discoveredIdentifier))
+        #expect(matches(regex, victim.discoveredIdentifier))
         #expect(!matches(regex, "Prefix." + victim.discoveredIdentifier + "/case"))
         #expect(!matches(regex, victim.discoveredIdentifier + "/case/nested"))
 
@@ -223,6 +226,258 @@ struct ProductionReplayDriverMechanicsTests {
             !FileManager.default.fileExists(atPath: $0.path)
         } == true)
         #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
+    }
+
+    @Test("Artifact validation happens before publication")
+    func invalidArtifactDoesNotReplaceFinalResult() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try Data("stable".utf8).write(to: scratch.result)
+        var observedStagingURL: URL?
+
+        #expect(throws: ProductionReplayDriverError.resultUnavailable) {
+            _ = try ProductionReplayDriver.run(
+                victim: makeVictim(),
+                input: makeInput(resultURL: scratch.result),
+                deadlineSeconds: 1,
+                artifactValidator: { data in
+                    #expect(data == Data("invalid".utf8))
+                    throw ProductionReplayDriverError.resultUnavailable
+                },
+                deadlineRunner: { _, environment, _, _ in
+                    let staging = try URL(fileURLWithPath: #require(
+                        environment[ProductionReplayEnvironmentKey.resultPath]
+                    ))
+                    observedStagingURL = staging
+                    try Data("invalid".utf8).write(to: staging)
+                    return .completed
+                }
+            )
+        }
+
+        #expect(try Data(contentsOf: scratch.result) == Data("stable".utf8))
+        #expect(observedStagingURL.map {
+            !FileManager.default.fileExists(atPath: $0.path)
+        } == true)
+        #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
+    }
+
+    @Test("Staging substitutions during publication are rolled back")
+    func stagingSubstitutionDuringPublicationFailsClosed() throws {
+        for originalResult in [Data?.none, Data("stable".utf8)] {
+            let scratch = try makeScratch()
+            defer { try? FileManager.default.removeItem(at: scratch.directory) }
+            if let originalResult {
+                try originalResult.write(to: scratch.result)
+            }
+            var stagingURL: URL?
+            var publicationHookCalled = false
+
+            #expect(throws: ProductionReplayDriverError.resultMissingOrNotRegular) {
+                _ = try ProductionReplayDriver.run(
+                    victim: makeVictim(),
+                    input: makeInput(resultURL: scratch.result),
+                    deadlineSeconds: 1,
+                    artifactValidator: { data in
+                        #expect(data == Data("validated".utf8))
+                    },
+                    beforePublicationMove: {
+                        publicationHookCalled = true
+                        let staging = try #require(stagingURL)
+                        try FileManager.default.removeItem(at: staging)
+                        try Data("substituted".utf8).write(to: staging)
+                    },
+                    deadlineRunner: { _, environment, _, _ in
+                        let staging = try URL(fileURLWithPath: #require(
+                            environment[ProductionReplayEnvironmentKey.resultPath]
+                        ))
+                        stagingURL = staging
+                        try Data("validated".utf8).write(to: staging)
+                        return .completed
+                    }
+                )
+            }
+
+            #expect(publicationHookCalled)
+            if let originalResult {
+                #expect(try Data(contentsOf: scratch.result) == originalResult)
+            } else {
+                #expect(!FileManager.default.fileExists(
+                    atPath: scratch.result.path
+                ))
+            }
+            #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
+        }
+    }
+
+    @Test("Staging mutations during publication are rolled back")
+    func stagingMutationDuringPublicationFailsClosed() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try Data("stable".utf8).write(to: scratch.result)
+        var stagingURL: URL?
+
+        #expect(throws: ProductionReplayDriverError.resultMissingOrNotRegular) {
+            _ = try ProductionReplayDriver.run(
+                victim: makeVictim(),
+                input: makeInput(resultURL: scratch.result),
+                deadlineSeconds: 1,
+                beforePublicationMove: {
+                    let staging = try #require(stagingURL)
+                    let descriptor = open(
+                        staging.path,
+                        O_WRONLY | O_TRUNC | O_NOFOLLOW | O_CLOEXEC
+                    )
+                    try #require(descriptor >= 0)
+                    defer { close(descriptor) }
+                    try ProductionReplayFileSystem.writeAll(
+                        Data("mutated".utf8),
+                        to: descriptor
+                    )
+                    try #require(fsync(descriptor) == 0)
+                },
+                deadlineRunner: { _, environment, _, _ in
+                    let staging = try URL(fileURLWithPath: #require(
+                        environment[ProductionReplayEnvironmentKey.resultPath]
+                    ))
+                    stagingURL = staging
+                    try Data("validated".utf8).write(to: staging)
+                    return .completed
+                }
+            )
+        }
+
+        #expect(try Data(contentsOf: scratch.result) == Data("stable".utf8))
+        #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
+    }
+
+    @Test("Published regular-file substitutions are rejected")
+    func publishedRegularFileSubstitutionFailsClosed() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        let result = try ProductionReplayDriver.run(
+            victim: makeVictim(),
+            input: makeInput(resultURL: scratch.result),
+            deadlineSeconds: 1,
+            deadlineRunner: { _, environment, _, _ in
+                let staging = try URL(fileURLWithPath: #require(
+                    environment[ProductionReplayEnvironmentKey.resultPath]
+                ))
+                try Data("validated".utf8).write(to: staging)
+                return .completed
+            }
+        )
+
+        try FileManager.default.removeItem(at: scratch.result)
+        try Data("substituted".utf8).write(to: scratch.result)
+
+        #expect(throws: ProductionReplayDriverError.resultMissingOrNotRegular) {
+            _ = try result.resultData()
+        }
+    }
+
+    @Test("Oversized staging artifacts are rejected before validation")
+    func oversizedStagingArtifactRejected() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try Data("stable".utf8).write(to: scratch.result)
+        var validatorCalled = false
+
+        #expect(throws: ProductionReplayDriverError.resultTooLarge) {
+            _ = try ProductionReplayDriver.run(
+                victim: makeVictim(),
+                input: makeInput(resultURL: scratch.result),
+                deadlineSeconds: 1,
+                artifactValidator: { _ in
+                    validatorCalled = true
+                },
+                deadlineRunner: { _, environment, _, _ in
+                    let staging = try URL(fileURLWithPath: #require(
+                        environment[ProductionReplayEnvironmentKey.resultPath]
+                    ))
+                    try Data(
+                        repeating: 0x41,
+                        count:
+                        ProductionReplayFileSystem.maximumArtifactByteCount + 1
+                    ).write(to: staging)
+                    return .completed
+                }
+            )
+        }
+
+        #expect(!validatorCalled)
+        #expect(try Data(contentsOf: scratch.result) == Data("stable".utf8))
+        #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
+    }
+
+    @Test("Oversized published artifacts cannot be read")
+    func oversizedPublishedArtifactRejected() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try Data(
+            repeating: 0x42,
+            count: ProductionReplayFileSystem.maximumArtifactByteCount + 1
+        ).write(to: scratch.result)
+        let destination =
+            try ProductionReplayFileSystem.validateFinalDestination(
+                scratch.result
+            )
+
+        #expect(throws: ProductionReplayDriverError.resultTooLarge) {
+            _ = try ProductionReplayFileSystem.readPublishedArtifact(
+                destination
+            )
+        }
+    }
+
+    @Test("Completion deadline gates validation and publication")
+    func completionDeadlineGatesPublication() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try Data("stable".utf8).write(to: scratch.result)
+        var failedChecks = 0
+
+        #expect(throws: ProductionReplayDriverError.invalidDeadline) {
+            _ = try ProductionReplayDriver.run(
+                victim: makeVictim(),
+                input: makeInput(resultURL: scratch.result),
+                deadlineSeconds: 1,
+                completionDeadlineValidator: {
+                    failedChecks += 1
+                    if failedChecks == 2 {
+                        throw ProductionReplayDriverError.invalidDeadline
+                    }
+                },
+                deadlineRunner: { _, environment, _, _ in
+                    let staging = try URL(fileURLWithPath: #require(
+                        environment[ProductionReplayEnvironmentKey.resultPath]
+                    ))
+                    try Data("late".utf8).write(to: staging)
+                    return .completed
+                }
+            )
+        }
+        #expect(failedChecks == 2)
+        #expect(try Data(contentsOf: scratch.result) == Data("stable".utf8))
+
+        var successfulChecks = 0
+        let result = try ProductionReplayDriver.run(
+            victim: makeVictim(),
+            input: makeInput(resultURL: scratch.result),
+            deadlineSeconds: 1,
+            completionDeadlineValidator: {
+                successfulChecks += 1
+            },
+            deadlineRunner: { _, environment, _, _ in
+                let staging = try URL(fileURLWithPath: #require(
+                    environment[ProductionReplayEnvironmentKey.resultPath]
+                ))
+                try Data("fresh".utf8).write(to: staging)
+                return .completed
+            }
+        )
+        #expect(successfulChecks == 2)
+        #expect(try result.resultData() == Data("fresh".utf8))
     }
 
     @Test("A real child publishes only after its sentinel-proven success")

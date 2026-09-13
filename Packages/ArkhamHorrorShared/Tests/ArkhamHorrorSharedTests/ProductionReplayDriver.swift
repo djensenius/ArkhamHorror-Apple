@@ -12,9 +12,13 @@ enum ProductionReplayDriverError: Error, Equatable {
     case resultDestinationNotRegular
     case stagingPathUnavailable
     case resultMissingOrNotRegular
+    case resultTooLarge
     case resultWriteFailed(Int32)
     case resultPublishFailed(Int32)
     case resultUnavailable
+    case inputAlreadyRead
+    case privateDirectoryUnavailable
+    case unexpectedDirectoryEntry(String)
     case invalidDeadline
     case missingCheckpoint
     case unsupportedCheckpoint(String)
@@ -61,13 +65,14 @@ struct ProductionReplayVictim: Sendable, Equatable {
         "\(moduleName).\(suiteName)/\(functionName)()"
     }
 
-    /// SwiftPM matches against the complete discovered identifier followed by one internal
-    /// test-case component. Escaping the full module/suite/function path, requiring exactly
-    /// that one terminal component, and anchoring the end prevents a same-named test in
-    /// another suite or module from joining the replay subprocess.
+    /// SwiftPM versions match either the complete discovered identifier or that
+    /// identifier followed by one internal test-case component. Escaping the full
+    /// module/suite/function path, permitting only that one optional terminal
+    /// component, and anchoring the end prevents a same-named test in another suite
+    /// or module from joining the replay subprocess.
     var exactFilter: String {
         let escaped = NSRegularExpression.escapedPattern(for: discoveredIdentifier)
-        return "^\(escaped)/[^/]+$"
+        return "^\(escaped)(/[^/]+)?$"
     }
 
     private static func isASCIIIdentifier(_ value: String) -> Bool {
@@ -182,13 +187,16 @@ struct ProductionReplayChildContext<Checkpoint: ProductionReplayCheckpoint>: Sen
 struct ProductionReplayRunResult: Equatable {
     let outcome: SubprocessDeadlineGuardOutcome
     private let destination: ProductionReplayDestination
+    private let publishedArtifact: ProductionReplayPublishedArtifact?
 
     init(
         outcome: SubprocessDeadlineGuardOutcome,
-        destination: ProductionReplayDestination
+        destination: ProductionReplayDestination,
+        publishedArtifact: ProductionReplayPublishedArtifact? = nil
     ) {
         self.outcome = outcome
         self.destination = destination
+        self.publishedArtifact = publishedArtifact
     }
 
     var resultURL: URL {
@@ -196,10 +204,13 @@ struct ProductionReplayRunResult: Equatable {
     }
 
     func resultData() throws -> Data {
-        guard outcome == .completed else {
+        guard outcome == .completed, let publishedArtifact else {
             throw ProductionReplayDriverError.resultUnavailable
         }
-        return try ProductionReplayFileSystem.readPublishedArtifact(destination)
+        return try ProductionReplayFileSystem.readPublishedArtifact(
+            destination,
+            expected: publishedArtifact
+        )
     }
 
     static func == (
@@ -217,12 +228,21 @@ typealias ProductionReplayDeadlineRunner = (
     _ hostArguments: [String]
 ) throws -> SubprocessDeadlineGuardOutcome
 
+typealias ProductionReplayArtifactValidator = (Data) throws -> Void
+typealias ProductionReplayDeadlineValidator = () throws -> Void
+typealias ProductionReplayPublicationHook = () throws -> Void
+
 enum ProductionReplayDriver {
     static func run(
         victim: ProductionReplayVictim,
         input: ProductionReplayInput<some ProductionReplayCheckpoint>,
         deadlineSeconds: Double,
         hostArguments: [String] = CommandLine.arguments,
+        artifactValidator: ProductionReplayArtifactValidator = { _ in },
+        completionDeadlineValidator:
+        ProductionReplayDeadlineValidator = {},
+        beforePublicationMove:
+        ProductionReplayPublicationHook = {},
         deadlineRunner: ProductionReplayDeadlineRunner = runDeadlineGuard
     ) throws -> ProductionReplayRunResult {
         guard deadlineSeconds.isFinite, deadlineSeconds > 0 else {
@@ -257,18 +277,23 @@ enum ProductionReplayDriver {
                 destination: destination
             )
         }
-
-        try ProductionReplayFileSystem.validateStagingArtifact(
+        try completionDeadlineValidator()
+        let artifact = try ProductionReplayFileSystem.openStagingArtifact(
             staging,
             parent: destination.parent
         )
-        try ProductionReplayFileSystem.publish(
-            staging,
-            to: destination
+        try artifactValidator(artifact.data)
+        try completionDeadlineValidator()
+        let publishedArtifact = try ProductionReplayFileSystem.publish(
+            artifact,
+            from: staging,
+            to: destination,
+            beforeMove: beforePublicationMove
         )
         return ProductionReplayRunResult(
             outcome: outcome,
-            destination: destination
+            destination: destination,
+            publishedArtifact: publishedArtifact
         )
     }
 

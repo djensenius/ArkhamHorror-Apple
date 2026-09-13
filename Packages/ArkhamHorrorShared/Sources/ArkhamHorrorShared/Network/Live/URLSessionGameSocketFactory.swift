@@ -198,6 +198,16 @@ final class GameSocketConnectDelegate: NSObject, URLSessionWebSocketDelegate, @u
             Task { await resolver.resolveFailed(GameSocketConnectError.transport) }
         }
     }
+
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest _: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
 }
 
 /// The production ``GameSocketConnection``, backed by one `URLSessionWebSocketTask`.

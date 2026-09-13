@@ -33,10 +33,13 @@ struct LocaleCatalogLoader: Sendable {
     /// on-disk cache, rooted in this app's own caches directory. The cache is simply omitted
     /// when no caches directory exists, because a catalog is always re-derivable from the
     /// server and a cache is an optimization, never an authority.
-    static func production() -> LocaleCatalogLoader {
+    static func production(
+        transport: any LocaleCatalogTransporting =
+            URLSessionLocaleCatalogTransport()
+    ) -> LocaleCatalogLoader {
         let storage = FileLocaleCatalogStore.defaultRoot().map { FileLocaleCatalogStore(root: $0) }
         return LocaleCatalogLoader(
-            transport: URLSessionLocaleCatalogTransport(), storage: storage
+            transport: transport, storage: storage
         )
     }
 

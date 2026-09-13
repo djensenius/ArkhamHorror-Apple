@@ -126,6 +126,8 @@ question-enemy-attack-remaining-damage-assignment.json:contracts/fixtures/questi
 question-enemy-attack-remaining-horror-assignment.json:contracts/fixtures/question-enemy-attack-remaining-horror-assignment.json
 answer-enemy-attack-assign-remaining-damage.json:contracts/fixtures/answer-enemy-attack-assign-remaining-damage.json
 answer-enemy-attack-assign-remaining-horror.json:contracts/fixtures/answer-enemy-attack-assign-remaining-horror.json
+replay-attestation.json:contracts/fixtures/replay-attestation.json
+replay-attestation.schema.json:contracts/schemas/replay-attestation.schema.json
 basic-choice-question.schema.json:contracts/schemas/basic-choice-question.schema.json
 "
 
