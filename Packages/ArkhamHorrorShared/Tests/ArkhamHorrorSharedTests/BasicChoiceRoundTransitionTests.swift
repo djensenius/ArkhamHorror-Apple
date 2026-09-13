@@ -348,3 +348,50 @@ struct BasicChoiceRoundTransitionTests {
         #expect(!question.choices[0].isSupported)
     }
 }
+
+@MainActor
+@Suite("Round-transition agenda source identity")
+struct RoundTransitionAgendaSourceTests {
+    @Test("Agenda consequences and assignment reject another internally consistent agenda source")
+    func agendaEffectsRejectOtherAgenda() throws {
+        var consequence = try RoundTransitionFixtures.value(.agendaConsequence)
+        for path in [
+            "choices/0/messages/0/contents/contents/1/contents",
+            "choices/1/messages/0/contents/0/contents",
+        ] {
+            consequence = try EnemyAttackFixtures.applying(
+                operation: "replace",
+                path: path.split(separator: "/"),
+                replacement: .string("c01106"),
+                to: consequence
+            )
+        }
+
+        let consequencePayload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: ContractJSON.encode(consequence)
+        )
+        let consequenceQuestion = try #require(consequencePayload.supportedQuestion)
+        #expect(consequenceQuestion.choices.allSatisfy { !$0.isSupported })
+
+        var assignment = try RoundTransitionFixtures.value(.agendaHorrorAssignment)
+        for path in [
+            "source/contents",
+            "question/question/choices/0/messages/0/contents/contents/1/contents",
+            "question/question/choices/0/messages/1/contents/contents/1/contents",
+        ] {
+            assignment = try EnemyAttackFixtures.applying(
+                operation: "replace",
+                path: path.split(separator: "/"),
+                replacement: .string("c01106"),
+                to: assignment
+            )
+        }
+
+        let assignmentPayload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: ContractJSON.encode(assignment)
+        )
+        #expect(assignmentPayload.isUpdateRequired)
+    }
+}

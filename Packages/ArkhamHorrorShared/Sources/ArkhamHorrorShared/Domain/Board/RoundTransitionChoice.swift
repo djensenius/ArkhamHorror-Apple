@@ -336,9 +336,11 @@ extension BasicChoiceParser {
     ) -> AgendaID? {
         guard case let .object(source)? = value,
               Set(source.keys) == ["tag", "contents"],
-              source["tag"] == .string("AgendaSource")
+              source["tag"] == .string("AgendaSource"),
+              let agendaID = roundTransitionAgendaID(source["contents"]),
+              agendaID.rawValue.rawValue == "c01105"
         else { return nil }
-        return roundTransitionAgendaID(source["contents"])
+        return agendaID
     }
 
     private static func roundTransitionAgendaID(_ value: JSONValue?) -> AgendaID? {
