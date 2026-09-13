@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@21503e7dc82954b66ac9c24e7d34d9d1517549b8`,
-schema revision `0.1.34`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@229b89da24546dc6f0a55b2d08ab0f047eb59808`,
+schema revision `0.1.36`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These forty-four files, and only these forty-four, live under `Fixtures/Contract/` — a
+These forty-five files, and only these forty-five, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -90,9 +90,9 @@ question version `6`; all 114 backend-published negative mutations remain update
 
 ## Governed assignment continuations
 
-The revision `0.1.34` manifest and basic-choice schema, both remaining-assignment
-questions, and both dedicated Answers are exact artifacts from the immutable
-`djensenius/ArkhamHorror#76` merge commit. Unlike the former replay-derived draft, these
+Both remaining-assignment questions and dedicated Answers originate from the immutable
+`djensenius/ArkhamHorror#76` merge. The current revision `0.1.36` manifest and
+basic-choice schema continue to govern them. Unlike the former replay-derived draft, these
 questions are generated through the real backend game engine, registered in the manifest,
 schema-validated, and each backed by 16 published single-mutation negatives.
 
@@ -102,7 +102,7 @@ choosing horror first produces the symmetric `Assign 1 damage`/`DamageToken` con
 Each sends its exact direct amount followed by the production `(0 damage, 0 horror)`
 completion message with both accumulated investigator-target arrays populated. Their
 Answers preserve source index `0`, player UUID `00000000-0000-0000-0000-000000000001`,
-and question version `7`. The 32 assignment-family negatives within the manifest's 362
+and question version `7`. The 32 assignment-family negatives within the manifest's 363
 total mutations now explicitly replace each continuation's required `AnyAsset` matcher
 with `AssetWithTitle`; Apple applies those mutations in memory and remains fail-closed.
 
@@ -110,11 +110,29 @@ with `AssetWithTitle`; Apple applies those mutations in memory and remains fail-
 `ContractPin.current`, verifies their exact digest registry entries and manifest hashes,
 and checks the fixture/schema links, immutable commit, revision, and mutation counts.
 
+## Governed enemy actions
+
+`question-player-window-enemy-actions.json` is the exact production-generated
+six-choice action menu added by `djensenius/ArkhamHorror#78`. Fight remains at source
+index `4` with ability index `100`; Evade remains at source index `5` with ability index
+`101`. Both carry the canonical enemy UUID
+`00000000-0000-0000-0000-000000000388`.
+
+The client recognizes only exact `ActionAbility` / `SingleAction` Fight and Evade labels
+whose source is exactly `EnemySource` plus a canonical lowercase UUID. It retains every
+other ability, window, and message field as opaque contract data, verifies that the enemy
+still exists in the newest board projection, and submits the unchanged source index and
+authoritative question version. Unknown actions and malformed or alternate source shapes
+remain update-required. The backend manifest publishes two focused negative mutations for
+this fixture within its 363 total regressions.
+
 `replay-attestation.json` and `replay-attestation.schema.json` govern the durable
 server authority returned after an authenticated checkpoint import. The production
 replay coordinator uses that contract to bind the imported game, player remapping,
 checkpoint bytes, backend build identity, and canonical replay envelope before
-submitting any native action.
+submitting any native action. `djensenius/ArkhamHorror#79` repairs the fixture's
+canonical receipt digest and pins these bytes to immutable merge
+`229b89da24546dc6f0a55b2d08ab0f047eb59808`.
 
 ## token.json / whoami.json
 

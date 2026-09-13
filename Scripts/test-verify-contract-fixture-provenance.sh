@@ -40,6 +40,7 @@ question-enemy-attack-remaining-damage-assignment.json \
 question-enemy-attack-remaining-horror-assignment.json \
 answer-enemy-attack-assign-remaining-damage.json \
 answer-enemy-attack-assign-remaining-horror.json \
+question-player-window-enemy-actions.json \
 replay-attestation.json"
 
 failures=0
@@ -124,7 +125,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.34",'
+    echo '  "schemaRevision": "0.1.36",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do

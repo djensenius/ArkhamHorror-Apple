@@ -247,37 +247,6 @@ enum BasicChoiceParser {
         }
     }
 
-    private static func parseAbilityLabel(
-        _ object: [String: JSONValue]
-    ) -> BasicChoiceContent? {
-        guard Set(object.keys) == [
-            "tag", "investigatorId", "ability", "windows", "before", "messages",
-        ],
-            let investigatorID = investigatorID(object["investigatorId"]),
-            case let .object(ability)? = object["ability"],
-            case .object? = ability["source"],
-            case let .string(cardCodeText)? = ability["cardCode"],
-            let cardCode = strictCardCode(cardCodeText),
-            isCanonicalInteger(ability["index"]),
-            case let .object(type)? = ability["type"],
-            case .string("ActionAbility")? = type["tag"],
-            case let .object(actions)? = type["actions"],
-            case .string("SingleAction")? = actions["tag"],
-            case .string("Investigate")? = actions["contents"],
-            case let .array(windows)? = object["windows"],
-            let before = messages(object["before"]),
-            let messages = messages(object["messages"])
-        else { return nil }
-        return .investigate(BasicChoiceAbility(
-            investigatorID: investigatorID,
-            cardCode: cardCode,
-            rawAbility: object["ability"] ?? .null,
-            windows: windows,
-            before: before,
-            messages: messages
-        ))
-    }
-
     /// Strict "engine message" array validator, shared by every `ComponentLabel`/
     /// `EndTurnButton`/`AbilityLabel` (`before` and `messages`)/`TargetLabel` path. Backend
     /// 0.1.22's `Message` schema requires every array element to be a tagged constructor
@@ -336,6 +305,60 @@ enum BasicChoiceParser {
             && token.allSatisfy(\.isASCIIWholeNumber)
             && (token == "0" || token.first != "0")
             && Int64(token) != nil
+    }
+}
+
+private extension BasicChoiceParser {
+    static func parseAbilityLabel(
+        _ object: [String: JSONValue]
+    ) -> BasicChoiceContent? {
+        guard Set(object.keys) == [
+            "tag", "investigatorId", "ability", "windows", "before", "messages",
+        ],
+            let investigatorID = investigatorID(object["investigatorId"]),
+            case let .object(ability)? = object["ability"],
+            case .object? = ability["source"],
+            case let .string(cardCodeText)? = ability["cardCode"],
+            let cardCode = strictCardCode(cardCodeText),
+            isCanonicalInteger(ability["index"]),
+            case let .object(type)? = ability["type"],
+            case .string("ActionAbility")? = type["tag"],
+            case let .object(actions)? = type["actions"],
+            case .string("SingleAction")? = actions["tag"],
+            case let .string(action)? = actions["contents"],
+            case let .array(windows)? = object["windows"],
+            let before = messages(object["before"]),
+            let messages = messages(object["messages"])
+        else { return nil }
+        let parsedAbility = BasicChoiceAbility(
+            investigatorID: investigatorID,
+            cardCode: cardCode,
+            rawAbility: object["ability"] ?? .null,
+            windows: windows,
+            before: before,
+            messages: messages
+        )
+        switch action {
+        case "Investigate":
+            return .investigate(parsedAbility)
+        case "Fight":
+            guard let enemyID = canonicalEnemySource(ability["source"]) else { return nil }
+            return .fight(parsedAbility, enemyID: enemyID)
+        case "Evade":
+            guard let enemyID = canonicalEnemySource(ability["source"]) else { return nil }
+            return .evade(parsedAbility, enemyID: enemyID)
+        default:
+            return nil
+        }
+    }
+
+    static func canonicalEnemySource(_ value: JSONValue?) -> EnemyID? {
+        guard case let .object(source)? = value,
+              Set(source.keys) == ["tag", "contents"],
+              source["tag"] == .string("EnemySource"),
+              case let .string(rawEnemyID)? = source["contents"]
+        else { return nil }
+        return EnemyID(codingKey: AnyCodingKey(stringValue: rawEnemyID))
     }
 }
 

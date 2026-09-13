@@ -64,7 +64,7 @@ enum BoardDisplayFormatting {
                 return "\(assignment.kind.actionTitle) to \(investigator.displayName)"
             }
             return choice.title
-        case .gainResource, .drawCard, .endTurn, .investigate, .continueReading,
+        case .gainResource, .drawCard, .endTurn, .investigate, .fight, .evade, .continueReading,
              .skipTriggers, .startSkillTest, .applySkillTestResults, .drawEncounterCard,
              .unsupported:
             return choice.title
@@ -100,26 +100,11 @@ enum BoardDisplayFormatting {
             storyResolution: storyResolution,
             labelResolution: labelResolution
         ) else {
-            switch choice.content {
-            case .continueReading:
-                return storyResolution?.unavailableReason?.announcement
-                    ?? "This story text is not currently available."
-            case .finishMulligan:
-                return labelResolution?.announcement
-                    ?? "The text for this choice is not currently available."
-            case .chooseHandCard:
-                return "This card isn't currently available in your hand."
-            case .chooseLocation:
-                return "This location isn't currently available."
-            case .resolveEnemyAttack:
-                return "The enemy or investigator for this attack isn't currently available."
-            case .assignEnemyAttackDamage:
-                return
-                    "The enemy or investigator for this assignment isn't currently available."
-            case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
-                 .startSkillTest, .applySkillTestResults, .drawEncounterCard, .unsupported:
-                return "This choice is not currently available."
-            }
+            return BasicChoiceAvailabilityFormatting.announcement(
+                for: choice,
+                storyResolution: storyResolution,
+                labelResolution: labelResolution
+            )
         }
         if canSubmit {
             return "Activates choice \(choice.index + 1)."
@@ -265,6 +250,23 @@ enum BoardDisplayFormatting {
             .sorted { $0.token < $1.token }
     }
 
+    /// Groups a chaos-token multiset into deterministic, canonical-then-alphabetical
+    /// counts.
+    static func groupChaosFaceCounts(_ tokens: [ChaosToken]) -> [BoardChaosFaceCount] {
+        BoardChaosFaceFormatting.group(tokens)
+    }
+
+    /// Turns a wire `PascalCase`/`camelCase`-ish tag (for example `"HunterEnemiesMoveStep"`
+    /// or `"GroupClueCost"`) into a space-separated display string ("Hunter Enemies Move
+    /// Step"), stripping a trailing `Step`/`Cost`/`Window` word if present is deliberately
+    /// **not** done here: the raw humanized tag is left intact so this stays a purely
+    /// mechanical, lossless transform with no risk of misrepresenting an unfamiliar tag.
+    static func humanizeTag(_ tag: String) -> String {
+        BoardTagFormatting.humanize(tag)
+    }
+}
+
+private enum BoardChaosFaceFormatting {
     /// The canonical base-game chaos-token face order, used so common faces always sort
     /// first in a fixed, human-familiar order; any additive/homebrew face this client
     /// build does not list here sorts afterward, alphabetically by raw text.
@@ -274,9 +276,7 @@ enum BoardDisplayFormatting {
         .curseToken, .blessToken, .frostToken, .bloodToken,
     ]
 
-    /// Groups a chaos-token multiset into deterministic, canonical-then-alphabetical
-    /// counts.
-    static func groupChaosFaceCounts(_ tokens: [ChaosToken]) -> [BoardChaosFaceCount] {
+    static func group(_ tokens: [ChaosToken]) -> [BoardChaosFaceCount] {
         var totals: [ChaosTokenFace: Int] = [:]
         for token in tokens {
             totals[token.chaosTokenFace, default: 0] += 1
@@ -298,13 +298,40 @@ enum BoardDisplayFormatting {
                 }
             }
     }
+}
 
-    /// Turns a wire `PascalCase`/`camelCase`-ish tag (for example `"HunterEnemiesMoveStep"`
-    /// or `"GroupClueCost"`) into a space-separated display string ("Hunter Enemies Move
-    /// Step"), stripping a trailing `Step`/`Cost`/`Window` word if present is deliberately
-    /// **not** done here: the raw humanized tag is left intact so this stays a purely
-    /// mechanical, lossless transform with no risk of misrepresenting an unfamiliar tag.
-    static func humanizeTag(_ tag: String) -> String {
+private enum BasicChoiceAvailabilityFormatting {
+    static func announcement(
+        for choice: BasicChoice,
+        storyResolution: StoryResolution?,
+        labelResolution: BasicChoiceLabelResolution?
+    ) -> String {
+        switch choice.content {
+        case .continueReading:
+            storyResolution?.unavailableReason?.announcement
+                ?? "This story text is not currently available."
+        case .finishMulligan:
+            labelResolution?.announcement
+                ?? "The text for this choice is not currently available."
+        case .chooseHandCard:
+            "This card isn't currently available in your hand."
+        case .chooseLocation:
+            "This location isn't currently available."
+        case .resolveEnemyAttack:
+            "The enemy or investigator for this attack isn't currently available."
+        case .assignEnemyAttackDamage:
+            "The enemy or investigator for this assignment isn't currently available."
+        case .fight, .evade:
+            "This enemy isn't currently available."
+        case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
+             .startSkillTest, .applySkillTestResults, .drawEncounterCard, .unsupported:
+            "This choice is not currently available."
+        }
+    }
+}
+
+private enum BoardTagFormatting {
+    static func humanize(_ tag: String) -> String {
         var words: [String] = []
         var current = ""
         for scalar in tag.unicodeScalars {
