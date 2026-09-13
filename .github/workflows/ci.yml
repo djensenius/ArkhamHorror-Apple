@@ -54,6 +54,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
       - name: Install tools
         uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
         with:
@@ -65,7 +67,24 @@ jobs:
       - name: Self-test locale-digest provenance script (offline)
         run: mise run locale-digest-provenance-selftest
       - name: Self-test production assignment replay wrapper (offline)
-        run: mise run production-assignment-replay-selftest
+        run: |
+          set -euo pipefail
+          replay_revision="$(
+            git log -1 --format=%H -- Scripts/run-production-assignment-replay.sh
+          )"
+          [[ "$replay_revision" =~ ^[0-9a-f]{40}$ ]]
+          scratch_root="$(mktemp -d /private/tmp/arkham-replay-ci.XXXXXX)"
+          replay_worktree="$scratch_root/checkout"
+          cleanup() {
+            git worktree remove --force "$replay_worktree" >/dev/null 2>&1 || true
+            /bin/rmdir "$scratch_root" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          git worktree add --detach "$replay_worktree" "$replay_revision"
+          "$replay_worktree/Scripts/test-run-production-assignment-replay.sh"
 
   contract-provenance:
     name: Contract fixture provenance
