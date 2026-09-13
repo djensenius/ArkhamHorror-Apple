@@ -12,21 +12,12 @@ enum EnemyActionFixtures {
     static let enemyID = BoardTestFixtures.enemyID("000000000388")
 
     static func value() throws -> JSONValue {
-        let data = try #require(Bundle.module.url(
-            forResource: "question-player-window-choose-one",
+        let url = try #require(Bundle.module.url(
+            forResource: "question-player-window-enemy-actions",
             withExtension: "json",
             subdirectory: "Fixtures/Contract"
         ))
-        let base = try ContractJSON.decode(JSONValue.self, from: Data(contentsOf: data))
-        guard case let .object(root) = base,
-              case let .array(baseChoices)? = root["choices"]
-        else { throw TestFailure() }
-        var choices = baseChoices
-        try choices.append(abilityChoice(action: "Fight", index: 100))
-        try choices.append(abilityChoice(action: "Evade", index: 101))
-        var updated = root
-        updated["choices"] = .array(choices)
-        return .object(updated)
+        return try ContractJSON.decode(JSONValue.self, from: Data(contentsOf: url))
     }
 
     static func payload(_ value: JSONValue? = nil) throws -> BasicChoiceQuestionPayload {
@@ -64,26 +55,6 @@ enum EnemyActionFixtures {
             enemyValues: includeEnemy ? [enemyID: .null] : [:]
         ))
     }
-
-    private static func abilityChoice(action: String, index: Int) throws -> JSONValue {
-        let enemyID = enemyID.rawValue.uuidString.lowercased()
-        return try ContractJSON.decode(
-            JSONValue.self,
-            from: Data(
-                """
-                {"tag":"AbilityLabel","investigatorId":"c01001","ability":{\
-                "source":{"tag":"EnemySource","contents":"\(enemyID)"},\
-                "cardCode":"c01160","index":\(index),\
-                "type":{"tag":"ActionAbility","actions":{\
-                "tag":"SingleAction","contents":"\(action)"}},\
-                "futureEngineData":{"nested":[1,true,null]}},\
-                "windows":[{"windowTiming":"When","windowType":{"tag":"NonFast"}}],\
-                "before":[{"tag":"FutureBefore","contents":{"opaque":true}}],\
-                "messages":[{"tag":"FutureMessage","contents":[1,"two"]}]}
-                """.utf8
-            )
-        )
-    }
 }
 
 @MainActor
@@ -114,17 +85,23 @@ struct BasicChoiceEnemyActionTests {
         #expect(evadeAbility.investigatorID.rawValue.rawValue == "c01001")
         #expect(fightAbility.cardCode.rawValue == "c01160")
         #expect(evadeAbility.cardCode.rawValue == "c01160")
-        #expect(fightAbility.windows.count == 1)
-        #expect(fightAbility.before.count == 1)
-        #expect(fightAbility.messages.count == 1)
+        #expect(fightAbility.windows.count == 3)
+        #expect(fightAbility.before.isEmpty)
+        #expect(fightAbility.messages.isEmpty)
         #expect(question.choices[4].ability == fightAbility)
         #expect(question.choices[5].ability == evadeAbility)
 
         guard case let .object(root) = raw,
               case let .array(rawChoices)? = root["choices"],
               case let .object(rawFight) = rawChoices[4],
-              case let .object(rawEvade) = rawChoices[5]
+              case let .object(rawEvade) = rawChoices[5],
+              case let .object(rawFightAbility)? = rawFight["ability"],
+              case let .object(rawEvadeAbility)? = rawEvade["ability"]
         else { throw TestFailure() }
+        #expect(rawFightAbility["criteria"] != nil)
+        #expect(rawFightAbility["requestor"] != nil)
+        #expect(rawEvadeAbility["criteria"] != nil)
+        #expect(rawEvadeAbility["requestor"] != nil)
         #expect(fightAbility.rawAbility == rawFight["ability"])
         #expect(evadeAbility.rawAbility == rawEvade["ability"])
         #expect(try ContractJSON.decode(

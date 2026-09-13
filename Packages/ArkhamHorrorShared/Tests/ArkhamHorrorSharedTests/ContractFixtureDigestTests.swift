@@ -126,6 +126,7 @@ struct ContractFixtureDigestTests {
             "question-enemy-attack-remaining-horror-assignment",
             "answer-enemy-attack-assign-remaining-damage",
             "answer-enemy-attack-assign-remaining-horror",
+            "question-player-window-enemy-actions",
             "replay-attestation",
             "replay-attestation.schema",
             "basic-choice-question.schema",
@@ -197,17 +198,17 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "21503e7dc82954b66ac9c24e7d34d9d1517549b8"
+            ContractPin.current.backendCommit == "229b89da24546dc6f0a55b2d08ab0f047eb59808"
         )
     }
 
-    @Test("The immutable manifest governs 32 assignment negatives within 362 total")
+    @Test("The immutable manifest governs 32 assignment negatives within 363 total")
     func assignmentFamilyManifestCoverage() throws {
         let manifest = try ContractJSON.decode(
             GovernedContractManifest.self,
             from: fixtureData(named: "manifest")
         )
-        #expect(manifest.negativeFixtures.count == 362)
+        #expect(manifest.negativeFixtures.count == 363)
         let fixtureSchemas = Dictionary(
             uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
         )
@@ -235,6 +236,20 @@ struct ContractFixtureDigestTests {
         }
 
         #expect(assignmentNegativeCount == 32)
+    }
+
+    @Test("The immutable manifest governs the production enemy-action menu")
+    func enemyActionManifestCoverage() throws {
+        let manifest = try ContractJSON.decode(
+            GovernedContractManifest.self,
+            from: fixtureData(named: "manifest")
+        )
+        let path = "contracts/fixtures/question-player-window-enemy-actions.json"
+        let fixtureSchemas = Dictionary(
+            uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
+        )
+        #expect(fixtureSchemas[path] == "contracts/schemas/basic-choice-question.schema.json")
+        #expect(manifest.negativeFixtures.count { $0.basePositiveFixture == path } == 2)
     }
 
     @Test("Registered fixture and schema digests match the backend manifest's artifact hashes")
