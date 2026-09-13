@@ -328,6 +328,15 @@ enum AssignmentContinuationReplayRunner {
                 deadline: configuration.deadline
             )
         )
+        let authenticationTransport =
+            try AssignmentReplayBoundedHTTPTransport(
+                maxByteCount: AssignmentReplayBootstrapLimits
+                    .maximumAuthenticationResponseBytes,
+                deadline: configuration.deadline
+            )
+        let localeTransport = ReplayDeadlineLocaleTransport(
+            deadline: configuration.deadline
+        )
         let socketRecorder = ProductionAssignmentReplaySocketRecorder()
         let authoritativeRecorder =
             AssignmentReplayAuthoritativeRecorder()
@@ -358,17 +367,21 @@ enum AssignmentContinuationReplayRunner {
                 configuration.serverProfile.id: configuration.authToken,
             ]),
             capabilityProbe: CapabilityProbe(transport: capabilityTransport),
-            authenticationSession: AuthenticationSession(),
+            authenticationSession: AuthenticationSession(
+                transport: authenticationTransport
+            ),
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             gameLifecycleService: GameLifecycleService(
                 transport: gameTransport
             ),
             liveGameSocketFactory: socketFactory,
-            localeCatalogLoader: .production(),
+            localeCatalogLoader: .production(transport: localeTransport),
             preferredLanguagesProvider: SystemPreferredLanguages(),
             assetCacheService: assetCache,
             assetCacheFactory: { assetCache },
-            storyAssetSourceLoader: StoryAssetSourceLoader()
+            storyAssetSourceLoader: StoryAssetSourceLoader(
+                transport: localeTransport
+            )
         )
         defer {
             model.flowTask?.cancel()

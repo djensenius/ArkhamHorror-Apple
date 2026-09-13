@@ -47,8 +47,8 @@ jobs:
     # `--no-parallel` (see `mise.toml`) specifically to remove that
     # internal scheduling as a variable. This timeout remains as a
     # defensive resilience measure regardless -- generous over this job's
-    # normal ~1-2 minute duration -- so a stuck runner fails fast enough to
-    # retry rather than silently consuming the default several-hour job
+    # normal several-minute duration -- so a stuck runner fails fast enough
+    # to retry rather than silently consuming the default several-hour job
     # ceiling; it does not weaken, skip, or shorten the tests themselves.
     timeout-minutes: 15
     steps:
@@ -66,6 +66,20 @@ jobs:
         run: mise run contract-provenance-selftest
       - name: Self-test locale-digest provenance script (offline)
         run: mise run locale-digest-provenance-selftest
+
+  replay-self-test:
+    name: Production assignment replay self-test
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Install tools
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
+        with:
+          cache: true
       - name: Self-test production assignment replay wrapper (offline)
         run: |
           set -euo pipefail

@@ -99,6 +99,56 @@ struct AssignmentReplayBoundedTransportTests {
         }
     }
 
+    @Test("Authentication bootstrap retains the bounded base transport")
+    func authenticationBootstrapRemainsBounded() async throws {
+        let profile = ServerProfile.hosted
+        let url = profile.endpointURL(path: "/whoami")
+        AssignmentReplayURLProtocol.register(
+            url,
+            data: Data(repeating: 0x41, count: 65)
+        )
+        let transport = try AssignmentReplayBoundedHTTPTransport(
+            maxByteCount: 64,
+            timeout: 5,
+            protocolClasses: [AssignmentReplayURLProtocol.self]
+        )
+        let session = AuthenticationSession(transport: transport)
+
+        do {
+            _ = try await session.currentUser(
+                on: profile,
+                token: "replay-token"
+            )
+            Issue.record("Expected the bounded authentication request to fail")
+        } catch let error as AuthenticationError {
+            guard case .transportFailure = error else {
+                Issue.record("Expected an authentication transport failure")
+                return
+            }
+        } catch {
+            Issue.record("Expected an AuthenticationError")
+        }
+        #expect(await AssignmentReplayURLProtocol.awaitStop(url))
+    }
+
+    @Test("Expired absolute deadline rejects locale bootstrap before networking")
+    func expiredLocaleDeadline() async throws {
+        let deadline = try AssignmentReplayCoordinatorDeadline(
+            rawValue: String(DispatchTime.now().uptimeNanoseconds - 1)
+        )
+        let transport = ReplayDeadlineLocaleTransport(
+            deadline: deadline
+        )
+        await #expect(
+            throws: ProductionAssignmentReplayCoordinatorError.deadlineExpired
+        ) {
+            _ = try await transport.fetch(
+                #require(URL(string: "https://assignment-replay.test/catalog")),
+                maxBytes: 64
+            )
+        }
+    }
+
     @Test("Expired absolute deadline rejects a socket before connecting")
     func expiredSocketDeadline() async throws {
         let deadline = try AssignmentReplayCoordinatorDeadline(

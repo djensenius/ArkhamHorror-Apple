@@ -11,13 +11,14 @@ readonly driver_identifier_prefix='ArkhamHorrorSharedTests.AssignmentReplayCoord
 readonly expected_driver_identifier="${driver_identifier_prefix}()"
 readonly driver_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator\(\)(/[^/]+)?$'
 readonly launcher_relative_path="Scripts/run-production-assignment-replay.sh"
-readonly trusted_base_revision="f892eb3265b411eb6af83ddef05ae3bd8b720760"
-readonly expected_package_tree="d7967d705622c32690478942b7ba7f48e095999f"
+readonly trusted_base_revision="6b49860e140f41c078d8926bad22edcd450e7d97"
+readonly expected_package_tree="e5fd18259d4cedb5e2448452c574108f525b7e12"
 readonly trusted_scratch_parent="/private/tmp"
 readonly git_bin="/usr/bin/git"
 
 verified_head=""
 verified_repository_tree=""
+repository_git_directory=""
 scratch_root=""
 scratch_root_identity=""
 materialized_repository=""
@@ -155,7 +156,47 @@ validate_toolchain() {
     fail "trusted Swift frontend is not a regular executable"
 }
 
+resolve_repository_git_directory() {
+  local actual_git_directory canonical_git_directory
+  actual_git_directory="$(
+    /usr/bin/env -i \
+      GIT_ATTR_NOSYSTEM=1 \
+      GIT_CONFIG_COUNT=0 \
+      GIT_CONFIG_GLOBAL=/dev/null \
+      GIT_CONFIG_NOSYSTEM=1 \
+      GIT_LITERAL_PATHSPECS=1 \
+      GIT_NO_REPLACE_OBJECTS=1 \
+      GIT_OPTIONAL_LOCKS=0 \
+      GIT_TERMINAL_PROMPT=0 \
+      HOME=/nonexistent \
+      LANG=C \
+      LC_ALL=C \
+      PATH=/usr/bin:/bin \
+      TMPDIR=/tmp \
+      XDG_CONFIG_HOME=/nonexistent \
+      "$git_bin" \
+      --no-pager \
+      -C "$repository_root" \
+      rev-parse --absolute-git-dir
+  )" || fail "source checkout Git directory is unavailable"
+  case "$actual_git_directory" in
+    /*) ;;
+    *) fail "source checkout Git directory is not absolute" ;;
+  esac
+  canonical_git_directory="$(
+    canonicalize_existing_path "$actual_git_directory"
+  )" || fail "source checkout Git directory canonicalization failed"
+  [[ "$canonical_git_directory" == "$actual_git_directory" ]] ||
+    fail "source checkout Git directory is not canonical"
+  require_trusted_repository_path "$canonical_git_directory"
+  [[ -d "$canonical_git_directory" ]] ||
+    fail "source checkout Git directory is not a directory"
+  repository_git_directory="$canonical_git_directory"
+}
+
 trusted_git() {
+  [[ -n "$repository_git_directory" ]] ||
+    fail "source checkout Git directory was not resolved"
   /usr/bin/env -i \
     GIT_ATTR_NOSYSTEM=1 \
     GIT_CONFIG_COUNT=0 \
@@ -173,7 +214,7 @@ trusted_git() {
     XDG_CONFIG_HOME=/nonexistent \
     "$git_bin" \
     --no-pager \
-    --git-dir="$repository_root/.git" \
+    --git-dir="$repository_git_directory" \
     --work-tree="$repository_root" \
     -c core.attributesFile=/dev/null \
     -c core.autocrlf=false \
@@ -654,6 +695,7 @@ require_trusted_repository_path "$repository_root"
 require_trusted_repository_path "$script_directory"
 require_trusted_repository_path "$canonical_launcher"
 require_trusted_repository_path "$repository_root/.git"
+resolve_repository_git_directory
 require_trusted_repository_path "$repository_root/Packages"
 require_trusted_repository_path "$package_path"
 require_trusted_repository_path "$package_path/Package.swift"

@@ -32,6 +32,21 @@ actor AssignmentReplayCapabilityTransport: CapabilityProbeTransport {
     }
 }
 
+enum AssignmentReplayBootstrapLimits {
+    static let maximumAuthenticationResponseBytes = 1024 * 1024
+}
+
+struct ReplayDeadlineLocaleTransport: LocaleCatalogTransporting {
+    let deadline: AssignmentReplayCoordinatorDeadline
+
+    func fetch(_ url: URL, maxBytes: Int) async throws -> LocaleCatalogResponse {
+        let remainingSeconds = try deadline.remainingSeconds()
+        return try await URLSessionLocaleCatalogTransport(
+            timeout: remainingSeconds
+        ).fetch(url, maxBytes: maxBytes)
+    }
+}
+
 enum AssignmentReplayObservationSource: Sendable, Equatable {
     case rest
     case socket
