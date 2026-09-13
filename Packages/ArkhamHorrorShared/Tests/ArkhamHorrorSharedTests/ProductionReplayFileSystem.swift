@@ -55,6 +55,8 @@ struct ProductionReplayStagingDestination: Sendable {
 }
 
 enum ProductionReplayFileSystem {
+    static let maximumArtifactByteCount = 1024 * 1024
+
     static func validateFinalDestination(
         _ resultURL: URL
     ) throws -> ProductionReplayDestination {
@@ -217,7 +219,10 @@ enum ProductionReplayFileSystem {
             descriptor: descriptor,
             parentIdentity: destination.parent.identity
         )
-        return try readAll(from: descriptor)
+        return try readAll(
+            from: descriptor,
+            maxByteCount: maximumArtifactByteCount
+        )
     }
 
     static func readStagingArtifact(
@@ -237,6 +242,9 @@ enum ProductionReplayFileSystem {
             descriptor: descriptor,
             parentIdentity: parent.identity
         )
-        return try readAll(from: descriptor)
+        return try readAll(
+            from: descriptor,
+            maxByteCount: maximumArtifactByteCount
+        )
     }
 }

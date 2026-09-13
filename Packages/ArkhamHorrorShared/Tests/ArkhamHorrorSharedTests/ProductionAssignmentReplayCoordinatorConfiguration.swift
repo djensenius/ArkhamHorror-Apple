@@ -18,6 +18,7 @@ enum ProductionAssignmentReplayCoordinatorError: Error, Equatable {
     case importedGameIdentityMismatch
     case importedPlayerMissing
     case duplicateImportedGame
+    case duplicateImportedPlayer
     case checkpointAuthorityMismatch
     case authoritativeGameMalformed
     case outputValidationFailed

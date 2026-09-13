@@ -1,6 +1,8 @@
 import Foundation
 import Testing
 
+// swiftlint:disable file_length
+
 enum ReplayDriverSelfTestCheckpoint: String, ProductionReplayCheckpoint {
     case assignmentContinuation = "assignment-continuation"
 }
@@ -65,7 +67,7 @@ struct ProductionReplayDriverMechanicsTests {
                 "productionReplayDriverSelfTestVictim()/case"
         ))
         #expect(!matches(regex, "productionReplayDriverSelfTestVictim()"))
-        #expect(!matches(regex, victim.discoveredIdentifier))
+        #expect(matches(regex, victim.discoveredIdentifier))
         #expect(!matches(regex, "Prefix." + victim.discoveredIdentifier + "/case"))
         #expect(!matches(regex, victim.discoveredIdentifier + "/case/nested"))
 
@@ -258,6 +260,60 @@ struct ProductionReplayDriverMechanicsTests {
             !FileManager.default.fileExists(atPath: $0.path)
         } == true)
         #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
+    }
+
+    @Test("Oversized staging artifacts are rejected before validation")
+    func oversizedStagingArtifactRejected() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try Data("stable".utf8).write(to: scratch.result)
+        var validatorCalled = false
+
+        #expect(throws: ProductionReplayDriverError.resultTooLarge) {
+            _ = try ProductionReplayDriver.run(
+                victim: makeVictim(),
+                input: makeInput(resultURL: scratch.result),
+                deadlineSeconds: 1,
+                artifactValidator: { _ in
+                    validatorCalled = true
+                },
+                deadlineRunner: { _, environment, _, _ in
+                    let staging = try URL(fileURLWithPath: #require(
+                        environment[ProductionReplayEnvironmentKey.resultPath]
+                    ))
+                    try Data(
+                        repeating: 0x41,
+                        count:
+                        ProductionReplayFileSystem.maximumArtifactByteCount + 1
+                    ).write(to: staging)
+                    return .completed
+                }
+            )
+        }
+
+        #expect(!validatorCalled)
+        #expect(try Data(contentsOf: scratch.result) == Data("stable".utf8))
+        #expect(try stagingArtifacts(in: scratch.directory).isEmpty)
+    }
+
+    @Test("Oversized published artifacts cannot be read")
+    func oversizedPublishedArtifactRejected() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        try Data(
+            repeating: 0x42,
+            count: ProductionReplayFileSystem.maximumArtifactByteCount + 1
+        ).write(to: scratch.result)
+        let destination =
+            try ProductionReplayFileSystem.validateFinalDestination(
+                scratch.result
+            )
+
+        #expect(throws: ProductionReplayDriverError.resultTooLarge) {
+            _ = try ProductionReplayFileSystem.readPublishedArtifact(
+                destination
+            )
+        }
     }
 
     @Test("Completion deadline gates validation and publication")

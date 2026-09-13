@@ -81,10 +81,6 @@ extension ProductionReplayFileSystem {
         }
     }
 
-    static func readAll(from descriptor: Int32) throws -> Data {
-        try readAll(from: descriptor, maxByteCount: .max)
-    }
-
     static func readAll(
         from descriptor: Int32,
         maxByteCount: Int
@@ -105,7 +101,7 @@ extension ProductionReplayFileSystem {
                 throw ProductionReplayDriverError.resultMissingOrNotRegular
             }
             guard result.count <= maxByteCount - count else {
-                throw ProductionReplayDriverError.resultMissingOrNotRegular
+                throw ProductionReplayDriverError.resultTooLarge
             }
             result.append(contentsOf: buffer.prefix(count))
         }

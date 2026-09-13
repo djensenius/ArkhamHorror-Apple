@@ -119,6 +119,45 @@ struct WebSocketHandshakeGateTests {
         session.webSocketTask(with: URL(string: "wss://example.invalid/socket")!)
     }
 
+    @Test("Handshake redirects are rejected before a token-bearing URL can be replayed")
+    func redirectIsRejected() async throws {
+        let resolver = WebSocketConnectResolver()
+        let delegate = GameSocketConnectDelegate(resolver: resolver)
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = makeNeverResumedTask(session: session)
+        let sourceURL = try #require(
+            URL(string: "https://example.invalid/socket?token=secret")
+        )
+        let redirectURL = try #require(
+            URL(string: "https://attacker.invalid/socket")
+        )
+        let response = try #require(
+            HTTPURLResponse(
+                url: sourceURL,
+                statusCode: 302,
+                httpVersion: "HTTP/1.1",
+                headerFields: [
+                    "Location": "https://attacker.invalid/socket",
+                ]
+            )
+        )
+        let redirect = await withCheckedContinuation { continuation in
+            delegate.urlSession(
+                session,
+                task: task,
+                willPerformHTTPRedirection: response,
+                newRequest: URLRequest(
+                    url: redirectURL
+                ),
+                completionHandler: {
+                    continuation.resume(returning: $0)
+                }
+            )
+        }
+        #expect(redirect == nil)
+    }
+
     @Test("Open observed, then complete: resolves connected, never failed")
     func openThenCompleteResolvesConnectedNeverFailed() async throws {
         let resolver = WebSocketConnectResolver()

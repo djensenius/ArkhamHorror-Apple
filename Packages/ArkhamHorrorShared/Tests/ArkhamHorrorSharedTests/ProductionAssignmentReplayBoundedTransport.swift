@@ -103,6 +103,8 @@ struct AssignmentReplayBoundedHTTPTransport: HTTPTransport {
     }
 }
 
+extension AssignmentReplayBoundedHTTPTransport: CapabilityProbeTransport {}
+
 // swiftlint:disable opening_brace
 private final class AssignmentReplayBoundedDataLoader:
     NSObject,

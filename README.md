@@ -289,6 +289,7 @@ set +x
 export ARKHAM_REPLAY_BASE_URL='http://127.0.0.1:3000'
 export ARKHAM_REPLAY_INVESTIGATOR_ID='c01234'
 export ARKHAM_REPLAY_ENEMY_ID='<exact enemy wire identity>'
+export ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$(git rev-parse HEAD)"
 export ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION='<ContractPin.current revision>'
 export ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION='<capabilities localeCatalog.catalogRevision>'
 export ARKHAM_REPLAY_DEADLINE_SECONDS=60

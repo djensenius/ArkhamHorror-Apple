@@ -320,14 +320,29 @@ enum AssignmentContinuationReplayRunner {
     static func run(
         configuration: ProductionAssignmentReplayConfiguration
     ) async throws -> ProductionAssignmentReplayEvidence {
-        let capabilityTransport = AssignmentReplayCapabilityTransport()
+        _ = try configuration.deadline.remainingSeconds()
+        let capabilityTransport = try AssignmentReplayCapabilityTransport(
+            base: AssignmentReplayBoundedHTTPTransport(
+                maxByteCount:
+                AssignmentReplayCapabilityTransport.maximumResponseBytes,
+                deadline: configuration.deadline
+            )
+        )
         let socketRecorder = ProductionAssignmentReplaySocketRecorder()
         let authoritativeRecorder =
             AssignmentReplayAuthoritativeRecorder()
-        let gameTransport = AssignmentReplayRecordingGameTransport(
+        let gameTransport = try AssignmentReplayRecordingGameTransport(
+            base: AssignmentReplayBoundedHTTPTransport(
+                maxByteCount:
+                ProductionAssignmentReplayBackend.maximumGameResponseBytes,
+                deadline: configuration.deadline
+            ),
             recorder: authoritativeRecorder
         )
         let socketFactory = AssignmentReplayRecordingSocketFactory(
+            base: AssignmentReplayDeadlineSocketFactory(
+                deadline: configuration.deadline
+            ),
             recorder: socketRecorder,
             authoritativeRecorder: authoritativeRecorder
         )
@@ -361,6 +376,7 @@ enum AssignmentContinuationReplayRunner {
         }
 
         await model.flowTask?.value
+        _ = try configuration.deadline.remainingSeconds()
         let capabilities = try await validateBoot(
             model: model,
             capabilityTransport: capabilityTransport,
@@ -369,6 +385,7 @@ enum AssignmentContinuationReplayRunner {
         if let catalogTask = model.localeCatalogTask {
             await catalogTask.value
         }
+        _ = try configuration.deadline.remainingSeconds()
         try validateCatalogAndAssets(
             model: model,
             capabilities: capabilities,
@@ -378,7 +395,7 @@ enum AssignmentContinuationReplayRunner {
             try AssignmentReplayBoundedHTTPTransport(
                 maxByteCount:
                 AssignmentReplayAttestationClient.maximumResponseBytes,
-                timeout: configuration.deadlineSeconds
+                deadline: configuration.deadline
             )
         let attestation = try await AssignmentReplayAttestationClient(
             transport: attestationTransport
@@ -478,6 +495,7 @@ enum AssignmentContinuationReplayRunner {
             throw ProductionAssignmentReplayError.controllerSubmissionMissing
         }
         let submissionResult = await submissionTask.value
+        _ = try configuration.deadline.remainingSeconds()
 
         let expectedAnswer = BasicChoiceAnswer(
             choice: configuration.checkpoint.sourceIndex,
@@ -669,8 +687,8 @@ enum AssignmentContinuationReplayRunner {
         model: AppModel,
         configuration: ProductionAssignmentReplayConfiguration
     ) async throws -> BoardProjection {
-        let deadline = ContinuousClock.now + .seconds(configuration.deadlineSeconds)
-        while ContinuousClock.now < deadline {
+        while true {
+            _ = try configuration.deadline.remainingSeconds()
             switch model.liveGameState(for: configuration.promptIdentity.gameID) {
             case let .live(projection):
                 return projection
@@ -681,15 +699,14 @@ enum AssignmentContinuationReplayRunner {
             }
             try await Task.sleep(for: .milliseconds(20))
         }
-        throw ProductionAssignmentReplayError.initialSnapshotTimedOut
     }
 
     private static func waitForNextProjection(
         model: AppModel,
         configuration: ProductionAssignmentReplayConfiguration
     ) async throws -> BoardProjection {
-        let deadline = ContinuousClock.now + .seconds(configuration.deadlineSeconds)
-        while ContinuousClock.now < deadline {
+        while true {
+            _ = try configuration.deadline.remainingSeconds()
             switch model.liveGameState(for: configuration.promptIdentity.gameID) {
             case let .live(projection)
                 where projection.counters.scenarioSteps
@@ -702,7 +719,6 @@ enum AssignmentContinuationReplayRunner {
             }
             try await Task.sleep(for: .milliseconds(20))
         }
-        throw ProductionAssignmentReplayError.nextSnapshotTimedOut
     }
 
     private static func requirePrompt(

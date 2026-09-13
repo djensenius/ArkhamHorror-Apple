@@ -49,6 +49,84 @@ struct AssignmentReplayBoundedTransportTests {
         }
         #expect(await AssignmentReplayURLProtocol.awaitStop(streamingURL))
     }
+
+    @Test("Capability and game recorders retain the bounded base transport")
+    func replayBootstrapWrappersRemainBounded() async throws {
+        let capabilityURL = try #require(
+            URL(string: "https://assignment-replay.test/capabilities")
+        )
+        AssignmentReplayURLProtocol.register(
+            capabilityURL,
+            data: Data(repeating: 0x41, count: 65)
+        )
+        let capabilityBase = try AssignmentReplayBoundedHTTPTransport(
+            maxByteCount: 64,
+            timeout: 5,
+            protocolClasses: [AssignmentReplayURLProtocol.self]
+        )
+        let capabilityTransport = AssignmentReplayCapabilityTransport(
+            base: capabilityBase
+        )
+        await #expect(
+            throws: AssignmentReplayBoundedTransportError.responseTooLarge
+        ) {
+            _ = try await capabilityTransport.data(
+                for: URLRequest(url: capabilityURL)
+            )
+        }
+
+        let gameURL = try #require(
+            URL(string: "https://assignment-replay.test/game")
+        )
+        AssignmentReplayURLProtocol.register(
+            gameURL,
+            data: Data(repeating: 0x42, count: 65)
+        )
+        let gameBase = try AssignmentReplayBoundedHTTPTransport(
+            maxByteCount: 64,
+            timeout: 5,
+            protocolClasses: [AssignmentReplayURLProtocol.self]
+        )
+        let gameTransport = AssignmentReplayRecordingGameTransport(
+            base: gameBase
+        )
+        await #expect(
+            throws: AssignmentReplayBoundedTransportError.responseTooLarge
+        ) {
+            _ = try await gameTransport.data(
+                for: URLRequest(url: gameURL)
+            )
+        }
+    }
+
+    @Test("Expired absolute deadline rejects a socket before connecting")
+    func expiredSocketDeadline() async throws {
+        let deadline = try AssignmentReplayCoordinatorDeadline(
+            rawValue: String(DispatchTime.now().uptimeNanoseconds - 1)
+        )
+        let base = AssignmentReplaySocketFactoryProbe()
+        let factory = AssignmentReplayDeadlineSocketFactory(
+            deadline: deadline,
+            base: base
+        )
+        await #expect(
+            throws: ProductionAssignmentReplayCoordinatorError.deadlineExpired
+        ) {
+            _ = try await factory.connect(
+                to: #require(URL(string: "wss://assignment-replay.test/game"))
+            )
+        }
+        #expect(await base.connectCallCount == 0)
+    }
+}
+
+private actor AssignmentReplaySocketFactoryProbe: GameSocketFactory {
+    private(set) var connectCallCount = 0
+
+    func connect(to _: URL) async throws -> any GameSocketConnection {
+        connectCallCount += 1
+        throw TestFailure()
+    }
 }
 
 private final class AssignmentReplayURLProtocol: URLProtocol, @unchecked Sendable {

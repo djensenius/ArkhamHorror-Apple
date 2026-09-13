@@ -6,31 +6,33 @@ protocol AssignmentReplayCoordinatorBackend: Sendable {
         _ checkpoint: AssignmentReplayCheckpointFile,
         investigatorID: InvestigatorID,
         profile: ServerProfile,
-        token: String
+        token: String,
+        deadline: AssignmentReplayCoordinatorDeadline
     ) async throws -> GameID
 
     func getGame(
         _ gameID: GameID,
         profile: ServerProfile,
-        token: String
+        token: String,
+        deadline: AssignmentReplayCoordinatorDeadline
     ) async throws -> GetGameEnvelope
 
     func fetchAttestation(
-        _ request: AssignmentReplayAttestationRequest
+        _ request: AssignmentReplayAttestationRequest,
+        deadline: AssignmentReplayCoordinatorDeadline
     ) async throws -> ProductionAssignmentReplayAttestation
 }
 
 struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
     static let maximumImportResponseBytes = 64 * 1024 * 1024
-    private static let maximumGameResponseBytes = 64 * 1024 * 1024
-
-    let deadline: AssignmentReplayCoordinatorDeadline
+    static let maximumGameResponseBytes = 64 * 1024 * 1024
 
     func importCheckpoint(
         _ checkpoint: AssignmentReplayCheckpointFile,
         investigatorID: InvestigatorID,
         profile: ServerProfile,
-        token: String
+        token: String,
+        deadline: AssignmentReplayCoordinatorDeadline
     ) async throws -> GameID {
         let url = Self.importURL(profile: profile)
         var request = URLRequest(url: url)
@@ -57,6 +59,7 @@ struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
             request,
             expectedURL: url,
             maxByteCount: Self.maximumImportResponseBytes,
+            deadline: deadline,
             failure: .importFailed
         )
         return try Self.decodeImportedGameID(from: response)
@@ -65,7 +68,8 @@ struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
     func getGame(
         _ gameID: GameID,
         profile: ServerProfile,
-        token: String
+        token: String,
+        deadline: AssignmentReplayCoordinatorDeadline
     ) async throws -> GetGameEnvelope {
         let url: URL
         do {
@@ -91,6 +95,7 @@ struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
             request,
             expectedURL: url,
             maxByteCount: Self.maximumGameResponseBytes,
+            deadline: deadline,
             failure: .authoritativeGameMalformed
         )
         do {
@@ -106,7 +111,8 @@ struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
     }
 
     func fetchAttestation(
-        _ request: AssignmentReplayAttestationRequest
+        _ request: AssignmentReplayAttestationRequest,
+        deadline: AssignmentReplayCoordinatorDeadline
     ) async throws -> ProductionAssignmentReplayAttestation {
         let transport = try AssignmentReplayBoundedHTTPTransport(
             maxByteCount:
@@ -122,6 +128,7 @@ struct ProductionAssignmentReplayBackend: AssignmentReplayCoordinatorBackend {
         _ request: URLRequest,
         expectedURL: URL,
         maxByteCount: Int,
+        deadline: AssignmentReplayCoordinatorDeadline,
         failure: ProductionAssignmentReplayCoordinatorError
     ) async throws -> Data {
         let transport = try AssignmentReplayBoundedHTTPTransport(

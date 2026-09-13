@@ -12,6 +12,7 @@ enum ProductionReplayDriverError: Error, Equatable {
     case resultDestinationNotRegular
     case stagingPathUnavailable
     case resultMissingOrNotRegular
+    case resultTooLarge
     case resultWriteFailed(Int32)
     case resultPublishFailed(Int32)
     case resultUnavailable
@@ -64,13 +65,14 @@ struct ProductionReplayVictim: Sendable, Equatable {
         "\(moduleName).\(suiteName)/\(functionName)()"
     }
 
-    /// SwiftPM matches against the complete discovered identifier followed by one internal
-    /// test-case component. Escaping the full module/suite/function path, requiring exactly
-    /// that one terminal component, and anchoring the end prevents a same-named test in
-    /// another suite or module from joining the replay subprocess.
+    /// SwiftPM versions match either the complete discovered identifier or that
+    /// identifier followed by one internal test-case component. Escaping the full
+    /// module/suite/function path, permitting only that one optional terminal
+    /// component, and anchoring the end prevents a same-named test in another suite
+    /// or module from joining the replay subprocess.
     var exactFilter: String {
         let escaped = NSRegularExpression.escapedPattern(for: discoveredIdentifier)
-        return "^\(escaped)/[^/]+$"
+        return "^\(escaped)(/[^/]+)?$"
     }
 
     private static func isASCIIIdentifier(_ value: String) -> Bool {

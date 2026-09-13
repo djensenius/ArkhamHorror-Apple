@@ -9,10 +9,10 @@ readonly swift_bin="$toolchain_bin/swift"
 readonly swift_target="$toolchain_bin/swift-frontend"
 readonly driver_identifier_prefix='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator'
 readonly expected_driver_identifier="${driver_identifier_prefix}()"
-readonly driver_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator\(\)/.+$'
+readonly driver_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator\(\)(/[^/]+)?$'
 readonly launcher_relative_path="Scripts/run-production-assignment-replay.sh"
-readonly trusted_base_revision="0f55232d0f27be60ca71719790821f8cd4fdf0a3"
-readonly expected_package_tree="d4de1e7856a7f562edd9e47d636f224891ab4318"
+readonly trusted_base_revision="1b693ca875a0206c816ff1d1af0dddebd85b587c"
+readonly expected_package_tree="c7f3dd4db0f03f9a22e4282e2edbde6a448ffdb2"
 readonly trusted_scratch_parent="/private/tmp"
 readonly git_bin="/usr/bin/git"
 
@@ -68,6 +68,7 @@ Required environment:
   ARKHAM_REPLAY_BASE_URL
   ARKHAM_REPLAY_INVESTIGATOR_ID
   ARKHAM_REPLAY_ENEMY_ID
+  ARKHAM_REPLAY_EXPECTED_APPLE_REVISION
   ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION
 
@@ -204,6 +205,10 @@ validate_repository_identity() {
     fail "trusted repository HEAD is unavailable"
   [[ "$actual_head" =~ ^[0-9a-f]{40}$ ]] ||
     fail "trusted repository HEAD is malformed"
+  [[ "$ARKHAM_REPLAY_EXPECTED_APPLE_REVISION" =~ ^[0-9a-f]{40}$ ]] ||
+    fail "expected Apple revision is malformed"
+  [[ "$actual_head" == "$ARKHAM_REPLAY_EXPECTED_APPLE_REVISION" ]] ||
+    fail "trusted repository HEAD does not match the audited Apple revision"
   object_type="$(trusted_git cat-file -t "$actual_head")" ||
     fail "trusted repository HEAD object is unavailable"
   [[ "$object_type" == "commit" ]] ||
@@ -606,6 +611,7 @@ trap 'exit 143' TERM
 require_environment ARKHAM_REPLAY_BASE_URL
 require_environment ARKHAM_REPLAY_INVESTIGATOR_ID
 require_environment ARKHAM_REPLAY_ENEMY_ID
+require_environment ARKHAM_REPLAY_EXPECTED_APPLE_REVISION
 require_environment ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION
 require_environment ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION
 validate_toolchain

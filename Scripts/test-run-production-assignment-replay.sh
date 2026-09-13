@@ -21,6 +21,11 @@ readonly repository_root="$(
   cd -P -- "$script_directory/.."
   /bin/pwd -P
 )"
+readonly audited_revision="$(
+  /usr/bin/git -C "$repository_root" rev-parse HEAD
+)"
+[[ "$audited_revision" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "self-test repository revision is malformed"
 readonly production_launcher="$script_directory/run-production-assignment-replay.sh"
 readonly package_path="$repository_root/Packages/ArkhamHorrorShared"
 readonly build_root="$repository_root/.build"
@@ -28,6 +33,7 @@ readonly harness_root="$build_root/production-assignment-replay-selftest.$$"
 readonly fake_swift="$harness_root/fake-swift"
 readonly marker="$harness_root/fake-swift-ran"
 readonly override_log="$harness_root/override.log"
+readonly revision_log="$harness_root/revision.log"
 readonly production_log="$harness_root/production-launch.log"
 readonly fake_package_root="$harness_root/fake-package"
 readonly fake_package_launcher="$fake_package_root/Scripts/run-production-assignment-replay.sh"
@@ -44,6 +50,14 @@ readonly ignored_source="$ignored_source_root/InjectedReplayDriver.swift"
 readonly ignored_source_leak="$harness_root/ignored-source-leak"
 created_build_root=0
 created_ignored_derived_data_root=0
+
+report_production_log() {
+  /usr/bin/sed \
+    -e "s#$sensitive_checkpoint#<checkpoint>#g" \
+    -e "s#$sensitive_output#<output>#g" \
+    -e "s#$sensitive_token#<token>#g" \
+    "$production_log" >&2
+}
 
 cleanup() {
   /bin/rm -f -- "$ignored_source"
@@ -76,6 +90,7 @@ if ARKHAM_REPLAY_SWIFT_BIN="$fake_swift" \
   ARKHAM_REPLAY_BASE_URL="https://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
+  ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
   ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.34" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$production_launcher" \
@@ -93,6 +108,26 @@ fi
 [[ ! -e "$marker" ]] ||
   fail "production launcher executed a caller-selected Swift binary"
 printf 'PASS: production rejects caller-selected executables\n'
+
+if ARKHAM_REPLAY_BASE_URL="https://example.com" \
+  ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
+  ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
+  ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="0000000000000000000000000000000000000000" \
+  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.34" \
+  ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+  "$production_launcher" \
+  "$harness_root/checkpoint" \
+  "$harness_root/output" \
+  "$harness_root/token" \
+  >"$revision_log" 2>&1
+then
+  fail "production launcher accepted the wrong audited Apple revision"
+fi
+/usr/bin/grep -F \
+  "trusted repository HEAD does not match the audited Apple revision" \
+  "$revision_log" >/dev/null ||
+  fail "production launcher did not reject the wrong Apple revision explicitly"
+printf 'PASS: production requires the operator-specified Apple revision\n'
 
 /bin/mkdir -p \
   "$fake_package_root/Scripts" \
@@ -167,6 +202,7 @@ readonly fake_test_list="$(
 if ARKHAM_REPLAY_BASE_URL="https://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
+  ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
   ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.34" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$fake_package_launcher" \
@@ -202,6 +238,7 @@ done
 if ARKHAM_REPLAY_BASE_URL="https://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
+  ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
   ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.34" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$fake_package_launcher" \
@@ -291,6 +328,7 @@ if PATH="$harness_root" \
   ARKHAM_REPLAY_BASE_URL="http://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
+  ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
   ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.34" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$production_launcher" \
@@ -310,10 +348,13 @@ fi
 if /usr/bin/grep -F "No matching test cases" "$production_log" >/dev/null; then
   fail "production launcher selected no replay driver test"
 fi
-/usr/bin/grep -F \
+if ! /usr/bin/grep -F \
   'Suite "Production assignment replay coordinator driver" started.' \
-  "$production_log" >/dev/null ||
+  "$production_log" >/dev/null
+then
+  report_production_log
   fail "production launcher did not execute the fixed coordinator driver"
+fi
 for sensitive_path in \
   "$sensitive_checkpoint" \
   "$sensitive_output" \

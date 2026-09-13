@@ -41,6 +41,7 @@ struct AssignmentReplayCoordinatorManifest: Codable, Equatable, Sendable {
                   AssignmentReplayCoordinatorDriver.horrorEvidenceName,
               ],
               Set(cases.map(\.gameID)).count == cases.count,
+              Set(cases.map(\.playerID)).count == cases.count,
               cases.allSatisfy({
                   ProductionAssignmentReplayConfiguration.isLowercaseHex(
                       $0.evidenceSHA256,
@@ -173,6 +174,11 @@ private enum AssignmentReplayCoordinatorEngine {
             throw ProductionAssignmentReplayCoordinatorError
                 .duplicateImportedGame
         }
+        guard damagePreparation.playerID != horrorPreparation.playerID
+        else {
+            throw ProductionAssignmentReplayCoordinatorError
+                .duplicateImportedPlayer
+        }
         guard damagePreparation.attestation.checkpointValidation ==
             horrorPreparation.attestation.checkpointValidation,
             damagePreparation.attestation.serverBuild ==
@@ -237,13 +243,15 @@ private enum AssignmentReplayCoordinatorEngine {
             checkpoint,
             investigatorID: input.investigatorID,
             profile: input.serverProfile,
-            token: token
+            token: token,
+            deadline: child.deadline
         )
         _ = try child.deadline.remainingSeconds()
         let game = try await backend.getGame(
             gameID,
             profile: input.serverProfile,
-            token: token
+            token: token,
+            deadline: child.deadline
         )
         _ = try child.deadline.remainingSeconds()
         guard game.game.id == gameID else {
@@ -263,7 +271,8 @@ private enum AssignmentReplayCoordinatorEngine {
             checkpointArtifactSHA256: checkpoint.artifactSHA256
         )
         let attestation = try await backend.fetchAttestation(
-            attestationRequest
+            attestationRequest,
+            deadline: child.deadline
         )
         _ = try child.deadline.remainingSeconds()
         try attestation.validate(request: attestationRequest)
@@ -292,7 +301,7 @@ private enum AssignmentReplayCoordinatorEngine {
         let input = child.invocation
         let configuration = try ProductionAssignmentReplayConfiguration(
             checkpoint: prepared.checkpoint,
-            deadlineSeconds: child.deadline.remainingSeconds(),
+            deadline: child.deadline,
             serverProfile: input.serverProfile,
             authToken: token,
             promptIdentity: ProductionAssignmentReplayPromptIdentity(
@@ -379,9 +388,7 @@ enum ProductionAssignmentReplayCoordinator {
     ) async throws -> AssignmentReplayCoordinatorManifestArtifact {
         try await AssignmentReplayCoordinatorEngine.run(
             child: child,
-            backend: ProductionAssignmentReplayBackend(
-                deadline: child.deadline
-            ),
+            backend: ProductionAssignmentReplayBackend(),
             caseRunner: { configuration in
                 try await AssignmentContinuationReplayRunner.run(
                     configuration: configuration

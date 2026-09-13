@@ -2,10 +2,12 @@
 import Foundation
 
 actor AssignmentReplayCapabilityTransport: CapabilityProbeTransport {
+    static let maximumResponseBytes = 1024 * 1024
+
     private let base: any CapabilityProbeTransport
     private var latestResponseData: Data?
 
-    init(base: any CapabilityProbeTransport = URLSessionTransport()) {
+    init(base: any CapabilityProbeTransport) {
         self.base = base
     }
 
@@ -84,7 +86,7 @@ struct AssignmentReplayRecordingGameTransport: HTTPTransport {
     let recorder: AssignmentReplayAuthoritativeRecorder
 
     init(
-        base: any HTTPTransport = URLSessionTransport(),
+        base: any HTTPTransport,
         recorder: AssignmentReplayAuthoritativeRecorder =
             AssignmentReplayAuthoritativeRecorder()
     ) {
@@ -143,7 +145,7 @@ struct AssignmentReplayRecordingSocketFactory: GameSocketFactory {
     let authoritativeRecorder: AssignmentReplayAuthoritativeRecorder
 
     init(
-        base: any GameSocketFactory = URLSessionGameSocketFactory(),
+        base: any GameSocketFactory,
         recorder: ProductionAssignmentReplaySocketRecorder =
             ProductionAssignmentReplaySocketRecorder(),
         authoritativeRecorder: AssignmentReplayAuthoritativeRecorder =
@@ -161,6 +163,41 @@ struct AssignmentReplayRecordingSocketFactory: GameSocketFactory {
             recorder: recorder,
             authoritativeRecorder: authoritativeRecorder
         )
+    }
+}
+
+struct AssignmentReplayDeadlineSocketFactory: GameSocketFactory {
+    let base: any GameSocketFactory
+    let deadline: AssignmentReplayCoordinatorDeadline
+
+    init(
+        deadline: AssignmentReplayCoordinatorDeadline,
+        base: any GameSocketFactory = URLSessionGameSocketFactory()
+    ) {
+        self.deadline = deadline
+        self.base = base
+    }
+
+    func connect(to url: URL) async throws -> any GameSocketConnection {
+        let remainingSeconds = try deadline.remainingSeconds()
+        return try await withThrowingTaskGroup(
+            of: (any GameSocketConnection).self
+        ) { group in
+            group.addTask {
+                try await base.connect(to: url)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(remainingSeconds))
+                throw ProductionAssignmentReplayCoordinatorError
+                    .deadlineExpired
+            }
+            defer { group.cancelAll() }
+            guard let connection = try await group.next() else {
+                throw ProductionAssignmentReplayCoordinatorError
+                    .deadlineExpired
+            }
+            return connection
+        }
     }
 }
 

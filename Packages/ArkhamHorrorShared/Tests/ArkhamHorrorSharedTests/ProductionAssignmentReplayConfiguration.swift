@@ -93,7 +93,7 @@ enum AssignmentReplayConfigurationError: Error, Equatable {
 }
 
 private struct ReplayConfigurationValidation {
-    let deadlineSeconds: Double
+    let deadline: AssignmentReplayCoordinatorDeadline
     let serverProfile: ServerProfile
     let authToken: String
     let promptIdentity: ProductionAssignmentReplayPromptIdentity
@@ -107,7 +107,7 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
     static let maximumDeadlineSeconds = 300.0
 
     let checkpoint: ProductionAssignmentReplayCheckpoint
-    let deadlineSeconds: Double
+    let deadline: AssignmentReplayCoordinatorDeadline
     let serverProfile: ServerProfile
     let authToken: String
     let promptIdentity: ProductionAssignmentReplayPromptIdentity
@@ -130,7 +130,7 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
 
     init(
         checkpoint: ProductionAssignmentReplayCheckpoint,
-        deadlineSeconds: Double,
+        deadline: AssignmentReplayCoordinatorDeadline,
         serverProfile: ServerProfile,
         authToken: String,
         promptIdentity: ProductionAssignmentReplayPromptIdentity,
@@ -141,7 +141,7 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
     ) throws {
         try Self.validate(
             ReplayConfigurationValidation(
-                deadlineSeconds: deadlineSeconds,
+                deadline: deadline,
                 serverProfile: serverProfile,
                 authToken: authToken,
                 promptIdentity: promptIdentity,
@@ -153,7 +153,7 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
         )
 
         self.checkpoint = checkpoint
-        self.deadlineSeconds = deadlineSeconds
+        self.deadline = deadline
         self.serverProfile = serverProfile
         self.authToken = authToken
         self.promptIdentity = promptIdentity
@@ -163,12 +163,19 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
         self.attestation = attestation
     }
 
+    // swiftlint:disable:next function_body_length
     private static func validate(
         _ input: ReplayConfigurationValidation
     ) throws {
-        guard input.deadlineSeconds.isFinite,
-              input.deadlineSeconds > 0,
-              input.deadlineSeconds <= maximumDeadlineSeconds
+        let remainingSeconds: Double
+        do {
+            remainingSeconds = try input.deadline.remainingSeconds()
+        } catch {
+            throw AssignmentReplayConfigurationError.invalidDeadline
+        }
+        guard remainingSeconds.isFinite,
+              remainingSeconds > 0,
+              remainingSeconds <= maximumDeadlineSeconds
         else {
             throw AssignmentReplayConfigurationError.invalidDeadline
         }

@@ -753,7 +753,17 @@ struct AssignmentReplayCoordinatorSelfTestSuite {
             )
         try manifest.manifest.validate()
         #expect(await backend.importCount == 2)
+        #expect(
+            await backend.deadlineValues.allSatisfy {
+                $0 == fixture.child.deadline.uptimeNanoseconds
+            }
+        )
         #expect(runner.cases == ProductionAssignmentReplayCheckpoint.allCases)
+        #expect(
+            runner.deadlineValues.allSatisfy {
+                $0 == fixture.child.deadline.uptimeNanoseconds
+            }
+        )
         #expect(
             try ProductionReplayFileSystem.listOwnedDirectoryNames(
                 fixture.output
@@ -890,6 +900,33 @@ struct AssignmentReplayCoordinatorSelfTestSuite {
         #expect(
             try ProductionReplayFileSystem.listOwnedDirectoryNames(
                 duplicateFixture.output
+            ).isEmpty
+        )
+
+        let duplicatePlayerFixture = try coordinatorHarnessFixture()
+        defer { duplicatePlayerFixture.cleanup() }
+        let duplicatePlayerBackend = FakeAssignmentReplayCoordinatorBackend(
+            approvedCheckpoint: duplicatePlayerFixture.checkpointBytes,
+            duplicatePlayer: true
+        )
+        var duplicatePlayerRunnerInvocationCount = 0
+        await #expect(
+            throws: ProductionAssignmentReplayCoordinatorError
+                .duplicateImportedPlayer
+        ) {
+            _ = try await AssignmentReplayCoordinatorSelfTestHarness.run(
+                child: duplicatePlayerFixture.child,
+                backend: duplicatePlayerBackend,
+                caseRunner: {
+                    duplicatePlayerRunnerInvocationCount += 1
+                    return try replayEvidence(configuration: $0)
+                }
+            )
+        }
+        #expect(duplicatePlayerRunnerInvocationCount == 0)
+        #expect(
+            try ProductionReplayFileSystem.listOwnedDirectoryNames(
+                duplicatePlayerFixture.output
             ).isEmpty
         )
 
@@ -1095,19 +1132,23 @@ struct AssignmentReplayCoordinatorDriverWiringTests {
 private actor FakeAssignmentReplayCoordinatorBackend: AssignmentReplayCoordinatorBackend {
     let approvedCheckpoint: Data
     let duplicateGame: Bool
+    let duplicatePlayer: Bool
     let divergesSecondAuthority: Bool
     let mismatchesFirstGameIdentity: Bool
     private(set) var importCount = 0
+    private(set) var deadlineValues: [UInt64] = []
     private var games: [GameID: GetGameEnvelope] = [:]
 
     init(
         approvedCheckpoint: Data,
         duplicateGame: Bool = false,
+        duplicatePlayer: Bool = false,
         divergesSecondAuthority: Bool = false,
         mismatchesFirstGameIdentity: Bool = false
     ) {
         self.approvedCheckpoint = approvedCheckpoint
         self.duplicateGame = duplicateGame
+        self.duplicatePlayer = duplicatePlayer
         self.divergesSecondAuthority = divergesSecondAuthority
         self.mismatchesFirstGameIdentity = mismatchesFirstGameIdentity
     }
@@ -1116,9 +1157,11 @@ private actor FakeAssignmentReplayCoordinatorBackend: AssignmentReplayCoordinato
         _ checkpoint: AssignmentReplayCheckpointFile,
         investigatorID _: InvestigatorID,
         profile _: ServerProfile,
-        token _: String
+        token _: String,
+        deadline: AssignmentReplayCoordinatorDeadline
     ) async throws -> GameID {
         importCount += 1
+        deadlineValues.append(deadline.uptimeNanoseconds)
         guard checkpoint.bytes == approvedCheckpoint else {
             throw ProductionAssignmentReplayCoordinatorError.importFailed
         }
@@ -1128,7 +1171,9 @@ private actor FakeAssignmentReplayCoordinatorBackend: AssignmentReplayCoordinato
                 : "000000000102"
         )
         let playerID = BoardTestFixtures.playerID(
-            importCount == 1 ? "000000000201" : "000000000202"
+            duplicatePlayer || importCount == 1
+                ? "000000000201"
+                : "000000000202"
         )
         let authoritativeGameID =
             mismatchesFirstGameIdentity && importCount == 1
@@ -1144,8 +1189,10 @@ private actor FakeAssignmentReplayCoordinatorBackend: AssignmentReplayCoordinato
     func getGame(
         _ gameID: GameID,
         profile _: ServerProfile,
-        token _: String
+        token _: String,
+        deadline: AssignmentReplayCoordinatorDeadline
     ) async throws -> GetGameEnvelope {
+        deadlineValues.append(deadline.uptimeNanoseconds)
         guard let game = games[gameID] else {
             throw ProductionAssignmentReplayCoordinatorError
                 .authoritativeGameMalformed
@@ -1154,9 +1201,11 @@ private actor FakeAssignmentReplayCoordinatorBackend: AssignmentReplayCoordinato
     }
 
     func fetchAttestation(
-        _ request: AssignmentReplayAttestationRequest
+        _ request: AssignmentReplayAttestationRequest,
+        deadline: AssignmentReplayCoordinatorDeadline
     ) async throws -> ProductionAssignmentReplayAttestation {
-        try replayAttestation(
+        deadlineValues.append(deadline.uptimeNanoseconds)
+        return try replayAttestation(
             request: request,
             canonicalEnvelopeSHA256:
             divergesSecondAuthority &&
@@ -1171,6 +1220,7 @@ private actor FakeAssignmentReplayCoordinatorBackend: AssignmentReplayCoordinato
 @MainActor
 private final class CoordinatorCaseRunnerProbe {
     private(set) var cases: [ProductionAssignmentReplayCheckpoint] = []
+    private(set) var deadlineValues: [UInt64] = []
     let failingCase: ProductionAssignmentReplayCheckpoint?
 
     init(
@@ -1183,6 +1233,7 @@ private final class CoordinatorCaseRunnerProbe {
         _ configuration: ProductionAssignmentReplayConfiguration
     ) throws -> ProductionAssignmentReplayEvidence {
         cases.append(configuration.checkpoint)
+        deadlineValues.append(configuration.deadline.uptimeNanoseconds)
         if configuration.checkpoint == failingCase {
             throw TestFailure()
         }
@@ -1457,7 +1508,7 @@ private func replayConfiguration(
     let digest = promptDigest ?? replayBackendPromptSHA256
     return try ProductionAssignmentReplayConfiguration(
         checkpoint: checkpoint,
-        deadlineSeconds: 30,
+        deadline: AssignmentReplayCoordinatorDeadline(secondsFromNow: 30),
         serverProfile: request.serverProfile,
         authToken: request.authToken,
         promptIdentity: ProductionAssignmentReplayPromptIdentity(
