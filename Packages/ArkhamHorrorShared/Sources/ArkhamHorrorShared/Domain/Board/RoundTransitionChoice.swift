@@ -1,6 +1,8 @@
 import Foundation
 
 extension BasicChoiceParser {
+    private static let roundTransitionAgendaCardCode = "c01105"
+
     static func parseQuestionWithSource(
         _ object: [String: JSONValue], rawValue: JSONValue
     ) -> BasicChoiceQuestionState {
@@ -172,7 +174,7 @@ extension BasicChoiceParser {
         guard Set(target.keys) == ["tag", "contents"],
               target["tag"] == .string("AgendaTarget"),
               let agendaID = roundTransitionAgendaID(target["contents"]),
-              agendaID.rawValue.rawValue == "c01105",
+              agendaID.rawValue.rawValue == roundTransitionAgendaCardCode,
               messages.count == 1,
               case let .object(message) = messages[0],
               Set(message.keys) == ["tag", "contents"],
@@ -338,7 +340,7 @@ extension BasicChoiceParser {
               Set(source.keys) == ["tag", "contents"],
               source["tag"] == .string("AgendaSource"),
               let agendaID = roundTransitionAgendaID(source["contents"]),
-              agendaID.rawValue.rawValue == "c01105"
+              agendaID.rawValue.rawValue == roundTransitionAgendaCardCode
         else { return nil }
         return agendaID
     }
