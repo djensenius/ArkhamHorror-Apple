@@ -322,4 +322,29 @@ struct BasicChoiceRoundTransitionTests {
         }
         #expect(checked == 55)
     }
+
+    @Test("Agenda advancement rejects a different internally consistent agenda ID")
+    func agendaAdvanceRejectsOtherAgenda() throws {
+        var mutated = try RoundTransitionFixtures.value(.agendaAdvance)
+        mutated = try EnemyAttackFixtures.applying(
+            operation: "replace",
+            path: ["choices", "0", "target", "contents"],
+            replacement: .string("c01106"),
+            to: mutated
+        )
+        mutated = try EnemyAttackFixtures.applying(
+            operation: "replace",
+            path: ["choices", "0", "messages", "0", "contents", "0"],
+            replacement: .string("c01106"),
+            to: mutated
+        )
+
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: ContractJSON.encode(mutated)
+        )
+        let question = try #require(payload.supportedQuestion)
+        #expect(question.choices.count == 1)
+        #expect(!question.choices[0].isSupported)
+    }
 }

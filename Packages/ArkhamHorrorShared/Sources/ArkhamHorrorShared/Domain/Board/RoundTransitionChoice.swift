@@ -172,6 +172,7 @@ extension BasicChoiceParser {
         guard Set(target.keys) == ["tag", "contents"],
               target["tag"] == .string("AgendaTarget"),
               let agendaID = roundTransitionAgendaID(target["contents"]),
+              agendaID.rawValue.rawValue == "c01105",
               messages.count == 1,
               case let .object(message) = messages[0],
               Set(message.keys) == ["tag", "contents"],
