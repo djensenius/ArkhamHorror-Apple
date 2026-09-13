@@ -11,8 +11,8 @@ readonly driver_identifier_prefix='ArkhamHorrorSharedTests.AssignmentReplayCoord
 readonly expected_driver_identifier="${driver_identifier_prefix}()"
 readonly driver_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator\(\)(/[^/]+)?$'
 readonly launcher_relative_path="Scripts/run-production-assignment-replay.sh"
-readonly trusted_base_revision="1b693ca875a0206c816ff1d1af0dddebd85b587c"
-readonly expected_package_tree="c7f3dd4db0f03f9a22e4282e2edbde6a448ffdb2"
+readonly trusted_base_revision="a965e891a57622224f7bee5c1b860abe1903737c"
+readonly expected_package_tree="d7967d705622c32690478942b7ba7f48e095999f"
 readonly trusted_scratch_parent="/private/tmp"
 readonly git_bin="/usr/bin/git"
 
@@ -22,6 +22,7 @@ scratch_root=""
 scratch_root_identity=""
 materialized_repository=""
 materialized_repository_identity=""
+materialized_git_directory=""
 materialized_package_path=""
 
 fail() {
@@ -337,7 +338,7 @@ materialized_git() {
     XDG_CONFIG_HOME=/nonexistent \
     "$git_bin" \
     --no-pager \
-    --git-dir="$materialized_repository/.git" \
+    --git-dir="$materialized_git_directory" \
     --work-tree="$materialized_repository" \
     -c core.attributesFile=/dev/null \
     -c core.autocrlf=false \
@@ -431,8 +432,13 @@ cleanup_materialized_repository() {
 }
 
 create_materialized_repository() {
-  local scratch_name
+  local common_git_directory scratch_name
   validate_trusted_scratch_parent
+  common_git_directory="$(trusted_git rev-parse --git-common-dir)" ||
+    fail "repository common git directory is unavailable"
+  [[ "$common_git_directory" == /* ]] ||
+    fail "repository common git directory is not absolute"
+  require_trusted_repository_path "$common_git_directory"
   umask 077
   scratch_root="$(
     /usr/bin/mktemp -d \
@@ -461,6 +467,32 @@ create_materialized_repository() {
   materialized_repository_identity="$(
     path_identity "$materialized_repository"
   )" || fail "committed replay checkout identity is unavailable"
+  materialized_git_directory="$(
+    /usr/bin/env -i \
+      GIT_ATTR_NOSYSTEM=1 \
+      GIT_CONFIG_COUNT=0 \
+      GIT_CONFIG_GLOBAL=/dev/null \
+      GIT_CONFIG_NOSYSTEM=1 \
+      GIT_LITERAL_PATHSPECS=1 \
+      GIT_NO_REPLACE_OBJECTS=1 \
+      GIT_OPTIONAL_LOCKS=0 \
+      GIT_TERMINAL_PROMPT=0 \
+      HOME=/nonexistent \
+      LANG=C \
+      LC_ALL=C \
+      PATH=/usr/bin:/bin \
+      TMPDIR=/tmp \
+      XDG_CONFIG_HOME=/nonexistent \
+      "$git_bin" \
+      --no-pager \
+      -C "$materialized_repository" \
+      rev-parse --absolute-git-dir
+  )" || fail "materialized replay git directory is unavailable"
+  case "$materialized_git_directory" in
+    "$common_git_directory/worktrees/"*) ;;
+    *) fail "materialized replay git directory is outside repository metadata" ;;
+  esac
+  require_trusted_repository_path "$materialized_git_directory"
   materialized_package_path="$materialized_repository/Packages/ArkhamHorrorShared"
 }
 

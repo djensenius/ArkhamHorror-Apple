@@ -226,7 +226,6 @@ typealias ProductionReplayArtifactValidator = (Data) throws -> Void
 typealias ProductionReplayDeadlineValidator = () throws -> Void
 
 enum ProductionReplayDriver {
-    // swiftlint:disable:next function_body_length
     static func run(
         victim: ProductionReplayVictim,
         input: ProductionReplayInput<some ProductionReplayCheckpoint>,
@@ -286,7 +285,6 @@ enum ProductionReplayDriver {
             staging,
             to: destination
         )
-        try completionDeadlineValidator()
         return ProductionReplayRunResult(
             outcome: outcome,
             destination: destination

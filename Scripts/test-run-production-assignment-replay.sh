@@ -49,7 +49,32 @@ readonly ignored_source_root="$ignored_derived_data_root/production-assignment-r
 readonly ignored_source="$ignored_source_root/InjectedReplayDriver.swift"
 readonly ignored_source_leak="$harness_root/ignored-source-leak"
 created_build_root=0
+created_harness_root=0
 created_ignored_derived_data_root=0
+created_ignored_source_root=0
+build_root_identity=""
+harness_root_identity=""
+ignored_derived_data_root_identity=""
+ignored_source_root_identity=""
+
+path_identity() {
+  /usr/bin/stat -f '%d:%i' "$1"
+}
+
+owned_directory_matches() {
+  local path="$1"
+  local expected_identity="$2"
+  [[ -n "$expected_identity" && -d "$path" && ! -L "$path" ]] ||
+    return 1
+  [[ "$(path_identity "$path")" == "$expected_identity" ]] ||
+    return 1
+  [[ "$(/usr/bin/stat -f '%u' "$path")" == "$(/usr/bin/id -u)" ]]
+}
+
+owned_private_directory_matches() {
+  owned_directory_matches "$1" "$2" &&
+    [[ "$(/usr/bin/stat -f '%Lp' "$1")" == 700 ]]
+}
 
 report_production_log() {
   /usr/bin/sed \
@@ -60,15 +85,67 @@ report_production_log() {
 }
 
 cleanup() {
-  /bin/rm -f -- "$ignored_source"
-  /bin/rmdir -- "$ignored_source_root" 2>/dev/null || true
+  local exit_status=$?
+  local cleanup_failed=0
+  trap - EXIT HUP INT TERM
+  set +e
+
+  if [[ "$created_ignored_source_root" == 1 ]]; then
+    if owned_directory_matches \
+      "$ignored_derived_data_root" \
+      "$ignored_derived_data_root_identity" &&
+      owned_private_directory_matches \
+        "$ignored_source_root" \
+        "$ignored_source_root_identity"
+    then
+      /bin/rm -f -- "$ignored_source" || cleanup_failed=1
+      /bin/rmdir -- "$ignored_source_root" 2>/dev/null ||
+        cleanup_failed=1
+    else
+      printf 'FAIL: refusing cleanup of unowned ignored-source path\n' >&2
+      cleanup_failed=1
+    fi
+  fi
+
   if [[ "$created_ignored_derived_data_root" == 1 ]]; then
-    /bin/rmdir -- "$ignored_derived_data_root" 2>/dev/null || true
+    if owned_directory_matches \
+      "$ignored_derived_data_root" \
+      "$ignored_derived_data_root_identity"
+    then
+      /bin/rmdir -- "$ignored_derived_data_root" 2>/dev/null ||
+        cleanup_failed=1
+    else
+      printf 'FAIL: refusing cleanup of unowned ignored-source parent\n' >&2
+      cleanup_failed=1
+    fi
   fi
-  /bin/rm -rf -- "$harness_root"
+
+  if [[ "$created_harness_root" == 1 ]]; then
+    if owned_directory_matches "$build_root" "$build_root_identity" &&
+      owned_private_directory_matches \
+        "$harness_root" \
+        "$harness_root_identity"
+    then
+      /bin/rm -rf -- "$harness_root" || cleanup_failed=1
+    else
+      printf 'FAIL: refusing cleanup of unowned harness path\n' >&2
+      cleanup_failed=1
+    fi
+  fi
+
   if [[ "$created_build_root" == 1 ]]; then
-    /bin/rmdir -- "$build_root" 2>/dev/null || true
+    if owned_directory_matches "$build_root" "$build_root_identity"; then
+      /bin/rmdir -- "$build_root" 2>/dev/null || cleanup_failed=1
+    else
+      printf 'FAIL: refusing cleanup of unowned build root\n' >&2
+      cleanup_failed=1
+    fi
   fi
+
+  if [[ "$cleanup_failed" == 1 && "$exit_status" == 0 ]]; then
+    exit_status=1
+  fi
+  exit "$exit_status"
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -78,7 +155,12 @@ if [[ ! -e "$build_root" ]]; then
 fi
 [[ -d "$build_root" && ! -L "$build_root" ]] ||
   fail "self-test build root is not a regular directory"
+build_root_identity="$(path_identity "$build_root")" ||
+  fail "self-test build root identity is unavailable"
 /bin/mkdir -m 700 "$harness_root"
+created_harness_root=1
+harness_root_identity="$(path_identity "$harness_root")" ||
+  fail "self-test harness identity is unavailable"
 cat >"$fake_swift" <<EOF
 #!/bin/bash
 /usr/bin/touch "$marker"
@@ -268,9 +350,15 @@ if [[ ! -e "$ignored_derived_data_root" ]]; then
 fi
 [[ -d "$ignored_derived_data_root" && ! -L "$ignored_derived_data_root" ]] ||
   fail "ignored source fixture parent is not a regular directory"
+ignored_derived_data_root_identity="$(
+  path_identity "$ignored_derived_data_root"
+)" || fail "ignored source fixture parent identity is unavailable"
 [[ ! -e "$ignored_source_root" && ! -L "$ignored_source_root" ]] ||
   fail "ignored source fixture path already exists"
 /bin/mkdir -m 700 "$ignored_source_root"
+created_ignored_source_root=1
+ignored_source_root_identity="$(path_identity "$ignored_source_root")" ||
+  fail "ignored source fixture identity is unavailable"
 /bin/cat >"$ignored_source" <<EOF
 import Darwin
 import Foundation

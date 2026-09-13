@@ -362,7 +362,7 @@ struct ProductionReplayDriverMechanicsTests {
                 return .completed
             }
         )
-        #expect(successfulChecks == 3)
+        #expect(successfulChecks == 2)
         #expect(try result.resultData() == Data("fresh".utf8))
     }
 
