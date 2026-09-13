@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@3b205dba1cfa97c52097f5c0fac1b40d619de663`,
-schema revision `0.1.37`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@1000165eb7e6624c21e497724de26a3dc08189e9`,
+schema revision `0.1.38`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These forty-six files, and only these forty-six, live under `Fixtures/Contract/` — a
+These fifty files, and only these fifty, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -91,7 +91,7 @@ question version `6`; all 114 backend-published negative mutations remain update
 ## Governed assignment continuations
 
 Both remaining-assignment questions and dedicated Answers originate from the immutable
-`djensenius/ArkhamHorror#76` merge. The current revision `0.1.37` manifest and
+`djensenius/ArkhamHorror#76` merge. The current revision `0.1.38` manifest and
 basic-choice schema continue to govern them. Unlike the former replay-derived draft, these
 questions are generated through the real backend game engine, registered in the manifest,
 schema-validated, and each backed by 16 published single-mutation negatives.
@@ -102,7 +102,7 @@ choosing horror first produces the symmetric `Assign 1 damage`/`DamageToken` con
 Each sends its exact direct amount followed by the production `(0 damage, 0 horror)`
 completion message with both accumulated investigator-target arrays populated. Their
 Answers preserve source index `0`, player UUID `00000000-0000-0000-0000-000000000001`,
-and question version `7`. The 32 assignment-family negatives within the manifest's 366
+and question version `7`. The 32 assignment-family negatives within the manifest's 421
 total mutations now explicitly replace each continuation's required `AnyAsset` matcher
 with `AssetWithTitle`; Apple applies those mutations in memory and remains fail-closed.
 
@@ -124,7 +124,7 @@ other ability, window, and message field as opaque contract data, verifies that 
 still exists in the newest board projection, and submits the unchanged source index and
 authoritative question version. Unknown actions and malformed or alternate source shapes
 remain update-required. The backend manifest publishes two focused negative mutations for
-this fixture within its 366 total regressions.
+this fixture within its 421 total regressions.
 
 `question-player-window-engage-action.json` is the production post-Evade menu added by
 `djensenius/ArkhamHorror#81`. The same Ghoul Minion remains available to Fight at source
@@ -136,14 +136,34 @@ calculates or mutates engagement state. The backend manifest publishes three foc
 Engage negatives for unknown action text, an alternate source constructor, and uppercase
 UUID spelling.
 
+## Governed round transition
+
+The four round-transition fixtures added by `djensenius/ArkhamHorror#83`
+preserve the production Q24-Q27 sequence:
+
+- `question-round-end-forced-ability.json` resolves Dissonant Voices through its
+  exact card, treachery, forced-ability, and end-of-round window identities;
+- `question-agenda-advance.json` advances Agenda 1 through the exact agenda source
+  and message;
+- `question-agenda-consequence.json` preserves the localized "take two horror"
+  and random-discard branches at their original source indices; and
+- `question-agenda-horror-assignment.json` assigns exactly two horror to the
+  investigator when the horror branch is selected.
+
+Swift independently verifies repeated dynamic source, target, and investigator
+identities because JSON Schema cannot express equality between UUID values. It
+does not calculate timing, branch outcomes, horror, or discard state. The
+backend manifest publishes 55 focused round-transition mutations within its 421
+total regressions.
+
 `replay-attestation.json` and `replay-attestation.schema.json` govern the durable
 server authority returned after an authenticated checkpoint import. The production
 replay coordinator uses that contract to bind the imported game, player remapping,
 checkpoint bytes, backend build identity, and canonical replay envelope before
 submitting any native action. `djensenius/ArkhamHorror#79` repairs the fixture's
 canonical receipt digest and pins these bytes to immutable merge
-`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.37` rebinds that
-same validated fixture to the Engage contract manifest.
+`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.38` rebinds that
+same validated fixture to the round-transition contract manifest.
 
 ## token.json / whoami.json
 

@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "99fe0cd10368afc07636aeb25cb2aa674b0bad14a260290dad39fe3e783d5ef1"
+            sha256Hex: "342367456537b43cec2b702393e42e5ce7b94299c574f05669773d94d9d5f5ba"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "ce002e1c1d018e06539270158341edbdb2884deb3177219675e5114bdb48b2b7"
+            sha256Hex: "f734193860ea6b931e9f7b795527586c167ffab9a366901096303bd102c1a68a"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -189,8 +189,24 @@ enum ContractFixtureDigests {
             sha256Hex: "546a1a8c07b1bf240c61b396c9630d566f68141f10bcf14604c04f2b888f682b"
         ),
         VendoredFixtureDigest(
+            fileName: "question-round-end-forced-ability",
+            sha256Hex: "d40629f34d5727a2c9bb873feb09931e3f32e004dc80baf375758833c80ac270"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-agenda-advance",
+            sha256Hex: "922f8e3923e2c74d28f9a2a79166b5ada177a5d75c12747195d1df2ecd17d067"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-agenda-consequence",
+            sha256Hex: "279a0b825dd3f5c0a7b08c7f4798660c2b0a3c8e9ec9530081471c985619b0ae"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-agenda-horror-assignment",
+            sha256Hex: "999336a2838fde0d40737a35abcab629d46af180e7869294961165c2cb60f2d4"
+        ),
+        VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "b3c0e42902b746fd5d956fce37e9a346bc1a398f54ca46ff18f46d261ca135f0"
+            sha256Hex: "dd42113bb77fa78e84670213d846ec1c8d9cea23587598f277b18be585e8bf3a"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",
@@ -198,7 +214,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "basic-choice-question.schema",
-            sha256Hex: "d55a1456c1ef4b47c39da1c1680a40d3799f9c9880a5696a493aad7507186245"
+            sha256Hex: "5f772960f76f9b3b6911bd29746402b0b33e7b096baa3fe08557b40e426c6d95"
         ),
     ]
 }

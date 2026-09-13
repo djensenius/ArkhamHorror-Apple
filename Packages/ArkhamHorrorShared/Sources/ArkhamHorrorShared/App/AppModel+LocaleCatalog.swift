@@ -253,9 +253,9 @@ extension AppModel {
         let unavailability = localeCatalogUnavailability ?? .catalog(.notAdvertised)
         var result: [Int: BasicChoiceLabelResolution] = [:]
         for choice in question.choices {
-            guard case let .finishMulligan(label, _) = choice.content else { continue }
+            guard let localizationKey = choice.localizationKey else { continue }
             switch StoryNarrativeLocalization.resolveProductionChoiceLabel(
-                label,
+                "$\(localizationKey)",
                 resolver: resolver,
                 catalogUnavailability: unavailability
             ) {

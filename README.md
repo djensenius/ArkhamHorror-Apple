@@ -1,10 +1,9 @@
 # ArkhamHorror-Apple
 
-ArkhamHorror-Apple is the native SwiftUI client foundation for a semantic digital
-card game on iOS, iPadOS, macOS, tvOS, and visionOS. Phase 0 is intentionally a
-walking skeleton: it proves the shared UI, platform entry points, focus-driven
-input, project generation, tests, and CI without pretending that game features
-exist.
+ArkhamHorror-Apple is a native SwiftUI client for a semantic digital card game
+on iOS, iPadOS, macOS, tvOS, and visionOS. It shares server-authoritative
+gameplay, networking, focus-driven input, and controller support across four
+thin platform targets.
 
 Official card art, playmat art, and other Arkham Horror assets are not included.
 
@@ -85,27 +84,22 @@ bridge.
 
 ### Backend replay authority
 
-As of Sunday, September 13, 2026, backend
-`djensenius/ArkhamHorror#78` is squash-merged as
-`f4cb4ba8bd5ab2708597168865f8c9dee48fdfc9`, and the receipt-integrity repair in
-`djensenius/ArkhamHorror#79` is squash-merged as
-`229b89da24546dc6f0a55b2d08ab0f047eb59808`. This repository is pinned to the
-Engage contract merge `3b205dba1cfa97c52097f5c0fac1b40d619de663` from
-`djensenius/ArkhamHorror#81`, at contract revision `0.1.37`. The Fight/Evade
-merge adds governed native enemy actions on top of the replay authority
-introduced by `djensenius/ArkhamHorror#76`; Engage adds the exact post-Evade
-action shape, while the receipt repair recalculates the governed attestation
-digest and verifies it through production decoding. The replay contract defines
-cross-client prompt SHA-256 over compact JSON with recursively sorted object
-keys and bounds every replay CLI message drain.
+As of Sunday, September 13, 2026, this repository is pinned to backend contract
+merge `1000165eb7e6624c21e497724de26a3dc08189e9` from
+`djensenius/ArkhamHorror#83`, at contract revision `0.1.38`. That revision adds
+the production Q24-Q27 sequence after Engage: resolving Dissonant Voices at the
+end of the round, advancing Agenda 1, choosing between two horror and a random
+discard, and assigning exactly two horror on the horror branch.
 
-Fight, Evade, and Engage remain server-authoritative. Swift recognizes only
-the exact governed `SingleAction` label and canonical `EnemySource`, checks
-that the referenced enemy still exists in the newest projection, and submits
-the unchanged source-array index with the current question version. Costs,
-targeting, attacks of opportunity, skill values, chaos tokens, damage,
-exhaustion, evasion, and engagement state are resolved only by the Haskell
-backend.
+Fight, Evade, Engage, and the round transition remain server-authoritative.
+Swift recognizes only the exact governed prompt/source/message shapes, checks
+that referenced entities still exist in the newest projection, and submits the
+unchanged source-array index with the current question version. Costs,
+targeting, attacks of opportunity, skill values, chaos tokens, damage, horror,
+round timing, agenda advancement, random discard, exhaustion, evasion, and
+engagement state are resolved only by the Haskell backend. The replay contract
+defines cross-client prompt SHA-256 over compact JSON with recursively sorted
+object keys and bounds every replay CLI message drain.
 
 It also defines deterministic checkpoint generation and validation, hashes the
 exact uploaded multipart file bytes, persists an import receipt and player
@@ -124,7 +118,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.37",
+       "contractSchemaRevision": "0.1.38",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -185,7 +179,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend merge above:
 
 1. Confirm `ContractPin.current` is
-   `3b205dba1cfa97c52097f5c0fac1b40d619de663` / `0.1.37`, then build the
+   `1000165eb7e6624c21e497724de26a3dc08189e9` / `0.1.38`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can
@@ -374,9 +368,14 @@ project differs from `project.yml`.
 
 ## Current limitations
 
-Phase 0 has no gameplay, persistence, accounts, deck management, or live network
-requests. The server card is a compile-time UI contract only, and platform icons
-are not yet provided. Product planning is tracked in
+The deterministic Gathering path is playable through setup, investigation,
+encounter draw, enemy attack and assignment, Fight, Evade, Engage, and the
+following end-of-round/agenda transition. It is not yet a complete campaign
+client: later encounter and player-window variants, all campaign-specific
+surfaces, full deck/campaign management, multiplayer parity, replay/undo UI,
+signing, distribution, final iconography, and final platform polish remain in
+progress. Unknown governed prompts fail closed with an explicit client-update
+requirement rather than guessing. Product planning is tracked in
 [djensenius/ArkhamHorror#5](https://github.com/djensenius/ArkhamHorror/issues/5)
 and
 [djensenius/ArkhamHorror-Apple#5](https://github.com/djensenius/ArkhamHorror-Apple/issues/5).

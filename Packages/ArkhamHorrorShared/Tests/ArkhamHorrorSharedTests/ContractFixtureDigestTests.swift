@@ -128,6 +128,10 @@ struct ContractFixtureDigestTests {
             "answer-enemy-attack-assign-remaining-horror",
             "question-player-window-enemy-actions",
             "question-player-window-engage-action",
+            "question-round-end-forced-ability",
+            "question-agenda-advance",
+            "question-agenda-consequence",
+            "question-agenda-horror-assignment",
             "replay-attestation",
             "replay-attestation.schema",
             "basic-choice-question.schema",
@@ -199,17 +203,17 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "3b205dba1cfa97c52097f5c0fac1b40d619de663"
+            ContractPin.current.backendCommit == "1000165eb7e6624c21e497724de26a3dc08189e9"
         )
     }
 
-    @Test("The immutable manifest governs 32 assignment negatives within 366 total")
+    @Test("The immutable manifest governs 32 assignment negatives within 421 total")
     func assignmentFamilyManifestCoverage() throws {
         let manifest = try ContractJSON.decode(
             GovernedContractManifest.self,
             from: fixtureData(named: "manifest")
         )
-        #expect(manifest.negativeFixtures.count == 366)
+        #expect(manifest.negativeFixtures.count == 421)
         let fixtureSchemas = Dictionary(
             uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
         )
@@ -265,6 +269,32 @@ struct ContractFixtureDigestTests {
         )
         #expect(fixtureSchemas[path] == "contracts/schemas/basic-choice-question.schema.json")
         #expect(manifest.negativeFixtures.count { $0.basePositiveFixture == path } == 3)
+    }
+
+    @Test("The immutable manifest governs all four round-transition prompts")
+    func roundTransitionManifestCoverage() throws {
+        let manifest = try ContractJSON.decode(
+            GovernedContractManifest.self,
+            from: fixtureData(named: "manifest")
+        )
+        let expectedCounts = [
+            "contracts/fixtures/question-round-end-forced-ability.json": 12,
+            "contracts/fixtures/question-agenda-advance.json": 7,
+            "contracts/fixtures/question-agenda-consequence.json": 15,
+            "contracts/fixtures/question-agenda-horror-assignment.json": 21,
+        ]
+        let fixtureSchemas = Dictionary(
+            uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
+        )
+        for (path, expectedCount) in expectedCounts {
+            #expect(fixtureSchemas[path]
+                == "contracts/schemas/basic-choice-question.schema.json")
+            #expect(
+                manifest.negativeFixtures.count { $0.basePositiveFixture == path }
+                    == expectedCount
+            )
+        }
+        #expect(expectedCounts.values.reduce(0, +) == 55)
     }
 
     @Test("Registered fixture and schema digests match the backend manifest's artifact hashes")

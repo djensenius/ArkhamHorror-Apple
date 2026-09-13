@@ -1,8 +1,8 @@
 /// Compiled-in contract metadata pinning this client build to a specific backend revision.
 ///
 /// - Backend PRs: djensenius/ArkhamHorror#20, #22, #24, #45, #49, #51, #57,
-///   #62, #65, #66, #68, #70, #72, #75, #76, #78, #79, #81
-/// - Backend commit: `3b205dba1cfa97c52097f5c0fac1b40d619de663`
+///   #62, #65, #66, #68, #70, #72, #75, #76, #78, #79, #81, #83
+/// - Backend commit: `1000165eb7e6624c21e497724de26a3dc08189e9`
 struct ContractPin: Sendable {
     /// The backend git commit this client was built against.
     let backendCommit: String
@@ -25,12 +25,12 @@ struct ContractPin: Sendable {
 extension ContractPin {
     /// The canonical pin compiled into this client build.
     ///
-    /// Contract revision `0.1.37` adds the governed native Engage action.
-    /// Basic Engage requires server revision `0.1.37`.
+    /// Contract revision `0.1.38` governs the post-Engage round and agenda transition.
+    /// Native round-transition choices require server revision `0.1.38`.
     static let current = ContractPin(
-        backendCommit: "3b205dba1cfa97c52097f5c0fac1b40d619de663",
-        supportedSchemaRevision: .literal(major: 0, minor: 1, patch: 37),
-        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 37),
+        backendCommit: "1000165eb7e6624c21e497724de26a3dc08189e9",
+        supportedSchemaRevision: .literal(major: 0, minor: 1, patch: 38),
+        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 38),
         expectedApiBasePath: "/api/v1",
         sourceNativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 0)
     )

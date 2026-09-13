@@ -32,6 +32,9 @@ enum BoardProjectionBuilder {
             enemyIDs: snapshot.enemies.keys.sorted {
                 $0.codingKey.stringValue < $1.codingKey.stringValue
             },
+            treacheryIDs: snapshot.treacheries.keys.sorted {
+                $0.codingKey.stringValue < $1.codingKey.stringValue
+            },
             otherInvestigatorCount: snapshot.otherInvestigators.count,
             killedInvestigatorCount: snapshot.killedInvestigators.count,
             handCardsByPlayer: makeHandCards(from: snapshot),

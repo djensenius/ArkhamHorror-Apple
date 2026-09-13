@@ -85,8 +85,10 @@ extension BoardTestFixtures {
         )
     }
 
-    static func entityMap<Tag: Sendable>(count: Int) -> UUIDEntityMap<Tag> {
-        var map = UUIDKeyedMap<Tag, JSONValue>()
+    static func entityMap<Tag: Sendable>(
+        count: Int, values: [Identifier<Tag>: JSONValue] = [:]
+    ) -> UUIDEntityMap<Tag> {
+        var map = UUIDKeyedMap<Tag, JSONValue>(values)
         for _ in 0 ..< count {
             map[Identifier(UUID())] = .null
         }
@@ -115,6 +117,7 @@ extension BoardTestFixtures {
         enemyValues: [EnemyID: JSONValue] = [:],
         assetCount: Int = 0,
         treacheryCount: Int = 0,
+        treacheryValues: [TreacheryID: JSONValue] = [:],
         eventCount: Int = 0,
         skillCount: Int = 0,
         concealedCount: Int = 0,
@@ -143,14 +146,9 @@ extension BoardTestFixtures {
         let resolvedLeadInvestigatorID = investigators[leadInvestigatorID] != nil
             ? leadInvestigatorID
             : (sortedInvestigatorIDs.first ?? leadInvestigatorID)
-        var cards = UUIDKeyedMap<WireCardIDTag, JSONValue>(cardValues)
-        for _ in 0 ..< cardCount {
-            cards[WireCardID(UUID())] = .null
-        }
-        var enemies = UUIDKeyedMap<EnemyIDTag, JSONValue>(enemyValues)
-        for _ in 0 ..< enemyCount {
-            enemies[EnemyID(UUID())] = .null
-        }
+        let cards = entityMap(count: cardCount, values: cardValues)
+        let enemies = entityMap(count: enemyCount, values: enemyValues)
+        let treacheries = entityMap(count: treacheryCount, values: treacheryValues)
 
         return PublicGameSnapshot(
             name: name, id: BoardTestFixtures.gameID(), log: [], git: "test",
@@ -158,7 +156,7 @@ extension BoardTestFixtures {
             encounterDeckSize: 0, locations: locationMap, investigators: investigators,
             otherInvestigators: otherInvestigators, killedInvestigators: killedInvestigators,
             enemies: enemies, assets: entityMap(count: assetCount),
-            acts: acts, agendas: agendas, treacheries: entityMap(count: treacheryCount),
+            acts: acts, agendas: agendas, treacheries: treacheries,
             events: entityMap(count: eventCount), concealed: entityMap(count: concealedCount),
             skills: entityMap(count: skillCount), stories: [:], scarletKeys: [:],
             playerCount: max(

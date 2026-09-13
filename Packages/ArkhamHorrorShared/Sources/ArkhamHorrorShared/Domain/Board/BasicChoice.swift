@@ -9,6 +9,37 @@ struct BasicChoiceAbility: Sendable, Equatable, Hashable {
     let messages: [JSONValue]
 }
 
+struct ForcedAbilityChoice: Sendable, Equatable, Hashable {
+    let ability: BasicChoiceAbility
+    let treacheryID: TreacheryID
+}
+
+struct AgendaConsequenceChoice: Sendable, Equatable, Hashable {
+    enum Kind: Sendable, Equatable, Hashable {
+        case takeHorror
+        case randomDiscard
+
+        var systemImage: String {
+            switch self {
+            case .takeHorror: "brain.head.profile"
+            case .randomDiscard: "rectangle.stack.badge.minus"
+            }
+        }
+    }
+
+    let kind: Kind
+    let label: String
+    let agendaID: AgendaID
+    let investigatorID: InvestigatorID?
+    let messages: [JSONValue]
+}
+
+struct AgendaHorrorAssignment: Sendable, Equatable, Hashable {
+    let agendaID: AgendaID
+    let investigatorID: InvestigatorID
+    let messages: [JSONValue]
+}
+
 enum BasicChoiceHandCardPurpose: Sendable, Equatable, Hashable {
     case choose
     case commit
@@ -64,6 +95,10 @@ enum BasicChoiceContent: Sendable, Equatable, Hashable {
     case fight(BasicChoiceAbility, enemyID: EnemyID)
     case evade(BasicChoiceAbility, enemyID: EnemyID)
     case engage(BasicChoiceAbility, enemyID: EnemyID)
+    case resolveForcedAbility(ForcedAbilityChoice)
+    case advanceAgenda(agendaID: AgendaID, messages: [JSONValue])
+    case chooseAgendaConsequence(AgendaConsequenceChoice)
+    case assignAgendaHorror(AgendaHorrorAssignment)
     case continueReading(messages: [JSONValue])
     case finishMulligan(label: String, messages: [JSONValue])
     case chooseLocation(locationID: LocationID, messages: [JSONValue])
@@ -107,6 +142,10 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .fight: "Fight"
         case .evade: "Evade"
         case .engage: "Engage"
+        case .resolveForcedAbility: "Resolve forced ability"
+        case .advanceAgenda: "Advance agenda"
+        case .chooseAgendaConsequence: "Unavailable action"
+        case .assignAgendaHorror: "Assign 2 horror"
         case .continueReading: "Continue"
         case .finishMulligan: "Unavailable action"
         case .chooseLocation: "Choose starting location"
@@ -129,6 +168,10 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .fight: "burst.fill"
         case .evade: "figure.run"
         case .engage: "person.2.fill"
+        case .resolveForcedAbility: "exclamationmark.triangle.fill"
+        case .advanceAgenda: "arrow.up.circle.fill"
+        case let .chooseAgendaConsequence(choice): choice.kind.systemImage
+        case .assignAgendaHorror: "brain.head.profile"
         case .continueReading: "arrow.right.circle.fill"
         case .finishMulligan: "checkmark.circle.fill"
         case .chooseLocation: "mappin.and.ellipse"
@@ -145,6 +188,8 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case let .investigate(ability), let .fight(ability, _), let .evade(ability, _),
              let .engage(ability, _):
             ability
+        case let .resolveForcedAbility(choice):
+            choice.ability
         default:
             nil
         }
@@ -161,9 +206,16 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
     }
 
     var localizationKey: String? {
-        guard case let .finishMulligan(label, _) = content,
-              label.first == "$"
-        else { return nil }
+        let label: String
+        switch content {
+        case let .finishMulligan(value, _):
+            label = value
+        case let .chooseAgendaConsequence(choice):
+            label = choice.label
+        default:
+            return nil
+        }
+        guard label.first == "$" else { return nil }
         return String(label.dropFirst())
     }
 }
