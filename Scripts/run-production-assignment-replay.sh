@@ -11,7 +11,7 @@ readonly driver_identifier_prefix='ArkhamHorrorSharedTests.AssignmentReplayCoord
 readonly expected_driver_identifier="${driver_identifier_prefix}()"
 readonly driver_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator\(\)(/[^/]+)?$'
 readonly launcher_relative_path="Scripts/run-production-assignment-replay.sh"
-readonly trusted_base_revision="a965e891a57622224f7bee5c1b860abe1903737c"
+readonly trusted_base_revision="f892eb3265b411eb6af83ddef05ae3bd8b720760"
 readonly expected_package_tree="d7967d705622c32690478942b7ba7f48e095999f"
 readonly trusted_scratch_parent="/private/tmp"
 readonly git_bin="/usr/bin/git"
@@ -264,8 +264,11 @@ validate_repository_identity() {
   origin="$(trusted_git remote get-url origin)" ||
     fail "trusted repository origin is unavailable"
   case "$origin" in
-    "https://github.com/djensenius/ArkhamHorror-Apple.git" | \
+    "https://github.com/djensenius/ArkhamHorror-Apple" | \
+      "https://github.com/djensenius/ArkhamHorror-Apple.git" | \
+      "git@github.com:djensenius/ArkhamHorror-Apple" | \
       "git@github.com:djensenius/ArkhamHorror-Apple.git" | \
+      "ssh://git@github.com/djensenius/ArkhamHorror-Apple" | \
       "ssh://git@github.com/djensenius/ArkhamHorror-Apple.git") ;;
     *) fail "trusted repository origin is not ArkhamHorror-Apple" ;;
   esac
