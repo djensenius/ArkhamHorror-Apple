@@ -90,19 +90,22 @@ As of Sunday, September 13, 2026, backend
 `f4cb4ba8bd5ab2708597168865f8c9dee48fdfc9`, and the receipt-integrity repair in
 `djensenius/ArkhamHorror#79` is squash-merged as
 `229b89da24546dc6f0a55b2d08ab0f047eb59808`. This repository is pinned to the
-latter immutable commit and contract revision `0.1.36`. The Fight/Evade merge
-adds governed native enemy actions on top of the replay authority introduced by
-`djensenius/ArkhamHorror#76`; the receipt repair recalculates the governed
-attestation digest and verifies it through production decoding. The replay
-contract defines cross-client prompt SHA-256 over compact JSON with recursively
-sorted object keys and bounds every replay CLI message drain.
+Engage contract merge `3b205dba1cfa97c52097f5c0fac1b40d619de663` from
+`djensenius/ArkhamHorror#81`, at contract revision `0.1.37`. The Fight/Evade
+merge adds governed native enemy actions on top of the replay authority
+introduced by `djensenius/ArkhamHorror#76`; Engage adds the exact post-Evade
+action shape, while the receipt repair recalculates the governed attestation
+digest and verifies it through production decoding. The replay contract defines
+cross-client prompt SHA-256 over compact JSON with recursively sorted object
+keys and bounds every replay CLI message drain.
 
-Fight and Evade remain server-authoritative. Swift recognizes only the exact
-governed `SingleAction` label and canonical `EnemySource`, checks that the
-referenced enemy still exists in the newest projection, and submits the
-unchanged source-array index with the current question version. Costs,
+Fight, Evade, and Engage remain server-authoritative. Swift recognizes only
+the exact governed `SingleAction` label and canonical `EnemySource`, checks
+that the referenced enemy still exists in the newest projection, and submits
+the unchanged source-array index with the current question version. Costs,
 targeting, attacks of opportunity, skill values, chaos tokens, damage,
-exhaustion, and evasion are resolved only by the Haskell backend.
+exhaustion, evasion, and engagement state are resolved only by the Haskell
+backend.
 
 It also defines deterministic checkpoint generation and validation, hashes the
 exact uploaded multipart file bytes, persists an import receipt and player
@@ -121,7 +124,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.36",
+       "contractSchemaRevision": "0.1.37",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -182,7 +185,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend merge above:
 
 1. Confirm `ContractPin.current` is
-   `229b89da24546dc6f0a55b2d08ab0f047eb59808` / `0.1.36`, then build the
+   `3b205dba1cfa97c52097f5c0fac1b40d619de663` / `0.1.37`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can

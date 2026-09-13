@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "c8af9c212694bef377f0060f2388ad0bbf83b80be7923bcd1fb05a86405bcec8"
+            sha256Hex: "99fe0cd10368afc07636aeb25cb2aa674b0bad14a260290dad39fe3e783d5ef1"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "d4fa8217292175bb0ea75c4db794370de1e64dbceea1b718c4aba87ae0c822b2"
+            sha256Hex: "ce002e1c1d018e06539270158341edbdb2884deb3177219675e5114bdb48b2b7"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -185,8 +185,12 @@ enum ContractFixtureDigests {
             sha256Hex: "153362eff3254415068fdeb21670099d0b82c8c51a82d1b7b1b188d285f1d06d"
         ),
         VendoredFixtureDigest(
+            fileName: "question-player-window-engage-action",
+            sha256Hex: "546a1a8c07b1bf240c61b396c9630d566f68141f10bcf14604c04f2b888f682b"
+        ),
+        VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "f1f8fdabe155d03fa9088fda179afd1e3dd408f68ae47c9c1b2bd2a9ed488dc6"
+            sha256Hex: "b3c0e42902b746fd5d956fce37e9a346bc1a398f54ca46ff18f46d261ca135f0"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",
@@ -194,7 +198,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "basic-choice-question.schema",
-            sha256Hex: "6cf67f76b07be912846735e2cee0c21eb5726fa40a9b3fee3802323cb19f8fa5"
+            sha256Hex: "d55a1456c1ef4b47c39da1c1680a40d3799f9c9880a5696a493aad7507186245"
         ),
     ]
 }

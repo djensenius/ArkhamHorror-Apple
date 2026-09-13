@@ -12,20 +12,12 @@ enum EngageActionFixtures {
     static let enemyID = BoardTestFixtures.enemyID("000000000388")
 
     static func value() throws -> JSONValue {
-        let data = try #require(Bundle.module.url(
-            forResource: "question-player-window-enemy-actions",
+        let url = try #require(Bundle.module.url(
+            forResource: "question-player-window-engage-action",
             withExtension: "json",
             subdirectory: "Fixtures/Contract"
         ))
-        let base = try ContractJSON.decode(JSONValue.self, from: Data(contentsOf: data))
-        guard case let .object(root) = base,
-              case var .array(choices)? = root["choices"],
-              choices.indices.contains(5)
-        else { throw TestFailure() }
-        choices[5] = try engageChoice()
-        var updated = root
-        updated["choices"] = .array(choices)
-        return .object(updated)
+        return try ContractJSON.decode(JSONValue.self, from: Data(contentsOf: url))
     }
 
     static func payload(_ value: JSONValue? = nil) throws -> BasicChoiceQuestionPayload {
@@ -58,27 +50,6 @@ enum EngageActionFixtures {
         BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             enemyValues: includeEnemy ? [enemyID: .null] : [:]
         ))
-    }
-
-    private static func engageChoice() throws -> JSONValue {
-        let enemyID = enemyID.rawValue.uuidString.lowercased()
-        return try ContractJSON.decode(
-            JSONValue.self,
-            from: Data(
-                """
-                {"tag":"AbilityLabel","investigatorId":"c01001","ability":{\
-                "source":{"tag":"EnemySource","contents":"\(enemyID)"},\
-                "cardCode":"c01160","index":102,\
-                "type":{"tag":"ActionAbility","actions":{\
-                "tag":"SingleAction","contents":"Engage"}},\
-                "criteria":{"tag":"FutureCriteria"},\
-                "requestor":{"tag":"EnemySource","contents":"\(enemyID)"},\
-                "triggersSkillTest":false},\
-                "windows":[{"tag":"WindowOne"},{"tag":"WindowTwo"},{"tag":"WindowThree"}],\
-                "before":[],"messages":[]}
-                """.utf8
-            )
-        )
     }
 }
 

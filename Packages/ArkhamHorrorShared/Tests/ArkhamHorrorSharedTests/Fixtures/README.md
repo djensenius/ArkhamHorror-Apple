@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@229b89da24546dc6f0a55b2d08ab0f047eb59808`,
-schema revision `0.1.36`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@3b205dba1cfa97c52097f5c0fac1b40d619de663`,
+schema revision `0.1.37`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These forty-five files, and only these forty-five, live under `Fixtures/Contract/` — a
+These forty-six files, and only these forty-six, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -91,7 +91,7 @@ question version `6`; all 114 backend-published negative mutations remain update
 ## Governed assignment continuations
 
 Both remaining-assignment questions and dedicated Answers originate from the immutable
-`djensenius/ArkhamHorror#76` merge. The current revision `0.1.36` manifest and
+`djensenius/ArkhamHorror#76` merge. The current revision `0.1.37` manifest and
 basic-choice schema continue to govern them. Unlike the former replay-derived draft, these
 questions are generated through the real backend game engine, registered in the manifest,
 schema-validated, and each backed by 16 published single-mutation negatives.
@@ -102,7 +102,7 @@ choosing horror first produces the symmetric `Assign 1 damage`/`DamageToken` con
 Each sends its exact direct amount followed by the production `(0 damage, 0 horror)`
 completion message with both accumulated investigator-target arrays populated. Their
 Answers preserve source index `0`, player UUID `00000000-0000-0000-0000-000000000001`,
-and question version `7`. The 32 assignment-family negatives within the manifest's 363
+and question version `7`. The 32 assignment-family negatives within the manifest's 366
 total mutations now explicitly replace each continuation's required `AnyAsset` matcher
 with `AssetWithTitle`; Apple applies those mutations in memory and remains fail-closed.
 
@@ -124,7 +124,17 @@ other ability, window, and message field as opaque contract data, verifies that 
 still exists in the newest board projection, and submits the unchanged source index and
 authoritative question version. Unknown actions and malformed or alternate source shapes
 remain update-required. The backend manifest publishes two focused negative mutations for
-this fixture within its 363 total regressions.
+this fixture within its 366 total regressions.
+
+`question-player-window-engage-action.json` is the production post-Evade menu added by
+`djensenius/ArkhamHorror#81`. The same Ghoul Minion remains available to Fight at source
+index `4` and exposes Engage at source index `5` with production ability index `102`.
+Engage requires the exact canonical `EnemySource`, retains every opaque ability/window
+field, stays actionable only while that enemy remains in the newest projection, and
+submits only the unchanged source index plus authoritative question version. Swift never
+calculates or mutates engagement state. The backend manifest publishes three focused
+Engage negatives for unknown action text, an alternate source constructor, and uppercase
+UUID spelling.
 
 `replay-attestation.json` and `replay-attestation.schema.json` govern the durable
 server authority returned after an authenticated checkpoint import. The production
@@ -132,7 +142,8 @@ replay coordinator uses that contract to bind the imported game, player remappin
 checkpoint bytes, backend build identity, and canonical replay envelope before
 submitting any native action. `djensenius/ArkhamHorror#79` repairs the fixture's
 canonical receipt digest and pins these bytes to immutable merge
-`229b89da24546dc6f0a55b2d08ab0f047eb59808`.
+`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.37` rebinds that
+same validated fixture to the Engage contract manifest.
 
 ## token.json / whoami.json
 
