@@ -327,6 +327,7 @@ private extension BasicChoiceParser {
             case .string("SingleAction")? = actions["tag"],
             case let .string(action)? = actions["contents"],
             case let .array(windows)? = object["windows"],
+            windows.allSatisfy(Self.isObject),
             let before = messages(object["before"]),
             let messages = messages(object["messages"])
         else { return nil }
@@ -347,6 +348,9 @@ private extension BasicChoiceParser {
         case "Evade":
             guard let enemyID = canonicalEnemySource(ability["source"]) else { return nil }
             return .evade(parsedAbility, enemyID: enemyID)
+        case "Engage":
+            guard let enemyID = canonicalEnemySource(ability["source"]) else { return nil }
+            return .engage(parsedAbility, enemyID: enemyID)
         default:
             return nil
         }
@@ -359,6 +363,11 @@ private extension BasicChoiceParser {
               case let .string(rawEnemyID)? = source["contents"]
         else { return nil }
         return EnemyID(codingKey: AnyCodingKey(stringValue: rawEnemyID))
+    }
+
+    static func isObject(_ value: JSONValue) -> Bool {
+        guard case .object = value else { return false }
+        return true
     }
 }
 

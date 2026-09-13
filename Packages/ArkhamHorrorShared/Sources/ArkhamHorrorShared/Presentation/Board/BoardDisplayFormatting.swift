@@ -64,7 +64,8 @@ enum BoardDisplayFormatting {
                 return "\(assignment.kind.actionTitle) to \(investigator.displayName)"
             }
             return choice.title
-        case .gainResource, .drawCard, .endTurn, .investigate, .fight, .evade, .continueReading,
+        case .gainResource, .drawCard, .endTurn, .investigate, .fight, .evade, .engage,
+             .continueReading,
              .skipTriggers, .startSkillTest, .applySkillTestResults, .drawEncounterCard,
              .unsupported:
             return choice.title
@@ -321,7 +322,7 @@ private enum BasicChoiceAvailabilityFormatting {
             "The enemy or investigator for this attack isn't currently available."
         case .assignEnemyAttackDamage:
             "The enemy or investigator for this assignment isn't currently available."
-        case .fight, .evade:
+        case .fight, .evade, .engage:
             "This enemy isn't currently available."
         case .gainResource, .drawCard, .endTurn, .investigate, .skipTriggers,
              .startSkillTest, .applySkillTestResults, .drawEncounterCard, .unsupported:
