@@ -325,24 +325,24 @@ private extension BasicChoiceParser {
             return specialized
         }
         guard !isRolandDefeatReactionCandidate(object),
-            Set(object.keys) == [
-            "tag", "investigatorId", "ability", "windows", "before", "messages",
-        ],
-            let investigatorID = investigatorID(object["investigatorId"]),
-            case let .object(ability)? = object["ability"],
-            case .object? = ability["source"],
-            case let .string(cardCodeText)? = ability["cardCode"],
-            let cardCode = strictCardCode(cardCodeText),
-            isCanonicalInteger(ability["index"]),
-            case let .object(type)? = ability["type"],
-            case .string("ActionAbility")? = type["tag"],
-            case let .object(actions)? = type["actions"],
-            case .string("SingleAction")? = actions["tag"],
-            case let .string(action)? = actions["contents"],
-            case let .array(windows)? = object["windows"],
-            windows.allSatisfy(Self.isObject),
-            let before = messages(object["before"]),
-            let messages = messages(object["messages"])
+              Set(object.keys) == [
+                  "tag", "investigatorId", "ability", "windows", "before", "messages",
+              ],
+              let investigatorID = investigatorID(object["investigatorId"]),
+              case let .object(ability)? = object["ability"],
+              case .object? = ability["source"],
+              case let .string(cardCodeText)? = ability["cardCode"],
+              let cardCode = strictCardCode(cardCodeText),
+              isCanonicalInteger(ability["index"]),
+              case let .object(type)? = ability["type"],
+              case .string("ActionAbility")? = type["tag"],
+              case let .object(actions)? = type["actions"],
+              case .string("SingleAction")? = actions["tag"],
+              case let .string(action)? = actions["contents"],
+              case let .array(windows)? = object["windows"],
+              windows.allSatisfy(Self.isObject),
+              let before = messages(object["before"]),
+              let messages = messages(object["messages"])
         else { return nil }
         let parsedAbility = BasicChoiceAbility(
             investigatorID: investigatorID,

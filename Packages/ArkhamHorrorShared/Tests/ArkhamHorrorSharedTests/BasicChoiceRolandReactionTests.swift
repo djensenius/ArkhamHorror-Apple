@@ -52,19 +52,28 @@ enum RolandReactionFixtures {
 
     static func projection(
         includeInvestigator: Bool = true,
-        placeInvestigator: Bool = true
+        placeInvestigator: Bool = true,
+        enemySpawnedLocation: Bool = false
     ) -> BoardProjection {
         let investigator = BoardTestFixtures.investigator(
             id: investigatorID,
             name: CardName(title: "Roland Banks", subtitle: "The Fed")
         )
-        let location = BoardTestFixtures.ordinaryLocation(
-            id: locationID,
-            label: "Study",
-            investigators: placeInvestigator && includeInvestigator ? [investigatorID] : []
-        )
+        let occupants = placeInvestigator && includeInvestigator ? [investigatorID] : []
+        let location: Location = if enemySpawnedLocation {
+            .enemy(BoardTestFixtures.enemyLocation(
+                id: locationID,
+                investigators: occupants
+            ))
+        } else {
+            .ordinary(BoardTestFixtures.ordinaryLocation(
+                id: locationID,
+                label: "Study",
+                investigators: occupants
+            ))
+        }
         return BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
-            locations: [(locationID, .ordinary(location))],
+            locations: [(locationID, location)],
             investigators: includeInvestigator ? [investigatorID: investigator] : [:],
             playerOrder: includeInvestigator ? [investigatorID] : []
         ))
@@ -283,10 +292,12 @@ struct BasicChoiceRolandReactionTests {
         let prompt = try RolandReactionFixtures.prompt()
         let reaction = prompt.choices[0]
         let present = RolandReactionFixtures.projection()
+        let enemyLocation = RolandReactionFixtures.projection(enemySpawnedLocation: true)
         let missingInvestigator = RolandReactionFixtures.projection(includeInvestigator: false)
         let missingLocation = RolandReactionFixtures.projection(placeInvestigator: false)
 
         #expect(prompt.isChoiceActionable(reaction, in: present))
+        #expect(prompt.isChoiceActionable(reaction, in: enemyLocation))
         #expect(!prompt.isChoiceActionable(reaction, in: missingInvestigator))
         #expect(!prompt.isChoiceActionable(reaction, in: missingLocation))
         #expect(BoardDisplayFormatting.choiceDisplayTitle(

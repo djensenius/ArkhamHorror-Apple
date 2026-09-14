@@ -90,6 +90,7 @@ extension BoardProjection {
         ), let locationID = investigator.currentLocationID
         else { return false }
         return locations.contains { $0.id == locationID }
+            || enemyLocations.contains { $0.id == locationID }
     }
 
     private func isEnemyChoiceActionable(_ content: BasicChoiceContent) -> Bool {
