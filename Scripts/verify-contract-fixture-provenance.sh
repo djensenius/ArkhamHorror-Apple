@@ -128,6 +128,7 @@ answer-enemy-attack-assign-remaining-damage.json:contracts/fixtures/answer-enemy
 answer-enemy-attack-assign-remaining-horror.json:contracts/fixtures/answer-enemy-attack-assign-remaining-horror.json
 question-player-window-enemy-actions.json:contracts/fixtures/question-player-window-enemy-actions.json
 question-player-window-engage-action.json:contracts/fixtures/question-player-window-engage-action.json
+question-roland-defeat-reaction.json:contracts/fixtures/question-roland-defeat-reaction.json
 question-round-end-forced-ability.json:contracts/fixtures/question-round-end-forced-ability.json
 question-agenda-advance.json:contracts/fixtures/question-agenda-advance.json
 question-agenda-consequence.json:contracts/fixtures/question-agenda-consequence.json

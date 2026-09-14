@@ -24,6 +24,10 @@ extension BasicChoiceParser {
     static func validateRoundTransitionQuestion(
         kind: BasicChoiceQuestionKind, choices: [BasicChoice]
     ) -> Bool {
+        if let isValid = validateRolandDefeatReactionQuestion(kind: kind, choices: choices) {
+            return isValid
+        }
+
         let forcedChoices = choices.compactMap { choice -> ForcedAbilityChoice? in
             guard case let .resolveForcedAbility(forced) = choice.content else { return nil }
             return forced

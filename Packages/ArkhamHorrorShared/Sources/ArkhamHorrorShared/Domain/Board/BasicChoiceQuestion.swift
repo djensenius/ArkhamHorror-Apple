@@ -319,8 +319,10 @@ private extension BasicChoiceParser {
     static func parseAbilityLabel(
         _ object: [String: JSONValue]
     ) -> BasicChoiceContent? {
-        if let forced = parseRoundEndForcedAbility(object) {
-            return forced
+        let specialized = parseRoundEndForcedAbility(object)
+            ?? parseRolandDefeatReaction(object)
+        if let specialized {
+            return specialized
         }
         guard Set(object.keys) == [
             "tag", "investigatorId", "ability", "windows", "before", "messages",
