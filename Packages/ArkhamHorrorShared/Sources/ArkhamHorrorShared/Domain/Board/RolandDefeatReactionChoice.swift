@@ -10,6 +10,7 @@ extension BasicChoiceParser {
         return ability["cardCode"] == .string(rolandCardCode)
             || ability["source"] == rolandInvestigatorSource
             || ability["requestor"] == rolandInvestigatorSource
+            || hasRolandDefeatReactionWindow(object["windows"])
     }
 
     static func parseRolandDefeatReaction(
@@ -255,5 +256,15 @@ private extension BasicChoiceParser {
                 .object(["tag": .string("AnyEnemy")]),
             ]),
         ])
+    }
+
+    static func hasRolandDefeatReactionWindow(_ value: JSONValue?) -> Bool {
+        guard case let .array(windows)? = value else { return false }
+        return windows.contains { window in
+            guard case let .object(windowObject) = window,
+                  case let .object(windowType)? = windowObject["windowType"]
+            else { return false }
+            return windowType["tag"] == .string("IfEnemyDefeated")
+        }
     }
 }

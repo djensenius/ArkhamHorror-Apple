@@ -152,38 +152,6 @@ struct BasicChoiceRolandReactionTests {
         }
     }
 
-    @Test("Malformed Roland reaction cannot fall through as a generic action")
-    func malformedReactionCannotBecomeInvestigate() throws {
-        let mutations = [
-            RolandMutation(
-                replacement: .string("ActionAbility"),
-                pointer: "/choices/0/ability/type/tag"
-            ),
-            RolandMutation(
-                replacement: .string("SingleAction"),
-                pointer: "/choices/0/ability/type/actions/tag"
-            ),
-            RolandMutation(
-                replacement: .string("Investigate"),
-                pointer: "/choices/0/ability/type/actions/contents"
-            ),
-        ]
-        let mutated = try mutations.reduce(RolandReactionFixtures.value()) {
-            try applying($1, to: $0)
-        }
-        let prompt = try RolandReactionFixtures.prompt(mutated)
-
-        #expect(!prompt.choices[0].isSupported)
-        #expect(prompt.choices[0].title == "Update required")
-        #expect(prompt.choices[1].content == .skipTriggers(
-            investigatorID: RolandReactionFixtures.investigatorID
-        ))
-        #expect(!prompt.isChoiceActionable(
-            prompt.choices[0],
-            in: RolandReactionFixtures.projection()
-        ))
-    }
-
     @Test("All 60 backend-published Roland mutations fail closed")
     func governedMutationsFailClosed() throws {
         let manifest = try ContractJSON.decode(
@@ -345,5 +313,44 @@ struct BasicChoiceRolandReactionTests {
             replacement: mutation.replacement,
             to: value
         )
+    }
+}
+
+@MainActor
+@Suite("Roland Banks reaction fallback")
+struct BasicChoiceRolandFallbackTests {
+    @Test("Malformed Roland reaction cannot fall through as a generic action")
+    func malformedReactionCannotBecomeInvestigate() throws {
+        let locationSource = JSONValue.object([
+            "tag": .string("LocationSource"),
+            "contents": .string(RolandReactionFixtures.locationID.codingKey.stringValue),
+        ])
+        let mutations: [(JSONValue, String)] = [
+            (.string("c01111"), "/choices/0/ability/cardCode"),
+            (locationSource, "/choices/0/ability/source"),
+            (locationSource, "/choices/0/ability/requestor"),
+            (.string("ActionAbility"), "/choices/0/ability/type/tag"),
+            (.string("SingleAction"), "/choices/0/ability/type/actions/tag"),
+            (.string("Investigate"), "/choices/0/ability/type/actions/contents"),
+        ]
+        let mutated = try mutations.reduce(RolandReactionFixtures.value()) { value, mutation in
+            try EnemyAttackFixtures.applying(
+                operation: "replace",
+                path: mutation.1.split(separator: "/"),
+                replacement: mutation.0,
+                to: value
+            )
+        }
+        let prompt = try RolandReactionFixtures.prompt(mutated)
+
+        #expect(!prompt.choices[0].isSupported)
+        #expect(prompt.choices[0].title == "Update required")
+        #expect(prompt.choices[1].content == .skipTriggers(
+            investigatorID: RolandReactionFixtures.investigatorID
+        ))
+        #expect(!prompt.isChoiceActionable(
+            prompt.choices[0],
+            in: RolandReactionFixtures.projection()
+        ))
     }
 }
