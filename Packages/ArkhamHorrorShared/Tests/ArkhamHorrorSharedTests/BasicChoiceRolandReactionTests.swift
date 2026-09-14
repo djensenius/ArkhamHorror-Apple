@@ -143,6 +143,38 @@ struct BasicChoiceRolandReactionTests {
         }
     }
 
+    @Test("Malformed Roland reaction cannot fall through as a generic action")
+    func malformedReactionCannotBecomeInvestigate() throws {
+        let mutations = [
+            RolandMutation(
+                replacement: .string("ActionAbility"),
+                pointer: "/choices/0/ability/type/tag"
+            ),
+            RolandMutation(
+                replacement: .string("SingleAction"),
+                pointer: "/choices/0/ability/type/actions/tag"
+            ),
+            RolandMutation(
+                replacement: .string("Investigate"),
+                pointer: "/choices/0/ability/type/actions/contents"
+            ),
+        ]
+        let mutated = try mutations.reduce(RolandReactionFixtures.value()) {
+            try applying($1, to: $0)
+        }
+        let prompt = try RolandReactionFixtures.prompt(mutated)
+
+        #expect(!prompt.choices[0].isSupported)
+        #expect(prompt.choices[0].title == "Update required")
+        #expect(prompt.choices[1].content == .skipTriggers(
+            investigatorID: RolandReactionFixtures.investigatorID
+        ))
+        #expect(!prompt.isChoiceActionable(
+            prompt.choices[0],
+            in: RolandReactionFixtures.projection()
+        ))
+    }
+
     @Test("All 60 backend-published Roland mutations fail closed")
     func governedMutationsFailClosed() throws {
         let manifest = try ContractJSON.decode(

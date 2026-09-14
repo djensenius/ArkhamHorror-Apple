@@ -1,6 +1,17 @@
 import Foundation
 
 extension BasicChoiceParser {
+    static func isRolandDefeatReactionCandidate(
+        _ object: [String: JSONValue]
+    ) -> Bool {
+        guard object["tag"] == .string("AbilityLabel"),
+              case let .object(ability)? = object["ability"]
+        else { return false }
+        return ability["cardCode"] == .string(rolandCardCode)
+            || ability["source"] == rolandInvestigatorSource
+            || ability["requestor"] == rolandInvestigatorSource
+    }
+
     static func parseRolandDefeatReaction(
         _ object: [String: JSONValue]
     ) -> BasicChoiceContent? {

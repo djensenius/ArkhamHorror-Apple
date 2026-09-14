@@ -324,7 +324,8 @@ private extension BasicChoiceParser {
         if let specialized {
             return specialized
         }
-        guard Set(object.keys) == [
+        guard !isRolandDefeatReactionCandidate(object),
+            Set(object.keys) == [
             "tag", "investigatorId", "ability", "windows", "before", "messages",
         ],
             let investigatorID = investigatorID(object["investigatorId"]),
