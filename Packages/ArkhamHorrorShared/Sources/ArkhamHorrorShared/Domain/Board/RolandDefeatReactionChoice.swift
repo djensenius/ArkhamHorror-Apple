@@ -1,6 +1,32 @@
 import Foundation
 
 extension BasicChoiceParser {
+    static func isTwoChoiceWindowReactionPrompt(
+        kind: BasicChoiceQuestionKind,
+        choices: [JSONValue]
+    ) -> Bool {
+        guard kind == .windowChooseOne,
+              choices.count == 2,
+              case let .object(firstChoice) = choices[0],
+              firstChoice["tag"] == .string("AbilityLabel"),
+              case let .object(secondChoice) = choices[1],
+              Set(secondChoice.keys) == ["tag", "investigatorId"],
+              secondChoice["tag"] == .string("SkipTriggersButton"),
+              case let .string(rawInvestigatorID)? = secondChoice["investigatorId"],
+              strictCardCode(rawInvestigatorID) != nil
+        else { return false }
+        return true
+    }
+
+    static func shouldReserveGenericAbilityFallback(
+        _ object: [String: JSONValue],
+        envelopeMatch: Bool
+    ) -> Bool {
+        envelopeMatch
+            || isRolandDefeatReactionCandidate(object)
+            || isCoverUpReactionCandidate(object)
+    }
+
     static func isRolandDefeatReactionCandidate(
         _ object: [String: JSONValue]
     ) -> Bool {
@@ -10,6 +36,7 @@ extension BasicChoiceParser {
         return ability["cardCode"] == .string(rolandCardCode)
             || ability["source"] == rolandInvestigatorSource
             || ability["requestor"] == rolandInvestigatorSource
+            || hasRolandDefeatReactionWindow(object["windows"])
     }
 
     static func parseRolandDefeatReaction(
@@ -255,5 +282,15 @@ private extension BasicChoiceParser {
                 .object(["tag": .string("AnyEnemy")]),
             ]),
         ])
+    }
+
+    static func hasRolandDefeatReactionWindow(_ value: JSONValue?) -> Bool {
+        guard case let .array(windows)? = value else { return false }
+        return windows.contains { window in
+            guard case let .object(windowObject) = window,
+                  case let .object(windowType)? = windowObject["windowType"]
+            else { return false }
+            return windowType["tag"] == .string("IfEnemyDefeated")
+        }
     }
 }

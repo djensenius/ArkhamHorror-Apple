@@ -85,16 +85,14 @@ bridge.
 ### Backend replay authority
 
 As of Monday, September 14, 2026, this repository is pinned to backend contract
-merge `1f73f580fd21cbbc30f70d50dd26949eef8d8ff3` from
-`djensenius/ArkhamHorror#85`, at contract revision `0.1.39`. That revision adds
-the exact production Q32 prompt for Roland Banks's optional post-defeat
-reaction, including the reaction and skip branches. Revision `0.1.38` previously
-added the production Q24-Q27 sequence after Engage: resolving Dissonant Voices
-at the end of the round, advancing Agenda 1, choosing between two horror and a
-random discard, and assigning exactly two horror on the horror branch.
+merge `38d8b466b635e3c9a18995baccac8b67cb6984cc` from
+`djensenius/ArkhamHorror#87`, at contract revision `0.1.40`. That revision adds
+the exact production Q33 prompt for Cover Up's optional clue-replacement
+reaction, including the reaction and skip branches. Revision `0.1.39` previously
+added the exact Q32 prompt for Roland Banks's optional post-defeat reaction.
 
-Fight, Evade, Engage, the round transition, and Roland's clue discovery remain
-server-authoritative.
+Fight, Evade, Engage, the round transition, Roland's clue discovery, and Cover
+Up's replacement effect remain server-authoritative.
 Swift recognizes only the exact governed prompt/source/message shapes, checks
 that referenced entities still exist in the newest projection, and submits the
 unchanged source-array index with the current question version. Costs,
@@ -121,7 +119,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.39",
+       "contractSchemaRevision": "0.1.40",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -182,7 +180,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend merge above:
 
 1. Confirm `ContractPin.current` is
-   `1f73f580fd21cbbc30f70d50dd26949eef8d8ff3` / `0.1.39`, then build the
+   `38d8b466b635e3c9a18995baccac8b67cb6984cc` / `0.1.40`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can

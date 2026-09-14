@@ -19,6 +19,8 @@ extension BoardProjection {
     ///   authoritative `EnemySource` identity is still present in this projection.
     /// - Roland's post-defeat reaction remains actionable only while Roland and his
     ///   current location remain present; the defeated enemy is expected to be gone.
+    /// - Cover Up's replacement reaction additionally requires the exact source treachery
+    ///   to remain present with at least one authoritative clue token.
     ///
     /// Such a choice stays visible at its exact original index (never filtered/reindexed)
     /// but cannot be actioned until it is authoritatively resolvable. Recomputed fresh
@@ -38,7 +40,7 @@ extension BoardProjection {
             return storyResolution?.isResolved == true
         case .finishMulligan:
             return labelResolution?.isResolved == true
-        case .rolandDefeatReaction, .resolveForcedAbility, .advanceAgenda,
+        case .rolandDefeatReaction, .coverUpReaction, .resolveForcedAbility, .advanceAgenda,
              .chooseAgendaConsequence,
              .assignAgendaHorror:
             return isRoundChoiceActionable(choice.content, labelResolution: labelResolution)
@@ -63,6 +65,8 @@ extension BoardProjection {
         switch content {
         case let .rolandDefeatReaction(reaction):
             isRolandDefeatReactionActionable(reaction)
+        case let .coverUpReaction(reaction):
+            isCoverUpReactionActionable(reaction)
         case let .resolveForcedAbility(forced):
             treacheryIDs.contains(forced.treacheryID)
                 && investigators.contains { $0.id == forced.ability.investigatorID }
@@ -91,6 +95,20 @@ extension BoardProjection {
         else { return false }
         return locations.contains { $0.id == locationID }
             || enemyLocations.contains { $0.id == locationID }
+    }
+
+    private func isCoverUpReactionActionable(
+        _ reaction: CoverUpReactionChoice
+    ) -> Bool {
+        guard let investigator = investigators.first(
+            where: { $0.id == reaction.ability.investigatorID }
+        ), investigator.currentLocationID == reaction.locationID,
+        locations.contains(where: { $0.id == reaction.locationID })
+        || enemyLocations.contains(where: { $0.id == reaction.locationID }),
+        let treachery = treacheriesByID[reaction.treacheryID]
+        else { return false }
+        return treachery.cardCode == reaction.ability.cardCode
+            && treachery.clueCount > 0
     }
 
     private func isEnemyChoiceActionable(_ content: BasicChoiceContent) -> Bool {

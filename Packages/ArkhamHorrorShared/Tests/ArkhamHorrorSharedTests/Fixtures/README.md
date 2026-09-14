@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@1f73f580fd21cbbc30f70d50dd26949eef8d8ff3`,
-schema revision `0.1.39`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@38d8b466b635e3c9a18995baccac8b67cb6984cc`,
+schema revision `0.1.40`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These 51 files, and only these 51, live under `Fixtures/Contract/` — a
+These 52 files, and only these 52, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -91,7 +91,7 @@ question version `6`; all 114 backend-published negative mutations remain update
 ## Governed assignment continuations
 
 Both remaining-assignment questions and dedicated Answers originate from the immutable
-`djensenius/ArkhamHorror#76` merge. The current revision `0.1.39` manifest and
+`djensenius/ArkhamHorror#76` merge. The current revision `0.1.40` manifest and
 basic-choice schema continue to govern them. Unlike the former replay-derived draft, these
 questions are generated through the real backend game engine, registered in the manifest,
 schema-validated, and each backed by 16 published single-mutation negatives.
@@ -102,7 +102,7 @@ choosing horror first produces the symmetric `Assign 1 damage`/`DamageToken` con
 Each sends its exact direct amount followed by the production `(0 damage, 0 horror)`
 completion message with both accumulated investigator-target arrays populated. Their
 Answers preserve source index `0`, player UUID `00000000-0000-0000-0000-000000000001`,
-and question version `7`. The 32 assignment-family negatives within the manifest's 481
+and question version `7`. The 32 assignment-family negatives within the manifest's 569
 total mutations now explicitly replace each continuation's required `AnyAsset` matcher
 with `AssetWithTitle`; Apple applies those mutations in memory and remains fail-closed.
 
@@ -124,7 +124,7 @@ other ability, window, and message field as opaque contract data, verifies that 
 still exists in the newest board projection, and submits the unchanged source index and
 authoritative question version. Unknown actions and malformed or alternate source shapes
 remain update-required. The backend manifest publishes two focused negative mutations for
-this fixture within its 481 total regressions.
+this fixture within its 569 total regressions.
 
 `question-player-window-engage-action.json` is the production post-Evade menu added by
 `djensenius/ArkhamHorror#81`. The same Ghoul Minion remains available to Fight at source
@@ -134,7 +134,7 @@ field, stays actionable only while that enemy remains in the newest projection, 
 submits only the unchanged source index plus authoritative question version. Swift never
 calculates or mutates engagement state. The backend manifest publishes three focused
 Engage negatives for unknown action text, an alternate source constructor, and uppercase
-UUID spelling.
+UUID spelling within the manifest's 569 total regressions.
 
 ## Governed round transition
 
@@ -153,7 +153,7 @@ preserve the production Q24-Q27 sequence:
 Swift independently verifies repeated dynamic source, target, and investigator
 identities because JSON Schema cannot express equality between UUID values. It
 does not calculate timing, branch outcomes, horror, or discard state. The
-backend manifest publishes 55 focused round-transition mutations within its 481
+backend manifest publishes 55 focused round-transition mutations within its 569
 total regressions.
 
 ## Governed Roland Banks reaction
@@ -169,8 +169,32 @@ published by the backend. It requires canonical integer tokens for ability
 indices `1` and `100`, keeps both source indices stable, and checks only that
 Roland and his current location remain present before submission. Haskell alone
 decides whether the reaction is legal and applies the clue movement. The
-manifest publishes 60 focused Roland mutations within its 481 total
+manifest publishes 60 focused Roland mutations within its 569 total
 regressions.
+
+## Governed Cover Up reaction
+
+`question-cover-up-reaction.json` is the exact production Q33
+`WindowChooseOne` prompt added by `djensenius/ArkhamHorror#87`. Source index `0`
+is Cover Up's optional replacement for discovering one clue; source index `1`
+is the exact `SkipTriggersButton`.
+
+The client accepts only the closed Cover Up `c01007` ability, criteria, limit,
+matching treachery source/requestor, declared `WouldDiscoverClues` matcher, and
+actual location, skill-test, Roland ability-source, and clue-count identities
+published by the backend. It retains both source indices, requires every
+governed integer token to use its canonical spelling, and permits submission
+only while Roland remains at the affected location and the exact Cover Up
+treachery remains present with at least one clue. Haskell alone decides whether
+the replacement is legal and mutates investigator, location, and treachery clue
+counts. The manifest publishes 88 focused Cover Up mutations within its 569
+total regressions.
+
+The deterministic fixture hashes to
+`8857d15cd056ac0e4d8556676dfc5746c5f9addaa2054d0b35c245610dbf71b9`.
+Authenticated replay prompts can have a different digest because location and
+skill-test UUIDs are runtime-generated; they remain governed by the same closed
+shape and repeated-identity checks.
 
 `replay-attestation.json` and `replay-attestation.schema.json` govern the durable
 server authority returned after an authenticated checkpoint import. The production
@@ -178,7 +202,7 @@ replay coordinator uses that contract to bind the imported game, player remappin
 checkpoint bytes, backend build identity, and canonical replay envelope before
 submitting any native action. `djensenius/ArkhamHorror#79` repairs the fixture's
 canonical receipt digest and pins these bytes to immutable merge
-`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.39` rebinds that
+`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.40` rebinds that
 same validated fixture to the current contract manifest.
 
 ## token.json / whoami.json

@@ -86,10 +86,14 @@ enum BasicChoiceParser {
         else {
             return .updateRequired(tag: tag)
         }
+        let reserveReaction = isTwoChoiceWindowReactionPrompt(kind: kind, choices: rawChoices)
         let parsedChoices = rawChoices.enumerated().map { index, choice in
             BasicChoice(
                 index: index, rawValue: choice,
-                content: parseChoice(choice, kind: kind, index: index)
+                content: parseChoice(
+                    choice, kind: kind, index: index,
+                    reserveGenericAbilityFallback: reserveReaction && index == 0
+                )
             )
         }
         let choices = contextualizeHandCardChoices(parsedChoices, kind: kind)
@@ -102,7 +106,8 @@ enum BasicChoiceParser {
     }
 
     private static func parseChoice(
-        _ value: JSONValue, kind: BasicChoiceQuestionKind, index: Int
+        _ value: JSONValue, kind: BasicChoiceQuestionKind, index: Int,
+        reserveGenericAbilityFallback: Bool
     ) -> BasicChoiceContent {
         guard case let .object(object) = value,
               case let .string(tag)? = object["tag"]
@@ -115,7 +120,8 @@ enum BasicChoiceParser {
         case "EndTurnButton":
             return parseEndTurn(object) ?? .unsupported(tag: tag)
         case "AbilityLabel":
-            return parseAbilityLabel(object) ?? .unsupported(tag: tag)
+            return parseAbilityLabel(object, reserveGenericFallback: reserveGenericAbilityFallback)
+                ?? .unsupported(tag: tag)
         case "Label":
             return parseLabel(object) ?? .unsupported(tag: tag)
         case "TargetLabel":
@@ -317,14 +323,15 @@ enum BasicChoiceParser {
 
 private extension BasicChoiceParser {
     static func parseAbilityLabel(
-        _ object: [String: JSONValue]
+        _ object: [String: JSONValue], reserveGenericFallback: Bool
     ) -> BasicChoiceContent? {
         let specialized = parseRoundEndForcedAbility(object)
             ?? parseRolandDefeatReaction(object)
+            ?? parseCoverUpReaction(object)
         if let specialized {
             return specialized
         }
-        guard !isRolandDefeatReactionCandidate(object),
+        guard !shouldReserveGenericAbilityFallback(object, envelopeMatch: reserveGenericFallback),
               Set(object.keys) == [
                   "tag", "investigatorId", "ability", "windows", "before", "messages",
               ],

@@ -158,6 +158,13 @@ struct BoardHandCardNode: Sendable, Equatable, Identifiable {
     }
 }
 
+/// The narrow authoritative treachery state needed to retire stale Cover Up actions.
+struct BoardTreacheryNode: Sendable, Equatable, Identifiable {
+    let id: TreacheryID
+    let cardCode: CardCode
+    let clueCount: Int
+}
+
 /// The scenario's chaos bag, summarized as face-grouped counts rather than a card-by-card
 /// listing.
 struct BoardChaosBagSummary: Sendable, Equatable {
@@ -281,6 +288,8 @@ struct BoardProjection: Sendable, Equatable {
     let enemyIDs: [EnemyID]
     /// Retains canonical treachery IDs so forced abilities fail closed after cards leave play.
     let treacheryIDs: [TreacheryID]
+    /// Treacheries whose embedded identity, card code, and token multiset all parsed exactly.
+    let treacheriesByID: [TreacheryID: BoardTreacheryNode]
     let otherInvestigatorCount: Int
     let killedInvestigatorCount: Int
     /// Narrow, immutable player-hand presentation authority. Raw card payloads never leave
