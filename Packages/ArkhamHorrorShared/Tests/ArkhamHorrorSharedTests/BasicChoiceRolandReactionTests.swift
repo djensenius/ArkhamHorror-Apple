@@ -326,12 +326,15 @@ struct BasicChoiceRolandFallbackTests {
             "contents": .string(RolandReactionFixtures.locationID.codingKey.stringValue),
         ])
         let mutations: [(JSONValue, String)] = [
+            (.string("c01002"), "/choices/0/investigatorId"),
             (.string("c01111"), "/choices/0/ability/cardCode"),
             (locationSource, "/choices/0/ability/source"),
             (locationSource, "/choices/0/ability/requestor"),
+            (.string("GameBegins"), "/choices/0/ability/window/tag"),
             (.string("ActionAbility"), "/choices/0/ability/type/tag"),
             (.string("SingleAction"), "/choices/0/ability/type/actions/tag"),
             (.string("Investigate"), "/choices/0/ability/type/actions/contents"),
+            (.string("GameBegins"), "/choices/0/windows/0/windowType/tag"),
         ]
         let mutated = try mutations.reduce(RolandReactionFixtures.value()) { value, mutation in
             try EnemyAttackFixtures.applying(

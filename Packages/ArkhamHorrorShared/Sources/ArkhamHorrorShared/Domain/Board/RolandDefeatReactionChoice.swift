@@ -1,6 +1,19 @@
 import Foundation
 
 extension BasicChoiceParser {
+    static func isTwoChoiceWindowReactionPrompt(
+        kind: BasicChoiceQuestionKind,
+        choices: [JSONValue]
+    ) -> Bool {
+        guard kind == .windowChooseOne,
+              choices.count == 2,
+              case let .object(firstChoice) = choices[0],
+              firstChoice["tag"] == .string("AbilityLabel"),
+              case let .object(secondChoice) = choices[1]
+        else { return false }
+        return parseInvestigatorControl(secondChoice, tag: "SkipTriggersButton") != nil
+    }
+
     static func isRolandDefeatReactionCandidate(
         _ object: [String: JSONValue]
     ) -> Bool {
