@@ -212,7 +212,7 @@ enum BasicChoiceParser {
         return .endTurn(investigatorID: investigatorID, messages: messages)
     }
 
-    static func parseInvestigatorControl(
+    private static func parseInvestigatorControl(
         _ object: [String: JSONValue], tag: String
     ) -> InvestigatorID? {
         guard Set(object.keys) == ["tag", "investigatorId"],

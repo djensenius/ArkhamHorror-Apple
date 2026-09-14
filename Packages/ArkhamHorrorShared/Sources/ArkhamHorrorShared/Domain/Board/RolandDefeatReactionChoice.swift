@@ -9,9 +9,13 @@ extension BasicChoiceParser {
               choices.count == 2,
               case let .object(firstChoice) = choices[0],
               firstChoice["tag"] == .string("AbilityLabel"),
-              case let .object(secondChoice) = choices[1]
+              case let .object(secondChoice) = choices[1],
+              Set(secondChoice.keys) == ["tag", "investigatorId"],
+              secondChoice["tag"] == .string("SkipTriggersButton"),
+              case let .string(rawInvestigatorID)? = secondChoice["investigatorId"],
+              strictCardCode(rawInvestigatorID) != nil
         else { return false }
-        return parseInvestigatorControl(secondChoice, tag: "SkipTriggersButton") != nil
+        return true
     }
 
     static func isRolandDefeatReactionCandidate(
