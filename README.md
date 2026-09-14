@@ -84,14 +84,17 @@ bridge.
 
 ### Backend replay authority
 
-As of Sunday, September 13, 2026, this repository is pinned to backend contract
-merge `1000165eb7e6624c21e497724de26a3dc08189e9` from
-`djensenius/ArkhamHorror#83`, at contract revision `0.1.38`. That revision adds
-the production Q24-Q27 sequence after Engage: resolving Dissonant Voices at the
-end of the round, advancing Agenda 1, choosing between two horror and a random
-discard, and assigning exactly two horror on the horror branch.
+As of Monday, September 14, 2026, this repository is pinned to backend contract
+merge `1f73f580fd21cbbc30f70d50dd26949eef8d8ff3` from
+`djensenius/ArkhamHorror#85`, at contract revision `0.1.39`. That revision adds
+the exact production Q32 prompt for Roland Banks's optional post-defeat
+reaction, including the reaction and skip branches. Revision `0.1.38` previously
+added the production Q24-Q27 sequence after Engage: resolving Dissonant Voices
+at the end of the round, advancing Agenda 1, choosing between two horror and a
+random discard, and assigning exactly two horror on the horror branch.
 
-Fight, Evade, Engage, and the round transition remain server-authoritative.
+Fight, Evade, Engage, the round transition, and Roland's clue discovery remain
+server-authoritative.
 Swift recognizes only the exact governed prompt/source/message shapes, checks
 that referenced entities still exist in the newest projection, and submits the
 unchanged source-array index with the current question version. Costs,
@@ -118,7 +121,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.38",
+       "contractSchemaRevision": "0.1.39",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -179,7 +182,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend merge above:
 
 1. Confirm `ContractPin.current` is
-   `1000165eb7e6624c21e497724de26a3dc08189e9` / `0.1.38`, then build the
+   `1f73f580fd21cbbc30f70d50dd26949eef8d8ff3` / `0.1.39`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can
@@ -369,13 +372,14 @@ project differs from `project.yml`.
 ## Current limitations
 
 The deterministic Gathering path is playable through setup, investigation,
-encounter draw, enemy attack and assignment, Fight, Evade, Engage, and the
-following end-of-round/agenda transition. It is not yet a complete campaign
-client: later encounter and player-window variants, all campaign-specific
-surfaces, full deck/campaign management, multiplayer parity, replay/undo UI,
-signing, distribution, final iconography, and final platform polish remain in
-progress. Unknown governed prompts fail closed with an explicit client-update
-requirement rather than guessing. Product planning is tracked in
+encounter draw, enemy attack and assignment, Fight, Evade, Engage, the following
+end-of-round/agenda transition, and Roland Banks's optional post-defeat clue
+reaction or skip. It is not yet a complete campaign client: later encounter and
+player-window variants, all campaign-specific surfaces, full deck/campaign
+management, multiplayer parity, replay/undo UI, signing, distribution, final
+iconography, and final platform polish remain in progress. Unknown governed
+prompts fail closed with an explicit client-update requirement rather than
+guessing. Product planning is tracked in
 [djensenius/ArkhamHorror#5](https://github.com/djensenius/ArkhamHorror/issues/5)
 and
 [djensenius/ArkhamHorror-Apple#5](https://github.com/djensenius/ArkhamHorror-Apple/issues/5).

@@ -32,6 +32,7 @@ private struct GovernedContractManifest: Decodable {
 }
 
 @Suite("ContractFixtureDigest")
+// swiftlint:disable:next type_body_length
 struct ContractFixtureDigestTests {
     /// The one subdirectory holding fixtures vendored from `ContractPin.current`'s pinned
     /// backend commit. `token.json`/`whoami.json` (synthetic auth fixtures, unrelated to
@@ -128,6 +129,7 @@ struct ContractFixtureDigestTests {
             "answer-enemy-attack-assign-remaining-horror",
             "question-player-window-enemy-actions",
             "question-player-window-engage-action",
+            "question-roland-defeat-reaction",
             "question-round-end-forced-ability",
             "question-agenda-advance",
             "question-agenda-consequence",
@@ -203,17 +205,17 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "1000165eb7e6624c21e497724de26a3dc08189e9"
+            ContractPin.current.backendCommit == "1f73f580fd21cbbc30f70d50dd26949eef8d8ff3"
         )
     }
 
-    @Test("The immutable manifest governs 32 assignment negatives within 421 total")
+    @Test("The immutable manifest governs 32 assignment negatives within 481 total")
     func assignmentFamilyManifestCoverage() throws {
         let manifest = try ContractJSON.decode(
             GovernedContractManifest.self,
             from: fixtureData(named: "manifest")
         )
-        #expect(manifest.negativeFixtures.count == 421)
+        #expect(manifest.negativeFixtures.count == 481)
         let fixtureSchemas = Dictionary(
             uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
         )
@@ -269,6 +271,20 @@ struct ContractFixtureDigestTests {
         )
         #expect(fixtureSchemas[path] == "contracts/schemas/basic-choice-question.schema.json")
         #expect(manifest.negativeFixtures.count { $0.basePositiveFixture == path } == 3)
+    }
+
+    @Test("The immutable manifest governs the production Roland reaction")
+    func rolandReactionManifestCoverage() throws {
+        let manifest = try ContractJSON.decode(
+            GovernedContractManifest.self,
+            from: fixtureData(named: "manifest")
+        )
+        let path = "contracts/fixtures/question-roland-defeat-reaction.json"
+        let fixtureSchemas = Dictionary(
+            uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
+        )
+        #expect(fixtureSchemas[path] == "contracts/schemas/basic-choice-question.schema.json")
+        #expect(manifest.negativeFixtures.count { $0.basePositiveFixture == path } == 60)
     }
 
     @Test("The immutable manifest governs all four round-transition prompts")

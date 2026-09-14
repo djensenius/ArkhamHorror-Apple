@@ -86,10 +86,14 @@ enum BasicChoiceParser {
         else {
             return .updateRequired(tag: tag)
         }
+        let reserveReaction = isTwoChoiceWindowReactionPrompt(kind: kind, choices: rawChoices)
         let parsedChoices = rawChoices.enumerated().map { index, choice in
             BasicChoice(
                 index: index, rawValue: choice,
-                content: parseChoice(choice, kind: kind, index: index)
+                content: parseChoice(
+                    choice, kind: kind, index: index,
+                    reserveGenericAbilityFallback: reserveReaction && index == 0
+                )
             )
         }
         let choices = contextualizeHandCardChoices(parsedChoices, kind: kind)
@@ -102,7 +106,8 @@ enum BasicChoiceParser {
     }
 
     private static func parseChoice(
-        _ value: JSONValue, kind: BasicChoiceQuestionKind, index: Int
+        _ value: JSONValue, kind: BasicChoiceQuestionKind, index: Int,
+        reserveGenericAbilityFallback: Bool
     ) -> BasicChoiceContent {
         guard case let .object(object) = value,
               case let .string(tag)? = object["tag"]
@@ -115,7 +120,8 @@ enum BasicChoiceParser {
         case "EndTurnButton":
             return parseEndTurn(object) ?? .unsupported(tag: tag)
         case "AbilityLabel":
-            return parseAbilityLabel(object) ?? .unsupported(tag: tag)
+            return parseAbilityLabel(object, reserveGenericFallback: reserveGenericAbilityFallback)
+                ?? .unsupported(tag: tag)
         case "Label":
             return parseLabel(object) ?? .unsupported(tag: tag)
         case "TargetLabel":
@@ -317,29 +323,33 @@ enum BasicChoiceParser {
 
 private extension BasicChoiceParser {
     static func parseAbilityLabel(
-        _ object: [String: JSONValue]
+        _ object: [String: JSONValue], reserveGenericFallback: Bool
     ) -> BasicChoiceContent? {
-        if let forced = parseRoundEndForcedAbility(object) {
-            return forced
+        let specialized = parseRoundEndForcedAbility(object)
+            ?? parseRolandDefeatReaction(object)
+        if let specialized {
+            return specialized
         }
-        guard Set(object.keys) == [
-            "tag", "investigatorId", "ability", "windows", "before", "messages",
-        ],
-            let investigatorID = investigatorID(object["investigatorId"]),
-            case let .object(ability)? = object["ability"],
-            case .object? = ability["source"],
-            case let .string(cardCodeText)? = ability["cardCode"],
-            let cardCode = strictCardCode(cardCodeText),
-            isCanonicalInteger(ability["index"]),
-            case let .object(type)? = ability["type"],
-            case .string("ActionAbility")? = type["tag"],
-            case let .object(actions)? = type["actions"],
-            case .string("SingleAction")? = actions["tag"],
-            case let .string(action)? = actions["contents"],
-            case let .array(windows)? = object["windows"],
-            windows.allSatisfy(Self.isObject),
-            let before = messages(object["before"]),
-            let messages = messages(object["messages"])
+        guard !reserveGenericFallback,
+              !isRolandDefeatReactionCandidate(object),
+              Set(object.keys) == [
+                  "tag", "investigatorId", "ability", "windows", "before", "messages",
+              ],
+              let investigatorID = investigatorID(object["investigatorId"]),
+              case let .object(ability)? = object["ability"],
+              case .object? = ability["source"],
+              case let .string(cardCodeText)? = ability["cardCode"],
+              let cardCode = strictCardCode(cardCodeText),
+              isCanonicalInteger(ability["index"]),
+              case let .object(type)? = ability["type"],
+              case .string("ActionAbility")? = type["tag"],
+              case let .object(actions)? = type["actions"],
+              case .string("SingleAction")? = actions["tag"],
+              case let .string(action)? = actions["contents"],
+              case let .array(windows)? = object["windows"],
+              windows.allSatisfy(Self.isObject),
+              let before = messages(object["before"]),
+              let messages = messages(object["messages"])
         else { return nil }
         let parsedAbility = BasicChoiceAbility(
             investigatorID: investigatorID,

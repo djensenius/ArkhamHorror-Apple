@@ -53,7 +53,7 @@ enum BoardDisplayFormatting {
         case .resolveEnemyAttack, .assignEnemyAttackDamage, .assignAgendaHorror:
             return investigatorChoiceDisplayTitle(for: choice, in: projection)
         case .gainResource, .drawCard, .endTurn, .investigate, .fight, .evade, .engage,
-             .resolveForcedAbility, .advanceAgenda, .continueReading,
+             .rolandDefeatReaction, .resolveForcedAbility, .advanceAgenda, .continueReading,
              .skipTriggers, .startSkillTest, .applySkillTestResults, .drawEncounterCard,
              .unsupported:
             return choice.title
@@ -334,7 +334,8 @@ private enum BasicChoiceAvailabilityFormatting {
             "The enemy or investigator for this attack isn't currently available."
         case .assignEnemyAttackDamage:
             "The enemy or investigator for this assignment isn't currently available."
-        case .resolveForcedAbility, .advanceAgenda, .assignAgendaHorror:
+        case .rolandDefeatReaction, .resolveForcedAbility, .advanceAgenda,
+             .assignAgendaHorror:
             roundTransitionAnnouncement(for: choice.content)
         case .fight, .evade, .engage:
             "This enemy isn't currently available."
@@ -348,6 +349,8 @@ private enum BasicChoiceAvailabilityFormatting {
         for content: BasicChoiceContent
     ) -> String {
         switch content {
+        case .rolandDefeatReaction:
+            "Roland Banks or his location isn't currently available."
         case .resolveForcedAbility:
             "The treachery or investigator for this ability isn't currently available."
         case .advanceAgenda:

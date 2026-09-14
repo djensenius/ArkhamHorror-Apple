@@ -14,6 +14,11 @@ struct ForcedAbilityChoice: Sendable, Equatable, Hashable {
     let treacheryID: TreacheryID
 }
 
+struct RolandDefeatReactionChoice: Sendable, Equatable, Hashable {
+    let ability: BasicChoiceAbility
+    let defeatedEnemyID: EnemyID
+}
+
 struct AgendaConsequenceChoice: Sendable, Equatable, Hashable {
     enum Kind: Sendable, Equatable, Hashable {
         case takeHorror
@@ -95,6 +100,7 @@ enum BasicChoiceContent: Sendable, Equatable, Hashable {
     case fight(BasicChoiceAbility, enemyID: EnemyID)
     case evade(BasicChoiceAbility, enemyID: EnemyID)
     case engage(BasicChoiceAbility, enemyID: EnemyID)
+    case rolandDefeatReaction(RolandDefeatReactionChoice)
     case resolveForcedAbility(ForcedAbilityChoice)
     case advanceAgenda(agendaID: AgendaID, messages: [JSONValue])
     case chooseAgendaConsequence(AgendaConsequenceChoice)
@@ -142,6 +148,7 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .fight: "Fight"
         case .evade: "Evade"
         case .engage: "Engage"
+        case .rolandDefeatReaction: "Discover 1 clue"
         case .resolveForcedAbility: "Resolve forced ability"
         case .advanceAgenda: "Advance agenda"
         case .chooseAgendaConsequence: "Unavailable action"
@@ -168,6 +175,7 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .fight: "burst.fill"
         case .evade: "figure.run"
         case .engage: "person.2.fill"
+        case .rolandDefeatReaction: "magnifyingglass.circle.fill"
         case .resolveForcedAbility: "exclamationmark.triangle.fill"
         case .advanceAgenda: "arrow.up.circle.fill"
         case let .chooseAgendaConsequence(choice): choice.kind.systemImage
@@ -188,6 +196,8 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case let .investigate(ability), let .fight(ability, _), let .evade(ability, _),
              let .engage(ability, _):
             ability
+        case let .rolandDefeatReaction(choice):
+            choice.ability
         case let .resolveForcedAbility(choice):
             choice.ability
         default:
