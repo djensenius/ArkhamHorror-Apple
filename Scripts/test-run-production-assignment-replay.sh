@@ -7,6 +7,7 @@ readonly swift_bin="$toolchain_bin/swift"
 readonly selftest_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorSelfTestSuite/'
 readonly expected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator()'
 readonly injected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinatorInjected()'
+readonly current_contract_revision="0.1.41"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -174,7 +175,7 @@ if ARKHAM_REPLAY_SWIFT_BIN="$fake_swift" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
   ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
-  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.40" \
+  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="$current_contract_revision" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$production_launcher" \
   "$harness_root/checkpoint" \
@@ -196,7 +197,7 @@ if ARKHAM_REPLAY_SCENARIO="gathering-act-advance" \
   ARKHAM_REPLAY_BASE_URL="https://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="0000000000000000000000000000000000000000" \
-  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.40" \
+  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="$current_contract_revision" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$production_launcher" \
   "$harness_root/checkpoint" \
@@ -217,7 +218,7 @@ if ARKHAM_REPLAY_SCENARIO="future-replay" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
   ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
-  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.40" \
+  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="$current_contract_revision" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$production_launcher" \
   "$harness_root/checkpoint" \
@@ -307,7 +308,7 @@ if ARKHAM_REPLAY_BASE_URL="https://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
   ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
-  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.40" \
+  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="$current_contract_revision" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$fake_package_launcher" \
   "$sensitive_checkpoint" \
@@ -343,7 +344,7 @@ if ARKHAM_REPLAY_BASE_URL="https://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
   ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
-  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.40" \
+  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="$current_contract_revision" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$fake_package_launcher" \
   "$sensitive_checkpoint" \
@@ -439,7 +440,7 @@ if PATH="$harness_root" \
   ARKHAM_REPLAY_BASE_URL="http://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
   ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
-  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.40" \
+  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="$current_contract_revision" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   "$production_launcher" \
   "$harness_root/missing-checkpoint" \

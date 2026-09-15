@@ -1,8 +1,59 @@
+import CryptoKit
 import Foundation
 
 struct QuestionPresentationRawQuestionShape: Sendable, Equatable, Hashable {
     let kind: QuestionPresentation.Kind
     let choices: [JSONValue]
+
+    func validateGovernedChoices(
+        for presentation: QuestionPresentation
+    ) throws {
+        // Any change to these governed raw branches requires a matching client update.
+        let requirement: (sourceIndex: Int, canonicalSHA256: String)? = switch (
+            presentation.questionVersion,
+            presentation.questionKind,
+            presentation.choiceCount
+        ) {
+        case (34, .playerWindowChooseOne, 13):
+            (
+                sourceIndex: 12,
+                canonicalSHA256:
+                "5ce874838b4e764a207a8b66017bc66339092708caeb32070fb69310c39946de"
+            )
+        case (35, .chooseOne, 1):
+            (
+                sourceIndex: 0,
+                canonicalSHA256:
+                "4e85cfd95e1abe29f08f8d1cf7eaaf817b23193b77000fe5413b02fdec6f3b7f"
+            )
+        default:
+            nil
+        }
+        guard let requirement else { return }
+        guard choices.indices.contains(requirement.sourceIndex) else {
+            throw QuestionPresentationBindingError.rawChoiceMismatch(
+                sourceIndex: requirement.sourceIndex
+            )
+        }
+        let canonical: Data
+        do {
+            canonical = try LosslessJSONSerializer.serialize(
+                choices[requirement.sourceIndex]
+            )
+        } catch {
+            throw QuestionPresentationBindingError.rawChoiceMismatch(
+                sourceIndex: requirement.sourceIndex
+            )
+        }
+        let digest = SHA256.hash(data: canonical)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        guard digest == requirement.canonicalSHA256 else {
+            throw QuestionPresentationBindingError.rawChoiceMismatch(
+                sourceIndex: requirement.sourceIndex
+            )
+        }
+    }
 }
 
 enum QuestionPresentationRawQuestionDeriver {
