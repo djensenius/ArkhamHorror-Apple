@@ -191,7 +191,7 @@ counts. The manifest publishes 88 focused Cover Up mutations within its 569
 total regressions.
 
 The deterministic fixture hashes to
-`8857d15cd056ac0e4d8556676dfc5746c5f9addaa2054d0b35c245610dbf71b9`.
+`0043cefb8ea59423b4283691ea6bbac816ef135b0b13fa380783004cd3613d95`.
 Authenticated replay prompts can have a different digest because location and
 skill-test UUIDs are runtime-generated; they remain governed by the same closed
 shape and repeated-identity checks.
