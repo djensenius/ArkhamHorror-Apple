@@ -51,7 +51,10 @@ extension BasicChoicePromptPresentation {
         guard let descriptor = semanticPresentation.descriptor(
             forSourceIndex: choice.index
         ) else {
-            return semanticLocalized("Unavailable action (choice \(choice.index + 1))")
+            return semanticLocalized(
+                "semantic.choice.unavailable.index",
+                value: "Unavailable action (choice \(choice.index + 1))"
+            )
         }
         let title = semanticTitle(
             for: descriptor,
@@ -60,7 +63,10 @@ extension BasicChoicePromptPresentation {
         )
         guard let cost = descriptor.cost else { return title }
         let costSummary = semanticCostSummary(cost, in: projection)
-        return semanticLocalized("\(title) (\(costSummary))")
+        return semanticLocalized(
+            "semantic.choice.title.withCost",
+            value: "\(title) (\(costSummary))"
+        )
     }
 
     // swiftlint:disable:next cyclomatic_complexity
@@ -105,6 +111,8 @@ extension BasicChoicePromptPresentation {
             forSourceIndex: choice.index
         ) else {
             return semanticLocalized(
+                "semantic.choice.accessibility.missingDescription",
+                value:
                 "This choice has no semantic description and cannot be activated."
             )
         }
@@ -119,9 +127,15 @@ extension BasicChoicePromptPresentation {
             )
         }
         guard canSubmit else {
-            return statusMessage ?? semanticLocalized("This choice is currently read-only.")
+            return statusMessage ?? semanticLocalized(
+                "semantic.choice.accessibility.readOnly",
+                value: "This choice is currently read-only."
+            )
         }
-        return semanticLocalized("Activates choice \(choice.index + 1).")
+        return semanticLocalized(
+            "semantic.choice.accessibility.activatesIndex",
+            value: "Activates choice \(choice.index + 1)."
+        )
     }
 
     private static func rawChoiceTag(_ value: JSONValue) -> String? {
@@ -131,7 +145,7 @@ extension BasicChoicePromptPresentation {
         return tag
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     private func semanticTitle(
         for descriptor: QuestionPresentation.Choice,
         in projection: BoardProjection,
@@ -139,37 +153,87 @@ extension BasicChoicePromptPresentation {
     ) -> String {
         switch descriptor.kind {
         case .advanceAct:
-            semanticLocalized("Advance act")
+            semanticLocalized(
+                "semantic.choice.title.advanceAct",
+                value: "Advance act"
+            )
         case .advanceAgenda:
-            semanticLocalized("Advance agenda")
+            semanticLocalized(
+                "semantic.choice.title.advanceAgenda",
+                value: "Advance agenda"
+            )
         case .applySkillTestResults:
-            semanticLocalized("Apply results")
+            semanticLocalized(
+                "semantic.choice.title.applyResults",
+                value: "Apply results"
+            )
         case .chooseTarget:
             descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
-                .map { semanticLocalized("Choose \($0)") }
-                ?? semanticLocalized("Choose target")
+                .map {
+                    semanticLocalized(
+                        "semantic.choice.title.chooseEntity",
+                        value: "Choose \($0)"
+                    )
+                }
+                ?? semanticLocalized(
+                    "semantic.choice.title.chooseTarget",
+                    value: "Choose target"
+                )
         case .drawCard:
-            semanticLocalized("Draw a card")
+            semanticLocalized(
+                "semantic.choice.title.drawCard",
+                value: "Draw a card"
+            )
         case .endTurn:
-            semanticLocalized("End turn")
+            semanticLocalized(
+                "semantic.choice.title.endTurn",
+                value: "End turn"
+            )
         case .engage:
-            semanticLocalized("Engage")
+            semanticLocalized(
+                "semantic.choice.title.engage",
+                value: "Engage"
+            )
         case .evade:
-            semanticLocalized("Evade")
+            semanticLocalized(
+                "semantic.choice.title.evade",
+                value: "Evade"
+            )
         case .fight:
-            semanticLocalized("Fight")
+            semanticLocalized(
+                "semantic.choice.title.fight",
+                value: "Fight"
+            )
         case .gainResource:
-            semanticLocalized("Gain a resource")
+            semanticLocalized(
+                "semantic.choice.title.gainResource",
+                value: "Gain a resource"
+            )
         case .investigate:
-            semanticLocalized("Investigate")
+            semanticLocalized(
+                "semantic.choice.title.investigate",
+                value: "Investigate"
+            )
         case .localizedLabel:
-            labelResolution?.title ?? semanticLocalized("Unavailable action")
+            labelResolution?.title ?? semanticLocalized(
+                "semantic.choice.title.unavailable",
+                value: "Unavailable action"
+            )
         case .skipTriggers:
-            semanticLocalized("Skip triggers")
+            semanticLocalized(
+                "semantic.choice.title.skipTriggers",
+                value: "Skip triggers"
+            )
         case .startSkillTest:
-            semanticLocalized("Start skill test")
+            semanticLocalized(
+                "semantic.choice.title.startSkillTest",
+                value: "Start skill test"
+            )
         case .useAbility:
-            semanticLocalized("Use ability")
+            semanticLocalized(
+                "semantic.choice.title.useAbility",
+                value: "Use ability"
+            )
         }
     }
 
@@ -196,191 +260,91 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    private enum SemanticCostComposition {
-        case all
-        case choice
-    }
-
-    private func semanticCostSummary(
-        _ cost: QuestionPresentation.Cost,
-        in projection: BoardProjection,
-        enclosingComposition: SemanticCostComposition? = nil
-    ) -> String {
-        switch cost {
-        case .free:
-            return semanticLocalized("free")
-        case let .action(amount):
-            return semanticCount(amount, singular: "action", plural: "actions")
-        case let .resource(amount):
-            return semanticCount(amount, singular: "resource", plural: "resources")
-        case let .clue(amount):
-            return semanticAmountSummary(amount, singular: "clue", plural: "clues")
-        case let .groupClue(amount, scope):
-            let amountSummary = semanticAmountSummary(
-                amount, singular: "clue", plural: "clues"
-            )
-            let scopeSummary = semanticScopeSummary(scope, in: projection)
-            return semanticLocalized("\(amountSummary) \(scopeSummary)")
-        case let .groupResource(amount, scope):
-            let amountSummary = semanticAmountSummary(
-                amount, singular: "resource", plural: "resources"
-            )
-            let scopeSummary = semanticScopeSummary(scope, in: projection)
-            return semanticLocalized("\(amountSummary) \(scopeSummary)")
-        case let .all(costs):
-            return semanticCompositeCostSummary(
-                costs,
-                composition: .all,
-                in: projection,
-                enclosingComposition: enclosingComposition
-            )
-        case let .choice(costs):
-            return semanticCompositeCostSummary(
-                costs,
-                composition: .choice,
-                in: projection,
-                enclosingComposition: enclosingComposition
-            )
-        case .other:
-            return semanticLocalized("additional cost")
-        }
-    }
-
-    private func semanticCompositeCostSummary(
-        _ costs: [QuestionPresentation.Cost],
-        composition: SemanticCostComposition,
-        in projection: BoardProjection,
-        enclosingComposition: SemanticCostComposition?
-    ) -> String {
-        let summaries = costs.map {
-            semanticCostSummary(
-                $0,
-                in: projection,
-                enclosingComposition: composition
-            )
-        }
-        guard let first = summaries.first else { return "" }
-        let summary = summaries.dropFirst().reduce(first) { partial, next in
-            switch composition {
-            case .all:
-                semanticLocalized("\(partial) and \(next)")
-            case .choice:
-                semanticLocalized("\(partial) or \(next)")
-            }
-        }
-        guard let enclosingComposition, enclosingComposition != composition else {
-            return summary
-        }
-        return "(\(summary))"
-    }
-
-    private func semanticAmountSummary(
-        _ amount: QuestionPresentation.Amount,
-        singular: String.LocalizationValue,
-        plural: String.LocalizationValue
-    ) -> String {
-        switch amount {
-        case let .fixed(value):
-            return semanticCount(value, singular: singular, plural: plural)
-        case let .perPlayer(value):
-            return semanticLocalized(
-                "\(semanticCount(value, singular: singular, plural: plural)) per investigator"
-            )
-        case let .fixedPlusPerPlayer(fixed, perPlayer):
-            let fixedSummary = semanticCount(fixed, singular: singular, plural: plural)
-            let perPlayerSummary = semanticCount(
-                perPlayer, singular: singular, plural: plural
-            )
-            return semanticLocalized(
-                "\(fixedSummary) + \(perPlayerSummary) per investigator"
-            )
-        case let .byPlayerCount(values):
-            let counts = values.map(String.init).joined(separator: "/")
-            let pluralUnit = semanticLocalized(plural)
-            return semanticLocalized("\(counts) \(pluralUnit) by player count")
-        case .variable:
-            return semanticLocalized("X \(semanticLocalized(plural))")
-        case .star:
-            return semanticLocalized("★ \(semanticLocalized(plural))")
-        case .unknown:
-            return semanticLocalized("an unknown number of \(semanticLocalized(plural))")
-        }
-    }
-
-    private func semanticScopeSummary(
-        _ scope: QuestionPresentation.Scope,
-        in projection: BoardProjection
-    ) -> String {
-        switch scope {
-        case .anywhere:
-            return semanticLocalized("from anywhere")
-        case .sameLocation:
-            return semanticLocalized("at the same location")
-        case let .location(rawID):
-            guard let id = semanticLocationID(rawID) else {
-                return semanticLocalized("at the specified location")
-            }
-            if let location = projection.locations.first(where: { $0.id == id }) {
-                return semanticLocalized("at \(location.displayLabel)")
-            }
-            if let location = projection.enemyLocations.first(where: { $0.id == id }) {
-                return semanticLocalized("at \(location.displayLabel)")
-            }
-            return semanticLocalized("at the specified location")
-        case .other:
-            return semanticLocalized("from the required area")
-        }
-    }
-
-    private func semanticCount(
-        _ value: Int,
-        singular: String.LocalizationValue,
-        plural: String.LocalizationValue
-    ) -> String {
-        let unit = semanticLocalized(value == 1 ? singular : plural)
-        return semanticLocalized("\(value) \(unit)")
-    }
-
+    // swiftlint:disable:next function_body_length
     private func semanticUnavailableAnnouncement(
         for descriptor: QuestionPresentation.Choice,
         labelResolution: BasicChoiceLabelResolution?
     ) -> String {
         if descriptor.kind == .localizedLabel {
             return labelResolution?.announcement
-                ?? semanticLocalized("The text for this choice is not currently available.")
+                ?? semanticLocalized(
+                    "semantic.choice.unavailable.text",
+                    value: "The text for this choice is not currently available."
+                )
         }
         switch descriptor.kind {
         case .advanceAct:
             return semanticLocalized(
+                "semantic.choice.unavailable.advanceAct",
+                value:
                 "The act or investigator for this choice is not currently available."
             )
         case .advanceAgenda:
             return semanticLocalized(
+                "semantic.choice.unavailable.advanceAgenda",
+                value:
                 "The agenda or investigator for this choice is not currently available."
             )
         case .fight, .evade, .engage:
             return semanticLocalized(
+                "semantic.choice.unavailable.enemy",
+                value:
                 "The enemy or investigator for this choice is not currently available."
             )
         case .investigate:
             return semanticLocalized(
+                "semantic.choice.unavailable.location",
+                value:
                 "The location or investigator for this choice is not currently available."
             )
         case .chooseTarget:
-            return semanticLocalized("The target for this choice is not currently available.")
+            return semanticLocalized(
+                "semantic.choice.unavailable.target",
+                value: "The target for this choice is not currently available."
+            )
         case .drawCard, .endTurn, .gainResource, .skipTriggers, .startSkillTest, .useAbility:
             return semanticLocalized(
+                "semantic.choice.unavailable.investigator",
+                value:
                 "The investigator for this choice is not currently available."
             )
         case .applySkillTestResults:
-            return semanticLocalized("This choice is not currently available.")
+            return semanticLocalized(
+                "semantic.choice.unavailable.generic",
+                value: "This choice is not currently available."
+            )
         case .localizedLabel:
-            return semanticLocalized("The text for this choice is not currently available.")
+            return semanticLocalized(
+                "semantic.choice.unavailable.text",
+                value: "The text for this choice is not currently available."
+            )
         }
     }
 
-    private func semanticLocalized(_ value: String.LocalizationValue) -> String {
-        String(localized: value, bundle: .module)
+    func semanticLocalized(
+        _ key: StaticString,
+        value: String.LocalizationValue
+    ) -> String {
+        let locale = semanticLocaleIdentifier.map(Locale.init(identifier:)) ?? .current
+        return String(
+            localized: key,
+            defaultValue: value,
+            bundle: semanticLocalizationBundle,
+            locale: locale
+        )
+    }
+
+    private var semanticLocalizationBundle: Bundle {
+        guard let semanticLocaleIdentifier else { return .module }
+        let localization = Bundle.preferredLocalizations(
+            from: Bundle.module.localizations,
+            forPreferences: [semanticLocaleIdentifier, "en"]
+        ).first
+        guard let localization,
+              let path = Bundle.module.path(forResource: localization, ofType: "lproj"),
+              let bundle = Bundle(path: path)
+        else { return .module }
+        return bundle
     }
 
     private func semanticLocationID(_ raw: String) -> LocationID? {

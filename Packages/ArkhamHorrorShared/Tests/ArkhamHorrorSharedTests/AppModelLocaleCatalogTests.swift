@@ -58,6 +58,33 @@ struct AppModelLocaleCatalogTests {
         ) == .success([.text("Synthetic body")]))
     }
 
+    @Test("The verified catalog locale propagates into basic choice presentation")
+    func verifiedCatalogLocalePropagatesIntoBasicChoicePresentation() async throws {
+        let documents = try SyntheticLocaleCatalogDocuments.make()
+        let model = model(documents: documents, loader: loader(for: documents))
+        await model.flowTask?.value
+        await model.localeCatalogTask?.value
+        let fixtureURL = try #require(Bundle.module.url(
+            forResource: "get-game",
+            withExtension: "json",
+            subdirectory: "Fixtures/Contract"
+        ))
+        let envelope = try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: Data(contentsOf: fixtureURL)
+        )
+        let gameID = envelope.game.id
+        let playerID = try #require(envelope.playerID)
+        model.liveGameStates[gameID] = .live(
+            BoardProjectionBuilder.makeProjection(from: envelope.game)
+        )
+        model.liveGameParticipantIdentities[gameID] = .participant(playerID)
+
+        #expect(model.basicChoicePresentation(
+            for: gameID
+        )?.semanticLocaleIdentifier == "en")
+    }
+
     @Test("A stale catalog completion cannot republish after profile invalidation")
     func staleCompletionIsGenerationFenced() async throws {
         let documents = try SyntheticLocaleCatalogDocuments.make()

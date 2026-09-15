@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "ArkhamHorrorShared",
+    defaultLocalization: "en",
     platforms: [
         .iOS(.v26),
         .macOS(.v26),
@@ -19,7 +20,10 @@ let package = Package(
     targets: [
         .target(
             name: "ArkhamHorrorShared",
-            resources: [.copy("Resources")]
+            resources: [
+                .copy("Resources"),
+                .process("Localization"),
+            ]
         ),
         .testTarget(
             name: "ArkhamHorrorSharedTests",

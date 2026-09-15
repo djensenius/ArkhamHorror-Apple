@@ -131,6 +131,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     let identity: BasicChoicePromptIdentity
     let question: BasicChoiceQuestionState
     let semanticPresentation: BoundQuestionPresentation?
+    let semanticLocaleIdentifier: String?
     /// The complete story outcome captured from one immutable catalog snapshot. This exact
     /// value drives rendering, focus, accessibility, controller dispatch, and send fencing.
     let storyResolution: StoryResolution?
@@ -147,6 +148,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         identity: BasicChoicePromptIdentity,
         question: BasicChoiceQuestionState,
         semanticPresentation: BoundQuestionPresentation? = nil,
+        semanticLocaleIdentifier: String? = nil,
         storyResolution: StoryResolution? = nil,
         choiceLabelResolutions: [Int: BasicChoiceLabelResolution]? = nil,
         readOnlyReason: BasicChoiceReadOnlyReason?,
@@ -158,6 +160,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         self.identity = identity
         self.question = question
         self.semanticPresentation = semanticPresentation
+        self.semanticLocaleIdentifier = semanticLocaleIdentifier
         self.storyResolution = storyResolution ?? question.supportedQuestion?.story.map {
             StoryNarrativeLocalization.resolve(
                 $0.flavorText,

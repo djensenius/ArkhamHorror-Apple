@@ -9,7 +9,8 @@ struct BasicChoiceSemanticPresentationTests {
     func q34AdvanceActUsesGenericPath() throws {
         let prompt = try prompt(
             rawFixture: "question-gathering-act-objective",
-            presentationFixture: "question-presentation-gathering-act-objective"
+            presentationFixture: "question-presentation-gathering-act-objective",
+            semanticLocaleIdentifier: "en"
         )
         let projection = try gatheringProductionProjection()
         let choice = try #require(prompt.choices.first { $0.index == 12 })
@@ -45,6 +46,26 @@ struct BasicChoiceSemanticPresentationTests {
         }
         #expect(controller.handle(.command(.primaryAction)))
         #expect(submitted == [12])
+    }
+
+    @Test("Q34 localizes native title, cost, and accessibility chrome in German")
+    func q34LocalizesNativeSemanticChromeInGerman() throws {
+        let prompt = try prompt(
+            rawFixture: "question-gathering-act-objective",
+            presentationFixture: "question-presentation-gathering-act-objective",
+            semanticLocaleIdentifier: "de"
+        )
+        let projection = try gatheringProductionProjection()
+        let choice = try #require(prompt.choices.first { $0.index == 12 })
+
+        #expect(
+            prompt.displayTitle(for: choice, in: projection)
+                == "Akt weiterentwickeln (2 Hinweise pro Ermittler von überall)"
+        )
+        #expect(
+            prompt.accessibilityHint(for: choice, in: projection)
+                == "Aktiviert Auswahl 13."
+        )
     }
 
     @Test("Q35 focuses and submits source index 0 through the same advanceAct path")
@@ -181,10 +202,13 @@ struct BasicChoiceSemanticPresentationTests {
         #expect(first != second)
         #expect(first.promptKey != second.promptKey)
     }
+}
 
+extension BasicChoiceSemanticPresentationTests {
     private func prompt(
         rawFixture: String,
-        presentationFixture: String
+        presentationFixture: String,
+        semanticLocaleIdentifier: String? = "en"
     ) throws -> BasicChoicePromptPresentation {
         let payload = try rawPayload(rawFixture)
         let presentation = try presentation(presentationFixture)
@@ -192,12 +216,17 @@ struct BasicChoiceSemanticPresentationTests {
             to: payload.rawValue,
             expectedQuestionVersion: presentation.questionVersion
         )
-        return makePrompt(payload: payload, presentation: bound)
+        return makePrompt(
+            payload: payload,
+            presentation: bound,
+            semanticLocaleIdentifier: semanticLocaleIdentifier
+        )
     }
 
     func makePrompt(
         payload: BasicChoiceQuestionPayload,
         presentation: BoundQuestionPresentation,
+        semanticLocaleIdentifier: String? = "en",
         choiceLabelResolutions: [Int: BasicChoiceLabelResolution]? = nil
     ) -> BasicChoicePromptPresentation {
         BasicChoicePromptPresentation(
@@ -208,6 +237,7 @@ struct BasicChoiceSemanticPresentationTests {
             ),
             question: payload.state,
             semanticPresentation: presentation,
+            semanticLocaleIdentifier: semanticLocaleIdentifier,
             choiceLabelResolutions: choiceLabelResolutions,
             readOnlyReason: nil,
             actionPhase: nil,

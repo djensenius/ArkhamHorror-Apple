@@ -63,6 +63,7 @@ extension AppModel {
             identity: promptIdentity,
             question: payload.state,
             semanticPresentation: payload.presentation,
+            semanticLocaleIdentifier: localeCatalogResolver?.snapshot.identity.locale,
             storyResolution: storyResolution,
             choiceLabelResolutions: labelResolutions,
             readOnlyReason: readOnlyReason,
