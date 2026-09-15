@@ -214,7 +214,13 @@ struct ProductionAssignmentReplayConfiguration: Sendable {
         } catch {
             throw AssignmentReplayConfigurationError.serverAttestationMismatch
         }
-        guard input.attestation.checkpointValidation.contractRevision ==
+        let checkpoint = input.attestation.checkpointValidation
+        guard checkpoint.promptTag ==
+            BasicChoiceQuestionKind.questionWithSource.rawValue
+        else {
+            throw AssignmentReplayConfigurationError.serverAttestationMismatch
+        }
+        guard checkpoint.contractRevision ==
             input.expectedContractRevision.description
         else {
             throw AssignmentReplayConfigurationError.contractRevisionMismatch

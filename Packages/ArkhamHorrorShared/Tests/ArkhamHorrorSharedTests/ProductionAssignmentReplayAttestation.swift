@@ -56,7 +56,7 @@ struct AssignmentReplayServerValidatedPrompt: Codable, Equatable, Sendable {
     func validate() throws {
         guard questionVersion > 0,
               questionVersion < Int.max,
-              promptTag == BasicChoiceQuestionKind.questionWithSource.rawValue,
+              BasicChoiceQuestionKind(rawValue: promptTag) != nil,
               ProductionAssignmentReplayConfiguration.isLowercaseHex(
                   promptSHA256,
                   count: 64

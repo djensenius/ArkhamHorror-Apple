@@ -29,36 +29,6 @@ enum BasicChoiceQuestionState: Sendable, Equatable, Hashable {
     }
 }
 
-struct BasicChoiceQuestionPayload: Sendable, Equatable, Hashable {
-    let rawValue: JSONValue
-    let state: BasicChoiceQuestionState
-
-    var supportedQuestion: BasicChoiceQuestion? {
-        guard case let .supported(question) = state else { return nil }
-        return question
-    }
-
-    var isUpdateRequired: Bool {
-        if case .updateRequired = state {
-            true
-        } else {
-            false
-        }
-    }
-}
-
-extension BasicChoiceQuestionPayload: Codable {
-    init(from decoder: any Decoder) throws {
-        let rawValue = try JSONValue(from: decoder)
-        self.rawValue = rawValue
-        state = BasicChoiceParser.parseQuestion(rawValue)
-    }
-
-    func encode(to encoder: any Encoder) throws {
-        try rawValue.encode(to: encoder)
-    }
-}
-
 enum BasicChoiceParser {
     private static let doneWithMulliganLabel = "$label.doneWithMulligan"
 

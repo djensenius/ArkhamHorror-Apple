@@ -301,6 +301,12 @@ extension AppModelLiveGameTests {
             game["question"] = .object([
                 participant.rawValue.uuidString.lowercased(): question,
             ])
+            if case let .object(presentations)? = game["questionPresentation"] {
+                let presentation = try #require(presentations.values.first)
+                game["questionPresentation"] = .object([
+                    participant.rawValue.uuidString.lowercased(): presentation,
+                ])
+            }
         }
         root["game"] = .object(game)
         value = .object(root)

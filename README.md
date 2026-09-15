@@ -105,15 +105,17 @@ hashes remain unchanged at Q33, and exercises that same strict prompt path.
 
 ### Backend replay authority
 
-As of Monday, September 14, 2026, this repository is pinned to backend contract
-merge `38d8b466b635e3c9a18995baccac8b67cb6984cc` from
-`djensenius/ArkhamHorror#87`, at contract revision `0.1.40`. That revision adds
-the exact production Q33 prompt for Cover Up's optional clue-replacement
-reaction, including the reaction and skip branches. Revision `0.1.39` previously
-added the exact Q32 prompt for Roland Banks's optional post-defeat reaction.
+As of Tuesday, September 15, 2026, this repository is pinned to backend contract
+merge `503e3e4c8cdf8370cba78ac0397e3a2e5c7eee8a` from
+`djensenius/ArkhamHorror#89`, at contract revision `0.1.41`. That revision adds
+player-keyed `questionPresentation` protocol version 1 plus exact production
+Q34 and Q35 fixtures for the Gathering Act 1 objective and advancement.
+Revision `0.1.40` previously added the exact Q33 prompt for Cover Up's optional
+clue-replacement reaction.
 
-Fight, Evade, Engage, the round transition, Roland's clue discovery, and Cover
-Up's replacement effect remain server-authoritative.
+Fight, Evade, Engage, the round transition, Roland's clue discovery, Cover
+Up's replacement effect, clue payment, and act advancement remain
+server-authoritative.
 Swift recognizes only the exact governed prompt/source/message shapes, checks
 that referenced entities still exist in the newest projection, and submits the
 unchanged source-array index with the current question version. Costs,
@@ -140,7 +142,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.40",
+       "contractSchemaRevision": "0.1.41",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -201,7 +203,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend merge above:
 
 1. Confirm `ContractPin.current` is
-   `38d8b466b635e3c9a18995baccac8b67cb6984cc` / `0.1.40`, then build the
+   `503e3e4c8cdf8370cba78ac0397e3a2e5c7eee8a` / `0.1.41`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can

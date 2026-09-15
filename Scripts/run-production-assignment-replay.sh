@@ -11,8 +11,8 @@ readonly driver_identifier_prefix='ArkhamHorrorSharedTests.AssignmentReplayCoord
 readonly expected_driver_identifier="${driver_identifier_prefix}()"
 readonly driver_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator\(\)(/[^/]+)?$'
 readonly launcher_relative_path="Scripts/run-production-assignment-replay.sh"
-readonly trusted_base_revision="edc9b278c5f56c47a09839381d9ad56fe554c549"
-readonly expected_package_tree="1696134de1765c20b3175897c5c69d7d795be7b8"
+readonly trusted_base_revision="398a8f224e8d024d2d03fb94e28f51c6d68e7153"
+readonly expected_package_tree="c43a44a1444f68cef9dedd971f5b7605609fe0b7"
 readonly trusted_scratch_parent="/private/tmp"
 readonly git_bin="/usr/bin/git"
 
@@ -69,12 +69,13 @@ usage: Scripts/run-production-assignment-replay.sh CHECKPOINT_JSON OUTPUT_DIRECT
 Required environment:
   ARKHAM_REPLAY_BASE_URL
   ARKHAM_REPLAY_INVESTIGATOR_ID
-  ARKHAM_REPLAY_ENEMY_ID
   ARKHAM_REPLAY_EXPECTED_APPLE_REVISION
   ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION
 
 Optional environment:
+  ARKHAM_REPLAY_SCENARIO           (default: assignment; also: gathering-act-advance)
+  ARKHAM_REPLAY_ENEMY_ID           (required for assignment)
   ARKHAM_REPLAY_SERVER_PROFILE_ID  (default: 00000000-0000-0000-0000-000000000777)
   ARKHAM_REPLAY_DEADLINE_SECONDS   (default: 60)
 EOF
@@ -684,9 +685,19 @@ trap 'exit 143' TERM
   usage
   exit 2
 }
+replay_scenario="${ARKHAM_REPLAY_SCENARIO:-assignment}"
+case "$replay_scenario" in
+  assignment)
+    require_environment ARKHAM_REPLAY_ENEMY_ID
+    ;;
+  gathering-act-advance) ;;
+  *)
+    fail "ARKHAM_REPLAY_SCENARIO is invalid"
+    ;;
+esac
+readonly replay_scenario
 require_environment ARKHAM_REPLAY_BASE_URL
 require_environment ARKHAM_REPLAY_INVESTIGATOR_ID
-require_environment ARKHAM_REPLAY_ENEMY_ID
 require_environment ARKHAM_REPLAY_EXPECTED_APPLE_REVISION
 require_environment ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION
 require_environment ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION
@@ -724,6 +735,7 @@ validate_repository_identity
   LC_ALL=C \
   PATH="$toolchain_bin:/usr/bin:/bin" \
   TMPDIR=/tmp \
+  ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_SCENARIO="$replay_scenario" \
   ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_SERVER_BASE_URL="$ARKHAM_REPLAY_BASE_URL" \
   ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_SERVER_PROFILE_ID="${ARKHAM_REPLAY_SERVER_PROFILE_ID:-00000000-0000-0000-0000-000000000777}" \
   ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_CHECKPOINT_PATH="$1" \
@@ -732,7 +744,7 @@ validate_repository_identity
   ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_DEADLINE_SECONDS="${ARKHAM_REPLAY_DEADLINE_SECONDS:-60}" \
   ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_EXPECTED_CONTRACT_REVISION="$ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION" \
   ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_EXPECTED_CATALOG_REVISION="$ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION" \
-  ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_ENEMY_ID="$ARKHAM_REPLAY_ENEMY_ID" \
+  ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_ENEMY_ID="${ARKHAM_REPLAY_ENEMY_ID:-}" \
   ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_INVESTIGATOR_ID="$ARKHAM_REPLAY_INVESTIGATOR_ID" \
   "$swift_bin" test \
   --package-path "$materialized_package_path" \

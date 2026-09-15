@@ -10,15 +10,35 @@ struct BasicChoicePromptIdentity: Sendable, Equatable, Hashable {
     let ownerID: PlayerID
     let questionVersion: Int
     let rawQuestion: JSONValue
+    let questionPresentation: QuestionPresentation?
     let sessionAttemptID: UUID?
     let connectionID: UUID?
+
+    init(
+        gameID: GameID,
+        ownerID: PlayerID,
+        questionVersion: Int,
+        rawQuestion: JSONValue,
+        questionPresentation: QuestionPresentation? = nil,
+        sessionAttemptID: UUID?,
+        connectionID: UUID?
+    ) {
+        self.gameID = gameID
+        self.ownerID = ownerID
+        self.questionVersion = questionVersion
+        self.rawQuestion = rawQuestion
+        self.questionPresentation = questionPresentation
+        self.sessionAttemptID = sessionAttemptID
+        self.connectionID = connectionID
+    }
 
     var promptKey: BasicChoicePromptKey {
         BasicChoicePromptKey(
             gameID: gameID,
             ownerID: ownerID,
             questionVersion: questionVersion,
-            rawQuestion: rawQuestion
+            rawQuestion: rawQuestion,
+            questionPresentation: questionPresentation
         )
     }
 }
@@ -29,6 +49,21 @@ struct BasicChoicePromptKey: Sendable, Equatable, Hashable {
     let ownerID: PlayerID
     let questionVersion: Int
     let rawQuestion: JSONValue
+    let questionPresentation: QuestionPresentation?
+
+    init(
+        gameID: GameID,
+        ownerID: PlayerID,
+        questionVersion: Int,
+        rawQuestion: JSONValue,
+        questionPresentation: QuestionPresentation? = nil
+    ) {
+        self.gameID = gameID
+        self.ownerID = ownerID
+        self.questionVersion = questionVersion
+        self.rawQuestion = rawQuestion
+        self.questionPresentation = questionPresentation
+    }
 }
 
 enum BasicChoiceReadOnlyReason: Sendable, Equatable {
@@ -95,6 +130,8 @@ enum BasicChoiceLabelResolution: Sendable, Equatable {
 struct BasicChoicePromptPresentation: Sendable, Equatable {
     let identity: BasicChoicePromptIdentity
     let question: BasicChoiceQuestionState
+    let semanticPresentation: BoundQuestionPresentation?
+    let semanticLocaleIdentifier: String?
     /// The complete story outcome captured from one immutable catalog snapshot. This exact
     /// value drives rendering, focus, accessibility, controller dispatch, and send fencing.
     let storyResolution: StoryResolution?
@@ -110,6 +147,8 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     init(
         identity: BasicChoicePromptIdentity,
         question: BasicChoiceQuestionState,
+        semanticPresentation: BoundQuestionPresentation? = nil,
+        semanticLocaleIdentifier: String? = nil,
         storyResolution: StoryResolution? = nil,
         choiceLabelResolutions: [Int: BasicChoiceLabelResolution]? = nil,
         readOnlyReason: BasicChoiceReadOnlyReason?,
@@ -120,6 +159,8 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     ) {
         self.identity = identity
         self.question = question
+        self.semanticPresentation = semanticPresentation
+        self.semanticLocaleIdentifier = semanticLocaleIdentifier
         self.storyResolution = storyResolution ?? question.supportedQuestion?.story.map {
             StoryNarrativeLocalization.resolve(
                 $0.flavorText,
@@ -131,11 +172,18 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             self.choiceLabelResolutions = choiceLabelResolutions
         } else {
             var defaults: [Int: BasicChoiceLabelResolution] = [:]
-            let localizableChoices = question.supportedQuestion?.choices.filter {
-                $0.localizationKey != nil
-            } ?? []
-            for choice in localizableChoices {
-                defaults[choice.index] = .unavailable(.catalog(.notAdvertised))
+            if let semanticPresentation {
+                for choice in semanticPresentation.presentation.choices {
+                    guard choice.kind == .localizedLabel else { continue }
+                    defaults[choice.sourceIndex] = .unavailable(.catalog(.notAdvertised))
+                }
+            } else {
+                let localizableChoices = question.supportedQuestion?.choices.filter {
+                    $0.localizationKey != nil
+                } ?? []
+                for choice in localizableChoices {
+                    defaults[choice.index] = .unavailable(.catalog(.notAdvertised))
+                }
             }
             self.choiceLabelResolutions = defaults
         }
@@ -155,7 +203,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     }
 
     var choices: [BasicChoice] {
-        question.supportedQuestion?.choices ?? []
+        Self.makeChoices(question: question, semanticPresentation: semanticPresentation)
     }
 
     var isAuthorized: Bool {
@@ -163,7 +211,17 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     }
 
     func isChoiceActionable(_ choice: BasicChoice, in projection: BoardProjection) -> Bool {
-        projection.isChoiceActionable(
+        if let semanticPresentation {
+            guard let descriptor = semanticPresentation.descriptor(
+                forSourceIndex: choice.index
+            ) else { return false }
+            return projection.isSemanticChoiceActionable(
+                descriptor,
+                ownerID: ownerID,
+                labelResolution: choiceLabelResolutions[choice.index]
+            )
+        }
+        return projection.isChoiceActionable(
             choice,
             ownerID: ownerID,
             storyResolution: storyResolution,
@@ -172,7 +230,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     }
 
     var isStoryAvailable: Bool {
-        guard question.supportedQuestion?.kind == .read else { return true }
+        guard isStoryPrompt else { return true }
         return storyResolution?.isResolved == true
     }
 

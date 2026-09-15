@@ -105,6 +105,10 @@ card-code-entity-map.json:contracts/fixtures/card-code-entity-map.json
 question-choose-one.json:contracts/fixtures/question-choose-one.json
 question-player-window-choose-one.json:contracts/fixtures/question-player-window-choose-one.json
 question-window-choose-one.json:contracts/fixtures/question-window-choose-one.json
+question-gathering-act-objective.json:contracts/fixtures/question-gathering-act-objective.json
+question-gathering-act-advance.json:contracts/fixtures/question-gathering-act-advance.json
+question-presentation-gathering-act-objective.json:contracts/fixtures/question-presentation-gathering-act-objective.json
+question-presentation-gathering-act-advance.json:contracts/fixtures/question-presentation-gathering-act-advance.json
 answer-question.json:contracts/fixtures/answer-question.json
 question-read.json:contracts/fixtures/question-read.json
 question-read-scenario-intro.json:contracts/fixtures/question-read-scenario-intro.json
@@ -137,6 +141,7 @@ question-agenda-horror-assignment.json:contracts/fixtures/question-agenda-horror
 replay-attestation.json:contracts/fixtures/replay-attestation.json
 replay-attestation.schema.json:contracts/schemas/replay-attestation.schema.json
 basic-choice-question.schema.json:contracts/schemas/basic-choice-question.schema.json
+question-presentation.schema.json:contracts/schemas/question-presentation.schema.json
 "
 
 # Rejects an absolute path or any `..` path-traversal component in a (script-controlled,

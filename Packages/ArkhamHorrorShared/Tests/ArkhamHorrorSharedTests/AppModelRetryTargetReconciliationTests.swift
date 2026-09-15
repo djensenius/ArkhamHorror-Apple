@@ -234,11 +234,9 @@ extension AppModelLiveGameTests {
             model: model, fakes: fakes, envelope: envelope, connection: connection
         )
 
-        // The base envelope's own `ChooseOne` question offers only ordinary
-        // `ComponentLabel`/`EndTurnButton`/`AbilityLabel` choices, none carrying a
-        // `LocationTarget` -- `isChoiceActionable` returns `true` unconditionally for
-        // these once wire-supported (`BoardProjection.swift`), so no projection change
-        // can ever make one newly non-actionable.
+        // The base semantic envelope's source index 1 is `drawCard` for the still-present
+        // investigator and carries no mutable target entity, so an otherwise-identical
+        // authoritative resend cannot make it newly non-actionable.
         let identity = try #require(model.basicChoicePresentation(for: gameID)?.identity)
         #expect(await model.submitBasicChoice(identity, choiceIndex: 1) == .retryableFailure)
 
@@ -247,7 +245,8 @@ extension AppModelLiveGameTests {
         let resend = try snapshotUpdate(
             from: envelope,
             scenarioSteps: envelope.game.scenarioSteps,
-            replacingQuestionWith: sameQuestion
+            replacingQuestionWith: sameQuestion,
+            preservingQuestionPresentation: true
         )
         try await connection.enqueue(.event(.message(ContractJSON.encode(resend))))
         await connection.waitUntilAwaitingNextEvent()

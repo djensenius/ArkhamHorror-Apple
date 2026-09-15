@@ -33,11 +33,12 @@ extension AppModel {
             ownerID: ownerID,
             questionVersion: projection.counters.scenarioSteps,
             rawQuestion: payload.rawValue,
+            questionPresentation: payload.presentation?.presentation,
             sessionAttemptID: sessionAttemptID,
             connectionID: connectionID
         )
         let readOnlyReason = readOnlyReason(
-            gameID: gameID, ownerID: ownerID, question: payload.state
+            gameID: gameID, ownerID: ownerID, payload: payload
         )
         let isSamePrompt = record?.identity.promptKey == promptIdentity.promptKey
         let isCurrentTransport = record?.identity == promptIdentity
@@ -52,12 +53,17 @@ extension AppModel {
         }
         let supportedQuestion = payload.state.supportedQuestion
         let storyResolution = storyResolution(for: supportedQuestion?.story)
-        let labelResolutions = choiceLabelResolutions(for: supportedQuestion)
+        let labelResolutions = choiceLabelResolutions(
+            for: supportedQuestion,
+            semanticPresentation: payload.presentation
+        )
         let localizationReasons = [storyResolution?.unavailableReason].compactMap(\.self)
             + labelResolutions.values.compactMap(\.unavailableReason)
         return BasicChoicePromptPresentation(
             identity: promptIdentity,
             question: payload.state,
+            semanticPresentation: payload.presentation,
+            semanticLocaleIdentifier: localeCatalogResolver?.snapshot.identity.locale,
             storyResolution: storyResolution,
             choiceLabelResolutions: labelResolutions,
             readOnlyReason: readOnlyReason,
@@ -80,9 +86,16 @@ extension AppModel {
     }
 
     private func readOnlyReason(
-        gameID: GameID, ownerID: PlayerID, question: BasicChoiceQuestionState
+        gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload
     ) -> BasicChoiceReadOnlyReason? {
-        guard question.supportedQuestion != nil else { return .updateRequired }
+        let hasRenderableSemanticPresentation = payload.presentation.map {
+            $0.presentation.questionKind != .unsupported && !$0.rawChoices.isEmpty
+        } ?? false
+        let hasRenderableSupportedQuestion =
+            payload.supportedQuestion?.choices.isEmpty == false
+        guard hasRenderableSupportedQuestion || hasRenderableSemanticPresentation else {
+            return .updateRequired
+        }
         guard let identity = liveGameParticipantIdentities[gameID] else { return .disconnected }
         switch identity {
         case .spectator:
@@ -271,6 +284,7 @@ extension AppModel {
         let current = projection.questions[action.identity.ownerID]
         let samePrompt = projection.counters.scenarioSteps == action.identity.questionVersion
             && current?.rawValue == action.identity.rawQuestion
+            && current?.presentation?.presentation == action.identity.questionPresentation
         guard samePrompt else {
             basicChoiceActions[gameID] = nil
             return
@@ -281,6 +295,7 @@ extension AppModel {
                 ownerID: action.identity.ownerID,
                 questionVersion: action.identity.questionVersion,
                 rawQuestion: action.identity.rawQuestion,
+                questionPresentation: action.identity.questionPresentation,
                 sessionAttemptID: liveGameSessions[gameID]?.attemptID,
                 connectionID: liveGameConnections[gameID]?.connectionID
             )
@@ -316,15 +331,44 @@ extension AppModel {
     ) {
         guard case .retryable = basicChoiceActions[gameID]?.phase,
               let choiceIndex = basicChoiceActions[gameID]?.choiceIndex,
-              let question = current?.supportedQuestion,
-              let originalChoice = question.choices.first(where: { $0.index == choiceIndex }),
-              !projection.isChoiceActionable(
-                  originalChoice,
-                  ownerID: basicChoiceActions[gameID]?.identity.ownerID,
-                  storyResolution: storyResolution(for: question.story),
-                  labelResolution: choiceLabelResolutions(for: question)[choiceIndex]
-              )
+              let current,
+              let ownerID = basicChoiceActions[gameID]?.identity.ownerID
         else { return }
+        let question = current.supportedQuestion
+        let choices = BasicChoicePromptPresentation.makeChoices(
+            question: current.state,
+            semanticPresentation: current.presentation
+        )
+        guard let originalChoice = choices.first(where: { $0.index == choiceIndex }) else {
+            basicChoiceActions[gameID] = nil
+            return
+        }
+        let labelResolutions = choiceLabelResolutions(
+            for: question,
+            semanticPresentation: current.presentation
+        )
+        let isActionable: Bool
+        if let semanticPresentation = current.presentation {
+            guard let descriptor = semanticPresentation.descriptor(
+                forSourceIndex: originalChoice.index
+            ) else {
+                basicChoiceActions[gameID] = nil
+                return
+            }
+            isActionable = projection.isSemanticChoiceActionable(
+                descriptor,
+                ownerID: ownerID,
+                labelResolution: labelResolutions[choiceIndex]
+            )
+        } else {
+            isActionable = projection.isChoiceActionable(
+                originalChoice,
+                ownerID: ownerID,
+                storyResolution: storyResolution(for: question?.story),
+                labelResolution: labelResolutions[choiceIndex]
+            )
+        }
+        guard !isActionable else { return }
         basicChoiceActions[gameID] = nil
     }
 

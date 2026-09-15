@@ -229,6 +229,7 @@ extension AppModelLiveGameTests {
             JSONValue.self, from: ContractJSON.encode(envelope.game)
         )
         guard case var .object(object) = value else { throw TestFailure() }
+        useLegacyQuestionFallback(in: &object)
         object["scenarioSteps"] = .number(.integer(Int64(scenarioSteps)))
 
         guard case var .object(questions)? = object["question"],

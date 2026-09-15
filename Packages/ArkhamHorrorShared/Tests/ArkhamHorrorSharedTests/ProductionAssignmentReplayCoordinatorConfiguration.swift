@@ -25,9 +25,15 @@ enum ProductionAssignmentReplayCoordinatorError: Error, Equatable {
     case unsupportedHost
 }
 
+enum ProductionAssignmentReplayScenario: String, Sendable, Equatable {
+    case assignment
+    case gatheringActAdvance = "gathering-act-advance"
+}
+
 // swiftlint:disable:next type_name
 enum AssignmentReplayCoordinatorEnvironmentKey {
     static let prefix = "ARKHAM_PRODUCTION_ASSIGNMENT_COORDINATOR_"
+    static let scenario = prefix + "SCENARIO"
     static let serverBaseURL = prefix + "SERVER_BASE_URL"
     static let serverProfileID = prefix + "SERVER_PROFILE_ID"
     static let checkpointPath = prefix + "CHECKPOINT_PATH"
@@ -54,6 +60,7 @@ enum AssignmentReplayCoordinatorEnvironmentKey {
     ])
 
     static let known = parentOnly.union([
+        scenario,
         serverBaseURL,
         serverProfileID,
         checkpointPath,
@@ -104,6 +111,7 @@ struct AssignmentReplayCoordinatorDeadline: Sendable, Equatable {
 
 // swiftlint:disable:next type_body_length type_name
 struct ProductionAssignmentReplayCoordinatorInvocation: Sendable {
+    let scenario: ProductionAssignmentReplayScenario
     let serverProfile: ServerProfile
     let checkpointURL: URL
     let tokenURL: URL
@@ -111,7 +119,7 @@ struct ProductionAssignmentReplayCoordinatorInvocation: Sendable {
     let deadlineSeconds: Int
     let expectedContractRevision: ContractRevision
     let expectedCatalogRevision: String
-    let enemyID: EnemyID
+    let enemyID: EnemyID?
     let investigatorID: InvestigatorID
 
     static func parse(
@@ -137,7 +145,9 @@ struct ProductionAssignmentReplayCoordinatorInvocation: Sendable {
         outputIdentity: ProductionReplayParentIdentity,
         deadline: AssignmentReplayCoordinatorDeadline
     ) -> [String: String] {
-        [
+        var environment = [
+            AssignmentReplayCoordinatorEnvironmentKey.scenario:
+                scenario.rawValue,
             AssignmentReplayCoordinatorEnvironmentKey.serverBaseURL:
                 serverProfile.endpointSummary,
             AssignmentReplayCoordinatorEnvironmentKey.serverProfileID:
@@ -156,8 +166,6 @@ struct ProductionAssignmentReplayCoordinatorInvocation: Sendable {
             AssignmentReplayCoordinatorEnvironmentKey
                 .expectedCatalogRevision:
                 expectedCatalogRevision,
-            AssignmentReplayCoordinatorEnvironmentKey.enemyID:
-                enemyID.codingKey.stringValue,
             AssignmentReplayCoordinatorEnvironmentKey.investigatorID:
                 investigatorID.codingKey.stringValue,
             AssignmentReplayCoordinatorEnvironmentKey.observedAppleRevision:
@@ -170,6 +178,11 @@ struct ProductionAssignmentReplayCoordinatorInvocation: Sendable {
                 .deadlineUptimeNanoseconds:
                 deadline.rawValue,
         ]
+        if let enemyID {
+            environment[AssignmentReplayCoordinatorEnvironmentKey.enemyID] =
+                enemyID.codingKey.stringValue
+        }
+        return environment
     }
 
     // swiftlint:disable:next function_body_length
@@ -177,6 +190,7 @@ struct ProductionAssignmentReplayCoordinatorInvocation: Sendable {
         _ environment: [String: String]
     ) throws -> ProductionAssignmentReplayCoordinatorInvocation {
         let profile = try parseServerProfile(environment)
+        let scenario = try replayScenario(environment)
         let checkpointURL = try absoluteFileURL(
             key: AssignmentReplayCoordinatorEnvironmentKey.checkpointPath,
             environment: environment,
@@ -222,6 +236,7 @@ struct ProductionAssignmentReplayCoordinatorInvocation: Sendable {
                 )
         }
         return try ProductionAssignmentReplayCoordinatorInvocation(
+            scenario: scenario,
             serverProfile: profile,
             checkpointURL: checkpointURL,
             tokenURL: tokenURL,
@@ -229,11 +244,7 @@ struct ProductionAssignmentReplayCoordinatorInvocation: Sendable {
             deadlineSeconds: deadlineSeconds,
             expectedContractRevision: contractRevision,
             expectedCatalogRevision: catalogRevision,
-            enemyID: identifier(
-                EnemyID.self,
-                key: AssignmentReplayCoordinatorEnvironmentKey.enemyID,
-                environment: environment
-            ),
+            enemyID: enemyID(environment, scenario: scenario),
             investigatorID: investigatorID(environment)
         )
     }
@@ -299,6 +310,48 @@ struct ProductionAssignmentReplayCoordinatorInvocation: Sendable {
             }
         }
         return profile
+    }
+
+    private static func replayScenario(
+        _ environment: [String: String]
+    ) throws -> ProductionAssignmentReplayScenario {
+        guard let rawValue =
+            environment[AssignmentReplayCoordinatorEnvironmentKey.scenario]
+        else {
+            return .assignment
+        }
+        guard !rawValue.isEmpty,
+              let scenario = ProductionAssignmentReplayScenario(
+                  rawValue: rawValue
+              )
+        else {
+            throw ProductionAssignmentReplayCoordinatorError
+                .invalidEnvironmentValue(
+                    AssignmentReplayCoordinatorEnvironmentKey.scenario
+                )
+        }
+        return scenario
+    }
+
+    private static func enemyID(
+        _ environment: [String: String],
+        scenario: ProductionAssignmentReplayScenario
+    ) throws -> EnemyID? {
+        let key = AssignmentReplayCoordinatorEnvironmentKey.enemyID
+        guard let rawValue = environment[key], !rawValue.isEmpty else {
+            guard scenario != .assignment else {
+                throw ProductionAssignmentReplayCoordinatorError
+                    .missingEnvironmentKey(key)
+            }
+            return nil
+        }
+        guard let value = EnemyID(
+            codingKey: AnyCodingKey(stringValue: rawValue)
+        ) else {
+            throw ProductionAssignmentReplayCoordinatorError
+                .invalidEnvironmentValue(key)
+        }
+        return value
     }
 
     private static func absoluteFileURL(

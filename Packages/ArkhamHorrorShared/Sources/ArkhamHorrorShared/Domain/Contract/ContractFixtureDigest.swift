@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "bd0e567aadb4bb08a269ec86dac62925c226e0986944af054b52ce4984c469cf"
+            sha256Hex: "396bf0307eef26e25859b9212e5cb49862c5c025d30b6e5e28fb0bc773797dd6"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "c506271497345d2c95976b43988fddbcac2e598938b66589f3aab14ed261ac88"
+            sha256Hex: "d63c998d37e242e679be5db83f783508935f2646bd4e4eb36c05fa4de0cd7c61"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -42,11 +42,11 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "get-game",
-            sha256Hex: "f406071dca455c1d87a2192729dda30c08d037bedfc78b3bb3ffc998f7304b93"
+            sha256Hex: "44a2c79ae74489faf3321084d825238c86a32d35b6a0ca93b11ed2303b09a478"
         ),
         VendoredFixtureDigest(
             fileName: "game-update",
-            sha256Hex: "ceb21a35691320516d3fe68b50d8115f092c4f32dd8f98d6240baeeeb73d07df"
+            sha256Hex: "cee7cfb8a7a1ee2c9a04f57eef1faf3e53064ae851a9d4806178d6991c4ccda5"
         ),
         VendoredFixtureDigest(
             fileName: "mode-turn-zero",
@@ -95,6 +95,22 @@ enum ContractFixtureDigests {
         VendoredFixtureDigest(
             fileName: "question-window-choose-one",
             sha256Hex: "96058cb5e2bb8a1d3beb5107b08fb66b8b4be8eb648317d439c5859657e362f6"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-gathering-act-objective",
+            sha256Hex: "7ddb854740d021428121fd823adc288cbe50a57b163a11273d4103b04deeedee"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-gathering-act-advance",
+            sha256Hex: "21eb483b08ca6cc6ad76b3d7884dde7f817cc9da9945e71ab975527c13b7fd6b"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-presentation-gathering-act-objective",
+            sha256Hex: "768c77f900c61f6bd0e99514b6b71c38a6c939ce192e9f6d0d43d4ef8c623fc6"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-presentation-gathering-act-advance",
+            sha256Hex: "232062dc5467843242763a428beaa212e082752a6ae02c1f753165f76e322841"
         ),
         VendoredFixtureDigest(
             fileName: "answer-question",
@@ -214,7 +230,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "82f2c5615b7a37907dfb5e11c10edced53fd70a11781b4edca9ab4a89d208f9e"
+            sha256Hex: "e39cf2043fc0790f11fb1186b34940a71ec696ee7ae79710fda2984f3c4238bf"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",
@@ -222,7 +238,11 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "basic-choice-question.schema",
-            sha256Hex: "99fc162c95ee55126afde9bb3cd3d30662e29ebab8e1915c3afc5b1605c89281"
+            sha256Hex: "b6631259f4ca0dd63399f1ff1d40d327704caef96a36f6065309552ba269bf57"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-presentation.schema",
+            sha256Hex: "56cdf7f7d24f9b468830e3a70d2412cd9f764df66c3f40a276c645b974f00095"
         ),
     ]
 }

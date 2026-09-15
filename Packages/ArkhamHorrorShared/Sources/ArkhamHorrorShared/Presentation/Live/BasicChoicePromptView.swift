@@ -8,12 +8,8 @@ struct BasicChoicePromptView: View {
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    private var kind: BasicChoiceQuestionKind? {
-        presentation.question.supportedQuestion?.kind
-    }
-
     private var isStoryPrompt: Bool {
-        kind == .read
+        presentation.isStoryPrompt
     }
 
     var body: some View {
@@ -34,7 +30,7 @@ struct BasicChoicePromptView: View {
                 SkillTestSummaryView(projection: skillTest)
             }
 
-            if presentation.question.supportedQuestion == nil {
+            if !presentation.isRenderableQuestion {
                 Label("Update required", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             } else {
@@ -160,7 +156,7 @@ struct BasicChoicePromptView: View {
                     onOutcome: { controller.handle(focusID: $0, $1) },
                     label: {
                         HStack(spacing: 10) {
-                            Image(systemName: choice.systemImage)
+                            Image(systemName: presentation.systemImage(for: choice))
                                 .frame(width: 22)
                             Text(title)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -196,28 +192,14 @@ struct BasicChoicePromptView: View {
         }
     }
 
-    /// A choice's display title, delegating to
-    /// ``BoardDisplayFormatting/choiceDisplayTitle(for:in:)`` against the current
-    /// authoritative board projection.
+    /// A choice's semantic title, or its legacy raw fallback title when the semantic
+    /// envelope is absent, resolved against the current authoritative board projection.
     private func displayTitle(for choice: BasicChoice) -> String {
-        BoardDisplayFormatting.choiceDisplayTitle(
-            for: choice,
-            in: controller.projection,
-            ownerID: presentation.ownerID,
-            labelResolution: presentation.choiceLabelResolutions[choice.index]
-        )
+        presentation.displayTitle(for: choice, in: controller.projection)
     }
 
     private func accessibilityHint(for choice: BasicChoice) -> String {
-        BoardDisplayFormatting.choiceAccessibilityHint(
-            for: choice,
-            in: controller.projection,
-            ownerID: presentation.ownerID,
-            storyResolution: presentation.storyResolution,
-            labelResolution: presentation.choiceLabelResolutions[choice.index],
-            canSubmit: presentation.canSubmit,
-            statusMessage: presentation.statusMessage
-        )
+        presentation.accessibilityHint(for: choice, in: controller.projection)
     }
 }
 

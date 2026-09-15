@@ -27,6 +27,9 @@ mode-campaign-scenario.json location-enemy-view.json movement.json \
 act-no-advance-cost.json investigator-unhealed-horror-negative.json \
 uuid-entity-map.json card-code-entity-map.json question-choose-one.json \
 question-player-window-choose-one.json question-window-choose-one.json \
+question-gathering-act-objective.json question-gathering-act-advance.json \
+question-presentation-gathering-act-objective.json \
+question-presentation-gathering-act-advance.json \
 answer-question.json question-read.json question-read-scenario-intro.json \
 question-read-with-cards.json \
 question-choose-one-location.json question-choose-one-location-multiple.json \
@@ -128,16 +131,21 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.40",'
+    echo '  "schemaRevision": "0.1.41",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
       if [ "$first" -eq 0 ]; then echo ','; fi
       first=0
       schema="contracts/schemas/basic-choice-question.schema.json"
-      if [ "$name" = "replay-attestation.json" ]; then
-        schema="contracts/schemas/replay-attestation.schema.json"
-      fi
+      case "$name" in
+        replay-attestation.json)
+          schema="contracts/schemas/replay-attestation.schema.json"
+          ;;
+        question-presentation-*.json)
+          schema="contracts/schemas/question-presentation.schema.json"
+          ;;
+      esac
       printf '    {"path": "contracts/fixtures/%s", "schema": "%s"}' "$name" "$schema"
     done
     echo ''
@@ -152,6 +160,8 @@ done
 echo '{"type":"object"}' >"$backend_repo/contracts/schemas/basic-choice-question.schema.json"
 echo '{"title":"replay-attestation","type":"object"}' \
   >"$backend_repo/contracts/schemas/replay-attestation.schema.json"
+echo '{"title":"question-presentation","type":"object"}' \
+  >"$backend_repo/contracts/schemas/question-presentation.schema.json"
 # shellcheck disable=SC2086
 write_backend_manifest "$backend_repo/contracts/manifest.json" $fixture_names
 git -C "$backend_repo" add -A
@@ -200,6 +210,7 @@ reset_local_good_state() {
   done
   cp "$backend_repo/contracts/schemas/basic-choice-question.schema.json" "$local_fixture_dir/"
   cp "$backend_repo/contracts/schemas/replay-attestation.schema.json" "$local_fixture_dir/"
+  cp "$backend_repo/contracts/schemas/question-presentation.schema.json" "$local_fixture_dir/"
   # shellcheck disable=SC2086
   write_backend_manifest "$local_fixture_dir/manifest.json" $fixture_names
   rm -rf "$local_repo/.git"

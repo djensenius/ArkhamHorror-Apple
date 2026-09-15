@@ -246,23 +246,33 @@ extension AppModel {
     /// Resolves every deployment-owned choice label against one current catalog snapshot,
     /// retaining authoritative source indices so unresolved entries stay visible in place.
     func choiceLabelResolutions(
-        for question: BasicChoiceQuestion?
+        for question: BasicChoiceQuestion?,
+        semanticPresentation: BoundQuestionPresentation? = nil
     ) -> [Int: BasicChoiceLabelResolution] {
-        guard let question else { return [:] }
         let resolver = localeCatalogResolver
         let unavailability = localeCatalogUnavailability ?? .catalog(.notAdvertised)
         var result: [Int: BasicChoiceLabelResolution] = [:]
-        for choice in question.choices {
-            guard let localizationKey = choice.localizationKey else { continue }
+        let labels: [(index: Int, wireLabel: String)] = if let semanticPresentation {
+            semanticPresentation.presentation.choices.compactMap { choice in
+                guard choice.kind == .localizedLabel, let label = choice.label else { return nil }
+                return (choice.sourceIndex, label.text)
+            }
+        } else {
+            (question?.choices ?? []).compactMap { choice in
+                guard let localizationKey = choice.localizationKey else { return nil }
+                return (choice.index, "$\(localizationKey)")
+            }
+        }
+        for label in labels {
             switch StoryNarrativeLocalization.resolveProductionChoiceLabel(
-                "$\(localizationKey)",
+                label.wireLabel,
                 resolver: resolver,
                 catalogUnavailability: unavailability
             ) {
             case let .success(value):
-                result[choice.index] = .resolved(value)
+                result[label.index] = .resolved(value)
             case let .failure(reason):
-                result[choice.index] = .unavailable(reason)
+                result[label.index] = .unavailable(reason)
             }
         }
         return result

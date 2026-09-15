@@ -89,6 +89,10 @@ struct PublicGameSnapshot: Sendable {
     /// Exact player-keyed question payloads. Each value retains its full raw JSON while
     /// recognizing only the narrow basic-choice slice this client can safely answer.
     let question: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>
+    /// Optional additive render metadata. Presence is strict: its player keys and every
+    /// envelope's version/kind/count must bind exactly to ``question``/``scenarioSteps``.
+    /// Absence preserves the legacy raw-question compatibility path.
+    let questionPresentation: UUIDKeyedMap<PlayerIDTag, QuestionPresentation>?
     let cards: UUIDEntityMap<WireCardIDTag>
     let totalDoom: Int
     let totalClues: Int

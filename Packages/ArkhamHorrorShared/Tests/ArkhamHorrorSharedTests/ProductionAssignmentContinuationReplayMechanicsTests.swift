@@ -36,11 +36,64 @@ struct AssignmentReplayCoordinatorConfigurationTests {
         #expect(invocation.serverProfile.endpointSummary
             == "http://127.0.0.1:3002")
         #expect(invocation.deadlineSeconds == 30)
+        #expect(invocation.scenario == .assignment)
         #expect(invocation.expectedContractRevision
             == ContractPin.current.supportedSchemaRevision)
         #expect(invocation.enemyID == DamageAssignmentFixtures.enemyID)
         #expect(invocation.investigatorID
             == DamageAssignmentFixtures.investigatorID)
+    }
+
+    @Test("Gathering replay parses without assignment enemy identity")
+    func gatheringConfiguration() throws {
+        var environment = coordinatorEnvironment()
+        environment[
+            AssignmentReplayCoordinatorEnvironmentKey.scenario
+        ] = ProductionAssignmentReplayScenario.gatheringActAdvance.rawValue
+        environment.removeValue(
+            forKey: AssignmentReplayCoordinatorEnvironmentKey.enemyID
+        )
+
+        let invocation = try #require(
+            try ProductionAssignmentReplayCoordinatorInvocation.parse(
+                environment: environment
+            )
+        )
+
+        #expect(invocation.scenario == .gatheringActAdvance)
+        #expect(invocation.enemyID == nil)
+    }
+
+    @Test("Assignment replay rejects a non-assignment attested prompt")
+    func assignmentPromptKind() {
+        #expect(
+            throws: AssignmentReplayConfigurationError
+                .serverAttestationMismatch
+        ) {
+            _ = try replayConfiguration(
+                promptTag:
+                BasicChoiceQuestionKind.playerWindowChooseOne.rawValue
+            )
+        }
+    }
+
+    @Test("Unknown replay scenario fails closed")
+    func unknownScenario() {
+        var environment = coordinatorEnvironment()
+        environment[
+            AssignmentReplayCoordinatorEnvironmentKey.scenario
+        ] = "future-replay"
+
+        #expect(
+            throws: ProductionAssignmentReplayCoordinatorError
+                .invalidEnvironmentValue(
+                    AssignmentReplayCoordinatorEnvironmentKey.scenario
+                )
+        ) {
+            _ = try ProductionAssignmentReplayCoordinatorInvocation.parse(
+                environment: environment
+            )
+        }
     }
 
     @Test(
@@ -560,6 +613,7 @@ struct AssignmentReplayCasesAndEvidenceTests {
             gameID: configuration.promptIdentity.gameID,
             gameRevision: configuration.attestation.gameRevision,
             playerID: configuration.promptIdentity.ownerID,
+            snapshot: fixture.snapshot,
             projection: fixture.projection
         )
         try AssignmentReplayAuthoritativeValidator.validate(
@@ -575,6 +629,7 @@ struct AssignmentReplayCasesAndEvidenceTests {
             gameID: valid.gameID,
             gameRevision: String(repeating: "f", count: 40),
             playerID: valid.playerID,
+            snapshot: valid.snapshot,
             projection: valid.projection
         )
         #expect(
@@ -595,6 +650,7 @@ struct AssignmentReplayCasesAndEvidenceTests {
             gameID: BoardTestFixtures.gameID("000000000901"),
             gameRevision: valid.gameRevision,
             playerID: valid.playerID,
+            snapshot: valid.snapshot,
             projection: valid.projection
         )
         #expect(
@@ -615,6 +671,7 @@ struct AssignmentReplayCasesAndEvidenceTests {
             gameID: valid.gameID,
             gameRevision: valid.gameRevision,
             playerID: BoardTestFixtures.playerID("000000000002"),
+            snapshot: valid.snapshot,
             projection: valid.projection
         )
         #expect(
@@ -1101,6 +1158,63 @@ struct AssignmentReplayCoordinatorDriverWiringTests {
         ))
     }
 
+    @Test("Gathering replay uses its fixed victim without assignment identity")
+    // swiftlint:disable:next function_body_length
+    func gatheringVictimWiring() throws {
+        let scratch = try makeScratch()
+        defer { try? FileManager.default.removeItem(at: scratch.directory) }
+        var environment = coordinatorEnvironment(
+            checkpointPath: scratch.directory
+                .appendingPathComponent("checkpoint").path,
+            tokenPath: scratch.directory
+                .appendingPathComponent("token").path,
+            outputPath: scratch.directory
+                .appendingPathComponent("output").path
+        )
+        environment[
+            AssignmentReplayCoordinatorEnvironmentKey.scenario
+        ] = ProductionAssignmentReplayScenario.gatheringActAdvance.rawValue
+        environment.removeValue(
+            forKey: AssignmentReplayCoordinatorEnvironmentKey.enemyID
+        )
+        let invocation = try #require(
+            try ProductionAssignmentReplayCoordinatorInvocation.parse(
+                environment: environment
+            )
+        )
+        var capturedEnvironment: [String: String] = [:]
+
+        #expect(throws: SubprocessDeadlineGuardError.self) {
+            _ = try GatheringActReplayCoordinatorDriver.run(
+                invocation: invocation,
+                hostArguments: ["/test-host"],
+                appleRevisionProvider: { replayAppleRevision },
+                deadlineRunner: { filter, environment, deadline, _ in
+                    #expect(try filter ==
+                        GatheringActReplayCoordinatorDriver.victim().exactFilter)
+                    #expect(deadline > 0 && deadline <= 30)
+                    capturedEnvironment = environment
+                    throw SubprocessDeadlineGuardError.childFailed(
+                        exitCode: 7
+                    )
+                }
+            )
+        }
+        #expect(capturedEnvironment[
+            AssignmentReplayCoordinatorEnvironmentKey.scenario
+        ] == ProductionAssignmentReplayScenario.gatheringActAdvance.rawValue)
+        #expect(capturedEnvironment[
+            AssignmentReplayCoordinatorEnvironmentKey.enemyID
+        ] == nil)
+        #expect(capturedEnvironment[
+            AssignmentReplayCoordinatorEnvironmentKey.tokenPath
+        ] == invocation.tokenURL.path)
+        #expect(!capturedEnvironment.values.contains("unit-test-token"))
+        #expect(!FileManager.default.fileExists(
+            atPath: invocation.outputDirectoryURL.path
+        ))
+    }
+
     @Test("Preexisting output is rejected without overwrite")
     func staleOutputRejected() throws {
         let scratch = try makeScratch()
@@ -1274,6 +1388,7 @@ private func coordinatorHarnessFixture(
         outputURL
     )
     let invocation = try ProductionAssignmentReplayCoordinatorInvocation(
+        scenario: .assignment,
         serverProfile: replayServerProfile(),
         checkpointURL: checkpointURL,
         tokenURL: tokenURL,
@@ -1356,6 +1471,8 @@ private func replayServerBuild(
 private func replayValidatedCheckpoint(
     promptDigest: String,
     promptVersion: Int = 6,
+    promptTag: String =
+        BasicChoiceQuestionKind.questionWithSource.rawValue,
     checkpointPlayerID: PlayerID =
         BoardTestFixtures.playerID("000000000001")
 ) -> AssignmentReplayServerValidatedCheckpoint {
@@ -1367,8 +1484,7 @@ private func replayValidatedCheckpoint(
         prompt: AssignmentReplayServerValidatedPrompt(
             questionVersion: promptVersion,
             playerID: checkpointPlayerID,
-            promptTag:
-            BasicChoiceQuestionKind.questionWithSource.rawValue,
+            promptTag: promptTag,
             promptSHA256: promptDigest
         ),
         checkpointGameSHA256: String(repeating: "5", count: 64),
@@ -1413,6 +1529,8 @@ private func replayAttestation(
         replayCheckpointEnvelopeSHA256,
     promptDigest: String? = nil,
     promptVersion: Int = 6,
+    promptTag: String =
+        BasicChoiceQuestionKind.questionWithSource.rawValue,
     validatedCheckpoint: AssignmentReplayServerValidatedCheckpoint? = nil,
     receiptValidatedCheckpoint:
     AssignmentReplayServerValidatedCheckpoint? = nil,
@@ -1422,7 +1540,8 @@ private func replayAttestation(
     let digest = promptDigest ?? replayBackendPromptSHA256
     let checkpoint = validatedCheckpoint ?? replayValidatedCheckpoint(
         promptDigest: digest,
-        promptVersion: promptVersion
+        promptVersion: promptVersion,
+        promptTag: promptTag
     )
     let receipt = try replayImportReceipt(
         ReplayReceiptFixtureInput(
@@ -1494,6 +1613,8 @@ private func replayConfiguration(
         .damageFirstThenRemainingHorror,
     promptDigest: String? = nil,
     promptVersion: Int = 6,
+    promptTag: String =
+        BasicChoiceQuestionKind.questionWithSource.rawValue,
     gameID: GameID = BoardTestFixtures.gameID(),
     playerID: PlayerID =
         BoardTestFixtures.playerID("000000000001"),
@@ -1524,7 +1645,8 @@ private func replayConfiguration(
         attestation: replayAttestation(
             request: request,
             promptDigest: digest,
-            promptVersion: promptVersion
+            promptVersion: promptVersion,
+            promptTag: promptTag
         )
     )
 }
@@ -1600,6 +1722,7 @@ private func replayEvidence(
 
 private struct AssignmentReplayStartingFixture {
     let prompt: BasicChoicePromptPresentation
+    let snapshot: PublicGameSnapshot
     let projection: BoardProjection
     let configuration: ProductionAssignmentReplayConfiguration
 }
@@ -1634,6 +1757,7 @@ private func replayStartingFixture(
             actionChoiceIndex: nil,
             serverFeedback: nil
         ),
+        snapshot: envelope.game,
         projection: BoardProjectionBuilder.makeProjection(from: envelope.game),
         configuration: configuration
     )
