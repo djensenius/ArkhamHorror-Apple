@@ -45,6 +45,12 @@ struct AppModelLiveGameTests {
         try fixtureData(named: "game-update")
     }
 
+    /// Selects the whole-field-absent compatibility path for synthetic fixtures that
+    /// replace raw question authority without also constructing matching semantic metadata.
+    func useLegacyQuestionFallback(in game: inout [String: JSONValue]) {
+        game.removeValue(forKey: "questionPresentation")
+    }
+
     // MARK: - Model construction
 
     struct Fakes {

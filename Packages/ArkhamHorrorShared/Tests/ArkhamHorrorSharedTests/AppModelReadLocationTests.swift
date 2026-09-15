@@ -28,11 +28,15 @@ extension AppModelLiveGameTests {
         from envelope: GetGameEnvelope,
         scenarioSteps: Int,
         replacingQuestionWith rawQuestion: JSONValue,
-        addingLocationIDs locationIDs: [String] = []
+        addingLocationIDs locationIDs: [String] = [],
+        preservingQuestionPresentation: Bool = false
     ) throws -> BoardSnapshotUpdate {
         let data = try ContractJSON.encode(envelope.game)
         var value = try ContractJSON.decode(JSONValue.self, from: data)
         guard case var .object(object) = value else { throw TestFailure() }
+        if !preservingQuestionPresentation {
+            useLegacyQuestionFallback(in: &object)
+        }
         object["scenarioSteps"] = .number(.integer(Int64(scenarioSteps)))
         if !locationIDs.isEmpty {
             guard case var .object(locations)? = object["locations"],

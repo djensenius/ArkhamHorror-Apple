@@ -127,6 +127,7 @@ extension AppModelLiveGameTests {
               let ownerID = envelope.playerID?.codingKey.stringValue
         else { throw TestFailure() }
 
+        useLegacyQuestionFallback(in: &object)
         let mulliganQuestion = try loadContractFixtureValue("question-mulligan")
         questions[ownerID] = mulliganQuestion
         object["question"] = .object(questions)

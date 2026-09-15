@@ -49,6 +49,7 @@ extension PublicGameSnapshot: Codable {
         case inSetup
         case skillTestResults
         case question
+        case questionPresentation
         case cards
         case totalDoom
         case totalClues
@@ -145,9 +146,10 @@ extension PublicGameSnapshot: Codable {
             JSONValue.self, from: container, forKey: .skillTestResults,
             codingPath: path + [CodingKeys.skillTestResults]
         )
-        question = try container.decode(
+        let decodedQuestions = try container.decode(
             UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>.self, forKey: .question
         )
+        let decodedPresentations = try Self.decodeQuestionPresentations(from: container)
         cards = try container.decode(UUIDEntityMap<WireCardIDTag>.self, forKey: .cards)
         totalDoom = try container.decode(Int.self, forKey: .totalDoom)
         totalClues = try container.decode(Int.self, forKey: .totalClues)
@@ -159,6 +161,13 @@ extension PublicGameSnapshot: Codable {
                 debugDescription: "scenarioSteps must be non-negative"
             )
         }
+        questionPresentation = decodedPresentations
+        question = try Self.bindQuestionPresentations(
+            decodedPresentations,
+            to: decodedQuestions,
+            questionVersion: scenarioSteps,
+            codingPath: path + [CodingKeys.questionPresentation]
+        )
         undoActionStep = try decodeRequiredNullable(
             Int.self, from: container, forKey: .undoActionStep,
             codingPath: path + [CodingKeys.undoActionStep]
@@ -232,6 +241,7 @@ extension PublicGameSnapshot: Codable {
         try container.encode(inSetup, forKey: .inSetup)
         try container.encode(skillTestResults, forKey: .skillTestResults)
         try container.encode(question, forKey: .question)
+        try container.encodeIfPresent(questionPresentation, forKey: .questionPresentation)
         try container.encode(cards, forKey: .cards)
         try container.encode(totalDoom, forKey: .totalDoom)
         try container.encode(totalClues, forKey: .totalClues)
@@ -244,5 +254,59 @@ extension PublicGameSnapshot: Codable {
         try container.encode(phaseHistory, forKey: .phaseHistory)
         try container.encode(turnHistory, forKey: .turnHistory)
         try container.encode(enemyAttackTargets, forKey: .enemyAttackTargets)
+    }
+
+    private static func bindQuestionPresentations(
+        _ presentations: UUIDKeyedMap<PlayerIDTag, QuestionPresentation>?,
+        to questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>,
+        questionVersion: Int,
+        codingPath: [any CodingKey]
+    ) throws -> UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload> {
+        guard let presentations else { return questions }
+        guard Set(presentations.keys) == Set(questions.keys) else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: codingPath,
+                    debugDescription: "questionPresentation player keys must exactly match question"
+                )
+            )
+        }
+        var boundQuestions = questions
+        for (playerID, presentation) in presentations {
+            guard let question = questions[playerID] else {
+                throw DecodingError.dataCorrupted(
+                    .init(
+                        codingPath: codingPath,
+                        debugDescription: "Missing raw question for semantic presentation"
+                    )
+                )
+            }
+            do {
+                boundQuestions[playerID] = try question.binding(
+                    presentation.bind(
+                        to: question.rawValue,
+                        expectedQuestionVersion: questionVersion
+                    )
+                )
+            } catch {
+                throw DecodingError.dataCorrupted(
+                    .init(
+                        codingPath: codingPath,
+                        debugDescription: "Invalid questionPresentation binding: \(error)"
+                    )
+                )
+            }
+        }
+        return boundQuestions
+    }
+
+    private static func decodeQuestionPresentations(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> UUIDKeyedMap<PlayerIDTag, QuestionPresentation>? {
+        guard container.contains(.questionPresentation) else { return nil }
+        return try container.decode(
+            UUIDKeyedMap<PlayerIDTag, QuestionPresentation>.self,
+            forKey: .questionPresentation
+        )
     }
 }

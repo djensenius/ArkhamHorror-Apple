@@ -172,6 +172,7 @@ extension BoardTestFixtures {
             focusedChaosTokens: [], activeCard: nil, removedFromPlay: [], gameState: gameState,
             inSetup: false, skillTestResults: nil,
             question: basicChoiceQuestions(count: questionCount),
+            questionPresentation: nil,
             cards: cards, totalDoom: totalDoom, totalClues: totalClues,
             scenarioSteps: 0, undoActionStep: nil, undoTurnStep: nil, undoPhaseStep: nil,
             undoRoundStep: nil, roundHistory: [:], phaseHistory: [:], turnHistory: [:],
