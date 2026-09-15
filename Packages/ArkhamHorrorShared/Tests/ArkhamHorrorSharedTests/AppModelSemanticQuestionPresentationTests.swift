@@ -229,6 +229,42 @@ extension AppModelLiveGameTests {
         #expect(!prompt.canSubmit)
     }
 
+    @Test("An empty supported semantic question still requires an app update")
+    func emptySupportedSemanticQuestionFailsClosed() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-gathering-act-advance",
+            presentationFixture: "question-presentation-gathering-act-advance",
+            questionVersion: 36,
+            mutateRawQuestion: { rawQuestion in
+                rawQuestion = .object([
+                    "tag": .string("ChooseOne"),
+                    "choices": .array([]),
+                ])
+            },
+            mutatePresentation: { presentation in
+                presentation["questionVersion"] = .number(.integer(36))
+                presentation["choiceCount"] = .number(.integer(0))
+                presentation["choices"] = .array([])
+            }
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(prompt.readOnlyReason == .updateRequired)
+        #expect(!prompt.isRenderableQuestion)
+        #expect(prompt.choices.isEmpty)
+        #expect(!prompt.canSubmit)
+    }
+
     private enum SemanticFixtureError: Error {
         case unexpectedShape
     }

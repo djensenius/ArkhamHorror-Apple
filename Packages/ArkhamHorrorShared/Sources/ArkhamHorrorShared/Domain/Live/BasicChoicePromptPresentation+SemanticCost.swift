@@ -39,14 +39,16 @@ extension BasicChoicePromptPresentation {
             let scopeSummary = semanticScopeSummary(scope, in: projection)
             return semanticLocalized(
                 "semantic.cost.join.scope",
-                value: "\(amountSummary) \(scopeSummary)"
+                value: "\(amountSummary) \(scopeSummary)",
+                arguments: [amountSummary, scopeSummary]
             )
         case let .groupResource(amount, scope):
             let amountSummary = semanticAmountSummary(amount, unit: .resource)
             let scopeSummary = semanticScopeSummary(scope, in: projection)
             return semanticLocalized(
                 "semantic.cost.join.scope",
-                value: "\(amountSummary) \(scopeSummary)"
+                value: "\(amountSummary) \(scopeSummary)",
+                arguments: [amountSummary, scopeSummary]
             )
         case let .all(costs):
             return semanticCompositeCostSummary(
@@ -89,12 +91,14 @@ extension BasicChoicePromptPresentation {
             case .all:
                 semanticLocalized(
                     "semantic.cost.join.all",
-                    value: "\(partial) and \(next)"
+                    value: "\(partial) and \(next)",
+                    arguments: [partial, next]
                 )
             case .choice:
                 semanticLocalized(
                     "semantic.cost.join.choice",
-                    value: "\(partial) or \(next)"
+                    value: "\(partial) or \(next)",
+                    arguments: [partial, next]
                 )
             }
         }
@@ -112,39 +116,48 @@ extension BasicChoicePromptPresentation {
         case let .fixed(value):
             return semanticCount(value, unit: unit)
         case let .perPlayer(value):
+            let count = semanticCount(value, unit: unit)
             return semanticLocalized(
                 "semantic.cost.amount.perInvestigator",
-                value: "\(semanticCount(value, unit: unit)) per investigator"
+                value: "\(count) per investigator",
+                arguments: [count]
             )
         case let .fixedPlusPerPlayer(fixed, perPlayer):
             let fixedSummary = semanticCount(fixed, unit: unit)
             let perPlayerSummary = semanticCount(perPlayer, unit: unit)
             return semanticLocalized(
                 "semantic.cost.amount.fixedPlusPerInvestigator",
-                value:
-                "\(fixedSummary) + \(perPlayerSummary) per investigator"
+                value: "\(fixedSummary) + \(perPlayerSummary) per investigator",
+                arguments: [fixedSummary, perPlayerSummary]
             )
         case let .byPlayerCount(values):
             let counts = values.map(String.init).joined(separator: "/")
             let pluralUnit = semanticUnit(unit, plural: true)
             return semanticLocalized(
                 "semantic.cost.amount.byPlayerCount",
-                value: "\(counts) \(pluralUnit) by player count"
+                value: "\(counts) \(pluralUnit) by player count",
+                arguments: [counts, pluralUnit]
             )
         case .variable:
+            let pluralUnit = semanticUnit(unit, plural: true)
             return semanticLocalized(
                 "semantic.cost.amount.variable",
-                value: "X \(semanticUnit(unit, plural: true))"
+                value: "X \(pluralUnit)",
+                arguments: [pluralUnit]
             )
         case .star:
+            let pluralUnit = semanticUnit(unit, plural: true)
             return semanticLocalized(
                 "semantic.cost.amount.star",
-                value: "★ \(semanticUnit(unit, plural: true))"
+                value: "★ \(pluralUnit)",
+                arguments: [pluralUnit]
             )
         case .unknown:
+            let pluralUnit = semanticUnit(unit, plural: true)
             return semanticLocalized(
                 "semantic.cost.amount.unknown",
-                value: "an unknown number of \(semanticUnit(unit, plural: true))"
+                value: "an unknown number of \(pluralUnit)",
+                arguments: [pluralUnit]
             )
         }
     }
@@ -174,13 +187,15 @@ extension BasicChoicePromptPresentation {
             if let location = projection.locations.first(where: { $0.id == id }) {
                 return semanticLocalized(
                     "semantic.cost.scope.location",
-                    value: "at \(location.displayLabel)"
+                    value: "at \(location.displayLabel)",
+                    arguments: [location.displayLabel]
                 )
             }
             if let location = projection.enemyLocations.first(where: { $0.id == id }) {
                 return semanticLocalized(
                     "semantic.cost.scope.location",
-                    value: "at \(location.displayLabel)"
+                    value: "at \(location.displayLabel)",
+                    arguments: [location.displayLabel]
                 )
             }
             return semanticLocalized(
@@ -202,7 +217,8 @@ extension BasicChoicePromptPresentation {
         let unitName = semanticUnit(unit, plural: value != 1)
         return semanticLocalized(
             "semantic.cost.count",
-            value: "\(value) \(unitName)"
+            value: "\(value) \(unitName)",
+            arguments: [Int64(value), unitName]
         )
     }
 

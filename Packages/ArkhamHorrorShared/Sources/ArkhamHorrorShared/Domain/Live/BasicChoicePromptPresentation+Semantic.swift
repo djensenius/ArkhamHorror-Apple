@@ -4,8 +4,9 @@ extension BasicChoicePromptPresentation {
     var isRenderableQuestion: Bool {
         if let semanticPresentation {
             return semanticPresentation.presentation.questionKind != .unsupported
+                && !semanticPresentation.rawChoices.isEmpty
         }
-        return question.supportedQuestion != nil
+        return question.supportedQuestion?.choices.isEmpty == false
     }
 
     var isStoryPrompt: Bool {
@@ -53,7 +54,8 @@ extension BasicChoicePromptPresentation {
         ) else {
             return semanticLocalized(
                 "semantic.choice.unavailable.index",
-                value: "Unavailable action (choice \(choice.index + 1))"
+                value: "Unavailable action (choice \(choice.index + 1))",
+                arguments: [Int64(choice.index + 1)]
             )
         }
         let title = semanticTitle(
@@ -65,7 +67,8 @@ extension BasicChoicePromptPresentation {
         let costSummary = semanticCostSummary(cost, in: projection)
         return semanticLocalized(
             "semantic.choice.title.withCost",
-            value: "\(title) (\(costSummary))"
+            value: "\(title) (\(costSummary))",
+            arguments: [title, costSummary]
         )
     }
 
@@ -134,7 +137,8 @@ extension BasicChoicePromptPresentation {
         }
         return semanticLocalized(
             "semantic.choice.accessibility.activatesIndex",
-            value: "Activates choice \(choice.index + 1)."
+            value: "Activates choice \(choice.index + 1).",
+            arguments: [Int64(choice.index + 1)]
         )
     }
 
@@ -172,7 +176,8 @@ extension BasicChoicePromptPresentation {
                 .map {
                     semanticLocalized(
                         "semantic.choice.title.chooseEntity",
-                        value: "Choose \($0)"
+                        value: "Choose \($0)",
+                        arguments: [$0]
                     )
                 }
                 ?? semanticLocalized(
@@ -323,28 +328,54 @@ extension BasicChoicePromptPresentation {
 
     func semanticLocalized(
         _ key: StaticString,
-        value: String.LocalizationValue
+        value: String.LocalizationValue,
+        arguments: [CVarArg] = []
     ) -> String {
         let locale = semanticLocaleIdentifier.map(Locale.init(identifier:)) ?? .current
-        return String(
-            localized: key,
-            defaultValue: value,
-            bundle: semanticLocalizationBundle,
-            locale: locale
+        guard let bundle = semanticLocalizationBundle else {
+            return String(
+                localized: key,
+                defaultValue: value,
+                bundle: .module,
+                locale: locale
+            )
+        }
+        // Resolve the chosen .lproj directly because Xcode 26 can ignore an injected locale
+        // when String(localized:) is given a SwiftPM resource sub-bundle.
+        let keyString = String(describing: key)
+        let format = bundle.localizedString(
+            forKey: keyString,
+            value: nil,
+            table: nil
         )
+        guard format != keyString else {
+            return String(
+                localized: key,
+                defaultValue: value,
+                bundle: .module,
+                locale: locale
+            )
+        }
+        guard !arguments.isEmpty else { return format }
+        return String(format: format, locale: locale, arguments: arguments)
     }
 
-    private var semanticLocalizationBundle: Bundle {
-        guard let semanticLocaleIdentifier else { return .module }
-        let localization = Bundle.preferredLocalizations(
-            from: Bundle.module.localizations,
-            forPreferences: [semanticLocaleIdentifier, "en"]
-        ).first
-        guard let localization,
-              let path = Bundle.module.path(forResource: localization, ofType: "lproj"),
-              let bundle = Bundle(path: path)
-        else { return .module }
-        return bundle
+    private var semanticLocalizationBundle: Bundle? {
+        guard let semanticLocaleIdentifier else { return nil }
+        var candidates = [semanticLocaleIdentifier]
+        if let language = semanticLocaleIdentifier.split(separator: "-").first {
+            candidates.append(String(language))
+        }
+        candidates.append("en")
+        for candidate in candidates {
+            let path = Bundle.module.path(
+                forResource: candidate,
+                ofType: "lproj"
+            )
+            guard let path, let bundle = Bundle(path: path) else { continue }
+            return bundle
+        }
+        return nil
     }
 
     private func semanticLocationID(_ raw: String) -> LocationID? {
