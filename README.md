@@ -82,6 +82,24 @@ catalog, asset, REST, and WebSocket paths, and sends
 construct game state, implement assignment rules, or call a direct answer
 bridge.
 
+### Historical authenticated Cover Up evidence
+
+The repository retains the credential-free production artifact at
+`Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Replay/cover-up-production-replay.json`.
+It was captured on September 14, 2026 from three authenticated checkpoint
+imports against backend merge
+`38d8b466b635e3c9a18995baccac8b67cb6984cc`, using Apple implementation
+`0d96d23a7b0f3d7dc06bec32b99d1208be48a5c3`.
+
+Normal package tests pin the artifact's exact SHA-256, validate the server
+attestations and import-receipt digests, and prove both production Q33 branches:
+using Cover Up changes its clues from 3 to 2 while Roland and the location stay
+at 1, and skipping leaves Cover Up at 3 while Roland changes from 1 to 2 and the
+location from 1 to 0. The stale leg decodes the returned production
+`GameUpdate`, proves all clue/state hashes remain unchanged at Q33, and runs the
+embedded prompt through the same strict parser and board actionability path as
+the live app.
+
 ### Backend replay authority
 
 As of Monday, September 14, 2026, this repository is pinned to backend contract

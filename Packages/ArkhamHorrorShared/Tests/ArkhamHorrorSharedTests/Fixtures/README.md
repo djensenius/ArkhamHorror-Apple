@@ -196,6 +196,30 @@ Authenticated replay prompts can have a different digest because location and
 skill-test UUIDs are runtime-generated; they remain governed by the same closed
 shape and repeated-identity checks.
 
+## Authenticated Cover Up replay evidence
+
+`Replay/cover-up-production-replay.json` is credential-free historical evidence
+captured through the production `AppModel`, controller, authenticated checkpoint
+import, REST, and WebSocket paths on September 14, 2026. It binds backend merge
+`38d8b466b635e3c9a18995baccac8b67cb6984cc`, Apple implementation
+`0d96d23a7b0f3d7dc06bec32b99d1208be48a5c3`, contract revision `0.1.40`,
+and three distinct imported game/player identities.
+
+The artifact records Q32 activation followed by both Q33 outcomes: using Cover
+Up removes one clue from the treachery and leaves investigator/location clues
+unchanged, while skipping leaves Cover Up unchanged and transfers one location
+clue to Roland. Its third leg resubmits the stale Q32 answer while Q33 is active
+and embeds the unchanged authoritative `GameUpdate`.
+
+`ProductionCoverUpReplayEvidenceTests` separately pins the exact 104,104-byte
+artifact SHA-256, recomputes every import-receipt digest, validates the canonical
+answers and controller source indices, asserts both clue deltas, and decodes the
+embedded stale response through production snapshot, strict Cover Up parser,
+projection, and actionability code. This evidence lives outside
+`Fixtures/Contract/`: it proves an authenticated historical execution and is not
+a replacement for the backend-governed contract fixtures or an offline rules
+engine.
+
 `replay-attestation.json` and `replay-attestation.schema.json` govern the durable
 server authority returned after an authenticated checkpoint import. The production
 replay coordinator uses that contract to bind the imported game, player remapping,
