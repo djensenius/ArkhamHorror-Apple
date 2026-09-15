@@ -82,6 +82,24 @@ struct ProductionGatheringActReplayMechanicsTests {
         }
     }
 
+    @Test("Q36 evidence requires every source index to remain actionable")
+    func q36CompleteActionability() throws {
+        let complete = try q36PromptEvidence(
+            actionableSourceIndices: Array(0 ..< 12)
+        )
+        try complete.validateResultingPrompt()
+
+        let incomplete = try q36PromptEvidence(
+            actionableSourceIndices: [0]
+        )
+        #expect(
+            throws:
+            ProductionGatheringActReplayEvidenceError.invalidQ36
+        ) {
+            try incomplete.validateResultingPrompt()
+        }
+    }
+
     @Test("Board summaries bind their authoritative source and revision")
     func authoritativeBoardSummary() throws {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
@@ -130,5 +148,32 @@ struct ProductionGatheringActReplayMechanicsTests {
         ) {
             try altered.validateDigest()
         }
+    }
+
+    private func q36PromptEvidence(
+        actionableSourceIndices: [Int]
+    ) throws -> GatheringActReplayPromptEvidence {
+        let sourceIndices = Array(0 ..< 12)
+        return try ContractJSON.decode(
+            GatheringActReplayPromptEvidence.self,
+            from: JSONSerialization.data(
+                withJSONObject: [
+                    "version":
+                        ProductionGatheringActReplayConfiguration
+                        .resultingQuestionVersion,
+                    "rawTag":
+                        BasicChoiceQuestionKind
+                        .playerWindowChooseOne.rawValue,
+                    "questionKind":
+                        QuestionPresentation.Kind
+                        .playerWindowChooseOne.rawValue,
+                    "choiceCount": sourceIndices.count,
+                    "sourceIndices": sourceIndices,
+                    "actionableSourceIndices": actionableSourceIndices,
+                    "canonicalSHA256": String(repeating: "a", count: 64),
+                    "selectedDescriptor": NSNull(),
+                ]
+            )
+        )
     }
 }

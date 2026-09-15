@@ -169,6 +169,28 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             selectedDescriptor = nil
         }
     }
+
+    func validateResultingPrompt() throws {
+        let expectedSourceIndices = Array(0 ..< 12)
+        guard version ==
+            ProductionGatheringActReplayConfiguration
+            .resultingQuestionVersion,
+            rawTag ==
+            BasicChoiceQuestionKind.playerWindowChooseOne.rawValue,
+            questionKind ==
+            QuestionPresentation.Kind.playerWindowChooseOne.rawValue,
+            choiceCount == expectedSourceIndices.count,
+            sourceIndices == expectedSourceIndices,
+            actionableSourceIndices == expectedSourceIndices,
+            selectedDescriptor == nil,
+            ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                canonicalSHA256,
+                count: 64
+            )
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ36
+        }
+    }
 }
 
 struct GatheringActReplayControllerEvidence: Codable, Equatable, Sendable {
@@ -560,25 +582,7 @@ struct ProductionGatheringActReplayEvidence:
     }
 
     private func validateQ36() throws {
-        guard q36Prompt.version ==
-            ProductionGatheringActReplayConfiguration
-            .resultingQuestionVersion,
-            q36Prompt.rawTag ==
-            BasicChoiceQuestionKind.playerWindowChooseOne.rawValue,
-            q36Prompt.questionKind ==
-            QuestionPresentation.Kind.playerWindowChooseOne.rawValue,
-            q36Prompt.choiceCount > 0,
-            q36Prompt.sourceIndices ==
-            Array(0 ..< q36Prompt.choiceCount),
-            !q36Prompt.actionableSourceIndices.isEmpty,
-            q36Prompt.selectedDescriptor == nil,
-            ProductionAssignmentReplayConfiguration.isLowercaseHex(
-                q36Prompt.canonicalSHA256,
-                count: 64
-            )
-        else {
-            throw ProductionGatheringActReplayEvidenceError.invalidQ36
-        }
+        try q36Prompt.validateResultingPrompt()
     }
 
     // swiftlint:disable:next function_body_length

@@ -604,14 +604,8 @@ enum ProductionGatheringActReplayRunner {
                 .resultingQuestionVersion,
             configuration: configuration
         )
-        guard prompt.canSubmit,
-              prompt.question.supportedQuestion?.kind ==
-              .playerWindowChooseOne,
-              evidence.choiceCount > 0,
-              evidence.sourceIndices ==
-              Array(0 ..< evidence.choiceCount),
-              !evidence.actionableSourceIndices.isEmpty
-        else {
+        try evidence.validateResultingPrompt()
+        guard prompt.canSubmit else {
             throw ProductionGatheringActReplayError.promptShapeMismatch
         }
     }
