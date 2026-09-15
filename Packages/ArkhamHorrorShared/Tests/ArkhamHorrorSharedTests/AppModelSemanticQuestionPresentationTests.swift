@@ -114,7 +114,14 @@ extension AppModelLiveGameTests {
         let envelope = try semanticEnvelope(
             rawFixture: "question-gathering-act-objective",
             presentationFixture: "question-presentation-gathering-act-objective",
-            questionVersion: 34
+            questionVersion: 33,
+            mutatePresentation: { presentation in
+                guard case var .array(choices)? = presentation["choices"],
+                      choices.indices.contains(12)
+                else { throw SemanticFixtureError.unexpectedShape }
+                choices.remove(at: 12)
+                presentation["choices"] = .array(choices)
+            }
         )
         let connection = FakeGameSocketConnection()
         let gameID = await startChoiceSession(
@@ -128,13 +135,15 @@ extension AppModelLiveGameTests {
         let changed = try semanticEnvelope(
             rawFixture: "question-gathering-act-objective",
             presentationFixture: "question-presentation-gathering-act-objective",
-            questionVersion: 34,
+            questionVersion: 33,
             mutatePresentation: { presentation in
                 guard case var .array(choices)? = presentation["choices"],
+                      choices.indices.contains(12),
                       case var .object(choice) = choices[0]
                 else { throw SemanticFixtureError.unexpectedShape }
                 choice["actorId"] = .string("c01002")
                 choices[0] = .object(choice)
+                choices.remove(at: 12)
                 presentation["choices"] = .array(choices)
             }
         )
@@ -161,7 +170,7 @@ extension AppModelLiveGameTests {
         )
         let presentation = QuestionPresentation(
             protocolVersion: 1,
-            questionVersion: 34,
+            questionVersion: 33,
             questionKind: .playerWindowChooseOne,
             choiceCount: 13,
             choices: [
@@ -178,7 +187,7 @@ extension AppModelLiveGameTests {
         )
         let bound = try presentation.bind(
             to: payload.rawValue,
-            expectedQuestionVersion: 34
+            expectedQuestionVersion: 33
         )
 
         #expect(model.choiceLabelResolutions(
@@ -272,6 +281,7 @@ extension AppModelLiveGameTests {
         guard case var .object(presentationObject) = presentation else {
             throw SemanticFixtureError.unexpectedShape
         }
+        presentationObject["questionVersion"] = .number(.integer(Int64(questionVersion)))
         try mutatePresentation?(&presentationObject)
         presentation = .object(presentationObject)
         var rawQuestion = try fixtureJSON(rawFixture)

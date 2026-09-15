@@ -8,51 +8,133 @@ struct QuestionPresentationRawQuestionShape: Sendable, Equatable, Hashable {
     func validateGovernedChoices(
         for presentation: QuestionPresentation
     ) throws {
-        // Any change to these governed raw branches requires a matching client update.
-        let requirement: (sourceIndex: Int, canonicalSHA256: String)? = switch (
+        switch (
             presentation.questionVersion,
             presentation.questionKind,
             presentation.choiceCount
         ) {
         case (34, .playerWindowChooseOne, 13):
-            (
-                sourceIndex: 12,
-                canonicalSHA256:
-                "5ce874838b4e764a207a8b66017bc66339092708caeb32070fb69310c39946de"
-            )
+            try validateGatheringActObjectiveChoices(for: presentation)
         case (35, .chooseOne, 1):
-            (
-                sourceIndex: 0,
-                canonicalSHA256:
+            try validateCanonicalChoice(
+                at: 0,
+                expectedSHA256:
                 "4e85cfd95e1abe29f08f8d1cf7eaaf817b23193b77000fe5413b02fdec6f3b7f"
             )
         default:
-            nil
+            return
         }
-        guard let requirement else { return }
-        guard choices.indices.contains(requirement.sourceIndex) else {
+    }
+
+    private func validateGatheringActObjectiveChoices(
+        for presentation: QuestionPresentation
+    ) throws {
+        let rawSeal: GovernedJSONSeal
+        let presentationSeal: GovernedJSONSeal
+        do {
+            rawSeal = try GovernedJSONSeal(.array(choices))
+            let presentationValue = try ContractJSON.decode(
+                JSONValue.self,
+                from: ContractJSON.encode(presentation.choices)
+            )
+            presentationSeal = try GovernedJSONSeal(presentationValue)
+        } catch {
+            throw QuestionPresentationBindingError.governedChoicesMismatch
+        }
+        guard rawSeal.canonicalSHA256 ==
+            "d6ebbbb9a4bc4c2110f95a7f086d32499af07115f0f3f3d9f9a167d59f927a65",
+            presentationSeal.canonicalSHA256 ==
+            "5393915d65cdda2b46b860a1a3e45f56e834823b1cee5d7360528394029b768c",
+            rawSeal.dynamicIDs.count == 8,
+            presentationSeal.dynamicIDs == rawSeal.dynamicIDs
+        else {
+            throw QuestionPresentationBindingError.governedChoicesMismatch
+        }
+    }
+
+    private func validateCanonicalChoice(
+        at sourceIndex: Int,
+        expectedSHA256: String
+    ) throws {
+        guard choices.indices.contains(sourceIndex) else {
             throw QuestionPresentationBindingError.rawChoiceMismatch(
-                sourceIndex: requirement.sourceIndex
+                sourceIndex: sourceIndex
             )
         }
         let canonical: Data
         do {
             canonical = try LosslessJSONSerializer.serialize(
-                choices[requirement.sourceIndex]
+                choices[sourceIndex]
             )
         } catch {
             throw QuestionPresentationBindingError.rawChoiceMismatch(
-                sourceIndex: requirement.sourceIndex
+                sourceIndex: sourceIndex
             )
         }
         let digest = SHA256.hash(data: canonical)
             .map { String(format: "%02x", $0) }
             .joined()
-        guard digest == requirement.canonicalSHA256 else {
+        guard digest == expectedSHA256 else {
             throw QuestionPresentationBindingError.rawChoiceMismatch(
-                sourceIndex: requirement.sourceIndex
+                sourceIndex: sourceIndex
             )
         }
+    }
+}
+
+private struct GovernedJSONSeal {
+    let canonicalSHA256: String
+    let dynamicIDs: [String]
+
+    init(_ value: JSONValue) throws {
+        var normalizer = GovernedUUIDNormalizer()
+        let normalized = normalizer.normalize(value)
+        let canonical = try LosslessJSONSerializer.serialize(normalized)
+        canonicalSHA256 = SHA256.hash(data: canonical)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        dynamicIDs = normalizer.dynamicIDs
+    }
+}
+
+private struct GovernedUUIDNormalizer {
+    private var placeholders: [String: String] = [:]
+    private(set) var dynamicIDs: [String] = []
+
+    mutating func normalize(_ value: JSONValue) -> JSONValue {
+        switch value {
+        case let .string(string):
+            guard Self.isCanonicalUUID(string) else { return value }
+            if let placeholder = placeholders[string] {
+                return .string(placeholder)
+            }
+            let placeholder = "$uuid\(dynamicIDs.count)"
+            placeholders[string] = placeholder
+            dynamicIDs.append(string)
+            return .string(placeholder)
+        case let .array(elements):
+            var normalized: [JSONValue] = []
+            normalized.reserveCapacity(elements.count)
+            for element in elements {
+                normalized.append(normalize(element))
+            }
+            return .array(normalized)
+        case let .object(object):
+            var normalized: [String: JSONValue] = [:]
+            normalized.reserveCapacity(object.count)
+            for key in object.keys.sorted() {
+                guard let child = object[key] else { continue }
+                normalized[key] = normalize(child)
+            }
+            return .object(normalized)
+        case .null, .bool, .number:
+            return value
+        }
+    }
+
+    private static func isCanonicalUUID(_ value: String) -> Bool {
+        guard let uuid = UUID(uuidString: value) else { return false }
+        return uuid.uuidString.lowercased() == value
     }
 }
 

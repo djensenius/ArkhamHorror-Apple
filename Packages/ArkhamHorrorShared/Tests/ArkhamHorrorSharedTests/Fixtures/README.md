@@ -219,9 +219,13 @@ The semantic descriptors are display, controller, and accessibility metadata
 only. Apple must submit the unchanged source index and exact question version;
 Haskell alone checks clue payment, legality, act advancement, and resulting
 state. Native decoding accepts only the exact Q34 and Q35 `advanceAct`
-descriptors, and binding verifies their corresponding raw choices against the
-exact canonical contract branches. Any changed identity, ability, cost, source
-index, raw choice, or prompt shape therefore remains update-required.
+descriptors. Q34 binding seals the complete raw choice array and complete
+semantic descriptor array after replacing the eight runtime-generated UUIDs
+with ordered placeholders, then requires both arrays to publish the same
+ordered identities. Q35 binding seals its sole raw choice directly. Any changed
+identity, ability, cost, message, source index, raw choice, or prompt shape
+therefore remains update-required, while authenticated imports may regenerate
+their opaque UUID identities without changing the governed shape.
 
 ## Authenticated Cover Up replay evidence
 

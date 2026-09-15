@@ -174,6 +174,7 @@ enum QuestionPresentationBindingError: Error, Sendable, Equatable {
     case questionKind(expected: QuestionPresentation.Kind, actual: QuestionPresentation.Kind)
     case choiceCount(expected: Int, actual: Int)
     case rawChoiceMismatch(sourceIndex: Int)
+    case governedChoicesMismatch
 }
 
 extension QuestionPresentation {
