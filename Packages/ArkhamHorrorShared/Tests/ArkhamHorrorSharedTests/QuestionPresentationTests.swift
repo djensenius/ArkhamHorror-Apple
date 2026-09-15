@@ -128,6 +128,33 @@ struct QuestionPresentationTests {
         #expect(binding.rawChoices.count == expectedCount)
     }
 
+    // swiftlint:disable line_length
+    @Test(
+        "Raw derivation rejects negative counted question amounts",
+        arguments: [
+            #"{"tag":"ChooseN","amount":-1,"choices":[{}]}"#,
+            #"{"tag":"ChooseUpToN","amount":-1,"choices":[{}]}"#,
+            #"{"tag":"Read","flavorText":{},"readChoices":{"tag":"BasicReadChoicesN","contents":[-1,[{}]]},"readCards":null}"#,
+            #"{"tag":"Read","flavorText":{},"readChoices":{"tag":"BasicReadChoicesUpToN","contents":[-1,[{}]]},"readCards":null}"#,
+        ]
+    )
+    // swiftlint:enable line_length
+    func negativeRawCountFailsClosed(rawJSON: String) {
+        let presentation = QuestionPresentation(
+            protocolVersion: 1,
+            questionVersion: 7,
+            questionKind: .chooseN,
+            choiceCount: 1,
+            choices: []
+        )
+        #expect(throws: QuestionPresentationBindingError.self) {
+            try presentation.bind(
+                to: ContractJSON.decode(JSONValue.self, from: Data(rawJSON.utf8)),
+                expectedQuestionVersion: 7
+            )
+        }
+    }
+
     @Test("Binding rejects version, kind, count, and malformed known raw questions")
     func bindingMismatchesFailClosed() throws {
         let raw = try rawFixture("question-gathering-act-advance")

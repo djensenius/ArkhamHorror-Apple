@@ -181,7 +181,8 @@ enum QuestionPresentationRawQuestionDeriver {
         kind: QuestionPresentation.Kind
     ) throws -> QuestionPresentationRawQuestionShape {
         guard Set(object.keys) == ["tag", "amount", "choices"],
-              integer(object["amount"]) != nil
+              let amount = integer(object["amount"]),
+              amount >= 0
         else {
             throw invalid("Malformed \(tag) question")
         }
@@ -242,7 +243,8 @@ enum QuestionPresentationRawQuestionDeriver {
         case "BasicReadChoicesN", "BasicReadChoicesUpToN":
             guard case let .array(contents)? = readChoices["contents"],
                   contents.count == 2,
-                  integer(contents[0]) != nil,
+                  let amount = integer(contents[0]),
+                  amount >= 0,
                   case let .array(values) = contents[1]
             else {
                 throw invalid("Malformed \(tag)")
