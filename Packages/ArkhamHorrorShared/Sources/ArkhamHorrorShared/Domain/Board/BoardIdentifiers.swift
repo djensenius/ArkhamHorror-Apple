@@ -168,6 +168,11 @@ enum SkillIDTag: Sendable {}
 /// A skill-test-in-progress `SkillId` (UUID), `Arkham/Id.hs`.
 typealias SkillID = Identifier<SkillIDTag>
 
+/// Phantom tag distinguishing ``SkillTestID``.
+enum SkillTestIDTag: Sendable {}
+/// A rules-engine `SkillTestId` (UUID), `Arkham/Id.hs`.
+typealias SkillTestID = Identifier<SkillTestIDTag>
+
 /// Phantom tag distinguishing ``ConcealedCardID``.
 enum ConcealedCardIDTag: Sendable {}
 /// A concealed card's `ConcealedCardId` (UUID), `Arkham/Id.hs`.

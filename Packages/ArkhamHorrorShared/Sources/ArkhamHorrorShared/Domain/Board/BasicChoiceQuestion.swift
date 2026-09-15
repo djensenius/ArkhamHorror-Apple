@@ -327,11 +327,11 @@ private extension BasicChoiceParser {
     ) -> BasicChoiceContent? {
         let specialized = parseRoundEndForcedAbility(object)
             ?? parseRolandDefeatReaction(object)
+            ?? parseCoverUpReaction(object)
         if let specialized {
             return specialized
         }
-        guard !reserveGenericFallback,
-              !isRolandDefeatReactionCandidate(object),
+        guard !shouldReserveGenericAbilityFallback(object, envelopeMatch: reserveGenericFallback),
               Set(object.keys) == [
                   "tag", "investigatorId", "ability", "windows", "before", "messages",
               ],

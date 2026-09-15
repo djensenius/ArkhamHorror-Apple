@@ -19,6 +19,13 @@ struct RolandDefeatReactionChoice: Sendable, Equatable, Hashable {
     let defeatedEnemyID: EnemyID
 }
 
+struct CoverUpReactionChoice: Sendable, Equatable, Hashable {
+    let ability: BasicChoiceAbility
+    let treacheryID: TreacheryID
+    let locationID: LocationID
+    let skillTestID: SkillTestID
+}
+
 struct AgendaConsequenceChoice: Sendable, Equatable, Hashable {
     enum Kind: Sendable, Equatable, Hashable {
         case takeHorror
@@ -101,6 +108,7 @@ enum BasicChoiceContent: Sendable, Equatable, Hashable {
     case evade(BasicChoiceAbility, enemyID: EnemyID)
     case engage(BasicChoiceAbility, enemyID: EnemyID)
     case rolandDefeatReaction(RolandDefeatReactionChoice)
+    case coverUpReaction(CoverUpReactionChoice)
     case resolveForcedAbility(ForcedAbilityChoice)
     case advanceAgenda(agendaID: AgendaID, messages: [JSONValue])
     case chooseAgendaConsequence(AgendaConsequenceChoice)
@@ -149,6 +157,7 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .evade: "Evade"
         case .engage: "Engage"
         case .rolandDefeatReaction: "Discover 1 clue"
+        case .coverUpReaction: "Remove 1 clue from Cover Up"
         case .resolveForcedAbility: "Resolve forced ability"
         case .advanceAgenda: "Advance agenda"
         case .chooseAgendaConsequence: "Unavailable action"
@@ -176,6 +185,7 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
         case .evade: "figure.run"
         case .engage: "person.2.fill"
         case .rolandDefeatReaction: "magnifyingglass.circle.fill"
+        case .coverUpReaction: "minus.circle.fill"
         case .resolveForcedAbility: "exclamationmark.triangle.fill"
         case .advanceAgenda: "arrow.up.circle.fill"
         case let .chooseAgendaConsequence(choice): choice.kind.systemImage
@@ -197,6 +207,8 @@ struct BasicChoice: Sendable, Equatable, Hashable, Identifiable {
              let .engage(ability, _):
             ability
         case let .rolandDefeatReaction(choice):
+            choice.ability
+        case let .coverUpReaction(choice):
             choice.ability
         case let .resolveForcedAbility(choice):
             choice.ability

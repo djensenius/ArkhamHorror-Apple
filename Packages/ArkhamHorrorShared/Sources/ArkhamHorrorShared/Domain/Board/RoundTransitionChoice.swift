@@ -24,6 +24,9 @@ extension BasicChoiceParser {
     static func validateRoundTransitionQuestion(
         kind: BasicChoiceQuestionKind, choices: [BasicChoice]
     ) -> Bool {
+        if let isValid = validateCoverUpReactionQuestion(kind: kind, choices: choices) {
+            return isValid
+        }
         if let isValid = validateRolandDefeatReactionQuestion(kind: kind, choices: choices) {
             return isValid
         }

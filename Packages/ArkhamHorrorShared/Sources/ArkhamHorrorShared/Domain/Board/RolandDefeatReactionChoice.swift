@@ -18,6 +18,15 @@ extension BasicChoiceParser {
         return true
     }
 
+    static func shouldReserveGenericAbilityFallback(
+        _ object: [String: JSONValue],
+        envelopeMatch: Bool
+    ) -> Bool {
+        envelopeMatch
+            || isRolandDefeatReactionCandidate(object)
+            || isCoverUpReactionCandidate(object)
+    }
+
     static func isRolandDefeatReactionCandidate(
         _ object: [String: JSONValue]
     ) -> Bool {

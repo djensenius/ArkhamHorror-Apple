@@ -53,9 +53,9 @@ enum BoardDisplayFormatting {
         case .resolveEnemyAttack, .assignEnemyAttackDamage, .assignAgendaHorror:
             return investigatorChoiceDisplayTitle(for: choice, in: projection)
         case .gainResource, .drawCard, .endTurn, .investigate, .fight, .evade, .engage,
-             .rolandDefeatReaction, .resolveForcedAbility, .advanceAgenda, .continueReading,
-             .skipTriggers, .startSkillTest, .applySkillTestResults, .drawEncounterCard,
-             .unsupported:
+             .rolandDefeatReaction, .coverUpReaction, .resolveForcedAbility, .advanceAgenda,
+             .continueReading, .skipTriggers, .startSkillTest, .applySkillTestResults,
+             .drawEncounterCard, .unsupported:
             return choice.title
         }
     }
@@ -120,6 +120,9 @@ enum BoardDisplayFormatting {
             )
         }
         if canSubmit {
+            if case .coverUpReaction = choice.content {
+                return "Removes 1 clue from Cover Up instead of discovering it."
+            }
             return "Activates choice \(choice.index + 1)."
         }
         return statusMessage ?? "This choice is currently read-only."
@@ -334,7 +337,7 @@ private enum BasicChoiceAvailabilityFormatting {
             "The enemy or investigator for this attack isn't currently available."
         case .assignEnemyAttackDamage:
             "The enemy or investigator for this assignment isn't currently available."
-        case .rolandDefeatReaction, .resolveForcedAbility, .advanceAgenda,
+        case .rolandDefeatReaction, .coverUpReaction, .resolveForcedAbility, .advanceAgenda,
              .assignAgendaHorror:
             roundTransitionAnnouncement(for: choice.content)
         case .fight, .evade, .engage:
@@ -351,6 +354,10 @@ private enum BasicChoiceAvailabilityFormatting {
         switch content {
         case .rolandDefeatReaction:
             "Roland Banks or his location isn't currently available."
+        case .coverUpReaction:
+            """
+            Cover Up, Roland Banks, or the affected location isn't available with a clue to remove.
+            """
         case .resolveForcedAbility:
             "The treachery or investigator for this ability isn't currently available."
         case .advanceAgenda:

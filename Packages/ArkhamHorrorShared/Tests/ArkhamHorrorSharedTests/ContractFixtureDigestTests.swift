@@ -130,6 +130,7 @@ struct ContractFixtureDigestTests {
             "question-player-window-enemy-actions",
             "question-player-window-engage-action",
             "question-roland-defeat-reaction",
+            "question-cover-up-reaction",
             "question-round-end-forced-ability",
             "question-agenda-advance",
             "question-agenda-consequence",
@@ -205,17 +206,17 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "1f73f580fd21cbbc30f70d50dd26949eef8d8ff3"
+            ContractPin.current.backendCommit == "38d8b466b635e3c9a18995baccac8b67cb6984cc"
         )
     }
 
-    @Test("The immutable manifest governs 32 assignment negatives within 481 total")
+    @Test("The immutable manifest governs 32 assignment negatives within 569 total")
     func assignmentFamilyManifestCoverage() throws {
         let manifest = try ContractJSON.decode(
             GovernedContractManifest.self,
             from: fixtureData(named: "manifest")
         )
-        #expect(manifest.negativeFixtures.count == 481)
+        #expect(manifest.negativeFixtures.count == 569)
         let fixtureSchemas = Dictionary(
             uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
         )
@@ -285,6 +286,20 @@ struct ContractFixtureDigestTests {
         )
         #expect(fixtureSchemas[path] == "contracts/schemas/basic-choice-question.schema.json")
         #expect(manifest.negativeFixtures.count { $0.basePositiveFixture == path } == 60)
+    }
+
+    @Test("The immutable manifest governs the production Cover Up reaction")
+    func coverUpReactionManifestCoverage() throws {
+        let manifest = try ContractJSON.decode(
+            GovernedContractManifest.self,
+            from: fixtureData(named: "manifest")
+        )
+        let path = "contracts/fixtures/question-cover-up-reaction.json"
+        let fixtureSchemas = Dictionary(
+            uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
+        )
+        #expect(fixtureSchemas[path] == "contracts/schemas/basic-choice-question.schema.json")
+        #expect(manifest.negativeFixtures.count { $0.basePositiveFixture == path } == 88)
     }
 
     @Test("The immutable manifest governs all four round-transition prompts")
