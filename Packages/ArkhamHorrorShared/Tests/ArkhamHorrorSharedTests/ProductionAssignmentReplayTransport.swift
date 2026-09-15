@@ -69,10 +69,21 @@ struct AssignmentReplayAuthoritativeObservation: Sendable, Equatable {
 }
 
 actor AssignmentReplayAuthoritativeRecorder {
+    static let defaultMaximumObservationCount = 8
+
+    private let maximumObservationCount: Int
     private var observations: [AssignmentReplayAuthoritativeObservation] = []
 
+    init(
+        maximumObservationCount: Int =
+            AssignmentReplayAuthoritativeRecorder.defaultMaximumObservationCount
+    ) {
+        precondition(maximumObservationCount > 0)
+        self.maximumObservationCount = maximumObservationCount
+    }
+
     func recordREST(_ envelope: GetGameEnvelope) {
-        observations.append(AssignmentReplayAuthoritativeObservation(
+        record(AssignmentReplayAuthoritativeObservation(
             source: .rest,
             gameID: envelope.game.id,
             gameRevision: envelope.game.git,
@@ -83,7 +94,7 @@ actor AssignmentReplayAuthoritativeRecorder {
     }
 
     func recordSocket(_ snapshot: PublicGameSnapshot) {
-        observations.append(AssignmentReplayAuthoritativeObservation(
+        record(AssignmentReplayAuthoritativeObservation(
             source: .socket,
             gameID: snapshot.id,
             gameRevision: snapshot.git,
@@ -102,6 +113,22 @@ actor AssignmentReplayAuthoritativeRecorder {
             $0.gameID == gameID
                 && $0.projection.counters.scenarioSteps == questionVersion
                 && (source == nil || $0.source == source)
+        }
+    }
+
+    private func record(
+        _ observation: AssignmentReplayAuthoritativeObservation
+    ) {
+        observations.removeAll {
+            $0.source == observation.source
+                && $0.gameID == observation.gameID
+                && $0.projection.counters.scenarioSteps ==
+                observation.projection.counters.scenarioSteps
+        }
+        observations.append(observation)
+        let overflow = observations.count - maximumObservationCount
+        if overflow > 0 {
+            observations.removeFirst(overflow)
         }
     }
 }

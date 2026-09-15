@@ -112,9 +112,9 @@ extension AppModelLiveGameTests {
         await model.flowTask?.value
         makeModern(model)
         let envelope = try semanticEnvelope(
-            rawFixture: "question-gathering-act-advance",
-            presentationFixture: "question-presentation-gathering-act-advance",
-            questionVersion: 35
+            rawFixture: "question-gathering-act-objective",
+            presentationFixture: "question-presentation-gathering-act-objective",
+            questionVersion: 34
         )
         let connection = FakeGameSocketConnection()
         let gameID = await startChoiceSession(
@@ -126,17 +126,14 @@ extension AppModelLiveGameTests {
         let stale = try #require(model.basicChoicePresentation(for: gameID)?.identity)
 
         let changed = try semanticEnvelope(
-            rawFixture: "question-gathering-act-advance",
-            presentationFixture: "question-presentation-gathering-act-advance",
-            questionVersion: 35,
+            rawFixture: "question-gathering-act-objective",
+            presentationFixture: "question-presentation-gathering-act-objective",
+            questionVersion: 34,
             mutatePresentation: { presentation in
                 guard case var .array(choices)? = presentation["choices"],
                       case var .object(choice) = choices[0]
                 else { throw SemanticFixtureError.unexpectedShape }
-                choice["label"] = .object([
-                    "kind": .string("embeddedI18n"),
-                    "text": .string("$continue"),
-                ])
+                choice["actorId"] = .string("c01002")
                 choices[0] = .object(choice)
                 presentation["choices"] = .array(choices)
             }
@@ -147,7 +144,7 @@ extension AppModelLiveGameTests {
         let current = try #require(model.basicChoicePresentation(for: gameID))
         #expect(current.identity.promptKey != stale.promptKey)
         #expect(
-            await model.submitBasicChoice(stale, choiceIndex: 0)
+            await model.submitBasicChoice(stale, choiceIndex: 12)
                 == .staleQuestion
         )
         #expect(await connection.sentData.isEmpty)

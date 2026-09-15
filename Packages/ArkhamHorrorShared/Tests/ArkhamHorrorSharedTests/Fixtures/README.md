@@ -218,7 +218,9 @@ the manifest's 582 total regressions.
 The semantic descriptors are display, controller, and accessibility metadata
 only. Apple must submit the unchanged source index and exact question version;
 Haskell alone checks clue payment, legality, act advancement, and resulting
-state.
+state. Native decoding accepts only these exact Q34 and Q35 `advanceAct`
+branches, so any changed identity, ability, cost, source index, or prompt shape
+remains update-required.
 
 ## Authenticated Cover Up replay evidence
 

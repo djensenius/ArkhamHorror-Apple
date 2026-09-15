@@ -5,21 +5,18 @@ import Testing
 @MainActor
 @Suite("Semantic question presentation governed mutations")
 struct QuestionPresentationMutationTests {
-    private enum RejectionStage {
-        case decoding
-        case binding
-        case actionability
-    }
+    private static let governedPresentationFixtures: Set<String> = [
+        "contracts/fixtures/question-presentation-gathering-act-objective.json",
+        "contracts/fixtures/question-presentation-gathering-act-advance.json",
+    ]
 
-    @Test("All seven backend-published Gathering mutations fail closed")
+    @Test("All seven backend-published Gathering mutations fail during decoding")
     func governedGatheringMutationsFailClosed() throws {
-        let stages = try governedNegativeEntries().map {
-            try rejectionStage(for: $0)
+        let entries = try governedNegativeEntries()
+        #expect(entries.count == 7)
+        for entry in entries {
+            try expectDecodingRejection(for: entry)
         }
-        #expect(stages.count == 7)
-        #expect(stages.count { $0 == .decoding } == 4)
-        #expect(stages.count { $0 == .binding } == 1)
-        #expect(stages.count { $0 == .actionability } == 2)
     }
 
     private func governedNegativeEntries() throws -> [[String: JSONValue]] {
@@ -33,123 +30,36 @@ struct QuestionPresentationMutationTests {
         return negativeFixtures.compactMap { value in
             guard case let .object(entry) = value,
                   case let .string(baseFixture)? = entry["basePositiveFixture"],
-                  rawFixtureName(for: baseFixture) != nil
+                  Self.governedPresentationFixtures.contains(baseFixture)
             else { return nil }
             return entry
         }
     }
 
-    private func rejectionStage(
+    private func expectDecodingRejection(
         for entry: [String: JSONValue]
-    ) throws -> RejectionStage {
+    ) throws {
         guard case let .string(baseFixture)? = entry["basePositiveFixture"],
-              let rawFixture = rawFixtureName(for: baseFixture),
               case let .string(basePointer)? = entry["basePointer"],
               case let .object(mutation)? = entry["mutation"],
               case let .string(operation)? = mutation["op"],
-              case let .string(pointer)? = mutation["pointer"]
+              case let .string(pointer)? = mutation["pointer"],
+              let filename = baseFixture.split(separator: "/").last
         else { throw TestFailure() }
 
-        let presentationFixture = try fixtureValue(
-            named: (baseFixture as NSString).lastPathComponent
-                .replacingOccurrences(of: ".json", with: "")
-        )
+        let fixtureName = String(filename.dropLast(".json".count))
         let mutated = try EnemyAttackFixtures.applying(
             operation: operation,
             path: (basePointer + pointer).split(separator: "/"),
             replacement: mutation["value"],
-            to: presentationFixture
+            to: fixtureValue(named: fixtureName)
         )
-        let presentation: QuestionPresentation
-        do {
-            presentation = try ContractJSON.decode(
+        #expect(throws: DecodingError.self) {
+            try ContractJSON.decode(
                 QuestionPresentation.self,
                 from: ContractJSON.encode(mutated)
             )
-        } catch {
-            return .decoding
         }
-
-        let payload = try ContractJSON.decode(
-            BasicChoiceQuestionPayload.self,
-            from: fixtureData(named: rawFixture)
-        )
-        let bound: BoundQuestionPresentation
-        do {
-            bound = try presentation.bind(
-                to: payload.rawValue,
-                expectedQuestionVersion: presentation.questionVersion
-            )
-        } catch {
-            return .binding
-        }
-        try expectActionabilityRejection(
-            presentation: presentation,
-            payload: payload,
-            bound: bound
-        )
-        return .actionability
-    }
-
-    private func expectActionabilityRejection(
-        presentation: QuestionPresentation,
-        payload: BasicChoiceQuestionPayload,
-        bound: BoundQuestionPresentation
-    ) throws {
-        let prompt = BasicChoicePromptPresentation(
-            identity: BasicChoicePromptIdentity(
-                gameID: BoardTestFixtures.gameID(),
-                ownerID: BoardTestFixtures.playerID(),
-                questionVersion: presentation.questionVersion,
-                rawQuestion: payload.rawValue,
-                questionPresentation: presentation,
-                sessionAttemptID: nil,
-                connectionID: nil
-            ),
-            question: payload.state,
-            semanticPresentation: bound,
-            readOnlyReason: nil,
-            actionPhase: nil,
-            actionChoiceIndex: nil,
-            serverFeedback: nil
-        )
-        let advanceChoice = try #require(
-            prompt.choices.first {
-                bound.descriptor(forSourceIndex: $0.index)?.kind == .advanceAct
-            }
-        )
-        #expect(!prompt.isChoiceActionable(
-            advanceChoice,
-            in: gatheringProjection()
-        ))
-    }
-
-    private func rawFixtureName(for path: String) -> String? {
-        switch path {
-        case "contracts/fixtures/question-presentation-gathering-act-objective.json":
-            "question-gathering-act-objective"
-        case "contracts/fixtures/question-presentation-gathering-act-advance.json":
-            "question-gathering-act-advance"
-        default:
-            nil
-        }
-    }
-
-    private func gatheringProjection() -> BoardProjection {
-        let investigatorID = BoardTestFixtures.investigatorID("c01001")
-        let actID = BoardTestFixtures.actID("c01108")
-        return BoardProjectionBuilder.makeProjection(
-            from: BoardTestFixtures.snapshot(
-                investigators: [
-                    investigatorID: BoardTestFixtures.investigator(id: investigatorID),
-                ],
-                acts: [
-                    actID: BoardTestFixtures.act(id: actID),
-                ],
-                activeInvestigatorID: investigatorID,
-                leadInvestigatorID: investigatorID
-            )
-        )
     }
 
     private func fixtureValue(named name: String) throws -> JSONValue {
@@ -165,5 +75,171 @@ struct QuestionPresentationMutationTests {
             )
         )
         return try Data(contentsOf: url)
+    }
+}
+
+@MainActor
+@Suite("Gathering advance-act semantic mutations")
+struct GatheringAdvanceActSemanticMutationTests {
+    private struct Mutation {
+        let fixture: String
+        let operation: String
+        let pointer: String
+        let replacement: JSONValue
+    }
+
+    private static let mutations: [Mutation] = [
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/questionVersion",
+            replacement: .number(.integer(33))
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/questionKind",
+            replacement: .string("chooseOne")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/actorId",
+            replacement: .string("c01002")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/kind",
+            replacement: .string("useAbility")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/entity/id",
+            replacement: .string("c01109")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/ability/cardCode",
+            replacement: .string("c01109")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/ability/index",
+            replacement: .number(.integer(998))
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/ability/type",
+            replacement: .string("action")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/ability/actions",
+            replacement: .array([.string("activate")])
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/ability/canBeCancelled",
+            replacement: .bool(false)
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/cost/amount/kind",
+            replacement: .string("fixed")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/cost/amount/value",
+            replacement: .number(.integer(3))
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "replace",
+            pointer: "/choices/12/cost/scope/kind",
+            replacement: .string("sameLocation")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-objective",
+            operation: "add",
+            pointer: "/choices/12/label",
+            replacement: .object([
+                "kind": .string("embeddedI18n"),
+                "text": .string("$continue"),
+            ])
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-advance",
+            operation: "replace",
+            pointer: "/questionVersion",
+            replacement: .number(.integer(36))
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-advance",
+            operation: "replace",
+            pointer: "/questionKind",
+            replacement: .string("playerWindowChooseOne")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-advance",
+            operation: "replace",
+            pointer: "/choices/0/entity/id",
+            replacement: .string("c01109")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-advance",
+            operation: "replace",
+            pointer: "/choices/0/kind",
+            replacement: .string("chooseTarget")
+        ),
+        Mutation(
+            fixture: "question-presentation-gathering-act-advance",
+            operation: "add",
+            pointer: "/choices/0/label",
+            replacement: .object([
+                "kind": .string("embeddedI18n"),
+                "text": .string("$continue"),
+            ])
+        ),
+    ]
+
+    @Test("Every unsupported Gathering advance-act field fails during decoding")
+    func unsupportedFieldsFailClosed() throws {
+        for mutation in Self.mutations {
+            let mutated = try EnemyAttackFixtures.applying(
+                operation: mutation.operation,
+                path: mutation.pointer.split(separator: "/"),
+                replacement: mutation.replacement,
+                to: fixtureValue(named: mutation.fixture)
+            )
+            #expect(throws: DecodingError.self) {
+                try ContractJSON.decode(
+                    QuestionPresentation.self,
+                    from: ContractJSON.encode(mutated)
+                )
+            }
+        }
+    }
+
+    private func fixtureValue(named name: String) throws -> JSONValue {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: name,
+                withExtension: "json",
+                subdirectory: "Fixtures/Contract"
+            )
+        )
+        return try ContractJSON.decode(
+            JSONValue.self,
+            from: Data(contentsOf: url)
+        )
     }
 }
