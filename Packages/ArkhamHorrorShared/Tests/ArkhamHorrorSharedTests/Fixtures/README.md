@@ -211,14 +211,14 @@ unchanged, while skipping leaves Cover Up unchanged and transfers one location
 clue to Roland. Its third leg resubmits the stale Q32 answer while Q33 is active
 and embeds the unchanged authoritative `GameUpdate`.
 
-`ProductionCoverUpReplayEvidenceTests` separately pins the exact 104,104-byte
-artifact SHA-256, recomputes every import-receipt digest, validates the canonical
-answers and controller source indices, asserts both clue deltas, and decodes the
-embedded stale response through production snapshot, strict Cover Up parser,
-projection, and actionability code. This evidence lives outside
-`Fixtures/Contract/`: it proves an authenticated historical execution and is not
-a replacement for the backend-governed contract fixtures or an offline rules
-engine.
+`ProductionCoverUpReplayEvidenceTests` separately pins the exact 456,305-byte
+artifact SHA-256, recomputes every import-receipt and canonical snapshot digest,
+validates the canonical answers and controller source indices, asserts both clue
+deltas, and decodes the embedded resolved and stale responses through production
+snapshot, strict Cover Up parser, projection, and actionability code. This
+evidence lives outside `Fixtures/Contract/`: it proves an authenticated
+historical execution and is not a replacement for the backend-governed contract
+fixtures or an offline rules engine.
 
 `replay-attestation.json` and `replay-attestation.schema.json` govern the durable
 server authority returned after an authenticated checkpoint import. The production
