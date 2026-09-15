@@ -47,7 +47,14 @@ struct ReplayDeadlineLocaleTransport: LocaleCatalogTransporting {
     }
 }
 
-enum AssignmentReplayObservationSource: Sendable, Equatable {
+// swiftlint:disable opening_brace
+enum AssignmentReplayObservationSource:
+    String,
+    Codable,
+    Sendable,
+    Equatable
+{
+    // swiftlint:enable opening_brace
     case rest
     case socket
 }
@@ -57,6 +64,7 @@ struct AssignmentReplayAuthoritativeObservation: Sendable, Equatable {
     let gameID: GameID
     let gameRevision: String
     let playerID: PlayerID?
+    let snapshot: PublicGameSnapshot
     let projection: BoardProjection
 }
 
@@ -69,6 +77,7 @@ actor AssignmentReplayAuthoritativeRecorder {
             gameID: envelope.game.id,
             gameRevision: envelope.game.git,
             playerID: envelope.playerID,
+            snapshot: envelope.game,
             projection: BoardProjectionBuilder.makeProjection(from: envelope.game)
         ))
     }
@@ -79,6 +88,7 @@ actor AssignmentReplayAuthoritativeRecorder {
             gameID: snapshot.id,
             gameRevision: snapshot.git,
             playerID: nil,
+            snapshot: snapshot,
             projection: BoardProjectionBuilder.makeProjection(from: snapshot)
         ))
     }

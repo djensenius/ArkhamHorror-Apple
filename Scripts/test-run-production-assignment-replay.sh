@@ -34,6 +34,7 @@ readonly fake_swift="$harness_root/fake-swift"
 readonly marker="$harness_root/fake-swift-ran"
 readonly override_log="$harness_root/override.log"
 readonly revision_log="$harness_root/revision.log"
+readonly scenario_log="$harness_root/scenario.log"
 readonly production_log="$harness_root/production-launch.log"
 readonly fake_package_root="$harness_root/fake-package"
 readonly fake_package_launcher="$fake_package_root/Scripts/run-production-assignment-replay.sh"
@@ -191,9 +192,9 @@ fi
   fail "production launcher executed a caller-selected Swift binary"
 printf 'PASS: production rejects caller-selected executables\n'
 
-if ARKHAM_REPLAY_BASE_URL="https://example.com" \
+if ARKHAM_REPLAY_SCENARIO="gathering-act-advance" \
+  ARKHAM_REPLAY_BASE_URL="https://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
-  ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
   ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="0000000000000000000000000000000000000000" \
   ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.40" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
@@ -210,6 +211,27 @@ fi
   "$revision_log" >/dev/null ||
   fail "production launcher did not reject the wrong Apple revision explicitly"
 printf 'PASS: production requires the operator-specified Apple revision\n'
+
+if ARKHAM_REPLAY_SCENARIO="future-replay" \
+  ARKHAM_REPLAY_BASE_URL="https://example.com" \
+  ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
+  ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
+  ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
+  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.40" \
+  ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+  "$production_launcher" \
+  "$harness_root/checkpoint" \
+  "$harness_root/output" \
+  "$harness_root/token" \
+  >"$scenario_log" 2>&1
+then
+  fail "production launcher accepted an unknown replay scenario"
+fi
+/usr/bin/grep -F \
+  "ARKHAM_REPLAY_SCENARIO is invalid" \
+  "$scenario_log" >/dev/null ||
+  fail "production launcher did not reject an unknown scenario explicitly"
+printf 'PASS: production rejects unknown replay scenarios\n'
 
 /bin/mkdir -p \
   "$fake_package_root/Scripts" \
@@ -413,9 +435,9 @@ readonly worktree_list_before="$(
 )"
 
 if PATH="$harness_root" \
+  ARKHAM_REPLAY_SCENARIO="gathering-act-advance" \
   ARKHAM_REPLAY_BASE_URL="http://example.com" \
   ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
-  ARKHAM_REPLAY_ENEMY_ID="00000000-0000-0000-0000-000000000301" \
   ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$audited_revision" \
   ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="0.1.40" \
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \

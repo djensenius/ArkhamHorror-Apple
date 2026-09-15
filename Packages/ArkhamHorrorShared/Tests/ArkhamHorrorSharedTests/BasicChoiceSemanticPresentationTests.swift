@@ -11,7 +11,7 @@ struct BasicChoiceSemanticPresentationTests {
             rawFixture: "question-gathering-act-objective",
             presentationFixture: "question-presentation-gathering-act-objective"
         )
-        let projection = gatheringProjection(includeAct: true, includeInvestigator: true)
+        let projection = try gatheringProductionProjection()
         let choice = try #require(prompt.choices.first { $0.index == 12 })
 
         #expect(prompt.choices.map(\.index) == Array(0 ... 12))
@@ -29,7 +29,21 @@ struct BasicChoiceSemanticPresentationTests {
             prompt: prompt,
             onChoice: { submitted.append($0) }
         )
-        #expect(controller.activatePromptChoice(12))
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
+        let actionableSourceIndices = prompt.choices.compactMap {
+            prompt.isChoiceActionable($0, in: projection) ? $0.index : nil
+        }
+        #expect(actionableSourceIndices.first == 0)
+        #expect(actionableSourceIndices.last == 12)
+        for sourceIndex in actionableSourceIndices.dropFirst() {
+            #expect(controller.handle(.command(.focusMove(.down))))
+            #expect(
+                controller.coordinator.currentFocus ==
+                    BoardFocusID.promptChoice(sourceIndex)
+            )
+        }
+        #expect(controller.handle(.command(.primaryAction)))
         #expect(submitted == [12])
     }
 
@@ -253,5 +267,15 @@ struct BasicChoiceSemanticPresentationTests {
             )
         )
         return try Data(contentsOf: url)
+    }
+}
+
+private extension BasicChoiceSemanticPresentationTests {
+    func gatheringProductionProjection() throws -> BoardProjection {
+        let envelope = try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: fixture("get-game")
+        )
+        return BoardProjectionBuilder.makeProjection(from: envelope.game)
     }
 }

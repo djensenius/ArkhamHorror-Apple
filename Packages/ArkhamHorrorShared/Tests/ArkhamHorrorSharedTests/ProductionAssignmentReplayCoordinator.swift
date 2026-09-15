@@ -116,6 +116,14 @@ private enum AssignmentReplayCoordinatorEngine {
     ) async throws -> AssignmentReplayCoordinatorManifestArtifact {
         _ = try child.deadline.remainingSeconds()
         let input = child.invocation
+        guard input.scenario == .assignment,
+              input.enemyID != nil
+        else {
+            throw ProductionAssignmentReplayCoordinatorError
+                .invalidEnvironmentValue(
+                    AssignmentReplayCoordinatorEnvironmentKey.scenario
+                )
+        }
         let output = try ProductionReplayFileSystem.openPrivateDirectory(
             input.outputDirectoryURL,
             expectedIdentity: child.outputIdentity
@@ -138,7 +146,9 @@ private enum AssignmentReplayCoordinatorEngine {
         let checkpoint = try AssignmentReplayCheckpointFile(
             bytes: checkpointHandle.readOnce()
         )
-        let token = try validatedToken(tokenHandle.readOnce())
+        let token = try ProductionReplayCredentialValidator.validatedToken(
+            tokenHandle.readOnce()
+        )
 
         var succeeded = false
         defer {
@@ -299,6 +309,12 @@ private enum AssignmentReplayCoordinatorEngine {
     ) async throws -> AssignmentReplayCoordinatorCaseReceipt {
         _ = try child.deadline.remainingSeconds()
         let input = child.invocation
+        guard let enemyID = input.enemyID else {
+            throw ProductionAssignmentReplayCoordinatorError
+                .missingEnvironmentKey(
+                    AssignmentReplayCoordinatorEnvironmentKey.enemyID
+                )
+        }
         let configuration = try ProductionAssignmentReplayConfiguration(
             checkpoint: prepared.checkpoint,
             deadline: child.deadline,
@@ -307,7 +323,7 @@ private enum AssignmentReplayCoordinatorEngine {
             promptIdentity: ProductionAssignmentReplayPromptIdentity(
                 gameID: prepared.gameID,
                 ownerID: prepared.playerID,
-                enemyID: input.enemyID,
+                enemyID: enemyID,
                 investigatorID: input.investigatorID
             ),
             expectedAppleRevision: child.appleRevision,
@@ -365,8 +381,10 @@ private enum AssignmentReplayCoordinatorEngine {
             AssignmentReplayCoordinatorDriver.horrorEvidenceName
         }
     }
+}
 
-    private static func validatedToken(_ bytes: Data) throws -> String {
+enum ProductionReplayCredentialValidator {
+    static func validatedToken(_ bytes: Data) throws -> String {
         var tokenBytes = bytes
         if tokenBytes.last == 0x0A {
             tokenBytes.removeLast()
@@ -595,8 +613,15 @@ struct AssignmentReplayCoordinatorDriverSuite {
         else {
             return
         }
-        _ = try AssignmentReplayCoordinatorDriver.run(
-            invocation: invocation
-        )
+        switch invocation.scenario {
+        case .assignment:
+            _ = try AssignmentReplayCoordinatorDriver.run(
+                invocation: invocation
+            )
+        case .gatheringActAdvance:
+            _ = try GatheringActReplayCoordinatorDriver.run(
+                invocation: invocation
+            )
+        }
     }
 }

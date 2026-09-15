@@ -65,7 +65,7 @@ description = "Offline self-test of verify-locale-digest-provenance.sh's own log
 run = "Scripts/test-verify-locale-digest-provenance.sh"
 
 [tasks.production-assignment-replay-selftest]
-description = "Offline self-test of the fixed launcher and Swift two-case replay coordinator"
+description = "Offline self-test of the fixed launcher and scenario-dispatched replay coordinator"
 run = "Scripts/test-run-production-assignment-replay.sh"
 
 [tasks.build]
