@@ -5,6 +5,30 @@ import Testing
 @Suite("Production Gathering act replay mechanics")
 // swiftlint:disable:next type_name
 struct ProductionGatheringActReplayMechanicsTests {
+    @Test("Attestation accepts known Gathering prompt kinds")
+    func attestedGatheringPromptKind() throws {
+        let playerID = BoardTestFixtures.playerID()
+        let prompt = AssignmentReplayServerValidatedPrompt(
+            questionVersion: 34,
+            playerID: playerID,
+            promptTag: BasicChoiceQuestionKind.playerWindowChooseOne.rawValue,
+            promptSHA256: String(repeating: "a", count: 64)
+        )
+
+        try prompt.validate()
+        #expect(
+            throws: ProductionAssignmentReplayError
+                .serverAttestationMismatch
+        ) {
+            try AssignmentReplayServerValidatedPrompt(
+                questionVersion: 34,
+                playerID: playerID,
+                promptTag: "FuturePrompt",
+                promptSHA256: String(repeating: "a", count: 64)
+            ).validate()
+        }
+    }
+
     @Test("Canonical answers retain exact source index, player, and version")
     func canonicalAnswer() throws {
         let playerID = BoardTestFixtures.playerID()

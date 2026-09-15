@@ -64,6 +64,19 @@ struct AssignmentReplayCoordinatorConfigurationTests {
         #expect(invocation.enemyID == nil)
     }
 
+    @Test("Assignment replay rejects a non-assignment attested prompt")
+    func assignmentPromptKind() {
+        #expect(
+            throws: AssignmentReplayConfigurationError
+                .serverAttestationMismatch
+        ) {
+            _ = try replayConfiguration(
+                promptTag:
+                BasicChoiceQuestionKind.playerWindowChooseOne.rawValue
+            )
+        }
+    }
+
     @Test("Unknown replay scenario fails closed")
     func unknownScenario() {
         var environment = coordinatorEnvironment()
@@ -1458,6 +1471,8 @@ private func replayServerBuild(
 private func replayValidatedCheckpoint(
     promptDigest: String,
     promptVersion: Int = 6,
+    promptTag: String =
+        BasicChoiceQuestionKind.questionWithSource.rawValue,
     checkpointPlayerID: PlayerID =
         BoardTestFixtures.playerID("000000000001")
 ) -> AssignmentReplayServerValidatedCheckpoint {
@@ -1469,8 +1484,7 @@ private func replayValidatedCheckpoint(
         prompt: AssignmentReplayServerValidatedPrompt(
             questionVersion: promptVersion,
             playerID: checkpointPlayerID,
-            promptTag:
-            BasicChoiceQuestionKind.questionWithSource.rawValue,
+            promptTag: promptTag,
             promptSHA256: promptDigest
         ),
         checkpointGameSHA256: String(repeating: "5", count: 64),
@@ -1515,6 +1529,8 @@ private func replayAttestation(
         replayCheckpointEnvelopeSHA256,
     promptDigest: String? = nil,
     promptVersion: Int = 6,
+    promptTag: String =
+        BasicChoiceQuestionKind.questionWithSource.rawValue,
     validatedCheckpoint: AssignmentReplayServerValidatedCheckpoint? = nil,
     receiptValidatedCheckpoint:
     AssignmentReplayServerValidatedCheckpoint? = nil,
@@ -1524,7 +1540,8 @@ private func replayAttestation(
     let digest = promptDigest ?? replayBackendPromptSHA256
     let checkpoint = validatedCheckpoint ?? replayValidatedCheckpoint(
         promptDigest: digest,
-        promptVersion: promptVersion
+        promptVersion: promptVersion,
+        promptTag: promptTag
     )
     let receipt = try replayImportReceipt(
         ReplayReceiptFixtureInput(
@@ -1596,6 +1613,8 @@ private func replayConfiguration(
         .damageFirstThenRemainingHorror,
     promptDigest: String? = nil,
     promptVersion: Int = 6,
+    promptTag: String =
+        BasicChoiceQuestionKind.questionWithSource.rawValue,
     gameID: GameID = BoardTestFixtures.gameID(),
     playerID: PlayerID =
         BoardTestFixtures.playerID("000000000001"),
@@ -1626,7 +1645,8 @@ private func replayConfiguration(
         attestation: replayAttestation(
             request: request,
             promptDigest: digest,
-            promptVersion: promptVersion
+            promptVersion: promptVersion,
+            promptTag: promptTag
         )
     )
 }
