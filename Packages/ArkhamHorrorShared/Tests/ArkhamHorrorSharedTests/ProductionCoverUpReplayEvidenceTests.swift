@@ -12,7 +12,7 @@ struct ProductionCoverUpReplayEvidenceTests {
         try evidence.validateProvenance()
     }
 
-    @Test("Use and skip preserve the production Q33 clue outcomes")
+    @Test("Use and skip decode the exact production Q33 and Q34 snapshots")
     func useAndSkipOutcomesAreExact() throws {
         let (_, evidence) = try loadEvidence()
 

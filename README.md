@@ -95,10 +95,13 @@ Normal package tests pin the artifact's exact SHA-256, validate the server
 attestations and import-receipt digests, and prove both production Q33 branches:
 using Cover Up changes its clues from 3 to 2 while Roland and the location stay
 at 1, and skipping leaves Cover Up at 3 while Roland changes from 1 to 2 and the
-location from 1 to 0. The stale leg decodes the returned production
-`GameUpdate`, proves all clue/state hashes remain unchanged at Q33, and runs the
-embedded prompt through the same strict parser and board actionability path as
-the live app.
+location from 1 to 0. Both resolved legs decode their canonical Q33-before and
+Q34-after production `GameUpdate` payloads, recompute the recorded state
+digests, validate exact clue projections, and run the Q33 prompt through the
+same strict parser and board actionability path as the live app. They also bind
+the exact branch-specific Q34 prompt digest and authoritative choice count. The
+stale leg decodes the returned production `GameUpdate`, proves all clue/state
+hashes remain unchanged at Q33, and exercises that same strict prompt path.
 
 ### Backend replay authority
 

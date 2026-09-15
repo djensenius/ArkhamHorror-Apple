@@ -100,7 +100,26 @@ struct ProductionCoverUpReplayResolvedCase: Codable, Equatable, Sendable {
     let q33Prompt: ProductionCoverUpReplayPromptEvidence
     let resultingQuestionVersion: Int
     let stateAfterSHA256: String
+    let stateAfterUTF8: String
     let stateBeforeSHA256: String
+    let stateBeforeUTF8: String
+}
+
+private struct CoverUpResolvedExpectation {
+    let caseName: String
+    let q33Choice: Int
+    let cluesAfter: ProductionCoverUpReplayClues
+    let clueDelta: ProductionCoverUpReplayClues
+    let q34PromptSHA256: String
+    let q34ChoiceCount: Int
+}
+
+private struct CoverUpQ33ProjectionExpectation {
+    let gameID: GameID
+    let playerID: PlayerID
+    let questionVersion: Int
+    let clues: ProductionCoverUpReplayClues
+    let error: ProductionCoverUpReplayEvidenceError
 }
 
 struct ProductionCoverUpReplayStaleCase: Codable, Equatable, Sendable {
@@ -126,8 +145,8 @@ struct ProductionCoverUpReplayStaleCase: Codable, Equatable, Sendable {
 
 struct ProductionCoverUpReplayEvidence: Codable, Equatable, Sendable {
     static let artifactSHA256 =
-        "865be796bbecf09c45e4f2af3c78375acc8bf35673c7e1b36256b366afb3befa"
-    static let expectedByteCount = 104_104
+        "2f61a711676873d9772ebd1d6dfa2f3defdcd89889a078ec91d8b0d0fe638d5b"
+    static let expectedByteCount = 456_305
 
     private static let schemaVersion = "1.0.0"
     private static let generatedAt = "2026-09-14T23:52:33.598Z"
@@ -158,6 +177,10 @@ struct ProductionCoverUpReplayEvidence: Codable, Equatable, Sendable {
         "7ff7e00af7be0a2b933ed1a817e7e2a54d3eaa5ae2bdce17f73f7153e59f23a9"
     private static let q33PromptSHA256 =
         "7c70ba6b40ad8c9965a8a9c8f6644dec60942f73a6db63e3dcb58872832fcd98"
+    private static let q34UsePromptSHA256 =
+        "8d0ebbab9e2b17091fdc38359393d37bb3c1f3ca45f8e4628dcaba1b2f40d6b7"
+    private static let q34SkipPromptSHA256 =
+        "2cc94769856ca06e2f5c53dc9165e5fe29d94e2a91ca5d2284108936ddc74c05"
     private static let q33LocationID =
         "4c9a45da-8069-4d10-94d1-451a5e0ae565"
     private static let q33SkillTestID =
@@ -229,32 +252,40 @@ extension ProductionCoverUpReplayEvidence {
         try validateProvenance()
         try validateResolvedCase(
             use,
-            caseName: "use-cover-up",
-            q33Choice: 0,
-            cluesAfter: ProductionCoverUpReplayClues(
-                coverUp: 2,
-                investigator: 1,
-                location: 1
-            ),
-            clueDelta: ProductionCoverUpReplayClues(
-                coverUp: -1,
-                investigator: 0,
-                location: 0
+            expectation: CoverUpResolvedExpectation(
+                caseName: "use-cover-up",
+                q33Choice: 0,
+                cluesAfter: ProductionCoverUpReplayClues(
+                    coverUp: 2,
+                    investigator: 1,
+                    location: 1
+                ),
+                clueDelta: ProductionCoverUpReplayClues(
+                    coverUp: -1,
+                    investigator: 0,
+                    location: 0
+                ),
+                q34PromptSHA256: Self.q34UsePromptSHA256,
+                q34ChoiceCount: 12
             )
         )
         try validateResolvedCase(
             skip,
-            caseName: "skip-cover-up",
-            q33Choice: 1,
-            cluesAfter: ProductionCoverUpReplayClues(
-                coverUp: 3,
-                investigator: 2,
-                location: 0
-            ),
-            clueDelta: ProductionCoverUpReplayClues(
-                coverUp: 0,
-                investigator: 1,
-                location: -1
+            expectation: CoverUpResolvedExpectation(
+                caseName: "skip-cover-up",
+                q33Choice: 1,
+                cluesAfter: ProductionCoverUpReplayClues(
+                    coverUp: 3,
+                    investigator: 2,
+                    location: 0
+                ),
+                clueDelta: ProductionCoverUpReplayClues(
+                    coverUp: 0,
+                    investigator: 1,
+                    location: -1
+                ),
+                q34PromptSHA256: Self.q34SkipPromptSHA256,
+                q34ChoiceCount: 13
             )
         )
     }
@@ -466,18 +497,30 @@ extension ProductionCoverUpReplayEvidence {
 
     private func validateResolvedCase(
         _ evidence: ProductionCoverUpReplayResolvedCase,
-        caseName: String,
-        q33Choice: Int,
-        cluesAfter: ProductionCoverUpReplayClues,
-        clueDelta: ProductionCoverUpReplayClues
+        expectation: CoverUpResolvedExpectation
     ) throws {
         try validateQ33Prompt(evidence.q33Prompt, playerID: evidence.playerID)
         try evidence.q33Answer.validate(
-            choice: q33Choice,
+            choice: expectation.q33Choice,
             playerID: evidence.playerID,
             questionVersion: 33
         )
-        try evidence.q33Controller.validate(selectedSourceIndex: q33Choice)
+        try evidence.q33Controller.validate(
+            selectedSourceIndex: expectation.q33Choice
+        )
+        try validateResolvedSummary(evidence, expectation: expectation)
+        let reaction = try validatedResolvedBeforeReaction(evidence)
+        try validateResolvedAfterSnapshot(
+            evidence,
+            expectation: expectation,
+            reaction: reaction
+        )
+    }
+
+    private func validateResolvedSummary(
+        _ evidence: ProductionCoverUpReplayResolvedCase,
+        expectation: CoverUpResolvedExpectation
+    ) throws {
         let stateHashesAreValid = [
             evidence.stateBeforeSHA256,
             evidence.stateAfterSHA256,
@@ -487,14 +530,14 @@ extension ProductionCoverUpReplayEvidence {
                 count: 64
             )
         }
-        guard evidence.caseName == caseName,
+        guard evidence.caseName == expectation.caseName,
               evidence.cluesBefore == ProductionCoverUpReplayClues(
                   coverUp: 3,
                   investigator: 1,
                   location: 1
               ),
-              evidence.cluesAfter == cluesAfter,
-              evidence.clueDelta == clueDelta,
+              evidence.cluesAfter == expectation.cluesAfter,
+              evidence.clueDelta == expectation.clueDelta,
               evidence.cluesAfter.subtracting(evidence.cluesBefore)
               == evidence.clueDelta,
               evidence.resultingQuestionVersion == 34,
@@ -503,6 +546,104 @@ extension ProductionCoverUpReplayEvidence {
         else {
             throw ProductionCoverUpReplayEvidenceError.invalidResolvedOutcome
         }
+    }
+
+    private func validatedResolvedBeforeReaction(
+        _ evidence: ProductionCoverUpReplayResolvedCase
+    ) throws -> CoverUpReactionChoice {
+        let beforeSnapshot = try decodeResolvedSnapshot(
+            evidence.stateBeforeUTF8,
+            expectedStateSHA256: evidence.stateBeforeSHA256,
+            gameID: evidence.gameID,
+            questionVersion: 33
+        )
+        let beforeProjection = BoardProjectionBuilder.makeProjection(
+            from: beforeSnapshot
+        )
+        let (payload, reaction) = try validatedQ33Question(
+            in: beforeProjection,
+            prompt: evidence.q33Prompt,
+            playerID: evidence.playerID,
+            error: .invalidResolvedOutcome
+        )
+        try validateQ33Projection(
+            beforeProjection,
+            payload: payload,
+            reaction: reaction,
+            expectation: CoverUpQ33ProjectionExpectation(
+                gameID: evidence.gameID,
+                playerID: evidence.playerID,
+                questionVersion: 33,
+                clues: evidence.cluesBefore,
+                error: .invalidResolvedOutcome
+            )
+        )
+        return reaction
+    }
+
+    private func validateResolvedAfterSnapshot(
+        _ evidence: ProductionCoverUpReplayResolvedCase,
+        expectation: CoverUpResolvedExpectation,
+        reaction: CoverUpReactionChoice
+    ) throws {
+        let afterSnapshot = try decodeResolvedSnapshot(
+            evidence.stateAfterUTF8,
+            expectedStateSHA256: evidence.stateAfterSHA256,
+            gameID: evidence.gameID,
+            questionVersion: evidence.resultingQuestionVersion
+        )
+        let afterProjection = BoardProjectionBuilder.makeProjection(
+            from: afterSnapshot
+        )
+        guard afterProjection.questions.count == 1,
+              let q34Payload = afterProjection.questions[evidence.playerID],
+              let q34Question = q34Payload.supportedQuestion,
+              q34Question.kind == .playerWindowChooseOne,
+              q34Question.choices.map(\.index)
+              == Array(0 ..< expectation.q34ChoiceCount),
+              try ProductionAssignmentReplayCanonicalJSON.promptDigest(
+                  q34Payload.rawValue
+              ) == expectation.q34PromptSHA256,
+              Self.clues(in: afterProjection, reaction: reaction)
+              == evidence.cluesAfter
+        else {
+            throw ProductionCoverUpReplayEvidenceError.invalidResolvedOutcome
+        }
+    }
+
+    private func decodeResolvedSnapshot(
+        _ utf8: String,
+        expectedStateSHA256: String,
+        gameID: GameID,
+        questionVersion: Int
+    ) throws -> PublicGameSnapshot {
+        let responseData = Data(utf8.utf8)
+        let rawResponse = try ContractJSON.decode(
+            JSONValue.self,
+            from: responseData
+        )
+        guard case let .object(root) = rawResponse,
+              Set(root.keys) == ["tag", "contents"],
+              root["tag"] == .string("GameUpdate"),
+              let rawSnapshot = root["contents"],
+              try ProductionAssignmentReplayCanonicalJSON.promptDigest(
+                  rawSnapshot
+              ) == expectedStateSHA256
+        else {
+            throw ProductionCoverUpReplayEvidenceError.invalidResolvedOutcome
+        }
+
+        let update = try ContractJSON.decode(
+            BoardSnapshotUpdate.self,
+            from: responseData
+        )
+        guard case let .snapshot(snapshot) = update,
+              snapshot.id == gameID,
+              snapshot.scenarioSteps == questionVersion
+        else {
+            throw ProductionCoverUpReplayEvidenceError.invalidResolvedOutcome
+        }
+        return snapshot
     }
 
     private func validateQ33Prompt(
@@ -527,56 +668,72 @@ extension ProductionCoverUpReplayEvidence {
         in snapshot: PublicGameSnapshot
     ) throws {
         let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-        let (payload, reaction) = try validatedStaleQuestion(in: projection)
-        try validateStaleProjection(
+        let (payload, reaction) = try validatedQ33Question(
+            in: projection,
+            prompt: stale.q33PromptBefore,
+            playerID: stale.playerID,
+            error: .invalidStalePrompt
+        )
+        try validateQ33Projection(
             projection,
             payload: payload,
-            reaction: reaction
+            reaction: reaction,
+            expectation: CoverUpQ33ProjectionExpectation(
+                gameID: stale.gameID,
+                playerID: stale.playerID,
+                questionVersion: stale.resultingQuestionVersion,
+                clues: stale.cluesBefore,
+                error: .invalidStalePrompt
+            )
         )
     }
 
-    private func validatedStaleQuestion(
-        in projection: BoardProjection
+    private func validatedQ33Question(
+        in projection: BoardProjection,
+        prompt: ProductionCoverUpReplayPromptEvidence,
+        playerID: PlayerID,
+        error: ProductionCoverUpReplayEvidenceError
     ) throws -> (
         payload: BasicChoiceQuestionPayload,
         reaction: CoverUpReactionChoice
     ) {
-        guard let payload = projection.questions[stale.playerID] else {
-            throw ProductionCoverUpReplayEvidenceError.invalidStalePrompt
+        guard let payload = projection.questions[playerID] else {
+            throw error
         }
         let promptSHA256 = try ProductionAssignmentReplayCanonicalJSON
             .promptDigest(payload.rawValue)
         guard projection.questions.count == 1,
-              promptSHA256 == stale.q33PromptBefore.canonicalSHA256,
+              promptSHA256 == prompt.canonicalSHA256,
               let question = payload.supportedQuestion,
               question.kind == .windowChooseOne,
               question.choices.map(\.index) == [0, 1]
         else {
-            throw ProductionCoverUpReplayEvidenceError.invalidStalePrompt
+            throw error
         }
         guard case let .coverUpReaction(reaction) = question.choices[0].content,
               case let .skipTriggers(skipInvestigatorID) = question.choices[1].content,
               reaction.ability.investigatorID == skipInvestigatorID,
               reaction.ability.cardCode.rawValue == "c01007",
-              reaction.treacheryID == stale.q33PromptBefore.treacheryID,
-              reaction.locationID == stale.q33PromptBefore.locationID,
-              reaction.skillTestID == stale.q33PromptBefore.skillTestID
+              reaction.treacheryID == prompt.treacheryID,
+              reaction.locationID == prompt.locationID,
+              reaction.skillTestID == prompt.skillTestID
         else {
-            throw ProductionCoverUpReplayEvidenceError.invalidStalePrompt
+            throw error
         }
         return (payload, reaction)
     }
 
-    private func validateStaleProjection(
+    private func validateQ33Projection(
         _ projection: BoardProjection,
         payload: BasicChoiceQuestionPayload,
-        reaction: CoverUpReactionChoice
+        reaction: CoverUpReactionChoice,
+        expectation: CoverUpQ33ProjectionExpectation
     ) throws {
         let presentation = BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
-                gameID: stale.gameID,
-                ownerID: stale.playerID,
-                questionVersion: stale.resultingQuestionVersion,
+                gameID: expectation.gameID,
+                ownerID: expectation.playerID,
+                questionVersion: expectation.questionVersion,
                 rawQuestion: payload.rawValue,
                 sessionAttemptID: nil,
                 connectionID: nil
@@ -590,29 +747,37 @@ extension ProductionCoverUpReplayEvidence {
         let allChoicesAreActionable = presentation.choices.allSatisfy {
             presentation.isChoiceActionable($0, in: projection)
         }
-        guard presentation.choices.map(\.index)
-            == stale.q33PromptBefore.actionableSourceIndices,
-            allChoicesAreActionable,
-            let investigator = projection.investigators.first(where: {
-                $0.id == reaction.ability.investigatorID
-            }),
+        guard presentation.choices.map(\.index) == [0, 1],
+              allChoicesAreActionable,
+              Self.clues(in: projection, reaction: reaction)
+              == expectation.clues
+        else {
+            throw expectation.error
+        }
+    }
+
+    private static func clues(
+        in projection: BoardProjection,
+        reaction: CoverUpReactionChoice
+    ) -> ProductionCoverUpReplayClues? {
+        guard let investigator = projection.investigators.first(where: {
+            $0.id == reaction.ability.investigatorID
+        }),
             investigator.currentLocationID == reaction.locationID,
-            let investigatorClues = Self.clueCount(
-                in: investigator.tokenCounts
-            ),
+            let investigatorClues = clueCount(in: investigator.tokenCounts),
             let location = projection.locations.first(where: {
                 $0.id == reaction.locationID
             }),
             let coverUpClues = projection
-            .treacheriesByID[reaction.treacheryID]?.clueCount,
-            ProductionCoverUpReplayClues(
-                coverUp: coverUpClues,
-                investigator: investigatorClues,
-                location: location.clueCount
-            ) == stale.cluesBefore
+            .treacheriesByID[reaction.treacheryID]?.clueCount
         else {
-            throw ProductionCoverUpReplayEvidenceError.invalidStalePrompt
+            return nil
         }
+        return ProductionCoverUpReplayClues(
+            coverUp: coverUpClues,
+            investigator: investigatorClues,
+            location: location.clueCount
+        )
     }
 
     private static func clueCount(
