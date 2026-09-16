@@ -86,7 +86,7 @@ extension BasicChoicePromptPresentation {
         case .assignDamage: "heart.slash.fill"
         case .assignHorror: "brain.head.profile.fill"
         case .chooseTarget: "scope"
-        case .drawCard: "rectangle.stack"
+        case .drawCard, .drawEncounterCard: "rectangle.stack"
         case .endTurn: "forward.end"
         case .engage: "person.2.fill"
         case .evade: "figure.run"
@@ -219,6 +219,11 @@ extension BasicChoicePromptPresentation {
             semanticLocalized(
                 "semantic.choice.title.drawCard",
                 value: "Draw a card"
+            )
+        case .drawEncounterCard:
+            semanticLocalized(
+                "semantic.choice.title.drawEncounterCard",
+                value: "Draw encounter card"
             )
         case .endTurn:
             semanticLocalized(

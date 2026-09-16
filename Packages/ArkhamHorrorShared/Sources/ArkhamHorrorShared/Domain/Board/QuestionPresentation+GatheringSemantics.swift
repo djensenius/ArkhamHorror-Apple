@@ -1,5 +1,14 @@
 extension QuestionPresentation {
     var hasSupportedGatheringSemantics: Bool {
+        let encounterDrawChoices = choices.filter {
+            $0.kind == .drawEncounterCard
+        }
+        if !encounterDrawChoices.isEmpty {
+            return questionKind == .chooseOne
+                && choiceCount == 1
+                && choices.count == 1
+        }
+
         let governedKinds: Set<ChoiceKind> = [
             .advanceAct,
             .assignDamage,
@@ -35,19 +44,30 @@ extension QuestionPresentation {
             return choices == [.gatheringCellarDamageAssignment]
                 || choices == [.gatheringAtticHorrorAssignment]
         case (39, .playerWindowChooseOne, 11):
+            let investigations = choices.filter {
+                $0.matchesGatheringInvestigation(
+                    cardCode: "c01114"
+                ) || $0.matchesGatheringInvestigation(
+                    cardCode: "c01113"
+                )
+            }
+            let hallways = choices.filter {
+                $0.matchesGatheringHallwayMovement()
+            }
             guard choices.map(\.sourceIndex) == Array(0 ..< 11),
-                  let investigation = choices.first(
-                      where: { $0.sourceIndex == 9 }
-                  ),
-                  let hallway = choices.first(where: { $0.sourceIndex == 10 }),
-                  investigation.matchesGatheringInvestigation(
-                      cardCode: "c01114"
-                  ) || investigation.matchesGatheringInvestigation(
-                      cardCode: "c01113"
-                  ),
-                  hallway.matchesGatheringHallwayMovement()
+                  investigations.count == 1,
+                  hallways.count == 1,
+                  let investigation = investigations.first,
+                  let hallway = hallways.first,
+                  Set([
+                      investigation.sourceIndex,
+                      hallway.sourceIndex,
+                  ]) == [9, 10]
             else { return false }
-            return governedChoices.map(\.sourceIndex) == [10]
+            return governedChoices == [hallway]
+        case (42, .playerWindowChooseOne, 12):
+            return governedChoices.isEmpty
+                || gatheringAtticActionWindowSemantics != nil
         default:
             return governedChoices.isEmpty
         }
@@ -110,6 +130,7 @@ extension QuestionPresentation.Choice {
             return false
         }
         return self == .gatheringHallwayMovement(
+            sourceIndex: sourceIndex,
             locationID: locationID.codingKey.stringValue
         )
     }
@@ -119,15 +140,17 @@ extension QuestionPresentation.Choice {
             return false
         }
         return self == .gatheringInvestigation(
+            sourceIndex: sourceIndex,
             cardCode: cardCode,
             locationID: locationID.codingKey.stringValue
         )
     }
 
-    static func gatheringMovement(
+    static func gatheringLocationMovement(
         sourceIndex: Int,
         cardCode: String,
-        locationID: String
+        locationID: String,
+        cost: QuestionPresentation.Cost
     ) -> Self {
         Self(
             sourceIndex: sourceIndex,
@@ -142,6 +165,19 @@ extension QuestionPresentation.Choice {
                 actions: [.move],
                 canBeCancelled: true
             ),
+            cost: cost
+        )
+    }
+
+    static func gatheringMovement(
+        sourceIndex: Int,
+        cardCode: String,
+        locationID: String
+    ) -> Self {
+        gatheringLocationMovement(
+            sourceIndex: sourceIndex,
+            cardCode: cardCode,
+            locationID: locationID,
             cost: .all([.action(1), .other])
         )
     }
@@ -167,30 +203,25 @@ extension QuestionPresentation.Choice {
         )
     }
 
-    static func gatheringHallwayMovement(locationID: String) -> Self {
-        Self(
-            sourceIndex: 10,
-            kind: .move,
-            actorID: "c01001",
-            entity: .init(kind: .location, id: locationID),
-            label: nil,
-            ability: .init(
-                cardCode: "c01112",
-                index: 104,
-                type: .action,
-                actions: [.move],
-                canBeCancelled: true
-            ),
+    static func gatheringHallwayMovement(
+        sourceIndex: Int = 10,
+        locationID: String
+    ) -> Self {
+        gatheringLocationMovement(
+            sourceIndex: sourceIndex,
+            cardCode: "c01112",
+            locationID: locationID,
             cost: .action(1)
         )
     }
 
     static func gatheringInvestigation(
+        sourceIndex: Int = 9,
         cardCode: String,
         locationID: String
     ) -> Self {
         Self(
-            sourceIndex: 9,
+            sourceIndex: sourceIndex,
             kind: .investigate,
             actorID: "c01001",
             entity: .init(kind: .location, id: locationID),
@@ -225,6 +256,18 @@ extension QuestionPresentation.Choice {
         ability: nil,
         cost: nil
     )
+
+    static func encounterDeckDraw(actorID: String) -> Self {
+        Self(
+            sourceIndex: 0,
+            kind: .drawEncounterCard,
+            actorID: actorID,
+            entity: nil,
+            label: nil,
+            ability: nil,
+            cost: nil
+        )
+    }
 }
 
 extension QuestionPresentation.Entity {

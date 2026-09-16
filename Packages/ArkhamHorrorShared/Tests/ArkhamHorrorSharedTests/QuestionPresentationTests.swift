@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 @Suite("Semantic question presentation v1")
+// swiftlint:disable:next type_body_length
 struct QuestionPresentationTests {
     @Test("Q34 decodes, binds source index 12, and round-trips")
     func gatheringActObjectiveBinds() throws {
@@ -67,6 +68,105 @@ struct QuestionPresentationTests {
         )
     }
 
+    @Test("Encounter draw semantics bind the exact raw actor at any question version")
+    func encounterDeckDrawBinds() throws {
+        let fixturePresentation = try presentationFixture(
+            "question-presentation-encounter-deck-draw"
+        )
+        let raw = try rawFixture("question-encounter-deck-draw")
+        let fixtureBinding = try fixturePresentation.bind(
+            to: raw,
+            expectedQuestionVersion: 41
+        )
+        #expect(
+            fixtureBinding.descriptor(forSourceIndex: 0)
+                == .encounterDeckDraw(actorID: "c01001")
+        )
+
+        let laterPresentation = QuestionPresentation(
+            protocolVersion: 1,
+            questionVersion: 87,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [.encounterDeckDraw(actorID: "c01001")]
+        )
+        #expect(
+            try laterPresentation.bind(
+                to: raw,
+                expectedQuestionVersion: 87
+            ).descriptor(forSourceIndex: 0)
+                == .encounterDeckDraw(actorID: "c01001")
+        )
+    }
+
+    @Test("Encounter draw binding rejects actor, descriptor, and raw-shape drift")
+    // swiftlint:disable:next function_body_length
+    func encounterDeckDrawMismatchesFailClosed() throws {
+        let raw = try rawFixture("question-encounter-deck-draw")
+        let presentation = try presentationFixture(
+            "question-presentation-encounter-deck-draw"
+        )
+        let wrongActor = QuestionPresentation(
+            protocolVersion: 1,
+            questionVersion: 41,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [.encounterDeckDraw(actorID: "c01002")]
+        )
+        let downgraded = QuestionPresentation(
+            protocolVersion: 1,
+            questionVersion: 41,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [
+                .init(
+                    sourceIndex: 0,
+                    kind: .drawCard,
+                    actorID: "c01001",
+                    entity: nil,
+                    label: nil,
+                    ability: nil,
+                    cost: nil
+                ),
+            ]
+        )
+
+        #expect(throws: QuestionPresentationBindingError.self) {
+            try wrongActor.bind(to: raw, expectedQuestionVersion: 41)
+        }
+        #expect(throws: QuestionPresentationBindingError.self) {
+            try downgraded.bind(to: raw, expectedQuestionVersion: 41)
+        }
+
+        let mutatedRawData = try #require(
+            String(
+                data: fixture("question-encounter-deck-draw"),
+                encoding: .utf8
+            )
+        ).replacingOccurrences(
+            of: #""EncounterDeck""#,
+            with: #""PlayerDeck""#
+        )
+        let mutatedRaw = try ContractJSON.decode(
+            JSONValue.self,
+            from: Data(mutatedRawData.utf8)
+        )
+        #expect(throws: QuestionPresentationBindingError.self) {
+            try presentation.bind(
+                to: mutatedRaw,
+                expectedQuestionVersion: 41
+            )
+        }
+        for wrapped in encounterDrawWrappers(around: raw) {
+            #expect(throws: QuestionPresentationBindingError.self) {
+                try presentation.bind(
+                    to: wrapped,
+                    expectedQuestionVersion: 41
+                )
+            }
+        }
+    }
+
     // swiftlint:disable line_length
     @Test(
         "Closed presentation shapes reject malformed or unknown values",
@@ -85,6 +185,8 @@ struct QuestionPresentationTests {
             #"{"protocolVersion":1,"questionVersion":38,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"assignHorror","entity":{"kind":"location","id":"dbaa2d2e-4ceb-44b2-a554-e5fa370e7882"}}]}"#,
             #"{"protocolVersion":1,"questionVersion":36,"questionKind":"playerWindowChooseOne","choiceCount":12,"choices":[{"sourceIndex":9,"kind":"move","actorId":"c01001","entity":{"kind":"location","id":"a3497b9f-796b-406d-aeb4-9b96fa9f4905"},"ability":{"cardCode":"c01114","index":104,"type":"action","actions":["move"],"canBeCancelled":true}}]}"#,
             #"{"protocolVersion":1,"questionVersion":37,"questionKind":"windowChooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"resolveForcedAbility","actorId":"c01001","ability":{"cardCode":"c01114","index":1,"type":"forced","actions":[],"canBeCancelled":true},"cost":{"kind":"free"}}]}"#,
+            #"{"protocolVersion":1,"questionVersion":41,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"drawEncounterCard"}]}"#,
+            #"{"protocolVersion":1,"questionVersion":41,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"drawEncounterCard","actorId":"c01001","entity":{"kind":"investigator","id":"c01001"}}]}"#,
             #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":1,"kind":"applySkillTestResults"}]}"#,
             #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":2,"choices":[{"sourceIndex":0,"kind":"applySkillTestResults"},{"sourceIndex":0,"kind":"applySkillTestResults"}]}"#,
         ]
@@ -94,6 +196,28 @@ struct QuestionPresentationTests {
         #expect(throws: DecodingError.self) {
             try ContractJSON.decode(QuestionPresentation.self, from: Data(json.utf8))
         }
+    }
+
+    private func encounterDrawWrappers(around question: JSONValue) -> [JSONValue] {
+        [
+            .object([
+                "tag": .string("QuestionLabel"),
+                "label": .string("Draw"),
+                "card": .null,
+                "question": question,
+            ]),
+            .object([
+                "tag": .string("PayCostQuestion"),
+                "cost": .object(["tag": .string("Free")]),
+                "question": question,
+            ]),
+            .object([
+                "tag": .string("QuestionWithSource"),
+                "source": .object(["tag": .string("GameSource")]),
+                "tooltip": .null,
+                "question": question,
+            ]),
+        ]
     }
 
     // swiftlint:disable line_length

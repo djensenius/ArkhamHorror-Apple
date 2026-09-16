@@ -131,6 +131,7 @@ question-investigate-commit.json:contracts/fixtures/question-investigate-commit.
 question-investigate-reveal-window.json:contracts/fixtures/question-investigate-reveal-window.json
 question-investigate-apply-results.json:contracts/fixtures/question-investigate-apply-results.json
 question-encounter-deck-draw.json:contracts/fixtures/question-encounter-deck-draw.json
+question-presentation-encounter-deck-draw.json:contracts/fixtures/question-presentation-encounter-deck-draw.json
 question-enemy-attack.json:contracts/fixtures/question-enemy-attack.json
 answer-enemy-attack.json:contracts/fixtures/answer-enemy-attack.json
 question-enemy-attack-damage-assignment.json:contracts/fixtures/question-enemy-attack-damage-assignment.json

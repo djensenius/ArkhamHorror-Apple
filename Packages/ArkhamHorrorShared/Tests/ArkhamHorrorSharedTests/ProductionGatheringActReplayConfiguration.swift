@@ -96,6 +96,21 @@ enum GatheringMovementEntryBranch: String, Codable, Equatable, Sendable {
         }
     }
 
+    var q39PromptSHA256s: Set<String> {
+        switch self {
+        case .cellar:
+            [
+                q39PromptSHA256,
+                "5329c8b70fc8e393ba73ea49556c7fa9f599af1cd15e85efab54f765b2f02166",
+            ]
+        case .attic:
+            [
+                q39PromptSHA256,
+                "ca5d812821f318f2502eb6fd3dfe30a6baa811e0c19d9d03b504be45ac0707d5",
+            ]
+        }
+    }
+
     var resultingDamage: Int {
         switch self {
         case .cellar:
@@ -140,6 +155,9 @@ struct ProductionGatheringActReplayConfiguration: Sendable {
     static let forcedAbilityQuestionVersion = 37
     static let assignmentQuestionVersion = 38
     static let postEntryQuestionVersion = 39
+    static let firstContinuationQuestionVersion = 40
+    static let secondContinuationQuestionVersion = 41
+    static let resultingContinuationQuestionVersion = 42
     static let advancingActID = "c01108"
     static let advancedActID = "c01109"
     static let studyCardCode = "c01111"

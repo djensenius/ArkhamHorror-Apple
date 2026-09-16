@@ -200,6 +200,9 @@ extension QuestionPresentation.Choice: Codable {
         switch kind {
         case .drawCard, .endTurn, .gainResource, .skipTriggers, .startSkillTest:
             return actorID != nil
+        case .drawEncounterCard:
+            return actorID != nil && entity == nil && label == nil
+                && ability == nil && cost == nil
         case .localizedLabel:
             return label != nil
         case .chooseTarget:

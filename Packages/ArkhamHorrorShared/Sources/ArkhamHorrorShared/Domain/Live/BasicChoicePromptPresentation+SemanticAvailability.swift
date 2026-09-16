@@ -76,7 +76,8 @@ extension BasicChoicePromptPresentation {
                 value:
                 "The investigator for this assignment is not currently available."
             )
-        case .drawCard, .endTurn, .gainResource, .skipTriggers, .startSkillTest, .useAbility:
+        case .drawCard, .drawEncounterCard, .endTurn, .gainResource, .skipTriggers,
+             .startSkillTest, .useAbility:
             return semanticLocalized(
                 "semantic.choice.unavailable.investigator",
                 value:
