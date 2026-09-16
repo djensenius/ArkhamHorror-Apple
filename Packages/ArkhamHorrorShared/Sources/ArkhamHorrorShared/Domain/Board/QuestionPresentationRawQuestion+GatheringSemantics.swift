@@ -152,16 +152,16 @@ extension QuestionPresentationRawQuestionShape {
             cardCode: "c01114"
         ) {
             expectedRawSHA256 =
-                "e903baf29be226df9df84912619d059f38fcc5badae625b7af7d55c6dffbc463"
+                "238a9dc09dcba4893c264eb51dd8d952fdb3488d6f8eb268a3d7b7f881f6190a"
             expectedPresentationSHA256 =
-                "1279a99e331c69e8a9978ad3f43663e55dde5cdb89e1b6db8d877fab9eb617f0"
+                "062d17ef4072edfa976a4ec946d7a296aaa43d5c0ee4bd5c2baed6bb3ffe3bfb"
         } else if investigation.matchesGatheringInvestigation(
             cardCode: "c01113"
         ) {
             expectedRawSHA256 =
-                "b6b4a5aa36617b1d93821a800d33668419bef179ad8f6ba779950f0d9ecf1432"
+                "d09ef3b29355240dc6663ea46c888bf99a833f916623b170634a13daf1ecdee7"
             expectedPresentationSHA256 =
-                "0f9fcbfb608d2867faddbee0f7d1aad54de9e7449e2bc3442d474326f912e829"
+                "2526973b069dfa5ac8b036696dbaa53d2f673e2acd0b992c081c7dff51a2f739"
         } else {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }
@@ -169,19 +169,15 @@ extension QuestionPresentationRawQuestionShape {
         let rawSeal: GovernedJSONSeal
         let presentationSeal: GovernedJSONSeal
         do {
-            rawSeal = try GovernedJSONSeal(
-                .array(Array(choices[9 ... 10]))
-            )
-            presentationSeal = try makePresentationSeal(
-                for: Array(presentation.choices[9 ... 10])
-            )
+            rawSeal = try GovernedJSONSeal(.array(choices))
+            presentationSeal = try makePresentationSeal(for: presentation)
         } catch {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }
         guard rawSeal.canonicalSHA256 == expectedRawSHA256,
               presentationSeal.canonicalSHA256 ==
               expectedPresentationSHA256,
-              rawSeal.dynamicIDs.count == 2,
+              rawSeal.dynamicIDs.count == 8,
               rawSeal.dynamicIDs == presentationSeal.dynamicIDs
         else {
             throw QuestionPresentationBindingError.governedChoicesMismatch

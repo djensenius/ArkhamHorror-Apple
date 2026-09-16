@@ -26,6 +26,10 @@ extension BoardProjection {
             return choice.entity?.kind == .enemy
         case .investigate:
             return choice.entity?.kind == .location
+                && semanticLocation(
+                    choice.entity,
+                    hasCardCode: choice.ability?.cardCode
+                )
         case .localizedLabel:
             return labelResolution?.isResolved == true
         case .move:

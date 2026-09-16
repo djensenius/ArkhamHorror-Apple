@@ -130,19 +130,10 @@ struct MovementEntryQuestionBindingTests {
             rawQuestion: rawQuestion,
             questionVersion: 39
         )
-    }
-
-    private func assertBindingFails(
-        presentation: QuestionPresentation,
-        rawQuestion: JSONValue,
-        questionVersion: Int
-    ) {
-        #expect(throws: QuestionPresentationBindingError.self) {
-            try presentation.bind(
-                to: rawQuestion,
-                expectedQuestionVersion: questionVersion
-            )
-        }
+        try assertRelabeledPostEntryChoiceFails(
+            presentation: presentation,
+            rawQuestion: rawQuestion
+        )
     }
 
     private func presentationFixture(
@@ -270,6 +261,54 @@ struct MovementEntryQuestionBindingTests {
             )
         )
         return try Data(contentsOf: url)
+    }
+}
+
+private func assertBindingFails(
+    presentation: QuestionPresentation,
+    rawQuestion: JSONValue,
+    questionVersion: Int
+) {
+    #expect(throws: QuestionPresentationBindingError.self) {
+        try presentation.bind(
+            to: rawQuestion,
+            expectedQuestionVersion: questionVersion
+        )
+    }
+}
+
+private func assertRelabeledPostEntryChoiceFails(
+    presentation: QuestionPresentation,
+    rawQuestion: JSONValue
+) throws {
+    var relabeledChoices = presentation.choices
+    let investigation = relabeledChoices[9]
+    relabeledChoices[0] = QuestionPresentation.Choice(
+        sourceIndex: 0,
+        kind: investigation.kind,
+        actorID: investigation.actorID,
+        entity: investigation.entity,
+        label: investigation.label,
+        ability: investigation.ability,
+        cost: investigation.cost
+    )
+    let relabeledPresentation = try ContractJSON.decode(
+        QuestionPresentation.self,
+        from: ContractJSON.encode(
+            QuestionPresentation(
+                protocolVersion: 1,
+                questionVersion: 39,
+                questionKind: .playerWindowChooseOne,
+                choiceCount: relabeledChoices.count,
+                choices: relabeledChoices
+            )
+        )
+    )
+    #expect(throws: QuestionPresentationBindingError.self) {
+        try relabeledPresentation.bind(
+            to: rawQuestion,
+            expectedQuestionVersion: 39
+        )
     }
 }
 

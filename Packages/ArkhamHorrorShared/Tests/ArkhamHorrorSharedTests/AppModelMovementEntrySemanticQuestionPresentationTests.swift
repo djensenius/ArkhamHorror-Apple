@@ -212,6 +212,36 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData.isEmpty)
     }
 
+    @Test("Q39 rejects an investigation whose projected location card is wrong")
+    func semanticInvestigationRejectsWrongLocationCard() throws {
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-gathering-movement",
+            presentationFixture: "question-presentation-gathering-movement",
+            questionVersion: 36,
+            mutateGame: {
+                try addGatheringLocations(
+                    to: &$0,
+                    includeAttic: false,
+                    cellarCardCode: "c01113"
+                )
+            }
+        )
+        let projection = BoardProjectionBuilder.makeProjection(
+            from: envelope.game
+        )
+        let ownerID = try #require(envelope.playerID)
+        let investigation = QuestionPresentation.Choice.gatheringInvestigation(
+            cardCode: "c01114",
+            locationID: "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
+        )
+
+        #expect(!projection.isSemanticChoiceActionable(
+            investigation,
+            ownerID: ownerID,
+            labelResolution: nil
+        ))
+    }
+
     private func assertMovementAnswer(choiceIndex: Int) async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
