@@ -37,25 +37,28 @@ struct GatheringActReplayCoordinatorManifest:
     let receipt: GatheringActReplayCoordinatorReceipt
 
     func validate() throws {
-        guard schemaVersion == Self.schemaVersion,
-              scenario ==
-              ProductionAssignmentReplayScenario
-              .gatheringActAdvance.rawValue,
-              ProductionAssignmentReplayConfiguration.isLowercaseHex(
-                  appleRevision,
-                  count: 40
-              ),
-              ProductionAssignmentReplayConfiguration.isLowercaseHex(
-                  checkpointArtifactSHA256,
-                  count: 64
-              ),
-              receipt.caseName == scenario,
-              receipt.fileName ==
-              GatheringActReplayCoordinatorDriver.evidenceName,
-              ProductionAssignmentReplayConfiguration.isLowercaseHex(
-                  receipt.evidenceSHA256,
-                  count: 64
-              )
+        guard let replayScenario =
+            ProductionAssignmentReplayScenario(rawValue: scenario),
+            replayScenario.isGatheringReplay,
+            let expectedEvidenceName =
+            GatheringActReplayCoordinatorDriver.evidenceName(
+                for: replayScenario
+            ),
+            schemaVersion == Self.schemaVersion,
+            ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                appleRevision,
+                count: 40
+            ),
+            ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                checkpointArtifactSHA256,
+                count: 64
+            ),
+            receipt.caseName == scenario,
+            receipt.fileName == expectedEvidenceName,
+            ProductionAssignmentReplayConfiguration.isLowercaseHex(
+                receipt.evidenceSHA256,
+                count: 64
+            )
         else {
             throw ProductionAssignmentReplayCoordinatorError
                 .outputValidationFailed
@@ -121,7 +124,12 @@ private enum GatheringActReplayCoordinatorEngine {
     ) async throws -> GatheringActReplayCoordinatorManifestArtifact {
         _ = try child.deadline.remainingSeconds()
         let input = child.invocation
-        guard input.scenario == .gatheringActAdvance else {
+        guard input.scenario.isGatheringReplay,
+              let evidenceName =
+              GatheringActReplayCoordinatorDriver.evidenceName(
+                  for: input.scenario
+              )
+        else {
             throw ProductionAssignmentReplayCoordinatorError
                 .invalidEnvironmentValue(
                     AssignmentReplayCoordinatorEnvironmentKey.scenario
@@ -157,7 +165,7 @@ private enum GatheringActReplayCoordinatorEngine {
         defer {
             if !succeeded {
                 try? ProductionReplayFileSystem.removeOwnedFile(
-                    named: GatheringActReplayCoordinatorDriver.evidenceName,
+                    named: evidenceName,
                     from: output
                 )
             }
@@ -214,7 +222,9 @@ private enum GatheringActReplayCoordinatorEngine {
             expectedAppleRevision: child.appleRevision,
             expectedContractRevision: input.expectedContractRevision,
             expectedCatalogRevision: input.expectedCatalogRevision,
-            attestation: attestation
+            attestation: attestation,
+            movementEntryBranch:
+            input.scenario.gatheringMovementEntryBranch
         )
 
         let evidence = try await caseRunner(configuration)
@@ -228,11 +238,11 @@ private enum GatheringActReplayCoordinatorEngine {
         ).validatedData()
         try ProductionReplayFileSystem.writeOwnedFile(
             data,
-            named: GatheringActReplayCoordinatorDriver.evidenceName,
+            named: evidenceName,
             in: output
         )
         let persisted = try ProductionReplayFileSystem.readOwnedFile(
-            named: GatheringActReplayCoordinatorDriver.evidenceName,
+            named: evidenceName,
             in: output,
             maxByteCount: 2 * 1024 * 1024
         )
@@ -250,17 +260,12 @@ private enum GatheringActReplayCoordinatorEngine {
         let manifest = GatheringActReplayCoordinatorManifest(
             schemaVersion:
             GatheringActReplayCoordinatorManifest.schemaVersion,
-            scenario:
-            ProductionAssignmentReplayScenario
-                .gatheringActAdvance.rawValue,
+            scenario: input.scenario.rawValue,
             appleRevision: child.appleRevision,
             checkpointArtifactSHA256: checkpoint.artifactSHA256,
             receipt: GatheringActReplayCoordinatorReceipt(
-                caseName:
-                ProductionAssignmentReplayScenario
-                    .gatheringActAdvance.rawValue,
-                fileName:
-                GatheringActReplayCoordinatorDriver.evidenceName,
+                caseName: input.scenario.rawValue,
+                fileName: evidenceName,
                 gameID: gameID,
                 playerID: playerID,
                 evidenceSHA256:
@@ -271,7 +276,7 @@ private enum GatheringActReplayCoordinatorEngine {
             manifest: manifest
         )
         guard try ProductionReplayFileSystem.listOwnedDirectoryNames(output) ==
-            [GatheringActReplayCoordinatorDriver.evidenceName]
+            [evidenceName]
         else {
             throw ProductionAssignmentReplayCoordinatorError
                 .outputValidationFailed
@@ -328,6 +333,21 @@ enum GatheringActReplayCoordinatorDriver {
         )
     }
 
+    static func evidenceName(
+        for scenario: ProductionAssignmentReplayScenario
+    ) -> String? {
+        switch scenario {
+        case .assignment:
+            nil
+        case .gatheringActAdvance:
+            evidenceName
+        case .gatheringCellarEntry:
+            "gathering-cellar-entry.json"
+        case .gatheringAtticEntry:
+            "gathering-attic-entry.json"
+        }
+    }
+
     // swiftlint:disable:next function_body_length
     static func run(
         invocation: ProductionAssignmentReplayCoordinatorInvocation,
@@ -344,7 +364,9 @@ enum GatheringActReplayCoordinatorDriver {
             )
         }
     ) throws -> GatheringActReplayCoordinatorManifest {
-        guard invocation.scenario == .gatheringActAdvance else {
+        guard invocation.scenario.isGatheringReplay,
+              let evidenceName = evidenceName(for: invocation.scenario)
+        else {
             throw ProductionAssignmentReplayCoordinatorError
                 .invalidEnvironmentValue(
                     AssignmentReplayCoordinatorEnvironmentKey.scenario

@@ -265,7 +265,7 @@ extension AppModelLiveGameTests {
         #expect(!prompt.canSubmit)
     }
 
-    private enum SemanticFixtureError: Error {
+    enum SemanticFixtureError: Error {
         case unexpectedShape
     }
 
@@ -295,7 +295,7 @@ extension AppModelLiveGameTests {
         #expect(!legacyActionability[12])
     }
 
-    private func semanticEnvelope(
+    func semanticEnvelope(
         rawFixture: String,
         presentationFixture: String,
         questionVersion: Int,

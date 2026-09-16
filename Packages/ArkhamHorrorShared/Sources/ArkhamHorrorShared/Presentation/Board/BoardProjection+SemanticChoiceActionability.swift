@@ -1,4 +1,5 @@
 extension BoardProjection {
+    // swiftlint:disable:next cyclomatic_complexity
     func isSemanticChoiceActionable(
         _ choice: QuestionPresentation.Choice,
         ownerID: PlayerID,
@@ -12,6 +13,9 @@ extension BoardProjection {
             return choice.entity?.kind == .agenda
         case .applySkillTestResults:
             return true
+        case .assignDamage, .assignHorror:
+            return choice.entity?.kind == .investigator
+                && choice.actorID == nil && choice.ability == nil && choice.cost == nil
         case .chooseTarget:
             return choice.entity != nil
         case .drawCard, .endTurn, .gainResource, .skipTriggers, .startSkillTest:
@@ -22,6 +26,12 @@ extension BoardProjection {
             return choice.entity?.kind == .location
         case .localizedLabel:
             return labelResolution?.isResolved == true
+        case .move:
+            return choice.entity?.kind == .location
+                && choice.actorID != nil && choice.ability != nil && choice.cost != nil
+        case .resolveForcedAbility:
+            return choice.entity?.kind == .location
+                && choice.actorID != nil && choice.ability != nil && choice.cost != nil
         case .useAbility:
             return choice.actorID != nil && choice.ability != nil && choice.cost != nil
         }

@@ -53,7 +53,7 @@ extension QuestionPresentation: Codable {
             choiceCount: choiceCount,
             choices: choices
         )
-        try Self.validateSupportedAdvanceActSemantics(
+        try Self.validateSupportedGatheringSemantics(
             presentation,
             in: container
         )
@@ -102,15 +102,15 @@ extension QuestionPresentation: Codable {
         }
     }
 
-    private static func validateSupportedAdvanceActSemantics(
+    private static func validateSupportedGatheringSemantics(
         _ presentation: QuestionPresentation,
         in container: KeyedDecodingContainer<CodingKeys>
     ) throws {
-        guard presentation.hasSupportedAdvanceActSemantics else {
+        guard presentation.hasSupportedGatheringSemantics else {
             throw DecodingError.dataCorruptedError(
                 forKey: .choices,
                 in: container,
-                debugDescription: "Unsupported advanceAct semantic descriptor"
+                debugDescription: "Unsupported Gathering semantic descriptor"
             )
         }
     }
@@ -120,22 +120,10 @@ extension QuestionPresentation: Codable {
               questionVersion >= 0,
               choiceCount >= 0,
               choices.allSatisfy(\.isValidShape),
-              hasSupportedAdvanceActSemantics
+              hasSupportedGatheringSemantics
         else { return false }
         let indices = choices.map(\.sourceIndex)
         return indices.allSatisfy { $0 < choiceCount } && Set(indices).count == indices.count
-    }
-
-    private var hasSupportedAdvanceActSemantics: Bool {
-        let advanceActChoices = choices.filter { $0.kind == .advanceAct }
-        switch (questionVersion, questionKind, choiceCount) {
-        case (34, .playerWindowChooseOne, 13):
-            return advanceActChoices == [.gatheringActObjective]
-        case (35, .chooseOne, 1):
-            return choices == [.gatheringActAdvance]
-        default:
-            return advanceActChoices.isEmpty
-        }
     }
 }
 
@@ -218,6 +206,15 @@ extension QuestionPresentation.Choice: Codable {
             return entity != nil
         case .useAbility:
             return actorID != nil && ability != nil && cost != nil
+        case .move:
+            return actorID != nil && entity?.kind == .location
+                && label == nil && ability != nil && cost != nil
+        case .resolveForcedAbility:
+            return actorID != nil && entity?.kind == .location
+                && label == nil && ability != nil && cost != nil
+        case .assignDamage, .assignHorror:
+            return actorID == nil && entity?.kind == .investigator
+                && label == nil && ability == nil && cost == nil
         case .advanceAct:
             return self == Self.gatheringActObjective ||
                 self == Self.gatheringActAdvance
@@ -233,32 +230,6 @@ extension QuestionPresentation.Choice: Codable {
         let allAbsent = actorID == nil && ability == nil && cost == nil
         return allPresent || allAbsent
     }
-
-    fileprivate static let gatheringActObjective = Self(
-        sourceIndex: 12,
-        kind: .advanceAct,
-        actorID: "c01001",
-        entity: .init(kind: .act, id: "c01108"),
-        label: nil,
-        ability: .init(
-            cardCode: "c01108",
-            index: 999,
-            type: .objective,
-            actions: [],
-            canBeCancelled: true
-        ),
-        cost: .groupClue(amount: .perPlayer(2), scope: .anywhere)
-    )
-
-    fileprivate static let gatheringActAdvance = Self(
-        sourceIndex: 0,
-        kind: .advanceAct,
-        actorID: nil,
-        entity: .init(kind: .act, id: "c01108"),
-        label: nil,
-        ability: nil,
-        cost: nil
-    )
 }
 
 extension QuestionPresentation.Entity: Codable {

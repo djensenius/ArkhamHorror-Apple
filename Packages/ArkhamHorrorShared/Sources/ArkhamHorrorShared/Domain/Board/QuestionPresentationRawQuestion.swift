@@ -1,140 +1,18 @@
-import CryptoKit
 import Foundation
 
 struct QuestionPresentationRawQuestionShape: Sendable, Equatable, Hashable {
     let kind: QuestionPresentation.Kind
     let choices: [JSONValue]
+    let rawQuestion: JSONValue
 
-    func validateGovernedChoices(
-        for presentation: QuestionPresentation
-    ) throws {
-        switch (
-            presentation.questionVersion,
-            presentation.questionKind,
-            presentation.choiceCount
-        ) {
-        case (34, .playerWindowChooseOne, 13):
-            try validateGatheringActObjectiveChoices(for: presentation)
-        case (35, .chooseOne, 1):
-            try validateCanonicalChoice(
-                at: 0,
-                expectedSHA256:
-                "4e85cfd95e1abe29f08f8d1cf7eaaf817b23193b77000fe5413b02fdec6f3b7f"
-            )
-        default:
-            return
-        }
-    }
-
-    private func validateGatheringActObjectiveChoices(
-        for presentation: QuestionPresentation
-    ) throws {
-        let rawSeal: GovernedJSONSeal
-        let presentationSeal: GovernedJSONSeal
-        do {
-            rawSeal = try GovernedJSONSeal(.array(choices))
-            let presentationValue = try ContractJSON.decode(
-                JSONValue.self,
-                from: ContractJSON.encode(presentation.choices)
-            )
-            presentationSeal = try GovernedJSONSeal(presentationValue)
-        } catch {
-            throw QuestionPresentationBindingError.governedChoicesMismatch
-        }
-        guard rawSeal.canonicalSHA256 ==
-            "d6ebbbb9a4bc4c2110f95a7f086d32499af07115f0f3f3d9f9a167d59f927a65",
-            presentationSeal.canonicalSHA256 ==
-            "5393915d65cdda2b46b860a1a3e45f56e834823b1cee5d7360528394029b768c",
-            rawSeal.dynamicIDs.count == 8,
-            presentationSeal.dynamicIDs == rawSeal.dynamicIDs
-        else {
-            throw QuestionPresentationBindingError.governedChoicesMismatch
-        }
-    }
-
-    private func validateCanonicalChoice(
-        at sourceIndex: Int,
-        expectedSHA256: String
-    ) throws {
-        guard choices.indices.contains(sourceIndex) else {
-            throw QuestionPresentationBindingError.rawChoiceMismatch(
-                sourceIndex: sourceIndex
-            )
-        }
-        let canonical: Data
-        do {
-            canonical = try LosslessJSONSerializer.serialize(
-                choices[sourceIndex]
-            )
-        } catch {
-            throw QuestionPresentationBindingError.rawChoiceMismatch(
-                sourceIndex: sourceIndex
-            )
-        }
-        let digest = SHA256.hash(data: canonical)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        guard digest == expectedSHA256 else {
-            throw QuestionPresentationBindingError.rawChoiceMismatch(
-                sourceIndex: sourceIndex
-            )
-        }
-    }
-}
-
-private struct GovernedJSONSeal {
-    let canonicalSHA256: String
-    let dynamicIDs: [String]
-
-    init(_ value: JSONValue) throws {
-        var normalizer = GovernedUUIDNormalizer()
-        let normalized = normalizer.normalize(value)
-        let canonical = try LosslessJSONSerializer.serialize(normalized)
-        canonicalSHA256 = SHA256.hash(data: canonical)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        dynamicIDs = normalizer.dynamicIDs
-    }
-}
-
-private struct GovernedUUIDNormalizer {
-    private var placeholders: [String: String] = [:]
-    private(set) var dynamicIDs: [String] = []
-
-    mutating func normalize(_ value: JSONValue) -> JSONValue {
-        switch value {
-        case let .string(string):
-            guard Self.isCanonicalUUID(string) else { return value }
-            if let placeholder = placeholders[string] {
-                return .string(placeholder)
-            }
-            let placeholder = "$uuid\(dynamicIDs.count)"
-            placeholders[string] = placeholder
-            dynamicIDs.append(string)
-            return .string(placeholder)
-        case let .array(elements):
-            var normalized: [JSONValue] = []
-            normalized.reserveCapacity(elements.count)
-            for element in elements {
-                normalized.append(normalize(element))
-            }
-            return .array(normalized)
-        case let .object(object):
-            var normalized: [String: JSONValue] = [:]
-            normalized.reserveCapacity(object.count)
-            for key in object.keys.sorted() {
-                guard let child = object[key] else { continue }
-                normalized[key] = normalize(child)
-            }
-            return .object(normalized)
-        case .null, .bool, .number:
-            return value
-        }
-    }
-
-    private static func isCanonicalUUID(_ value: String) -> Bool {
-        guard let uuid = UUID(uuidString: value) else { return false }
-        return uuid.uuidString.lowercased() == value
+    init(
+        kind: QuestionPresentation.Kind,
+        choices: [JSONValue],
+        rawQuestion: JSONValue = .null
+    ) {
+        self.kind = kind
+        self.choices = choices
+        self.rawQuestion = rawQuestion
     }
 }
 
@@ -146,21 +24,38 @@ enum QuestionPresentationRawQuestionDeriver {
         else {
             throw invalid("Raw question must be a tagged object")
         }
+        let shape: QuestionPresentationRawQuestionShape
         if let shape = try directQuestion(tag: tag, object: object) {
-            return shape
+            return .init(
+                kind: shape.kind,
+                choices: shape.choices,
+                rawQuestion: value
+            )
+        } else if let wrappedShape = try derivedWrappedQuestion(
+            tag: tag,
+            object: object
+        ) {
+            shape = wrappedShape
+        } else {
+            switch tag {
+            case "ChooseOneAtATimeWithAuto":
+                _ = try labeledChoices(
+                    object,
+                    tag: tag,
+                    kind: .chooseOneAtATime
+                )
+                shape = .init(kind: .unsupported, choices: [])
+            case "Read":
+                shape = try readChoices(object)
+            default:
+                shape = .init(kind: .unsupported, choices: [])
+            }
         }
-        if let shape = try derivedWrappedQuestion(tag: tag, object: object) {
-            return shape
-        }
-        switch tag {
-        case "ChooseOneAtATimeWithAuto":
-            _ = try labeledChoices(object, tag: tag, kind: .chooseOneAtATime)
-            return .init(kind: .unsupported, choices: [])
-        case "Read":
-            return try readChoices(object)
-        default:
-            return .init(kind: .unsupported, choices: [])
-        }
+        return .init(
+            kind: shape.kind,
+            choices: shape.choices,
+            rawQuestion: value
+        )
     }
 
     private static func directQuestion(

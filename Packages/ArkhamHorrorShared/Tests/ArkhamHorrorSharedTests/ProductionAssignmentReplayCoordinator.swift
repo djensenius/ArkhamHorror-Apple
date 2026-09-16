@@ -618,7 +618,8 @@ struct AssignmentReplayCoordinatorDriverSuite {
             _ = try AssignmentReplayCoordinatorDriver.run(
                 invocation: invocation
             )
-        case .gatheringActAdvance:
+        case .gatheringActAdvance, .gatheringCellarEntry,
+             .gatheringAtticEntry:
             _ = try GatheringActReplayCoordinatorDriver.run(
                 invocation: invocation
             )

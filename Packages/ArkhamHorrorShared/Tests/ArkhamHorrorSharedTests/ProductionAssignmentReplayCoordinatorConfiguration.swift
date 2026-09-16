@@ -28,6 +28,25 @@ enum ProductionAssignmentReplayCoordinatorError: Error, Equatable {
 enum ProductionAssignmentReplayScenario: String, Sendable, Equatable {
     case assignment
     case gatheringActAdvance = "gathering-act-advance"
+    case gatheringCellarEntry = "gathering-cellar-entry"
+    case gatheringAtticEntry = "gathering-attic-entry"
+}
+
+extension ProductionAssignmentReplayScenario {
+    var isGatheringReplay: Bool {
+        self != .assignment
+    }
+
+    var gatheringMovementEntryBranch: GatheringMovementEntryBranch? {
+        switch self {
+        case .assignment, .gatheringActAdvance:
+            nil
+        case .gatheringCellarEntry:
+            .cellar
+        case .gatheringAtticEntry:
+            .attic
+        }
+    }
 }
 
 // swiftlint:disable:next type_name

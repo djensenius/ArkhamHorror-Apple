@@ -109,6 +109,16 @@ question-gathering-act-objective.json:contracts/fixtures/question-gathering-act-
 question-gathering-act-advance.json:contracts/fixtures/question-gathering-act-advance.json
 question-presentation-gathering-act-objective.json:contracts/fixtures/question-presentation-gathering-act-objective.json
 question-presentation-gathering-act-advance.json:contracts/fixtures/question-presentation-gathering-act-advance.json
+question-gathering-movement.json:contracts/fixtures/question-gathering-movement.json
+question-gathering-attic-entry-forced.json:contracts/fixtures/question-gathering-attic-entry-forced.json
+question-gathering-cellar-entry-forced.json:contracts/fixtures/question-gathering-cellar-entry-forced.json
+question-gathering-attic-horror-assignment.json:contracts/fixtures/question-gathering-attic-horror-assignment.json
+question-gathering-cellar-damage-assignment.json:contracts/fixtures/question-gathering-cellar-damage-assignment.json
+question-presentation-gathering-movement.json:contracts/fixtures/question-presentation-gathering-movement.json
+question-presentation-gathering-attic-entry-forced.json:contracts/fixtures/question-presentation-gathering-attic-entry-forced.json
+question-presentation-gathering-cellar-entry-forced.json:contracts/fixtures/question-presentation-gathering-cellar-entry-forced.json
+question-presentation-gathering-attic-horror-assignment.json:contracts/fixtures/question-presentation-gathering-attic-horror-assignment.json
+question-presentation-gathering-cellar-damage-assignment.json:contracts/fixtures/question-presentation-gathering-cellar-damage-assignment.json
 answer-question.json:contracts/fixtures/answer-question.json
 question-read.json:contracts/fixtures/question-read.json
 question-read-scenario-intro.json:contracts/fixtures/question-read-scenario-intro.json

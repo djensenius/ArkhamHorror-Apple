@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@503e3e4c8cdf8370cba78ac0397e3a2e5c7eee8a`,
-schema revision `0.1.41`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@f4d83466f6e36bea13d4b0c21204db56121b6585`,
+schema revision `0.1.42`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These 57 files, and only these 57, live under `Fixtures/Contract/` — a
+These 67 files, and only these 67, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -92,7 +92,7 @@ question version `6`; all 114 backend-published negative mutations remain update
 ## Governed assignment continuations
 
 Both remaining-assignment questions and dedicated Answers originate from the immutable
-`djensenius/ArkhamHorror#76` merge. The current revision `0.1.41` manifest and
+`djensenius/ArkhamHorror#76` merge. The current revision `0.1.42` manifest and
 basic-choice schema continue to govern them. Unlike the former replay-derived draft, these
 questions are generated through the real backend game engine, registered in the manifest,
 schema-validated, and each backed by 16 published single-mutation negatives.
@@ -103,7 +103,7 @@ choosing horror first produces the symmetric `Assign 1 damage`/`DamageToken` con
 Each sends its exact direct amount followed by the production `(0 damage, 0 horror)`
 completion message with both accumulated investigator-target arrays populated. Their
 Answers preserve source index `0`, player UUID `00000000-0000-0000-0000-000000000001`,
-and question version `7`. The 32 assignment-family negatives within the manifest's 582
+and question version `7`. The 32 assignment-family negatives within the manifest's 625
 total mutations now explicitly replace each continuation's required `AnyAsset` matcher
 with `AssetWithTitle`; Apple applies those mutations in memory and remains fail-closed.
 
@@ -125,7 +125,7 @@ other ability, window, and message field as opaque contract data, verifies that 
 still exists in the newest board projection, and submits the unchanged source index and
 authoritative question version. Unknown actions and malformed or alternate source shapes
 remain update-required. The backend manifest publishes two focused negative mutations for
-this fixture within its 582 total regressions.
+this fixture within its 625 total regressions.
 
 `question-player-window-engage-action.json` is the production post-Evade menu added by
 `djensenius/ArkhamHorror#81`. The same Ghoul Minion remains available to Fight at source
@@ -135,7 +135,7 @@ field, stays actionable only while that enemy remains in the newest projection, 
 submits only the unchanged source index plus authoritative question version. Swift never
 calculates or mutates engagement state. The backend manifest publishes three focused
 Engage negatives for unknown action text, an alternate source constructor, and uppercase
-UUID spelling within the manifest's 582 total regressions.
+UUID spelling within the manifest's 625 total regressions.
 
 ## Governed round transition
 
@@ -154,7 +154,7 @@ preserve the production Q24-Q27 sequence:
 Swift independently verifies repeated dynamic source, target, and investigator
 identities because JSON Schema cannot express equality between UUID values. It
 does not calculate timing, branch outcomes, horror, or discard state. The
-backend manifest publishes 55 focused round-transition mutations within its 582
+backend manifest publishes 55 focused round-transition mutations within its 625
 total regressions.
 
 ## Governed Roland Banks reaction
@@ -170,7 +170,7 @@ published by the backend. It requires canonical integer tokens for ability
 indices `1` and `100`, keeps both source indices stable, and checks only that
 Roland and his current location remain present before submission. Haskell alone
 decides whether the reaction is legal and applies the clue movement. The
-manifest publishes 60 focused Roland mutations within its 582 total
+manifest publishes 60 focused Roland mutations within its 625 total
 regressions.
 
 ## Governed Cover Up reaction
@@ -188,7 +188,7 @@ governed integer token to use its canonical spelling, and permits submission
 only while Roland remains at the affected location and the exact Cover Up
 treachery remains present with at least one clue. Haskell alone decides whether
 the replacement is legal and mutates investigator, location, and treachery clue
-counts. The manifest publishes 88 focused Cover Up mutations within its 582
+counts. The manifest publishes 88 focused Cover Up mutations within its 625
 total regressions.
 
 The deterministic fixture hashes to
@@ -213,7 +213,7 @@ the objective cost or ability metadata. The paired
 version `1`, the authoritative question version/kind/count, and generic
 `advanceAct` descriptors over those original source indices. The presentation
 schema publishes six focused Q34 mutations and one focused Q35 mutation within
-the manifest's 582 total regressions.
+the manifest's 625 total regressions.
 
 The semantic descriptors are display, controller, and accessibility metadata
 only. Apple must submit the unchanged source index and exact question version;
@@ -226,6 +226,30 @@ ordered identities. Q35 binding seals its sole raw choice directly. Any changed
 identity, ability, cost, message, source index, raw choice, or prompt shape
 therefore remains update-required, while authenticated imports may regenerate
 their opaque UUID identities without changing the governed shape.
+
+## Governed Gathering movement entry
+
+The ten movement-entry fixtures added by `djensenius/ArkhamHorror#91` govern
+Q36 through Q39 after the Act 1 advancement:
+
+- Q36 is the 11-choice movement menu. Cellar remains source index `9` and
+  Attic remains source index `10`.
+- Q37 is the exact `WindowChooseOne` location-entry forced ability for Cellar
+  (`c01114`) or Attic (`c01113`), always at source index `0`.
+- Q38 is the exact source-index-zero damage assignment for Cellar or horror
+  assignment for Attic.
+- Q39 is the next player window. Replay validates its prompt and authoritative
+  board state but does not answer it.
+
+The paired presentation fixtures publish only `move`, `resolveForcedAbility`,
+`assignDamage`, and `assignHorror` descriptors that remain independently bound
+to the raw source, card, location, investigator, token, and message identities.
+Apple submits only the unchanged source indices and question versions; Haskell
+alone moves Roland, resolves the location ability, and assigns damage or horror.
+The manifest publishes 43 focused movement-entry mutations within its 625 total
+regressions, including schema-valid raw changes to action/type, basic-action
+expansion, cost, cancellation, additional-cost handling, cost bypass, and
+target precedence that would otherwise change the pinned semantic descriptor.
 
 ## Authenticated Cover Up replay evidence
 
@@ -257,7 +281,7 @@ replay coordinator uses that contract to bind the imported game, player remappin
 checkpoint bytes, backend build identity, and canonical replay envelope before
 submitting any native action. `djensenius/ArkhamHorror#79` repairs the fixture's
 canonical receipt digest and pins these bytes to immutable merge
-`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.41` rebinds that
+`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.42` rebinds that
 same validated fixture to the current contract manifest.
 
 ## token.json / whoami.json

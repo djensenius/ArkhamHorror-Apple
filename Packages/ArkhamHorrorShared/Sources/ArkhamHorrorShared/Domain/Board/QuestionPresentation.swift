@@ -32,6 +32,8 @@ extension QuestionPresentation {
         case advanceAct
         case advanceAgenda
         case applySkillTestResults
+        case assignDamage
+        case assignHorror
         case chooseTarget
         case drawCard
         case endTurn
@@ -41,6 +43,8 @@ extension QuestionPresentation {
         case gainResource
         case investigate
         case localizedLabel
+        case move
+        case resolveForcedAbility
         case skipTriggers
         case startSkillTest
         case useAbility

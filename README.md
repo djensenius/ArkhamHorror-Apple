@@ -73,14 +73,15 @@ Select the stable Xcode developer directory once per shell:
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 ```
 
-## External production assignment replay
+## External production replay
 
-The assignment-continuation replay is a permanent **test-only** integration
-driver. It boots the real `AppModel`, production capability/authentication,
-catalog, asset, REST, and WebSocket paths, and sends
+The replay harness is a permanent **test-only** integration driver. It supports
+the legacy enemy-attack assignment replay plus Gathering act-advance, Cellar
+entry, and Attic entry scenarios. It boots the real `AppModel`, production
+capability/authentication, catalog, asset, REST, and WebSocket paths, and sends
 `BoardCommandController.jumpToActivePrompt` plus `primaryAction`. It does not
-construct game state, implement assignment rules, or call a direct answer
-bridge.
+construct game state, implement movement, forced-ability, or assignment rules,
+or call a direct answer bridge.
 
 ### Historical authenticated Cover Up evidence
 
@@ -105,16 +106,20 @@ hashes remain unchanged at Q33, and exercises that same strict prompt path.
 
 ### Backend replay authority
 
-As of Tuesday, September 15, 2026, this repository is pinned to backend contract
-merge `503e3e4c8cdf8370cba78ac0397e3a2e5c7eee8a` from
-`djensenius/ArkhamHorror#89`, at contract revision `0.1.41`. That revision adds
-player-keyed `questionPresentation` protocol version 1 plus exact production
-Q34 and Q35 fixtures for the Gathering Act 1 objective and advancement.
-Revision `0.1.40` previously added the exact Q33 prompt for Cover Up's optional
-clue-replacement reaction.
+As of Wednesday, September 16, 2026, this repository is pinned to backend
+contract commit `f4d83466f6e36bea13d4b0c21204db56121b6585` from
+`djensenius/ArkhamHorror#91`, at contract revision `0.1.42`. That revision adds
+the production Q36 movement, Q37 forced-ability, and Q38 damage/horror
+assignment prompts for both the Cellar and Attic branches. It binds the raw
+ability inputs to their semantic move and forced-ability projections, expands
+the exact negative-regression inventory to 625 cases, and publishes locale
+catalog revision `1.546b76d781cd46b3a2286be5412d2ce7`. The authenticated
+movement replays submit Q34-Q38, validate the branch-specific Q39 post-entry
+prompt, and stop without answering Q39.
 
 Fight, Evade, Engage, the round transition, Roland's clue discovery, Cover
-Up's replacement effect, clue payment, and act advancement remain
+Up's replacement effect, clue payment, act advancement, movement legality,
+forced entry abilities, and damage/horror assignment remain
 server-authoritative.
 Swift recognizes only the exact governed prompt/source/message shapes, checks
 that referenced entities still exist in the newest projection, and submits the
@@ -142,7 +147,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.41",
+       "contractSchemaRevision": "0.1.42",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -200,14 +205,16 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 
 ### Produce and import the authoritative checkpoint
 
-Using the immutable backend merge above:
+Using the immutable backend revision above:
 
 1. Confirm `ContractPin.current` is
-   `503e3e4c8cdf8370cba78ac0397e3a2e5c7eee8a` / `0.1.41`, then build the
+   `f4d83466f6e36bea13d4b0c21204db56121b6585` / `0.1.42`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can
-   be replayed to the combined enemy-attack assignment prompt.
+   be replayed to the selected scenario's checkpoint: the combined enemy-attack
+   assignment prompt for `assignment`, or the Q34 act-advance prompt for the
+   Gathering scenarios.
 3. Create an exact answer plan whose `stopAt` binds the prompt player, version,
    tag, and canonical SHA-256. Generate and inspect the checkpoint with the
    backend-owned harness:
@@ -231,12 +238,13 @@ Using the immutable backend merge above:
    DEVELOPMENT=true stack exec arkham-api
    ```
 
-5. Preserve `assignment.checkpoint.json` byte-for-byte. The coordinator imports
-   this exact byte sequence twice without a `multiplayerVariant` query
-   override; the checkpoint's retained multiplayer mode must already be
-   `WithFriends`. The route returns the complete bare `PublicGame` snapshot,
-   not an `{ "id": ... }` receipt. Apple accepts only the exact non-redirected
-   2xx JSON response under a 64 MiB ceiling, decodes it through the governed
+5. Preserve `assignment.checkpoint.json` byte-for-byte. The `assignment`
+   coordinator imports this exact byte sequence twice; each Gathering scenario
+   imports it once. No import adds a `multiplayerVariant` query override, so the
+   checkpoint's retained multiplayer mode must already be `WithFriends`. The
+   route returns the complete bare `PublicGame` snapshot, not an
+   `{ "id": ... }` receipt. Apple accepts only the exact non-redirected 2xx JSON
+   response under a 64 MiB ceiling, decodes it through the governed
    `PublicGameSnapshot` contract, and requires semantic decode/re-encode
    equality so ignored or unknown structure cannot supply the imported game
    ID. The importer must run the checkpoint validator and persist its separate
@@ -244,7 +252,7 @@ Using the immutable backend merge above:
    through the authenticated production GET and requires schema-version-1
    attestation before submitting anything.
 
-### Run both Apple cases
+### Run an Apple replay scenario
 
 Invoke the production launcher only through its canonical committed regular-file
 path; launcher symlinks and copies beside another Swift package are rejected.
@@ -319,13 +327,15 @@ not already exist:
 
 ```sh
 set +x
+export ARKHAM_REPLAY_SCENARIO='gathering-cellar-entry'
 export ARKHAM_REPLAY_BASE_URL='http://127.0.0.1:3000'
-export ARKHAM_REPLAY_INVESTIGATOR_ID='c01234'
-export ARKHAM_REPLAY_ENEMY_ID='<exact enemy wire identity>'
+export ARKHAM_REPLAY_INVESTIGATOR_ID='c01001'
 export ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="$(git rev-parse HEAD)"
 export ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION='<ContractPin.current revision>'
 export ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION='<capabilities localeCatalog.catalogRevision>'
 export ARKHAM_REPLAY_DEADLINE_SECONDS=60
+# Required only when ARKHAM_REPLAY_SCENARIO=assignment:
+# export ARKHAM_REPLAY_ENEMY_ID='<exact enemy wire identity>'
 
 CHECKPOINT="$(pwd -P)/assignment.checkpoint.json"
 OUTPUT_DIRECTORY="${HOME}/.arkham-horror-replay/run-001"
@@ -343,16 +353,22 @@ globally bounded Swift coordinator then:
    no-follow filesystem operations.
 2. Opens the checkpoint and mode-0600 token through verified ancestor
    descriptors and reads each retained file descriptor exactly once.
-3. Imports, authenticates, and attests both fresh games before either controller
+3. Imports each required fresh game, loads it through authenticated production
+   REST, and obtains a server-side checkpoint attestation before any controller
    can submit an answer.
-4. Requires both imports to be distinct and to return identical validator and
-   clean server-build authority for the exact uploaded bytes.
-5. Runs and persists the damage-first case, then proceeds to the horror-first
-   `AppModel` and controller only after complete first-case success.
-6. Publishes success only after both compact canonical artifacts independently
-   decode, digest, and validate; otherwise it removes partial anchored output.
+4. Requires the assignment scenario's two imports to have distinct game and
+   player IDs and identical validator/build authority for the uploaded bytes;
+   each Gathering scenario uses one independently attested import.
+5. Runs the selected scenario through the real `AppModel`. `assignment`
+   resolves damage-first and horror-first orders. `gathering-act-advance`
+   submits Q34-Q35 and validates Q36. `gathering-cellar-entry` and
+   `gathering-attic-entry` submit Q34-Q38, validate Q39, and deliberately do not
+   answer Q39.
+6. Publishes success only after every compact canonical artifact independently
+   decodes, digests, and validates; otherwise it removes partial anchored
+   output.
 
-The same outer `ProductionReplayDriver` deadline bounds both imports, both
+The same outer `ProductionReplayDriver` deadline bounds all imports,
 authenticated GETs and attestations, capability/catalog/asset/session startup,
 controller actions, reconciliation, and output publication. Setup networking
 uses redirect-rejecting, cookie/credential/cache-free production `URLSession`
@@ -361,19 +377,23 @@ response-size ceilings.
 
 Prompt version, prompt digest, checkpoint Game/queue digests, exact artifact
 digest, canonical checkpoint-envelope identity, and the clean validator/import
-backend build come only from the authenticated server attestation. The exact
-two final files are:
+backend build come only from the authenticated server attestation. The
+credential-free output depends on the selected scenario:
 
-- `damage-first.json`
-- `horror-first.json`
+- `assignment`: `damage-first.json` and `horror-first.json`
+- `gathering-act-advance`: `gathering-act-advance.json`
+- `gathering-cellar-entry`: `gathering-cellar-entry.json`
+- `gathering-attic-entry`: `gathering-attic-entry.json`
 
-Each is published only after the exact controller command path, one canonical
-versioned `Answer`, authoritative before/after state, assignment delta, next
-prompt/version/digest, checkpoint full-file and server-canonical envelope
-digests, checkpoint Game/queue digests, validator/import server build, Apple
-revision, game revision, contract, and catalog assertions pass. Evidence
-schema `4.0.0` records all of those identities without claiming the
-caller-authored generation history is authenticated.
+Each file is published only after the exact controller command path,
+authoritative before/after state, checkpoint full-file and server-canonical
+envelope digests, checkpoint Game/queue digests, validator/import server build,
+Apple revision, game revision, contract, catalog, and scenario assertions
+pass. Assignment evidence uses schema `4.0.0`; Gathering evidence uses schema
+`1.1.0`. Cellar and Attic evidence additionally binds the selected Q36 move,
+Q37 forced ability, Q38 damage/horror assignment, and unsubmitted Q39
+continuation prompt without claiming the caller-authored generation history is
+authenticated.
 
 ## Commands
 
@@ -395,12 +415,15 @@ project differs from `project.yml`.
 The deterministic Gathering path is playable through setup, investigation,
 encounter draw, enemy attack and assignment, Fight, Evade, Engage, the following
 end-of-round/agenda transition, and Roland Banks's optional post-defeat clue
-reaction or skip. It is not yet a complete campaign client: later encounter and
-player-window variants, all campaign-specific surfaces, full deck/campaign
-management, multiplayer parity, replay/undo UI, signing, distribution, final
-iconography, and final platform polish remain in progress. Unknown governed
-prompts fail closed with an explicit client-update requirement rather than
-guessing. Product planning is tracked in
+reaction or skip. The test-only authenticated replay additionally covers Act 1
+advancement plus both Cellar and Attic movement-entry branches through their
+forced damage/horror assignment, then validates Q39 without submitting it. It is
+not yet a complete campaign client: later encounter and player-window variants,
+all campaign-specific surfaces, full deck/campaign management, multiplayer
+parity, replay/undo UI, signing, distribution, final iconography, and final
+platform polish remain in progress. Unknown governed prompts fail closed with
+an explicit client-update requirement rather than guessing. Product planning is
+tracked in
 [djensenius/ArkhamHorror#5](https://github.com/djensenius/ArkhamHorror/issues/5)
 and
 [djensenius/ArkhamHorror-Apple#5](https://github.com/djensenius/ArkhamHorror-Apple/issues/5).

@@ -131,6 +131,26 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
     let canonicalSHA256: String
     let selectedDescriptor: GatheringActReplayDescriptorEvidence?
 
+    init(
+        version: Int,
+        rawTag: String,
+        questionKind: String,
+        choiceCount: Int,
+        sourceIndices: [Int],
+        actionableSourceIndices: [Int],
+        canonicalSHA256: String,
+        selectedDescriptor: GatheringActReplayDescriptorEvidence?
+    ) {
+        self.version = version
+        self.rawTag = rawTag
+        self.questionKind = questionKind
+        self.choiceCount = choiceCount
+        self.sourceIndices = sourceIndices
+        self.actionableSourceIndices = actionableSourceIndices
+        self.canonicalSHA256 = canonicalSHA256
+        self.selectedDescriptor = selectedDescriptor
+    }
+
     @MainActor
     init(
         prompt: BasicChoicePromptPresentation,
@@ -170,7 +190,10 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
         }
     }
 
-    func validateResultingPrompt() throws {
+    func validateResultingPrompt(
+        selectedDescriptor expectedDescriptor:
+        QuestionPresentation.Choice? = nil
+    ) throws {
         let expectedSourceIndices = Array(0 ..< 12)
         guard version ==
             ProductionGatheringActReplayConfiguration
@@ -182,13 +205,94 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             choiceCount == expectedSourceIndices.count,
             sourceIndices == expectedSourceIndices,
             actionableSourceIndices == expectedSourceIndices,
-            selectedDescriptor == nil,
+            selectedDescriptor == expectedDescriptor.map(
+                GatheringActReplayDescriptorEvidence.init(choice:)
+            ),
             ProductionAssignmentReplayConfiguration.isLowercaseHex(
                 canonicalSHA256,
                 count: 64
             )
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ36
+        }
+    }
+
+    func validateMovementPrompt(
+        branch: GatheringMovementEntryBranch
+    ) throws {
+        try validateResultingPrompt(
+            selectedDescriptor: branch.movementDescriptor
+        )
+        guard canonicalSHA256 ==
+            ProductionGatheringActReplayConfiguration.movementPromptSHA256
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ36
+        }
+    }
+
+    func validateForcedAbilityPrompt(
+        branch: GatheringMovementEntryBranch
+    ) throws {
+        guard version ==
+            ProductionGatheringActReplayConfiguration
+            .forcedAbilityQuestionVersion,
+            rawTag == BasicChoiceQuestionKind.windowChooseOne.rawValue,
+            questionKind ==
+            QuestionPresentation.Kind.windowChooseOne.rawValue,
+            choiceCount == 1,
+            sourceIndices == [0],
+            actionableSourceIndices == [0],
+            canonicalSHA256 == branch.q37PromptSHA256,
+            selectedDescriptor ==
+            GatheringActReplayDescriptorEvidence(
+                choice: branch.forcedAbilityDescriptor
+            )
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ37
+        }
+    }
+
+    func validateAssignmentPrompt(
+        branch: GatheringMovementEntryBranch
+    ) throws {
+        guard version ==
+            ProductionGatheringActReplayConfiguration
+            .assignmentQuestionVersion,
+            rawTag == "QuestionWithSource",
+            questionKind == QuestionPresentation.Kind.chooseOne.rawValue,
+            choiceCount == 1,
+            sourceIndices == [0],
+            actionableSourceIndices == [0],
+            canonicalSHA256 == branch.q38PromptSHA256,
+            selectedDescriptor ==
+            GatheringActReplayDescriptorEvidence(
+                choice: branch.assignmentDescriptor
+            )
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ38
+        }
+    }
+
+    func validatePostEntryPrompt(
+        branch: GatheringMovementEntryBranch
+    ) throws {
+        let sourceIndexSet = Set(sourceIndices)
+        guard version ==
+            ProductionGatheringActReplayConfiguration.postEntryQuestionVersion,
+            rawTag ==
+            BasicChoiceQuestionKind.playerWindowChooseOne.rawValue,
+            questionKind ==
+            QuestionPresentation.Kind.playerWindowChooseOne.rawValue,
+            choiceCount == sourceIndices.count,
+            !sourceIndices.isEmpty,
+            sourceIndices == sourceIndices.sorted(),
+            sourceIndexSet.count == sourceIndices.count,
+            !actionableSourceIndices.isEmpty,
+            actionableSourceIndices.allSatisfy(sourceIndexSet.contains),
+            canonicalSHA256 == branch.q39PromptSHA256,
+            selectedDescriptor == nil
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ39
         }
     }
 }
@@ -252,6 +356,9 @@ private struct GatheringActReplayBoardStatePayload:
     let locations: [GatheringActReplayLocationEvidence]
     let investigatorID: InvestigatorID
     let investigatorLocationID: LocationID?
+    let remainingActions: Int
+    let damage: Int
+    let horror: Int
     let enemyIDs: [EnemyID]
 }
 
@@ -271,6 +378,9 @@ struct GatheringActReplayBoardStateEvidence:
     let locations: [GatheringActReplayLocationEvidence]
     let investigatorID: InvestigatorID
     let investigatorLocationID: LocationID?
+    let remainingActions: Int
+    let damage: Int
+    let horror: Int
     let enemyIDs: [EnemyID]
     let summaryCanonicalSHA256: String
 
@@ -299,6 +409,9 @@ struct GatheringActReplayBoardStateEvidence:
             locations: locations,
             investigatorID: investigatorID,
             investigatorLocationID: investigator.currentLocationID,
+            remainingActions: investigator.remainingActions,
+            damage: Self.tokenCount("Damage", in: investigator.tokenCounts),
+            horror: Self.tokenCount("Horror", in: investigator.tokenCounts),
             enemyIDs: snapshot.enemies.keys.sorted {
                 $0.codingKey.stringValue < $1.codingKey.stringValue
             }
@@ -312,6 +425,9 @@ struct GatheringActReplayBoardStateEvidence:
         self.locations = payload.locations
         self.investigatorID = payload.investigatorID
         investigatorLocationID = payload.investigatorLocationID
+        remainingActions = payload.remainingActions
+        damage = payload.damage
+        horror = payload.horror
         enemyIDs = payload.enemyIDs
         summaryCanonicalSHA256 =
             try ProductionAssignmentReplayCanonicalJSON.digest(payload)
@@ -328,6 +444,9 @@ struct GatheringActReplayBoardStateEvidence:
             locations: locations,
             investigatorID: investigatorID,
             investigatorLocationID: investigatorLocationID,
+            remainingActions: remainingActions,
+            damage: damage,
+            horror: horror,
             enemyIDs: enemyIDs
         )
         guard try summaryCanonicalSHA256 ==
@@ -355,6 +474,177 @@ struct GatheringActReplayBoardStateEvidence:
             }
         )
     }
+
+    private static func tokenCount(
+        _ token: String,
+        in counts: [BoardTokenSummary]
+    ) -> Int {
+        counts.first(where: { $0.token == token })?.count ?? 0
+    }
+}
+
+struct GatheringReplayStateIdentity {
+    let gameID: GameID
+    let investigatorID: InvestigatorID
+    let gameRevision: String
+}
+
+struct GatheringMovementEntryValidationContext {
+    let q36Prompt: GatheringActReplayPromptEvidence
+    let q36State: GatheringActReplayBoardStateEvidence
+    let gameID: GameID
+    let playerID: PlayerID
+    let investigatorID: InvestigatorID
+    let gameRevision: String
+
+    var stateIdentity: GatheringReplayStateIdentity {
+        GatheringReplayStateIdentity(
+            gameID: gameID,
+            investigatorID: investigatorID,
+            gameRevision: gameRevision
+        )
+    }
+}
+
+struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
+    let branch: GatheringMovementEntryBranch
+    let q36Answer: GatheringActReplayAnswerEvidence
+    let q36Controller: GatheringActReplayControllerEvidence
+    let q37Prompt: GatheringActReplayPromptEvidence
+    let q37Answer: GatheringActReplayAnswerEvidence
+    let q37Controller: GatheringActReplayControllerEvidence
+    let q37State: GatheringActReplayBoardStateEvidence
+    let q38Prompt: GatheringActReplayPromptEvidence
+    let q38Answer: GatheringActReplayAnswerEvidence
+    let q38Controller: GatheringActReplayControllerEvidence
+    let q38State: GatheringActReplayBoardStateEvidence
+    let q39Prompt: GatheringActReplayPromptEvidence
+    let q39State: GatheringActReplayBoardStateEvidence
+
+    func validate(
+        context: GatheringMovementEntryValidationContext
+    ) throws {
+        try context.q36Prompt.validateMovementPrompt(branch: branch)
+        try q36Answer.validate(
+            choice: branch.movementSourceIndex,
+            playerID: context.playerID,
+            questionVersion:
+            ProductionGatheringActReplayConfiguration
+                .resultingQuestionVersion
+        )
+        try q36Controller.validate(
+            selectedSourceIndex: branch.movementSourceIndex,
+            expectedFocusSourceIndices:
+            Array(0 ... branch.movementSourceIndex)
+        )
+        try q37Prompt.validateForcedAbilityPrompt(branch: branch)
+        try q37Answer.validate(
+            choice: 0,
+            playerID: context.playerID,
+            questionVersion:
+            ProductionGatheringActReplayConfiguration
+                .forcedAbilityQuestionVersion
+        )
+        try q37Controller.validate(
+            selectedSourceIndex: 0,
+            expectedFocusSourceIndices: [0]
+        )
+        try q38Prompt.validateAssignmentPrompt(branch: branch)
+        try q38Answer.validate(
+            choice: 0,
+            playerID: context.playerID,
+            questionVersion:
+            ProductionGatheringActReplayConfiguration
+                .assignmentQuestionVersion
+        )
+        try q38Controller.validate(
+            selectedSourceIndex: 0,
+            expectedFocusSourceIndices: [0]
+        )
+        try q39Prompt.validatePostEntryPrompt(branch: branch)
+        try validateBoardTransition(
+            q36State: context.q36State,
+            identity: context.stateIdentity
+        )
+    }
+
+    private func validateBoardTransition(
+        q36State: GatheringActReplayBoardStateEvidence,
+        identity: GatheringReplayStateIdentity
+    ) throws {
+        try q37State.validateDigest()
+        try q38State.validateDigest()
+        try q39State.validateDigest()
+        guard q36State.remainingActions == 2,
+              q36State.damage == 1,
+              q36State.horror == 3
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidState
+        }
+        try validateEnteredState(
+            q37State,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .forcedAbilityQuestionVersion,
+            identity: identity,
+            damage: 1,
+            horror: 3
+        )
+        try validateEnteredState(
+            q38State,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .assignmentQuestionVersion,
+            identity: identity,
+            damage: 1,
+            horror: 3
+        )
+        try validateEnteredState(
+            q39State,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .postEntryQuestionVersion,
+            identity: identity,
+            damage: branch.resultingDamage,
+            horror: branch.resultingHorror
+        )
+    }
+
+    private func validateEnteredState(
+        _ state: GatheringActReplayBoardStateEvidence,
+        version: Int,
+        identity: GatheringReplayStateIdentity,
+        damage: Int,
+        horror: Int
+    ) throws {
+        let locations = state.locations.filter {
+            $0.id.codingKey.stringValue == branch.locationID
+                && $0.cardCode == branch.locationCardCode
+        }
+        guard locations.count == 1 else {
+            throw ProductionGatheringActReplayEvidenceError.invalidState
+        }
+        let location = locations[0]
+        guard state.source == .socket,
+              state.gameID == identity.gameID,
+              state.gameRevision == identity.gameRevision,
+              state.playerID == nil,
+              state.scenarioSteps == version,
+              state.actIDs == [
+                  ProductionGatheringActReplayConfiguration.advancedActID,
+              ],
+              state.investigatorID == identity.investigatorID,
+              state.investigatorLocationID == location.id,
+              state.remainingActions == 1,
+              state.damage == damage,
+              state.horror == horror,
+              location.revealed,
+              location.investigatorIDs == [identity.investigatorID],
+              state.enemyIDs.isEmpty
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidState
+        }
+    }
 }
 
 // swiftlint:disable opening_brace
@@ -365,7 +655,7 @@ struct ProductionGatheringActReplayEvidence:
     Sendable
 {
     // swiftlint:enable opening_brace
-    static let currentSchemaVersion = "1.0.0"
+    static let currentSchemaVersion = "1.1.0"
 
     let schemaVersion: String
     let attestation: ProductionAssignmentReplayAttestation
@@ -381,6 +671,7 @@ struct ProductionGatheringActReplayEvidence:
     let q35Controller: GatheringActReplayControllerEvidence
     let q36Prompt: GatheringActReplayPromptEvidence
     let q36State: GatheringActReplayBoardStateEvidence
+    let movementEntry: GatheringMovementEntryReplayEvidence?
     let revisions: AssignmentReplayRevisionEvidence
 
     func validateSemantics() throws {
@@ -393,6 +684,16 @@ struct ProductionGatheringActReplayEvidence:
         try validateQ35()
         try validateQ36()
         try validateBoardTransition()
+        try movementEntry?.validate(
+            context: GatheringMovementEntryValidationContext(
+                q36Prompt: q36Prompt,
+                q36State: q36State,
+                gameID: gameID,
+                playerID: playerID,
+                investigatorID: investigatorID,
+                gameRevision: revisions.game
+            )
+        )
         try validateRevisions()
     }
 
@@ -407,6 +708,8 @@ struct ProductionGatheringActReplayEvidence:
               playerID == configuration.promptIdentity.ownerID,
               investigatorID ==
               configuration.promptIdentity.investigatorID,
+              movementEntry?.branch ==
+              configuration.movementEntryBranch,
               q34Prompt.canonicalSHA256 ==
               configuration.expectedPromptDigest,
               revisions.apple == configuration.expectedAppleRevision,
@@ -582,7 +885,9 @@ struct ProductionGatheringActReplayEvidence:
     }
 
     private func validateQ36() throws {
-        try q36Prompt.validateResultingPrompt()
+        try q36Prompt.validateResultingPrompt(
+            selectedDescriptor: movementEntry?.branch.movementDescriptor
+        )
     }
 
     // swiftlint:disable:next function_body_length
@@ -636,6 +941,9 @@ struct ProductionGatheringActReplayEvidence:
               ],
               q36State.investigatorID == investigatorID,
               q36State.investigatorLocationID == hallway.id,
+              q36State.remainingActions == 2,
+              q36State.damage == 1,
+              q36State.horror == 3,
               hallway.id != study.id,
               hallway.revealed,
               hallway.investigatorIDs == [investigatorID],
@@ -727,6 +1035,9 @@ enum ProductionGatheringActReplayEvidenceError: Error, Equatable {
     case invalidQ34
     case invalidQ35
     case invalidQ36
+    case invalidQ37
+    case invalidQ38
+    case invalidQ39
     case invalidState
     case invalidRevisions
     case configurationMismatch
