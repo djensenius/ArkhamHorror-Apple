@@ -126,7 +126,8 @@ extension BasicChoicePromptPresentation {
         guard projection.isSemanticChoiceActionable(
             descriptor,
             ownerID: ownerID,
-            labelResolution: choiceLabelResolutions[choice.index]
+            labelResolution: choiceLabelResolutions[choice.index],
+            governedSource: semanticPresentation.governedSource
         ) else {
             return semanticUnavailableAnnouncement(
                 for: descriptor,

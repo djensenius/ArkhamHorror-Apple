@@ -358,7 +358,8 @@ extension AppModel {
             isActionable = projection.isSemanticChoiceActionable(
                 descriptor,
                 ownerID: ownerID,
-                labelResolution: labelResolutions[choiceIndex]
+                labelResolution: labelResolutions[choiceIndex],
+                governedSource: semanticPresentation.governedSource
             )
         } else {
             isActionable = projection.isChoiceActionable(

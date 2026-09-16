@@ -230,16 +230,18 @@ their opaque UUID identities without changing the governed shape.
 ## Governed Gathering movement entry
 
 The ten movement-entry fixtures added by `djensenius/ArkhamHorror#91` govern
-Q36 through Q39 after the Act 1 advancement:
+Q36 through Q38 and the transition into Q39 after the Act 1 advancement:
 
-- Q36 is the 11-choice movement menu. Cellar remains source index `9` and
+- Q36 is the 12-choice movement menu. Cellar remains source index `9` and
   Attic remains source index `10`.
 - Q37 is the exact `WindowChooseOne` location-entry forced ability for Cellar
   (`c01114`) or Attic (`c01113`), always at source index `0`.
 - Q38 is the exact source-index-zero damage assignment for Cellar or horror
   assignment for Attic.
-- Q39 is the next player window. Replay validates its prompt and authoritative
-  board state but does not answer it.
+- Q39 is the next player window. It has no vendored contract fixture; native
+  binding seals its runtime-normalized investigation and Hallway movement
+  choices, while replay validates the full prompt and authoritative board state
+  without answering it.
 
 The paired presentation fixtures publish only `move`, `resolveForcedAbility`,
 `assignDamage`, and `assignHorror` descriptors that remain independently bound

@@ -114,6 +114,104 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData.isEmpty)
     }
 
+    @Test("Q36 rejects a destination UUID whose projected card is wrong")
+    func semanticMovementRejectsWrongLocationCard() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-gathering-movement",
+            presentationFixture: "question-presentation-gathering-movement",
+            questionVersion: 36,
+            mutateGame: {
+                try addGatheringLocations(
+                    to: &$0,
+                    cellarCardCode: "c01113"
+                )
+            }
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        #expect(
+            await model.submitBasicChoice(prompt.identity, choiceIndex: 9)
+                == .unsupportedChoice
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Q37 rejects a forced source UUID whose projected card is wrong")
+    func semanticForcedAbilityRejectsWrongLocationCard() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-gathering-cellar-entry-forced",
+            presentationFixture: "question-presentation-gathering-cellar-entry-forced",
+            questionVersion: 37,
+            mutateGame: {
+                try addGatheringLocations(
+                    to: &$0,
+                    includeAttic: false,
+                    cellarCardCode: "c01113"
+                )
+            }
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        #expect(
+            await model.submitBasicChoice(prompt.identity, choiceIndex: 0)
+                == .unsupportedChoice
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Q38 rejects a governed source UUID whose projected card is wrong")
+    func semanticAssignmentRejectsWrongLocationCard() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-gathering-cellar-damage-assignment",
+            presentationFixture: "question-presentation-gathering-cellar-damage-assignment",
+            questionVersion: 38,
+            mutateGame: {
+                try addGatheringLocations(
+                    to: &$0,
+                    includeAttic: false,
+                    cellarCardCode: "c01113"
+                )
+            }
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        #expect(
+            await model.submitBasicChoice(prompt.identity, choiceIndex: 0)
+                == .unsupportedChoice
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
     private func assertMovementAnswer(choiceIndex: Int) async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
@@ -166,7 +264,8 @@ extension AppModelLiveGameTests {
         let envelope = try semanticEnvelope(
             rawFixture: rawFixture,
             presentationFixture: presentationFixture,
-            questionVersion: 38
+            questionVersion: 38,
+            mutateGame: { try addGatheringLocations(to: &$0) }
         )
         let connection = FakeGameSocketConnection()
         await connection.enqueueSendResult(.success(()))
@@ -203,7 +302,9 @@ extension AppModelLiveGameTests {
     private func addGatheringLocations(
         to game: inout [String: JSONValue],
         includeCellar: Bool = true,
-        includeAttic: Bool = true
+        includeAttic: Bool = true,
+        cellarCardCode: String = "c01114",
+        atticCardCode: String = "c01113"
     ) throws {
         guard case var .object(locations)? = game["locations"],
               case let .object(template)? = locations.values.first
@@ -223,14 +324,14 @@ extension AppModelLiveGameTests {
         if includeCellar {
             addLocation(
                 id: "a3497b9f-796b-406d-aeb4-9b96fa9f4905",
-                cardCode: "c01114",
+                cardCode: cellarCardCode,
                 label: "Cellar"
             )
         }
         if includeAttic {
             addLocation(
                 id: "dbaa2d2e-4ceb-44b2-a554-e5fa370e7882",
-                cardCode: "c01113",
+                cardCode: atticCardCode,
                 label: "Attic"
             )
         }

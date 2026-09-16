@@ -294,7 +294,7 @@ enum ProductionGatheringActReplayRunner {
             selectedSourceIndex:
             configuration.movementEntryBranch?.movementSourceIndex
         )
-        try validateQ36Prompt(
+        let movementDestination = try validateQ36Prompt(
             q36Prompt,
             evidence: q36PromptEvidence,
             projection: q36Projection,
@@ -307,6 +307,7 @@ enum ProductionGatheringActReplayRunner {
         let movementEntry = try await runMovementEntryIfNeeded(
             q36Prompt: q36Prompt,
             q36Projection: q36Projection,
+            destination: movementDestination,
             context: MovementEntryExecutionContext(
                 model: model,
                 socketRecorder: socketRecorder,
@@ -365,13 +366,17 @@ enum ProductionGatheringActReplayRunner {
     private static func runMovementEntryIfNeeded(
         q36Prompt: BasicChoicePromptPresentation,
         q36Projection: BoardProjection,
+        destination: GatheringMovementEntryDestination?,
         context: MovementEntryExecutionContext
     ) async throws -> GatheringMovementEntryReplayEvidence? {
         guard let branch = context.configuration.movementEntryBranch else {
             return nil
         }
+        guard let destination, destination.branch == branch else {
+            throw ProductionGatheringActReplayError.promptShapeMismatch
+        }
         return try await runMovementEntry(
-            branch: branch,
+            destination: destination,
             q36Prompt: q36Prompt,
             q36Projection: q36Projection,
             context: context
@@ -380,11 +385,12 @@ enum ProductionGatheringActReplayRunner {
 
     // swiftlint:disable:next function_body_length
     private static func runMovementEntry(
-        branch: GatheringMovementEntryBranch,
+        destination: GatheringMovementEntryDestination,
         q36Prompt: BasicChoicePromptPresentation,
         q36Projection: BoardProjection,
         context: MovementEntryExecutionContext
     ) async throws -> GatheringMovementEntryReplayEvidence {
+        let branch = destination.branch
         let model = context.model
         let socketRecorder = context.socketRecorder
         let authoritativeRecorder = context.authoritativeRecorder
@@ -439,7 +445,7 @@ enum ProductionGatheringActReplayRunner {
             q37Prompt,
             evidence: q37PromptEvidence,
             projection: q37Projection,
-            branch: branch,
+            destination: destination,
             configuration: configuration
         )
         let q37State = try GatheringActReplayBoardStateEvidence(
@@ -495,7 +501,7 @@ enum ProductionGatheringActReplayRunner {
             q38Prompt,
             evidence: q38PromptEvidence,
             projection: q38Projection,
-            branch: branch,
+            destination: destination,
             configuration: configuration
         )
         let q38State = try GatheringActReplayBoardStateEvidence(
@@ -552,7 +558,7 @@ enum ProductionGatheringActReplayRunner {
             q39Prompt,
             evidence: q39PromptEvidence,
             projection: q39Projection,
-            branch: branch,
+            destination: destination,
             configuration: configuration
         )
         let q39State = try GatheringActReplayBoardStateEvidence(
@@ -837,7 +843,7 @@ enum ProductionGatheringActReplayRunner {
         evidence: GatheringActReplayPromptEvidence,
         projection: BoardProjection,
         configuration: ProductionGatheringActReplayConfiguration
-    ) throws {
+    ) throws -> GatheringMovementEntryDestination? {
         try validatePromptIdentity(
             prompt,
             projection: projection,
@@ -846,21 +852,28 @@ enum ProductionGatheringActReplayRunner {
                 .resultingQuestionVersion,
             configuration: configuration
         )
+        let destination: GatheringMovementEntryDestination?
         if let branch = configuration.movementEntryBranch {
-            try evidence.validateMovementPrompt(branch: branch)
+            destination = try GatheringMovementEntryDestination(
+                branch: branch,
+                locationID:
+                evidence.validateMovementPrompt(branch: branch)
+            )
         } else {
             try evidence.validateResultingPrompt()
+            destination = nil
         }
         guard prompt.canSubmit else {
             throw ProductionGatheringActReplayError.promptShapeMismatch
         }
+        return destination
     }
 
     private static func validateQ37Prompt(
         _ prompt: BasicChoicePromptPresentation,
         evidence: GatheringActReplayPromptEvidence,
         projection: BoardProjection,
-        branch: GatheringMovementEntryBranch,
+        destination: GatheringMovementEntryDestination,
         configuration: ProductionGatheringActReplayConfiguration
     ) throws {
         try validatePromptIdentity(
@@ -871,7 +884,9 @@ enum ProductionGatheringActReplayRunner {
                 .forcedAbilityQuestionVersion,
             configuration: configuration
         )
-        try evidence.validateForcedAbilityPrompt(branch: branch)
+        try evidence.validateForcedAbilityPrompt(
+            destination: destination
+        )
         guard prompt.canSubmit,
               prompt.question.supportedQuestion?.kind == .windowChooseOne
         else {
@@ -883,7 +898,7 @@ enum ProductionGatheringActReplayRunner {
         _ prompt: BasicChoicePromptPresentation,
         evidence: GatheringActReplayPromptEvidence,
         projection: BoardProjection,
-        branch: GatheringMovementEntryBranch,
+        destination: GatheringMovementEntryDestination,
         configuration: ProductionGatheringActReplayConfiguration
     ) throws {
         try validatePromptIdentity(
@@ -894,10 +909,10 @@ enum ProductionGatheringActReplayRunner {
                 .assignmentQuestionVersion,
             configuration: configuration
         )
-        try evidence.validateAssignmentPrompt(branch: branch)
-        guard prompt.canSubmit,
-              prompt.question.supportedQuestion?.kind == .chooseOne
-        else {
+        try evidence.validateAssignmentPrompt(
+            destination: destination
+        )
+        guard prompt.canSubmit else {
             throw ProductionGatheringActReplayError.promptShapeMismatch
         }
     }
@@ -906,7 +921,7 @@ enum ProductionGatheringActReplayRunner {
         _ prompt: BasicChoicePromptPresentation,
         evidence: GatheringActReplayPromptEvidence,
         projection: BoardProjection,
-        branch: GatheringMovementEntryBranch,
+        destination: GatheringMovementEntryDestination,
         configuration: ProductionGatheringActReplayConfiguration
     ) throws {
         try validatePromptIdentity(
@@ -917,7 +932,7 @@ enum ProductionGatheringActReplayRunner {
                 .postEntryQuestionVersion,
             configuration: configuration
         )
-        try evidence.validatePostEntryPrompt(branch: branch)
+        try evidence.validatePostEntryPrompt(destination: destination)
         guard prompt.canSubmit,
               prompt.question.supportedQuestion?.kind ==
               .playerWindowChooseOne

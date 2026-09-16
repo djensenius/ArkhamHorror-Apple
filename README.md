@@ -390,10 +390,10 @@ authoritative before/after state, checkpoint full-file and server-canonical
 envelope digests, checkpoint Game/queue digests, validator/import server build,
 Apple revision, game revision, contract, catalog, and scenario assertions
 pass. Assignment evidence uses schema `4.0.0`; Gathering evidence uses schema
-`1.1.0`. Cellar and Attic evidence additionally binds the selected Q36 move,
-Q37 forced ability, Q38 damage/horror assignment, and unsubmitted Q39
-continuation prompt without claiming the caller-authored generation history is
-authenticated.
+`1.2.0`. Cellar and Attic evidence additionally binds the selected Q36 runtime
+destination through the Q37 forced ability, Q38 damage/horror source, entered
+board states, and unsubmitted Q39 continuation prompt without claiming the
+caller-authored generation history is authenticated.
 
 ## Commands
 

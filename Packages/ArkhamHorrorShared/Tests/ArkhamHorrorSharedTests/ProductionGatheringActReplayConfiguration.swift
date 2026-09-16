@@ -32,15 +32,6 @@ enum GatheringMovementEntryBranch: String, Codable, Equatable, Sendable {
         }
     }
 
-    var locationID: String {
-        switch self {
-        case .cellar:
-            QuestionPresentation.Choice.gatheringCellarLocationID
-        case .attic:
-            QuestionPresentation.Choice.gatheringAtticLocationID
-        }
-    }
-
     var locationCardCode: String {
         switch self {
         case .cellar:
@@ -50,22 +41,23 @@ enum GatheringMovementEntryBranch: String, Codable, Equatable, Sendable {
         }
     }
 
-    var movementDescriptor: QuestionPresentation.Choice {
-        switch self {
-        case .cellar:
-            .gatheringCellarMove
-        case .attic:
-            .gatheringAtticMove
-        }
+    func movementDescriptor(
+        locationID: String
+    ) -> QuestionPresentation.Choice {
+        .gatheringMovement(
+            sourceIndex: movementSourceIndex,
+            cardCode: locationCardCode,
+            locationID: locationID
+        )
     }
 
-    var forcedAbilityDescriptor: QuestionPresentation.Choice {
-        switch self {
-        case .cellar:
-            .gatheringCellarForcedAbility
-        case .attic:
-            .gatheringAtticForcedAbility
-        }
+    func forcedAbilityDescriptor(
+        locationID: String
+    ) -> QuestionPresentation.Choice {
+        .gatheringForcedAbility(
+            cardCode: locationCardCode,
+            locationID: locationID
+        )
     }
 
     var assignmentDescriptor: QuestionPresentation.Choice {
@@ -121,6 +113,11 @@ enum GatheringMovementEntryBranch: String, Codable, Equatable, Sendable {
             4
         }
     }
+}
+
+struct GatheringMovementEntryDestination: Equatable, Sendable {
+    let branch: GatheringMovementEntryBranch
+    let locationID: LocationID
 }
 
 // swiftlint:disable:next type_name

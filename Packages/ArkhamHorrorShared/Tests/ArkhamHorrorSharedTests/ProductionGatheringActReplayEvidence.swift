@@ -130,6 +130,10 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
     let actionableSourceIndices: [Int]
     let canonicalSHA256: String
     let selectedDescriptor: GatheringActReplayDescriptorEvidence?
+    let governedDescriptors: [GatheringActReplayDescriptorEvidence]?
+    let governedSourceEntityKind: String?
+    let governedSourceEntityID: String?
+    let governedSourceCardCode: String?
 
     init(
         version: Int,
@@ -139,7 +143,11 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
         sourceIndices: [Int],
         actionableSourceIndices: [Int],
         canonicalSHA256: String,
-        selectedDescriptor: GatheringActReplayDescriptorEvidence?
+        selectedDescriptor: GatheringActReplayDescriptorEvidence?,
+        governedDescriptors: [GatheringActReplayDescriptorEvidence]? = nil,
+        governedSourceEntityKind: String? = nil,
+        governedSourceEntityID: String? = nil,
+        governedSourceCardCode: String? = nil
     ) {
         self.version = version
         self.rawTag = rawTag
@@ -149,6 +157,10 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
         self.actionableSourceIndices = actionableSourceIndices
         self.canonicalSHA256 = canonicalSHA256
         self.selectedDescriptor = selectedDescriptor
+        self.governedDescriptors = governedDescriptors
+        self.governedSourceEntityKind = governedSourceEntityKind
+        self.governedSourceEntityID = governedSourceEntityID
+        self.governedSourceCardCode = governedSourceCardCode
     }
 
     @MainActor
@@ -176,6 +188,10 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             try ProductionAssignmentReplayCanonicalJSON.promptDigest(
                 prompt.identity.rawQuestion
             )
+        governedSourceEntityKind =
+            semantic.governedSource?.entity.kind.rawValue
+        governedSourceEntityID = semantic.governedSource?.entity.id
+        governedSourceCardCode = semantic.governedSource?.cardCode
         if let selectedSourceIndex {
             guard let descriptor = semantic.descriptor(
                 forSourceIndex: selectedSourceIndex
@@ -187,6 +203,19 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             )
         } else {
             selectedDescriptor = nil
+        }
+        let isPostEntryPrompt = version ==
+            ProductionGatheringActReplayConfiguration.postEntryQuestionVersion
+        if isPostEntryPrompt {
+            let descriptors = [9, 10].compactMap(
+                semantic.descriptor(forSourceIndex:)
+            ).map(GatheringActReplayDescriptorEvidence.init(choice:))
+            guard descriptors.count == 2 else {
+                throw ProductionGatheringActReplayEvidenceError.invalidPrompt
+            }
+            governedDescriptors = descriptors
+        } else {
+            governedDescriptors = nil
         }
     }
 
@@ -208,6 +237,10 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             selectedDescriptor == expectedDescriptor.map(
                 GatheringActReplayDescriptorEvidence.init(choice:)
             ),
+            governedDescriptors == nil,
+            governedSourceEntityKind == nil,
+            governedSourceEntityID == nil,
+            governedSourceCardCode == nil,
             ProductionAssignmentReplayConfiguration.isLowercaseHex(
                 canonicalSHA256,
                 count: 64
@@ -219,19 +252,29 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
 
     func validateMovementPrompt(
         branch: GatheringMovementEntryBranch
-    ) throws {
+    ) throws -> LocationID {
+        guard let locationIDText = selectedDescriptor?.entityID,
+              let locationID = LocationID(
+                  codingKey: AnyCodingKey(stringValue: locationIDText)
+              )
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ36
+        }
         try validateResultingPrompt(
-            selectedDescriptor: branch.movementDescriptor
+            selectedDescriptor: branch.movementDescriptor(
+                locationID: locationIDText
+            )
         )
         guard canonicalSHA256 ==
             ProductionGatheringActReplayConfiguration.movementPromptSHA256
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ36
         }
+        return locationID
     }
 
     func validateForcedAbilityPrompt(
-        branch: GatheringMovementEntryBranch
+        destination: GatheringMovementEntryDestination
     ) throws {
         guard version ==
             ProductionGatheringActReplayConfiguration
@@ -242,18 +285,25 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             choiceCount == 1,
             sourceIndices == [0],
             actionableSourceIndices == [0],
-            canonicalSHA256 == branch.q37PromptSHA256,
+            canonicalSHA256 == destination.branch.q37PromptSHA256,
             selectedDescriptor ==
             GatheringActReplayDescriptorEvidence(
-                choice: branch.forcedAbilityDescriptor
-            )
+                choice: destination.branch.forcedAbilityDescriptor(
+                    locationID:
+                    destination.locationID.codingKey.stringValue
+                )
+            ),
+            governedDescriptors == nil,
+            governedSourceEntityKind == nil,
+            governedSourceEntityID == nil,
+            governedSourceCardCode == nil
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ37
         }
     }
 
     func validateAssignmentPrompt(
-        branch: GatheringMovementEntryBranch
+        destination: GatheringMovementEntryDestination
     ) throws {
         guard version ==
             ProductionGatheringActReplayConfiguration
@@ -263,34 +313,62 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             choiceCount == 1,
             sourceIndices == [0],
             actionableSourceIndices == [0],
-            canonicalSHA256 == branch.q38PromptSHA256,
+            canonicalSHA256 == destination.branch.q38PromptSHA256,
             selectedDescriptor ==
             GatheringActReplayDescriptorEvidence(
-                choice: branch.assignmentDescriptor
-            )
+                choice: destination.branch.assignmentDescriptor
+            ),
+            governedDescriptors == nil,
+            governedSourceEntityKind ==
+            QuestionPresentation.EntityKind.location.rawValue,
+            governedSourceEntityID ==
+            destination.locationID.codingKey.stringValue,
+            governedSourceCardCode == destination.branch.locationCardCode
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ38
         }
     }
 
     func validatePostEntryPrompt(
-        branch: GatheringMovementEntryBranch
+        destination: GatheringMovementEntryDestination
     ) throws {
         let sourceIndexSet = Set(sourceIndices)
+        guard let descriptors = governedDescriptors,
+              descriptors.count == 2,
+              let hallwayIDText = descriptors[1].entityID,
+              LocationID(
+                  codingKey: AnyCodingKey(stringValue: hallwayIDText)
+              ) != nil
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ39
+        }
+        let expectedDescriptors = [
+            GatheringActReplayDescriptorEvidence(
+                choice: .gatheringInvestigation(
+                    cardCode: destination.branch.locationCardCode,
+                    locationID: destination.locationID.codingKey.stringValue
+                )
+            ),
+            GatheringActReplayDescriptorEvidence(
+                choice: .gatheringHallwayMovement(locationID: hallwayIDText)
+            ),
+        ]
         guard version ==
             ProductionGatheringActReplayConfiguration.postEntryQuestionVersion,
             rawTag ==
             BasicChoiceQuestionKind.playerWindowChooseOne.rawValue,
             questionKind ==
             QuestionPresentation.Kind.playerWindowChooseOne.rawValue,
-            choiceCount == sourceIndices.count,
-            !sourceIndices.isEmpty,
-            sourceIndices == sourceIndices.sorted(),
-            sourceIndexSet.count == sourceIndices.count,
-            !actionableSourceIndices.isEmpty,
-            actionableSourceIndices.allSatisfy(sourceIndexSet.contains),
-            canonicalSHA256 == branch.q39PromptSHA256,
-            selectedDescriptor == nil
+            choiceCount == 11,
+            sourceIndices == Array(0 ..< 11),
+            sourceIndexSet.count == 11,
+            actionableSourceIndices == sourceIndices,
+            canonicalSHA256 == destination.branch.q39PromptSHA256,
+            selectedDescriptor == nil,
+            descriptors == expectedDescriptors,
+            governedSourceEntityKind == nil,
+            governedSourceEntityID == nil,
+            governedSourceCardCode == nil
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ39
         }
@@ -524,7 +602,7 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
     func validate(
         context: GatheringMovementEntryValidationContext
     ) throws {
-        try context.q36Prompt.validateMovementPrompt(branch: branch)
+        let destination = try movementDestination(context: context)
         try q36Answer.validate(
             choice: branch.movementSourceIndex,
             playerID: context.playerID,
@@ -537,7 +615,9 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
             expectedFocusSourceIndices:
             Array(0 ... branch.movementSourceIndex)
         )
-        try q37Prompt.validateForcedAbilityPrompt(branch: branch)
+        try q37Prompt.validateForcedAbilityPrompt(
+            destination: destination
+        )
         try q37Answer.validate(
             choice: 0,
             playerID: context.playerID,
@@ -549,7 +629,9 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
             selectedSourceIndex: 0,
             expectedFocusSourceIndices: [0]
         )
-        try q38Prompt.validateAssignmentPrompt(branch: branch)
+        try q38Prompt.validateAssignmentPrompt(
+            destination: destination
+        )
         try q38Answer.validate(
             choice: 0,
             playerID: context.playerID,
@@ -561,16 +643,28 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
             selectedSourceIndex: 0,
             expectedFocusSourceIndices: [0]
         )
-        try q39Prompt.validatePostEntryPrompt(branch: branch)
+        try q39Prompt.validatePostEntryPrompt(destination: destination)
         try validateBoardTransition(
             q36State: context.q36State,
-            identity: context.stateIdentity
+            identity: context.stateIdentity,
+            destination: destination
+        )
+    }
+
+    private func movementDestination(
+        context: GatheringMovementEntryValidationContext
+    ) throws -> GatheringMovementEntryDestination {
+        try GatheringMovementEntryDestination(
+            branch: branch,
+            locationID:
+            context.q36Prompt.validateMovementPrompt(branch: branch)
         )
     }
 
     private func validateBoardTransition(
         q36State: GatheringActReplayBoardStateEvidence,
-        identity: GatheringReplayStateIdentity
+        identity: GatheringReplayStateIdentity,
+        destination: GatheringMovementEntryDestination
     ) throws {
         try q37State.validateDigest()
         try q38State.validateDigest()
@@ -587,8 +681,8 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
             ProductionGatheringActReplayConfiguration
                 .forcedAbilityQuestionVersion,
             identity: identity,
-            damage: 1,
-            horror: 3
+            destination: destination,
+            health: (damage: 1, horror: 3)
         )
         try validateEnteredState(
             q38State,
@@ -596,8 +690,8 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
             ProductionGatheringActReplayConfiguration
                 .assignmentQuestionVersion,
             identity: identity,
-            damage: 1,
-            horror: 3
+            destination: destination,
+            health: (damage: 1, horror: 3)
         )
         try validateEnteredState(
             q39State,
@@ -605,8 +699,11 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
             ProductionGatheringActReplayConfiguration
                 .postEntryQuestionVersion,
             identity: identity,
-            damage: branch.resultingDamage,
-            horror: branch.resultingHorror
+            destination: destination,
+            health: (
+                damage: branch.resultingDamage,
+                horror: branch.resultingHorror
+            )
         )
     }
 
@@ -614,12 +711,12 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
         _ state: GatheringActReplayBoardStateEvidence,
         version: Int,
         identity: GatheringReplayStateIdentity,
-        damage: Int,
-        horror: Int
+        destination: GatheringMovementEntryDestination,
+        health: (damage: Int, horror: Int)
     ) throws {
         let locations = state.locations.filter {
-            $0.id.codingKey.stringValue == branch.locationID
-                && $0.cardCode == branch.locationCardCode
+            $0.id == destination.locationID
+                && $0.cardCode == destination.branch.locationCardCode
         }
         guard locations.count == 1 else {
             throw ProductionGatheringActReplayEvidenceError.invalidState
@@ -636,8 +733,8 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
               state.investigatorID == identity.investigatorID,
               state.investigatorLocationID == location.id,
               state.remainingActions == 1,
-              state.damage == damage,
-              state.horror == horror,
+              state.damage == health.damage,
+              state.horror == health.horror,
               location.revealed,
               location.investigatorIDs == [identity.investigatorID],
               state.enemyIDs.isEmpty
@@ -655,7 +752,7 @@ struct ProductionGatheringActReplayEvidence:
     Sendable
 {
     // swiftlint:enable opening_brace
-    static let currentSchemaVersion = "1.1.0"
+    static let currentSchemaVersion = "1.2.0"
 
     let schemaVersion: String
     let attestation: ProductionAssignmentReplayAttestation
@@ -885,9 +982,13 @@ struct ProductionGatheringActReplayEvidence:
     }
 
     private func validateQ36() throws {
-        try q36Prompt.validateResultingPrompt(
-            selectedDescriptor: movementEntry?.branch.movementDescriptor
-        )
+        if let movementEntry {
+            _ = try q36Prompt.validateMovementPrompt(
+                branch: movementEntry.branch
+            )
+        } else {
+            try q36Prompt.validateResultingPrompt()
+        }
     }
 
     // swiftlint:disable:next function_body_length

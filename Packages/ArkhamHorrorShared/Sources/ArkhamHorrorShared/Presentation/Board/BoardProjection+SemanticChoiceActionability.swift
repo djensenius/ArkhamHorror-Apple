@@ -3,7 +3,8 @@ extension BoardProjection {
     func isSemanticChoiceActionable(
         _ choice: QuestionPresentation.Choice,
         ownerID: PlayerID,
-        labelResolution: BasicChoiceLabelResolution?
+        labelResolution: BasicChoiceLabelResolution?,
+        governedSource: QuestionPresentation.GovernedSource? = nil
     ) -> Bool {
         guard containsSemanticChoiceIdentities(choice, ownerID: ownerID) else { return false }
         switch choice.kind {
@@ -16,6 +17,7 @@ extension BoardProjection {
         case .assignDamage, .assignHorror:
             return choice.entity?.kind == .investigator
                 && choice.actorID == nil && choice.ability == nil && choice.cost == nil
+                && containsGovernedSource(governedSource, ownerID: ownerID)
         case .chooseTarget:
             return choice.entity != nil
         case .drawCard, .endTurn, .gainResource, .skipTriggers, .startSkillTest:
@@ -29,11 +31,43 @@ extension BoardProjection {
         case .move:
             return choice.entity?.kind == .location
                 && choice.actorID != nil && choice.ability != nil && choice.cost != nil
+                && semanticLocation(
+                    choice.entity,
+                    hasCardCode: choice.ability?.cardCode
+                )
         case .resolveForcedAbility:
             return choice.entity?.kind == .location
                 && choice.actorID != nil && choice.ability != nil && choice.cost != nil
+                && semanticLocation(
+                    choice.entity,
+                    hasCardCode: choice.ability?.cardCode
+                )
         case .useAbility:
             return choice.actorID != nil && choice.ability != nil && choice.cost != nil
+        }
+    }
+
+    private func containsGovernedSource(
+        _ source: QuestionPresentation.GovernedSource?,
+        ownerID: PlayerID
+    ) -> Bool {
+        guard let source else { return true }
+        return containsSemanticEntity(source.entity, ownerID: ownerID)
+            && semanticLocation(source.entity, hasCardCode: source.cardCode)
+    }
+
+    private func semanticLocation(
+        _ entity: QuestionPresentation.Entity?,
+        hasCardCode rawCardCode: String?
+    ) -> Bool {
+        guard let locationID = entity?.canonicalLocationID,
+              let rawCardCode,
+              let cardCode = try? CardCode(rawCardCode)
+        else { return false }
+        return locations.contains {
+            $0.id == locationID && $0.cardCode == cardCode
+        } || enemyLocations.contains {
+            $0.id == locationID && $0.cardCode == cardCode
         }
     }
 

@@ -110,17 +110,17 @@ struct QuestionPresentationMovementEntryTests {
         )
     }
 
-    @Test("Q36-Q38 reject well-shaped semantic identity drift")
+    @Test("Q36-Q38 reject well-shaped static semantic drift")
     func gatheringSemanticIdentityDriftFailsClosed() throws {
         let wrongCellarMove = try mutatedChoiceFixture(
             "question-presentation-gathering-movement",
             choiceIndex: 9
         ) { choice in
-            guard case var .object(entity)? = choice["entity"] else {
+            guard case var .object(ability)? = choice["ability"] else {
                 throw FixtureMutationError.unexpectedShape
             }
-            entity["id"] = .string("dbaa2d2e-4ceb-44b2-a554-e5fa370e7882")
-            choice["entity"] = .object(entity)
+            ability["index"] = .number(.integer(105))
+            choice["ability"] = .object(ability)
         }
         assertPresentationDecodeFails(wrongCellarMove)
 
@@ -131,7 +131,7 @@ struct QuestionPresentationMovementEntryTests {
             guard case var .object(ability)? = choice["ability"] else {
                 throw FixtureMutationError.unexpectedShape
             }
-            ability["cardCode"] = .string("c01114")
+            ability["index"] = .number(.integer(2))
             choice["ability"] = .object(ability)
         }
         assertPresentationDecodeFails(wrongAtticForced)

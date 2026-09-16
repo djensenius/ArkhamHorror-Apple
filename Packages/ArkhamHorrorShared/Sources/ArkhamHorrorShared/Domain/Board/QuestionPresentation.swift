@@ -83,6 +83,11 @@ extension QuestionPresentation {
         let id: String
     }
 
+    struct GovernedSource: Sendable, Equatable, Hashable {
+        let entity: Entity
+        let cardCode: String
+    }
+
     enum LabelKind: String, Sendable, Equatable, Hashable, Codable {
         case embeddedI18n
     }
@@ -161,6 +166,7 @@ extension QuestionPresentation {
 struct BoundQuestionPresentation: Sendable, Equatable, Hashable {
     let presentation: QuestionPresentation
     let rawChoices: [JSONValue]
+    let governedSource: QuestionPresentation.GovernedSource?
 
     func descriptor(forSourceIndex sourceIndex: Int) -> QuestionPresentation.Choice? {
         presentation.choices.first { $0.sourceIndex == sourceIndex }
@@ -205,7 +211,11 @@ extension QuestionPresentation {
                 actual: choiceCount
             )
         }
-        try rawShape.validateGovernedChoices(for: self)
-        return BoundQuestionPresentation(presentation: self, rawChoices: rawShape.choices)
+        let governedSource = try rawShape.validateGovernedChoices(for: self)
+        return BoundQuestionPresentation(
+            presentation: self,
+            rawChoices: rawShape.choices,
+            governedSource: governedSource
+        )
     }
 }
