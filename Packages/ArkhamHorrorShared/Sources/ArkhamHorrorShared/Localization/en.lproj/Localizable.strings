@@ -7,6 +7,10 @@
 "semantic.choice.title.advanceAct" = "Advance act";
 "semantic.choice.title.advanceAgenda" = "Advance agenda";
 "semantic.choice.title.applyResults" = "Apply results";
+"semantic.choice.title.assignDamage" = "Assign damage to %@";
+"semantic.choice.title.assignDamage.generic" = "Assign damage";
+"semantic.choice.title.assignHorror" = "Assign horror to %@";
+"semantic.choice.title.assignHorror.generic" = "Assign horror";
 "semantic.choice.title.chooseEntity" = "Choose %@";
 "semantic.choice.title.chooseTarget" = "Choose target";
 "semantic.choice.title.drawCard" = "Draw a card";
@@ -16,6 +20,10 @@
 "semantic.choice.title.fight" = "Fight";
 "semantic.choice.title.gainResource" = "Gain a resource";
 "semantic.choice.title.investigate" = "Investigate";
+"semantic.choice.title.move" = "Move to %@";
+"semantic.choice.title.move.generic" = "Move";
+"semantic.choice.title.resolveForcedAbility" = "Resolve forced ability at %@";
+"semantic.choice.title.resolveForcedAbility.generic" = "Resolve forced ability";
 "semantic.choice.title.unavailable" = "Unavailable action";
 "semantic.choice.title.skipTriggers" = "Skip triggers";
 "semantic.choice.title.startSkillTest" = "Start skill test";
@@ -50,6 +58,8 @@
 "semantic.choice.unavailable.advanceAgenda" = "The agenda or investigator for this choice is not currently available.";
 "semantic.choice.unavailable.enemy" = "The enemy or investigator for this choice is not currently available.";
 "semantic.choice.unavailable.location" = "The location or investigator for this choice is not currently available.";
+"semantic.choice.unavailable.forcedAbility" = "The source or investigator for this forced ability is not currently available.";
 "semantic.choice.unavailable.target" = "The target for this choice is not currently available.";
 "semantic.choice.unavailable.investigator" = "The investigator for this choice is not currently available.";
+"semantic.choice.unavailable.assignment" = "The investigator for this assignment is not currently available.";
 "semantic.choice.unavailable.generic" = "This choice is not currently available.";

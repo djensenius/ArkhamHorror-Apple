@@ -7,6 +7,10 @@
 "semantic.choice.title.advanceAct" = "Akt weiterentwickeln";
 "semantic.choice.title.advanceAgenda" = "Agenda weiterentwickeln";
 "semantic.choice.title.applyResults" = "Ergebnisse anwenden";
+"semantic.choice.title.assignDamage" = "%@ Schaden zuweisen";
+"semantic.choice.title.assignDamage.generic" = "Schaden zuweisen";
+"semantic.choice.title.assignHorror" = "%@ Horror zuweisen";
+"semantic.choice.title.assignHorror.generic" = "Horror zuweisen";
 "semantic.choice.title.chooseEntity" = "%@ wählen";
 "semantic.choice.title.chooseTarget" = "Ziel wählen";
 "semantic.choice.title.drawCard" = "Eine Karte ziehen";
@@ -16,6 +20,10 @@
 "semantic.choice.title.fight" = "Kampf";
 "semantic.choice.title.gainResource" = "Eine Ressource erhalten";
 "semantic.choice.title.investigate" = "Ermitteln";
+"semantic.choice.title.move" = "Zu %@ bewegen";
+"semantic.choice.title.move.generic" = "Bewegen";
+"semantic.choice.title.resolveForcedAbility" = "Erzwungene Fähigkeit bei %@ abhandeln";
+"semantic.choice.title.resolveForcedAbility.generic" = "Erzwungene Fähigkeit abhandeln";
 "semantic.choice.title.unavailable" = "Nicht verfügbare Aktion";
 "semantic.choice.title.skipTriggers" = "Trigger überspringen";
 "semantic.choice.title.startSkillTest" = "Fertigkeitsprobe beginnen";
@@ -50,6 +58,8 @@
 "semantic.choice.unavailable.advanceAgenda" = "Die Agenda oder der Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
 "semantic.choice.unavailable.enemy" = "Der Gegner oder Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
 "semantic.choice.unavailable.location" = "Der Ort oder Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
+"semantic.choice.unavailable.forcedAbility" = "Die Quelle oder der Ermittler für diese erzwungene Fähigkeit ist derzeit nicht verfügbar.";
 "semantic.choice.unavailable.target" = "Das Ziel für diese Auswahl ist derzeit nicht verfügbar.";
 "semantic.choice.unavailable.investigator" = "Der Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
+"semantic.choice.unavailable.assignment" = "Der Ermittler für diese Zuweisung ist derzeit nicht verfügbar.";
 "semantic.choice.unavailable.generic" = "Diese Auswahl ist derzeit nicht verfügbar.";

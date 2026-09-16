@@ -112,41 +112,53 @@ struct QuestionPresentationMovementEntryTests {
 
     @Test("Q36-Q38 reject well-shaped static semantic drift")
     func gatheringSemanticIdentityDriftFailsClosed() throws {
-        let wrongCellarMove = try mutatedChoiceFixture(
-            "question-presentation-gathering-movement",
-            choiceIndex: 9
-        ) { choice in
-            guard case var .object(ability)? = choice["ability"] else {
-                throw FixtureMutationError.unexpectedShape
+        for choiceIndex in [9, 10] {
+            let wrongMove = try mutatedChoiceFixture(
+                "question-presentation-gathering-movement",
+                choiceIndex: choiceIndex
+            ) { choice in
+                guard case var .object(ability)? = choice["ability"] else {
+                    throw FixtureMutationError.unexpectedShape
+                }
+                ability["index"] = .number(.integer(105))
+                choice["ability"] = .object(ability)
             }
-            ability["index"] = .number(.integer(105))
-            choice["ability"] = .object(ability)
+            assertPresentationDecodeFails(wrongMove)
         }
-        assertPresentationDecodeFails(wrongCellarMove)
 
-        let wrongAtticForced = try mutatedChoiceFixture(
+        for fixture in [
+            "question-presentation-gathering-cellar-entry-forced",
             "question-presentation-gathering-attic-entry-forced",
-            choiceIndex: 0
-        ) { choice in
-            guard case var .object(ability)? = choice["ability"] else {
-                throw FixtureMutationError.unexpectedShape
+        ] {
+            let wrongForcedAbility = try mutatedChoiceFixture(
+                fixture,
+                choiceIndex: 0
+            ) { choice in
+                guard case var .object(ability)? = choice["ability"] else {
+                    throw FixtureMutationError.unexpectedShape
+                }
+                ability["index"] = .number(.integer(2))
+                choice["ability"] = .object(ability)
             }
-            ability["index"] = .number(.integer(2))
-            choice["ability"] = .object(ability)
+            assertPresentationDecodeFails(wrongForcedAbility)
         }
-        assertPresentationDecodeFails(wrongAtticForced)
 
-        let wrongAssignmentInvestigator = try mutatedChoiceFixture(
+        for fixture in [
             "question-presentation-gathering-cellar-damage-assignment",
-            choiceIndex: 0
-        ) { choice in
-            guard case var .object(entity)? = choice["entity"] else {
-                throw FixtureMutationError.unexpectedShape
+            "question-presentation-gathering-attic-horror-assignment",
+        ] {
+            let wrongAssignment = try mutatedChoiceFixture(
+                fixture,
+                choiceIndex: 0
+            ) { choice in
+                guard case var .object(entity)? = choice["entity"] else {
+                    throw FixtureMutationError.unexpectedShape
+                }
+                entity["id"] = .string("c01002")
+                choice["entity"] = .object(entity)
             }
-            entity["id"] = .string("c01002")
-            choice["entity"] = .object(entity)
+            assertPresentationDecodeFails(wrongAssignment)
         }
-        assertPresentationDecodeFails(wrongAssignmentInvestigator)
     }
 
     private func assertMovementChoice(
