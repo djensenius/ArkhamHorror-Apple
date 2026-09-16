@@ -83,6 +83,8 @@ extension BasicChoicePromptPresentation {
         return switch descriptor.kind {
         case .advanceAct, .advanceAgenda: "arrow.up.circle.fill"
         case .applySkillTestResults: "checkmark.seal.fill"
+        case .assignDamage: "heart.slash.fill"
+        case .assignHorror: "brain.head.profile.fill"
         case .chooseTarget: "scope"
         case .drawCard: "rectangle.stack"
         case .endTurn: "forward.end"
@@ -92,6 +94,8 @@ extension BasicChoicePromptPresentation {
         case .gainResource: "circle.fill"
         case .investigate: "magnifyingglass"
         case .localizedLabel: "text.bubble.fill"
+        case .move: "figure.walk"
+        case .resolveForcedAbility: "exclamationmark.triangle.fill"
         case .skipTriggers: "forward.end.alt"
         case .startSkillTest: "play.circle.fill"
         case .useAbility: "bolt.circle.fill"
@@ -122,7 +126,8 @@ extension BasicChoicePromptPresentation {
         guard projection.isSemanticChoiceActionable(
             descriptor,
             ownerID: ownerID,
-            labelResolution: choiceLabelResolutions[choice.index]
+            labelResolution: choiceLabelResolutions[choice.index],
+            governedSource: semanticPresentation.governedSource
         ) else {
             return semanticUnavailableAnnouncement(
                 for: descriptor,
@@ -171,6 +176,32 @@ extension BasicChoicePromptPresentation {
                 "semantic.choice.title.applyResults",
                 value: "Apply results"
             )
+        case .assignDamage:
+            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
+                .map {
+                    semanticLocalized(
+                        "semantic.choice.title.assignDamage",
+                        value: "Assign damage to \($0)",
+                        arguments: [$0]
+                    )
+                }
+                ?? semanticLocalized(
+                    "semantic.choice.title.assignDamage.generic",
+                    value: "Assign damage"
+                )
+        case .assignHorror:
+            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
+                .map {
+                    semanticLocalized(
+                        "semantic.choice.title.assignHorror",
+                        value: "Assign horror to \($0)",
+                        arguments: [$0]
+                    )
+                }
+                ?? semanticLocalized(
+                    "semantic.choice.title.assignHorror.generic",
+                    value: "Assign horror"
+                )
         case .chooseTarget:
             descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
                 .map {
@@ -224,6 +255,32 @@ extension BasicChoicePromptPresentation {
                 "semantic.choice.title.unavailable",
                 value: "Unavailable action"
             )
+        case .move:
+            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
+                .map {
+                    semanticLocalized(
+                        "semantic.choice.title.move",
+                        value: "Move to \($0)",
+                        arguments: [$0]
+                    )
+                }
+                ?? semanticLocalized(
+                    "semantic.choice.title.move.generic",
+                    value: "Move"
+                )
+        case .resolveForcedAbility:
+            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
+                .map {
+                    semanticLocalized(
+                        "semantic.choice.title.resolveForcedAbility",
+                        value: "Resolve forced ability at \($0)",
+                        arguments: [$0]
+                    )
+                }
+                ?? semanticLocalized(
+                    "semantic.choice.title.resolveForcedAbility.generic",
+                    value: "Resolve forced ability"
+                )
         case .skipTriggers:
             semanticLocalized(
                 "semantic.choice.title.skipTriggers",
@@ -238,90 +295,6 @@ extension BasicChoicePromptPresentation {
             semanticLocalized(
                 "semantic.choice.title.useAbility",
                 value: "Use ability"
-            )
-        }
-    }
-
-    private func semanticEntityTitle(
-        _ entity: QuestionPresentation.Entity,
-        in projection: BoardProjection
-    ) -> String? {
-        switch entity.kind {
-        case .location:
-            guard let id = semanticLocationID(entity.id) else { return nil }
-            return projection.locations.first(where: { $0.id == id })?.displayLabel
-                ?? projection.enemyLocations.first(where: { $0.id == id })?.displayLabel
-        case .investigator:
-            guard let id = semanticInvestigatorID(entity.id) else { return nil }
-            return projection.investigators.first(where: { $0.id == id })?.displayName
-        case .card:
-            guard let id = semanticWireCardID(entity.id) else { return nil }
-            return projection.handCardsByPlayer[ownerID]?[id]?.displayLabel
-        case .scenario:
-            return projection.scenario?.displayName
-        case .act, .agenda, .asset, .cardCode, .effect, .enemy, .event, .player, .skill,
-             .story, .treachery:
-            return nil
-        }
-    }
-
-    // swiftlint:disable:next function_body_length
-    private func semanticUnavailableAnnouncement(
-        for descriptor: QuestionPresentation.Choice,
-        labelResolution: BasicChoiceLabelResolution?
-    ) -> String {
-        if descriptor.kind == .localizedLabel {
-            return labelResolution?.announcement
-                ?? semanticLocalized(
-                    "semantic.choice.unavailable.text",
-                    value: "The text for this choice is not currently available."
-                )
-        }
-        switch descriptor.kind {
-        case .advanceAct:
-            return semanticLocalized(
-                "semantic.choice.unavailable.advanceAct",
-                value:
-                "The act or investigator for this choice is not currently available."
-            )
-        case .advanceAgenda:
-            return semanticLocalized(
-                "semantic.choice.unavailable.advanceAgenda",
-                value:
-                "The agenda or investigator for this choice is not currently available."
-            )
-        case .fight, .evade, .engage:
-            return semanticLocalized(
-                "semantic.choice.unavailable.enemy",
-                value:
-                "The enemy or investigator for this choice is not currently available."
-            )
-        case .investigate:
-            return semanticLocalized(
-                "semantic.choice.unavailable.location",
-                value:
-                "The location or investigator for this choice is not currently available."
-            )
-        case .chooseTarget:
-            return semanticLocalized(
-                "semantic.choice.unavailable.target",
-                value: "The target for this choice is not currently available."
-            )
-        case .drawCard, .endTurn, .gainResource, .skipTriggers, .startSkillTest, .useAbility:
-            return semanticLocalized(
-                "semantic.choice.unavailable.investigator",
-                value:
-                "The investigator for this choice is not currently available."
-            )
-        case .applySkillTestResults:
-            return semanticLocalized(
-                "semantic.choice.unavailable.generic",
-                value: "This choice is not currently available."
-            )
-        case .localizedLabel:
-            return semanticLocalized(
-                "semantic.choice.unavailable.text",
-                value: "The text for this choice is not currently available."
             )
         }
     }
@@ -376,18 +349,5 @@ extension BasicChoicePromptPresentation {
             return bundle
         }
         return nil
-    }
-
-    private func semanticLocationID(_ raw: String) -> LocationID? {
-        LocationID(codingKey: AnyCodingKey(stringValue: raw))
-    }
-
-    private func semanticWireCardID(_ raw: String) -> WireCardID? {
-        WireCardID(codingKey: AnyCodingKey(stringValue: raw))
-    }
-
-    private func semanticInvestigatorID(_ raw: String) -> InvestigatorID? {
-        guard let code = try? CardCode(raw) else { return nil }
-        return InvestigatorID(code)
     }
 }

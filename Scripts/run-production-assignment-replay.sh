@@ -11,8 +11,8 @@ readonly driver_identifier_prefix='ArkhamHorrorSharedTests.AssignmentReplayCoord
 readonly expected_driver_identifier="${driver_identifier_prefix}()"
 readonly driver_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator\(\)(/[^/]+)?$'
 readonly launcher_relative_path="Scripts/run-production-assignment-replay.sh"
-readonly trusted_base_revision="398a8f224e8d024d2d03fb94e28f51c6d68e7153"
-readonly expected_package_tree="c43a44a1444f68cef9dedd971f5b7605609fe0b7"
+readonly trusted_base_revision="2012417b04f74799d544a15d2abf4d33f115c4a2"
+readonly expected_package_tree="312a3b1b8203f17a6a05e2dc313d476dd7a70bf6"
 readonly trusted_scratch_parent="/private/tmp"
 readonly git_bin="/usr/bin/git"
 
@@ -74,7 +74,8 @@ Required environment:
   ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION
 
 Optional environment:
-  ARKHAM_REPLAY_SCENARIO           (default: assignment; also: gathering-act-advance)
+  ARKHAM_REPLAY_SCENARIO           (default: assignment; also: gathering-act-advance,
+                                    gathering-cellar-entry, gathering-attic-entry)
   ARKHAM_REPLAY_ENEMY_ID           (required for assignment)
   ARKHAM_REPLAY_SERVER_PROFILE_ID  (default: 00000000-0000-0000-0000-000000000777)
   ARKHAM_REPLAY_DEADLINE_SECONDS   (default: 60)
@@ -690,7 +691,7 @@ case "$replay_scenario" in
   assignment)
     require_environment ARKHAM_REPLAY_ENEMY_ID
     ;;
-  gathering-act-advance) ;;
+  gathering-act-advance | gathering-cellar-entry | gathering-attic-entry) ;;
   *)
     fail "ARKHAM_REPLAY_SCENARIO is invalid"
     ;;

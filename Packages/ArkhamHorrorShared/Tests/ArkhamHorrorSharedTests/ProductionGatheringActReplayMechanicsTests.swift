@@ -100,6 +100,53 @@ struct ProductionGatheringActReplayMechanicsTests {
         }
     }
 
+    @Test("Movement branches bind exact Q36 through Q39 identities")
+    func movementEntryBranches() throws {
+        for branch in [
+            GatheringMovementEntryBranch.cellar,
+            .attic,
+        ] {
+            let destination = try GatheringMovementEntryDestination(
+                branch: branch,
+                locationID:
+                q36MovementPromptEvidence(branch: branch)
+                    .validateMovementPrompt(branch: branch)
+            )
+            try q37PromptEvidence(branch: branch)
+                .validateForcedAbilityPrompt(
+                    destination: destination
+                )
+            try q38PromptEvidence(branch: branch)
+                .validateAssignmentPrompt(
+                    destination: destination
+                )
+            try q39PromptEvidence(destination: destination)
+                .validatePostEntryPrompt(destination: destination)
+        }
+    }
+
+    @Test("Movement replay scenarios produce branch-specific evidence names")
+    func movementEntryScenarioNames() {
+        #expect(
+            ProductionAssignmentReplayScenario.gatheringCellarEntry
+                .gatheringMovementEntryBranch == .cellar
+        )
+        #expect(
+            ProductionAssignmentReplayScenario.gatheringAtticEntry
+                .gatheringMovementEntryBranch == .attic
+        )
+        #expect(
+            GatheringActReplayCoordinatorDriver.evidenceName(
+                for: .gatheringCellarEntry
+            ) == "gathering-cellar-entry.json"
+        )
+        #expect(
+            GatheringActReplayCoordinatorDriver.evidenceName(
+                for: .gatheringAtticEntry
+            ) == "gathering-attic-entry.json"
+        )
+    }
+
     @Test("Board summaries bind their authoritative source and revision")
     func authoritativeBoardSummary() throws {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
@@ -149,8 +196,25 @@ struct ProductionGatheringActReplayMechanicsTests {
             try altered.validateDigest()
         }
     }
+}
 
-    private func q36PromptEvidence(
+private extension ProductionGatheringActReplayMechanicsTests {
+    func rawQuestionTag(in fixtureName: String) throws -> String {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: fixtureName,
+                withExtension: "json",
+                subdirectory: "Fixtures/Contract"
+            )
+        )
+        let value = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)
+        )
+        let object = try #require(value as? [String: Any])
+        return try #require(object["tag"] as? String)
+    }
+
+    func q36PromptEvidence(
         actionableSourceIndices: [Int]
     ) throws -> GatheringActReplayPromptEvidence {
         let sourceIndices = Array(0 ..< 12)
@@ -175,5 +239,127 @@ struct ProductionGatheringActReplayMechanicsTests {
                 ]
             )
         )
+    }
+
+    func q36MovementPromptEvidence(
+        branch: GatheringMovementEntryBranch
+    ) throws -> GatheringActReplayPromptEvidence {
+        let sourceIndices = Array(0 ..< 12)
+        let locationID = movementEntryFixtureLocationID(for: branch)
+        return try GatheringActReplayPromptEvidence(
+            version:
+            ProductionGatheringActReplayConfiguration
+                .resultingQuestionVersion,
+            rawTag: rawQuestionTag(in: "question-gathering-movement"),
+            questionKind:
+            QuestionPresentation.Kind.playerWindowChooseOne.rawValue,
+            choiceCount: sourceIndices.count,
+            sourceIndices: sourceIndices,
+            actionableSourceIndices: sourceIndices,
+            canonicalSHA256:
+            ProductionGatheringActReplayConfiguration
+                .movementPromptSHA256,
+            selectedDescriptor: GatheringActReplayDescriptorEvidence(
+                choice: branch.movementDescriptor(locationID: locationID)
+            )
+        )
+    }
+
+    func q37PromptEvidence(
+        branch: GatheringMovementEntryBranch
+    ) throws -> GatheringActReplayPromptEvidence {
+        let locationID = movementEntryFixtureLocationID(for: branch)
+        return try GatheringActReplayPromptEvidence(
+            version:
+            ProductionGatheringActReplayConfiguration
+                .forcedAbilityQuestionVersion,
+            rawTag: rawQuestionTag(
+                in: branch == .cellar
+                    ? "question-gathering-cellar-entry-forced"
+                    : "question-gathering-attic-entry-forced"
+            ),
+            questionKind: QuestionPresentation.Kind.windowChooseOne.rawValue,
+            choiceCount: 1,
+            sourceIndices: [0],
+            actionableSourceIndices: [0],
+            canonicalSHA256: branch.q37PromptSHA256,
+            selectedDescriptor: GatheringActReplayDescriptorEvidence(
+                choice: branch.forcedAbilityDescriptor(
+                    locationID: locationID
+                )
+            )
+        )
+    }
+
+    func q38PromptEvidence(
+        branch: GatheringMovementEntryBranch
+    ) throws -> GatheringActReplayPromptEvidence {
+        let locationID = movementEntryFixtureLocationID(for: branch)
+        return try GatheringActReplayPromptEvidence(
+            version:
+            ProductionGatheringActReplayConfiguration
+                .assignmentQuestionVersion,
+            rawTag: rawQuestionTag(
+                in: branch == .cellar
+                    ? "question-gathering-cellar-damage-assignment"
+                    : "question-gathering-attic-horror-assignment"
+            ),
+            questionKind: QuestionPresentation.Kind.chooseOne.rawValue,
+            choiceCount: 1,
+            sourceIndices: [0],
+            actionableSourceIndices: [0],
+            canonicalSHA256: branch.q38PromptSHA256,
+            selectedDescriptor: GatheringActReplayDescriptorEvidence(
+                choice: branch.assignmentDescriptor
+            ),
+            governedSourceEntityKind:
+            QuestionPresentation.EntityKind.location.rawValue,
+            governedSourceEntityID: locationID,
+            governedSourceCardCode: branch.locationCardCode
+        )
+    }
+
+    func q39PromptEvidence(
+        destination: GatheringMovementEntryDestination,
+        actionableSourceIndices: [Int] = Array(0 ..< 11)
+    ) -> GatheringActReplayPromptEvidence {
+        let hallwayID = "fda9afef-4166-4c9f-962e-eed6e8cbee25"
+        return GatheringActReplayPromptEvidence(
+            version:
+            ProductionGatheringActReplayConfiguration
+                .postEntryQuestionVersion,
+            rawTag:
+            BasicChoiceQuestionKind.playerWindowChooseOne.rawValue,
+            questionKind:
+            QuestionPresentation.Kind.playerWindowChooseOne.rawValue,
+            choiceCount: 11,
+            sourceIndices: Array(0 ..< 11),
+            actionableSourceIndices: actionableSourceIndices,
+            canonicalSHA256: destination.branch.q39PromptSHA256,
+            selectedDescriptor: nil,
+            governedDescriptors: [
+                GatheringActReplayDescriptorEvidence(
+                    choice: .gatheringInvestigation(
+                        cardCode: destination.branch.locationCardCode,
+                        locationID:
+                        destination.locationID.codingKey.stringValue
+                    )
+                ),
+                GatheringActReplayDescriptorEvidence(
+                    choice: .gatheringHallwayMovement(locationID: hallwayID)
+                ),
+            ]
+        )
+    }
+
+    func movementEntryFixtureLocationID(
+        for branch: GatheringMovementEntryBranch
+    ) -> String {
+        switch branch {
+        case .cellar:
+            "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
+        case .attic:
+            "dbaa2d2e-4ceb-44b2-a554-e5fa370e7882"
+        }
     }
 }

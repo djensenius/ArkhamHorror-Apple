@@ -7,7 +7,7 @@ readonly swift_bin="$toolchain_bin/swift"
 readonly selftest_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorSelfTestSuite/'
 readonly expected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator()'
 readonly injected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinatorInjected()'
-readonly current_contract_revision="0.1.41"
+readonly current_contract_revision="0.1.42"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -193,25 +193,31 @@ fi
   fail "production launcher executed a caller-selected Swift binary"
 printf 'PASS: production rejects caller-selected executables\n'
 
-if ARKHAM_REPLAY_SCENARIO="gathering-act-advance" \
-  ARKHAM_REPLAY_BASE_URL="https://example.com" \
-  ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
-  ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="0000000000000000000000000000000000000000" \
-  ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="$current_contract_revision" \
-  ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
-  "$production_launcher" \
-  "$harness_root/checkpoint" \
-  "$harness_root/output" \
-  "$harness_root/token" \
-  >"$revision_log" 2>&1
-then
-  fail "production launcher accepted the wrong audited Apple revision"
-fi
-/usr/bin/grep -F \
-  "trusted repository HEAD does not match the audited Apple revision" \
-  "$revision_log" >/dev/null ||
-  fail "production launcher did not reject the wrong Apple revision explicitly"
-printf 'PASS: production requires the operator-specified Apple revision\n'
+for replay_scenario in \
+  gathering-act-advance \
+  gathering-cellar-entry \
+  gathering-attic-entry
+do
+  if ARKHAM_REPLAY_SCENARIO="$replay_scenario" \
+    ARKHAM_REPLAY_BASE_URL="https://example.com" \
+    ARKHAM_REPLAY_INVESTIGATOR_ID="c01234" \
+    ARKHAM_REPLAY_EXPECTED_APPLE_REVISION="0000000000000000000000000000000000000000" \
+    ARKHAM_REPLAY_EXPECTED_CONTRACT_REVISION="$current_contract_revision" \
+    ARKHAM_REPLAY_EXPECTED_CATALOG_REVISION="1.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+    "$production_launcher" \
+    "$harness_root/checkpoint" \
+    "$harness_root/output" \
+    "$harness_root/token" \
+    >"$revision_log" 2>&1
+  then
+    fail "production launcher accepted the wrong audited Apple revision for $replay_scenario"
+  fi
+  /usr/bin/grep -F \
+    "trusted repository HEAD does not match the audited Apple revision" \
+    "$revision_log" >/dev/null ||
+    fail "production launcher did not reject the wrong Apple revision for $replay_scenario"
+done
+printf 'PASS: production accepts every Gathering scenario and requires the audited revision\n'
 
 if ARKHAM_REPLAY_SCENARIO="future-replay" \
   ARKHAM_REPLAY_BASE_URL="https://example.com" \

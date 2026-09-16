@@ -46,22 +46,29 @@ struct AssignmentReplayCoordinatorConfigurationTests {
 
     @Test("Gathering replay parses without assignment enemy identity")
     func gatheringConfiguration() throws {
-        var environment = coordinatorEnvironment()
-        environment[
-            AssignmentReplayCoordinatorEnvironmentKey.scenario
-        ] = ProductionAssignmentReplayScenario.gatheringActAdvance.rawValue
-        environment.removeValue(
-            forKey: AssignmentReplayCoordinatorEnvironmentKey.enemyID
-        )
-
-        let invocation = try #require(
-            try ProductionAssignmentReplayCoordinatorInvocation.parse(
-                environment: environment
+        let scenarios: [ProductionAssignmentReplayScenario] = [
+            .gatheringActAdvance,
+            .gatheringCellarEntry,
+            .gatheringAtticEntry,
+        ]
+        for scenario in scenarios {
+            var environment = coordinatorEnvironment()
+            environment[
+                AssignmentReplayCoordinatorEnvironmentKey.scenario
+            ] = scenario.rawValue
+            environment.removeValue(
+                forKey: AssignmentReplayCoordinatorEnvironmentKey.enemyID
             )
-        )
 
-        #expect(invocation.scenario == .gatheringActAdvance)
-        #expect(invocation.enemyID == nil)
+            let invocation = try #require(
+                try ProductionAssignmentReplayCoordinatorInvocation.parse(
+                    environment: environment
+                )
+            )
+
+            #expect(invocation.scenario == scenario)
+            #expect(invocation.enemyID == nil)
+        }
     }
 
     @Test("Assignment replay rejects a non-assignment attested prompt")

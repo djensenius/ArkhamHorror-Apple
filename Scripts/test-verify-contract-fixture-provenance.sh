@@ -30,6 +30,15 @@ question-player-window-choose-one.json question-window-choose-one.json \
 question-gathering-act-objective.json question-gathering-act-advance.json \
 question-presentation-gathering-act-objective.json \
 question-presentation-gathering-act-advance.json \
+question-gathering-movement.json question-gathering-attic-entry-forced.json \
+question-gathering-cellar-entry-forced.json \
+question-gathering-attic-horror-assignment.json \
+question-gathering-cellar-damage-assignment.json \
+question-presentation-gathering-movement.json \
+question-presentation-gathering-attic-entry-forced.json \
+question-presentation-gathering-cellar-entry-forced.json \
+question-presentation-gathering-attic-horror-assignment.json \
+question-presentation-gathering-cellar-damage-assignment.json \
 answer-question.json question-read.json question-read-scenario-intro.json \
 question-read-with-cards.json \
 question-choose-one-location.json question-choose-one-location-multiple.json \
@@ -131,7 +140,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.41",'
+    echo '  "schemaRevision": "0.1.42",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do

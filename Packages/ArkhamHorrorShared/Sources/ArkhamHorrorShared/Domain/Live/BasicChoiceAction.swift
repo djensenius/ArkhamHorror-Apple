@@ -218,7 +218,8 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             return projection.isSemanticChoiceActionable(
                 descriptor,
                 ownerID: ownerID,
-                labelResolution: choiceLabelResolutions[choice.index]
+                labelResolution: choiceLabelResolutions[choice.index],
+                governedSource: semanticPresentation.governedSource
             )
         }
         return projection.isChoiceActionable(

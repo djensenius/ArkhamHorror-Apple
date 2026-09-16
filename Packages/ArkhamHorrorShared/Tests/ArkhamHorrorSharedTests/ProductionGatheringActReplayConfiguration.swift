@@ -19,6 +19,107 @@ struct ProductionGatheringActReplayPromptIdentity: Equatable, Sendable {
     let investigatorID: InvestigatorID
 }
 
+enum GatheringMovementEntryBranch: String, Codable, Equatable, Sendable {
+    case cellar
+    case attic
+
+    var movementSourceIndex: Int {
+        switch self {
+        case .cellar:
+            9
+        case .attic:
+            10
+        }
+    }
+
+    var locationCardCode: String {
+        switch self {
+        case .cellar:
+            "c01114"
+        case .attic:
+            "c01113"
+        }
+    }
+
+    func movementDescriptor(
+        locationID: String
+    ) -> QuestionPresentation.Choice {
+        .gatheringMovement(
+            sourceIndex: movementSourceIndex,
+            cardCode: locationCardCode,
+            locationID: locationID
+        )
+    }
+
+    func forcedAbilityDescriptor(
+        locationID: String
+    ) -> QuestionPresentation.Choice {
+        .gatheringForcedAbility(
+            cardCode: locationCardCode,
+            locationID: locationID
+        )
+    }
+
+    var assignmentDescriptor: QuestionPresentation.Choice {
+        switch self {
+        case .cellar:
+            .gatheringCellarDamageAssignment
+        case .attic:
+            .gatheringAtticHorrorAssignment
+        }
+    }
+
+    var q37PromptSHA256: String {
+        switch self {
+        case .cellar:
+            "81226881d2744c27b99dc9e0169dc6da66b50616628d0cfe770fd42411adab7f"
+        case .attic:
+            "e2bdcb51bb439cf4e0e4b3e143658ef8bdc56607369e4a4a0e9a6209863e0fef"
+        }
+    }
+
+    var q38PromptSHA256: String {
+        switch self {
+        case .cellar:
+            "8259de19c744c3b781b434e40b4a78cd5d8a8af0a324aec8c16f009111f9ed2b"
+        case .attic:
+            "63ef3583c5440bb0eea5cc0c8f05bcf21d633ec5e9508d2f3bd45572a7abb43d"
+        }
+    }
+
+    var q39PromptSHA256: String {
+        switch self {
+        case .cellar:
+            "e8266d1d38bf743b8ae3015c853c6472face1be3b18c5b7fbdc4452d8f82beaf"
+        case .attic:
+            "6aa58eed631203e4025fa22f397382042bcdb2159ca7613319f125928c1bda92"
+        }
+    }
+
+    var resultingDamage: Int {
+        switch self {
+        case .cellar:
+            2
+        case .attic:
+            1
+        }
+    }
+
+    var resultingHorror: Int {
+        switch self {
+        case .cellar:
+            3
+        case .attic:
+            4
+        }
+    }
+}
+
+struct GatheringMovementEntryDestination: Equatable, Sendable {
+    let branch: GatheringMovementEntryBranch
+    let locationID: LocationID
+}
+
 // swiftlint:disable:next type_name
 private struct GatheringActReplayConfigurationValidation {
     let deadline: AssignmentReplayCoordinatorDeadline
@@ -36,10 +137,15 @@ struct ProductionGatheringActReplayConfiguration: Sendable {
     static let startingQuestionVersion = 34
     static let confirmationQuestionVersion = 35
     static let resultingQuestionVersion = 36
+    static let forcedAbilityQuestionVersion = 37
+    static let assignmentQuestionVersion = 38
+    static let postEntryQuestionVersion = 39
     static let advancingActID = "c01108"
     static let advancedActID = "c01109"
     static let studyCardCode = "c01111"
     static let hallwayCardCode = "c01112"
+    static let movementPromptSHA256 =
+        "ccc03aba15081592b2163fac1b61e433b20333486b650e1ed359ac598d2262f8"
 
     let deadline: AssignmentReplayCoordinatorDeadline
     let serverProfile: ServerProfile
@@ -49,6 +155,7 @@ struct ProductionGatheringActReplayConfiguration: Sendable {
     let expectedContractRevision: ContractRevision
     let expectedCatalogRevision: String
     let attestation: ProductionAssignmentReplayAttestation
+    let movementEntryBranch: GatheringMovementEntryBranch?
 
     var validatedCheckpoint: AssignmentReplayValidatedCheckpoint {
         attestation.checkpointValidation
@@ -78,7 +185,8 @@ struct ProductionGatheringActReplayConfiguration: Sendable {
         expectedAppleRevision: String,
         expectedContractRevision: ContractRevision,
         expectedCatalogRevision: String,
-        attestation: ProductionAssignmentReplayAttestation
+        attestation: ProductionAssignmentReplayAttestation,
+        movementEntryBranch: GatheringMovementEntryBranch?
     ) throws {
         try Self.validate(
             GatheringActReplayConfigurationValidation(
@@ -100,6 +208,7 @@ struct ProductionGatheringActReplayConfiguration: Sendable {
         self.expectedContractRevision = expectedContractRevision
         self.expectedCatalogRevision = expectedCatalogRevision
         self.attestation = attestation
+        self.movementEntryBranch = movementEntryBranch
     }
 
     // swiftlint:disable:next function_body_length

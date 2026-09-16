@@ -117,6 +117,16 @@ struct ContractFixtureDigestTests {
             "question-gathering-act-objective", "question-gathering-act-advance",
             "question-presentation-gathering-act-objective",
             "question-presentation-gathering-act-advance",
+            "question-gathering-movement",
+            "question-gathering-cellar-entry-forced",
+            "question-gathering-attic-entry-forced",
+            "question-gathering-cellar-damage-assignment",
+            "question-gathering-attic-horror-assignment",
+            "question-presentation-gathering-movement",
+            "question-presentation-gathering-cellar-entry-forced",
+            "question-presentation-gathering-attic-entry-forced",
+            "question-presentation-gathering-cellar-damage-assignment",
+            "question-presentation-gathering-attic-horror-assignment",
             "answer-question", "question-read", "question-read-scenario-intro",
             "question-read-with-cards",
             "question-choose-one-location", "question-choose-one-location-multiple",
@@ -210,17 +220,17 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "503e3e4c8cdf8370cba78ac0397e3a2e5c7eee8a"
+            ContractPin.current.backendCommit == "f4d83466f6e36bea13d4b0c21204db56121b6585"
         )
     }
 
-    @Test("The immutable manifest governs 32 assignment negatives within 582 total")
+    @Test("The immutable manifest governs 32 assignment negatives within 625 total")
     func assignmentFamilyManifestCoverage() throws {
         let manifest = try ContractJSON.decode(
             GovernedContractManifest.self,
             from: fixtureData(named: "manifest")
         )
-        #expect(manifest.negativeFixtures.count == 582)
+        #expect(manifest.negativeFixtures.count == 625)
         let fixtureSchemas = Dictionary(
             uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
         )

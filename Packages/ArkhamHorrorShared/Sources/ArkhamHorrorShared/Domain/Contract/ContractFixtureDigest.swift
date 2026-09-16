@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "396bf0307eef26e25859b9212e5cb49862c5c025d30b6e5e28fb0bc773797dd6"
+            sha256Hex: "548d41c19c3b1305177fb3bae01f9cb9f93ff6a38a6b64b8e2865e952fe7eaa3"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "d63c998d37e242e679be5db83f783508935f2646bd4e4eb36c05fa4de0cd7c61"
+            sha256Hex: "55e12d321799c54e4ce75a33fb299cf574b7ca05a0790e21b328f1b2a263bf7f"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -230,7 +230,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "e39cf2043fc0790f11fb1186b34940a71ec696ee7ae79710fda2984f3c4238bf"
+            sha256Hex: "03dfb79074162f1b880d8a3b51b22af00757ffbe9699a2199ef97c53ec3fde6a"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",
@@ -238,11 +238,56 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "basic-choice-question.schema",
-            sha256Hex: "b6631259f4ca0dd63399f1ff1d40d327704caef96a36f6065309552ba269bf57"
+            sha256Hex: "d9b0a1e260592b1e0c7bab34a02be2dae6b8319f0aae6d818728a37a7bcca457"
         ),
         VendoredFixtureDigest(
             fileName: "question-presentation.schema",
-            sha256Hex: "56cdf7f7d24f9b468830e3a70d2412cd9f764df66c3f40a276c645b974f00095"
+            sha256Hex: "dbcafa4f644345f2386116862d8e6dd8c8183100bc9d3c03a309a7ec052288ec"
+        ),
+    ] + movementEntry
+}
+
+extension ContractFixtureDigests {
+    private static let movementEntry: [VendoredFixtureDigest] = [
+        VendoredFixtureDigest(
+            fileName: "question-gathering-movement",
+            sha256Hex: "d5264a434360c2c4a741b8ef0f2b17b843590b5326f4f0e1067b80574fbf2822"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-gathering-cellar-entry-forced",
+            sha256Hex: "08aa1a06e962827fcc25c077cf7c88b6a1d863bc24cdf95252482ba9dad119ce"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-gathering-attic-entry-forced",
+            sha256Hex: "eb36ee5b742cabeb41a6d9e98efba052d9fe6c1a8d610e76651eae8db255877c"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-gathering-cellar-damage-assignment",
+            sha256Hex: "1d746cbaa060ef427516d1b949c2e40600c19a86762a0eb892db1f3ade916473"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-gathering-attic-horror-assignment",
+            sha256Hex: "9241df0b7a57a5be5d0d2c35b47635ba39823a6179b018ce730a8e124bb3f6b3"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-presentation-gathering-movement",
+            sha256Hex: "e87a92d62a40cbff46a55f8476984c84b130428f8b077d86131ac013cf394a00"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-presentation-gathering-cellar-entry-forced",
+            sha256Hex: "a9eab9713c85b3b3556a88611c4513ec98d0a77a0bf7f233b3f6c1a8a673c850"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-presentation-gathering-attic-entry-forced",
+            sha256Hex: "36117fa21a39361bbc06d54bdd76905855d3ab4913f0fd5973611ca74316f0cc"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-presentation-gathering-cellar-damage-assignment",
+            sha256Hex: "b55f3887017f1eb392f7b15faf6324d81471712c0f18294c175ec9ea751cfd8f"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-presentation-gathering-attic-horror-assignment",
+            sha256Hex: "5b00bb0d74400bf6e1b03a64332d500cb70d368bc68fe4cd1e1bbe8e65b308d7"
         ),
     ]
 }

@@ -205,7 +205,7 @@ struct BasicChoiceSemanticPresentationTests {
 }
 
 extension BasicChoiceSemanticPresentationTests {
-    private func prompt(
+    func prompt(
         rawFixture: String,
         presentationFixture: String,
         semanticLocaleIdentifier: String? = "en"
