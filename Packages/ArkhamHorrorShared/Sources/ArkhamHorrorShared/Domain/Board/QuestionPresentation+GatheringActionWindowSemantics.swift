@@ -1,12 +1,18 @@
 extension QuestionPresentation {
     var gatheringAtticActionWindowSemantics: GatheringAtticActionWindowSemantics? {
-        guard choices.map(\.sourceIndex) == Array(0 ..< 12),
+        guard choiceCount == choices.count,
+              [12, 13].contains(choices.count),
+              choices.map(\.sourceIndex) == Array(choices.indices),
               choices[0] == .gatheringGainResource,
-              choices[1] == .gatheringDrawCard,
-              zip(2 ... 7, choices[2 ... 7]).allSatisfy({
-                  $0.1.matchesGatheringCardTarget(sourceIndex: $0.0)
-              }),
-              choices[8] == .gatheringEndTurn(sourceIndex: 8)
+              choices[1] == .gatheringDrawCard
+        else { return nil }
+        let endTurnSourceIndex = choices.count - 4
+        let handCardSourceIndices = 2 ..< endTurnSourceIndex
+        guard handCardSourceIndices.allSatisfy({
+            choices[$0].matchesGatheringCardTarget(sourceIndex: $0)
+        }),
+            choices[endTurnSourceIndex] ==
+            .gatheringEndTurn(sourceIndex: endTurnSourceIndex)
         else { return nil }
         let atticMovements = choices.filter {
             $0.matchesGatheringLocationMovement(
@@ -33,7 +39,7 @@ extension QuestionPresentation {
                   atticMovement.sourceIndex,
                   hallwayInvestigation.sourceIndex,
                   cellarMovement.sourceIndex,
-              ]) == [9, 10, 11]
+              ]) == Set((endTurnSourceIndex + 1) ..< choices.count)
         else { return nil }
         return GatheringAtticActionWindowSemantics(
             atticMovement: atticMovement,

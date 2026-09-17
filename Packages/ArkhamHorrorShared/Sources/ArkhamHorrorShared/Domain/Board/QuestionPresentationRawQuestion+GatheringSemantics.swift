@@ -51,7 +51,7 @@ extension QuestionPresentationRawQuestionShape {
         case (39, .playerWindowChooseOne, 11):
             try validateGatheringPostEntryChoices(for: presentation)
             return nil
-        case (42, .playerWindowChooseOne, 12):
+        case (42, .playerWindowChooseOne, _):
             if try validateGatheringAtticActionWindowIfPresent(
                 for: presentation
             ) {

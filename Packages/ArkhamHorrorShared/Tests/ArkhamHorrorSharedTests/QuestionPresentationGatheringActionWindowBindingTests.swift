@@ -9,7 +9,7 @@ private let q42CellarFixtureID =
 private let q42AtticFixtureID =
     "dbaa2d2e-4ceb-44b2-a554-e5fa370e7882"
 
-private enum AtticQ42Role {
+enum AtticQ42Role {
     case atticMovement
     case hallwayInvestigation
     case cellarMovement
@@ -30,26 +30,88 @@ struct GatheringActionWindowBindingTests {
                 .hallwayInvestigation,
                 .atticMovement,
             ],
+            [
+                .cellarMovement,
+                .atticMovement,
+                .hallwayInvestigation,
+            ],
         ]
-        for roleOrder in roleOrders {
-            let rawQuestion = try atticQ42RawQuestion(
-                roleOrder: roleOrder
-            )
-            let presentation = try atticQ42Presentation(
-                roleOrder: roleOrder
-            )
-            let binding = try presentation.bind(
-                to: rawQuestion,
-                expectedQuestionVersion: 42
-            )
-            #expect(binding.presentation.choices.count == 12)
+        for handCardCount in [6, 7] {
+            for roleOrder in roleOrders {
+                try assertAtticQ42BindingSucceeds(
+                    handCardCount: handCardCount,
+                    roleOrder: roleOrder
+                )
+            }
         }
 
+        for (handCardCount, roleOrder) in [
+            (6, roleOrders[0]),
+            (7, roleOrders[2]),
+        ] {
+            try assertAtticQ42DriftFails(
+                handCardCount: handCardCount,
+                roleOrder: roleOrder
+            )
+        }
+    }
+
+    @Test("Attic Q42 rejects unsupported hand-card counts")
+    func gatheringAtticQ42RejectsUnsupportedChoiceCount() throws {
+        let presentation = try atticQ42Presentation(
+            roleOrder: [
+                .cellarMovement,
+                .atticMovement,
+                .hallwayInvestigation,
+            ],
+            handCardCount: 7
+        )
+        let unsupported = try presentationData(
+            withExtraCardInsertedInto: presentation
+        )
+        #expect(throws: DecodingError.self) {
+            try ContractJSON.decode(
+                QuestionPresentation.self,
+                from: unsupported
+            )
+        }
+    }
+}
+
+private extension GatheringActionWindowBindingTests {
+    func assertAtticQ42BindingSucceeds(
+        handCardCount: Int,
+        roleOrder: [AtticQ42Role]
+    ) throws {
         let rawQuestion = try atticQ42RawQuestion(
-            roleOrder: roleOrders[0]
+            roleOrder: roleOrder,
+            handCardCount: handCardCount
         )
         let presentation = try atticQ42Presentation(
-            roleOrder: roleOrders[0]
+            roleOrder: roleOrder,
+            handCardCount: handCardCount
+        )
+        let binding = try presentation.bind(
+            to: rawQuestion,
+            expectedQuestionVersion: 42
+        )
+        #expect(
+            binding.presentation.choices.count ==
+                handCardCount + 6
+        )
+    }
+
+    func assertAtticQ42DriftFails(
+        handCardCount: Int,
+        roleOrder: [AtticQ42Role]
+    ) throws {
+        let rawQuestion = try atticQ42RawQuestion(
+            roleOrder: roleOrder,
+            handCardCount: handCardCount
+        )
+        let presentation = try atticQ42Presentation(
+            roleOrder: roleOrder,
+            handCardCount: handCardCount
         )
         try assertRawTargetDriftFails(
             presentation: presentation,
@@ -65,7 +127,32 @@ struct GatheringActionWindowBindingTests {
         )
     }
 
-    private func assertRawTargetDriftFails(
+    func presentationData(
+        withExtraCardInsertedInto presentation: QuestionPresentation
+    ) throws -> Data {
+        guard case var .object(encoded) = try ContractJSON.decode(
+            JSONValue.self,
+            from: ContractJSON.encode(presentation)
+        ),
+            case var .array(choices)? = encoded["choices"],
+            case let .object(extraCard) = choices[2]
+        else {
+            throw GatheringActionWindowFixtureError.unexpectedShape
+        }
+        choices.insert(.object(extraCard), at: 2)
+        for sourceIndex in choices.indices {
+            guard case var .object(choice) = choices[sourceIndex] else {
+                throw GatheringActionWindowFixtureError.unexpectedShape
+            }
+            choice["sourceIndex"] = .number(.integer(Int64(sourceIndex)))
+            choices[sourceIndex] = .object(choice)
+        }
+        encoded["choiceCount"] = .number(.integer(Int64(choices.count)))
+        encoded["choices"] = .array(choices)
+        return try ContractJSON.encode(JSONValue.object(encoded))
+    }
+
+    func assertRawTargetDriftFails(
         presentation: QuestionPresentation,
         rawQuestion: JSONValue
     ) throws {
@@ -81,7 +168,7 @@ struct GatheringActionWindowBindingTests {
         )
     }
 
-    private func assertPresentationTargetDriftFails(
+    func assertPresentationTargetDriftFails(
         presentation: QuestionPresentation,
         rawQuestion: JSONValue
     ) throws {
@@ -117,12 +204,15 @@ struct GatheringActionWindowBindingTests {
         )
     }
 
-    private func assertMovementDowngradeFails(
+    func assertMovementDowngradeFails(
         presentation: QuestionPresentation,
         rawQuestion: JSONValue
     ) throws {
         var downgradedChoices = presentation.choices
-        for sourceIndex in [9, 11] {
+        let movementSourceIndices = downgradedChoices.suffix(3)
+            .filter { $0.kind == .move }
+            .map(\.sourceIndex)
+        for sourceIndex in movementSourceIndices {
             downgradedChoices[sourceIndex] = .gatheringEndTurn(
                 sourceIndex: sourceIndex
             )
@@ -145,19 +235,38 @@ struct GatheringActionWindowBindingTests {
         )
     }
 
-    private func atticQ42Presentation(
-        roleOrder: [AtticQ42Role]
+    func atticQ42Presentation(
+        roleOrder: [AtticQ42Role],
+        handCardCount: Int = 6
     ) throws -> QuestionPresentation {
+        guard [6, 7].contains(handCardCount) else {
+            throw GatheringActionWindowFixtureError.unexpectedShape
+        }
         let movement = try presentationFixture(
             "question-presentation-gathering-movement"
         )
-        let choices = Array(movement.choices.prefix(9))
-            + roleOrder.enumerated().map { offset, role in
-                atticQ42PresentationChoice(
-                    role: role,
-                    sourceIndex: offset + 9
-                )
+        var choices = Array(movement.choices.prefix(9))
+        if handCardCount == 7 {
+            choices.insert(
+                .gatheringCardTarget(
+                    sourceIndex: 2,
+                    cardID:
+                    "fb0d11c0-e7fd-42e9-bfc3-851bfa025837"
+                ),
+                at: 2
+            )
+            for sourceIndex in 3 ..< choices.count {
+                choices[sourceIndex] = choices[sourceIndex]
+                    .replacingSourceIndex(sourceIndex)
             }
+        }
+        let firstRoleSourceIndex = choices.count
+        choices += roleOrder.enumerated().map { offset, role in
+            atticQ42PresentationChoice(
+                role: role,
+                sourceIndex: offset + firstRoleSourceIndex
+            )
+        }
         return try ContractJSON.decode(
             QuestionPresentation.self,
             from: ContractJSON.encode(
@@ -172,7 +281,7 @@ struct GatheringActionWindowBindingTests {
         )
     }
 
-    private func atticQ42PresentationChoice(
+    func atticQ42PresentationChoice(
         role: AtticQ42Role,
         sourceIndex: Int
     ) -> QuestionPresentation.Choice {
@@ -198,97 +307,4 @@ struct GatheringActionWindowBindingTests {
             )
         }
     }
-
-    private func atticQ42RawQuestion(
-        roleOrder: [AtticQ42Role]
-    ) throws -> JSONValue {
-        guard case var .object(root) =
-            try rawFixture("question-gathering-movement"),
-            case let .array(movementChoices)? = root["choices"],
-            movementChoices.indices.contains(11)
-        else {
-            throw GatheringActionWindowFixtureError.unexpectedShape
-        }
-        root["choices"] = try .array(
-            Array(movementChoices.prefix(9))
-                + (roleOrder.map {
-                    try atticQ42RawChoice(
-                        role: $0,
-                        movementChoices: movementChoices
-                    )
-                })
-        )
-        return .object(root)
-    }
-
-    private func atticQ42RawChoice(
-        role: AtticQ42Role,
-        movementChoices: [JSONValue]
-    ) throws -> JSONValue {
-        switch role {
-        case .atticMovement:
-            try replacing(
-                movementChoices[10],
-                at: "/ability/type/cost",
-                with: .object([
-                    "contents": .number(.integer(1)),
-                    "tag": .string("ActionCost"),
-                ])
-            )
-        case .hallwayInvestigation:
-            movementChoices[11]
-        case .cellarMovement:
-            movementChoices[9]
-        }
-    }
-
-    private func presentationFixture(
-        _ name: String
-    ) throws -> QuestionPresentation {
-        try ContractJSON.decode(QuestionPresentation.self, from: fixture(name))
-    }
-
-    private func rawFixture(_ name: String) throws -> JSONValue {
-        try ContractJSON.decode(JSONValue.self, from: fixture(name))
-    }
-
-    private func replacing(
-        _ value: JSONValue,
-        at pointer: String,
-        with replacement: JSONValue
-    ) throws -> JSONValue {
-        try EnemyAttackFixtures.applying(
-            operation: "replace",
-            path: pointer.split(separator: "/"),
-            replacement: replacement,
-            to: value
-        )
-    }
-
-    private func fixture(_ name: String) throws -> Data {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: name,
-                withExtension: "json",
-                subdirectory: "Fixtures/Contract"
-            )
-        )
-        return try Data(contentsOf: url)
-    }
-}
-
-private func assertActionWindowBindingFails(
-    presentation: QuestionPresentation,
-    rawQuestion: JSONValue
-) {
-    #expect(throws: QuestionPresentationBindingError.self) {
-        try presentation.bind(
-            to: rawQuestion,
-            expectedQuestionVersion: 42
-        )
-    }
-}
-
-private enum GatheringActionWindowFixtureError: Error {
-    case unexpectedShape
 }

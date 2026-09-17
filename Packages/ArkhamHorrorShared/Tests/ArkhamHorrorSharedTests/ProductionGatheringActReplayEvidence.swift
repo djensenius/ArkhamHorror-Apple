@@ -544,19 +544,19 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             throw ProductionGatheringActReplayEvidenceError.invalidQ42
         }
 
-        let expectedEndTurn = GatheringActReplayDescriptorEvidence(
-            choice: QuestionPresentation.Choice(
-                sourceIndex: branch == .cellar ? 0 : 8,
-                kind: .endTurn,
-                actorID: investigatorID.codingKey.stringValue,
-                entity: nil,
-                label: nil,
-                ability: nil,
-                cost: nil
-            )
-        )
         switch branch {
         case .cellar:
+            let expectedEndTurn = GatheringActReplayDescriptorEvidence(
+                choice: QuestionPresentation.Choice(
+                    sourceIndex: 0,
+                    kind: .endTurn,
+                    actorID: investigatorID.codingKey.stringValue,
+                    entity: nil,
+                    label: nil,
+                    ability: nil,
+                    cost: nil
+                )
+            )
             guard choiceCount == 1,
                   sourceIndices == [0],
                   actionableSourceIndices == [0],
@@ -565,8 +565,25 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
                 throw ProductionGatheringActReplayEvidenceError.invalidQ42
             }
         case .attic:
-            guard choiceCount == 12,
-                  sourceIndices == Array(0 ..< 12),
+            guard [12, 13].contains(choiceCount) else {
+                throw ProductionGatheringActReplayEvidenceError.invalidQ42
+            }
+            let endTurnSourceIndex = choiceCount - 4
+            let handCardSourceIndices = 2 ..< endTurnSourceIndex
+            let locationSourceIndices =
+                Set((endTurnSourceIndex + 1) ..< choiceCount)
+            let expectedEndTurn = GatheringActReplayDescriptorEvidence(
+                choice: QuestionPresentation.Choice(
+                    sourceIndex: endTurnSourceIndex,
+                    kind: .endTurn,
+                    actorID: investigatorID.codingKey.stringValue,
+                    entity: nil,
+                    label: nil,
+                    ability: nil,
+                    cost: nil
+                )
+            )
+            guard sourceIndices == Array(0 ..< choiceCount),
                   actionableSourceIndices == sourceIndices,
                   let governedDescriptors,
                   governedDescriptors.map(\.sourceIndex) == sourceIndices,
@@ -578,8 +595,9 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
                   GatheringActReplayDescriptorEvidence(
                       choice: .gatheringDrawCard
                   ),
-                  governedDescriptors[8] == expectedEndTurn,
-                  (2 ... 7).allSatisfy({
+                  governedDescriptors[endTurnSourceIndex] ==
+                  expectedEndTurn,
+                  handCardSourceIndices.allSatisfy({
                       guard let cardID = governedDescriptors[$0].entityID,
                             WireCardID(
                                 codingKey:
@@ -620,7 +638,7 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
                       atticMovement.sourceIndex,
                       hallwayInvestigation.sourceIndex,
                       cellarMovement.sourceIndex,
-                  ]) == [9, 10, 11],
+                  ]) == locationSourceIndices,
                   atticMovement ==
                   GatheringActReplayDescriptorEvidence(
                       choice: .gatheringLocationMovement(

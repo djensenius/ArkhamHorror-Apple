@@ -204,6 +204,17 @@ struct ProductionGatheringActReplayMechanicsTests {
         }
     }
 
+    @Test("Seven-card Attic Q42 keeps every source index actionable")
+    func sevenCardAtticQ42() throws {
+        try q42PromptEvidence(
+            branch: .attic,
+            atticHandCardCount: 7
+        ).validateResultingContinuationPrompt(
+            branch: .attic,
+            investigatorID: BoardTestFixtures.investigatorID("c01001")
+        )
+    }
+
     @Test("Board summaries bind their authoritative source and revision")
     func authoritativeBoardSummary() throws {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
@@ -489,6 +500,7 @@ private extension ProductionGatheringActReplayMechanicsTests {
     func q42PromptEvidence(
         branch: GatheringMovementEntryBranch,
         actionableSourceIndices: [Int]? = nil,
+        atticHandCardCount: Int = 6,
         atticRoleOrder: [AtticQ42EvidenceRole] = [
             .atticMovement,
             .hallwayInvestigation,
@@ -509,7 +521,10 @@ private extension ProductionGatheringActReplayMechanicsTests {
                 ),
             ]
         case .attic:
-            atticQ42Choices(roleOrder: atticRoleOrder)
+            atticQ42Choices(
+                handCardCount: atticHandCardCount,
+                roleOrder: atticRoleOrder
+            )
         }
         let sourceIndices = choices.map(\.sourceIndex)
         return GatheringActReplayPromptEvidence(
@@ -534,12 +549,13 @@ private extension ProductionGatheringActReplayMechanicsTests {
 
     // swiftlint:disable:next function_body_length
     func atticQ42Choices(
+        handCardCount: Int,
         roleOrder: [AtticQ42EvidenceRole]
     ) -> [QuestionPresentation.Choice] {
-        let cardIDs = (0 ..< 6).map {
+        let cardIDs = (0 ..< handCardCount).map {
             String(format: "00000000-0000-4000-8000-%012d", $0)
         }
-        return [
+        var choices = [
             QuestionPresentation.Choice(
                 sourceIndex: 0,
                 kind: .gainResource,
@@ -568,18 +584,21 @@ private extension ProductionGatheringActReplayMechanicsTests {
                 ability: nil,
                 cost: nil
             )
-        } + [
+        }
+        choices.append(
             QuestionPresentation.Choice(
-                sourceIndex: 8,
+                sourceIndex: choices.count,
                 kind: .endTurn,
                 actorID: "c01001",
                 entity: nil,
                 label: nil,
                 ability: nil,
                 cost: nil
-            ),
-        ] + roleOrder.enumerated().map { offset, role in
-            let sourceIndex = offset + 9
+            )
+        )
+        let firstRoleSourceIndex = choices.count
+        choices += roleOrder.enumerated().map { offset, role in
+            let sourceIndex = offset + firstRoleSourceIndex
             return switch role {
             case .atticMovement:
                 .gatheringLocationMovement(
@@ -607,6 +626,7 @@ private extension ProductionGatheringActReplayMechanicsTests {
                 )
             }
         }
+        return choices
     }
 
     func movementEntryFixtureLocationID(

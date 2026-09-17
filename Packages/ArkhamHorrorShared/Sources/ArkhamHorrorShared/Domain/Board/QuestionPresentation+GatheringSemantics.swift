@@ -65,7 +65,7 @@ extension QuestionPresentation {
                   ]) == [9, 10]
             else { return false }
             return governedChoices == [hallway]
-        case (42, .playerWindowChooseOne, 12):
+        case (42, .playerWindowChooseOne, _):
             return governedChoices.isEmpty
                 || gatheringAtticActionWindowSemantics != nil
         default:

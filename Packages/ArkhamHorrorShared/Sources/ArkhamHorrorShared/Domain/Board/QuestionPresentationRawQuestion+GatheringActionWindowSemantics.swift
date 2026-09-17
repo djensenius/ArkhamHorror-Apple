@@ -15,36 +15,58 @@ extension QuestionPresentationRawQuestionShape {
     private func validateGatheringAtticActionWindow(
         for presentation: QuestionPresentation
     ) throws -> Bool {
+        let expectedSeals: GatheringAtticActionWindowExpectedSeals
+        switch choices.count {
+        case 12:
+            expectedSeals = GatheringAtticActionWindowExpectedSeals(
+                rawSHA256:
+                "f5c36e8051a3375c37f1e63b5d0d7543f842fa0992797c20cc87468532b352c7",
+                presentationSHA256:
+                "bb8b3bfc28f16b939b10d718c6e4dd00e6ef1912065a00f174509f1b41068266",
+                dynamicIDCount: 9
+            )
+        case 13:
+            expectedSeals = GatheringAtticActionWindowExpectedSeals(
+                rawSHA256:
+                "09c20cc3d7ad012734be82160462616399f305cfc251838f94ab22b96cd93cf1",
+                presentationSHA256:
+                "6b0be18f36d804d02875d007ca3694732e617098e378f0b460a10ecb4efe7f48",
+                dynamicIDCount: 10
+            )
+        default:
+            return false
+        }
+        let firstRoleSourceIndex = choices.count - 3
         let candidates = [
             GatheringAtticActionWindowRawRoles(
-                atticMovement: 9,
-                hallwayInvestigation: 10,
-                cellarMovement: 11
+                atticMovement: firstRoleSourceIndex,
+                hallwayInvestigation: firstRoleSourceIndex + 1,
+                cellarMovement: firstRoleSourceIndex + 2
             ),
             GatheringAtticActionWindowRawRoles(
-                atticMovement: 9,
-                hallwayInvestigation: 11,
-                cellarMovement: 10
+                atticMovement: firstRoleSourceIndex,
+                hallwayInvestigation: firstRoleSourceIndex + 2,
+                cellarMovement: firstRoleSourceIndex + 1
             ),
             GatheringAtticActionWindowRawRoles(
-                atticMovement: 10,
-                hallwayInvestigation: 9,
-                cellarMovement: 11
+                atticMovement: firstRoleSourceIndex + 1,
+                hallwayInvestigation: firstRoleSourceIndex,
+                cellarMovement: firstRoleSourceIndex + 2
             ),
             GatheringAtticActionWindowRawRoles(
-                atticMovement: 10,
-                hallwayInvestigation: 11,
-                cellarMovement: 9
+                atticMovement: firstRoleSourceIndex + 1,
+                hallwayInvestigation: firstRoleSourceIndex + 2,
+                cellarMovement: firstRoleSourceIndex
             ),
             GatheringAtticActionWindowRawRoles(
-                atticMovement: 11,
-                hallwayInvestigation: 9,
-                cellarMovement: 10
+                atticMovement: firstRoleSourceIndex + 2,
+                hallwayInvestigation: firstRoleSourceIndex,
+                cellarMovement: firstRoleSourceIndex + 1
             ),
             GatheringAtticActionWindowRawRoles(
-                atticMovement: 11,
-                hallwayInvestigation: 10,
-                cellarMovement: 9
+                atticMovement: firstRoleSourceIndex + 2,
+                hallwayInvestigation: firstRoleSourceIndex + 1,
+                cellarMovement: firstRoleSourceIndex
             ),
         ]
         var matches: [(
@@ -56,7 +78,7 @@ extension QuestionPresentationRawQuestionShape {
                 .array(canonicalRawChoices(roles: roles))
             )
             let matchesExpectedRawSeal = seal.canonicalSHA256 ==
-                "f5c36e8051a3375c37f1e63b5d0d7543f842fa0992797c20cc87468532b352c7"
+                expectedSeals.rawSHA256
             if matchesExpectedRawSeal {
                 matches.append((roles, seal))
             }
@@ -80,10 +102,10 @@ extension QuestionPresentationRawQuestionShape {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }
         guard rawSeal.canonicalSHA256 ==
-            "f5c36e8051a3375c37f1e63b5d0d7543f842fa0992797c20cc87468532b352c7",
+            expectedSeals.rawSHA256,
             presentationSeal.canonicalSHA256 ==
-            "bb8b3bfc28f16b939b10d718c6e4dd00e6ef1912065a00f174509f1b41068266",
-            rawSeal.dynamicIDs.count == 9,
+            expectedSeals.presentationSHA256,
+            rawSeal.dynamicIDs.count == expectedSeals.dynamicIDCount,
             rawSeal.dynamicIDs == presentationSeal.dynamicIDs
         else {
             throw QuestionPresentationBindingError.governedChoicesMismatch
@@ -95,9 +117,11 @@ extension QuestionPresentationRawQuestionShape {
         roles: GatheringAtticActionWindowRawRoles
     ) -> [JSONValue] {
         var result = choices
-        result[9] = choices[roles.atticMovement]
-        result[10] = choices[roles.hallwayInvestigation]
-        result[11] = choices[roles.cellarMovement]
+        let firstRoleSourceIndex = choices.count - 3
+        result[firstRoleSourceIndex] = choices[roles.atticMovement]
+        result[firstRoleSourceIndex + 1] =
+            choices[roles.hallwayInvestigation]
+        result[firstRoleSourceIndex + 2] = choices[roles.cellarMovement]
         return result
     }
 
@@ -106,10 +130,14 @@ extension QuestionPresentationRawQuestionShape {
         roles: GatheringAtticActionWindowRawRoles
     ) -> [QuestionPresentation.Choice] {
         var result = choices
-        result[9] = choices[roles.atticMovement].replacingSourceIndex(9)
-        result[10] =
-            choices[roles.hallwayInvestigation].replacingSourceIndex(10)
-        result[11] = choices[roles.cellarMovement].replacingSourceIndex(11)
+        let firstRoleSourceIndex = choices.count - 3
+        result[firstRoleSourceIndex] = choices[roles.atticMovement]
+            .replacingSourceIndex(firstRoleSourceIndex)
+        result[firstRoleSourceIndex + 1] =
+            choices[roles.hallwayInvestigation]
+                .replacingSourceIndex(firstRoleSourceIndex + 1)
+        result[firstRoleSourceIndex + 2] = choices[roles.cellarMovement]
+            .replacingSourceIndex(firstRoleSourceIndex + 2)
         return result
     }
 }
@@ -118,4 +146,10 @@ private struct GatheringAtticActionWindowRawRoles {
     let atticMovement: Int
     let hallwayInvestigation: Int
     let cellarMovement: Int
+}
+
+private struct GatheringAtticActionWindowExpectedSeals {
+    let rawSHA256: String
+    let presentationSHA256: String
+    let dynamicIDCount: Int
 }
