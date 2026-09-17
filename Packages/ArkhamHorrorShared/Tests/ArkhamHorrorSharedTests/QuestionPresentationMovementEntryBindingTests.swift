@@ -334,19 +334,14 @@ private func assertRelabeledPostEntryChoiceFails(
         ability: investigation.ability,
         cost: investigation.cost
     )
-    #expect(throws: Error.self) {
-        let relabeledPresentation = try ContractJSON.decode(
-            QuestionPresentation.self,
-            from: ContractJSON.encode(
-                QuestionPresentation(
-                    protocolVersion: 1,
-                    questionVersion: 39,
-                    questionKind: .playerWindowChooseOne,
-                    choiceCount: relabeledChoices.count,
-                    choices: relabeledChoices
-                )
-            )
-        )
+    let relabeledPresentation = QuestionPresentation(
+        protocolVersion: 1,
+        questionVersion: 39,
+        questionKind: .playerWindowChooseOne,
+        choiceCount: relabeledChoices.count,
+        choices: relabeledChoices
+    )
+    #expect(throws: QuestionPresentationBindingError.self) {
         _ = try relabeledPresentation.bind(
             to: rawQuestion,
             expectedQuestionVersion: 39
