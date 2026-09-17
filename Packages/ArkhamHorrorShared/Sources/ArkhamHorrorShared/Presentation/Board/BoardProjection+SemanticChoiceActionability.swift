@@ -20,7 +20,8 @@ extension BoardProjection {
                 && containsGovernedSource(governedSource, ownerID: ownerID)
         case .chooseTarget:
             return choice.entity != nil
-        case .drawCard, .endTurn, .gainResource, .skipTriggers, .startSkillTest:
+        case .drawCard, .drawEncounterCard, .endTurn, .gainResource, .skipTriggers,
+             .startSkillTest:
             return choice.actorID != nil
         case .engage, .evade, .fight:
             return choice.entity?.kind == .enemy

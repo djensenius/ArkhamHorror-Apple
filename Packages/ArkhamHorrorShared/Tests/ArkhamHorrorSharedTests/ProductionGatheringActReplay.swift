@@ -50,6 +50,15 @@ enum ProductionGatheringActReplayRunner {
         let precedingAnswers: [BasicChoiceAnswer]
     }
 
+    private struct PostEntryExecutionInput {
+        let destination: GatheringMovementEntryDestination
+        let q39Prompt: BasicChoicePromptPresentation
+        let q39Projection: BoardProjection
+        let q39SourceIndex: Int
+        let precedingAnswers: [BasicChoiceAnswer]
+        let context: MovementEntryExecutionContext
+    }
+
     // swiftlint:disable:next function_body_length
     static func run(
         configuration: ProductionGatheringActReplayConfiguration
@@ -352,9 +361,9 @@ enum ProductionGatheringActReplayRunner {
         )
         var expectedAnswers = [q34Answer, q35Answer]
         if let movementEntry {
-            expectedAnswers.append(movementEntry.q36Answer.answer)
-            expectedAnswers.append(movementEntry.q37Answer.answer)
-            expectedAnswers.append(movementEntry.q38Answer.answer)
+            expectedAnswers.append(
+                contentsOf: movementEntry.submittedAnswers.map(\.answer)
+            )
         }
         try validateSentAnswers(
             socketRecorder.snapshot(),
@@ -549,21 +558,39 @@ enum ProductionGatheringActReplayRunner {
             model: model,
             configuration: configuration
         )
+        let q39SourceIndex = try postEntrySelectionSourceIndex(
+            prompt: q39Prompt,
+            destination: destination
+        )
         let q39PromptEvidence = try GatheringActReplayPromptEvidence(
             prompt: q39Prompt,
             projection: q39Projection,
-            selectedSourceIndex: nil
+            selectedSourceIndex: q39SourceIndex
         )
-        try validateQ39Prompt(
+        let postEntryValidation = try validateQ39Prompt(
             q39Prompt,
             evidence: q39PromptEvidence,
             projection: q39Projection,
             destination: destination,
             configuration: configuration
         )
+        guard postEntryValidation.selectedSourceIndex == q39SourceIndex else {
+            throw ProductionGatheringActReplayError.promptShapeMismatch
+        }
         let q39State = try GatheringActReplayBoardStateEvidence(
             observation: q39Authority,
             investigatorID: configuration.promptIdentity.investigatorID
+        )
+        let continuation = try await runPostEntryContinuation(
+            input: PostEntryExecutionInput(
+                destination: destination,
+                q39Prompt: q39Prompt,
+                q39Projection: q39Projection,
+                q39SourceIndex: q39SourceIndex,
+                precedingAnswers:
+                precedingAnswers + [q36Answer, q37Answer, q38Answer],
+                context: context
+            )
         )
 
         return try GatheringMovementEntryReplayEvidence(
@@ -579,7 +606,218 @@ enum ProductionGatheringActReplayRunner {
             q38Controller: q38Execution.evidence,
             q38State: q38State,
             q39Prompt: q39PromptEvidence,
-            q39State: q39State
+            q39State: q39State,
+            continuation: continuation
+        )
+    }
+
+    // swiftlint:disable:next function_body_length
+    private static func runPostEntryContinuation(
+        input: PostEntryExecutionInput
+    ) async throws -> GatheringContinuationReplayEvidence {
+        let destination = input.destination
+        let branch = destination.branch
+        let q39Prompt = input.q39Prompt
+        let q39Projection = input.q39Projection
+        let q39SourceIndex = input.q39SourceIndex
+        let precedingAnswers = input.precedingAnswers
+        let context = input.context
+        let model = context.model
+        let socketRecorder = context.socketRecorder
+        let authoritativeRecorder = context.authoritativeRecorder
+        let configuration = context.configuration
+        let ownerID = configuration.promptIdentity.ownerID
+        let investigatorID = configuration.promptIdentity.investigatorID
+
+        let q39Answer = BasicChoiceAnswer(
+            choice: q39SourceIndex,
+            playerID: ownerID,
+            questionVersion:
+            ProductionGatheringActReplayConfiguration
+                .postEntryQuestionVersion
+        )
+        let q39Execution = try await executeController(
+            prompt: q39Prompt,
+            projection: q39Projection,
+            selectedSourceIndex: q39SourceIndex,
+            model: model
+        )
+        try validateSubmission(q39Execution.result)
+        try validateSentAnswers(
+            socketRecorder.snapshot(),
+            expected: precedingAnswers + [q39Answer]
+        )
+
+        let q40Projection = try await waitForProjection(
+            model: model,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .firstContinuationQuestionVersion,
+            configuration: configuration
+        )
+        let q40Authority = try await requireAuthority(
+            recorder: authoritativeRecorder,
+            projection: q40Projection,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .firstContinuationQuestionVersion,
+            source: .socket,
+            configuration: configuration
+        )
+        try validateParticipant(model: model, configuration: configuration)
+        let q40Prompt = try requirePrompt(
+            model: model,
+            configuration: configuration
+        )
+        let q40PromptEvidence = try GatheringActReplayPromptEvidence(
+            prompt: q40Prompt,
+            projection: q40Projection,
+            selectedSourceIndex: 0
+        )
+        try validateQ40Prompt(
+            q40Prompt,
+            evidence: q40PromptEvidence,
+            projection: q40Projection,
+            branch: branch,
+            configuration: configuration
+        )
+        let q40State = try GatheringActReplayBoardStateEvidence(
+            observation: q40Authority,
+            investigatorID: investigatorID
+        )
+        let q40Answer = BasicChoiceAnswer(
+            choice: 0,
+            playerID: ownerID,
+            questionVersion:
+            ProductionGatheringActReplayConfiguration
+                .firstContinuationQuestionVersion
+        )
+        let q40Execution = try await executeController(
+            prompt: q40Prompt,
+            projection: q40Projection,
+            selectedSourceIndex: 0,
+            model: model
+        )
+        try validateSubmission(q40Execution.result)
+        try validateSentAnswers(
+            socketRecorder.snapshot(),
+            expected: precedingAnswers + [q39Answer, q40Answer]
+        )
+
+        let q41Projection = try await waitForProjection(
+            model: model,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .secondContinuationQuestionVersion,
+            configuration: configuration
+        )
+        let q41Authority = try await requireAuthority(
+            recorder: authoritativeRecorder,
+            projection: q41Projection,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .secondContinuationQuestionVersion,
+            source: .socket,
+            configuration: configuration
+        )
+        try validateParticipant(model: model, configuration: configuration)
+        let q41Prompt = try requirePrompt(
+            model: model,
+            configuration: configuration
+        )
+        let q41PromptEvidence = try GatheringActReplayPromptEvidence(
+            prompt: q41Prompt,
+            projection: q41Projection,
+            selectedSourceIndex: 0
+        )
+        try validateQ41Prompt(
+            q41Prompt,
+            evidence: q41PromptEvidence,
+            projection: q41Projection,
+            branch: branch,
+            configuration: configuration
+        )
+        let q41State = try GatheringActReplayBoardStateEvidence(
+            observation: q41Authority,
+            investigatorID: investigatorID
+        )
+        let q41Answer = BasicChoiceAnswer(
+            choice: 0,
+            playerID: ownerID,
+            questionVersion:
+            ProductionGatheringActReplayConfiguration
+                .secondContinuationQuestionVersion
+        )
+        let q41Execution = try await executeController(
+            prompt: q41Prompt,
+            projection: q41Projection,
+            selectedSourceIndex: 0,
+            model: model
+        )
+        try validateSubmission(q41Execution.result)
+        try validateSentAnswers(
+            socketRecorder.snapshot(),
+            expected:
+            precedingAnswers + [q39Answer, q40Answer, q41Answer]
+        )
+
+        let q42Projection = try await waitForProjection(
+            model: model,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .resultingContinuationQuestionVersion,
+            configuration: configuration
+        )
+        let q42Authority = try await requireAuthority(
+            recorder: authoritativeRecorder,
+            projection: q42Projection,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .resultingContinuationQuestionVersion,
+            source: .socket,
+            configuration: configuration
+        )
+        try validateParticipant(model: model, configuration: configuration)
+        let q42Prompt = try requirePrompt(
+            model: model,
+            configuration: configuration
+        )
+        let q42PromptEvidence = try GatheringActReplayPromptEvidence(
+            prompt: q42Prompt,
+            projection: q42Projection,
+            selectedSourceIndex: nil
+        )
+        try validateQ42Prompt(
+            q42Prompt,
+            evidence: q42PromptEvidence,
+            projection: q42Projection,
+            branch: branch,
+            configuration: configuration
+        )
+        let q42State = try GatheringActReplayBoardStateEvidence(
+            observation: q42Authority,
+            investigatorID: investigatorID
+        )
+
+        return try GatheringContinuationReplayEvidence(
+            q39Answer: GatheringActReplayAnswerEvidence(
+                answer: q39Answer
+            ),
+            q39Controller: q39Execution.evidence,
+            q40Prompt: q40PromptEvidence,
+            q40Answer: GatheringActReplayAnswerEvidence(
+                answer: q40Answer
+            ),
+            q40Controller: q40Execution.evidence,
+            q40State: q40State,
+            q41Prompt: q41PromptEvidence,
+            q41Answer: GatheringActReplayAnswerEvidence(
+                answer: q41Answer
+            ),
+            q41Controller: q41Execution.evidence,
+            q41State: q41State,
+            q42Prompt: q42PromptEvidence,
+            q42State: q42State
         )
     }
 
@@ -917,13 +1155,40 @@ enum ProductionGatheringActReplayRunner {
         }
     }
 
+    private static func postEntrySelectionSourceIndex(
+        prompt: BasicChoicePromptPresentation,
+        destination: GatheringMovementEntryDestination
+    ) throws -> Int {
+        guard let choices =
+            prompt.semanticPresentation?.presentation.choices
+        else {
+            throw ProductionGatheringActReplayError.promptShapeMismatch
+        }
+        let matches = choices.filter { choice in
+            switch destination.branch {
+            case .cellar:
+                choice.matchesGatheringInvestigation(
+                    cardCode: destination.branch.locationCardCode
+                ) && choice.entity?.id ==
+                    destination.locationID.codingKey.stringValue
+            case .attic:
+                choice.matchesGatheringHallwayMovement()
+            }
+        }
+        guard matches.count == 1, let sourceIndex = matches.first?.sourceIndex
+        else {
+            throw ProductionGatheringActReplayError.promptShapeMismatch
+        }
+        return sourceIndex
+    }
+
     private static func validateQ39Prompt(
         _ prompt: BasicChoicePromptPresentation,
         evidence: GatheringActReplayPromptEvidence,
         projection: BoardProjection,
         destination: GatheringMovementEntryDestination,
         configuration: ProductionGatheringActReplayConfiguration
-    ) throws {
+    ) throws -> GatheringPostEntryPromptValidation {
         try validatePromptIdentity(
             prompt,
             projection: projection,
@@ -932,7 +1197,95 @@ enum ProductionGatheringActReplayRunner {
                 .postEntryQuestionVersion,
             configuration: configuration
         )
-        try evidence.validatePostEntryPrompt(destination: destination)
+        let validation = try evidence.validatePostEntryPrompt(
+            destination: destination
+        )
+        guard prompt.canSubmit,
+              prompt.question.supportedQuestion?.kind ==
+              .playerWindowChooseOne
+        else {
+            throw ProductionGatheringActReplayError.promptShapeMismatch
+        }
+        return validation
+    }
+
+    private static func validateQ40Prompt(
+        _ prompt: BasicChoicePromptPresentation,
+        evidence: GatheringActReplayPromptEvidence,
+        projection: BoardProjection,
+        branch: GatheringMovementEntryBranch,
+        configuration: ProductionGatheringActReplayConfiguration
+    ) throws {
+        try validatePromptIdentity(
+            prompt,
+            projection: projection,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .firstContinuationQuestionVersion,
+            configuration: configuration
+        )
+        try evidence.validateFirstContinuationPrompt(
+            branch: branch,
+            investigatorID: configuration.promptIdentity.investigatorID
+        )
+        let expectedKind: BasicChoiceQuestionKind = switch branch {
+        case .cellar:
+            .chooseOne
+        case .attic:
+            .playerWindowChooseOne
+        }
+        guard prompt.canSubmit,
+              prompt.question.supportedQuestion?.kind == expectedKind
+        else {
+            throw ProductionGatheringActReplayError.promptShapeMismatch
+        }
+    }
+
+    private static func validateQ41Prompt(
+        _ prompt: BasicChoicePromptPresentation,
+        evidence: GatheringActReplayPromptEvidence,
+        projection: BoardProjection,
+        branch: GatheringMovementEntryBranch,
+        configuration: ProductionGatheringActReplayConfiguration
+    ) throws {
+        try validatePromptIdentity(
+            prompt,
+            projection: projection,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .secondContinuationQuestionVersion,
+            configuration: configuration
+        )
+        try evidence.validateSecondContinuationPrompt(
+            branch: branch,
+            investigatorID: configuration.promptIdentity.investigatorID
+        )
+        guard prompt.canSubmit,
+              prompt.question.supportedQuestion?.kind == .chooseOne
+        else {
+            throw ProductionGatheringActReplayError.promptShapeMismatch
+        }
+    }
+
+    private static func validateQ42Prompt(
+        _ prompt: BasicChoicePromptPresentation,
+        evidence: GatheringActReplayPromptEvidence,
+        projection: BoardProjection,
+        branch: GatheringMovementEntryBranch,
+        configuration: ProductionGatheringActReplayConfiguration
+    ) throws {
+        try validatePromptIdentity(
+            prompt,
+            projection: projection,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .resultingContinuationQuestionVersion,
+            configuration: configuration
+        )
+        try evidence.validateResultingContinuationPrompt(
+            branch: branch,
+            investigatorID: configuration.promptIdentity.investigatorID
+        )
         guard prompt.canSubmit,
               prompt.question.supportedQuestion?.kind ==
               .playerWindowChooseOne

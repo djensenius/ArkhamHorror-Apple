@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+// swiftlint:disable file_length
 extension AppModelLiveGameTests {
     @Test("Q34 sends exact source index 12 and question version 34")
     func q34SemanticAdvanceActSendsExactAnswer() async throws {
@@ -68,6 +69,126 @@ extension AppModelLiveGameTests {
         )
         // swiftlint:disable:next line_length
         #expect(await connection.sentData == [Data(#"{"contents":{"choice":0,"playerId":"00000000-0000-0000-0000-000000000001","questionVersion":35},"tag":"Answer"}"#.utf8)])
+    }
+
+    @Test("Q41 sends the encounter draw's exact source index and question version")
+    func q41SemanticEncounterDrawSendsExactAnswer() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-encounter-deck-draw",
+            presentationFixture: "question-presentation-encounter-deck-draw",
+            questionVersion: 41
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let choice = try #require(prompt.choices.first)
+        let projection = try #require(
+            model.liveGameState(for: gameID).lastKnownProjection
+        )
+        #expect(prompt.questionVersion == 41)
+        #expect(prompt.displayTitle(for: choice, in: projection) == "Draw encounter card")
+        #expect(prompt.isChoiceActionable(choice, in: projection))
+        #expect(
+            await model.submitBasicChoice(prompt.identity, choiceIndex: 0)
+                == .sentAwaitingSnapshot
+        )
+        // swiftlint:disable:next line_length
+        #expect(await connection.sentData == [Data(#"{"contents":{"choice":0,"playerId":"00000000-0000-0000-0000-000000000001","questionVersion":41},"tag":"Answer"}"#.utf8)])
+    }
+
+    @Test("The newest projection rejects an encounter draw after its actor disappears")
+    func semanticEncounterDrawRevalidatesBeforeSend() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-encounter-deck-draw",
+            presentationFixture: "question-presentation-encounter-deck-draw",
+            questionVersion: 41
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+        let identity = try #require(
+            model.basicChoicePresentation(for: gameID)?.identity
+        )
+
+        let withoutActor = try semanticEnvelope(
+            rawFixture: "question-encounter-deck-draw",
+            presentationFixture: "question-presentation-encounter-deck-draw",
+            questionVersion: 41,
+            mutateGame: { $0["investigators"] = .object([:]) }
+        )
+        model.liveGameStates[gameID] = .live(
+            BoardProjectionBuilder.makeProjection(from: withoutActor.game)
+        )
+
+        #expect(
+            await model.submitBasicChoice(identity, choiceIndex: 0)
+                == .unsupportedChoice
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Q41 rejects actor drift and a downgraded semantic kind")
+    func semanticEncounterDrawBindingDriftFailsClosed() {
+        #expect(throws: DecodingError.self) {
+            try semanticEnvelope(
+                rawFixture: "question-encounter-deck-draw",
+                presentationFixture: "question-presentation-encounter-deck-draw",
+                questionVersion: 41,
+                mutatePresentation: { presentation in
+                    guard case var .array(choices)? = presentation["choices"],
+                          case var .object(choice) = choices.first
+                    else { throw SemanticFixtureError.unexpectedShape }
+                    choice["actorId"] = .string("c01002")
+                    choices[0] = .object(choice)
+                    presentation["choices"] = .array(choices)
+                }
+            )
+        }
+        for wrapper in SemanticEncounterDrawWrapper.allCases {
+            #expect(throws: DecodingError.self) {
+                try semanticEnvelope(
+                    rawFixture: "question-encounter-deck-draw",
+                    presentationFixture:
+                    "question-presentation-encounter-deck-draw",
+                    questionVersion: 41,
+                    mutateRawQuestion: {
+                        $0 = wrapper.wrapping($0)
+                    }
+                )
+            }
+        }
+        #expect(throws: DecodingError.self) {
+            try semanticEnvelope(
+                rawFixture: "question-encounter-deck-draw",
+                presentationFixture: "question-presentation-encounter-deck-draw",
+                questionVersion: 41,
+                mutatePresentation: { presentation in
+                    guard case var .array(choices)? = presentation["choices"],
+                          case var .object(choice) = choices.first
+                    else { throw SemanticFixtureError.unexpectedShape }
+                    choice["kind"] = .string("drawCard")
+                    choices[0] = .object(choice)
+                    presentation["choices"] = .array(choices)
+                }
+            )
+        }
     }
 
     @Test("The newest projection rejects advanceAct after its act disappears")
@@ -340,5 +461,36 @@ extension AppModelLiveGameTests {
 
     private func fixtureJSON(_ name: String) throws -> JSONValue {
         try ContractJSON.decode(JSONValue.self, from: fixtureData(named: name))
+    }
+}
+
+private enum SemanticEncounterDrawWrapper: CaseIterable {
+    case label
+    case payCost
+    case source
+
+    func wrapping(_ question: JSONValue) -> JSONValue {
+        switch self {
+        case .label:
+            .object([
+                "tag": .string("QuestionLabel"),
+                "label": .string("Draw"),
+                "card": .null,
+                "question": question,
+            ])
+        case .payCost:
+            .object([
+                "tag": .string("PayCostQuestion"),
+                "cost": .object(["tag": .string("Free")]),
+                "question": question,
+            ])
+        case .source:
+            .object([
+                "tag": .string("QuestionWithSource"),
+                "source": .object(["tag": .string("GameSource")]),
+                "tooltip": .null,
+                "question": question,
+            ])
+        }
     }
 }

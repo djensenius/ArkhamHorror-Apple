@@ -14,6 +14,7 @@
 "semantic.choice.title.chooseEntity" = "%@ wählen";
 "semantic.choice.title.chooseTarget" = "Ziel wählen";
 "semantic.choice.title.drawCard" = "Eine Karte ziehen";
+"semantic.choice.title.drawEncounterCard" = "Begegnungskarte ziehen";
 "semantic.choice.title.endTurn" = "Zug beenden";
 "semantic.choice.title.engage" = "Verwickeln";
 "semantic.choice.title.evade" = "Entkommen";

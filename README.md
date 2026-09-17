@@ -107,20 +107,21 @@ hashes remain unchanged at Q33, and exercises that same strict prompt path.
 ### Backend replay authority
 
 As of Wednesday, September 16, 2026, this repository is pinned to backend
-contract commit `f4d83466f6e36bea13d4b0c21204db56121b6585` from
-`djensenius/ArkhamHorror#91`, at contract revision `0.1.42`. That revision adds
-the production Q36 movement, Q37 forced-ability, and Q38 damage/horror
-assignment prompts for both the Cellar and Attic branches. It binds the raw
-ability inputs to their semantic move and forced-ability projections, expands
-the exact negative-regression inventory to 625 cases, and publishes locale
-catalog revision `1.546b76d781cd46b3a2286be5412d2ce7`. The authenticated
-movement replays submit Q34-Q38, validate the branch-specific Q39 post-entry
-prompt, and stop without answering Q39.
+contract commit `e6047c07761dc075105c28d28a052fc1e19368ec` from
+`djensenius/ArkhamHorror#93`, at contract revision `0.1.43`. That revision adds
+the exact semantic encounter-deck draw used by the Attic branch and
+deterministic backend execution from Q39 through the Q42 action window. It
+expands the exact negative-regression inventory to 628 cases and publishes
+locale catalog revision `1.0f49e8af5450fe30e349a29da7d4c51f`. The
+authenticated movement replays submit Q34-Q41 and validate the branch-specific
+Q42 prompt and authoritative board state.
 
 Fight, Evade, Engage, the round transition, Roland's clue discovery, Cover
 Up's replacement effect, clue payment, act advancement, movement legality,
 forced entry abilities, and damage/horror assignment remain
-server-authoritative.
+server-authoritative. The backend also remains authoritative for Q39
+investigation or movement, skill-test resolution, end-turn progression,
+encounter-card draws, and the resulting Q42 action window.
 Swift recognizes only the exact governed prompt/source/message shapes, checks
 that referenced entities still exist in the newest projection, and submits the
 unchanged source-array index with the current question version. Costs,
@@ -147,7 +148,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.42",
+       "contractSchemaRevision": "0.1.43",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -208,7 +209,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend revision above:
 
 1. Confirm `ContractPin.current` is
-   `f4d83466f6e36bea13d4b0c21204db56121b6585` / `0.1.42`, then build the
+   `e6047c07761dc075105c28d28a052fc1e19368ec` / `0.1.43`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can

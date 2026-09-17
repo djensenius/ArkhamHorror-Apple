@@ -2,9 +2,22 @@ import CryptoKit
 import Foundation
 
 extension QuestionPresentationRawQuestionShape {
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     func validateGovernedChoices(
         for presentation: QuestionPresentation
     ) throws -> QuestionPresentation.GovernedSource? {
+        let rawEncounterDrawActorID = encounterDeckDrawActorID()
+        let hasEncounterDrawDescriptor = presentation.choices.contains {
+            $0.kind == .drawEncounterCard
+        }
+        if rawEncounterDrawActorID != nil || hasEncounterDrawDescriptor {
+            try validateEncounterDeckDraw(
+                for: presentation,
+                rawActorID: rawEncounterDrawActorID
+            )
+            return nil
+        }
+
         switch (
             presentation.questionVersion,
             presentation.questionKind,
@@ -38,8 +51,59 @@ extension QuestionPresentationRawQuestionShape {
         case (39, .playerWindowChooseOne, 11):
             try validateGatheringPostEntryChoices(for: presentation)
             return nil
+        case (40, .chooseOne, 1):
+            try validateGatheringStartSkillTest(for: presentation)
+            return nil
+        case (40, .playerWindowChooseOne, 1):
+            try validateGatheringEndTurn(for: presentation)
+            return nil
+        case (41, .chooseOne, 1):
+            try validateGatheringApplySkillTestResults(for: presentation)
+            return nil
+        case (42, .playerWindowChooseOne, 1):
+            try validateGatheringEndTurn(for: presentation)
+            return nil
+        case (42, .playerWindowChooseOne, 12),
+             (42, .playerWindowChooseOne, 13):
+            guard try validateGatheringAtticActionWindowIfPresent(
+                for: presentation
+            ) else {
+                throw QuestionPresentationBindingError
+                    .governedChoicesMismatch
+            }
+            return nil
         default:
             return nil
+        }
+    }
+
+    private func encounterDeckDrawActorID() -> String? {
+        guard case let .object(root) = rawQuestion,
+              root["tag"] == .string("ChooseOne"),
+              kind == .chooseOne,
+              choices.count == 1,
+              case let .object(rawChoice) = choices[0],
+              case let .drawEncounterCard(investigatorID, _)? =
+              BasicChoiceParser.parseEncounterDeckDraw(
+                  rawChoice,
+                  kind: .chooseOne,
+                  index: 0
+              )
+        else { return nil }
+        return investigatorID.rawValue.rawValue
+    }
+
+    private func validateEncounterDeckDraw(
+        for presentation: QuestionPresentation,
+        rawActorID: String?
+    ) throws {
+        guard let rawActorID,
+              kind == .chooseOne,
+              presentation.questionKind == .chooseOne,
+              presentation.choiceCount == 1,
+              presentation.choices == [.encounterDeckDraw(actorID: rawActorID)]
+        else {
+            throw QuestionPresentationBindingError.governedChoicesMismatch
         }
     }
 
@@ -137,15 +201,33 @@ extension QuestionPresentationRawQuestionShape {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     private func validateGatheringPostEntryChoices(
         for presentation: QuestionPresentation
     ) throws {
+        let investigations = presentation.choices.filter {
+            $0.matchesGatheringInvestigation(
+                cardCode: "c01114"
+            ) || $0.matchesGatheringInvestigation(
+                cardCode: "c01113"
+            )
+        }
+        let hallways = presentation.choices.filter {
+            $0.matchesGatheringHallwayMovement()
+        }
         guard choices.indices.contains(10),
-              presentation.choices.indices.contains(10)
+              presentation.choices.indices.contains(10),
+              investigations.count == 1,
+              hallways.count == 1,
+              let investigation = investigations.first,
+              let hallway = hallways.first,
+              Set([
+                  investigation.sourceIndex,
+                  hallway.sourceIndex,
+              ]) == [9, 10]
         else {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }
-        let investigation = presentation.choices[9]
         let expectedRawSHA256: String
         let expectedPresentationSHA256: String
         if investigation.matchesGatheringInvestigation(
@@ -169,8 +251,22 @@ extension QuestionPresentationRawQuestionShape {
         let rawSeal: GovernedJSONSeal
         let presentationSeal: GovernedJSONSeal
         do {
-            rawSeal = try GovernedJSONSeal(.array(choices))
-            presentationSeal = try makePresentationSeal(for: presentation)
+            rawSeal = try GovernedJSONSeal(
+                .array(
+                    canonicalPostEntryRawChoices(
+                        investigationSourceIndex:
+                        investigation.sourceIndex,
+                        hallwaySourceIndex: hallway.sourceIndex
+                    )
+                )
+            )
+            presentationSeal = try makePresentationSeal(
+                for: canonicalPostEntryPresentationChoices(
+                    presentation.choices,
+                    investigation: investigation,
+                    hallway: hallway
+                )
+            )
         } catch {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }
@@ -182,6 +278,27 @@ extension QuestionPresentationRawQuestionShape {
         else {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }
+    }
+
+    private func canonicalPostEntryRawChoices(
+        investigationSourceIndex: Int,
+        hallwaySourceIndex: Int
+    ) -> [JSONValue] {
+        var result = choices
+        result[9] = choices[investigationSourceIndex]
+        result[10] = choices[hallwaySourceIndex]
+        return result
+    }
+
+    private func canonicalPostEntryPresentationChoices(
+        _ choices: [QuestionPresentation.Choice],
+        investigation: QuestionPresentation.Choice,
+        hallway: QuestionPresentation.Choice
+    ) -> [QuestionPresentation.Choice] {
+        var result = choices
+        result[9] = investigation.replacingSourceIndex(9)
+        result[10] = hallway.replacingSourceIndex(10)
+        return result
     }
 
     private func validateGatheringQuestion(
@@ -208,22 +325,6 @@ extension QuestionPresentationRawQuestionShape {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }
         return rawSeal
-    }
-
-    private func makePresentationSeal(
-        for presentation: QuestionPresentation
-    ) throws -> GovernedJSONSeal {
-        try makePresentationSeal(for: presentation.choices)
-    }
-
-    private func makePresentationSeal(
-        for choices: [QuestionPresentation.Choice]
-    ) throws -> GovernedJSONSeal {
-        let value = try ContractJSON.decode(
-            JSONValue.self,
-            from: ContractJSON.encode(choices)
-        )
-        return try GovernedJSONSeal(value)
     }
 
     private func validateCanonicalChoice(
@@ -253,61 +354,5 @@ extension QuestionPresentationRawQuestionShape {
                 sourceIndex: sourceIndex
             )
         }
-    }
-}
-
-private struct GovernedJSONSeal {
-    let canonicalSHA256: String
-    let dynamicIDs: [String]
-
-    init(_ value: JSONValue) throws {
-        var normalizer = GovernedUUIDNormalizer()
-        let normalized = normalizer.normalize(value)
-        let canonical = try LosslessJSONSerializer.serialize(normalized)
-        canonicalSHA256 = SHA256.hash(data: canonical)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        dynamicIDs = normalizer.dynamicIDs
-    }
-}
-
-private struct GovernedUUIDNormalizer {
-    private var placeholders: [String: String] = [:]
-    private(set) var dynamicIDs: [String] = []
-
-    mutating func normalize(_ value: JSONValue) -> JSONValue {
-        switch value {
-        case let .string(string):
-            guard Self.isCanonicalUUID(string) else { return value }
-            if let placeholder = placeholders[string] {
-                return .string(placeholder)
-            }
-            let placeholder = "$uuid\(dynamicIDs.count)"
-            placeholders[string] = placeholder
-            dynamicIDs.append(string)
-            return .string(placeholder)
-        case let .array(elements):
-            var normalized: [JSONValue] = []
-            normalized.reserveCapacity(elements.count)
-            for element in elements {
-                normalized.append(normalize(element))
-            }
-            return .array(normalized)
-        case let .object(object):
-            var normalized: [String: JSONValue] = [:]
-            normalized.reserveCapacity(object.count)
-            for key in object.keys.sorted() {
-                guard let child = object[key] else { continue }
-                normalized[key] = normalize(child)
-            }
-            return .object(normalized)
-        case .null, .bool, .number:
-            return value
-        }
-    }
-
-    private static func isCanonicalUUID(_ value: String) -> Bool {
-        guard let uuid = UUID(uuidString: value) else { return false }
-        return uuid.uuidString.lowercased() == value
     }
 }

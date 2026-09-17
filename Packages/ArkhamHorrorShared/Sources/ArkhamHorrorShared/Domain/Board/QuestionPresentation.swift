@@ -36,6 +36,7 @@ extension QuestionPresentation {
         case assignHorror
         case chooseTarget
         case drawCard
+        case drawEncounterCard
         case endTurn
         case engage
         case evade

@@ -1,6 +1,33 @@
 @testable import ArkhamHorrorShared
 import Foundation
 
+private let gatheringAtticQ42PromptSHA256s = [
+    "12:0:1:2":
+        "28319921e5c12435567f794fdd6eb5ab3e6e89f63ba38f52e0b099b38ae1824a",
+    "12:0:2:1":
+        "1c0b5dd3b8e807516352e87b8378df4171302567b60f715cf28ad7f5f3330c6f",
+    "12:1:0:2":
+        "3027ec9916d4bb14542680ee71c53a19b6a7f9c9b167877459acbbb419adcafe",
+    "12:2:0:1":
+        "a169b0620713fffaa550f07d26664c0eaa626ca1c95ec9c29ae3c60adeea8d65",
+    "12:1:2:0":
+        "0f9cd56d4ce4d1d638d567bf7160ce140795d8f3afef99014fc2ad0afacdf8a8",
+    "12:2:1:0":
+        "8a5deae8ecebeae6e8d07fadc03ada5068d0dfde75b07c5817c10c40be7b57b6",
+    "13:0:1:2":
+        "5e57090f25063d7515ebeb58271ec71ead11bf8e6588b58ae9eeced2fe0cdf4b",
+    "13:0:2:1":
+        "a1a25cb87379b7620290e75d7cb963ac43c68236ec875a6718656b7724ffb739",
+    "13:1:0:2":
+        "90f341be4d8227bf096bcf15215f23202ff8fd6cf842ff7ee90a495d807ebd90",
+    "13:2:0:1":
+        "9233798958ec994090a86a6887ee59667e76b5fde7ecc4b82b5d822e55ee32a3",
+    "13:1:2:0":
+        "d45350e80f83ba2b89cfd16382891812d6850e658c8f1306c62b1b54f9375684",
+    "13:2:1:0":
+        "c2bd1c56f64249b4945b89770781d2136c26ab381291a4ad14328b713be4dec9",
+]
+
 // swiftlint:disable:next type_name
 enum ProductionGatheringActReplayConfigurationError: Error, Equatable {
     case invalidDeadline
@@ -96,6 +123,72 @@ enum GatheringMovementEntryBranch: String, Codable, Equatable, Sendable {
         }
     }
 
+    var q39PromptSHA256s: Set<String> {
+        switch self {
+        case .cellar:
+            [
+                q39PromptSHA256,
+                "5329c8b70fc8e393ba73ea49556c7fa9f599af1cd15e85efab54f765b2f02166",
+            ]
+        case .attic:
+            [
+                q39PromptSHA256,
+                "ca5d812821f318f2502eb6fd3dfe30a6baa811e0c19d9d03b504be45ac0707d5",
+            ]
+        }
+    }
+
+    var firstContinuationPromptSHA256: String {
+        switch self {
+        case .cellar:
+            "1276b303023cd7aee7823721fb1dadeb5daaa6df86f5c36697894f0effeb5a85"
+        case .attic:
+            "99258cd532aec6632832e3766bcf3a4a40f3caaf186e7e23684bd944b4f51a95"
+        }
+    }
+
+    var secondContinuationPromptSHA256: String {
+        switch self {
+        case .cellar:
+            "a62508e1da45f79d7548903fbc6be47641c91bdcb85e320a50026abdda56eecb"
+        case .attic:
+            "f47283f0c5a1537cbee8cdcb7b2b5faef740a5fa44ec8a8341d92a64e10594f1"
+        }
+    }
+
+    func resultingContinuationPromptSHA256(
+        choiceCount: Int,
+        atticMovementSourceIndex: Int? = nil,
+        hallwayInvestigationSourceIndex: Int? = nil,
+        cellarMovementSourceIndex: Int? = nil
+    ) -> String? {
+        switch self {
+        case .cellar:
+            guard choiceCount == 1,
+                  atticMovementSourceIndex == nil,
+                  hallwayInvestigationSourceIndex == nil,
+                  cellarMovementSourceIndex == nil
+            else { return nil }
+            return
+                "99258cd532aec6632832e3766bcf3a4a40f3caaf186e7e23684bd944b4f51a95"
+        case .attic:
+            guard let atticMovementSourceIndex,
+                  let hallwayInvestigationSourceIndex,
+                  let cellarMovementSourceIndex
+            else { return nil }
+            let firstRoleSourceIndex = choiceCount - 3
+            let roleOffsets = [
+                atticMovementSourceIndex - firstRoleSourceIndex,
+                hallwayInvestigationSourceIndex - firstRoleSourceIndex,
+                cellarMovementSourceIndex - firstRoleSourceIndex,
+            ]
+            let key = ([choiceCount] + roleOffsets)
+                .map(String.init)
+                .joined(separator: ":")
+            return gatheringAtticQ42PromptSHA256s[key]
+        }
+    }
+
     var resultingDamage: Int {
         switch self {
         case .cellar:
@@ -140,6 +233,9 @@ struct ProductionGatheringActReplayConfiguration: Sendable {
     static let forcedAbilityQuestionVersion = 37
     static let assignmentQuestionVersion = 38
     static let postEntryQuestionVersion = 39
+    static let firstContinuationQuestionVersion = 40
+    static let secondContinuationQuestionVersion = 41
+    static let resultingContinuationQuestionVersion = 42
     static let advancingActID = "c01108"
     static let advancedActID = "c01109"
     static let studyCardCode = "c01111"

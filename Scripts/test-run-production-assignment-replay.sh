@@ -7,7 +7,7 @@ readonly swift_bin="$toolchain_bin/swift"
 readonly selftest_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorSelfTestSuite/'
 readonly expected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator()'
 readonly injected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinatorInjected()'
-readonly current_contract_revision="0.1.42"
+readonly current_contract_revision="0.1.43"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2

@@ -2,6 +2,13 @@
 import Foundation
 import Testing
 
+// swiftlint:disable file_length
+private enum AtticQ42EvidenceRole {
+    case atticMovement
+    case hallwayInvestigation
+    case cellarMovement
+}
+
 @Suite("Production Gathering act replay mechanics")
 // swiftlint:disable:next type_name
 struct ProductionGatheringActReplayMechanicsTests {
@@ -120,7 +127,7 @@ struct ProductionGatheringActReplayMechanicsTests {
                 .validateAssignmentPrompt(
                     destination: destination
                 )
-            try q39PromptEvidence(destination: destination)
+            _ = try q39PromptEvidence(destination: destination)
                 .validatePostEntryPrompt(destination: destination)
         }
     }
@@ -144,6 +151,67 @@ struct ProductionGatheringActReplayMechanicsTests {
             GatheringActReplayCoordinatorDriver.evidenceName(
                 for: .gatheringAtticEntry
             ) == "gathering-attic-entry.json"
+        )
+    }
+
+    @Test("Post-entry successor prompts bind exact Q40 through Q42 roles")
+    func postEntrySuccessorPrompts() throws {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        for branch in [
+            GatheringMovementEntryBranch.cellar,
+            .attic,
+        ] {
+            try q40PromptEvidence(branch: branch)
+                .validateFirstContinuationPrompt(
+                    branch: branch,
+                    investigatorID: investigatorID
+                )
+            try q41PromptEvidence(branch: branch)
+                .validateSecondContinuationPrompt(
+                    branch: branch,
+                    investigatorID: investigatorID
+                )
+            try q42PromptEvidence(branch: branch)
+                .validateResultingContinuationPrompt(
+                    branch: branch,
+                    investigatorID: investigatorID
+                )
+        }
+
+        try q42PromptEvidence(
+            branch: .attic,
+            atticRoleOrder: [
+                .cellarMovement,
+                .hallwayInvestigation,
+                .atticMovement,
+            ]
+        ).validateResultingContinuationPrompt(
+            branch: .attic,
+            investigatorID: investigatorID
+        )
+
+        #expect(
+            throws:
+            ProductionGatheringActReplayEvidenceError.invalidQ42
+        ) {
+            try q42PromptEvidence(
+                branch: .attic,
+                actionableSourceIndices: Array(0 ..< 11)
+            ).validateResultingContinuationPrompt(
+                branch: .attic,
+                investigatorID: investigatorID
+            )
+        }
+    }
+
+    @Test("Seven-card Attic Q42 keeps every source index actionable")
+    func sevenCardAtticQ42() throws {
+        try q42PromptEvidence(
+            branch: .attic,
+            atticHandCardCount: 7
+        ).validateResultingContinuationPrompt(
+            branch: .attic,
+            investigatorID: BoardTestFixtures.investigatorID("c01001")
         )
     }
 
@@ -194,6 +262,76 @@ struct ProductionGatheringActReplayMechanicsTests {
             ProductionGatheringActReplayEvidenceError.digestMismatch
         ) {
             try altered.validateDigest()
+        }
+    }
+}
+
+@Suite("Production Gathering continuation prompt identities")
+struct GatheringContinuationIdentityTests {
+    @Test("Q40 and Q41 reject substituted prompt identities")
+    func continuationPromptIdentityTampering() {
+        let fixtures = ProductionGatheringActReplayMechanicsTests()
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        #expect(
+            throws:
+            ProductionGatheringActReplayEvidenceError.invalidQ40
+        ) {
+            try fixtures.q40PromptEvidence(
+                branch: .cellar,
+                canonicalSHA256:
+                GatheringMovementEntryBranch.attic
+                    .firstContinuationPromptSHA256
+            ).validateFirstContinuationPrompt(
+                branch: .cellar,
+                investigatorID: investigatorID
+            )
+        }
+        #expect(
+            throws:
+            ProductionGatheringActReplayEvidenceError.invalidQ41
+        ) {
+            try fixtures.q41PromptEvidence(
+                branch: .attic,
+                canonicalSHA256:
+                GatheringMovementEntryBranch.cellar
+                    .secondContinuationPromptSHA256
+            ).validateSecondContinuationPrompt(
+                branch: .attic,
+                investigatorID: investigatorID
+            )
+        }
+    }
+
+    @Test("Q42 binds its prompt identity to role order")
+    func resultingPromptIdentityTracksRoleOrder() throws {
+        let fixtures = ProductionGatheringActReplayMechanicsTests()
+        let mismatchedDigest = try #require(
+            GatheringMovementEntryBranch.attic
+                .resultingContinuationPromptSHA256(
+                    choiceCount: 13,
+                    atticMovementSourceIndex: 10,
+                    hallwayInvestigationSourceIndex: 11,
+                    cellarMovementSourceIndex: 12
+                )
+        )
+        #expect(
+            throws:
+            ProductionGatheringActReplayEvidenceError.invalidQ42
+        ) {
+            try fixtures.q42PromptEvidence(
+                branch: .attic,
+                atticHandCardCount: 7,
+                atticRoleOrder: [
+                    .cellarMovement,
+                    .atticMovement,
+                    .hallwayInvestigation,
+                ],
+                canonicalSHA256: mismatchedDigest
+            ).validateResultingContinuationPrompt(
+                branch: .attic,
+                investigatorID:
+                BoardTestFixtures.investigatorID("c01001")
+            )
         }
     }
 }
@@ -324,6 +462,16 @@ private extension ProductionGatheringActReplayMechanicsTests {
         actionableSourceIndices: [Int] = Array(0 ..< 11)
     ) -> GatheringActReplayPromptEvidence {
         let hallwayID = "fda9afef-4166-4c9f-962e-eed6e8cbee25"
+        let investigation = GatheringActReplayDescriptorEvidence(
+            choice: .gatheringInvestigation(
+                cardCode: destination.branch.locationCardCode,
+                locationID:
+                destination.locationID.codingKey.stringValue
+            )
+        )
+        let hallway = GatheringActReplayDescriptorEvidence(
+            choice: .gatheringHallwayMovement(locationID: hallwayID)
+        )
         return GatheringActReplayPromptEvidence(
             version:
             ProductionGatheringActReplayConfiguration
@@ -336,20 +484,262 @@ private extension ProductionGatheringActReplayMechanicsTests {
             sourceIndices: Array(0 ..< 11),
             actionableSourceIndices: actionableSourceIndices,
             canonicalSHA256: destination.branch.q39PromptSHA256,
-            selectedDescriptor: nil,
-            governedDescriptors: [
-                GatheringActReplayDescriptorEvidence(
-                    choice: .gatheringInvestigation(
-                        cardCode: destination.branch.locationCardCode,
-                        locationID:
-                        destination.locationID.codingKey.stringValue
-                    )
-                ),
-                GatheringActReplayDescriptorEvidence(
-                    choice: .gatheringHallwayMovement(locationID: hallwayID)
+            selectedDescriptor:
+            destination.branch == .cellar ? investigation : hallway,
+            governedDescriptors: [investigation, hallway]
+        )
+    }
+
+    func q40PromptEvidence(
+        branch: GatheringMovementEntryBranch,
+        canonicalSHA256: String? = nil
+    ) -> GatheringActReplayPromptEvidence {
+        let kind: QuestionPresentation.ChoiceKind = switch branch {
+        case .cellar:
+            .startSkillTest
+        case .attic:
+            .endTurn
+        }
+        let questionKind: QuestionPresentation.Kind = switch branch {
+        case .cellar:
+            .chooseOne
+        case .attic:
+            .playerWindowChooseOne
+        }
+        let rawTag: BasicChoiceQuestionKind = switch branch {
+        case .cellar:
+            .chooseOne
+        case .attic:
+            .playerWindowChooseOne
+        }
+        return GatheringActReplayPromptEvidence(
+            version:
+            ProductionGatheringActReplayConfiguration
+                .firstContinuationQuestionVersion,
+            rawTag: rawTag.rawValue,
+            questionKind: questionKind.rawValue,
+            choiceCount: 1,
+            sourceIndices: [0],
+            actionableSourceIndices: [0],
+            canonicalSHA256:
+            canonicalSHA256 ?? branch.firstContinuationPromptSHA256,
+            selectedDescriptor: GatheringActReplayDescriptorEvidence(
+                choice: QuestionPresentation.Choice(
+                    sourceIndex: 0,
+                    kind: kind,
+                    actorID: "c01001",
+                    entity: nil,
+                    label: nil,
+                    ability: nil,
+                    cost: nil
+                )
+            )
+        )
+    }
+
+    func q41PromptEvidence(
+        branch: GatheringMovementEntryBranch,
+        canonicalSHA256: String? = nil
+    ) -> GatheringActReplayPromptEvidence {
+        let choice: QuestionPresentation.Choice = switch branch {
+        case .cellar:
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .applySkillTestResults,
+                actorID: nil,
+                entity: nil,
+                label: nil,
+                ability: nil,
+                cost: nil
+            )
+        case .attic:
+            .encounterDeckDraw(actorID: "c01001")
+        }
+        return GatheringActReplayPromptEvidence(
+            version:
+            ProductionGatheringActReplayConfiguration
+                .secondContinuationQuestionVersion,
+            rawTag: BasicChoiceQuestionKind.chooseOne.rawValue,
+            questionKind: QuestionPresentation.Kind.chooseOne.rawValue,
+            choiceCount: 1,
+            sourceIndices: [0],
+            actionableSourceIndices: [0],
+            canonicalSHA256:
+            canonicalSHA256 ?? branch.secondContinuationPromptSHA256,
+            selectedDescriptor:
+            GatheringActReplayDescriptorEvidence(choice: choice)
+        )
+    }
+
+    func q42PromptEvidence(
+        branch: GatheringMovementEntryBranch,
+        actionableSourceIndices: [Int]? = nil,
+        atticHandCardCount: Int = 6,
+        atticRoleOrder: [AtticQ42EvidenceRole] = [
+            .atticMovement,
+            .hallwayInvestigation,
+            .cellarMovement,
+        ],
+        canonicalSHA256: String? = nil
+    ) throws -> GatheringActReplayPromptEvidence {
+        let choices: [QuestionPresentation.Choice] = switch branch {
+        case .cellar:
+            [
+                QuestionPresentation.Choice(
+                    sourceIndex: 0,
+                    kind: .endTurn,
+                    actorID: "c01001",
+                    entity: nil,
+                    label: nil,
+                    ability: nil,
+                    cost: nil
                 ),
             ]
+        case .attic:
+            atticQ42Choices(
+                handCardCount: atticHandCardCount,
+                roleOrder: atticRoleOrder
+            )
+        }
+        let sourceIndices = choices.map(\.sourceIndex)
+        let expectedCanonicalSHA256 = try q42PromptSHA256(
+            branch: branch,
+            choices: choices
         )
+        return GatheringActReplayPromptEvidence(
+            version:
+            ProductionGatheringActReplayConfiguration
+                .resultingContinuationQuestionVersion,
+            rawTag:
+            BasicChoiceQuestionKind.playerWindowChooseOne.rawValue,
+            questionKind:
+            QuestionPresentation.Kind.playerWindowChooseOne.rawValue,
+            choiceCount: choices.count,
+            sourceIndices: sourceIndices,
+            actionableSourceIndices:
+            actionableSourceIndices ?? sourceIndices,
+            canonicalSHA256:
+            canonicalSHA256 ?? expectedCanonicalSHA256,
+            selectedDescriptor: nil,
+            governedDescriptors: choices.map(
+                GatheringActReplayDescriptorEvidence.init(choice:)
+            )
+        )
+    }
+
+    func q42PromptSHA256(
+        branch: GatheringMovementEntryBranch,
+        choices: [QuestionPresentation.Choice]
+    ) throws -> String {
+        if branch == .cellar {
+            return try #require(
+                branch.resultingContinuationPromptSHA256(
+                    choiceCount: choices.count
+                )
+            )
+        }
+        let atticMovement = try #require(choices.first {
+            $0.kind == .move && $0.ability?.cardCode == "c01113"
+        })
+        let hallwayInvestigation = try #require(choices.first {
+            $0.kind == .investigate
+                && $0.ability?.cardCode ==
+                ProductionGatheringActReplayConfiguration.hallwayCardCode
+        })
+        let cellarMovement = try #require(choices.first {
+            $0.kind == .move && $0.ability?.cardCode == "c01114"
+        })
+        return try #require(
+            branch.resultingContinuationPromptSHA256(
+                choiceCount: choices.count,
+                atticMovementSourceIndex: atticMovement.sourceIndex,
+                hallwayInvestigationSourceIndex:
+                hallwayInvestigation.sourceIndex,
+                cellarMovementSourceIndex: cellarMovement.sourceIndex
+            )
+        )
+    }
+
+    // swiftlint:disable:next function_body_length
+    func atticQ42Choices(
+        handCardCount: Int,
+        roleOrder: [AtticQ42EvidenceRole]
+    ) -> [QuestionPresentation.Choice] {
+        let cardIDs = (0 ..< handCardCount).map {
+            String(format: "00000000-0000-4000-8000-%012d", $0)
+        }
+        var choices = [
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .gainResource,
+                actorID: "c01001",
+                entity: nil,
+                label: nil,
+                ability: nil,
+                cost: nil
+            ),
+            QuestionPresentation.Choice(
+                sourceIndex: 1,
+                kind: .drawCard,
+                actorID: "c01001",
+                entity: nil,
+                label: nil,
+                ability: nil,
+                cost: nil
+            ),
+        ] + cardIDs.enumerated().map { offset, cardID in
+            QuestionPresentation.Choice(
+                sourceIndex: offset + 2,
+                kind: .chooseTarget,
+                actorID: nil,
+                entity: .init(kind: .card, id: cardID),
+                label: nil,
+                ability: nil,
+                cost: nil
+            )
+        }
+        choices.append(
+            QuestionPresentation.Choice(
+                sourceIndex: choices.count,
+                kind: .endTurn,
+                actorID: "c01001",
+                entity: nil,
+                label: nil,
+                ability: nil,
+                cost: nil
+            )
+        )
+        let firstRoleSourceIndex = choices.count
+        choices += roleOrder.enumerated().map { offset, role in
+            let sourceIndex = offset + firstRoleSourceIndex
+            return switch role {
+            case .atticMovement:
+                .gatheringLocationMovement(
+                    sourceIndex: sourceIndex,
+                    cardCode: "c01113",
+                    locationID:
+                    "dbaa2d2e-4ceb-44b2-a554-e5fa370e7882",
+                    cost: .action(1)
+                )
+            case .hallwayInvestigation:
+                .gatheringInvestigation(
+                    sourceIndex: sourceIndex,
+                    cardCode:
+                    ProductionGatheringActReplayConfiguration
+                        .hallwayCardCode,
+                    locationID:
+                    "fda9afef-4166-4c9f-962e-eed6e8cbee25"
+                )
+            case .cellarMovement:
+                .gatheringMovement(
+                    sourceIndex: sourceIndex,
+                    cardCode: "c01114",
+                    locationID:
+                    "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
+                )
+            }
+        }
+        return choices
     }
 
     func movementEntryFixtureLocationID(

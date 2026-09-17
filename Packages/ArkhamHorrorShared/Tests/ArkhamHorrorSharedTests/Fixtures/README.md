@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@f4d83466f6e36bea13d4b0c21204db56121b6585`,
-schema revision `0.1.42`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@e6047c07761dc075105c28d28a052fc1e19368ec`,
+schema revision `0.1.43`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These 67 files, and only these 67, live under `Fixtures/Contract/` — a
+These 68 files, and only these 68, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -58,15 +58,18 @@ result application.
 
 `question-encounter-deck-draw.json` is the production Mythos `ChooseOne` prompt:
 source index zero is `TargetLabel(EncounterDeckTarget)` with one closed `DrawCards`
-message. The vendored `basic-choice-question.schema.json` publishes its semantic title,
-**Draw encounter card**, under `encounterDeckDrawLabel.title`. The client validates only
-this one-card, unresolved, standard, top-of-encounter-deck draw from `GameSource`,
-preserves the message bytes as data, and submits the unchanged versioned answer index.
-Other draw shapes remain unsupported; no game rules execute on the client.
-Fixture-driven tests apply all 47 encounter negatives from the unmodified manifest
-in memory, plus client numeric, required-field, source-index, focus, pending, stale,
-and reconnect/retry boundaries. Both the digest registry and the backend manifest's
-`artifactHashes` bind the vendored fixture and schema bytes.
+message. `question-presentation-encounter-deck-draw.json` publishes the actor-only
+`drawEncounterCard` descriptor over that unchanged source index, while the vendored
+`basic-choice-question.schema.json` publishes its semantic title, **Draw encounter
+card**, under `encounterDeckDrawLabel.title`. The client validates only this one-card,
+unresolved, standard, top-of-encounter-deck draw from `GameSource`, requires the raw and
+semantic actor identities to agree, preserves the message bytes as data, and submits the
+unchanged versioned answer index. Other draw shapes and wrapper variants remain
+unsupported; no game rules execute on the client. Fixture-driven tests apply all 47 raw
+encounter negatives and all three semantic-presentation negatives from the unmodified
+manifest in memory, plus client numeric, required-field, source-index, focus, pending,
+stale, and reconnect/retry boundaries. Both the digest registry and the backend
+manifest's `artifactHashes` bind the vendored fixtures and schema bytes.
 
 `question-enemy-attack.json` is the production enemy-phase `ChooseOneAtATime` prompt:
 its only source-index-zero choice is the exact closed regular attack published by
@@ -92,7 +95,7 @@ question version `6`; all 114 backend-published negative mutations remain update
 ## Governed assignment continuations
 
 Both remaining-assignment questions and dedicated Answers originate from the immutable
-`djensenius/ArkhamHorror#76` merge. The current revision `0.1.42` manifest and
+`djensenius/ArkhamHorror#76` merge. The current revision `0.1.43` manifest and
 basic-choice schema continue to govern them. Unlike the former replay-derived draft, these
 questions are generated through the real backend game engine, registered in the manifest,
 schema-validated, and each backed by 16 published single-mutation negatives.
@@ -103,7 +106,7 @@ choosing horror first produces the symmetric `Assign 1 damage`/`DamageToken` con
 Each sends its exact direct amount followed by the production `(0 damage, 0 horror)`
 completion message with both accumulated investigator-target arrays populated. Their
 Answers preserve source index `0`, player UUID `00000000-0000-0000-0000-000000000001`,
-and question version `7`. The 32 assignment-family negatives within the manifest's 625
+and question version `7`. The 32 assignment-family negatives within the manifest's 628
 total mutations now explicitly replace each continuation's required `AnyAsset` matcher
 with `AssetWithTitle`; Apple applies those mutations in memory and remains fail-closed.
 
@@ -125,7 +128,7 @@ other ability, window, and message field as opaque contract data, verifies that 
 still exists in the newest board projection, and submits the unchanged source index and
 authoritative question version. Unknown actions and malformed or alternate source shapes
 remain update-required. The backend manifest publishes two focused negative mutations for
-this fixture within its 625 total regressions.
+this fixture within its 628 total regressions.
 
 `question-player-window-engage-action.json` is the production post-Evade menu added by
 `djensenius/ArkhamHorror#81`. The same Ghoul Minion remains available to Fight at source
@@ -135,7 +138,7 @@ field, stays actionable only while that enemy remains in the newest projection, 
 submits only the unchanged source index plus authoritative question version. Swift never
 calculates or mutates engagement state. The backend manifest publishes three focused
 Engage negatives for unknown action text, an alternate source constructor, and uppercase
-UUID spelling within the manifest's 625 total regressions.
+UUID spelling within the manifest's 628 total regressions.
 
 ## Governed round transition
 
@@ -154,7 +157,7 @@ preserve the production Q24-Q27 sequence:
 Swift independently verifies repeated dynamic source, target, and investigator
 identities because JSON Schema cannot express equality between UUID values. It
 does not calculate timing, branch outcomes, horror, or discard state. The
-backend manifest publishes 55 focused round-transition mutations within its 625
+backend manifest publishes 55 focused round-transition mutations within its 628
 total regressions.
 
 ## Governed Roland Banks reaction
@@ -170,7 +173,7 @@ published by the backend. It requires canonical integer tokens for ability
 indices `1` and `100`, keeps both source indices stable, and checks only that
 Roland and his current location remain present before submission. Haskell alone
 decides whether the reaction is legal and applies the clue movement. The
-manifest publishes 60 focused Roland mutations within its 625 total
+manifest publishes 60 focused Roland mutations within its 628 total
 regressions.
 
 ## Governed Cover Up reaction
@@ -188,7 +191,7 @@ governed integer token to use its canonical spelling, and permits submission
 only while Roland remains at the affected location and the exact Cover Up
 treachery remains present with at least one clue. Haskell alone decides whether
 the replacement is legal and mutates investigator, location, and treachery clue
-counts. The manifest publishes 88 focused Cover Up mutations within its 625
+counts. The manifest publishes 88 focused Cover Up mutations within its 628
 total regressions.
 
 The deterministic fixture hashes to
@@ -213,7 +216,7 @@ the objective cost or ability metadata. The paired
 version `1`, the authoritative question version/kind/count, and generic
 `advanceAct` descriptors over those original source indices. The presentation
 schema publishes six focused Q34 mutations and one focused Q35 mutation within
-the manifest's 625 total regressions.
+the manifest's 628 total regressions.
 
 The semantic descriptors are display, controller, and accessibility metadata
 only. Apple must submit the unchanged source index and exact question version;
@@ -240,15 +243,25 @@ Q36 through Q38 and the transition into Q39 after the Act 1 advancement:
   assignment for Attic.
 - Q39 is the next player window. It has no vendored contract fixture; native
   binding seals its runtime-normalized investigation and Hallway movement
-  choices, while replay validates the full prompt and authoritative board state
-  without answering it.
+  choices, then submits the descriptor-selected source index: investigate the
+  Cellar or move from the Attic to the Hallway.
+- The backend-generated Q40 and Q41 prompts start and apply the Cellar skill
+  test, or end the Attic turn and draw exactly one encounter card.
+- Q42 is observed rather than answered. The Cellar branch exposes its
+  source-index-zero end-turn prompt; the Attic branch exposes all 12
+  authoritative player-window choices. Apple seals the entire raw and semantic
+  arrays after canonicalizing only the Attic movement, Hallway investigation,
+  and Cellar movement roles within source indices `9...11`, and requires all
+  six hand-card UUIDs plus all three location UUIDs to agree.
 
 The paired presentation fixtures publish only `move`, `resolveForcedAbility`,
 `assignDamage`, and `assignHorror` descriptors that remain independently bound
 to the raw source, card, location, investigator, token, and message identities.
 Apple submits only the unchanged source indices and question versions; Haskell
-alone moves Roland, resolves the location ability, and assigns damage or horror.
-The manifest publishes 43 focused movement-entry mutations within its 625 total
+alone moves Roland, resolves the location ability, assigns damage or horror,
+performs the investigation, ends the turn, draws the encounter card, advances
+the queue, and publishes the resulting Q42 state.
+The manifest publishes 43 focused movement-entry mutations within its 628 total
 regressions, including schema-valid raw changes to action/type, basic-action
 expansion, cost, cancellation, additional-cost handling, cost bypass, and
 target precedence that would otherwise change the pinned semantic descriptor.
@@ -283,7 +296,7 @@ replay coordinator uses that contract to bind the imported game, player remappin
 checkpoint bytes, backend build identity, and canonical replay envelope before
 submitting any native action. `djensenius/ArkhamHorror#79` repairs the fixture's
 canonical receipt digest and pins these bytes to immutable merge
-`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.42` rebinds that
+`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.43` rebinds that
 same validated fixture to the current contract manifest.
 
 ## token.json / whoami.json

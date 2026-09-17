@@ -68,6 +68,54 @@ enum EncounterDeckDrawFixtures {
             serverFeedback: nil
         )
     }
+
+    static func semanticPrompt(
+        _ value: JSONValue,
+        phase: BasicChoiceActionPhase? = nil
+    ) throws -> BasicChoicePromptPresentation {
+        let payload = try payload(value)
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: data("question-presentation-encounter-deck-draw")
+        )
+        let bound = try presentation.bind(
+            to: payload.rawValue,
+            expectedQuestionVersion: presentation.questionVersion
+        )
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID("000000000001"),
+                questionVersion: presentation.questionVersion,
+                rawQuestion: payload.rawValue,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: payload.state,
+            semanticPresentation: bound,
+            semanticLocaleIdentifier: "en",
+            readOnlyReason: nil,
+            actionPhase: phase,
+            actionChoiceIndex: phase == nil ? nil : 0,
+            serverFeedback: nil
+        )
+    }
+
+    static func semanticBoard() -> BoardProjection {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        return BoardProjectionBuilder.makeProjection(
+            from: BoardTestFixtures.snapshot(
+                investigators: [
+                    investigatorID: BoardTestFixtures.investigator(
+                        id: investigatorID
+                    ),
+                ],
+                activeInvestigatorID: investigatorID,
+                leadInvestigatorID: investigatorID
+            )
+        )
+    }
 }
 
 @MainActor
@@ -76,7 +124,7 @@ struct BasicChoiceEncounterDeckDrawTests {
     @Test("The production fixture uses the backend's semantic title and exact source index zero")
     func fixturePresentationAndEncoding() throws {
         let raw = try EncounterDeckDrawFixtures.value()
-        let prompt = try EncounterDeckDrawFixtures.prompt(raw)
+        let prompt = try EncounterDeckDrawFixtures.semanticPrompt(raw)
         let question = try #require(prompt.question.supportedQuestion)
         #expect(question.kind == .chooseOne)
         #expect(question.choices.map(\.index) == [0])
@@ -88,32 +136,26 @@ struct BasicChoiceEncounterDeckDrawTests {
         #expect(investigatorID.rawValue.rawValue == "c01001")
         #expect(messages.count == 1)
         #expect(choice.localizationKey == nil)
-        let schema = try JSONSerialization.jsonObject(
-            with: EncounterDeckDrawFixtures.data("basic-choice-question.schema")
-        ) as? [String: Any]
-        let definitions = try #require(schema?["$defs"] as? [String: Any])
-        let branch = try #require(definitions["encounterDeckDrawLabel"] as? [String: Any])
-        #expect(choice.title == branch["title"] as? String)
-        #expect(choice.title == "Draw encounter card")
-        let board = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        #expect(
+            prompt.semanticPresentation?.descriptor(forSourceIndex: 0)
+                == .encounterDeckDraw(actorID: "c01001")
+        )
+        let board = EncounterDeckDrawFixtures.semanticBoard()
         #expect(prompt.isChoiceActionable(choice, in: board))
-        #expect(BoardDisplayFormatting.choiceDisplayTitle(
-            for: choice, in: board
-        ) == "Draw encounter card")
-        #expect(BoardDisplayFormatting.choiceAccessibilityHint(
-            for: choice, in: board, canSubmit: true, statusMessage: nil
-        ) == "Activates choice 1.")
+        #expect(prompt.displayTitle(for: choice, in: board) == "Draw encounter card")
+        #expect(prompt.systemImage(for: choice) == "rectangle.stack")
+        #expect(prompt.accessibilityHint(for: choice, in: board) == "Activates choice 1.")
         #expect(try ContractJSON.decode(
             JSONValue.self,
             from: ContractJSON.encode(EncounterDeckDrawFixtures.payload(raw))
         ) == raw)
         let answer = BasicChoiceAnswer(
-            choice: choice.index, playerID: prompt.ownerID, questionVersion: 3
+            choice: choice.index, playerID: prompt.ownerID, questionVersion: 41
         )
         let expected = Data(
             """
             {"contents":{"choice":0,"playerId":"00000000-0000-0000-0000-000000000001",\
-            "questionVersion":3},"tag":"Answer"}
+            "questionVersion":41},"tag":"Answer"}
             """.utf8
         )
         #expect(try ContractJSON.encode(answer) == expected)
@@ -222,7 +264,7 @@ struct BasicChoiceEncounterDeckDrawTests {
         let choice = try #require(prompt.choices.first { $0.index == index })
         #expect(choice.content == .unsupported(tag: "TargetLabel"))
         #expect(choice.title == "Update required")
-        let board = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let board = EncounterDeckDrawFixtures.semanticBoard()
         #expect(!prompt.isChoiceActionable(choice, in: board))
         #expect(BoardDisplayFormatting.choiceAccessibilityHint(
             for: choice, in: board, canSubmit: true, statusMessage: nil
@@ -237,8 +279,10 @@ struct BasicChoiceEncounterDeckDrawTests {
 extension BasicChoiceEncounterDeckDrawTests {
     @Test("Native, keyboard, gamepad and Siri Remote activation share source index zero")
     func nativeFocusAndInputActivation() throws {
-        let prompt = try EncounterDeckDrawFixtures.prompt(EncounterDeckDrawFixtures.value())
-        let board = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let prompt = try EncounterDeckDrawFixtures.semanticPrompt(
+            EncounterDeckDrawFixtures.value()
+        )
+        let board = EncounterDeckDrawFixtures.semanticBoard()
         var submitted: [Int] = []
         let controller = BoardCommandController(
             projection: board, prompt: prompt, onChoice: { submitted.append($0) }
@@ -263,15 +307,15 @@ extension BasicChoiceEncounterDeckDrawTests {
     @Test("Pending draw disables stale native controls and retry receives semantic focus")
     func pendingAndRetryFocus() throws {
         let raw = try EncounterDeckDrawFixtures.value()
-        let board = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let board = EncounterDeckDrawFixtures.semanticBoard()
         var choices: [Int] = []
         var retries = 0
         let controller = try BoardCommandController(
-            projection: board, prompt: EncounterDeckDrawFixtures.prompt(raw),
+            projection: board, prompt: EncounterDeckDrawFixtures.semanticPrompt(raw),
             onChoice: { choices.append($0) }, onRetry: { retries += 1 }
         )
         for phase in [BasicChoiceActionPhase.sending, .awaitingSnapshot, .uncertain] {
-            let pending = try EncounterDeckDrawFixtures.prompt(raw, phase: phase)
+            let pending = try EncounterDeckDrawFixtures.semanticPrompt(raw, phase: phase)
             controller.applyPrompt(pending)
             #expect(!pending.canSubmit)
             #expect(!controller.coordinator.graph.contains(BoardFocusID.promptChoice(0)))
@@ -280,7 +324,7 @@ extension BasicChoiceEncounterDeckDrawTests {
                 focusID: BoardFocusID.promptChoice(0), .command(.primaryAction)
             ))
         }
-        try controller.applyPrompt(EncounterDeckDrawFixtures.prompt(
+        try controller.applyPrompt(EncounterDeckDrawFixtures.semanticPrompt(
             raw, phase: .retryable(.transportFailure)
         ))
         #expect(controller.coordinator.graph.contains(BoardFocusID.promptRetry))

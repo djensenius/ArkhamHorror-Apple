@@ -14,6 +14,7 @@
 "semantic.choice.title.chooseEntity" = "Choose %@";
 "semantic.choice.title.chooseTarget" = "Choose target";
 "semantic.choice.title.drawCard" = "Draw a card";
+"semantic.choice.title.drawEncounterCard" = "Draw encounter card";
 "semantic.choice.title.endTurn" = "End turn";
 "semantic.choice.title.engage" = "Engage";
 "semantic.choice.title.evade" = "Evade";

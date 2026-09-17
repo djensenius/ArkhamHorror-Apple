@@ -121,6 +121,12 @@ struct GatheringActReplayDescriptorEvidence: Codable, Equatable, Sendable {
     }
 }
 
+struct GatheringPostEntryPromptValidation: Equatable, Sendable {
+    let selectedSourceIndex: Int
+    let hallwayID: LocationID
+}
+
+// swiftlint:disable:next type_body_length
 struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
     let version: Int
     let rawTag: String
@@ -164,6 +170,7 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
     }
 
     @MainActor
+    // swiftlint:disable:next function_body_length
     init(
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
@@ -204,9 +211,9 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
         } else {
             selectedDescriptor = nil
         }
-        let isPostEntryPrompt = version ==
-            ProductionGatheringActReplayConfiguration.postEntryQuestionVersion
-        if isPostEntryPrompt {
+        switch version {
+        case ProductionGatheringActReplayConfiguration
+            .postEntryQuestionVersion:
             let descriptors = [9, 10].compactMap(
                 semantic.descriptor(forSourceIndex:)
             ).map(GatheringActReplayDescriptorEvidence.init(choice:))
@@ -214,7 +221,12 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
                 throw ProductionGatheringActReplayEvidenceError.invalidPrompt
             }
             governedDescriptors = descriptors
-        } else {
+        case ProductionGatheringActReplayConfiguration
+            .resultingContinuationQuestionVersion:
+            governedDescriptors = semantic.presentation.choices.map(
+                GatheringActReplayDescriptorEvidence.init(choice:)
+            )
+        default:
             governedDescriptors = nil
         }
     }
@@ -329,13 +341,30 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     func validatePostEntryPrompt(
         destination: GatheringMovementEntryDestination
-    ) throws {
+    ) throws -> GatheringPostEntryPromptValidation {
         let sourceIndexSet = Set(sourceIndices)
         guard let descriptors = governedDescriptors,
               descriptors.count == 2,
-              let hallwayIDText = descriptors[1].entityID,
+              let investigation = descriptors.first(where: {
+                  $0.kind ==
+                      QuestionPresentation.ChoiceKind.investigate.rawValue
+              }),
+              let hallway = descriptors.first(where: {
+                  $0.kind == QuestionPresentation.ChoiceKind.move.rawValue
+                      && $0.abilityCardCode ==
+                      ProductionGatheringActReplayConfiguration.hallwayCardCode
+              }),
+              let hallwayIDText = hallway.entityID,
+              let hallwayID = LocationID(
+                  codingKey: AnyCodingKey(stringValue: hallwayIDText)
+              ),
+              Set([
+                  investigation.sourceIndex,
+                  hallway.sourceIndex,
+              ]) == [9, 10],
               LocationID(
                   codingKey: AnyCodingKey(stringValue: hallwayIDText)
               ) != nil
@@ -345,14 +374,24 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
         let expectedDescriptors = [
             GatheringActReplayDescriptorEvidence(
                 choice: .gatheringInvestigation(
+                    sourceIndex: investigation.sourceIndex,
                     cardCode: destination.branch.locationCardCode,
                     locationID: destination.locationID.codingKey.stringValue
                 )
             ),
             GatheringActReplayDescriptorEvidence(
-                choice: .gatheringHallwayMovement(locationID: hallwayIDText)
+                choice: .gatheringHallwayMovement(
+                    sourceIndex: hallway.sourceIndex,
+                    locationID: hallwayIDText
+                )
             ),
         ]
+        let expectedSelectedDescriptor = switch destination.branch {
+        case .cellar:
+            expectedDescriptors[0]
+        case .attic:
+            expectedDescriptors[1]
+        }
         guard version ==
             ProductionGatheringActReplayConfiguration.postEntryQuestionVersion,
             rawTag ==
@@ -363,14 +402,278 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             sourceIndices == Array(0 ..< 11),
             sourceIndexSet.count == 11,
             actionableSourceIndices == sourceIndices,
-            canonicalSHA256 == destination.branch.q39PromptSHA256,
-            selectedDescriptor == nil,
-            descriptors == expectedDescriptors,
+            destination.branch.q39PromptSHA256s.contains(canonicalSHA256),
+            selectedDescriptor == expectedSelectedDescriptor,
+            descriptors.sorted(by: { $0.sourceIndex < $1.sourceIndex }) ==
+            expectedDescriptors.sorted(by: {
+                $0.sourceIndex < $1.sourceIndex
+            }),
             governedSourceEntityKind == nil,
             governedSourceEntityID == nil,
             governedSourceCardCode == nil
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ39
+        }
+        return GatheringPostEntryPromptValidation(
+            selectedSourceIndex: expectedSelectedDescriptor.sourceIndex,
+            hallwayID: hallwayID
+        )
+    }
+
+    func validateFirstContinuationPrompt(
+        branch: GatheringMovementEntryBranch,
+        investigatorID: InvestigatorID
+    ) throws {
+        let expectedKind: QuestionPresentation.ChoiceKind = switch branch {
+        case .cellar:
+            .startSkillTest
+        case .attic:
+            .endTurn
+        }
+        let expectedQuestionKind: QuestionPresentation.Kind = switch branch {
+        case .cellar:
+            .chooseOne
+        case .attic:
+            .playerWindowChooseOne
+        }
+        let expectedRawTag: String = switch branch {
+        case .cellar:
+            BasicChoiceQuestionKind.chooseOne.rawValue
+        case .attic:
+            BasicChoiceQuestionKind.playerWindowChooseOne.rawValue
+        }
+        let expectedDescriptor = GatheringActReplayDescriptorEvidence(
+            choice: QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: expectedKind,
+                actorID: investigatorID.codingKey.stringValue,
+                entity: nil,
+                label: nil,
+                ability: nil,
+                cost: nil
+            )
+        )
+        guard version ==
+            ProductionGatheringActReplayConfiguration
+            .firstContinuationQuestionVersion,
+            rawTag == expectedRawTag,
+            questionKind == expectedQuestionKind.rawValue,
+            choiceCount == 1,
+            sourceIndices == [0],
+            actionableSourceIndices == [0],
+            selectedDescriptor == expectedDescriptor,
+            governedDescriptors == nil,
+            governedSourceEntityKind == nil,
+            governedSourceEntityID == nil,
+            governedSourceCardCode == nil,
+            canonicalSHA256 == branch.firstContinuationPromptSHA256
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ40
+        }
+    }
+
+    func validateSecondContinuationPrompt(
+        branch: GatheringMovementEntryBranch,
+        investigatorID: InvestigatorID
+    ) throws {
+        let expectedChoice: QuestionPresentation.Choice = switch branch {
+        case .cellar:
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .applySkillTestResults,
+                actorID: nil,
+                entity: nil,
+                label: nil,
+                ability: nil,
+                cost: nil
+            )
+        case .attic:
+            .encounterDeckDraw(
+                actorID: investigatorID.codingKey.stringValue
+            )
+        }
+        let expectedDescriptor = GatheringActReplayDescriptorEvidence(
+            choice: expectedChoice
+        )
+        guard version ==
+            ProductionGatheringActReplayConfiguration
+            .secondContinuationQuestionVersion,
+            rawTag == BasicChoiceQuestionKind.chooseOne.rawValue,
+            questionKind == QuestionPresentation.Kind.chooseOne.rawValue,
+            choiceCount == 1,
+            sourceIndices == [0],
+            actionableSourceIndices == [0],
+            selectedDescriptor == expectedDescriptor,
+            governedDescriptors == nil,
+            governedSourceEntityKind == nil,
+            governedSourceEntityID == nil,
+            governedSourceCardCode == nil,
+            canonicalSHA256 == branch.secondContinuationPromptSHA256
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ41
+        }
+    }
+
+    // swiftlint:disable:next function_body_length
+    func validateResultingContinuationPrompt(
+        branch: GatheringMovementEntryBranch,
+        investigatorID: InvestigatorID
+    ) throws {
+        guard version ==
+            ProductionGatheringActReplayConfiguration
+            .resultingContinuationQuestionVersion,
+            rawTag ==
+            BasicChoiceQuestionKind.playerWindowChooseOne.rawValue,
+            questionKind ==
+            QuestionPresentation.Kind.playerWindowChooseOne.rawValue,
+            selectedDescriptor == nil,
+            governedSourceEntityKind == nil,
+            governedSourceEntityID == nil,
+            governedSourceCardCode == nil
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidQ42
+        }
+
+        switch branch {
+        case .cellar:
+            let expectedEndTurn = GatheringActReplayDescriptorEvidence(
+                choice: QuestionPresentation.Choice(
+                    sourceIndex: 0,
+                    kind: .endTurn,
+                    actorID: investigatorID.codingKey.stringValue,
+                    entity: nil,
+                    label: nil,
+                    ability: nil,
+                    cost: nil
+                )
+            )
+            guard choiceCount == 1,
+                  sourceIndices == [0],
+                  actionableSourceIndices == [0],
+                  governedDescriptors == [expectedEndTurn],
+                  canonicalSHA256 ==
+                  branch.resultingContinuationPromptSHA256(
+                      choiceCount: choiceCount
+                  )
+            else {
+                throw ProductionGatheringActReplayEvidenceError.invalidQ42
+            }
+        case .attic:
+            guard [12, 13].contains(choiceCount) else {
+                throw ProductionGatheringActReplayEvidenceError.invalidQ42
+            }
+            let endTurnSourceIndex = choiceCount - 4
+            let handCardSourceIndices = 2 ..< endTurnSourceIndex
+            let locationSourceIndices =
+                Set((endTurnSourceIndex + 1) ..< choiceCount)
+            let expectedEndTurn = GatheringActReplayDescriptorEvidence(
+                choice: QuestionPresentation.Choice(
+                    sourceIndex: endTurnSourceIndex,
+                    kind: .endTurn,
+                    actorID: investigatorID.codingKey.stringValue,
+                    entity: nil,
+                    label: nil,
+                    ability: nil,
+                    cost: nil
+                )
+            )
+            guard sourceIndices == Array(0 ..< choiceCount),
+                  actionableSourceIndices == sourceIndices,
+                  let governedDescriptors,
+                  governedDescriptors.map(\.sourceIndex) == sourceIndices,
+                  governedDescriptors[0] ==
+                  GatheringActReplayDescriptorEvidence(
+                      choice: .gatheringGainResource
+                  ),
+                  governedDescriptors[1] ==
+                  GatheringActReplayDescriptorEvidence(
+                      choice: .gatheringDrawCard
+                  ),
+                  governedDescriptors[endTurnSourceIndex] ==
+                  expectedEndTurn,
+                  handCardSourceIndices.allSatisfy({
+                      guard let cardID = governedDescriptors[$0].entityID,
+                            WireCardID(
+                                codingKey:
+                                AnyCodingKey(stringValue: cardID)
+                            ) != nil
+                      else { return false }
+                      return governedDescriptors[$0] ==
+                          GatheringActReplayDescriptorEvidence(
+                              choice: .gatheringCardTarget(
+                                  sourceIndex: $0,
+                                  cardID: cardID
+                              )
+                          )
+                  }),
+                  let atticMovement = governedDescriptors.first(where: {
+                      $0.kind ==
+                          QuestionPresentation.ChoiceKind.move.rawValue
+                          && $0.abilityCardCode == "c01113"
+                  }),
+                  let hallwayInvestigation =
+                  governedDescriptors.first(where: {
+                      $0.kind ==
+                          QuestionPresentation.ChoiceKind
+                          .investigate.rawValue
+                          && $0.abilityCardCode ==
+                          ProductionGatheringActReplayConfiguration
+                          .hallwayCardCode
+                  }),
+                  let cellarMovement = governedDescriptors.first(where: {
+                      $0.kind ==
+                          QuestionPresentation.ChoiceKind.move.rawValue
+                          && $0.abilityCardCode == "c01114"
+                  }),
+                  let atticID = atticMovement.entityID,
+                  let hallwayID = hallwayInvestigation.entityID,
+                  let cellarID = cellarMovement.entityID,
+                  Set([
+                      atticMovement.sourceIndex,
+                      hallwayInvestigation.sourceIndex,
+                      cellarMovement.sourceIndex,
+                  ]) == locationSourceIndices,
+                  atticMovement ==
+                  GatheringActReplayDescriptorEvidence(
+                      choice: .gatheringLocationMovement(
+                          sourceIndex: atticMovement.sourceIndex,
+                          cardCode: "c01113",
+                          locationID: atticID,
+                          cost: .action(1)
+                      )
+                  ),
+                  hallwayInvestigation ==
+                  GatheringActReplayDescriptorEvidence(
+                      choice: .gatheringInvestigation(
+                          sourceIndex:
+                          hallwayInvestigation.sourceIndex,
+                          cardCode:
+                          ProductionGatheringActReplayConfiguration
+                              .hallwayCardCode,
+                          locationID: hallwayID
+                      )
+                  ),
+                  cellarMovement ==
+                  GatheringActReplayDescriptorEvidence(
+                      choice: .gatheringMovement(
+                          sourceIndex: cellarMovement.sourceIndex,
+                          cardCode: "c01114",
+                          locationID: cellarID
+                      )
+                  ),
+                  canonicalSHA256 ==
+                  branch.resultingContinuationPromptSHA256(
+                      choiceCount: choiceCount,
+                      atticMovementSourceIndex:
+                      atticMovement.sourceIndex,
+                      hallwayInvestigationSourceIndex:
+                      hallwayInvestigation.sourceIndex,
+                      cellarMovementSourceIndex:
+                      cellarMovement.sourceIndex
+                  )
+            else {
+                throw ProductionGatheringActReplayEvidenceError.invalidQ42
+            }
         }
     }
 }
@@ -567,6 +870,13 @@ struct GatheringReplayStateIdentity {
     let gameRevision: String
 }
 
+private struct GatheringContinuationStateExpectation {
+    let version: Int
+    let remainingActions: Int
+    let locationID: LocationID
+    let locationCardCode: String
+}
+
 struct GatheringMovementEntryValidationContext {
     let q36Prompt: GatheringActReplayPromptEvidence
     let q36State: GatheringActReplayBoardStateEvidence
@@ -584,6 +894,182 @@ struct GatheringMovementEntryValidationContext {
     }
 }
 
+struct GatheringContinuationReplayEvidence: Codable, Equatable, Sendable {
+    let q39Answer: GatheringActReplayAnswerEvidence
+    let q39Controller: GatheringActReplayControllerEvidence
+    let q40Prompt: GatheringActReplayPromptEvidence
+    let q40Answer: GatheringActReplayAnswerEvidence
+    let q40Controller: GatheringActReplayControllerEvidence
+    let q40State: GatheringActReplayBoardStateEvidence
+    let q41Prompt: GatheringActReplayPromptEvidence
+    let q41Answer: GatheringActReplayAnswerEvidence
+    let q41Controller: GatheringActReplayControllerEvidence
+    let q41State: GatheringActReplayBoardStateEvidence
+    let q42Prompt: GatheringActReplayPromptEvidence
+    let q42State: GatheringActReplayBoardStateEvidence
+
+    var submittedAnswers: [GatheringActReplayAnswerEvidence] {
+        [q39Answer, q40Answer, q41Answer]
+    }
+
+    // swiftlint:disable:next function_body_length
+    func validate(
+        branch: GatheringMovementEntryBranch,
+        destination: GatheringMovementEntryDestination,
+        postEntry: GatheringPostEntryPromptValidation,
+        identity: GatheringReplayStateIdentity,
+        playerID: PlayerID
+    ) throws {
+        try q39Answer.validate(
+            choice: postEntry.selectedSourceIndex,
+            playerID: playerID,
+            questionVersion:
+            ProductionGatheringActReplayConfiguration
+                .postEntryQuestionVersion
+        )
+        try q39Controller.validate(
+            selectedSourceIndex: postEntry.selectedSourceIndex,
+            expectedFocusSourceIndices:
+            Array(0 ... postEntry.selectedSourceIndex)
+        )
+        try q40Prompt.validateFirstContinuationPrompt(
+            branch: branch,
+            investigatorID: identity.investigatorID
+        )
+        try q40Answer.validate(
+            choice: 0,
+            playerID: playerID,
+            questionVersion:
+            ProductionGatheringActReplayConfiguration
+                .firstContinuationQuestionVersion
+        )
+        try q40Controller.validate(
+            selectedSourceIndex: 0,
+            expectedFocusSourceIndices: [0]
+        )
+        try q41Prompt.validateSecondContinuationPrompt(
+            branch: branch,
+            investigatorID: identity.investigatorID
+        )
+        try q41Answer.validate(
+            choice: 0,
+            playerID: playerID,
+            questionVersion:
+            ProductionGatheringActReplayConfiguration
+                .secondContinuationQuestionVersion
+        )
+        try q41Controller.validate(
+            selectedSourceIndex: 0,
+            expectedFocusSourceIndices: [0]
+        )
+        try q42Prompt.validateResultingContinuationPrompt(
+            branch: branch,
+            investigatorID: identity.investigatorID
+        )
+        try validateStateProgression(
+            branch: branch,
+            destination: destination,
+            postEntry: postEntry,
+            identity: identity
+        )
+    }
+
+    private func validateStateProgression(
+        branch: GatheringMovementEntryBranch,
+        destination: GatheringMovementEntryDestination,
+        postEntry: GatheringPostEntryPromptValidation,
+        identity: GatheringReplayStateIdentity
+    ) throws {
+        try q40State.validateDigest()
+        try q41State.validateDigest()
+        try q42State.validateDigest()
+        try validateStateIdentity(
+            q40State,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .firstContinuationQuestionVersion,
+            identity: identity
+        )
+        try validateStateIdentity(
+            q41State,
+            version:
+            ProductionGatheringActReplayConfiguration
+                .secondContinuationQuestionVersion,
+            identity: identity
+        )
+        let locationID: LocationID
+        let locationCardCode: String
+        switch branch {
+        case .cellar:
+            locationID = destination.locationID
+            locationCardCode = destination.branch.locationCardCode
+        case .attic:
+            locationID = postEntry.hallwayID
+            locationCardCode =
+                ProductionGatheringActReplayConfiguration.hallwayCardCode
+        }
+        try validateState(
+            q42State,
+            expectation: GatheringContinuationStateExpectation(
+                version:
+                ProductionGatheringActReplayConfiguration
+                    .resultingContinuationQuestionVersion,
+                remainingActions: branch == .cellar ? 0 : 3,
+                locationID: locationID,
+                locationCardCode: locationCardCode
+            ),
+            identity: identity
+        )
+    }
+
+    private func validateStateIdentity(
+        _ state: GatheringActReplayBoardStateEvidence,
+        version: Int,
+        identity: GatheringReplayStateIdentity
+    ) throws {
+        guard state.source == .socket,
+              state.gameID == identity.gameID,
+              state.gameRevision == identity.gameRevision,
+              state.playerID == nil,
+              state.scenarioSteps == version,
+              state.actIDs == [
+                  ProductionGatheringActReplayConfiguration.advancedActID,
+              ],
+              state.investigatorID == identity.investigatorID
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidState
+        }
+    }
+
+    private func validateState(
+        _ state: GatheringActReplayBoardStateEvidence,
+        expectation: GatheringContinuationStateExpectation,
+        identity: GatheringReplayStateIdentity
+    ) throws {
+        let locations = state.locations.filter {
+            $0.id == expectation.locationID
+                && $0.cardCode == expectation.locationCardCode
+        }
+        guard locations.count == 1 else {
+            throw ProductionGatheringActReplayEvidenceError.invalidState
+        }
+        let location = locations[0]
+        try validateStateIdentity(
+            state,
+            version: expectation.version,
+            identity: identity
+        )
+        guard
+            state.investigatorLocationID == expectation.locationID,
+            state.remainingActions == expectation.remainingActions,
+            location.revealed,
+            location.investigatorIDs == [identity.investigatorID]
+        else {
+            throw ProductionGatheringActReplayEvidenceError.invalidState
+        }
+    }
+}
+
 struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
     let branch: GatheringMovementEntryBranch
     let q36Answer: GatheringActReplayAnswerEvidence
@@ -598,7 +1084,13 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
     let q38State: GatheringActReplayBoardStateEvidence
     let q39Prompt: GatheringActReplayPromptEvidence
     let q39State: GatheringActReplayBoardStateEvidence
+    let continuation: GatheringContinuationReplayEvidence
 
+    var submittedAnswers: [GatheringActReplayAnswerEvidence] {
+        [q36Answer, q37Answer, q38Answer] + continuation.submittedAnswers
+    }
+
+    // swiftlint:disable:next function_body_length
     func validate(
         context: GatheringMovementEntryValidationContext
     ) throws {
@@ -643,11 +1135,20 @@ struct GatheringMovementEntryReplayEvidence: Codable, Equatable, Sendable {
             selectedSourceIndex: 0,
             expectedFocusSourceIndices: [0]
         )
-        try q39Prompt.validatePostEntryPrompt(destination: destination)
+        let postEntry = try q39Prompt.validatePostEntryPrompt(
+            destination: destination
+        )
         try validateBoardTransition(
             q36State: context.q36State,
             identity: context.stateIdentity,
             destination: destination
+        )
+        try continuation.validate(
+            branch: branch,
+            destination: destination,
+            postEntry: postEntry,
+            identity: context.stateIdentity,
+            playerID: context.playerID
         )
     }
 
@@ -752,7 +1253,7 @@ struct ProductionGatheringActReplayEvidence:
     Sendable
 {
     // swiftlint:enable opening_brace
-    static let currentSchemaVersion = "1.2.0"
+    static let currentSchemaVersion = "1.3.0"
 
     let schemaVersion: String
     let attestation: ProductionAssignmentReplayAttestation
@@ -1139,6 +1640,9 @@ enum ProductionGatheringActReplayEvidenceError: Error, Equatable {
     case invalidQ37
     case invalidQ38
     case invalidQ39
+    case invalidQ40
+    case invalidQ41
+    case invalidQ42
     case invalidState
     case invalidRevisions
     case configurationMismatch

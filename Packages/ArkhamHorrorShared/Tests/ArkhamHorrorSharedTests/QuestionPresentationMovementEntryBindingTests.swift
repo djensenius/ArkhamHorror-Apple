@@ -4,8 +4,13 @@ import Testing
 
 private let movementEntryHallwayFixtureID =
     "fda9afef-4166-4c9f-962e-eed6e8cbee25"
+private let movementEntryCellarFixtureID =
+    "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
+private let movementEntryAtticFixtureID =
+    "dbaa2d2e-4ceb-44b2-a554-e5fa370e7882"
 
 @Suite("Semantic movement-entry raw binding")
+// swiftlint:disable:next type_body_length
 struct MovementEntryQuestionBindingTests {
     @Test("Q36-Q38 reject raw source drift and cross-branch presentation")
     func gatheringRawPresentationDriftFailsClosed() throws {
@@ -64,35 +69,49 @@ struct MovementEntryQuestionBindingTests {
         let branches = [
             (
                 movementIndex: 9,
+                investigationSourceIndex: 9,
                 cardCode: "c01114",
                 locationID: "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
             ),
             (
                 movementIndex: 10,
+                investigationSourceIndex: 9,
                 cardCode: "c01113",
                 locationID: "dbaa2d2e-4ceb-44b2-a554-e5fa370e7882"
+            ),
+            (
+                movementIndex: 9,
+                investigationSourceIndex: 10,
+                cardCode: "c01114",
+                locationID: "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
             ),
         ]
         for branch in branches {
             try assertPostEntryBinding(
                 movementIndex: branch.movementIndex,
+                investigationSourceIndex:
+                branch.investigationSourceIndex,
                 cardCode: branch.cardCode,
                 locationID: branch.locationID
             )
         }
     }
 
+    // swiftlint:disable:next function_body_length
     private func assertPostEntryBinding(
         movementIndex: Int,
+        investigationSourceIndex: Int,
         cardCode: String,
         locationID: String
     ) throws {
         let rawQuestion = try postEntryRawQuestion(
             movementIndex: movementIndex,
+            investigationSourceIndex: investigationSourceIndex,
             cardCode: cardCode,
             locationID: locationID
         )
         let presentation = try postEntryPresentation(
+            investigationSourceIndex: investigationSourceIndex,
             cardCode: cardCode,
             locationID: locationID,
             hallwayID: movementEntryHallwayFixtureID
@@ -102,16 +121,23 @@ struct MovementEntryQuestionBindingTests {
             expectedQuestionVersion: 39
         )
         #expect(
-            binding.descriptor(forSourceIndex: 9)?.entity?.id == locationID
+            binding.descriptor(
+                forSourceIndex: investigationSourceIndex
+            )?.entity?.id == locationID
         )
+        let hallwaySourceIndex =
+            investigationSourceIndex == 9 ? 10 : 9
         #expect(
-            binding.descriptor(forSourceIndex: 10)?.entity?.id ==
+            binding.descriptor(
+                forSourceIndex: hallwaySourceIndex
+            )?.entity?.id ==
                 movementEntryHallwayFixtureID
         )
 
         let driftedRaw = try replacing(
             rawQuestion,
-            at: "/choices/10/ability/source/contents",
+            at:
+            "/choices/\(hallwaySourceIndex)/ability/source/contents",
             with: .string(locationID)
         )
         assertBindingFails(
@@ -121,6 +147,7 @@ struct MovementEntryQuestionBindingTests {
         )
 
         let driftedPresentation = try postEntryPresentation(
+            investigationSourceIndex: investigationSourceIndex,
             cardCode: cardCode,
             locationID: locationID,
             hallwayID: "33333333-3333-4333-8333-333333333333"
@@ -147,6 +174,7 @@ struct MovementEntryQuestionBindingTests {
     }
 
     private func postEntryPresentation(
+        investigationSourceIndex: Int,
         cardCode: String,
         locationID: String,
         hallwayID: String
@@ -154,13 +182,24 @@ struct MovementEntryQuestionBindingTests {
         let movement = try presentationFixture(
             "question-presentation-gathering-movement"
         )
-        let choices = Array(movement.choices.prefix(9)) + [
+        let hallwaySourceIndex =
+            investigationSourceIndex == 9 ? 10 : 9
+        let investigation = QuestionPresentation.Choice
             .gatheringInvestigation(
+                sourceIndex: investigationSourceIndex,
                 cardCode: cardCode,
                 locationID: locationID
-            ),
-            .gatheringHallwayMovement(locationID: hallwayID),
-        ]
+            )
+        let hallway = QuestionPresentation.Choice
+            .gatheringHallwayMovement(
+                sourceIndex: hallwaySourceIndex,
+                locationID: hallwayID
+            )
+        let postEntryChoices = investigationSourceIndex == 9
+            ? [investigation, hallway]
+            : [hallway, investigation]
+        let choices = Array(movement.choices.prefix(9))
+            + postEntryChoices
         return try ContractJSON.decode(
             QuestionPresentation.self,
             from: ContractJSON.encode(
@@ -177,6 +216,7 @@ struct MovementEntryQuestionBindingTests {
 
     private func postEntryRawQuestion(
         movementIndex: Int,
+        investigationSourceIndex: Int,
         cardCode: String,
         locationID: String
     ) throws -> JSONValue {
@@ -210,11 +250,11 @@ struct MovementEntryQuestionBindingTests {
                 "tag": .string("ActionCost"),
             ])
         )
+        let postEntryChoices = investigationSourceIndex == 9
+            ? [investigation, hallwayMovement]
+            : [hallwayMovement, investigation]
         root["choices"] = .array(
-            Array(movementChoices.prefix(9)) + [
-                investigation,
-                hallwayMovement,
-            ]
+            Array(movementChoices.prefix(9)) + postEntryChoices
         )
         return .object(root)
     }
@@ -282,7 +322,9 @@ private func assertRelabeledPostEntryChoiceFails(
     rawQuestion: JSONValue
 ) throws {
     var relabeledChoices = presentation.choices
-    let investigation = relabeledChoices[9]
+    let investigation = try #require(
+        relabeledChoices.first { $0.kind == .investigate }
+    )
     relabeledChoices[0] = QuestionPresentation.Choice(
         sourceIndex: 0,
         kind: investigation.kind,
@@ -292,20 +334,15 @@ private func assertRelabeledPostEntryChoiceFails(
         ability: investigation.ability,
         cost: investigation.cost
     )
-    let relabeledPresentation = try ContractJSON.decode(
-        QuestionPresentation.self,
-        from: ContractJSON.encode(
-            QuestionPresentation(
-                protocolVersion: 1,
-                questionVersion: 39,
-                questionKind: .playerWindowChooseOne,
-                choiceCount: relabeledChoices.count,
-                choices: relabeledChoices
-            )
-        )
+    let relabeledPresentation = QuestionPresentation(
+        protocolVersion: 1,
+        questionVersion: 39,
+        questionKind: .playerWindowChooseOne,
+        choiceCount: relabeledChoices.count,
+        choices: relabeledChoices
     )
     #expect(throws: QuestionPresentationBindingError.self) {
-        try relabeledPresentation.bind(
+        _ = try relabeledPresentation.bind(
             to: rawQuestion,
             expectedQuestionVersion: 39
         )
