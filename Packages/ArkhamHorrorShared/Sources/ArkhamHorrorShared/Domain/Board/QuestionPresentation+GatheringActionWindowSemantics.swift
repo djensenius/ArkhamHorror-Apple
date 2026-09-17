@@ -76,6 +76,26 @@ extension QuestionPresentation.Choice {
         cost: nil
     )
 
+    static let gatheringStartSkillTest = Self(
+        sourceIndex: 0,
+        kind: .startSkillTest,
+        actorID: "c01001",
+        entity: nil,
+        label: nil,
+        ability: nil,
+        cost: nil
+    )
+
+    static let gatheringApplySkillTestResults = Self(
+        sourceIndex: 0,
+        kind: .applySkillTestResults,
+        actorID: nil,
+        entity: nil,
+        label: nil,
+        ability: nil,
+        cost: nil
+    )
+
     static func gatheringEndTurn(sourceIndex: Int) -> Self {
         Self(
             sourceIndex: sourceIndex,

@@ -51,18 +51,23 @@ extension QuestionPresentationRawQuestionShape {
         case (39, .playerWindowChooseOne, 11):
             try validateGatheringPostEntryChoices(for: presentation)
             return nil
-        case (42, .playerWindowChooseOne, _):
-            if try validateGatheringAtticActionWindowIfPresent(
+        case (40, .chooseOne, 1):
+            try validateGatheringStartSkillTest(for: presentation)
+            return nil
+        case (40, .playerWindowChooseOne, 1):
+            try validateGatheringEndTurn(for: presentation)
+            return nil
+        case (41, .chooseOne, 1):
+            try validateGatheringApplySkillTestResults(for: presentation)
+            return nil
+        case (42, .playerWindowChooseOne, 1):
+            try validateGatheringEndTurn(for: presentation)
+            return nil
+        case (42, .playerWindowChooseOne, 12),
+             (42, .playerWindowChooseOne, 13):
+            guard try validateGatheringAtticActionWindowIfPresent(
                 for: presentation
-            ) {
-                return nil
-            }
-            let hasMovement = presentation.choices.contains {
-                $0.kind == .move
-            }
-            let hasActionWindowSemantics =
-                presentation.gatheringAtticActionWindowSemantics != nil
-            if hasActionWindowSemantics || hasMovement {
+            ) else {
                 throw QuestionPresentationBindingError
                     .governedChoicesMismatch
             }

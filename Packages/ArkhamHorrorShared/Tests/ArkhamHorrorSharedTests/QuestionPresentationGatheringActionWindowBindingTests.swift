@@ -76,6 +76,39 @@ struct GatheringActionWindowBindingTests {
             )
         }
     }
+
+    @Test("Attic Q42 rejects sparse descriptors without trapping")
+    func gatheringAtticQ42RejectsSparseDescriptors() throws {
+        for handCardCount in [6, 7] {
+            let rawQuestion = try atticQ42RawQuestion(
+                roleOrder: [
+                    .cellarMovement,
+                    .atticMovement,
+                    .hallwayInvestigation,
+                ],
+                handCardCount: handCardCount
+            )
+            let complete = try atticQ42Presentation(
+                roleOrder: [
+                    .cellarMovement,
+                    .atticMovement,
+                    .hallwayInvestigation,
+                ],
+                handCardCount: handCardCount
+            )
+            let sparse = QuestionPresentation(
+                protocolVersion: complete.protocolVersion,
+                questionVersion: complete.questionVersion,
+                questionKind: complete.questionKind,
+                choiceCount: complete.choiceCount,
+                choices: Array(complete.choices.prefix(1))
+            )
+            assertActionWindowBindingFails(
+                presentation: sparse,
+                rawQuestion: rawQuestion
+            )
+        }
+    }
 }
 
 private extension GatheringActionWindowBindingTests {
@@ -217,17 +250,12 @@ private extension GatheringActionWindowBindingTests {
                 sourceIndex: sourceIndex
             )
         }
-        let downgradedPresentation = try ContractJSON.decode(
-            QuestionPresentation.self,
-            from: ContractJSON.encode(
-                QuestionPresentation(
-                    protocolVersion: 1,
-                    questionVersion: 42,
-                    questionKind: .playerWindowChooseOne,
-                    choiceCount: downgradedChoices.count,
-                    choices: downgradedChoices
-                )
-            )
+        let downgradedPresentation = QuestionPresentation(
+            protocolVersion: 1,
+            questionVersion: 42,
+            questionKind: .playerWindowChooseOne,
+            choiceCount: downgradedChoices.count,
+            choices: downgradedChoices
         )
         assertActionWindowBindingFails(
             presentation: downgradedPresentation,

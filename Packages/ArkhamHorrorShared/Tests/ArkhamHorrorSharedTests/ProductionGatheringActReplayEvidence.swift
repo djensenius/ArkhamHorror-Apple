@@ -466,10 +466,7 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             governedSourceEntityKind == nil,
             governedSourceEntityID == nil,
             governedSourceCardCode == nil,
-            ProductionAssignmentReplayConfiguration.isLowercaseHex(
-                canonicalSHA256,
-                count: 64
-            )
+            canonicalSHA256 == branch.firstContinuationPromptSHA256
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ40
         }
@@ -511,10 +508,7 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             governedSourceEntityKind == nil,
             governedSourceEntityID == nil,
             governedSourceCardCode == nil,
-            ProductionAssignmentReplayConfiguration.isLowercaseHex(
-                canonicalSHA256,
-                count: 64
-            )
+            canonicalSHA256 == branch.secondContinuationPromptSHA256
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ41
         }
@@ -535,11 +529,7 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             selectedDescriptor == nil,
             governedSourceEntityKind == nil,
             governedSourceEntityID == nil,
-            governedSourceCardCode == nil,
-            ProductionAssignmentReplayConfiguration.isLowercaseHex(
-                canonicalSHA256,
-                count: 64
-            )
+            governedSourceCardCode == nil
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ42
         }
@@ -560,7 +550,11 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             guard choiceCount == 1,
                   sourceIndices == [0],
                   actionableSourceIndices == [0],
-                  governedDescriptors == [expectedEndTurn]
+                  governedDescriptors == [expectedEndTurn],
+                  canonicalSHA256 ==
+                  branch.resultingContinuationPromptSHA256(
+                      choiceCount: choiceCount
+                  )
             else {
                 throw ProductionGatheringActReplayEvidenceError.invalidQ42
             }
@@ -666,6 +660,16 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
                           cardCode: "c01114",
                           locationID: cellarID
                       )
+                  ),
+                  canonicalSHA256 ==
+                  branch.resultingContinuationPromptSHA256(
+                      choiceCount: choiceCount,
+                      atticMovementSourceIndex:
+                      atticMovement.sourceIndex,
+                      hallwayInvestigationSourceIndex:
+                      hallwayInvestigation.sourceIndex,
+                      cellarMovementSourceIndex:
+                      cellarMovement.sourceIndex
                   )
             else {
                 throw ProductionGatheringActReplayEvidenceError.invalidQ42

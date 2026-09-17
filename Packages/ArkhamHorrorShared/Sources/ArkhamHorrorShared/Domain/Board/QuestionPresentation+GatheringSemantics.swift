@@ -65,9 +65,17 @@ extension QuestionPresentation {
                   ]) == [9, 10]
             else { return false }
             return governedChoices == [hallway]
-        case (42, .playerWindowChooseOne, _):
-            return governedChoices.isEmpty
-                || gatheringAtticActionWindowSemantics != nil
+        case (40, .chooseOne, 1):
+            return choices == [.gatheringStartSkillTest]
+        case (40, .playerWindowChooseOne, 1):
+            return choices == [.gatheringEndTurn(sourceIndex: 0)]
+        case (41, .chooseOne, 1):
+            return choices == [.gatheringApplySkillTestResults]
+        case (42, .playerWindowChooseOne, 1):
+            return choices == [.gatheringEndTurn(sourceIndex: 0)]
+        case (42, .playerWindowChooseOne, 12),
+             (42, .playerWindowChooseOne, 13):
+            return gatheringAtticActionWindowSemantics != nil
         default:
             return governedChoices.isEmpty
         }

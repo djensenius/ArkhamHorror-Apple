@@ -11,10 +11,66 @@ extension QuestionPresentationRawQuestionShape {
         }
     }
 
+    func validateGatheringStartSkillTest(
+        for presentation: QuestionPresentation
+    ) throws {
+        guard choices == [
+            .object([
+                "investigatorId": .string("c01001"),
+                "tag": .string("StartSkillTestButton"),
+            ]),
+        ],
+            presentation.choices == [.gatheringStartSkillTest]
+        else {
+            throw QuestionPresentationBindingError.governedChoicesMismatch
+        }
+    }
+
+    func validateGatheringApplySkillTestResults(
+        for presentation: QuestionPresentation
+    ) throws {
+        guard choices == [
+            .object([
+                "tag": .string("SkillTestApplyResultsButton"),
+            ]),
+        ],
+            presentation.choices == [.gatheringApplySkillTestResults]
+        else {
+            throw QuestionPresentationBindingError.governedChoicesMismatch
+        }
+    }
+
+    func validateGatheringEndTurn(
+        for presentation: QuestionPresentation
+    ) throws {
+        guard choices == [
+            .object([
+                "investigatorId": .string("c01001"),
+                "messages": .array([
+                    .object([
+                        "contents": .string("c01001"),
+                        "tag": .string("ChooseEndTurn"),
+                    ]),
+                ]),
+                "tag": .string("EndTurnButton"),
+            ]),
+        ],
+            presentation.choices == [.gatheringEndTurn(sourceIndex: 0)]
+        else {
+            throw QuestionPresentationBindingError.governedChoicesMismatch
+        }
+    }
+
     // swiftlint:disable:next function_body_length
     private func validateGatheringAtticActionWindow(
         for presentation: QuestionPresentation
     ) throws -> Bool {
+        guard presentation.choiceCount == presentation.choices.count,
+              presentation.choices.map(\.sourceIndex) ==
+              Array(presentation.choices.indices)
+        else {
+            throw QuestionPresentationBindingError.governedChoicesMismatch
+        }
         let expectedSeals: GatheringAtticActionWindowExpectedSeals
         switch choices.count {
         case 12:

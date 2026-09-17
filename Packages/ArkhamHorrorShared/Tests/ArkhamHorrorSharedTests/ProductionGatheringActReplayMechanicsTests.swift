@@ -266,6 +266,76 @@ struct ProductionGatheringActReplayMechanicsTests {
     }
 }
 
+@Suite("Production Gathering continuation prompt identities")
+struct GatheringContinuationIdentityTests {
+    @Test("Q40 and Q41 reject substituted prompt identities")
+    func continuationPromptIdentityTampering() {
+        let fixtures = ProductionGatheringActReplayMechanicsTests()
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        #expect(
+            throws:
+            ProductionGatheringActReplayEvidenceError.invalidQ40
+        ) {
+            try fixtures.q40PromptEvidence(
+                branch: .cellar,
+                canonicalSHA256:
+                GatheringMovementEntryBranch.attic
+                    .firstContinuationPromptSHA256
+            ).validateFirstContinuationPrompt(
+                branch: .cellar,
+                investigatorID: investigatorID
+            )
+        }
+        #expect(
+            throws:
+            ProductionGatheringActReplayEvidenceError.invalidQ41
+        ) {
+            try fixtures.q41PromptEvidence(
+                branch: .attic,
+                canonicalSHA256:
+                GatheringMovementEntryBranch.cellar
+                    .secondContinuationPromptSHA256
+            ).validateSecondContinuationPrompt(
+                branch: .attic,
+                investigatorID: investigatorID
+            )
+        }
+    }
+
+    @Test("Q42 binds its prompt identity to role order")
+    func resultingPromptIdentityTracksRoleOrder() throws {
+        let fixtures = ProductionGatheringActReplayMechanicsTests()
+        let mismatchedDigest = try #require(
+            GatheringMovementEntryBranch.attic
+                .resultingContinuationPromptSHA256(
+                    choiceCount: 13,
+                    atticMovementSourceIndex: 10,
+                    hallwayInvestigationSourceIndex: 11,
+                    cellarMovementSourceIndex: 12
+                )
+        )
+        #expect(
+            throws:
+            ProductionGatheringActReplayEvidenceError.invalidQ42
+        ) {
+            try fixtures.q42PromptEvidence(
+                branch: .attic,
+                atticHandCardCount: 7,
+                atticRoleOrder: [
+                    .cellarMovement,
+                    .atticMovement,
+                    .hallwayInvestigation,
+                ],
+                canonicalSHA256: mismatchedDigest
+            ).validateResultingContinuationPrompt(
+                branch: .attic,
+                investigatorID:
+                BoardTestFixtures.investigatorID("c01001")
+            )
+        }
+    }
+}
+
 private extension ProductionGatheringActReplayMechanicsTests {
     func rawQuestionTag(in fixtureName: String) throws -> String {
         let url = try #require(
@@ -421,7 +491,8 @@ private extension ProductionGatheringActReplayMechanicsTests {
     }
 
     func q40PromptEvidence(
-        branch: GatheringMovementEntryBranch
+        branch: GatheringMovementEntryBranch,
+        canonicalSHA256: String? = nil
     ) -> GatheringActReplayPromptEvidence {
         let kind: QuestionPresentation.ChoiceKind = switch branch {
         case .cellar:
@@ -450,7 +521,8 @@ private extension ProductionGatheringActReplayMechanicsTests {
             choiceCount: 1,
             sourceIndices: [0],
             actionableSourceIndices: [0],
-            canonicalSHA256: String(repeating: "a", count: 64),
+            canonicalSHA256:
+            canonicalSHA256 ?? branch.firstContinuationPromptSHA256,
             selectedDescriptor: GatheringActReplayDescriptorEvidence(
                 choice: QuestionPresentation.Choice(
                     sourceIndex: 0,
@@ -466,7 +538,8 @@ private extension ProductionGatheringActReplayMechanicsTests {
     }
 
     func q41PromptEvidence(
-        branch: GatheringMovementEntryBranch
+        branch: GatheringMovementEntryBranch,
+        canonicalSHA256: String? = nil
     ) -> GatheringActReplayPromptEvidence {
         let choice: QuestionPresentation.Choice = switch branch {
         case .cellar:
@@ -491,7 +564,8 @@ private extension ProductionGatheringActReplayMechanicsTests {
             choiceCount: 1,
             sourceIndices: [0],
             actionableSourceIndices: [0],
-            canonicalSHA256: String(repeating: "b", count: 64),
+            canonicalSHA256:
+            canonicalSHA256 ?? branch.secondContinuationPromptSHA256,
             selectedDescriptor:
             GatheringActReplayDescriptorEvidence(choice: choice)
         )
@@ -505,8 +579,9 @@ private extension ProductionGatheringActReplayMechanicsTests {
             .atticMovement,
             .hallwayInvestigation,
             .cellarMovement,
-        ]
-    ) -> GatheringActReplayPromptEvidence {
+        ],
+        canonicalSHA256: String? = nil
+    ) throws -> GatheringActReplayPromptEvidence {
         let choices: [QuestionPresentation.Choice] = switch branch {
         case .cellar:
             [
@@ -527,6 +602,10 @@ private extension ProductionGatheringActReplayMechanicsTests {
             )
         }
         let sourceIndices = choices.map(\.sourceIndex)
+        let expectedCanonicalSHA256 = try q42PromptSHA256(
+            branch: branch,
+            choices: choices
+        )
         return GatheringActReplayPromptEvidence(
             version:
             ProductionGatheringActReplayConfiguration
@@ -539,10 +618,44 @@ private extension ProductionGatheringActReplayMechanicsTests {
             sourceIndices: sourceIndices,
             actionableSourceIndices:
             actionableSourceIndices ?? sourceIndices,
-            canonicalSHA256: String(repeating: "c", count: 64),
+            canonicalSHA256:
+            canonicalSHA256 ?? expectedCanonicalSHA256,
             selectedDescriptor: nil,
             governedDescriptors: choices.map(
                 GatheringActReplayDescriptorEvidence.init(choice:)
+            )
+        )
+    }
+
+    func q42PromptSHA256(
+        branch: GatheringMovementEntryBranch,
+        choices: [QuestionPresentation.Choice]
+    ) throws -> String {
+        if branch == .cellar {
+            return try #require(
+                branch.resultingContinuationPromptSHA256(
+                    choiceCount: choices.count
+                )
+            )
+        }
+        let atticMovement = try #require(choices.first {
+            $0.kind == .move && $0.ability?.cardCode == "c01113"
+        })
+        let hallwayInvestigation = try #require(choices.first {
+            $0.kind == .investigate
+                && $0.ability?.cardCode ==
+                ProductionGatheringActReplayConfiguration.hallwayCardCode
+        })
+        let cellarMovement = try #require(choices.first {
+            $0.kind == .move && $0.ability?.cardCode == "c01114"
+        })
+        return try #require(
+            branch.resultingContinuationPromptSHA256(
+                choiceCount: choices.count,
+                atticMovementSourceIndex: atticMovement.sourceIndex,
+                hallwayInvestigationSourceIndex:
+                hallwayInvestigation.sourceIndex,
+                cellarMovementSourceIndex: cellarMovement.sourceIndex
             )
         )
     }

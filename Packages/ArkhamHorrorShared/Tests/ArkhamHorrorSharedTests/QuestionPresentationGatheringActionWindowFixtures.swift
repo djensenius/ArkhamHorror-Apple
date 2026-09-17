@@ -102,12 +102,13 @@ extension GatheringActionWindowBindingTests {
 
 func assertActionWindowBindingFails(
     presentation: QuestionPresentation,
-    rawQuestion: JSONValue
+    rawQuestion: JSONValue,
+    expectedQuestionVersion: Int = 42
 ) {
     #expect(throws: QuestionPresentationBindingError.self) {
         try presentation.bind(
             to: rawQuestion,
-            expectedQuestionVersion: 42
+            expectedQuestionVersion: expectedQuestionVersion
         )
     }
 }
