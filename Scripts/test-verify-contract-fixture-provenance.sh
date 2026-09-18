@@ -55,7 +55,8 @@ answer-enemy-attack-assign-remaining-damage.json \
 answer-enemy-attack-assign-remaining-horror.json \
 question-player-window-enemy-actions.json question-player-window-engage-action.json \
 question-roland-defeat-reaction.json question-cover-up-reaction.json \
-question-round-end-forced-ability.json question-agenda-advance.json \
+question-round-end-forced-ability.json question-treachery-forced-ability.json \
+question-presentation-treachery-forced-ability.json question-agenda-advance.json \
 question-agenda-consequence.json question-agenda-horror-assignment.json \
 replay-attestation.json"
 
@@ -141,7 +142,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.43",'
+    echo '  "schemaRevision": "0.1.44",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do

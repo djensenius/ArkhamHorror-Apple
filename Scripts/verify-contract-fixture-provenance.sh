@@ -146,6 +146,8 @@ question-player-window-engage-action.json:contracts/fixtures/question-player-win
 question-roland-defeat-reaction.json:contracts/fixtures/question-roland-defeat-reaction.json
 question-cover-up-reaction.json:contracts/fixtures/question-cover-up-reaction.json
 question-round-end-forced-ability.json:contracts/fixtures/question-round-end-forced-ability.json
+question-treachery-forced-ability.json:contracts/fixtures/question-treachery-forced-ability.json
+question-presentation-treachery-forced-ability.json:contracts/fixtures/question-presentation-treachery-forced-ability.json
 question-agenda-advance.json:contracts/fixtures/question-agenda-advance.json
 question-agenda-consequence.json:contracts/fixtures/question-agenda-consequence.json
 question-agenda-horror-assignment.json:contracts/fixtures/question-agenda-horror-assignment.json
