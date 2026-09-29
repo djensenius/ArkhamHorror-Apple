@@ -159,19 +159,15 @@ private struct DeckRow: View {
             Spacer()
             if isDeleting {
                 ProgressView().controlSize(.small)
+            } else {
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.deckDeleteButton(for: deck.id.rawValue)
+                )
             }
-        }
-        .swipeActions {
-            Button(role: .destructive, action: onDelete) {
-                Label("Delete", systemImage: "trash")
-            }
-            .accessibilityIdentifier(AccountAccessibilityID.deckDeleteButton(for: deck.id.rawValue))
-        }
-        .contextMenu {
-            Button(role: .destructive, action: onDelete) {
-                Label("Delete", systemImage: "trash")
-            }
-            .accessibilityIdentifier(AccountAccessibilityID.deckDeleteButton(for: deck.id.rawValue))
         }
     }
 }
