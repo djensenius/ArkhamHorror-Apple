@@ -5,15 +5,15 @@ import Testing
 @MainActor
 @Suite("CreateGameViewModel")
 struct CreateGameViewModelTests {
-    @Test("Defaults create a solo Easy Night of the Zealot campaign")
-    func defaultsCreateSoloCampaign() throws {
+    @Test("Defaults create a one-player Easy Night of the Zealot campaign")
+    func defaultsCreateOnePlayerCampaign() throws {
         let viewModel = CreateGameViewModel()
 
         #expect(viewModel.mode == .campaign)
         #expect(viewModel.selectedCampaignID == "01")
         #expect(viewModel.difficulty == .easy)
         #expect(viewModel.playerCount == 1)
-        #expect(viewModel.multiplayerVariant == .solo)
+        #expect(viewModel.multiplayerVariant == .withFriends)
         #expect(viewModel.shouldShowMultiplayerVariant == false)
         #expect(viewModel.resolvedGameName == "The Night of the Zealot")
 
@@ -21,7 +21,7 @@ struct CreateGameViewModelTests {
         #expect(request.campaignOrScenario.campaignId == "01")
         #expect(request.campaignOrScenario.scenarioId == nil)
         #expect(request.deckIds == [nil])
-        #expect(request.multiplayerVariant == .solo)
+        #expect(request.multiplayerVariant == .withFriends)
         #expect(request.includeTarotReadings == false)
         #expect(request.options.isEmpty)
     }
@@ -65,24 +65,24 @@ struct CreateGameViewModelTests {
 
         viewModel.playerCount = 0
         #expect(viewModel.playerCount == 1)
-        #expect(viewModel.multiplayerVariant == .solo)
+        #expect(viewModel.multiplayerVariant == .withFriends)
         #expect(viewModel.shouldShowMultiplayerVariant == false)
 
         viewModel.playerCount = 3
         #expect(viewModel.playerCount == 3)
         #expect(viewModel.multiplayerVariant == .withFriends)
         #expect(viewModel.shouldShowMultiplayerVariant == true)
-        #expect(viewModel.availableMultiplayerVariants == [.withFriends])
+        #expect(viewModel.availableMultiplayerVariants == [.withFriends, .solo])
 
         viewModel.multiplayerVariant = .solo
-        #expect(viewModel.multiplayerVariant == .withFriends)
+        #expect(viewModel.multiplayerVariant == .solo)
 
         viewModel.playerCount = 5
         #expect(viewModel.playerCount == 4)
-        #expect(viewModel.multiplayerVariant == .withFriends)
+        #expect(viewModel.multiplayerVariant == .solo)
 
         viewModel.playerCount = 1
-        #expect(viewModel.multiplayerVariant == .solo)
+        #expect(viewModel.multiplayerVariant == .withFriends)
     }
 
     @Test("Submit prevents double submit while in flight and returns the created game id")

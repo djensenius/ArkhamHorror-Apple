@@ -31,7 +31,7 @@ final class CreateGameViewModel {
         didSet { normalizePlayerCount() }
     }
 
-    var multiplayerVariant: RequestMultiplayerVariant = .solo {
+    var multiplayerVariant: RequestMultiplayerVariant = .withFriends {
         didSet { normalizeMultiplayerVariant() }
     }
 
@@ -64,7 +64,7 @@ final class CreateGameViewModel {
     }
 
     var availableMultiplayerVariants: [RequestMultiplayerVariant] {
-        playerCount > 1 ? [.withFriends] : [.solo]
+        playerCount > 1 ? [.withFriends, .solo] : [.withFriends]
     }
 
     var canSubmit: Bool {
@@ -107,7 +107,7 @@ final class CreateGameViewModel {
             campaignOrScenario: campaignOrScenario,
             difficulty: difficulty,
             campaignName: resolvedGameName,
-            multiplayerVariant: playerCount == 1 ? .solo : .withFriends,
+            multiplayerVariant: multiplayerVariant,
             includeTarotReadings: false,
             options: [],
             strictAsIfAt: .absent,
@@ -168,13 +168,14 @@ final class CreateGameViewModel {
             playerCount = clamped
             return
         }
-        multiplayerVariant = playerCount == 1 ? .solo : .withFriends
+        if playerCount == 1 {
+            multiplayerVariant = .withFriends
+        }
     }
 
     private func normalizeMultiplayerVariant() {
-        let expected: RequestMultiplayerVariant = playerCount == 1 ? .solo : .withFriends
-        if multiplayerVariant != expected {
-            multiplayerVariant = expected
+        if playerCount == 1, multiplayerVariant != .withFriends {
+            multiplayerVariant = .withFriends
         }
     }
 }
