@@ -58,13 +58,19 @@ struct DeckService: Sendable {
     func importDeck(
         from url: String, on profile: ServerProfile, token: String
     ) async throws -> Deck {
+        let fetchURL: String
+        do {
+            fetchURL = try DeckImportURL.parse(url).fetchURL
+        } catch let error as DeckImportURL.ParseError {
+            throw DeckServiceError.invalidImportURL(error)
+        }
         let deckList = try await fetchDeckList(
-            FetchDeckRequest(url: url), on: profile, token: token
+            FetchDeckRequest(url: fetchURL), on: profile, token: token
         )
         let request = CreateDeckRequest(
-            deckId: deckList.id ?? url,
+            deckId: deckList.id ?? fetchURL,
             deckName: deckList.name ?? deckList.investigatorName,
-            deckUrl: deckList.url ?? url,
+            deckUrl: deckList.url,
             deckList: DeckListInput(deckList)
         )
         return try await createDeck(request, on: profile, token: token)
@@ -142,7 +148,7 @@ struct DeckService: Sendable {
 
     // MARK: - Request execution
 
-    private enum BadRequestDecoder {
+    private enum BadRequestDecoder: Equatable {
         case generic
         case operation
         case validation
@@ -176,6 +182,8 @@ struct DeckService: Sendable {
             throw decodeBadRequest(data, as: badRequest)
         case 401:
             throw DeckServiceError.sessionExpired
+        case 500 ... 599 where badRequest == .operation:
+            throw DeckServiceError.remoteDeckSourceUnavailable
         default:
             throw DeckServiceError.unexpectedStatus(http.statusCode)
         }
@@ -233,6 +241,8 @@ enum DeckServiceError: Error, Equatable, Sendable {
     case sessionExpired
     case unexpectedStatus(Int)
     case malformedPayload
+    case invalidImportURL(DeckImportURL.ParseError)
+    case remoteDeckSourceUnavailable
     case operationFailed(DeckOperationError)
     case validationFailed(DeckValidationErrors)
 }
@@ -254,6 +264,10 @@ extension DeckServiceError {
             "The server returned an unexpected deck response (HTTP \(status))."
         case .malformedPayload:
             "The server returned deck data this app could not read."
+        case let .invalidImportURL(error):
+            error.message
+        case .remoteDeckSourceUnavailable:
+            "Couldn't reach ArkhamDB. Try again later."
         case let .operationFailed(error):
             error.errorMsg
         case let .validationFailed(errors):

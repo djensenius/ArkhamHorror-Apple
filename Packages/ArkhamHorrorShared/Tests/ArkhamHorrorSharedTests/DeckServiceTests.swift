@@ -2,6 +2,25 @@
 import Foundation
 import Testing
 
+private actor ScriptedDeckHTTPTransport: HTTPTransport {
+    private(set) var requests: [URLRequest] = []
+    private var responses: [(Data, URLResponse)]
+
+    init(responses: [(Data, URLResponse)]) {
+        self.responses = responses
+    }
+
+    nonisolated func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await recordAndReturn(request)
+    }
+
+    private func recordAndReturn(_ request: URLRequest) throws -> (Data, URLResponse) {
+        requests.append(request)
+        guard !responses.isEmpty else { throw TestFailure() }
+        return responses.removeFirst()
+    }
+}
+
 private struct DecksFixture: Decodable {
     let createDeck: CreateDeckRequest
     let fetchDeck: FetchDeckRequest
@@ -31,6 +50,106 @@ struct DeckServiceTests {
             )
         )
         return try ContractJSON.decode(DecksFixture.self, from: Data(contentsOf: url))
+    }
+
+    @Test(
+        "Import URL recognition rewrites only supported HTTPS ArkhamDB and arkham.build links",
+        arguments: [
+            (
+                "https://arkhamdb.com/decklist/view/4242",
+                "https://arkhamdb.com/api/public/decklist/4242"
+            ),
+            (
+                "https://arkhamdb.com/deck/4242",
+                "https://arkhamdb.com/api/public/deck/4242"
+            ),
+            (
+                "https://en.arkhamdb.com/decklist/4242",
+                "https://arkhamdb.com/api/public/decklist/4242"
+            ),
+            (
+                "https://arkham.build/decklist/view/abc123",
+                "https://arkham.build/decklist/view/abc123"
+            ),
+        ]
+    )
+    func importURLRecognition(rawURL: String, fetchURL: String) throws {
+        #expect(try DeckImportURL.parse(rawURL).fetchURL == fetchURL)
+    }
+
+    @Test(
+        "Import URL recognition rejects unsupported and SSRF-shaped inputs",
+        arguments: [
+            "http://arkhamdb.com/decklist/view/4242",
+            "https://example.com/decklist/view/4242",
+            "https://127.0.0.1/decklist/view/4242",
+            "https://localhost/decklist/view/4242",
+            "https://169.254.169.254/latest/meta-data",
+            "https://arkhamdb.com.evil.test/decklist/view/4242",
+            "https://arkham.build/share/abc123",
+            "https://arkham.build/deck/view/abc123",
+        ]
+    )
+    func importURLRecognitionRejects(rawURL: String) {
+        #expect(throws: DeckImportURL.ParseError.self) {
+            try DeckImportURL.parse(rawURL)
+        }
+    }
+
+    @Test("importDeck fetches the normalized URL then creates a deck with derived fields")
+    func importDeckFetchThenCreate() async throws {
+        let fixture = try loadFixture()
+        let fetchEndpoint = profile.endpointURL(path: "/arkham/decks/fetch")
+        let createEndpoint = profile.endpointURL(path: "/arkham/decks")
+        let fetched = DeckList(
+            slots: fixture.normalizedDeckList.slots,
+            sideSlots: fixture.normalizedDeckList.sideSlots,
+            investigatorCode: fixture.normalizedDeckList.investigatorCode,
+            investigatorName: fixture.normalizedDeckList.investigatorName,
+            meta: fixture.normalizedDeckList.meta,
+            tabooId: fixture.normalizedDeckList.tabooId,
+            url: nil,
+            id: "4242.0",
+            name: "Contract deck"
+        )
+        let transport = try ScriptedDeckHTTPTransport(responses: [
+            (ContractJSON.encode(fetched), httpResponse(200, url: fetchEndpoint)),
+            (ContractJSON.encode(fixture.deck), httpResponse(200, url: createEndpoint)),
+        ])
+        let service = DeckService(transport: transport)
+
+        _ = try await service.importDeck(
+            from: "https://arkhamdb.com/decklist/view/4242",
+            on: profile,
+            token: token
+        )
+
+        let requests = await transport.requests
+        #expect(requests.map(\.httpMethod) == ["POST", "POST"])
+        let fetchBody = try #require(requests[0].httpBody)
+        #expect(
+            try ContractJSON.decode(FetchDeckRequest.self, from: fetchBody)
+                == FetchDeckRequest(url: "https://arkhamdb.com/api/public/decklist/4242")
+        )
+        let createBody = try #require(requests[1].httpBody)
+        let createRequest = try ContractJSON.decode(CreateDeckRequest.self, from: createBody)
+        #expect(createRequest.deckId == "4242.0")
+        #expect(createRequest.deckName == "Contract deck")
+        #expect(createRequest.deckUrl == nil)
+        #expect(createRequest.deckList == DeckListInput(fetched))
+    }
+
+    @Test("fetchDeckList maps 5xx remote fetch failures to an ArkhamDB reachability message")
+    func fetchDeckListRemoteFailure() async throws {
+        let fixture = try loadFixture()
+        let url = profile.endpointURL(path: "/arkham/decks/fetch")
+        let transport = GameLifecycleRecordingTransport(
+            data: Data(), response: httpResponse(500, url: url)
+        )
+        let service = DeckService(transport: transport)
+        await #expect(throws: DeckServiceError.remoteDeckSourceUnavailable) {
+            _ = try await service.fetchDeckList(fixture.fetchDeck, on: profile, token: token)
+        }
     }
 
     @Test("listDecks issues GET /arkham/decks with Authorization and decodes deck arrays")

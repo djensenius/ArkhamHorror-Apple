@@ -115,7 +115,9 @@ struct DecksViewModelTests {
         let model = makeModel(service: service)
 
         await model.importDeck()
-        #expect(model.importState == .failed("Enter a valid ArkhamDB deck URL."))
+        #expect(
+            model.importState == .failed(DeckImportURL.ParseError.invalid.message)
+        )
         #expect(await service.callOrder.isEmpty)
 
         model.importURL = " https://arkhamdb.com/decklist/view/4242 "

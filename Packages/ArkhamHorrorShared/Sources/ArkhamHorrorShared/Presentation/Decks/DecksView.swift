@@ -20,9 +20,7 @@ struct DecksView: View {
         List {
             #if !os(tvOS)
                 Section("Import") {
-                    TextField("ArkhamDB deck URL", text: $viewModel.importURL)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier(AccountAccessibilityID.deckImportURLField)
+                    importURLField(text: $viewModel.importURL)
                     Button {
                         Task { await viewModel.importDeck() }
                     } label: {
@@ -93,6 +91,17 @@ struct DecksView: View {
                     + "It does not delete it from ArkhamDB."
             )
         }
+    }
+
+    private func importURLField(text: Binding<String>) -> some View {
+        TextField("ArkhamDB deck URL", text: text)
+            #if os(iOS) || os(visionOS)
+                .keyboardType(.URL)
+                .textContentType(.URL)
+                .textInputAutocapitalization(.never)
+            #endif
+            .autocorrectionDisabled()
+            .accessibilityIdentifier(AccountAccessibilityID.deckImportURLField)
     }
 
     private var isLoading: Bool {

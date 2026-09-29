@@ -52,7 +52,7 @@ final class DecksViewModel {
     }
 
     var canImport: Bool {
-        normalizedImportURL != nil && !isImporting
+        !importURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isImporting
     }
 
     func load() async {
@@ -69,8 +69,14 @@ final class DecksViewModel {
     }
 
     func importDeck() async {
-        guard let url = normalizedImportURL else {
-            importState = .failed("Enter a valid ArkhamDB deck URL.")
+        let url = importURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            _ = try DeckImportURL.parse(url)
+        } catch let error as DeckImportURL.ParseError {
+            importState = .failed(error.message)
+            return
+        } catch {
+            importState = .failed(DeckImportURL.ParseError.invalid.message)
             return
         }
         importState = .importing
@@ -109,16 +115,6 @@ final class DecksViewModel {
             breakDeletion(deck)
             loadState = .failed(Self.message(for: error))
         }
-    }
-
-    private var normalizedImportURL: String? {
-        let trimmed = importURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let components = URLComponents(string: trimmed),
-              let scheme = components.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              components.host?.isEmpty == false
-        else { return nil }
-        return trimmed
     }
 
     private func upsert(_ deck: Deck) {
