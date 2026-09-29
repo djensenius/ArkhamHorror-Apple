@@ -235,8 +235,8 @@ struct AppModelGameLifecycleActionTests {
         let service = ScriptedGameLifecycleService()
         let gameID = GameID(UUID())
         let deck = try sampleDeck()
-        let playList = DeckList(
-            slots: try CardQuantityMap([CardCode("c01016"): 1]),
+        let playList = try DeckList(
+            slots: CardQuantityMap([CardCode("c01016"): 1]),
             sideSlots: deck.list.sideSlots,
             investigatorCode: deck.list.investigatorCode,
             investigatorName: deck.list.investigatorName,

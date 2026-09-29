@@ -29,9 +29,9 @@ struct DeckChoiceAnswerTests {
 
     @Test("DeckAnswer encodes to the governed answer-deck fixture shape")
     func deckAnswerEncoding() throws {
-        let answer = DeckAnswer(
-            deckId: DeckID(UUID(uuidString: "00000000-0000-0000-0000-000000000002")!),
-            playerId: PlayerID(UUID(uuidString: "00000000-0000-0000-0000-000000000001")!)
+        let answer = try DeckAnswer(
+            deckId: DeckID(#require(UUID(uuidString: "00000000-0000-0000-0000-000000000002"))),
+            playerId: PlayerID(#require(UUID(uuidString: "00000000-0000-0000-0000-000000000001")))
         )
         let encoded = try ContractJSON.encode(answer)
         let fixture = try loadFixture("answer-deck")

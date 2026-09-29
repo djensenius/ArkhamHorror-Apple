@@ -100,11 +100,11 @@ struct DecksView: View {
 
     private func importURLField(text: Binding<String>) -> some View {
         TextField("ArkhamDB deck URL", text: text)
-            #if os(iOS) || os(visionOS)
-                .keyboardType(.URL)
-                .textContentType(.URL)
-                .textInputAutocapitalization(.never)
-            #endif
+        #if os(iOS) || os(visionOS)
+            .keyboardType(.URL)
+            .textContentType(.URL)
+            .textInputAutocapitalization(.never)
+        #endif
             .autocorrectionDisabled()
             .accessibilityIdentifier(AccountAccessibilityID.deckImportURLField)
     }

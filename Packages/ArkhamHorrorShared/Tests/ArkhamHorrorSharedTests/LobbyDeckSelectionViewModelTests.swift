@@ -149,8 +149,8 @@ struct LobbyDeckSelectionViewModelTests {
     @Test("validation sends playList instead of list when a 0.1.46 deck provides one")
     func validationUsesPlayableList() async throws {
         let fixture = try loadFixture()
-        let playList = DeckList(
-            slots: try CardQuantityMap([CardCode("c01016"): 1]),
+        let playList = try DeckList(
+            slots: CardQuantityMap([CardCode("c01016"): 1]),
             sideSlots: fixture.deck.list.sideSlots,
             investigatorCode: fixture.deck.list.investigatorCode,
             investigatorName: fixture.deck.list.investigatorName,
