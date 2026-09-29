@@ -25,34 +25,34 @@ struct CreateGameSheetView: View {
             .navigationBarTitleDisplayMode(.inline)
         #endif
         #if os(macOS)
-            .frame(minWidth: 420, minHeight: 520)
+        .frame(minWidth: 420, minHeight: 520)
         #endif
-            .interactiveDismissDisabled(viewModel.isSubmitting)
-            .accessibilityIdentifier(AccountAccessibilityID.createGameSheet)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .disabled(viewModel.isSubmitting)
-                    .accessibilityLabel("Cancel new game")
-                    .accessibilityIdentifier(AccountAccessibilityID.createGameCancelButton)
+        .interactiveDismissDisabled(viewModel.isSubmitting)
+        .accessibilityIdentifier(AccountAccessibilityID.createGameSheet)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    dismiss()
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        Task { await submit() }
-                    } label: {
-                        if viewModel.isSubmitting {
-                            ProgressView()
-                        } else {
-                            Text("Create")
-                        }
-                    }
-                    .disabled(!viewModel.canSubmit)
-                    .accessibilityLabel(viewModel.isSubmitting ? "Creating game" : "Create game")
-                    .accessibilityIdentifier(AccountAccessibilityID.createGameSubmitButton)
-                }
+                .disabled(viewModel.isSubmitting)
+                .accessibilityLabel("Cancel new game")
+                .accessibilityIdentifier(AccountAccessibilityID.createGameCancelButton)
             }
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    Task { await submit() }
+                } label: {
+                    if viewModel.isSubmitting {
+                        ProgressView()
+                    } else {
+                        Text("Create")
+                    }
+                }
+                .disabled(!viewModel.canSubmit)
+                .accessibilityLabel(viewModel.isSubmitting ? "Creating game" : "Create game")
+                .accessibilityIdentifier(AccountAccessibilityID.createGameSubmitButton)
+            }
+        }
     }
 
     private var gameSection: some View {
