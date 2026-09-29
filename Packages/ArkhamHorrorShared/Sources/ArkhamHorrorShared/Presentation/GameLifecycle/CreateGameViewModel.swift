@@ -113,7 +113,7 @@ final class CreateGameViewModel {
             strictAsIfAt: .absent,
             asIfRuling: .absent,
             ultimatumsAndBoons: .absent,
-            achievementsEnabled: .absent
+            achievementsEnabled: mode == .standaloneScenario ? .value(false) : .absent
         )
     }
 

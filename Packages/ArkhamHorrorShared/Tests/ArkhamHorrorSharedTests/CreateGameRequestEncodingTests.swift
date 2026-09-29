@@ -36,6 +36,7 @@ struct CreateGameRequestEncodingTests {
             #expect(json["campaignId"] is NSNull)
             #expect(json["scenarioId"] as? String == scenario.id)
             #expect(json["campaignName"] as? String == scenario.title)
+            #expect(json["achievementsEnabled"] as? Bool == false)
             try expectNullDeckSlots(json, count: 1)
         }
     }
@@ -57,14 +58,14 @@ struct CreateGameRequestEncodingTests {
         }
     }
 
-    @Test("Solo requests encode one null deck slot and Solo multiplayer variant")
-    func soloEncoding() throws {
+    @Test("One-player requests encode one null deck slot and the web-default variant")
+    func onePlayerEncoding() throws {
         let viewModel = CreateGameViewModel()
         viewModel.playerCount = 1
         let json = try encodedJSONObject(for: viewModel.makeRequest())
 
         #expect(json["playerCount"] as? Int == 1)
-        #expect(json["multiplayerVariant"] as? String == "Solo")
+        #expect(json["multiplayerVariant"] as? String == "WithFriends")
         try expectNullDeckSlots(json, count: 1)
     }
 
