@@ -230,6 +230,8 @@ struct BoardEnemyNode: Sendable, Equatable, Identifiable {
     let evade: BoardCalculationSummary?
     let damage: Int?
     let horror: Int?
+    let attackDamage: Int?
+    let attackHorror: Int?
     let exhausted: Bool
     let engagedInvestigatorID: InvestigatorID?
     let locationID: LocationID?

@@ -53,7 +53,7 @@ struct BoardCardRenderingProjectionTests {
                 locationID,
                 .ordinary(BoardTestFixtures.ordinaryLocation(id: locationID, enemies: [enemyID]))
             )],
-            enemyValues: [enemyID: #require(enemyValues[enemyID])]
+            enemyValues: [enemyID: enemyWithDamageToken(#require(enemyValues[enemyID]))]
         ))
         let enemy = try #require(projection.enemiesByLocationID[locationID]?.first)
         let summary = BoardAccessibility.summary(enemy: enemy)
@@ -61,7 +61,9 @@ struct BoardCardRenderingProjectionTests {
         #expect(summary.contains("Fight 1"))
         #expect(summary.contains("Health 1"))
         #expect(summary.contains("Evade 3"))
-        #expect(summary.contains("Damage 1"))
+        #expect(summary.contains("Damage taken 2"))
+        #expect(summary.contains("Attack damage 1"))
+        #expect(!summary.contains("Damage 1"))
     }
 
     @Test("Choice-to-board links require actionability and prompt submit authority")
@@ -143,6 +145,12 @@ struct BoardCardRenderingProjectionTests {
             UUIDEntityMap<EnemyIDTag>.self,
             from: Data(contentsOf: url)
         )
+    }
+
+    private func enemyWithDamageToken(_ raw: JSONValue) -> JSONValue {
+        guard case var .object(object) = raw else { return raw }
+        object["tokens"] = .array([.array([.string("Damage"), number(2)])])
+        return .object(object)
     }
 
     private func assetObject(id: AssetID) -> JSONValue {

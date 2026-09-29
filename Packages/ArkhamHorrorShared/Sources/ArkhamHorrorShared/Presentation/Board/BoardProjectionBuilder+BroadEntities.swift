@@ -187,8 +187,10 @@ extension BoardProjectionBuilder {
             fight: calculationSummary(in: object?["fight"]),
             health: calculationSummary(in: object?["health"] ?? object?["remainingHealth"]),
             evade: calculationSummary(in: object?["evade"]),
-            damage: safeInteger(object?["healthDamage"]),
-            horror: safeInteger(object?["sanityDamage"]),
+            damage: tokenCount("Damage", in: object?["tokens"]),
+            horror: tokenCount("Horror", in: object?["tokens"]),
+            attackDamage: positiveInteger(object?["healthDamage"]),
+            attackHorror: positiveInteger(object?["sanityDamage"]),
             exhausted: safeBool(object?["exhausted"]) ?? false,
             engagedInvestigatorID: engagedInvestigatorID,
             locationID: locationID,
@@ -311,6 +313,11 @@ extension BoardProjectionBuilder {
             return BoardCalculationSummary(displayValue: "X", staticValue: nil)
         }
         return BoardCalculationSummary(displayValue: "?", staticValue: nil)
+    }
+
+    static func positiveInteger(_ value: JSONValue?) -> Int? {
+        guard let integer = safeInteger(value), integer > 0 else { return nil }
+        return integer
     }
 
     static func safeInteger(_ value: JSONValue?) -> Int? {

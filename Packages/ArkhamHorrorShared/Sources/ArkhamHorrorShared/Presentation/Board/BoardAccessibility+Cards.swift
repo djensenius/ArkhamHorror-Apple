@@ -64,10 +64,16 @@ extension BoardAccessibility {
             parts.append("Evade \(evade.displayValue)")
         }
         if let damage = enemy.damage {
-            parts.append("Damage \(damage)")
+            parts.append("Damage taken \(damage)")
         }
         if let horror = enemy.horror {
-            parts.append("Horror \(horror)")
+            parts.append("Horror taken \(horror)")
+        }
+        if let attackDamage = enemy.attackDamage {
+            parts.append("Attack damage \(attackDamage)")
+        }
+        if let attackHorror = enemy.attackHorror {
+            parts.append("Attack horror \(attackHorror)")
         }
     }
 

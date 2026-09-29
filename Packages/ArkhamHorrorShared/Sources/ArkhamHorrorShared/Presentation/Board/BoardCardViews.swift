@@ -194,8 +194,13 @@ struct BoardEnemyCardView: View {
                     if let evade = enemy.evade {
                         BoardStatBadge(systemImage: "figure.run", value: evade.displayValue)
                     }
-                    if let damage = enemy.damage {
-                        BoardStatBadge(systemImage: "heart.slash", value: "\(damage)")
+                    if let attackDamage = enemy.attackDamage {
+                        BoardStatBadge(systemImage: "heart.slash", value: "Atk \(attackDamage)")
+                    }
+                    if let attackHorror = enemy.attackHorror {
+                        BoardStatBadge(
+                            systemImage: "brain.head.profile", value: "Atk \(attackHorror)"
+                        )
                     }
                 }
                 .accessibilityHidden(true)
