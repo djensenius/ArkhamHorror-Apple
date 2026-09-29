@@ -135,6 +135,11 @@ final class AppModel {
     var assetCacheService: AssetCacheService?
     @ObservationIgnored let assetCacheFactory: @MainActor () -> AssetCacheService?
     @ObservationIgnored let storyAssetSourceLoader: StoryAssetSourceLoader
+    @ObservationIgnored let cardCatalogService: CardCatalogService
+    var cardCatalog: CardCatalogSnapshot?
+    var cardCatalogFailure: LocaleCatalogFailure?
+    var isCardCatalogLoading = false
+    @ObservationIgnored var cardCatalogTask: Task<Void, Never>?
     var storyAssetSource: AssetSourceNamespace?
     var storyAssetSourceFailure: LocaleCatalogFailure?
 
@@ -328,7 +333,8 @@ final class AppModel {
         preferredLanguagesProvider: any PreferredLanguagesProviding = SystemPreferredLanguages(),
         assetCacheService: AssetCacheService? = nil,
         assetCacheFactory: @escaping @MainActor () -> AssetCacheService? = { nil },
-        storyAssetSourceLoader: StoryAssetSourceLoader = StoryAssetSourceLoader()
+        storyAssetSourceLoader: StoryAssetSourceLoader = StoryAssetSourceLoader(),
+        cardCatalogService: CardCatalogService = CardCatalogService()
     ) {
         self.profileStore = profileStore
         self.tokenStore = tokenStore
@@ -344,6 +350,7 @@ final class AppModel {
         self.assetCacheService = assetCacheService
         self.assetCacheFactory = assetCacheFactory
         self.storyAssetSourceLoader = storyAssetSourceLoader
+        self.cardCatalogService = cardCatalogService
         startLaunchFlow()
     }
 }

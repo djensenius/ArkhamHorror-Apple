@@ -16,6 +16,7 @@ import SwiftUI
 struct BoardView: View {
     let projection: BoardProjection
     let prompt: BasicChoicePromptPresentation?
+    let cardCatalog: CardCatalogSnapshot?
     let onChoice: (Int) -> Void
     let onRetryChoice: () -> Void
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
@@ -30,12 +31,14 @@ struct BoardView: View {
     init(
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
+        cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onRetryChoice: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
         self.projection = projection
         self.prompt = prompt
+        self.cardCatalog = cardCatalog
         self.onChoice = onChoice
         self.onRetryChoice = onRetryChoice
         self.onCatalogRetry = onCatalogRetry
@@ -109,6 +112,7 @@ struct BoardView: View {
                 )
             }
         }
+        .environment(\.boardCardCatalog, cardCatalog)
         .semanticKeyboardInput { controller.handle($0) }
         #if os(tvOS)
             .semanticSiriRemoteInput(

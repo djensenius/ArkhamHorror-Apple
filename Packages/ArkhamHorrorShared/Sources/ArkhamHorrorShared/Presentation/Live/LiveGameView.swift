@@ -52,6 +52,7 @@ struct LiveGameView: View {
         #endif
             .onAppear {
                 isViewVisible = true
+                model.loadCardCatalogIfNeeded()
                 syncSubscription()
             }
             .onDisappear {
@@ -156,6 +157,7 @@ struct LiveGameView: View {
         return BoardView(
             projection: projection,
             prompt: renderedPrompt,
+            cardCatalog: model.cardCatalog,
             onChoice: { index in
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.submitBasicChoice(identity, choiceIndex: index) }

@@ -203,7 +203,7 @@ struct BoardPlayerCardNode: Sendable, Equatable, Identifiable {
     let horror: Int?
     let usesSummary: String?
     let tokenCounts: [BoardTokenSummary]
-    let imageReference: StoryAssetReference?
+    let imageReference: AssetKey?
 }
 
 /// A player card proven to be both in one unambiguous investigator's current hand and in

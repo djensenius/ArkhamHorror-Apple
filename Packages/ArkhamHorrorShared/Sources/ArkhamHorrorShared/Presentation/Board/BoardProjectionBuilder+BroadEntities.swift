@@ -146,7 +146,7 @@ extension BoardProjectionBuilder {
             horror: tokenCount("Horror", in: object?["tokens"]),
             usesSummary: usesSummary(fromTokens: object?["tokens"]),
             tokenCounts: safeTokenCounts(in: object?["tokens"]),
-            imageReference: nil
+            imageReference: code.flatMap(cardImageKey)
         )
     }
 
@@ -197,6 +197,16 @@ extension BoardProjectionBuilder {
     }
 
     // MARK: - Shared broad-field parsing
+
+    static func cardImageKey(for cardCode: CardCode) -> AssetKey? {
+        guard let artwork = try? AssetIdentifier.artwork(from: cardCode) else { return nil }
+        switch artwork {
+        case let .official(identifier):
+            return AssetKey(category: .card(.art, identifier))
+        case let .homebrew(campaign, art):
+            return AssetKey(category: .homebrewCard(campaign: campaign, art: art))
+        }
+    }
 
     static func cardDisplayName(in object: [String: JSONValue]?, fallback: String) -> String {
         if let label = safeTrimmedString(object?["label"]) {

@@ -193,7 +193,7 @@ extension BoardProjectionBuilder {
                     horror: globalCard.horror,
                     usesSummary: globalCard.usesSummary,
                     tokenCounts: globalCard.tokenCounts,
-                    imageReference: nil
+                    imageReference: BoardProjectionBuilder.cardImageKey(for: handCard.cardCode)
                 ))
             }
             legacyResult[playerID] = legacy

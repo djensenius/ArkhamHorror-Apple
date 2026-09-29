@@ -1,5 +1,9 @@
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var boardCardCatalog: CardCatalogSnapshot?
+}
+
 struct BoardPlayerAreaView: View {
     let investigator: BoardInvestigatorNode
     let handCards: [BoardPlayerCardNode]
@@ -59,16 +63,21 @@ struct BoardPlayerCardFaceView: View {
     let card: BoardPlayerCardNode
     let linkedChoices: [BoardLinkedChoice]
     let onLinkedChoice: (Int) -> Void
+    @Environment(\.boardCardCatalog) private var cardCatalog
+
+    private var displayName: String {
+        card.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? card.displayName
+    }
 
     var body: some View {
         linkedContainer(accessibilityLabel: BoardAccessibility.summary(playerCard: card)) {
             VStack(alignment: .leading, spacing: 4) {
                 if let imageReference = card.imageReference {
-                    StoryAssetImageView(reference: imageReference)
+                    BoardAssetImageView(key: imageReference, description: displayName)
                         .frame(height: 80)
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
-                Text(card.displayName)
+                Text(displayName)
                     .font(.caption.bold())
                     .foregroundStyle(ArkhamTheme.bone)
                     .lineLimit(2)
@@ -142,12 +151,17 @@ struct BoardEnemyCardView: View {
     let enemy: BoardEnemyNode
     let linkedChoices: [BoardLinkedChoice]
     let onLinkedChoice: (Int) -> Void
+    @Environment(\.boardCardCatalog) private var cardCatalog
+
+    private var displayName: String {
+        enemy.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? enemy.displayName
+    }
 
     var body: some View {
         linkedContainer(accessibilityLabel: BoardAccessibility.summary(enemy: enemy)) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(enemy.displayName)
+                    Text(displayName)
                         .font(.caption.bold())
                         .foregroundStyle(ArkhamTheme.bone)
                         .lineLimit(1)
@@ -235,13 +249,18 @@ struct BoardThreatTreacheryCardView: View {
     let treachery: BoardThreatTreacheryNode
     let linkedChoices: [BoardLinkedChoice]
     let onLinkedChoice: (Int) -> Void
+    @Environment(\.boardCardCatalog) private var cardCatalog
+
+    private var displayName: String {
+        treachery.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? treachery.displayName
+    }
 
     var body: some View {
         linkedContainer(
             accessibilityLabel: BoardAccessibility.summary(threatTreachery: treachery)
         ) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(treachery.displayName)
+                Text(displayName)
                     .font(.caption.bold())
                     .foregroundStyle(ArkhamTheme.bone)
                     .lineLimit(2)
