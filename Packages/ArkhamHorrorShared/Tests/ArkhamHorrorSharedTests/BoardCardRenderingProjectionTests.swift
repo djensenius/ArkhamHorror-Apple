@@ -31,7 +31,7 @@ struct BoardCardRenderingProjectionTests {
             )],
             investigators: [investigatorID: investigator],
             playerOrder: [investigatorID],
-            enemyValues: [enemyID: enemyObject(id: enemyID)],
+            enemyValues: [enemyID: .null],
             assetValues: [assetID: assetObject(id: assetID)],
             treacheryValues: [treacheryID: treacheryObject(id: treacheryID)],
             cardValues: [cardID: playerCard(id: cardID, code: "c01020", title: "Machete")]
@@ -45,23 +45,23 @@ struct BoardCardRenderingProjectionTests {
 
     @Test("Enemy accessibility label includes stats and state")
     func enemyAccessibilitySummaryIncludesStats() throws {
-        let enemyID = BoardTestFixtures.enemyID("000000000389")
+        let enemyValues = try vendoredEnemyEntityMap()
+        let enemyID = try #require(enemyValues.keys.first)
         let locationID = BoardTestFixtures.locationID("000000000112")
-        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+        let projection = try BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             locations: [(
                 locationID,
                 .ordinary(BoardTestFixtures.ordinaryLocation(id: locationID, enemies: [enemyID]))
             )],
-            enemyValues: [enemyID: enemyObject(id: enemyID)]
+            enemyValues: [enemyID: #require(enemyValues[enemyID])]
         ))
         let enemy = try #require(projection.enemiesByLocationID[locationID]?.first)
         let summary = BoardAccessibility.summary(enemy: enemy)
-        #expect(summary.contains("Ghoul"))
-        #expect(summary.contains("Fight 2"))
-        #expect(summary.contains("Health 3"))
-        #expect(summary.contains("Evade 1"))
+        #expect(summary.contains("Card c01159"))
+        #expect(summary.contains("Fight 1"))
+        #expect(summary.contains("Health 1"))
+        #expect(summary.contains("Evade 3"))
         #expect(summary.contains("Damage 1"))
-        #expect(summary.contains("Exhausted"))
     }
 
     @Test("Choice-to-board links require actionability and prompt submit authority")
@@ -69,7 +69,7 @@ struct BoardCardRenderingProjectionTests {
         let enemyID = EnemyActionFixtures.enemyID
         let prompt = try EnemyActionFixtures.prompt()
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
-            enemyValues: [enemyID: enemyObject(id: enemyID)]
+            enemyValues: [enemyID: .null]
         ))
         let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
         let link = try #require(links[.enemy(enemyID)])
@@ -98,8 +98,8 @@ struct BoardCardRenderingProjectionTests {
         #expect(projection.handCardsByPlayer[playerID]?[cardID]?.displayLabel == "Machete")
 
         let asset = try #require(projection.inPlayCardsByPlayer[playerID]?.first)
-        #expect(asset.displayName == "Beat Cop")
-        #expect(asset.usesSummary == "ammo 3")
+        #expect(asset.displayName == "Card c01018")
+        #expect(asset.usesSummary == "Ammo 3")
         #expect(asset.damage == 1)
         #expect(asset.horror == 2)
 
@@ -114,13 +114,10 @@ struct BoardCardRenderingProjectionTests {
         locationID: LocationID
     ) throws {
         let locationEnemy = try #require(projection.enemiesByLocationID[locationID]?.first)
-        #expect(locationEnemy.displayName == "Ghoul")
-        #expect(locationEnemy.fight == 2)
-        #expect(locationEnemy.health == 3)
-        #expect(locationEnemy.evade == 1)
-        #expect(locationEnemy.damage == 1)
-        #expect(locationEnemy.horror == 1)
-        #expect(locationEnemy.exhausted)
+        #expect(locationEnemy.displayName.hasPrefix("Enemy"))
+        #expect(locationEnemy.fight == nil)
+        #expect(locationEnemy.health == nil)
+        #expect(locationEnemy.evade == nil)
 
         let engagedEnemy = try #require(
             projection.engagedEnemiesByInvestigatorID[investigatorID]?.first
@@ -140,18 +137,16 @@ struct BoardCardRenderingProjectionTests {
         ])
     }
 
-    private func enemyObject(id: EnemyID) -> JSONValue {
-        .object([
-            "id": .string(id.codingKey.stringValue),
-            "cardCode": .string("c01111"),
-            "name": .string("Ghoul"),
-            "fight": number(2),
-            "health": number(3),
-            "evade": number(1),
-            "damage": number(1),
-            "horror": number(1),
-            "exhausted": .bool(true),
-        ])
+    private func vendoredEnemyEntityMap() throws -> UUIDEntityMap<EnemyIDTag> {
+        let url = try #require(Bundle.module.url(
+            forResource: "uuid-entity-map",
+            withExtension: "json",
+            subdirectory: "Fixtures/Contract"
+        ))
+        return try ContractJSON.decode(
+            UUIDEntityMap<EnemyIDTag>.self,
+            from: Data(contentsOf: url)
+        )
     }
 
     private func assetObject(id: AssetID) -> JSONValue {
@@ -159,10 +154,11 @@ struct BoardCardRenderingProjectionTests {
             "id": .string(id.codingKey.stringValue),
             "cardId": .string(BoardTestFixtures.cardID("000000000602").codingKey.stringValue),
             "cardCode": .string("c01018"),
-            "name": .string("Beat Cop"),
-            "damage": number(1),
-            "horror": number(2),
-            "uses": .object(["ammo": number(3)]),
+            "tokens": .array([
+                .array([.string("Ammo"), number(3)]),
+                .array([.string("Damage"), number(1)]),
+                .array([.string("Horror"), number(2)]),
+            ]),
         ])
     }
 

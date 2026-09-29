@@ -137,9 +137,9 @@ extension BoardProjectionBuilder {
             subtitle: cardSubtitle(in: object),
             zone: zone,
             ownerID: ownerID,
-            damage: safeInteger(object?["damage"] ?? object?["damageTaken"]),
-            horror: safeInteger(object?["horror"] ?? object?["horrorTaken"]),
-            usesSummary: usesSummary(in: object?["uses"] ?? object?["use"]),
+            damage: tokenCount("Damage", in: object?["tokens"]),
+            horror: tokenCount("Horror", in: object?["tokens"]),
+            usesSummary: usesSummary(fromTokens: object?["tokens"]),
             tokenCounts: safeTokenCounts(in: object?["tokens"]),
             imageReference: nil
         )
@@ -179,11 +179,11 @@ extension BoardProjectionBuilder {
             id: id,
             cardCode: code,
             displayName: cardDisplayName(in: object, fallback: fallback),
-            fight: safeInteger(object?["fight"]),
-            health: safeInteger(object?["health"] ?? object?["remainingHealth"]),
-            evade: safeInteger(object?["evade"]),
-            damage: safeInteger(object?["damage"]),
-            horror: safeInteger(object?["horror"]),
+            fight: calculationSummary(in: object?["fight"]),
+            health: calculationSummary(in: object?["health"] ?? object?["remainingHealth"]),
+            evade: calculationSummary(in: object?["evade"]),
+            damage: safeInteger(object?["healthDamage"]),
+            horror: safeInteger(object?["sanityDamage"]),
             exhausted: safeBool(object?["exhausted"]) ?? false,
             engagedInvestigatorID: engagedInvestigatorID,
             locationID: locationID,
@@ -230,10 +230,23 @@ extension BoardProjectionBuilder {
                   let count = safeInteger(contents[1]),
                   count >= 0
             else { continue }
-            totals[name, default: 0] += count
+            totals[name] = clampedSum(totals[name] ?? 0, count)
         }
         return totals.map { BoardTokenSummary(token: $0.key, count: $0.value) }
             .sorted { $0.token < $1.token }
+    }
+
+    static func usesSummary(fromTokens value: JSONValue?) -> String? {
+        let parts = safeTokenCounts(in: value)
+            .filter { isUseToken($0.token) && $0.count >= 1 }
+            .map { "\($0.token) \($0.count)" }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    static func tokenCount(_ token: String, in value: JSONValue?) -> Int? {
+        let count = safeTokenCounts(in: value).first { $0.token == token }?.count
+        guard let count, count > 0 else { return nil }
+        return count
     }
 
     static func usesSummary(in value: JSONValue?) -> String? {
@@ -260,6 +273,29 @@ extension BoardProjectionBuilder {
         case .null, nil, .bool:
             return nil
         }
+    }
+
+    static func calculationSummary(in value: JSONValue?) -> BoardCalculationSummary? {
+        if let fixed = safeInteger(value) {
+            return BoardCalculationSummary(displayValue: "\(fixed)", staticValue: fixed)
+        }
+        guard case let .object(object)? = value,
+              case let .string(tag)? = object["tag"]
+        else { return nil }
+        if tag == "Fixed", let fixed = safeInteger(object["contents"]) {
+            return BoardCalculationSummary(displayValue: "\(fixed)", staticValue: fixed)
+        }
+        guard tag == "GameValueCalculation",
+              case let .object(contents)? = object["contents"],
+              case let .string(innerTag)? = contents["tag"]
+        else { return BoardCalculationSummary(displayValue: "?", staticValue: nil) }
+        if innerTag == "Static", let fixed = safeInteger(contents["contents"]) {
+            return BoardCalculationSummary(displayValue: "\(fixed)", staticValue: fixed)
+        }
+        if innerTag == "ValueX" {
+            return BoardCalculationSummary(displayValue: "X", staticValue: nil)
+        }
+        return BoardCalculationSummary(displayValue: "?", staticValue: nil)
     }
 
     static func safeInteger(_ value: JSONValue?) -> Int? {
@@ -298,6 +334,15 @@ extension BoardProjectionBuilder {
               case let .string(raw)? = object["cardId"] ?? object["cardID"]
         else { return nil }
         return WireCardID(codingKey: AnyCodingKey(stringValue: raw))
+    }
+
+    private static func isUseToken(_ token: String) -> Bool {
+        token != "Damage" && token != "Horror" && token != "Clue" && token != "Doom"
+    }
+
+    private static func clampedSum(_ lhs: Int, _ rhs: Int) -> Int {
+        let sum = lhs.addingReportingOverflow(rhs)
+        return sum.overflow ? Int.max : sum.partialValue
     }
 
     private static func safeBool(_ value: JSONValue?) -> Bool? {

@@ -173,20 +173,38 @@ struct BoardEnemyCardView: View {
                     .foregroundStyle(.secondary)
                 HStack(spacing: 4) {
                     if let fight = enemy.fight {
-                        BoardStatBadge(systemImage: "burst.fill", value: "\(fight)")
+                        BoardStatBadge(systemImage: "burst.fill", value: fight.displayValue)
                     }
                     if let health = enemy.health {
-                        BoardStatBadge(systemImage: "heart.fill", value: "\(health)")
+                        BoardStatBadge(systemImage: "heart.fill", value: health.displayValue)
                     }
                     if let evade = enemy.evade {
-                        BoardStatBadge(systemImage: "figure.run", value: "\(evade)")
+                        BoardStatBadge(systemImage: "figure.run", value: evade.displayValue)
                     }
                     if let damage = enemy.damage {
                         BoardStatBadge(systemImage: "heart.slash", value: "\(damage)")
                     }
                 }
                 .accessibilityHidden(true)
+                tokenBadges
             }
+        }
+    }
+
+    @ViewBuilder
+    private var tokenBadges: some View {
+        let badges = enemy.tokenCounts.map { "\($0.token) \($0.count)" }
+        if !badges.isEmpty {
+            HStack(spacing: 3) {
+                ForEach(badges, id: \.self) { badge in
+                    Text(badge)
+                        .font(.caption2)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.25), in: Capsule())
+                }
+            }
+            .accessibilityHidden(true)
         }
     }
 

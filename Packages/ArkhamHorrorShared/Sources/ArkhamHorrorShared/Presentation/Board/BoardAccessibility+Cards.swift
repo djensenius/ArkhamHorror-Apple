@@ -55,13 +55,13 @@ extension BoardAccessibility {
 
     private static func appendEnemyStats(_ enemy: BoardEnemyNode, to parts: inout [String]) {
         if let fight = enemy.fight {
-            parts.append("Fight \(fight)")
+            parts.append("Fight \(fight.displayValue)")
         }
         if let health = enemy.health {
-            parts.append("Health \(health)")
+            parts.append("Health \(health.displayValue)")
         }
         if let evade = enemy.evade {
-            parts.append("Evade \(evade)")
+            parts.append("Evade \(evade.displayValue)")
         }
         if let damage = enemy.damage {
             parts.append("Damage \(damage)")

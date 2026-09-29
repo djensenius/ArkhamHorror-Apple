@@ -225,9 +225,9 @@ struct BoardEnemyNode: Sendable, Equatable, Identifiable {
     let id: EnemyID
     let cardCode: CardCode?
     let displayName: String
-    let fight: Int?
-    let health: Int?
-    let evade: Int?
+    let fight: BoardCalculationSummary?
+    let health: BoardCalculationSummary?
+    let evade: BoardCalculationSummary?
     let damage: Int?
     let horror: Int?
     let exhausted: Bool
