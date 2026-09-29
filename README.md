@@ -106,22 +106,23 @@ hashes remain unchanged at Q33, and exercises that same strict prompt path.
 
 ### Backend replay authority
 
-As of Wednesday, September 16, 2026, this repository is pinned to backend
-contract commit `e6047c07761dc075105c28d28a052fc1e19368ec` from
-`djensenius/ArkhamHorror#93`, at contract revision `0.1.43`. That revision adds
-the exact semantic encounter-deck draw used by the Attic branch and
-deterministic backend execution from Q39 through the Q42 action window. It
-expands the exact negative-regression inventory to 628 cases and publishes
-locale catalog revision `1.0f49e8af5450fe30e349a29da7d4c51f`. The
-authenticated movement replays submit Q34-Q41 and validate the branch-specific
-Q42 prompt and authoritative board state.
+As of Friday, September 18, 2026, this repository is pinned to backend
+contract commit `612751d047888329698bab5fc035a0d5e72c0424` from
+`djensenius/ArkhamHorror#95`, at contract revision `0.1.44`. That revision adds
+the exact treachery-sourced forced-ability semantics used by Cover Up at Q68,
+keeps the locale catalog at revision `1.9178faf9112db6889053977908c1943b`,
+and expands the exact negative-regression inventory to 629 cases. The
+authenticated Attic replay submits Q34-Q70 by semantic role and validates the
+terminal `Over` state.
 
 Fight, Evade, Engage, the round transition, Roland's clue discovery, Cover
 Up's replacement effect, clue payment, act advancement, movement legality,
 forced entry abilities, and damage/horror assignment remain
 server-authoritative. The backend also remains authoritative for Q39
 investigation or movement, skill-test resolution, end-turn progression,
-encounter-card draws, and the resulting Q42 action window.
+encounter-card draws, backend-offered discard targets, Cover Up's terminal
+forced ability, story resolution, deck mutation, and the resulting Q70
+terminal state.
 Swift recognizes only the exact governed prompt/source/message shapes, checks
 that referenced entities still exist in the newest projection, and submits the
 unchanged source-array index with the current question version. Costs,
@@ -148,7 +149,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.43",
+       "contractSchemaRevision": "0.1.44",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -209,7 +210,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend revision above:
 
 1. Confirm `ContractPin.current` is
-   `e6047c07761dc075105c28d28a052fc1e19368ec` / `0.1.43`, then build the
+   `612751d047888329698bab5fc035a0d5e72c0424` / `0.1.44`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can
@@ -362,9 +363,10 @@ globally bounded Swift coordinator then:
    each Gathering scenario uses one independently attested import.
 5. Runs the selected scenario through the real `AppModel`. `assignment`
    resolves damage-first and horror-first orders. `gathering-act-advance`
-   submits Q34-Q35 and validates Q36. `gathering-cellar-entry` and
-   `gathering-attic-entry` submit Q34-Q38, validate Q39, and deliberately do not
-   answer Q39.
+   submits Q34-Q35 and validates Q36. `gathering-cellar-entry` submits Q34-Q38,
+   validates Q39, and deliberately does not answer it. `gathering-attic-entry`
+   continues from Q34 through Q70, including the backend-offered discard,
+   Cover Up forced ability, story continuation, and terminal deck resolution.
 6. Publishes success only after every compact canonical artifact independently
    decodes, digests, and validates; otherwise it removes partial anchored
    output.
@@ -391,10 +393,13 @@ authoritative before/after state, checkpoint full-file and server-canonical
 envelope digests, checkpoint Game/queue digests, validator/import server build,
 Apple revision, game revision, contract, catalog, and scenario assertions
 pass. Assignment evidence uses schema `4.0.0`; Gathering evidence uses schema
-`1.2.0`. Cellar and Attic evidence additionally binds the selected Q36 runtime
-destination through the Q37 forced ability, Q38 damage/horror source, entered
-board states, and unsubmitted Q39 continuation prompt without claiming the
-caller-authored generation history is authenticated.
+`2.0.0`. Cellar evidence additionally binds the selected Q36 runtime
+destination through the Q37 forced ability, Q38 damage source, entered board
+state, and unsubmitted Q39 continuation prompt. Attic evidence binds those
+entry transitions plus every Q39-Q70 prompt and controller submission, the Q68
+defeat state with Cover Up still carrying three clues, and the final Q70
+`Over` state after Cover Up is removed and Lita Chantler is added to Roland's
+deck, without claiming the caller-authored generation history is authenticated.
 
 ## Commands
 

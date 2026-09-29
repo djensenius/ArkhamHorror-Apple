@@ -213,7 +213,9 @@ extension QuestionPresentation.Choice: Codable {
             return actorID != nil && entity?.kind == .location
                 && label == nil && ability != nil && cost != nil
         case .resolveForcedAbility:
-            return actorID != nil && entity?.kind == .location
+            guard let entityKind = entity?.kind else { return false }
+            return actorID != nil
+                && (entityKind == .location || entityKind == .treachery)
                 && label == nil && ability != nil && cost != nil
         case .assignDamage, .assignHorror:
             return actorID == nil && entity?.kind == .investigator

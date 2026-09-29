@@ -41,14 +41,31 @@ extension BoardProjection {
                     hasCardCode: choice.ability?.cardCode
                 )
         case .resolveForcedAbility:
-            return choice.entity?.kind == .location
-                && choice.actorID != nil && choice.ability != nil && choice.cost != nil
-                && semanticLocation(
-                    choice.entity,
-                    hasCardCode: choice.ability?.cardCode
-                )
+            return isSemanticForcedAbilityActionable(choice)
         case .useAbility:
             return choice.actorID != nil && choice.ability != nil && choice.cost != nil
+        }
+    }
+
+    private func isSemanticForcedAbilityActionable(
+        _ choice: QuestionPresentation.Choice
+    ) -> Bool {
+        guard choice.actorID != nil, choice.ability != nil, choice.cost != nil else {
+            return false
+        }
+        switch choice.entity?.kind {
+        case .location:
+            return semanticLocation(
+                choice.entity,
+                hasCardCode: choice.ability?.cardCode
+            )
+        case .treachery:
+            return semanticTreachery(
+                choice.entity,
+                hasCardCode: choice.ability?.cardCode
+            )
+        default:
+            return false
         }
     }
 
@@ -74,6 +91,19 @@ extension BoardProjection {
         } || enemyLocations.contains {
             $0.id == locationID && $0.cardCode == cardCode
         }
+    }
+
+    private func semanticTreachery(
+        _ entity: QuestionPresentation.Entity?,
+        hasCardCode rawCardCode: String?
+    ) -> Bool {
+        guard entity?.kind == .treachery,
+              let rawID = entity?.id,
+              let treacheryID = uuidIdentifier(rawID, as: TreacheryID.self),
+              let rawCardCode,
+              let cardCode = try? CardCode(rawCardCode)
+        else { return false }
+        return treacheriesByID[treacheryID]?.cardCode == cardCode
     }
 
     private func containsSemanticChoiceIdentities(

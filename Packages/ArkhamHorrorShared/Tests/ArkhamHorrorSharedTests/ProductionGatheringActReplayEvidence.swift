@@ -107,6 +107,11 @@ struct GatheringActReplayDescriptorEvidence: Codable, Equatable, Sendable {
             case .other:
                 costScope = "other"
             }
+        case .free:
+            costKind = "free"
+            costAmountKind = nil
+            costAmountValue = nil
+            costScope = nil
         case .none:
             costKind = nil
             costAmountKind = nil
@@ -907,9 +912,11 @@ struct GatheringContinuationReplayEvidence: Codable, Equatable, Sendable {
     let q41State: GatheringActReplayBoardStateEvidence
     let q42Prompt: GatheringActReplayPromptEvidence
     let q42State: GatheringActReplayBoardStateEvidence
+    let terminal: GatheringTerminalReplayEvidence?
 
     var submittedAnswers: [GatheringActReplayAnswerEvidence] {
-        [q39Answer, q40Answer, q41Answer]
+        [q39Answer, q40Answer, q41Answer] +
+            (terminal?.submittedAnswers ?? [])
     }
 
     // swiftlint:disable:next function_body_length
@@ -972,6 +979,32 @@ struct GatheringContinuationReplayEvidence: Codable, Equatable, Sendable {
             postEntry: postEntry,
             identity: identity
         )
+        switch branch {
+        case .cellar:
+            guard terminal == nil else {
+                throw ProductionGatheringActReplayEvidenceError
+                    .invalidTerminalReplay
+            }
+        case .attic:
+            guard let terminal else {
+                throw ProductionGatheringActReplayEvidenceError
+                    .invalidTerminalReplay
+            }
+            guard let terminalQ42 = terminal.steps.first?.prompt,
+                  terminalQ42.canonicalSHA256 ==
+                  q42Prompt.canonicalSHA256,
+                  terminalQ42.sourceIndices == q42Prompt.sourceIndices,
+                  terminalQ42.actionableSourceIndices ==
+                  q42Prompt.actionableSourceIndices
+            else {
+                throw ProductionGatheringActReplayEvidenceError
+                    .invalidTerminalReplay
+            }
+            try terminal.validate(
+                promptIdentity: identity,
+                playerID: playerID
+            )
+        }
     }
 
     private func validateStateProgression(
@@ -1253,7 +1286,7 @@ struct ProductionGatheringActReplayEvidence:
     Sendable
 {
     // swiftlint:enable opening_brace
-    static let currentSchemaVersion = "1.3.0"
+    static let currentSchemaVersion = "2.0.0"
 
     let schemaVersion: String
     let attestation: ProductionAssignmentReplayAttestation
@@ -1643,6 +1676,7 @@ enum ProductionGatheringActReplayEvidenceError: Error, Equatable {
     case invalidQ40
     case invalidQ41
     case invalidQ42
+    case invalidTerminalReplay
     case invalidState
     case invalidRevisions
     case configurationMismatch

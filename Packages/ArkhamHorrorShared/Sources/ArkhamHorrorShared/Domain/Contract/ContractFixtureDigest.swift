@@ -18,11 +18,11 @@ enum ContractFixtureDigests {
     static let all: [VendoredFixtureDigest] = [
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "7fed8e2ab7092eaa72810113dec4010642454f50a63d60328ca10038514602cf"
+            sha256Hex: "cd95bdbf9e70f6a15fbe1a3b6ea89a5ab422e415fadbc86e23ffca025150ed0e"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "d2178315833db20b7e24aed363f680ed74fb148151bb246c9553e46f37e86e2e"
+            sha256Hex: "c182475a29c5ed82f604e395ed6526521d665f68985fc6a9d50da504df4a8558"
         ),
         VendoredFixtureDigest(
             fileName: "catalog",
@@ -221,6 +221,14 @@ enum ContractFixtureDigests {
             sha256Hex: "d40629f34d5727a2c9bb873feb09931e3f32e004dc80baf375758833c80ac270"
         ),
         VendoredFixtureDigest(
+            fileName: "question-treachery-forced-ability",
+            sha256Hex: "fc539af36c05a0f924ec255b697669c0ea49282270a80a8b167cabe105f6521b"
+        ),
+        VendoredFixtureDigest(
+            fileName: "question-presentation-treachery-forced-ability",
+            sha256Hex: "bd988ba0d52a24a7b7ef6591a49a769bec440e90eca6915bbb250978f99b3b06"
+        ),
+        VendoredFixtureDigest(
             fileName: "question-agenda-advance",
             sha256Hex: "922f8e3923e2c74d28f9a2a79166b5ada177a5d75c12747195d1df2ecd17d067"
         ),
@@ -234,7 +242,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "17d23ab964950e3ac0bf2770218c3f92a6109bb4e9ca078b7fd3389114624bc0"
+            sha256Hex: "daa61145ae81abbb0c489d922d82629d4d358a59aedb53190bd27d184e699f07"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",
@@ -242,11 +250,11 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "basic-choice-question.schema",
-            sha256Hex: "d9b0a1e260592b1e0c7bab34a02be2dae6b8319f0aae6d818728a37a7bcca457"
+            sha256Hex: "f812c0a99c436766c8969eeba58ee6579414490975049dc626f3af10b32ab934"
         ),
         VendoredFixtureDigest(
             fileName: "question-presentation.schema",
-            sha256Hex: "4d45330275fccfa8c052ee366746a605d55ffb0c965f51ecfa3c3f4055838de9"
+            sha256Hex: "a6972d416fe52125b8709457c504b0ee7878d16e3267196f0db262d15450122c"
         ),
     ] + movementEntry
 }

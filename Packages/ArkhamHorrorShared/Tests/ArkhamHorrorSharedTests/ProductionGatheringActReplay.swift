@@ -34,7 +34,7 @@ enum ProductionGatheringActReplayError: Error, Equatable {
     case sentAnswerMismatch
 }
 
-private struct GatheringActReplayControllerExecution {
+struct GatheringActReplayControllerExecution {
     let evidence: GatheringActReplayControllerEvidence
     let result: BasicChoiceSubmitResult
 }
@@ -42,7 +42,7 @@ private struct GatheringActReplayControllerExecution {
 @MainActor
 // swiftlint:disable:next type_body_length
 enum ProductionGatheringActReplayRunner {
-    private struct MovementEntryExecutionContext {
+    struct MovementEntryExecutionContext {
         let model: AppModel
         let socketRecorder: ProductionAssignmentReplaySocketRecorder
         let authoritativeRecorder: AssignmentReplayAuthoritativeRecorder
@@ -799,6 +799,18 @@ enum ProductionGatheringActReplayRunner {
             investigatorID: investigatorID
         )
 
+        let terminal = try await runTerminalContinuationIfNeeded(
+            input: GatheringTerminalContinuationInput(
+                branch: branch,
+                q42Prompt: q42Prompt,
+                q42Projection: q42Projection,
+                q42Authority: q42Authority,
+                precedingAnswers:
+                precedingAnswers + [q39Answer, q40Answer, q41Answer],
+                context: context
+            )
+        )
+
         return try GatheringContinuationReplayEvidence(
             q39Answer: GatheringActReplayAnswerEvidence(
                 answer: q39Answer
@@ -817,7 +829,8 @@ enum ProductionGatheringActReplayRunner {
             q41Controller: q41Execution.evidence,
             q41State: q41State,
             q42Prompt: q42PromptEvidence,
-            q42State: q42State
+            q42State: q42State,
+            terminal: terminal
         )
     }
 
@@ -881,7 +894,7 @@ enum ProductionGatheringActReplayRunner {
         }
     }
 
-    private static func waitForProjection(
+    static func waitForProjection(
         model: AppModel,
         version: Int,
         configuration: ProductionGatheringActReplayConfiguration
@@ -907,7 +920,7 @@ enum ProductionGatheringActReplayRunner {
         }
     }
 
-    private static func requireAuthority(
+    static func requireAuthority(
         recorder: AssignmentReplayAuthoritativeRecorder,
         projection: BoardProjection,
         version: Int,
@@ -952,7 +965,7 @@ enum ProductionGatheringActReplayRunner {
         return observation
     }
 
-    private static func validateParticipant(
+    static func validateParticipant(
         model: AppModel,
         configuration: ProductionGatheringActReplayConfiguration
     ) throws {
@@ -965,7 +978,7 @@ enum ProductionGatheringActReplayRunner {
         }
     }
 
-    private static func requirePrompt(
+    static func requirePrompt(
         model: AppModel,
         configuration: ProductionGatheringActReplayConfiguration
     ) throws -> BasicChoicePromptPresentation {
@@ -977,7 +990,7 @@ enum ProductionGatheringActReplayRunner {
         return prompt
     }
 
-    private static func validatePromptIdentity(
+    static func validatePromptIdentity(
         _ prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
         version: Int,
@@ -1295,7 +1308,7 @@ enum ProductionGatheringActReplayRunner {
     }
 
     // swiftlint:disable:next function_body_length
-    private static func executeController(
+    static func executeController(
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
         selectedSourceIndex: Int,
@@ -1410,7 +1423,7 @@ enum ProductionGatheringActReplayRunner {
         }
     }
 
-    private static func validateSubmission(
+    static func validateSubmission(
         _ result: BasicChoiceSubmitResult
     ) throws {
         guard result == .sentAwaitingSnapshot ||
@@ -1420,7 +1433,7 @@ enum ProductionGatheringActReplayRunner {
         }
     }
 
-    private static func validateSentAnswers(
+    static func validateSentAnswers(
         _ sentAnswers: [Data],
         expected answers: [BasicChoiceAnswer]
     ) throws {

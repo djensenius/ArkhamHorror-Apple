@@ -17,6 +17,14 @@ extension QuestionPresentation {
             .resolveForcedAbility,
         ]
         let governedChoices = choices.filter { governedKinds.contains($0.kind) }
+        let treacheryForcedChoices = governedChoices.filter {
+            $0.kind == .resolveForcedAbility
+                && $0.entity?.kind == .treachery
+        }
+        if !treacheryForcedChoices.isEmpty {
+            return questionKind == .windowChooseOne
+                && governedChoices == treacheryForcedChoices
+        }
         switch (questionVersion, questionKind, choiceCount) {
         case (34, .playerWindowChooseOne, 13):
             return governedChoices == [.gatheringActObjective]

@@ -17,6 +17,9 @@ extension QuestionPresentationRawQuestionShape {
             )
             return nil
         }
+        if try validateTreacheryForcedAbilities(for: presentation) {
+            return nil
+        }
 
         switch (
             presentation.questionVersion,
