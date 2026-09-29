@@ -69,8 +69,13 @@ struct BoardPlayerCardFaceView: View {
         card.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? card.displayName
     }
 
+    private var accessibilitySummary: String {
+        BoardAccessibility.summary(playerCard: card)
+            .replacingOccurrences(of: card.displayName, with: displayName)
+    }
+
     var body: some View {
-        linkedContainer(accessibilityLabel: BoardAccessibility.summary(playerCard: card)) {
+        linkedContainer(accessibilityLabel: accessibilitySummary) {
             VStack(alignment: .leading, spacing: 4) {
                 if let imageReference = card.imageReference {
                     BoardAssetImageView(key: imageReference, description: displayName)
@@ -157,8 +162,13 @@ struct BoardEnemyCardView: View {
         enemy.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? enemy.displayName
     }
 
+    private var accessibilitySummary: String {
+        BoardAccessibility.summary(enemy: enemy)
+            .replacingOccurrences(of: enemy.displayName, with: displayName)
+    }
+
     var body: some View {
-        linkedContainer(accessibilityLabel: BoardAccessibility.summary(enemy: enemy)) {
+        linkedContainer(accessibilityLabel: accessibilitySummary) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(displayName)
@@ -255,10 +265,13 @@ struct BoardThreatTreacheryCardView: View {
         treachery.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? treachery.displayName
     }
 
+    private var accessibilitySummary: String {
+        BoardAccessibility.summary(threatTreachery: treachery)
+            .replacingOccurrences(of: treachery.displayName, with: displayName)
+    }
+
     var body: some View {
-        linkedContainer(
-            accessibilityLabel: BoardAccessibility.summary(threatTreachery: treachery)
-        ) {
+        linkedContainer(accessibilityLabel: accessibilitySummary) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayName)
                     .font(.caption.bold())
