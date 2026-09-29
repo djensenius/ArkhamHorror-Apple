@@ -45,22 +45,30 @@ final class LobbyDeckSelectionViewModel {
         return []
     }
 
-    func load(allowedInvestigatorIDs: Set<String>) async {
-        guard case .idle = loadState else { return }
-        await reload(allowedInvestigatorIDs: allowedInvestigatorIDs)
+    func load(allowedInvestigatorIDs: Set<String>? = nil) async {
+        guard case .loading = loadState else {
+            await reload(allowedInvestigatorIDs: allowedInvestigatorIDs)
+            return
+        }
     }
 
-    func reload(allowedInvestigatorIDs: Set<String>) async {
+    func reload(allowedInvestigatorIDs: Set<String>? = nil) async {
         loadState = .loading
         validations = [:]
         do {
             let token = try await tokenProvider()
             let loaded = try await deckService.listDecks(on: profile, token: token)
             let matching = loaded
-                .filter { allowedInvestigatorIDs.contains($0.normalizedInvestigatorCode) }
+                .filter { deck in
+                    allowedInvestigatorIDs?.contains(deck.normalizedInvestigatorCode) ?? true
+                }
                 .sortedForPresentation()
             loadState = .loaded(matching)
-            await validate(matching, token: token)
+            do {
+                try await validate(matching, token: token)
+            } catch is CancellationError {
+                return
+            }
         } catch is CancellationError {
             loadState = .idle
         } catch {
@@ -78,7 +86,7 @@ final class LobbyDeckSelectionViewModel {
         }?.id
     }
 
-    private func validate(_ decks: [Deck], token: String) async {
+    private func validate(_ decks: [Deck], token: String) async throws {
         for deck in decks {
             validations[deck.id] = .pending
             do {
@@ -86,8 +94,8 @@ final class LobbyDeckSelectionViewModel {
                     DeckListInput(deck.list), on: profile, token: token
                 )
                 validations[deck.id] = .valid
-            } catch is CancellationError {
-                return
+            } catch let cancellation as CancellationError {
+                throw cancellation
             } catch let error as DeckServiceError {
                 switch error {
                 case let .validationFailed(errors):

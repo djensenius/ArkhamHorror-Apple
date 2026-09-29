@@ -33,7 +33,7 @@ struct LobbyDeckSelectionView: View {
     }
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 8) {
             switch viewModel.loadState {
             case .idle, .loading:
                 HStack {
