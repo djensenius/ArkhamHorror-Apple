@@ -90,8 +90,17 @@ struct DecksViewModelTests {
         return try ContractJSON.decode(DecksViewModelFixture.self, from: Data(contentsOf: url))
     }
 
-    private func makeModel(service: ScriptedDeckService) -> DecksViewModel {
-        DecksViewModel(profile: .hosted, deckService: service) { "token" }
+    private func makeModel(
+        service: ScriptedDeckService,
+        tokenProvider: @escaping DecksViewModel.TokenProvider = { "token" },
+        sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = {}
+    ) -> DecksViewModel {
+        DecksViewModel(
+            profile: .hosted,
+            deckService: service,
+            tokenProvider: tokenProvider,
+            sessionExpiredHandler: sessionExpiredHandler
+        )
     }
 
     @Test("load moves through loaded empty and failed states")
@@ -165,6 +174,39 @@ struct DecksViewModelTests {
         #expect(model.pendingDeletion == nil)
         #expect(model.decks.isEmpty)
         #expect(await service.lastDeletedID == fixture.deck.id)
+    }
+
+    @Test("401 deck failures invoke the session-expired handler")
+    func sessionExpiredHandlerRuns() async {
+        let service = ScriptedDeckService()
+        await service.enqueueList(.failure(DeckServiceError.sessionExpired))
+        var expirations = 0
+        let model = makeModel(
+            service: service,
+            sessionExpiredHandler: { expirations += 1 }
+        )
+
+        await model.load()
+
+        #expect(
+            model.loadState == DecksViewModel.LoadState.failed(
+                DeckServiceError.sessionExpired.message
+            )
+        )
+        #expect(expirations == 1)
+    }
+
+    @Test("stale token access is treated like cancellation without surfacing an error")
+    func staleTokenIsSilent() async {
+        let model = makeModel(
+            service: ScriptedDeckService(),
+            tokenProvider: { throw GameLifecycleTokenAccessError.stale }
+        )
+
+        model.importURL = "https://arkhamdb.com/decklist/view/4242"
+        await model.importDeck()
+
+        #expect(model.importState == .idle)
     }
 
     @Test("delete failure leaves the loaded deck list visible and shows an inline error")

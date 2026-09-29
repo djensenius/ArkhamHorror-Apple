@@ -20,10 +20,12 @@ final class LobbyDeckSelectionViewModel {
     }
 
     typealias TokenProvider = @MainActor () async throws -> String
+    typealias SessionExpiredHandler = @MainActor () async -> Void
 
     private let profile: ServerProfile
     private let deckService: any DeckServicing
     private let tokenProvider: TokenProvider
+    private let sessionExpiredHandler: SessionExpiredHandler
 
     var loadState: LoadState = .idle
     var validations: [DeckID: ValidationState] = [:]
@@ -31,11 +33,13 @@ final class LobbyDeckSelectionViewModel {
     init(
         profile: ServerProfile,
         deckService: any DeckServicing,
-        tokenProvider: @escaping TokenProvider
+        tokenProvider: @escaping TokenProvider,
+        sessionExpiredHandler: @escaping SessionExpiredHandler = {}
     ) {
         self.profile = profile
         self.deckService = deckService
         self.tokenProvider = tokenProvider
+        self.sessionExpiredHandler = sessionExpiredHandler
     }
 
     var decks: [Deck] {
@@ -71,6 +75,11 @@ final class LobbyDeckSelectionViewModel {
             }
         } catch is CancellationError {
             loadState = .idle
+        } catch GameLifecycleTokenAccessError.stale {
+            loadState = .idle
+        } catch DeckServiceError.sessionExpired {
+            loadState = .failed(DeckServiceError.sessionExpired.message)
+            await sessionExpiredHandler()
         } catch {
             loadState = .failed(DecksViewModel.message(for: error))
         }
@@ -100,6 +109,9 @@ final class LobbyDeckSelectionViewModel {
                 switch error {
                 case let .validationFailed(errors):
                     validations[deck.id] = .invalid(errorMessage(for: errors))
+                case .sessionExpired:
+                    validations[deck.id] = .failed(error.message)
+                    await sessionExpiredHandler()
                 default:
                     validations[deck.id] = .failed(error.message)
                 }

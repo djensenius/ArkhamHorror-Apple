@@ -114,6 +114,15 @@ extension AppModel {
         )
     }
 
+    func handleDeckSessionExpired(profile: ServerProfile) async {
+        await handleGameLifecycleSessionExpired(
+            profile: profile,
+            generation: generation,
+            credentialEpoch: currentCredentialEpoch(for: profile.id),
+            globalEpoch: currentGlobalCredentialEpoch()
+        )
+    }
+
     /// Clears every game-lifecycle/lobby state property back to its initial, empty
     /// value and cancels every in-flight list/action task -- and, via
     /// ``resetLiveGameState()``, tears down every live-game session too (see

@@ -19,10 +19,12 @@ final class DecksViewModel {
     }
 
     typealias TokenProvider = @MainActor () async throws -> String
+    typealias SessionExpiredHandler = @MainActor () async -> Void
 
     private let profile: ServerProfile
     private let deckService: any DeckServicing
     private let tokenProvider: TokenProvider
+    private let sessionExpiredHandler: SessionExpiredHandler
 
     var loadState: LoadState = .idle
     var importState: ImportState = .idle
@@ -34,11 +36,13 @@ final class DecksViewModel {
     init(
         profile: ServerProfile,
         deckService: any DeckServicing,
-        tokenProvider: @escaping TokenProvider
+        tokenProvider: @escaping TokenProvider,
+        sessionExpiredHandler: @escaping SessionExpiredHandler = {}
     ) {
         self.profile = profile
         self.deckService = deckService
         self.tokenProvider = tokenProvider
+        self.sessionExpiredHandler = sessionExpiredHandler
     }
 
     var decks: [Deck] {
@@ -64,6 +68,11 @@ final class DecksViewModel {
             loadState = .loaded(decks.sortedForPresentation())
         } catch is CancellationError {
             loadState = .idle
+        } catch GameLifecycleTokenAccessError.stale {
+            loadState = .idle
+        } catch DeckServiceError.sessionExpired {
+            loadState = .failed(DeckServiceError.sessionExpired.message)
+            await sessionExpiredHandler()
         } catch {
             loadState = .failed(Self.message(for: error))
         }
@@ -89,6 +98,11 @@ final class DecksViewModel {
             importState = .idle
         } catch is CancellationError {
             importState = .idle
+        } catch GameLifecycleTokenAccessError.stale {
+            importState = .idle
+        } catch DeckServiceError.sessionExpired {
+            importState = .failed(DeckServiceError.sessionExpired.message)
+            await sessionExpiredHandler()
         } catch {
             importState = .failed(Self.message(for: error))
         }
@@ -114,6 +128,12 @@ final class DecksViewModel {
             remove(deck)
         } catch is CancellationError {
             breakDeletion(deck)
+        } catch GameLifecycleTokenAccessError.stale {
+            breakDeletion(deck)
+        } catch DeckServiceError.sessionExpired {
+            breakDeletion(deck)
+            deletionFailure = DeckServiceError.sessionExpired.message
+            await sessionExpiredHandler()
         } catch {
             breakDeletion(deck)
             deletionFailure = Self.message(for: error)
@@ -148,7 +168,7 @@ final class DecksViewModel {
         if let gameError = error as? GameLifecycleTokenAccessError {
             switch gameError {
             case .stale:
-                return "The signed-in session changed. Try again."
+                return ""
             case .noToken:
                 return "Your session is no longer available. Sign in again to manage decks."
             case .tokenStore:

@@ -10,7 +10,8 @@ struct DecksView: View {
             initialValue: DecksViewModel(
                 profile: profile,
                 deckService: model.deckService,
-                tokenProvider: { try await model.currentGameLifecycleToken(for: profile) }
+                tokenProvider: { try await model.currentGameLifecycleToken(for: profile) },
+                sessionExpiredHandler: { await model.handleDeckSessionExpired(profile: profile) }
             )
         )
     }
