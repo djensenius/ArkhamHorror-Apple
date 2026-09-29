@@ -23,6 +23,19 @@ struct AppModelGameLifecycleActionTests {
         )
     }
 
+    private struct DeckFixture: Decodable {
+        let deck: Deck
+    }
+
+    private func sampleDeck() throws -> Deck {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: "decks", withExtension: "json", subdirectory: "Fixtures/Contract"
+            )
+        )
+        return try ContractJSON.decode(DeckFixture.self, from: Data(contentsOf: url)).deck
+    }
+
     // MARK: - Per-game actions: delete
 
     @Test("deleteGame refreshes the games list on success")
@@ -196,6 +209,25 @@ struct AppModelGameLifecycleActionTests {
         #expect(sentRequest?.deckUrl == nil)
         #expect(sentRequest?.deckList == nil)
         #expect(model.gameListState == .loaded([]))
+    }
+
+    @Test("chooseDeck sends web-compatible investigator id, deck URL, and deckList")
+    func chooseSavedDeckEncodingMatchesLobbyRESTRoute() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let deck = try sampleDeck()
+        await service.enqueueChooseDeckResult(.success(()))
+        await service.enqueueListGamesResult(.success([]))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        model.chooseDeck(deck, investigatorId: "01001", in: gameID)
+        await model.gameLifecycleActionTasks[gameID]?.value
+        await model.gameListTask?.value
+
+        let sentRequest = try #require(await service.lastChooseDeckRequest)
+        #expect(sentRequest.investigatorId.rawValue == "01001")
+        #expect(sentRequest.deckUrl == "https://arkhamdb.com/decklist/view/4242")
+        #expect(sentRequest.deckList == DeckListInput(deck.list))
     }
 
     // MARK: - createGame (typed operation; no polished create UI)

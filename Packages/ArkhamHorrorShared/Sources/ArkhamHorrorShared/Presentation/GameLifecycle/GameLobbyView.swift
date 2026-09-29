@@ -193,6 +193,7 @@ struct GameLobbyView: View {
         }
     }
 
+    @ViewBuilder
     private func chooseDeckContent(for game: GameSummary) -> some View {
         ForEach(game.investigators, id: \.id) { investigator in
             Button {
@@ -208,6 +209,16 @@ struct GameLobbyView: View {
                 AccountAccessibilityID.gameContinueDeckButton(
                     for: gameID.rawValue, investigatorId: investigator.id
                 )
+            )
+        }
+
+        if case let .signedIn(profile, _, _) = model.sessionState {
+            LobbyDeckSelectionView(
+                model: model,
+                profile: profile,
+                gameID: gameID,
+                investigators: game.investigators,
+                action: action
             )
         }
     }

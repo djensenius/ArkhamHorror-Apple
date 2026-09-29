@@ -12,10 +12,20 @@ struct AccountShellView: View {
     let user: CurrentUser
 
     @State private var isPresentingAccountDetail = false
+    @State private var isPresentingDecks = false
 
     var body: some View {
         GamesListView(model: model)
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        isPresentingDecks = true
+                    } label: {
+                        Label("Decks", systemImage: "rectangle.stack")
+                    }
+                    .accessibilityIdentifier(AccountAccessibilityID.decksButton)
+                }
+
                 ToolbarItem(placement: .navigation) {
                     Button {
                         isPresentingAccountDetail = true
@@ -30,6 +40,11 @@ struct AccountShellView: View {
                     AccountDetailView(
                         model: model, profile: profile, compatibility: compatibility, user: user
                     )
+                }
+            }
+            .sheet(isPresented: $isPresentingDecks) {
+                NavigationStack {
+                    DecksView(model: model, profile: profile)
                 }
             }
     }

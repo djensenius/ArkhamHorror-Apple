@@ -1,0 +1,128 @@
+import Foundation
+import Observation
+
+/// Deck-list and validation state used by the lobby choose-deck section.
+@MainActor
+@Observable
+final class LobbyDeckSelectionViewModel {
+    enum LoadState: Equatable {
+        case idle
+        case loading
+        case loaded([Deck])
+        case failed(String)
+    }
+
+    enum ValidationState: Equatable {
+        case pending
+        case valid
+        case invalid(String)
+        case failed(String)
+    }
+
+    typealias TokenProvider = @MainActor () async throws -> String
+
+    private let profile: ServerProfile
+    private let deckService: any DeckServicing
+    private let tokenProvider: TokenProvider
+
+    var loadState: LoadState = .idle
+    var validations: [DeckID: ValidationState] = [:]
+
+    init(
+        profile: ServerProfile,
+        deckService: any DeckServicing,
+        tokenProvider: @escaping TokenProvider
+    ) {
+        self.profile = profile
+        self.deckService = deckService
+        self.tokenProvider = tokenProvider
+    }
+
+    var decks: [Deck] {
+        if case let .loaded(decks) = loadState {
+            return decks
+        }
+        return []
+    }
+
+    func load(allowedInvestigatorIDs: Set<String>) async {
+        guard case .idle = loadState else { return }
+        await reload(allowedInvestigatorIDs: allowedInvestigatorIDs)
+    }
+
+    func reload(allowedInvestigatorIDs: Set<String>) async {
+        loadState = .loading
+        validations = [:]
+        do {
+            let token = try await tokenProvider()
+            let loaded = try await deckService.listDecks(on: profile, token: token)
+            let matching = loaded
+                .filter { allowedInvestigatorIDs.contains($0.normalizedInvestigatorCode) }
+                .sortedForPresentation()
+            loadState = .loaded(matching)
+            await validate(matching, token: token)
+        } catch is CancellationError {
+            loadState = .idle
+        } catch {
+            loadState = .failed(DecksViewModel.message(for: error))
+        }
+    }
+
+    func validationState(for deck: Deck) -> ValidationState {
+        validations[deck.id] ?? .pending
+    }
+
+    func claimedInvestigatorID(for deck: Deck, in investigators: [InvestigatorSummary]) -> String? {
+        investigators.first { investigator in
+            Deck.normalizedInvestigatorCode(investigator.id) == deck.normalizedInvestigatorCode
+        }?.id
+    }
+
+    private func validate(_ decks: [Deck], token: String) async {
+        for deck in decks {
+            validations[deck.id] = .pending
+            do {
+                _ = try await deckService.validateDeckList(
+                    DeckListInput(deck.list), on: profile, token: token
+                )
+                validations[deck.id] = .valid
+            } catch is CancellationError {
+                return
+            } catch let error as DeckServiceError {
+                switch error {
+                case let .validationFailed(errors):
+                    validations[deck.id] = .invalid(errorMessage(for: errors))
+                default:
+                    validations[deck.id] = .failed(error.message)
+                }
+            } catch {
+                validations[deck.id] = .failed("Deck validation failed. Try again.")
+            }
+        }
+    }
+
+    private func errorMessage(for errors: DeckValidationErrors) -> String {
+        DeckServiceError.validationFailed(errors).message
+    }
+}
+
+extension Deck {
+    var normalizedInvestigatorCode: String {
+        Self.normalizedInvestigatorCode(list.investigatorCode.rawValue)
+    }
+
+    static func normalizedInvestigatorCode(_ code: String) -> String {
+        if code.hasPrefix("c") {
+            return String(code.dropFirst())
+        }
+        return code
+    }
+}
+
+private extension [Deck] {
+    func sortedForPresentation() -> [Deck] {
+        sorted { lhs, rhs in
+            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+}

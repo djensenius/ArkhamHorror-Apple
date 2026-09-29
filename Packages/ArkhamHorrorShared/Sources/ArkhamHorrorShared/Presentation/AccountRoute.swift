@@ -87,6 +87,28 @@ enum AccountAccessibilityID {
     static let profileManagementFailureText = "account.profileManagementFailure"
     static let accountDetailButton = "account.detail"
 
+    // MARK: - Decks
+
+    static let decksButton = "account.decks.open"
+    static let decksRefreshButton = "account.decks.refresh"
+    static let deckList = "account.decks.list"
+    static let deckImportURLField = "account.decks.import.url"
+    static let deckImportButton = "account.decks.import.submit"
+    static let deckValidationErrorText = "account.decks.validationError"
+    static let deckDeleteConfirmButton = "account.decks.delete.confirm"
+
+    static func deckDeleteButton(for deckID: UUID) -> String {
+        "account.decks.delete.\(deckID.uuidString)"
+    }
+
+    static func lobbyDeckButton(for gameID: UUID, deckID: UUID) -> String {
+        "account.games.chooseDeck.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func lobbyDeckValidationText(for gameID: UUID, deckID: UUID) -> String {
+        "account.games.chooseDeck.validation.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
     // MARK: - Games list/lobby
 
     // These stay under the same "account." namespace as every identifier above --

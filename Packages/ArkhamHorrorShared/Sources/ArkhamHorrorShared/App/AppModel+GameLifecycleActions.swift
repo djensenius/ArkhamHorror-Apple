@@ -289,18 +289,50 @@ extension AppModel {
     /// no deck source) for `rawInvestigatorId` (an already-claimed seat's
     /// investigator, as reported by the game's own `investigators` summary) in `id`,
     /// and refreshes the games list on success.
-    ///
-    /// This slice never browses or upgrades a deck from a catalog/deck-list source;
-    /// see ``ChooseDeckRequest`` and this type's own documentation.
     func continueWithoutUpgrading(investigatorId rawInvestigatorId: String, in id: GameID) {
+        chooseDeck(nil, investigatorId: rawInvestigatorId, in: id)
+    }
+
+    /// Chooses a saved deck for a claimed investigator using the existing pre-game REST
+    /// route (`PUT /arkham/games/{gameId}/decks`) and the same body semantics as the web
+    /// lobby route: investigator id plus deck URL/list, never a saved-deck id.
+    func chooseDeck(_ deck: Deck, investigatorId rawInvestigatorId: String, in id: GameID) {
+        chooseDeck(.saved(deck), investigatorId: rawInvestigatorId, in: id)
+    }
+
+    private enum DeckChoiceSource: Sendable {
+        case saved(Deck)
+
+        var deckURL: String? {
+            switch self {
+            case let .saved(deck):
+                deck.url ?? deck.list.url
+            }
+        }
+
+        var deckList: DeckListInput {
+            switch self {
+            case let .saved(deck):
+                DeckListInput(deck.list)
+            }
+        }
+    }
+
+    private func chooseDeck(_ source: DeckChoiceSource?, investigatorId: String, in id: GameID) {
         guard let attempt = beginGameAction(id, kind: .choosingDeck) else { return }
         gameLifecycleActionTasks[id] = Task { [weak self] in
-            await self?.performChooseDeck(rawInvestigatorId, in: id, attempt: attempt)
+            await self?.performChooseDeck(
+                source,
+                investigatorId: investigatorId,
+                in: id,
+                attempt: attempt
+            )
         }
     }
 
     private func performChooseDeck(
-        _ rawInvestigatorId: String, in id: GameID, attempt: GameActionAttempt
+        _ source: DeckChoiceSource?, investigatorId rawInvestigatorId: String, in id: GameID,
+        attempt: GameActionAttempt
     ) async {
         guard let token = await resolveGameActionToken(id, kind: .choosingDeck, attempt: attempt)
         else { return }
@@ -310,7 +342,11 @@ extension AppModel {
             )
             return
         }
-        let request = ChooseDeckRequest(investigatorId: investigatorId, deckUrl: nil, deckList: nil)
+        let request = ChooseDeckRequest(
+            investigatorId: investigatorId,
+            deckUrl: source?.deckURL,
+            deckList: source?.deckList
+        )
         await performGameAction(id, kind: .choosingDeck, attempt: attempt) {
             try await self.gameLifecycleService.chooseDeck(
                 request, in: id, on: attempt.profile, token: token
