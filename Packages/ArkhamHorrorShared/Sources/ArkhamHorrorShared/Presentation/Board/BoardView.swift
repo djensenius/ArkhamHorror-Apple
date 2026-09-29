@@ -260,6 +260,7 @@ struct BoardRegularLayoutView: View {
                     engagedEnemiesByInvestigatorID: controller.projection
                         .engagedEnemiesByInvestigatorID,
                     choiceLinks: choiceLinks,
+                    fullPlayerAreaPlayerID: controller.prompt?.ownerID,
                     otherInvestigatorCount: controller.projection.otherInvestigatorCount,
                     killedInvestigatorCount: controller.projection.killedInvestigatorCount,
                     focusedID: controller.coordinator.currentFocus,

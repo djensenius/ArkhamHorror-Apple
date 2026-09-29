@@ -97,11 +97,14 @@ struct BoardLocationBoardView: View {
     private func locationEnemyPanel(_ location: BoardLocationNode) -> some View {
         if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
             BoardEnemyPanelView(
-                title: "Enemies", enemies: Array(enemies.prefix(1)),
-                choiceLinks: choiceLinks, onLinkedChoice: onLinkedChoice
+                title: "Enemies", enemies: Array(enemies.prefix(3)),
+                choiceLinks: choiceLinks,
+                focusBinding: focusBinding,
+                onOutcome: onOutcome,
+                onLinkedChoice: onLinkedChoice
             )
-            if enemies.count > 1 {
-                Text("+\(enemies.count - 1) more enemies")
+            if enemies.count > 3 {
+                Text("+\(enemies.count - 3) more enemies")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -180,8 +183,11 @@ struct BoardEnemyLocationsRowView: View {
             }
             if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
                 BoardEnemyPanelView(
-                    title: "Enemies", enemies: Array(enemies.prefix(1)),
-                    choiceLinks: choiceLinks, onLinkedChoice: onLinkedChoice
+                    title: "Enemies", enemies: Array(enemies.prefix(3)),
+                    choiceLinks: choiceLinks,
+                    focusBinding: focusBinding,
+                    onOutcome: onOutcome,
+                    onLinkedChoice: onLinkedChoice
                 )
             }
         }

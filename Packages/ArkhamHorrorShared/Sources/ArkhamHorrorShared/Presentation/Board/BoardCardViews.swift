@@ -11,6 +11,8 @@ struct BoardPlayerAreaView: View {
     let threatTreacheries: [BoardThreatTreacheryNode]
     let engagedEnemies: [BoardEnemyNode]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -24,13 +26,18 @@ struct BoardPlayerAreaView: View {
             if !engagedEnemies.isEmpty {
                 BoardEnemyPanelView(
                     title: "Engaged", enemies: engagedEnemies,
-                    choiceLinks: choiceLinks, onLinkedChoice: onLinkedChoice
+                    choiceLinks: choiceLinks,
+                    focusBinding: focusBinding,
+                    onOutcome: onOutcome,
+                    onLinkedChoice: onLinkedChoice
                 )
             }
             if !threatTreacheries.isEmpty {
                 BoardThreatAreaView(
                     treacheries: threatTreacheries,
                     choiceLinks: choiceLinks,
+                    focusBinding: focusBinding,
+                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -49,7 +56,10 @@ struct BoardPlayerAreaView: View {
                     ForEach(cards) { card in
                         BoardPlayerCardFaceView(
                             card: card,
+                            focusID: BoardFocusID.playerCard(card.id),
                             linkedChoices: choiceLinks[.playerCard(card.id)] ?? [],
+                            focusBinding: focusBinding,
+                            onOutcome: onOutcome,
                             onLinkedChoice: onLinkedChoice
                         )
                     }
@@ -61,7 +71,10 @@ struct BoardPlayerAreaView: View {
 
 struct BoardPlayerCardFaceView: View {
     let card: BoardPlayerCardNode
+    let focusID: SemanticFocusID
     let linkedChoices: [BoardLinkedChoice]
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -122,8 +135,11 @@ struct BoardPlayerCardFaceView: View {
         @ViewBuilder content: @escaping () -> some View
     ) -> some View {
         BoardLinkedChoiceFace(
+            focusID: focusID,
             accessibilityLabel: accessibilityLabel,
             linkedChoices: linkedChoices,
+            focusBinding: focusBinding,
+            onOutcome: onOutcome,
             onLinkedChoice: onLinkedChoice,
             content: content
         )
@@ -134,6 +150,8 @@ struct BoardEnemyPanelView: View {
     let title: String
     let enemies: [BoardEnemyNode]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -144,7 +162,10 @@ struct BoardEnemyPanelView: View {
             ForEach(enemies) { enemy in
                 BoardEnemyCardView(
                     enemy: enemy,
+                    focusID: BoardFocusID.enemy(enemy.id),
                     linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
+                    focusBinding: focusBinding,
+                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -154,7 +175,10 @@ struct BoardEnemyPanelView: View {
 
 struct BoardEnemyCardView: View {
     let enemy: BoardEnemyNode
+    let focusID: SemanticFocusID
     let linkedChoices: [BoardLinkedChoice]
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -231,8 +255,11 @@ struct BoardEnemyCardView: View {
         @ViewBuilder content: @escaping () -> some View
     ) -> some View {
         BoardLinkedChoiceFace(
+            focusID: focusID,
             accessibilityLabel: accessibilityLabel,
             linkedChoices: linkedChoices,
+            focusBinding: focusBinding,
+            onOutcome: onOutcome,
             onLinkedChoice: onLinkedChoice,
             content: content
         )
@@ -242,6 +269,8 @@ struct BoardEnemyCardView: View {
 struct BoardThreatAreaView: View {
     let treacheries: [BoardThreatTreacheryNode]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -252,7 +281,10 @@ struct BoardThreatAreaView: View {
             ForEach(treacheries) { treachery in
                 BoardThreatTreacheryCardView(
                     treachery: treachery,
+                    focusID: BoardFocusID.threatTreachery(treachery.id),
                     linkedChoices: choiceLinks[.treachery(treachery.id)] ?? [],
+                    focusBinding: focusBinding,
+                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -262,7 +294,10 @@ struct BoardThreatAreaView: View {
 
 struct BoardThreatTreacheryCardView: View {
     let treachery: BoardThreatTreacheryNode
+    let focusID: SemanticFocusID
     let linkedChoices: [BoardLinkedChoice]
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -297,88 +332,13 @@ struct BoardThreatTreacheryCardView: View {
         @ViewBuilder content: @escaping () -> some View
     ) -> some View {
         BoardLinkedChoiceFace(
+            focusID: focusID,
             accessibilityLabel: accessibilityLabel,
             linkedChoices: linkedChoices,
+            focusBinding: focusBinding,
+            onOutcome: onOutcome,
             onLinkedChoice: onLinkedChoice,
             content: content
         )
-    }
-}
-
-private struct BoardLinkedChoiceFace<Content: View>: View {
-    let accessibilityLabel: String
-    let linkedChoices: [BoardLinkedChoice]
-    let onLinkedChoice: (Int) -> Void
-    @ViewBuilder let content: () -> Content
-
-    private var actionableChoices: [BoardLinkedChoice] {
-        linkedChoices.filter(\.isActionable)
-    }
-
-    var body: some View {
-        switch actionableChoices.count {
-        case 0:
-            content()
-                .cardFaceStyle(linkedChoices: linkedChoices)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(accessibilityLabel))
-        case 1:
-            if let choice = actionableChoices.first {
-                Button { onLinkedChoice(choice.choiceIndex) } label: {
-                    content().cardFaceStyle(linkedChoices: linkedChoices)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(accessibilityLabel))
-                .accessibilityHint(Text("Activates \(choice.title)"))
-            }
-        default:
-            Menu {
-                ForEach(actionableChoices, id: \.choiceIndex) { choice in
-                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
-                }
-            } label: {
-                content().cardFaceStyle(linkedChoices: linkedChoices)
-            }
-            .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(Text("Choose which prompt action to take."))
-        }
-    }
-}
-
-enum BoardCardBadgeFormatter {
-    static func cardBadges(_ card: BoardPlayerCardNode) -> [String] {
-        var badges: [String] = []
-        if let usesSummary = card.usesSummary {
-            badges.append(usesSummary)
-        }
-        if let damage = card.damage, damage > 0 {
-            badges.append("Damage \(damage)")
-        }
-        if let horror = card.horror, horror > 0 {
-            badges.append("Horror \(horror)")
-        }
-        badges.append(contentsOf: card.tokenCounts.map { "\($0.token) \($0.count)" })
-        return badges
-    }
-}
-
-private extension View {
-    func cardFaceStyle(linkedChoices: [BoardLinkedChoice]) -> some View {
-        padding(8)
-            .frame(width: 116, alignment: .leading)
-            .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 9))
-            .overlay {
-                RoundedRectangle(cornerRadius: 9)
-                    .strokeBorder(
-                        outlineColor(linkedChoices),
-                        lineWidth: linkedChoices.isEmpty ? 1 : 3
-                    )
-            }
-    }
-
-    private func outlineColor(_ linkedChoices: [BoardLinkedChoice]) -> Color {
-        guard !linkedChoices.isEmpty else { return .white.opacity(0.12) }
-        let hasActionable = linkedChoices.contains(where: \.isActionable)
-        return hasActionable ? ArkhamTheme.accent : .orange.opacity(0.45)
     }
 }

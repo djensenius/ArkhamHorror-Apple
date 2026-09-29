@@ -66,6 +66,41 @@ struct BoardCardRenderingProjectionTests {
         #expect(!summary.contains("Damage 1"))
     }
 
+    @Test("Non-active investigator engaged enemies stay visible and focusable")
+    func nonActiveInvestigatorEngagedEnemyIsReachable() throws {
+        let enemyID = EnemyActionFixtures.enemyID
+        let activeID = BoardTestFixtures.investigatorID("c01001")
+        let engagedID = BoardTestFixtures.investigatorID("c01002")
+        let active = BoardTestFixtures.investigator(
+            id: activeID,
+            playerID: BoardTestFixtures.playerID("000000000101")
+        )
+        let engaged = BoardTestFixtures.investigator(
+            id: engagedID,
+            engagedEnemies: [enemyID],
+            playerID: BoardTestFixtures.playerID("000000000001")
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            investigators: [activeID: active, engagedID: engaged],
+            playerOrder: [activeID, engagedID],
+            activeInvestigatorID: activeID,
+            enemyValues: [enemyID: .null]
+        ))
+        #expect(projection.engagedEnemiesByInvestigatorID[engagedID]?.first?.id == enemyID)
+
+        let prompt = try EnemyActionFixtures.prompt()
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+        #expect(links[.enemy(enemyID)]?.map(\.choiceIndex) == [4, 5])
+
+        let graph = BoardFocusGraphBuilder.makeGraph(
+            projection: projection,
+            layout: BoardLayoutBuilder.makeLayout(locations: []),
+            prompt: prompt
+        )
+        #expect(graph.contains(BoardFocusID.enemy(enemyID)))
+        #expect(graph.zoneEntryPoints[BoardFocusZone.boardElements] == BoardFocusID.enemy(enemyID))
+    }
+
     @Test("Choice-to-board links require actionability and prompt submit authority")
     func choiceLinksHonorActionability() throws {
         let enemyID = EnemyActionFixtures.enemyID

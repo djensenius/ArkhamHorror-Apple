@@ -9,6 +9,7 @@ struct BoardInvestigatorRowView: View {
     let threatTreacheriesByPlayer: [PlayerID: [BoardThreatTreacheryNode]]
     let engagedEnemiesByInvestigatorID: [InvestigatorID: [BoardEnemyNode]]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    let fullPlayerAreaPlayerID: PlayerID?
     let otherInvestigatorCount: Int
     let killedInvestigatorCount: Int
     let focusedID: SemanticFocusID?
@@ -98,7 +99,7 @@ struct BoardInvestigatorRowView: View {
 
     @ViewBuilder
     private func investigatorPlayerArea(_ investigator: BoardInvestigatorNode) -> some View {
-        if investigator.isActiveInvestigator {
+        if shouldShowFullArea(for: investigator) {
             BoardPlayerAreaView(
                 investigator: investigator,
                 handCards: handCardsByPlayer[investigator.playerID] ?? [],
@@ -106,14 +107,49 @@ struct BoardInvestigatorRowView: View {
                 threatTreacheries: threatTreacheriesByPlayer[investigator.playerID] ?? [],
                 engagedEnemies: engagedEnemiesByInvestigatorID[investigator.id] ?? [],
                 choiceLinks: choiceLinks,
+                focusBinding: focusBinding,
+                onOutcome: onOutcome,
                 onLinkedChoice: onLinkedChoice
             )
         } else {
+            compactPlayerArea(investigator)
+        }
+    }
+
+    private func shouldShowFullArea(for investigator: BoardInvestigatorNode) -> Bool {
+        if let fullPlayerAreaPlayerID {
+            return investigator.playerID == fullPlayerAreaPlayerID
+        }
+        return investigator.isActiveInvestigator
+    }
+
+    private func compactPlayerArea(_ investigator: BoardInvestigatorNode) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
             let handCount = handCardsByPlayer[investigator.playerID]?.count ?? 0
             let inPlayCount = inPlayCardsByPlayer[investigator.playerID]?.count ?? 0
             Text("Hand \(handCount), in play \(inPlayCount)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            if let enemies = engagedEnemiesByInvestigatorID[investigator.id], !enemies.isEmpty {
+                BoardEnemyPanelView(
+                    title: "Engaged", enemies: enemies,
+                    choiceLinks: choiceLinks,
+                    focusBinding: focusBinding,
+                    onOutcome: onOutcome,
+                    onLinkedChoice: onLinkedChoice
+                )
+            }
+            if let treacheries = threatTreacheriesByPlayer[investigator.playerID] {
+                if !treacheries.isEmpty {
+                    BoardThreatAreaView(
+                        treacheries: treacheries,
+                        choiceLinks: choiceLinks,
+                        focusBinding: focusBinding,
+                        onOutcome: onOutcome,
+                        onLinkedChoice: onLinkedChoice
+                    )
+                }
+            }
         }
     }
 

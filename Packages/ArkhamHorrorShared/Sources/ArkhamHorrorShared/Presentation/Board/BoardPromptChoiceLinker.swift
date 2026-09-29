@@ -5,6 +5,14 @@ enum BoardPromptElementID: Sendable, Equatable, Hashable {
     case playerCard(BoardPlayerCardID)
     case enemy(EnemyID)
     case treachery(TreacheryID)
+
+    var focusID: SemanticFocusID {
+        switch self {
+        case let .playerCard(id): BoardFocusID.playerCard(id)
+        case let .enemy(id): BoardFocusID.enemy(id)
+        case let .treachery(id): BoardFocusID.threatTreachery(id)
+        }
+    }
 }
 
 struct BoardLinkedChoice: Sendable, Equatable {
