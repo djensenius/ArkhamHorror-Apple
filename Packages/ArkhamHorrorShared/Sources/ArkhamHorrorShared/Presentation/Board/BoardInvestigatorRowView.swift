@@ -62,41 +62,58 @@ struct BoardInvestigatorRowView: View {
 
     private func tile(_ investigator: BoardInvestigatorNode) -> some View {
         let id = BoardFocusID.investigator(investigator.id)
-        return BoardEntityTile(
-            id: id,
-            accessibilityLabel: BoardAccessibility.summary(investigator: investigator),
-            isFocused: focusedID == id,
-            focusBinding: focusBinding,
-            onOutcome: onOutcome
-        ) {
-            VStack(spacing: 4) {
-                Text(investigator.displayName)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(ArkhamTheme.bone)
-                    .lineLimit(1)
-                HStack(spacing: 4) {
-                    BoardStatBadge(systemImage: "heart.fill", value: "\(investigator.health)")
-                    BoardStatBadge(
-                        systemImage: "brain.head.profile", value: "\(investigator.sanity)"
-                    )
-                    BoardStatBadge(
-                        systemImage: "bolt.fill", value: "\(investigator.remainingActions)"
-                    )
-                }
-                if investigator.isActiveInvestigator {
-                    Text("Active").font(.caption2).foregroundStyle(ArkhamTheme.accent)
-                }
-                statusBadges(investigator)
-                BoardPlayerAreaView(
-                    investigator: investigator,
-                    handCards: handCardsByPlayer[investigator.playerID] ?? [],
-                    inPlayCards: inPlayCardsByPlayer[investigator.playerID] ?? [],
-                    threatTreacheries: threatTreacheriesByPlayer[investigator.playerID] ?? [],
-                    engagedEnemies: engagedEnemiesByInvestigatorID[investigator.id] ?? [],
-                    choiceLinks: choiceLinks,
-                    onLinkedChoice: onLinkedChoice
-                )
+        return VStack(spacing: 8) {
+            BoardEntityTile(
+                id: id,
+                accessibilityLabel: BoardAccessibility.summary(investigator: investigator),
+                isFocused: focusedID == id,
+                focusBinding: focusBinding,
+                onOutcome: onOutcome
+            ) {
+                investigatorSummary(investigator)
             }
+            investigatorPlayerArea(investigator)
+        }
+        .frame(width: 272, alignment: .top)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func investigatorSummary(_ investigator: BoardInvestigatorNode) -> some View {
+        VStack(spacing: 4) {
+            Text(investigator.displayName)
+                .font(.subheadline.bold())
+                .foregroundStyle(ArkhamTheme.bone)
+                .lineLimit(1)
+            HStack(spacing: 4) {
+                BoardStatBadge(systemImage: "heart.fill", value: "\(investigator.health)")
+                BoardStatBadge(systemImage: "brain.head.profile", value: "\(investigator.sanity)")
+                BoardStatBadge(systemImage: "bolt.fill", value: "\(investigator.remainingActions)")
+            }
+            if investigator.isActiveInvestigator {
+                Text("Active").font(.caption2).foregroundStyle(ArkhamTheme.accent)
+            }
+            statusBadges(investigator)
+        }
+    }
+
+    @ViewBuilder
+    private func investigatorPlayerArea(_ investigator: BoardInvestigatorNode) -> some View {
+        if investigator.isActiveInvestigator {
+            BoardPlayerAreaView(
+                investigator: investigator,
+                handCards: handCardsByPlayer[investigator.playerID] ?? [],
+                inPlayCards: inPlayCardsByPlayer[investigator.playerID] ?? [],
+                threatTreacheries: threatTreacheriesByPlayer[investigator.playerID] ?? [],
+                engagedEnemies: engagedEnemiesByInvestigatorID[investigator.id] ?? [],
+                choiceLinks: choiceLinks,
+                onLinkedChoice: onLinkedChoice
+            )
+        } else {
+            let handCount = handCardsByPlayer[investigator.playerID]?.count ?? 0
+            let inPlayCount = inPlayCardsByPlayer[investigator.playerID]?.count ?? 0
+            Text("Hand \(handCount), in play \(inPlayCount)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 

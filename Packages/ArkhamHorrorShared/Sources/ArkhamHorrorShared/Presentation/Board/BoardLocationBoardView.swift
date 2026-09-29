@@ -53,16 +53,20 @@ struct BoardLocationBoardView: View {
                 width: baseCellSize.width * zoomScale * 0.85,
                 height: baseCellSize.height * zoomScale * 0.85
             )
-            BoardEntityTile(
-                id: id,
-                accessibilityLabel: BoardAccessibility.summary(location: location),
-                isFocused: focusedID == id,
-                focusBinding: focusBinding,
-                onOutcome: onOutcome
-            ) {
-                locationTileContent(location)
+            VStack(spacing: 6) {
+                BoardEntityTile(
+                    id: id,
+                    accessibilityLabel: BoardAccessibility.summary(location: location),
+                    isFocused: focusedID == id,
+                    focusBinding: focusBinding,
+                    onOutcome: onOutcome
+                ) {
+                    locationTileContent(location)
+                }
+                .frame(width: tileSize.width, height: tileSize.height * 0.55)
+                locationEnemyPanel(location)
             }
-            .frame(width: tileSize.width, height: tileSize.height)
+            .frame(width: tileSize.width, height: tileSize.height, alignment: .top)
             .position(center(for: position))
         }
     }
@@ -85,11 +89,21 @@ struct BoardLocationBoardView: View {
                     )
                 }
             }
-            if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
-                BoardEnemyPanelView(
-                    title: "Enemies", enemies: enemies,
-                    choiceLinks: choiceLinks, onLinkedChoice: onLinkedChoice
-                )
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func locationEnemyPanel(_ location: BoardLocationNode) -> some View {
+        if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
+            BoardEnemyPanelView(
+                title: "Enemies", enemies: Array(enemies.prefix(1)),
+                choiceLinks: choiceLinks, onLinkedChoice: onLinkedChoice
+            )
+            if enemies.count > 1 {
+                Text("+\(enemies.count - 1) more enemies")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -141,32 +155,36 @@ struct BoardEnemyLocationsRowView: View {
 
     private func tile(_ location: BoardEnemyLocationNode) -> some View {
         let id = BoardFocusID.enemyLocation(location.id)
-        return BoardEntityTile(
-            id: id,
-            accessibilityLabel: BoardAccessibility.summary(enemyLocation: location),
-            isFocused: focusedID == id,
-            focusBinding: focusBinding,
-            onOutcome: onOutcome
-        ) {
-            VStack(spacing: 4) {
-                Text(location.displayLabel)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(ArkhamTheme.bone)
-                HStack(spacing: 4) {
-                    BoardStatBadge(systemImage: "figure.walk", value: "\(location.enemyCount)")
-                    if !location.investigatorIDs.isEmpty {
-                        BoardStatBadge(
-                            systemImage: "person.fill", value: "\(location.investigatorIDs.count)"
-                        )
+        return VStack(spacing: 6) {
+            BoardEntityTile(
+                id: id,
+                accessibilityLabel: BoardAccessibility.summary(enemyLocation: location),
+                isFocused: focusedID == id,
+                focusBinding: focusBinding,
+                onOutcome: onOutcome
+            ) {
+                VStack(spacing: 4) {
+                    Text(location.displayLabel)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(ArkhamTheme.bone)
+                    HStack(spacing: 4) {
+                        BoardStatBadge(systemImage: "figure.walk", value: "\(location.enemyCount)")
+                        if !location.investigatorIDs.isEmpty {
+                            BoardStatBadge(
+                                systemImage: "person.fill",
+                                value: "\(location.investigatorIDs.count)"
+                            )
+                        }
                     }
                 }
-                if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
-                    BoardEnemyPanelView(
-                        title: "Enemies", enemies: enemies,
-                        choiceLinks: choiceLinks, onLinkedChoice: onLinkedChoice
-                    )
-                }
+            }
+            if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
+                BoardEnemyPanelView(
+                    title: "Enemies", enemies: Array(enemies.prefix(1)),
+                    choiceLinks: choiceLinks, onLinkedChoice: onLinkedChoice
+                )
             }
         }
+        .accessibilityElement(children: .contain)
     }
 }

@@ -74,7 +74,7 @@ struct BoardCardRenderingProjectionTests {
         let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
         let enemyLinks = try #require(links[.enemy(enemyID)])
         #expect(enemyLinks.map(\.choiceIndex) == [4, 5])
-        #expect(enemyLinks.allSatisfy(\.isActionable))
+        #expect(!enemyLinks.contains { !$0.isActionable })
 
         let missingEnemyProjection = BoardProjectionBuilder.makeProjection(
             from: BoardTestFixtures.snapshot()
@@ -113,11 +113,7 @@ struct BoardCardRenderingProjectionTests {
         enemyID: EnemyID,
         locationID: LocationID
     ) throws {
-        let locationEnemy = try #require(projection.enemiesByLocationID[locationID]?.first)
-        #expect(locationEnemy.displayName.hasPrefix("Enemy"))
-        #expect(locationEnemy.fight == nil)
-        #expect(locationEnemy.health == nil)
-        #expect(locationEnemy.evade == nil)
+        #expect(projection.enemiesByLocationID[locationID]?.isEmpty != false)
 
         let engagedEnemy = try #require(
             projection.engagedEnemiesByInvestigatorID[investigatorID]?.first

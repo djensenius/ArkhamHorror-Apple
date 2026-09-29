@@ -62,19 +62,24 @@ extension BoardProjectionBuilder {
         byLocationID: [LocationID: [BoardEnemyNode]],
         engagedByInvestigatorID: [InvestigatorID: [BoardEnemyNode]]
     ) {
+        let engagedEnemyIDs = Set(snapshot.investigators.values.flatMap(\.engagedEnemies))
         var byLocationID: [LocationID: [BoardEnemyNode]] = [:]
         for location in locations {
-            let enemies = enemyIDs(at: location.id, in: snapshot).map {
-                enemyNode(id: $0, rawValue: snapshot.enemies[$0], locationID: location.id)
-            }
+            let enemies = enemyIDs(at: location.id, in: snapshot)
+                .filter { !engagedEnemyIDs.contains($0) }
+                .map {
+                    enemyNode(id: $0, rawValue: snapshot.enemies[$0], locationID: location.id)
+                }
             if !enemies.isEmpty {
                 byLocationID[location.id] = enemies
             }
         }
         for location in enemyLocations {
-            let enemies = enemyIDs(at: location.id, in: snapshot).map {
-                enemyNode(id: $0, rawValue: snapshot.enemies[$0], locationID: location.id)
-            }
+            let enemies = enemyIDs(at: location.id, in: snapshot)
+                .filter { !engagedEnemyIDs.contains($0) }
+                .map {
+                    enemyNode(id: $0, rawValue: snapshot.enemies[$0], locationID: location.id)
+                }
             if !enemies.isEmpty {
                 byLocationID[location.id] = enemies
             }
