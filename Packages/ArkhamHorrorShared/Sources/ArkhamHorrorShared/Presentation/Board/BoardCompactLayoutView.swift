@@ -21,7 +21,7 @@ struct BoardCompactLayoutView: View {
         )
     }
 
-    private var choiceLinks: [BoardPromptElementID: BoardLinkedChoice] {
+    private var choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]] {
         BoardPromptChoiceLinker.links(prompt: controller.prompt, projection: controller.projection)
     }
 

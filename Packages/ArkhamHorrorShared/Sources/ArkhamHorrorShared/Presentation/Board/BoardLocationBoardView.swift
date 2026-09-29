@@ -7,7 +7,7 @@ import SwiftUI
 struct BoardLocationBoardView: View {
     let locations: [BoardLocationNode]
     let enemiesByLocationID: [LocationID: [BoardEnemyNode]]
-    let choiceLinks: [BoardPromptElementID: BoardLinkedChoice]
+    let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let layout: BoardLayout
     let zoomScale: CGFloat
     let focusedID: SemanticFocusID?
@@ -114,7 +114,7 @@ struct BoardLocationBoardView: View {
 struct BoardEnemyLocationsRowView: View {
     let enemyLocations: [BoardEnemyLocationNode]
     let enemiesByLocationID: [LocationID: [BoardEnemyNode]]
-    let choiceLinks: [BoardPromptElementID: BoardLinkedChoice]
+    let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void

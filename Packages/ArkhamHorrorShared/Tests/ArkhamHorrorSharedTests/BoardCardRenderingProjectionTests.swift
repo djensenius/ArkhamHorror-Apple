@@ -72,9 +72,9 @@ struct BoardCardRenderingProjectionTests {
             enemyValues: [enemyID: .null]
         ))
         let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
-        let link = try #require(links[.enemy(enemyID)])
-        #expect(link.choiceIndex == 4)
-        #expect(link.isActionable)
+        let enemyLinks = try #require(links[.enemy(enemyID)])
+        #expect(enemyLinks.map(\.choiceIndex) == [4, 5])
+        #expect(enemyLinks.allSatisfy(\.isActionable))
 
         let missingEnemyProjection = BoardProjectionBuilder.makeProjection(
             from: BoardTestFixtures.snapshot()
@@ -82,13 +82,13 @@ struct BoardCardRenderingProjectionTests {
         let missingLinks = BoardPromptChoiceLinker.links(
             prompt: prompt, projection: missingEnemyProjection
         )
-        #expect(missingLinks[.enemy(enemyID)]?.isActionable == false)
+        #expect(missingLinks[.enemy(enemyID)]?.allSatisfy { !$0.isActionable } == true)
 
         let sendingPrompt = try EnemyActionFixtures.prompt(phase: .sending, actionChoiceIndex: 4)
         let sendingLinks = BoardPromptChoiceLinker.links(
             prompt: sendingPrompt, projection: projection
         )
-        #expect(sendingLinks[.enemy(enemyID)]?.isActionable == false)
+        #expect(sendingLinks[.enemy(enemyID)]?.allSatisfy { !$0.isActionable } == true)
     }
 
     private func expectPlayerCards(in projection: BoardProjection, cardID: WireCardID) throws {

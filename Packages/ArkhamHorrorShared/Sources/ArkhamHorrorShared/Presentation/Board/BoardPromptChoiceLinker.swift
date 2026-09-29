@@ -17,9 +17,9 @@ enum BoardPromptChoiceLinker {
     static func links(
         prompt: BasicChoicePromptPresentation?,
         projection: BoardProjection
-    ) -> [BoardPromptElementID: BoardLinkedChoice] {
+    ) -> [BoardPromptElementID: [BoardLinkedChoice]] {
         guard let prompt else { return [:] }
-        var result: [BoardPromptElementID: BoardLinkedChoice] = [:]
+        var result: [BoardPromptElementID: [BoardLinkedChoice]] = [:]
         for choice in prompt.choices {
             let linkedChoice = BoardLinkedChoice(
                 choiceIndex: choice.index,
@@ -27,24 +27,10 @@ enum BoardPromptChoiceLinker {
                 isActionable: prompt.canSubmit && prompt.isChoiceActionable(choice, in: projection)
             )
             for elementID in elementIDs(for: choice, prompt: prompt) {
-                insert(linkedChoice, for: elementID, into: &result)
+                result[elementID, default: []].append(linkedChoice)
             }
         }
         return result
-    }
-
-    private static func insert(
-        _ link: BoardLinkedChoice,
-        for elementID: BoardPromptElementID,
-        into result: inout [BoardPromptElementID: BoardLinkedChoice]
-    ) {
-        guard let existing = result[elementID] else {
-            result[elementID] = link
-            return
-        }
-        if link.isActionable, !existing.isActionable {
-            result[elementID] = link
-        }
     }
 
     private static func elementIDs(

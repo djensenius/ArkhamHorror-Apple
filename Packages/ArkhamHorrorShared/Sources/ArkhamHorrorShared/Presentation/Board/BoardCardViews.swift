@@ -6,7 +6,7 @@ struct BoardPlayerAreaView: View {
     let inPlayCards: [BoardPlayerCardNode]
     let threatTreacheries: [BoardThreatTreacheryNode]
     let engagedEnemies: [BoardEnemyNode]
-    let choiceLinks: [BoardPromptElementID: BoardLinkedChoice]
+    let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -45,7 +45,7 @@ struct BoardPlayerAreaView: View {
                     ForEach(cards) { card in
                         BoardPlayerCardFaceView(
                             card: card,
-                            linkedChoice: choiceLinks[.playerCard(card.id)],
+                            linkedChoices: choiceLinks[.playerCard(card.id)] ?? [],
                             onLinkedChoice: onLinkedChoice
                         )
                     }
@@ -57,7 +57,7 @@ struct BoardPlayerAreaView: View {
 
 struct BoardPlayerCardFaceView: View {
     let card: BoardPlayerCardNode
-    let linkedChoice: BoardLinkedChoice?
+    let linkedChoices: [BoardLinkedChoice]
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -103,34 +103,23 @@ struct BoardPlayerCardFaceView: View {
         }
     }
 
-    @ViewBuilder
     private func linkedContainer(
         accessibilityLabel: String,
-        @ViewBuilder content: () -> some View
+        @ViewBuilder content: @escaping () -> some View
     ) -> some View {
-        if let linkedChoice, linkedChoice.isActionable {
-            Button {
-                onLinkedChoice(linkedChoice.choiceIndex)
-            } label: {
-                content()
-                    .cardFaceStyle(linkedChoice: linkedChoice)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(Text("Activates \(linkedChoice.title)"))
-        } else {
-            content()
-                .cardFaceStyle(linkedChoice: linkedChoice)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(accessibilityLabel))
-        }
+        BoardLinkedChoiceFace(
+            accessibilityLabel: accessibilityLabel,
+            linkedChoices: linkedChoices,
+            onLinkedChoice: onLinkedChoice,
+            content: content
+        )
     }
 }
 
 struct BoardEnemyPanelView: View {
     let title: String
     let enemies: [BoardEnemyNode]
-    let choiceLinks: [BoardPromptElementID: BoardLinkedChoice]
+    let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -141,7 +130,7 @@ struct BoardEnemyPanelView: View {
             ForEach(enemies) { enemy in
                 BoardEnemyCardView(
                     enemy: enemy,
-                    linkedChoice: choiceLinks[.enemy(enemy.id)],
+                    linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -151,7 +140,7 @@ struct BoardEnemyPanelView: View {
 
 struct BoardEnemyCardView: View {
     let enemy: BoardEnemyNode
-    let linkedChoice: BoardLinkedChoice?
+    let linkedChoices: [BoardLinkedChoice]
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -208,30 +197,22 @@ struct BoardEnemyCardView: View {
         }
     }
 
-    @ViewBuilder
     private func linkedContainer(
         accessibilityLabel: String,
-        @ViewBuilder content: () -> some View
+        @ViewBuilder content: @escaping () -> some View
     ) -> some View {
-        if let linkedChoice, linkedChoice.isActionable {
-            Button { onLinkedChoice(linkedChoice.choiceIndex) } label: {
-                content().cardFaceStyle(linkedChoice: linkedChoice)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(Text("Activates \(linkedChoice.title)"))
-        } else {
-            content()
-                .cardFaceStyle(linkedChoice: linkedChoice)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(accessibilityLabel))
-        }
+        BoardLinkedChoiceFace(
+            accessibilityLabel: accessibilityLabel,
+            linkedChoices: linkedChoices,
+            onLinkedChoice: onLinkedChoice,
+            content: content
+        )
     }
 }
 
 struct BoardThreatAreaView: View {
     let treacheries: [BoardThreatTreacheryNode]
-    let choiceLinks: [BoardPromptElementID: BoardLinkedChoice]
+    let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -242,7 +223,7 @@ struct BoardThreatAreaView: View {
             ForEach(treacheries) { treachery in
                 BoardThreatTreacheryCardView(
                     treachery: treachery,
-                    linkedChoice: choiceLinks[.treachery(treachery.id)],
+                    linkedChoices: choiceLinks[.treachery(treachery.id)] ?? [],
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -252,7 +233,7 @@ struct BoardThreatAreaView: View {
 
 struct BoardThreatTreacheryCardView: View {
     let treachery: BoardThreatTreacheryNode
-    let linkedChoice: BoardLinkedChoice?
+    let linkedChoices: [BoardLinkedChoice]
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -274,23 +255,55 @@ struct BoardThreatTreacheryCardView: View {
         }
     }
 
-    @ViewBuilder
     private func linkedContainer(
         accessibilityLabel: String,
-        @ViewBuilder content: () -> some View
+        @ViewBuilder content: @escaping () -> some View
     ) -> some View {
-        if let linkedChoice, linkedChoice.isActionable {
-            Button { onLinkedChoice(linkedChoice.choiceIndex) } label: {
-                content().cardFaceStyle(linkedChoice: linkedChoice)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(Text("Activates \(linkedChoice.title)"))
-        } else {
+        BoardLinkedChoiceFace(
+            accessibilityLabel: accessibilityLabel,
+            linkedChoices: linkedChoices,
+            onLinkedChoice: onLinkedChoice,
+            content: content
+        )
+    }
+}
+
+private struct BoardLinkedChoiceFace<Content: View>: View {
+    let accessibilityLabel: String
+    let linkedChoices: [BoardLinkedChoice]
+    let onLinkedChoice: (Int) -> Void
+    @ViewBuilder let content: () -> Content
+
+    private var actionableChoices: [BoardLinkedChoice] {
+        linkedChoices.filter(\.isActionable)
+    }
+
+    var body: some View {
+        switch actionableChoices.count {
+        case 0:
             content()
-                .cardFaceStyle(linkedChoice: linkedChoice)
+                .cardFaceStyle(linkedChoices: linkedChoices)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(accessibilityLabel))
+        case 1:
+            if let choice = actionableChoices.first {
+                Button { onLinkedChoice(choice.choiceIndex) } label: {
+                    content().cardFaceStyle(linkedChoices: linkedChoices)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(accessibilityLabel))
+                .accessibilityHint(Text("Activates \(choice.title)"))
+            }
+        default:
+            Menu {
+                ForEach(actionableChoices, id: \.choiceIndex) { choice in
+                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
+                }
+            } label: {
+                content().cardFaceStyle(linkedChoices: linkedChoices)
+            }
+            .accessibilityLabel(Text(accessibilityLabel))
+            .accessibilityHint(Text("Choose which prompt action to take."))
         }
     }
 }
@@ -313,21 +326,22 @@ enum BoardCardBadgeFormatter {
 }
 
 private extension View {
-    func cardFaceStyle(linkedChoice: BoardLinkedChoice?) -> some View {
+    func cardFaceStyle(linkedChoices: [BoardLinkedChoice]) -> some View {
         padding(8)
             .frame(width: 116, alignment: .leading)
             .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 9))
             .overlay {
                 RoundedRectangle(cornerRadius: 9)
                     .strokeBorder(
-                        outlineColor(linkedChoice),
-                        lineWidth: linkedChoice == nil ? 1 : 3
+                        outlineColor(linkedChoices),
+                        lineWidth: linkedChoices.isEmpty ? 1 : 3
                     )
             }
     }
 
-    private func outlineColor(_ linkedChoice: BoardLinkedChoice?) -> Color {
-        guard let linkedChoice else { return .white.opacity(0.12) }
-        return linkedChoice.isActionable ? ArkhamTheme.accent : .orange.opacity(0.45)
+    private func outlineColor(_ linkedChoices: [BoardLinkedChoice]) -> Color {
+        guard !linkedChoices.isEmpty else { return .white.opacity(0.12) }
+        let hasActionable = linkedChoices.contains(where: \.isActionable)
+        return hasActionable ? ArkhamTheme.accent : .orange.opacity(0.45)
     }
 }

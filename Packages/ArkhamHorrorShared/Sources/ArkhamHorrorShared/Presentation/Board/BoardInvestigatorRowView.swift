@@ -8,7 +8,7 @@ struct BoardInvestigatorRowView: View {
     let inPlayCardsByPlayer: [PlayerID: [BoardPlayerCardNode]]
     let threatTreacheriesByPlayer: [PlayerID: [BoardThreatTreacheryNode]]
     let engagedEnemiesByInvestigatorID: [InvestigatorID: [BoardEnemyNode]]
-    let choiceLinks: [BoardPromptElementID: BoardLinkedChoice]
+    let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let otherInvestigatorCount: Int
     let killedInvestigatorCount: Int
     let focusedID: SemanticFocusID?
