@@ -24,6 +24,9 @@ struct CreateGameSheetView: View {
         #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
+        #if os(macOS)
+            .frame(minWidth: 420, minHeight: 520)
+        #endif
             .interactiveDismissDisabled(viewModel.isSubmitting)
             .accessibilityIdentifier(AccountAccessibilityID.createGameSheet)
             .toolbar {
