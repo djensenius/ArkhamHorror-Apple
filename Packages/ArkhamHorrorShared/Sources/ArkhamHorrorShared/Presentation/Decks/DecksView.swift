@@ -44,6 +44,9 @@ struct DecksView: View {
 
             Section("Decks") {
                 decksContent
+                if let deletionFailure = viewModel.deletionFailure {
+                    ArkhamFailureText(message: deletionFailure)
+                }
             }
         }
         .accessibilityIdentifier(AccountAccessibilityID.deckList)
@@ -78,16 +81,17 @@ struct DecksView: View {
                     }
                 }
             ),
-            titleVisibility: .visible
-        ) {
+            titleVisibility: .visible,
+            presenting: viewModel.pendingDeletion
+        ) { deck in
             Button("Delete Deck", role: .destructive) {
-                Task { await viewModel.deletePendingDeck() }
+                Task { await viewModel.delete(deck) }
             }
             .accessibilityIdentifier(AccountAccessibilityID.deckDeleteConfirmButton)
             Button("Cancel", role: .cancel) { viewModel.cancelDelete() }
-        } message: {
+        } message: { deck in
             Text(
-                "This removes the saved deck from your account. "
+                "This removes \(deck.name) from your account. "
                     + "It does not delete it from ArkhamDB."
             )
         }
@@ -170,9 +174,11 @@ private struct DeckRow: View {
                 ProgressView().controlSize(.small)
             } else {
                 Button(role: .destructive, action: onDelete) {
-                    Label("Delete", systemImage: "trash")
+                    Label("Delete \(deck.name)", systemImage: "trash")
                         .labelStyle(.iconOnly)
                 }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Delete \(deck.name)")
                 .accessibilityIdentifier(
                     AccountAccessibilityID.deckDeleteButton(for: deck.id.rawValue)
                 )

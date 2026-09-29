@@ -29,6 +29,7 @@ final class DecksViewModel {
     var importURL = ""
     var pendingDeletion: Deck?
     var deletingDeckIDs: Set<DeckID> = []
+    var deletionFailure: String?
 
     init(
         profile: ServerProfile,
@@ -101,10 +102,12 @@ final class DecksViewModel {
         pendingDeletion = nil
     }
 
-    func deletePendingDeck() async {
-        guard let deck = pendingDeletion else { return }
-        pendingDeletion = nil
+    func delete(_ deck: Deck) async {
+        if pendingDeletion?.id == deck.id {
+            pendingDeletion = nil
+        }
         deletingDeckIDs.insert(deck.id)
+        deletionFailure = nil
         do {
             let token = try await tokenProvider()
             try await deckService.deleteDeck(deck.id, on: profile, token: token)
@@ -113,8 +116,13 @@ final class DecksViewModel {
             breakDeletion(deck)
         } catch {
             breakDeletion(deck)
-            loadState = .failed(Self.message(for: error))
+            deletionFailure = Self.message(for: error)
         }
+    }
+
+    func deletePendingDeck() async {
+        guard let deck = pendingDeletion else { return }
+        await delete(deck)
     }
 
     private func upsert(_ deck: Deck) {

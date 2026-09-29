@@ -149,7 +149,7 @@ struct DecksViewModelTests {
         #expect(model.importState == .failed("Unsupported card c99999"))
     }
 
-    @Test("delete asks for confirmation then removes the deck")
+    @Test("delete asks for confirmation then removes the deck through the view-called API")
     func deleteStates() async throws {
         let fixture = try loadFixture()
         let service = ScriptedDeckService()
@@ -160,10 +160,26 @@ struct DecksViewModelTests {
         model.requestDelete(fixture.deck)
         #expect(model.pendingDeletion == fixture.deck)
         await service.enqueueDelete(.success(()))
-        await model.deletePendingDeck()
+        await model.delete(fixture.deck)
 
         #expect(model.pendingDeletion == nil)
         #expect(model.decks.isEmpty)
         #expect(await service.lastDeletedID == fixture.deck.id)
+    }
+
+    @Test("delete failure leaves the loaded deck list visible and shows an inline error")
+    func deleteFailureKeepsLoadedList() async throws {
+        let fixture = try loadFixture()
+        let service = ScriptedDeckService()
+        let model = makeModel(service: service)
+        await service.enqueueList(.success([fixture.deck]))
+        await model.load()
+
+        await service.enqueueDelete(.failure(DeckServiceError.unexpectedStatus(500)))
+        await model.delete(fixture.deck)
+
+        #expect(model.decks == [fixture.deck])
+        #expect(model.loadState == .loaded([fixture.deck]))
+        #expect(model.deletionFailure == DeckServiceError.unexpectedStatus(500).message)
     }
 }
