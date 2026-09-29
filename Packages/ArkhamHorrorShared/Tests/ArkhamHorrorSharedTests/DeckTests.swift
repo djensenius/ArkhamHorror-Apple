@@ -80,6 +80,15 @@ struct DeckTests {
         #expect(fixture.deck.list.investigatorCode.rawValue == "c01001")
     }
 
+    @Test("deck decodes the sync contract's 0.1.46 fixture with null additive fields")
+    func deckDecodesRevision146SyncFixture() throws {
+        let url = URL(fileURLWithPath: "/Users/david/Developer/ArkhamHorror/ArkhamHorror-sync/contracts/fixtures/decks.json")
+        let fixture = try ContractJSON.decode(DecksFixture.self, from: Data(contentsOf: url))
+        #expect(fixture.deck.lastUsedAt == nil)
+        #expect(fixture.deck.overlay == nil)
+        #expect(fixture.deck.playList == fixture.deck.list)
+    }
+
     @Test("deck decodes additive 0.1.46 lastUsedAt, overlay, and playList fields")
     func deckDecodesRevision146Fields() throws {
         let json = """
