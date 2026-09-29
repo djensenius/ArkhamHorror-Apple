@@ -9,6 +9,7 @@ struct LiveChooseDeckSelectionView: View {
 
     @State private var viewModel: LobbyDeckSelectionViewModel
     @State private var isSubmitting = false
+    @State private var sendFailure: String?
 
     init(model: AppModel, profile: ServerProfile, gameID: GameID) {
         self.model = model
@@ -18,8 +19,10 @@ struct LiveChooseDeckSelectionView: View {
             initialValue: LobbyDeckSelectionViewModel(
                 profile: profile,
                 deckService: model.deckService,
-                tokenProvider: { try await model.currentGameLifecycleToken(for: profile) },
-                sessionExpiredHandler: { await model.handleDeckSessionExpired(profile: profile) }
+                tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
+                sessionExpiredHandler: { context in
+                    await model.handleDeckSessionExpired(profile: profile, context: context)
+                }
             )
         )
     }
@@ -31,6 +34,9 @@ struct LiveChooseDeckSelectionView: View {
                     .font(.headline)
                     .foregroundStyle(ArkhamTheme.bone)
                 content
+                if let sendFailure {
+                    ArkhamFailureText(message: sendFailure)
+                }
             }
         }
         .task {
@@ -72,7 +78,11 @@ struct LiveChooseDeckSelectionView: View {
         return Button {
             Task {
                 isSubmitting = true
-                _ = await model.chooseDeckForLivePrompt(deck, in: gameID)
+                sendFailure = nil
+                let didSend = await model.chooseDeckForLivePrompt(deck, in: gameID)
+                if !didSend {
+                    sendFailure = "This deck could not be sent. Reconnect and try again."
+                }
                 isSubmitting = false
             }
         } label: {

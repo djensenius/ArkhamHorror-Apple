@@ -171,13 +171,12 @@ struct GamesListView: View {
             // triggering delete then would silently supersede and cancel that other
             // action rather than confirming an explicit, intentional delete.
             let actionInFlight = model.gameLifecycleActions[summary.id] != nil
-            // `rowButton(for:)` already applies `liveGameEnterButton` to an active
-            // game's own `NavigationLink`; a later `.accessibilityIdentifier` on the
-            // same node would silently override it, making that identifier
-            // unreachable, so only the non-active (lobby-sheet button) case is
-            // stamped with `gameRow` here.
+            // `rowButton(for:)` already applies `liveGameEnterButton` to live-board
+            // navigation rows; a later `.accessibilityIdentifier` on the same node
+            // would silently override it, making that identifier unreachable, so only
+            // lobby-sheet button rows are stamped with `gameRow` here.
             Group {
-                if case .active = summary.gameState {
+                if summary.gameState.opensLiveGameView {
                     rowButton(for: summary)
                 } else {
                     rowButton(for: summary)
@@ -216,7 +215,7 @@ struct GamesListView: View {
     /// has no equivalent presentation for an in-progress game.
     @ViewBuilder
     private func rowButton(for summary: GameSummary) -> some View {
-        if case .active = summary.gameState {
+        if summary.gameState.opensLiveGameView {
             NavigationLink(value: summary.id) {
                 GameRowView(game: summary)
             }
@@ -262,6 +261,17 @@ private struct GameRowSwipeActions: ViewModifier {
                 )
             }
         #endif
+    }
+}
+
+private extension GameState {
+    var opensLiveGameView: Bool {
+        switch self {
+        case .active, .chooseDecks:
+            true
+        case .pending, .over, .unknown:
+            false
+        }
     }
 }
 

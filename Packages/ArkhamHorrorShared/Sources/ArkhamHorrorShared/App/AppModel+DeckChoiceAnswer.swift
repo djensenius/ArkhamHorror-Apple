@@ -7,7 +7,10 @@ extension AppModel {
     func chooseDeckForLivePrompt(_ deck: Deck, in gameID: GameID) async -> Bool {
         guard let prompt = basicChoicePresentation(for: gameID),
               LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion),
-              prompt.isAuthorized,
+              case let .participant(playerID) = liveGameParticipantIdentities[gameID],
+              playerID == prompt.ownerID,
+              case let .signedIn(_, compatibility, _) = sessionState,
+              case .modern = compatibility,
               let connection = liveGameConnections[gameID],
               liveGameSessions[gameID]?.attemptID == connection.attemptID
         else { return false }
