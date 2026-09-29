@@ -195,6 +195,7 @@ extension BoardProjectionBuilder {
     ) -> BoardInvestigatorNode {
         BoardInvestigatorNode(
             id: investigator.id,
+            playerID: investigator.playerID,
             displayName: BoardDisplayFormatting.safeTitle(
                 investigator.name, fallback: investigator.cardCode.rawValue
             ),

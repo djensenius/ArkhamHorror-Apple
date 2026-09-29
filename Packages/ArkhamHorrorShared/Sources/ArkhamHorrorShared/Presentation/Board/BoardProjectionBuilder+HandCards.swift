@@ -3,6 +3,12 @@ import Foundation
 private struct BoardPlayerCardIdentity: Sendable, Equatable {
     let id: WireCardID
     let cardCode: CardCode
+    let displayName: String
+    let subtitle: String?
+    let tokenCounts: [BoardTokenSummary]
+    let damage: Int?
+    let horror: Int?
+    let usesSummary: String?
 
     init?(_ rawValue: JSONValue) {
         guard case let .object(wrapper) = rawValue,
@@ -16,6 +22,14 @@ private struct BoardPlayerCardIdentity: Sendable, Equatable {
         else { return nil }
         self.id = id
         self.cardCode = cardCode
+        displayName = BoardProjectionBuilder.cardDisplayName(
+            in: contents, fallback: "Card \(cardCode.rawValue)"
+        )
+        subtitle = BoardProjectionBuilder.cardSubtitle(in: contents)
+        tokenCounts = BoardProjectionBuilder.safeTokenCounts(in: contents["tokens"])
+        damage = BoardProjectionBuilder.safeInteger(contents["damage"])
+        horror = BoardProjectionBuilder.safeInteger(contents["horror"])
+        usesSummary = BoardProjectionBuilder.usesSummary(in: contents["uses"])
     }
 
     static func claimedID(in rawValue: JSONValue) -> WireCardID? {
@@ -40,6 +54,21 @@ extension BoardProjectionBuilder {
     static func makeHandCards(
         from snapshot: PublicGameSnapshot
     ) -> [PlayerID: [WireCardID: BoardHandCardNode]] {
+        makeResolvedHandCards(from: snapshot).legacy
+    }
+
+    static func makeOrderedHandCards(
+        from snapshot: PublicGameSnapshot
+    ) -> [PlayerID: [BoardPlayerCardNode]] {
+        makeResolvedHandCards(from: snapshot).ordered
+    }
+
+    private static func makeResolvedHandCards(
+        from snapshot: PublicGameSnapshot
+    ) -> (
+        legacy: [PlayerID: [WireCardID: BoardHandCardNode]],
+        ordered: [PlayerID: [BoardPlayerCardNode]]
+    ) {
         let records = investigatorHandRecords(in: snapshot)
         let investigatorsByPlayer = validInvestigatorsByPlayer(in: records)
         let globalCards = globalPlayerCards(in: snapshot)
@@ -128,22 +157,48 @@ extension BoardProjectionBuilder {
         _ parsedHands: [PlayerID: [WireCardID: BoardPlayerCardIdentity]],
         globalCards: [WireCardID: BoardPlayerCardIdentity],
         claimCounts: [WireCardID: Int]
-    ) -> [PlayerID: [WireCardID: BoardHandCardNode]] {
-        var result: [PlayerID: [WireCardID: BoardHandCardNode]] = [:]
+    ) -> (
+        legacy: [PlayerID: [WireCardID: BoardHandCardNode]],
+        ordered: [PlayerID: [BoardPlayerCardNode]]
+    ) {
+        var legacyResult: [PlayerID: [WireCardID: BoardHandCardNode]] = [:]
+        var orderedResult: [PlayerID: [BoardPlayerCardNode]] = [:]
         for (playerID, hand) in parsedHands {
-            var resolved: [WireCardID: BoardHandCardNode] = [:]
-            for (cardID, handCard) in hand {
-                guard claimCounts[cardID] == 1,
+            var legacy: [WireCardID: BoardHandCardNode] = [:]
+            var ordered: [BoardPlayerCardNode] = []
+            let sortedCardIDs = hand.keys.sorted {
+                $0.codingKey.stringValue < $1.codingKey.stringValue
+            }
+            for cardID in sortedCardIDs {
+                guard let handCard = hand[cardID],
+                      claimCounts[cardID] == 1,
                       let globalCard = globalCards[cardID],
                       globalCard.cardCode == handCard.cardCode
                 else { continue }
-                resolved[cardID] = BoardHandCardNode(
+                let displayName = globalCard.displayName
+                legacy[cardID] = BoardHandCardNode(
                     id: cardID,
-                    cardCode: handCard.cardCode
+                    cardCode: handCard.cardCode,
+                    displayName: displayName
                 )
+                ordered.append(BoardPlayerCardNode(
+                    id: .card(cardID),
+                    cardID: cardID,
+                    cardCode: handCard.cardCode,
+                    displayName: displayName,
+                    subtitle: globalCard.subtitle,
+                    zone: .hand,
+                    ownerID: playerID,
+                    damage: globalCard.damage,
+                    horror: globalCard.horror,
+                    usesSummary: globalCard.usesSummary,
+                    tokenCounts: globalCard.tokenCounts,
+                    imageReference: nil
+                ))
             }
-            result[playerID] = resolved
+            legacyResult[playerID] = legacy
+            orderedResult[playerID] = ordered
         }
-        return result
+        return (legacyResult, orderedResult)
     }
 }

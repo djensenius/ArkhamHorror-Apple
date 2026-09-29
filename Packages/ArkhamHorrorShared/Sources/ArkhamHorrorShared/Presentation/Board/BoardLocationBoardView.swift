@@ -6,13 +6,16 @@ import SwiftUI
 /// every tile itself remains an independent focusable/accessible view.
 struct BoardLocationBoardView: View {
     let locations: [BoardLocationNode]
+    let enemiesByLocationID: [LocationID: [BoardEnemyNode]]
+    let choiceLinks: [BoardPromptElementID: BoardLinkedChoice]
     let layout: BoardLayout
     let zoomScale: CGFloat
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
+    let onLinkedChoice: (Int) -> Void
 
-    private let baseCellSize = CGSize(width: 150, height: 112)
+    private let baseCellSize = CGSize(width: 220, height: 190)
 
     private func center(for position: BoardGridPosition) -> CGPoint {
         CGPoint(
@@ -82,6 +85,12 @@ struct BoardLocationBoardView: View {
                     )
                 }
             }
+            if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
+                BoardEnemyPanelView(
+                    title: "Enemies", enemies: enemies,
+                    choiceLinks: choiceLinks, onLinkedChoice: onLinkedChoice
+                )
+            }
         }
     }
 
@@ -104,9 +113,12 @@ struct BoardLocationBoardView: View {
 /// The enemy-spawned pseudo-location row — the board's single "board.enemyLocations" zone.
 struct BoardEnemyLocationsRowView: View {
     let enemyLocations: [BoardEnemyLocationNode]
+    let enemiesByLocationID: [LocationID: [BoardEnemyNode]]
+    let choiceLinks: [BoardPromptElementID: BoardLinkedChoice]
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
+    let onLinkedChoice: (Int) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -147,6 +159,12 @@ struct BoardEnemyLocationsRowView: View {
                             systemImage: "person.fill", value: "\(location.investigatorIDs.count)"
                         )
                     }
+                }
+                if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
+                    BoardEnemyPanelView(
+                        title: "Enemies", enemies: enemies,
+                        choiceLinks: choiceLinks, onLinkedChoice: onLinkedChoice
+                    )
                 }
             }
         }

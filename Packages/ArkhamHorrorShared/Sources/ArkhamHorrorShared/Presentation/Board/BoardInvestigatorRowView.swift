@@ -4,11 +4,17 @@ import SwiftUI
 /// `PublicGame.playerOrder`.
 struct BoardInvestigatorRowView: View {
     let investigators: [BoardInvestigatorNode]
+    let handCardsByPlayer: [PlayerID: [BoardPlayerCardNode]]
+    let inPlayCardsByPlayer: [PlayerID: [BoardPlayerCardNode]]
+    let threatTreacheriesByPlayer: [PlayerID: [BoardThreatTreacheryNode]]
+    let engagedEnemiesByInvestigatorID: [InvestigatorID: [BoardEnemyNode]]
+    let choiceLinks: [BoardPromptElementID: BoardLinkedChoice]
     let otherInvestigatorCount: Int
     let killedInvestigatorCount: Int
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
+    let onLinkedChoice: (Int) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -81,6 +87,15 @@ struct BoardInvestigatorRowView: View {
                     Text("Active").font(.caption2).foregroundStyle(ArkhamTheme.accent)
                 }
                 statusBadges(investigator)
+                BoardPlayerAreaView(
+                    investigator: investigator,
+                    handCards: handCardsByPlayer[investigator.playerID] ?? [],
+                    inPlayCards: inPlayCardsByPlayer[investigator.playerID] ?? [],
+                    threatTreacheries: threatTreacheriesByPlayer[investigator.playerID] ?? [],
+                    engagedEnemies: engagedEnemiesByInvestigatorID[investigator.id] ?? [],
+                    choiceLinks: choiceLinks,
+                    onLinkedChoice: onLinkedChoice
+                )
             }
         }
     }

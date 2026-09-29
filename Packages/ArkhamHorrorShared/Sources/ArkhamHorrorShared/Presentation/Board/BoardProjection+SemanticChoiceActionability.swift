@@ -133,7 +133,7 @@ extension BoardProjection {
             return agendas.contains { $0.id == id }
         case .card:
             guard let id = uuidIdentifier(entity.id, as: WireCardID.self) else { return false }
-            return handCardsByPlayer[ownerID]?[id] != nil
+            return containsVisiblePlayerCard(cardID: id, ownerID: ownerID)
         case .enemy:
             guard let id = uuidIdentifier(entity.id, as: EnemyID.self) else { return false }
             return enemyIDs.contains(id)
@@ -154,6 +154,12 @@ extension BoardProjection {
         case .asset, .cardCode, .effect, .event, .skill, .story:
             return false
         }
+    }
+
+    private func containsVisiblePlayerCard(cardID: WireCardID, ownerID: PlayerID) -> Bool {
+        handCardsByPlayer[ownerID]?[cardID] != nil
+            || orderedHandCardsByPlayer[ownerID]?.contains { $0.cardID == cardID } == true
+            || inPlayCardsByPlayer[ownerID]?.contains { $0.cardID == cardID } == true
     }
 
     private func containsInvestigator(_ rawID: String) -> Bool {

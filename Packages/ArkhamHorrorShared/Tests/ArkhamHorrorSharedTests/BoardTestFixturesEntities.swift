@@ -116,6 +116,7 @@ extension BoardTestFixtures {
         enemyCount: Int = 0,
         enemyValues: [EnemyID: JSONValue] = [:],
         assetCount: Int = 0,
+        assetValues: [AssetID: JSONValue] = [:],
         treacheryCount: Int = 0,
         treacheryValues: [TreacheryID: JSONValue] = [:],
         eventCount: Int = 0,
@@ -148,6 +149,7 @@ extension BoardTestFixtures {
             : (sortedInvestigatorIDs.first ?? leadInvestigatorID)
         let cards = entityMap(count: cardCount, values: cardValues)
         let enemies = entityMap(count: enemyCount, values: enemyValues)
+        let assets = entityMap(count: assetCount, values: assetValues)
         let treacheries = entityMap(count: treacheryCount, values: treacheryValues)
 
         return PublicGameSnapshot(
@@ -155,7 +157,7 @@ extension BoardTestFixtures {
             settings: gameSettings(), gameSettings: gameSettings(), mode: mode, modifiers: [],
             encounterDeckSize: 0, locations: locationMap, investigators: investigators,
             otherInvestigators: otherInvestigators, killedInvestigators: killedInvestigators,
-            enemies: enemies, assets: entityMap(count: assetCount),
+            enemies: enemies, assets: assets,
             acts: acts, agendas: agendas, treacheries: treacheries,
             events: entityMap(count: eventCount), concealed: entityMap(count: concealedCount),
             skills: entityMap(count: skillCount), stories: [:], scarletKeys: [:],

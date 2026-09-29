@@ -110,6 +110,7 @@ struct BoardEnemyLocationNode: Sendable, Equatable, Identifiable {
 /// One investigator entity (`PublicGame.investigators`), ordered by `PublicGame.playerOrder`.
 struct BoardInvestigatorNode: Sendable, Equatable, Identifiable {
     let id: InvestigatorID
+    let playerID: PlayerID
     let displayName: String
     let subtitle: String?
     let investigatorClass: ClassSymbol
@@ -147,15 +148,92 @@ struct BoardInvestigatorNode: Sendable, Equatable, Identifiable {
     let placementSummary: String
 }
 
+/// A stable identity for player-card-like board entries whose authoritative IDs live in
+/// different backend domains depending on zone. Hand cards use the physical `CardId`; in-play
+/// rows use the entity IDs already present on the investigator.
+enum BoardPlayerCardID: Sendable, Equatable, Hashable, Identifiable {
+    case card(WireCardID)
+    case asset(AssetID)
+    case event(EventID)
+    case skill(SkillID)
+
+    var id: String {
+        rawText
+    }
+
+    var rawText: String {
+        switch self {
+        case let .card(id): id.codingKey.stringValue
+        case let .asset(id): id.codingKey.stringValue
+        case let .event(id): id.codingKey.stringValue
+        case let .skill(id): id.codingKey.stringValue
+        }
+    }
+}
+
+/// The board zone where a player card is currently visible.
+enum BoardPlayerCardZone: String, Sendable, Equatable, Hashable {
+    case hand
+    case asset
+    case event
+    case skill
+
+    var displayTitle: String {
+        switch self {
+        case .hand: "Hand"
+        case .asset: "Asset"
+        case .event: "Event"
+        case .skill: "Skill"
+        }
+    }
+}
+
+/// Shared visible state for cards in hand and cards in an investigator play area. Broad
+/// entity payloads stay inside the projection builder; this node carries only display-safe
+/// card identity, token/use summaries, and damage/horror counters.
+struct BoardPlayerCardNode: Sendable, Equatable, Identifiable {
+    let id: BoardPlayerCardID
+    let cardID: WireCardID?
+    let cardCode: CardCode?
+    let displayName: String
+    let subtitle: String?
+    let zone: BoardPlayerCardZone
+    let ownerID: PlayerID
+    let damage: Int?
+    let horror: Int?
+    let usesSummary: String?
+    let tokenCounts: [BoardTokenSummary]
+    let imageReference: StoryAssetReference?
+}
+
 /// A player card proven to be both in one unambiguous investigator's current hand and in
 /// `PublicGame.cards` with the same canonical instance ID and card code.
 struct BoardHandCardNode: Sendable, Equatable, Identifiable {
     let id: WireCardID
     let cardCode: CardCode
+    let displayName: String
 
     var displayLabel: String {
-        "Card \(cardCode.rawValue)"
+        displayName
     }
+}
+
+/// Visible enemy state derived from typed placement arrays plus safe optional scalar fields
+/// in the broad enemy map. Missing broad fields keep rendering text-only identity instead
+/// of failing the whole board projection.
+struct BoardEnemyNode: Sendable, Equatable, Identifiable {
+    let id: EnemyID
+    let cardCode: CardCode?
+    let displayName: String
+    let fight: Int?
+    let health: Int?
+    let evade: Int?
+    let damage: Int?
+    let horror: Int?
+    let exhausted: Bool
+    let engagedInvestigatorID: InvestigatorID?
+    let locationID: LocationID?
+    let tokenCounts: [BoardTokenSummary]
 }
 
 /// The narrow authoritative treachery state needed to retire stale Cover Up actions.
@@ -163,6 +241,16 @@ struct BoardTreacheryNode: Sendable, Equatable, Identifiable {
     let id: TreacheryID
     let cardCode: CardCode
     let clueCount: Int
+}
+
+/// Treacheries visible in an investigator's threat area.
+struct BoardThreatTreacheryNode: Sendable, Equatable, Identifiable {
+    let id: TreacheryID
+    let cardCode: CardCode?
+    let displayName: String
+    let ownerID: PlayerID
+    let clueCount: Int
+    let tokenCounts: [BoardTokenSummary]
 }
 
 /// The scenario's chaos bag, summarized as face-grouped counts rather than a card-by-card
@@ -295,6 +383,12 @@ struct BoardProjection: Sendable, Equatable {
     /// Narrow, immutable player-hand presentation authority. Raw card payloads never leave
     /// ``BoardProjectionBuilder``.
     let handCardsByPlayer: [PlayerID: [WireCardID: BoardHandCardNode]]
+    /// Ordered hand-card display nodes for the player-facing board strip.
+    let orderedHandCardsByPlayer: [PlayerID: [BoardPlayerCardNode]]
+    let inPlayCardsByPlayer: [PlayerID: [BoardPlayerCardNode]]
+    let threatTreacheriesByPlayer: [PlayerID: [BoardThreatTreacheryNode]]
+    let enemiesByLocationID: [LocationID: [BoardEnemyNode]]
+    let engagedEnemiesByInvestigatorID: [InvestigatorID: [BoardEnemyNode]]
     let chaosBag: BoardChaosBagState
     let counters: BoardCounters
     let skillTest: BoardSkillTestProjection?

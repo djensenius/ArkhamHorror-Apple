@@ -212,6 +212,9 @@ struct BoardRegularLayoutView: View {
     let focusBinding: FocusState<SemanticFocusID?>.Binding
 
     var body: some View {
+        let choiceLinks = BoardPromptChoiceLinker.links(
+            prompt: controller.prompt, projection: controller.projection
+        )
         ScrollView([.horizontal, .vertical]) {
             VStack(alignment: .leading, spacing: 20) {
                 header
@@ -226,26 +229,39 @@ struct BoardRegularLayoutView: View {
                     .frame(width: 220)
                     BoardLocationBoardView(
                         locations: controller.projection.locations,
+                        enemiesByLocationID: controller.projection.enemiesByLocationID,
+                        choiceLinks: choiceLinks,
                         layout: controller.layout,
                         zoomScale: controller.zoomScale,
                         focusedID: controller.coordinator.currentFocus,
                         focusBinding: focusBinding,
-                        onOutcome: { controller.handle(focusID: $0, $1) }
+                        onOutcome: { controller.handle(focusID: $0, $1) },
+                        onLinkedChoice: { controller.activatePromptChoice($0) }
                     )
                 }
                 BoardEnemyLocationsRowView(
                     enemyLocations: controller.projection.enemyLocations,
+                    enemiesByLocationID: controller.projection.enemiesByLocationID,
+                    choiceLinks: choiceLinks,
                     focusedID: controller.coordinator.currentFocus,
                     focusBinding: focusBinding,
-                    onOutcome: { controller.handle(focusID: $0, $1) }
+                    onOutcome: { controller.handle(focusID: $0, $1) },
+                    onLinkedChoice: { controller.activatePromptChoice($0) }
                 )
                 BoardInvestigatorRowView(
                     investigators: controller.projection.investigators,
+                    handCardsByPlayer: controller.projection.orderedHandCardsByPlayer,
+                    inPlayCardsByPlayer: controller.projection.inPlayCardsByPlayer,
+                    threatTreacheriesByPlayer: controller.projection.threatTreacheriesByPlayer,
+                    engagedEnemiesByInvestigatorID: controller.projection
+                        .engagedEnemiesByInvestigatorID,
+                    choiceLinks: choiceLinks,
                     otherInvestigatorCount: controller.projection.otherInvestigatorCount,
                     killedInvestigatorCount: controller.projection.killedInvestigatorCount,
                     focusedID: controller.coordinator.currentFocus,
                     focusBinding: focusBinding,
-                    onOutcome: { controller.handle(focusID: $0, $1) }
+                    onOutcome: { controller.handle(focusID: $0, $1) },
+                    onLinkedChoice: { controller.activatePromptChoice($0) }
                 )
             }
             .padding(24)
