@@ -77,14 +77,15 @@ struct GamesListView: View {
                     if let gameID = createHandoff.completedDismissal() {
                         presentedGameID = gameID
                     }
-                }
-            ) {
-                NavigationStack {
-                    CreateGameSheetView(model: model) { gameID in
-                        createHandoff.created(gameID)
+                },
+                content: {
+                    NavigationStack {
+                        CreateGameSheetView(model: model) { gameID in
+                            createHandoff.created(gameID)
+                        }
                     }
                 }
-            }
+            )
             .sheet(
                 isPresented: Binding(
                     get: { presentedGameID != nil },
