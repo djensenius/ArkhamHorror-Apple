@@ -69,6 +69,24 @@ struct CreateGameRequestEncodingTests {
         try expectNullDeckSlots(json, count: 1)
     }
 
+    @Test("Multiplayer requests encode the selected variant for With Friends and multi-handed solo")
+    func multiplayerVariantEncoding() throws {
+        let withFriends = CreateGameViewModel()
+        withFriends.playerCount = 3
+        var json = try encodedJSONObject(for: withFriends.makeRequest())
+        #expect(json["playerCount"] as? Int == 3)
+        #expect(json["multiplayerVariant"] as? String == "WithFriends")
+        try expectNullDeckSlots(json, count: 3)
+
+        let multiHandedSolo = CreateGameViewModel()
+        multiHandedSolo.playerCount = 3
+        multiHandedSolo.multiplayerVariant = .solo
+        json = try encodedJSONObject(for: multiHandedSolo.makeRequest())
+        #expect(json["playerCount"] as? Int == 3)
+        #expect(json["multiplayerVariant"] as? String == "Solo")
+        try expectNullDeckSlots(json, count: 3)
+    }
+
     private func encodedJSONObject(for request: CreateGameRequest) throws -> [String: Any] {
         let data = try ContractJSON.encode(request)
         return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])

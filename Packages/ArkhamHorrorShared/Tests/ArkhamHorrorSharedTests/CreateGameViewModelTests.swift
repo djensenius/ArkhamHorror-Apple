@@ -131,6 +131,74 @@ struct CreateGameViewModelTests {
         #expect(returnedID == createdID)
         #expect(viewModel.failureMessage == nil)
     }
+
+    @Test("Submit reports validation failure for empty campaign catalog")
+    func submitEmptyCampaignCatalog() async {
+        let viewModel = CreateGameViewModel(
+            catalog: CreateGameCatalog(campaigns: [], standaloneScenarios: [])
+        )
+
+        let returnedID = await viewModel.submit { _ in
+            Issue.record("Invalid catalog should not call createGame")
+            return GameID(UUID())
+        }
+
+        #expect(returnedID == nil)
+        #expect(viewModel.isSubmitting == false)
+        #expect(viewModel.failureMessage == "Couldn't create game. Try again.")
+    }
+
+    @Test("Submit reports validation failure for empty standalone scenario catalog")
+    func submitEmptyScenarioCatalog() async {
+        let viewModel = CreateGameViewModel(
+            catalog: CreateGameCatalog(campaigns: [], standaloneScenarios: [])
+        )
+        viewModel.mode = .standaloneScenario
+
+        let returnedID = await viewModel.submit { _ in
+            Issue.record("Invalid catalog should not call createGame")
+            return GameID(UUID())
+        }
+
+        #expect(returnedID == nil)
+        #expect(viewModel.isSubmitting == false)
+        #expect(viewModel.failureMessage == "Couldn't create game. Try again.")
+    }
+
+    @Test("Submit reports validation failure for unknown catalog selections")
+    func submitUnknownSelections() async {
+        let unknownCampaign = CreateGameViewModel(selectedCampaignID: "missing-campaign")
+        let campaignID = await unknownCampaign.submit { _ in
+            Issue.record("Unknown campaign should not call createGame")
+            return GameID(UUID())
+        }
+        #expect(campaignID == nil)
+        #expect(unknownCampaign.failureMessage == "Couldn't create game. Try again.")
+
+        let unknownScenario = CreateGameViewModel(
+            mode: .standaloneScenario,
+            selectedScenarioID: "missing-scenario"
+        )
+        let scenarioID = await unknownScenario.submit { _ in
+            Issue.record("Unknown scenario should not call createGame")
+            return GameID(UUID())
+        }
+        #expect(scenarioID == nil)
+        #expect(unknownScenario.failureMessage == "Couldn't create game. Try again.")
+    }
+
+    @Test("Submit cancellation clears in-flight state without showing an inline error")
+    func submitCancellation() async {
+        let viewModel = CreateGameViewModel()
+
+        let returnedID = await viewModel.submit { _ in
+            throw CancellationError()
+        }
+
+        #expect(returnedID == nil)
+        #expect(viewModel.isSubmitting == false)
+        #expect(viewModel.failureMessage == nil)
+    }
 }
 
 private actor CreateGameSubmitGate {

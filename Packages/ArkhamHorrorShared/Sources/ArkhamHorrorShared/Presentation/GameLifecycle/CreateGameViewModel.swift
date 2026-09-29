@@ -39,10 +39,16 @@ final class CreateGameViewModel {
     private(set) var isSubmitting = false
     private(set) var failureMessage: String?
 
-    init(catalog: CreateGameCatalog = .default) {
+    init(
+        catalog: CreateGameCatalog = .default,
+        mode: CreateGameMode = .campaign,
+        selectedCampaignID: String? = nil,
+        selectedScenarioID: String? = nil
+    ) {
         self.catalog = catalog
-        selectedCampaignID = catalog.campaigns.first?.id ?? ""
-        selectedScenarioID = catalog.standaloneScenarios.first?.id ?? ""
+        self.mode = mode
+        self.selectedCampaignID = selectedCampaignID ?? catalog.campaigns.first?.id ?? ""
+        self.selectedScenarioID = selectedScenarioID ?? catalog.standaloneScenarios.first?.id ?? ""
     }
 
     var selectedTitle: String {
