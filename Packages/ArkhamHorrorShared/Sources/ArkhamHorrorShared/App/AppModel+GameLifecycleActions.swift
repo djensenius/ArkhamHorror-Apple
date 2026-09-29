@@ -313,7 +313,7 @@ extension AppModel {
         var deckList: DeckListInput {
             switch self {
             case let .saved(deck):
-                DeckListInput(deck.list)
+                DeckListInput(deck.playableList)
             }
         }
     }

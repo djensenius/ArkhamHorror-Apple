@@ -230,6 +230,42 @@ struct AppModelGameLifecycleActionTests {
         #expect(sentRequest.deckList == DeckListInput(deck.list))
     }
 
+    @Test("chooseDeck sends playList instead of list when a 0.1.46 deck provides one")
+    func chooseSavedDeckUsesPlayableList() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let deck = try sampleDeck()
+        let playList = DeckList(
+            slots: try CardQuantityMap([CardCode("c01016"): 1]),
+            sideSlots: deck.list.sideSlots,
+            investigatorCode: deck.list.investigatorCode,
+            investigatorName: deck.list.investigatorName,
+            meta: deck.list.meta,
+            tabooId: deck.list.tabooId,
+            url: deck.list.url,
+            id: deck.list.id,
+            name: deck.list.name
+        )
+        let deckWithPlayList = Deck(
+            id: deck.id,
+            userId: deck.userId,
+            url: deck.url,
+            name: deck.name,
+            investigatorName: deck.investigatorName,
+            list: deck.list,
+            playList: playList
+        )
+        await service.enqueueChooseDeckResult(.success(()))
+        await service.enqueueListGamesResult(.success([]))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        model.chooseDeck(deckWithPlayList, investigatorId: "01001", in: gameID)
+        await model.gameLifecycleActionTasks[gameID]?.value
+
+        let sentRequest = try #require(await service.lastChooseDeckRequest)
+        #expect(sentRequest.deckList == DeckListInput(playList))
+    }
+
     // MARK: - createGame (typed operation; no polished create UI)
 
     @Test("createGame returns the created game's ID and refreshes the list")

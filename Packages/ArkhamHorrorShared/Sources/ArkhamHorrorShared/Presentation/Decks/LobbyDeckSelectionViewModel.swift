@@ -91,7 +91,7 @@ final class LobbyDeckSelectionViewModel {
             validations[deck.id] = .pending
             do {
                 _ = try await deckService.validateDeckList(
-                    DeckListInput(deck.list), on: profile, token: token
+                    DeckListInput(deck.playableList), on: profile, token: token
                 )
                 validations[deck.id] = .valid
             } catch let cancellation as CancellationError {

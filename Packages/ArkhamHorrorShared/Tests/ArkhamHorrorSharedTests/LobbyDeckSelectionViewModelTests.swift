@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 private actor ScriptedLobbyDeckService: DeckServicing {
+    private(set) var validatedDeckLists: [DeckListInput] = []
     private var listQueue: [Result<DeckListResponse, any Error>] = []
     private var validateQueue: [Result<DeckValidationSuccess, any Error>] = []
 
@@ -42,9 +43,10 @@ private actor ScriptedLobbyDeckService: DeckServicing {
     }
 
     func validateDeckList(
-        _: DeckListInput, on _: ServerProfile, token _: String
+        _ deckList: DeckListInput, on _: ServerProfile, token _: String
     ) async throws -> DeckValidationSuccess {
-        try consume(&validateQueue)
+        validatedDeckLists.append(deckList)
+        return try consume(&validateQueue)
     }
 }
 
@@ -142,6 +144,39 @@ struct LobbyDeckSelectionViewModelTests {
         await model.load(allowedInvestigatorIDs: ["01001"])
 
         #expect(model.validationState(for: fixture.deck) == .valid)
+    }
+
+    @Test("validation sends playList instead of list when a 0.1.46 deck provides one")
+    func validationUsesPlayableList() async throws {
+        let fixture = try loadFixture()
+        let playList = DeckList(
+            slots: try CardQuantityMap([CardCode("c01016"): 1]),
+            sideSlots: fixture.deck.list.sideSlots,
+            investigatorCode: fixture.deck.list.investigatorCode,
+            investigatorName: fixture.deck.list.investigatorName,
+            meta: fixture.deck.list.meta,
+            tabooId: fixture.deck.list.tabooId,
+            url: fixture.deck.list.url,
+            id: fixture.deck.list.id,
+            name: fixture.deck.list.name
+        )
+        let deck = Deck(
+            id: fixture.deck.id,
+            userId: fixture.deck.userId,
+            url: fixture.deck.url,
+            name: fixture.deck.name,
+            investigatorName: fixture.deck.investigatorName,
+            list: fixture.deck.list,
+            playList: playList
+        )
+        let service = ScriptedLobbyDeckService()
+        await service.enqueueList(.success([deck]))
+        await service.enqueueValidate(.success(DeckValidationSuccess()))
+        let model = makeModel(service: service)
+
+        await model.load(allowedInvestigatorIDs: ["01001"])
+
+        #expect(await service.validatedDeckLists == [DeckListInput(playList)])
     }
 
     @Test("claimedInvestigatorID matches normalized deck investigator codes")
