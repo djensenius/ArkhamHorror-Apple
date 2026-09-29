@@ -12,13 +12,22 @@ struct GamesListView: View {
     let model: AppModel
 
     @State private var pendingDeletion: GameID?
+    @State private var isCreatePresented = false
     @State private var presentedGameID: GameID?
 
     var body: some View {
         content
             .navigationTitle("Games")
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        isCreatePresented = true
+                    } label: {
+                        Label("New Game", systemImage: "plus")
+                    }
+                    .accessibilityLabel("New game")
+                    .accessibilityIdentifier(AccountAccessibilityID.createGameOpenButton)
+
                     Button {
                         model.refreshGames()
                     } label: {
@@ -60,6 +69,17 @@ struct GamesListView: View {
                 Button("Cancel", role: .cancel) { pendingDeletion = nil }
             } message: { _ in
                 Text("This permanently removes the game for every player.")
+            }
+            .sheet(isPresented: $isCreatePresented) {
+                NavigationStack {
+                    CreateGameSheetView(model: model) { gameID in
+                        isCreatePresented = false
+                        Task { @MainActor in
+                            await Task.yield()
+                            presentedGameID = gameID
+                        }
+                    }
+                }
             }
             .sheet(
                 isPresented: Binding(
