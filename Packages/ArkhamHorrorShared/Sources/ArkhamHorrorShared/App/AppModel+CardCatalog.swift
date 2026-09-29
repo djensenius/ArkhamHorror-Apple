@@ -1,4 +1,12 @@
 extension AppModel {
+    func clearCardCatalogCache() {
+        cardCatalogTask?.cancel()
+        cardCatalogTask = nil
+        cardCatalog = nil
+        cardCatalogFailure = nil
+        isCardCatalogLoading = false
+    }
+
     func loadCardCatalogIfNeeded() {
         guard cardCatalog == nil, !isCardCatalogLoading else { return }
         isCardCatalogLoading = true

@@ -15,9 +15,6 @@ extension BoardAccessibility {
         if let horror = card.horror, horror > 0 {
             parts.append("Horror \(horror)")
         }
-        if !card.tokenCounts.isEmpty {
-            parts.append(tokenCountsSummary(card.tokenCounts))
-        }
         return parts.joined(separator: ". ")
     }
 

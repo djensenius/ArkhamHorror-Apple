@@ -15,7 +15,7 @@ struct BoardLocationBoardView: View {
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
-    private let baseCellSize = CGSize(width: 220, height: 190)
+    private let baseCellSize = CGSize(width: 150, height: 112)
 
     private func center(for position: BoardGridPosition) -> CGPoint {
         CGPoint(

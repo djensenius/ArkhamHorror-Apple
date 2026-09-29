@@ -101,6 +101,20 @@ struct BoardCardRenderingProjectionTests {
         #expect(graph.zoneEntryPoints[BoardFocusZone.boardElements] == BoardFocusID.enemy(enemyID))
     }
 
+    @Test("Enemy calculation tags render display values")
+    func enemyCalculationTagsRender() {
+        #expect(calculation("Static", number(2), players: 3)?.displayValue == "2")
+        #expect(calculation("PerPlayer", number(2), players: 3)?.displayValue == "6")
+        #expect(
+            calculation("StaticWithPerPlayer", numbers([1, 2]), players: 3)?.displayValue == "7"
+        )
+        #expect(
+            calculation("ByPlayerCount", numbers([1, 2, 4, 8]), players: 3)?.displayValue == "4"
+        )
+        #expect(calculation("ValueX", nil, players: 3)?.displayValue == "X")
+        #expect(calculation("ValueStar", nil, players: 3)?.displayValue == "–")
+    }
+
     @Test("Choice-to-board links require actionability and prompt submit authority")
     func choiceLinksHonorActionability() throws {
         let enemyID = EnemyActionFixtures.enemyID
@@ -208,6 +222,25 @@ struct BoardCardRenderingProjectionTests {
             "name": .string("Cover Up"),
             "tokens": .array([.array([.string("Clue"), number(1)])]),
         ])
+    }
+
+    private func calculation(
+        _ tag: String, _ contents: JSONValue?, players: Int
+    ) -> BoardCalculationSummary? {
+        BoardProjectionBuilder.calculationSummary(
+            in: .object([
+                "tag": .string("GameValueCalculation"),
+                "contents": .object([
+                    "tag": .string(tag),
+                    "contents": contents ?? .null,
+                ]),
+            ]),
+            playerCount: players
+        )
+    }
+
+    private func numbers(_ values: [Int64]) -> JSONValue {
+        .array(values.map(number))
     }
 
     private func number(_ value: Int64) -> JSONValue {

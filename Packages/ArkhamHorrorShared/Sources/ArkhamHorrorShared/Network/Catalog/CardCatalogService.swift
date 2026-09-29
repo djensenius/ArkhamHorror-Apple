@@ -59,6 +59,9 @@ struct CardCatalogService: Sendable {
         guard LocaleCatalogLoader.isAcceptableJSONMediaType(response) else {
             throw LocaleCatalogFailure.unacceptableContentType
         }
-        return try ContractJSON.decode(CardList.self, from: response.data)
+        let raw = try ContractJSON.decode([JSONValue].self, from: response.data)
+        return raw.compactMap { value in
+            try? ContractJSON.decode(CardDef.self, from: ContractJSON.encode(value))
+        }
     }
 }

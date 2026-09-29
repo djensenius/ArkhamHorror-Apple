@@ -68,7 +68,10 @@ extension BoardProjectionBuilder {
             let enemies = enemyIDs(at: location.id, in: snapshot)
                 .filter { !engagedEnemyIDs.contains($0) }
                 .map {
-                    enemyNode(id: $0, rawValue: snapshot.enemies[$0], locationID: location.id)
+                    enemyNode(
+                        id: $0, rawValue: snapshot.enemies[$0],
+                        playerCount: snapshot.playerCount, locationID: location.id
+                    )
                 }
             if !enemies.isEmpty {
                 byLocationID[location.id] = enemies
@@ -78,7 +81,10 @@ extension BoardProjectionBuilder {
             let enemies = enemyIDs(at: location.id, in: snapshot)
                 .filter { !engagedEnemyIDs.contains($0) }
                 .map {
-                    enemyNode(id: $0, rawValue: snapshot.enemies[$0], locationID: location.id)
+                    enemyNode(
+                        id: $0, rawValue: snapshot.enemies[$0],
+                        playerCount: snapshot.playerCount, locationID: location.id
+                    )
                 }
             if !enemies.isEmpty {
                 byLocationID[location.id] = enemies
@@ -90,6 +96,7 @@ extension BoardProjectionBuilder {
             let enemies = investigator.engagedEnemies.map {
                 enemyNode(
                     id: $0, rawValue: snapshot.enemies[$0],
+                    playerCount: snapshot.playerCount,
                     engagedInvestigatorID: investigator.id
                 )
             }
@@ -173,6 +180,7 @@ extension BoardProjectionBuilder {
     private static func enemyNode(
         id: EnemyID,
         rawValue: JSONValue?,
+        playerCount: Int,
         locationID: LocationID? = nil,
         engagedInvestigatorID: InvestigatorID? = nil
     ) -> BoardEnemyNode {
@@ -184,9 +192,11 @@ extension BoardProjectionBuilder {
             id: id,
             cardCode: code,
             displayName: cardDisplayName(in: object, fallback: fallback),
-            fight: calculationSummary(in: object?["fight"]),
-            health: calculationSummary(in: object?["health"] ?? object?["remainingHealth"]),
-            evade: calculationSummary(in: object?["evade"]),
+            fight: calculationSummary(in: object?["fight"], playerCount: playerCount),
+            health: calculationSummary(
+                in: object?["health"] ?? object?["remainingHealth"], playerCount: playerCount
+            ),
+            evade: calculationSummary(in: object?["evade"], playerCount: playerCount),
             damage: tokenCount("Damage", in: object?["tokens"]),
             horror: tokenCount("Horror", in: object?["tokens"]),
             attackDamage: positiveInteger(object?["healthDamage"]),
@@ -290,29 +300,6 @@ extension BoardProjectionBuilder {
         case .null, nil, .bool:
             return nil
         }
-    }
-
-    static func calculationSummary(in value: JSONValue?) -> BoardCalculationSummary? {
-        if let fixed = safeInteger(value) {
-            return BoardCalculationSummary(displayValue: "\(fixed)", staticValue: fixed)
-        }
-        guard case let .object(object)? = value,
-              case let .string(tag)? = object["tag"]
-        else { return nil }
-        if tag == "Fixed", let fixed = safeInteger(object["contents"]) {
-            return BoardCalculationSummary(displayValue: "\(fixed)", staticValue: fixed)
-        }
-        guard tag == "GameValueCalculation",
-              case let .object(contents)? = object["contents"],
-              case let .string(innerTag)? = contents["tag"]
-        else { return BoardCalculationSummary(displayValue: "?", staticValue: nil) }
-        if innerTag == "Static", let fixed = safeInteger(contents["contents"]) {
-            return BoardCalculationSummary(displayValue: "\(fixed)", staticValue: fixed)
-        }
-        if innerTag == "ValueX" {
-            return BoardCalculationSummary(displayValue: "X", staticValue: nil)
-        }
-        return BoardCalculationSummary(displayValue: "?", staticValue: nil)
     }
 
     static func positiveInteger(_ value: JSONValue?) -> Int? {
