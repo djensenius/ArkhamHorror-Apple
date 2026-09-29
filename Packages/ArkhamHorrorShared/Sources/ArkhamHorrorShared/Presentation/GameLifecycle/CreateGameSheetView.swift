@@ -24,6 +24,7 @@ struct CreateGameSheetView: View {
         #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
+            .interactiveDismissDisabled(viewModel.isSubmitting)
             .accessibilityIdentifier(AccountAccessibilityID.createGameSheet)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
