@@ -177,7 +177,7 @@ struct CreateGameSheetView: View {
         guard let id = await viewModel.submit(createGame: { request in
             try await model.createGame(request)
         }) else { return }
-        dismiss()
         onCreated(id)
+        dismiss()
     }
 }
