@@ -93,7 +93,9 @@ struct DecksViewModelTests {
     private func makeModel(
         service: ScriptedDeckService,
         tokenProvider: @escaping DecksViewModel.TokenProvider = {
-            DeckRequestContext(token: "token", sessionGeneration: 0, credentialEpoch: 0, globalEpoch: 0)
+            DeckRequestContext(
+                token: "token", sessionGeneration: 0, credentialEpoch: 0, globalEpoch: 0
+            )
         },
         sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in }
     ) -> DecksViewModel {

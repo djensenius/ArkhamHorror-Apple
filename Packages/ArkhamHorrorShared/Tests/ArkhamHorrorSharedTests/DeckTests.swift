@@ -82,7 +82,8 @@ struct DeckTests {
 
     @Test("deck decodes the sync contract's 0.1.46 fixture with null additive fields")
     func deckDecodesRevision146SyncFixture() throws {
-        let url = URL(fileURLWithPath: "/Users/david/Developer/ArkhamHorror/ArkhamHorror-sync/contracts/fixtures/decks.json")
+        let url = URL(fileURLWithPath: "/Users/david/Developer/ArkhamHorror/"
+            + "ArkhamHorror-sync/contracts/fixtures/decks.json")
         let fixture = try ContractJSON.decode(DecksFixture.self, from: Data(contentsOf: url))
         #expect(fixture.deck.lastUsedAt == nil)
         #expect(fixture.deck.overlay == nil)

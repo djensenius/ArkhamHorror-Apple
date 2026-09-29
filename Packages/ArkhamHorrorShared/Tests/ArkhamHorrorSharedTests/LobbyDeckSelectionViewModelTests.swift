@@ -61,6 +61,8 @@ private struct LobbyDeckFixture: Decodable {
 @MainActor
 @Suite("LobbyDeckSelectionViewModel")
 struct LobbyDeckSelectionViewModelTests {
+    private typealias SessionExpiredHandler = LobbyDeckSelectionViewModel.SessionExpiredHandler
+
     private func loadFixture() throws -> LobbyDeckFixture {
         let url = try #require(
             Bundle.module.url(
@@ -72,13 +74,15 @@ struct LobbyDeckSelectionViewModelTests {
 
     private func makeModel(
         service: ScriptedLobbyDeckService,
-        sessionExpiredHandler: @escaping LobbyDeckSelectionViewModel.SessionExpiredHandler = { _ in }
+        sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in () }
     ) -> LobbyDeckSelectionViewModel {
         LobbyDeckSelectionViewModel(
             profile: .hosted,
             deckService: service,
             tokenProvider: {
-                DeckRequestContext(token: "token", sessionGeneration: 0, credentialEpoch: 0, globalEpoch: 0)
+                DeckRequestContext(
+                    token: "token", sessionGeneration: 0, credentialEpoch: 0, globalEpoch: 0
+                )
             },
             sessionExpiredHandler: sessionExpiredHandler
         )
@@ -158,7 +162,10 @@ struct LobbyDeckSelectionViewModelTests {
 
         await model.load(allowedInvestigatorIDs: ["01001", "01002"])
 
-        #expect(model.validationState(for: roland) == .failed(DeckServiceError.sessionExpired.message))
+        #expect(
+            model.validationState(for: roland)
+                == .failed(DeckServiceError.sessionExpired.message)
+        )
         #expect(model.validationState(for: daisy) == .pending)
         #expect(await service.validatedDeckLists.count == 1)
         #expect(expirations == 1)

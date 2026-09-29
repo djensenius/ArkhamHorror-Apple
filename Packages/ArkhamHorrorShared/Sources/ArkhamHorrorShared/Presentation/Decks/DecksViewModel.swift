@@ -105,7 +105,9 @@ final class DecksViewModel {
         do {
             let context = try await tokenProvider()
             requestContext = context
-            let deck = try await deckService.importDeck(from: url, on: profile, token: context.token)
+            let deck = try await deckService.importDeck(
+                from: url, on: profile, token: context.token
+            )
             upsert(deck)
             importURL = ""
             importState = .idle

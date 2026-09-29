@@ -61,11 +61,11 @@ enum DeckImportURL: Equatable, Sendable {
         if parts.count == 2, parts[0] == "decklist", isArkhamBuildIdentifier(parts[1]) {
             return .fetchURL("https://arkham.build/decklist/\(parts[1])")
         }
-        if parts.count == 3,
-           parts[0] == "decklist",
-           parts[1] == "view",
-           isArkhamBuildIdentifier(parts[2])
-        {
+        let isDecklistView = parts.count == 3
+            && parts[0] == "decklist"
+            && parts[1] == "view"
+            && isArkhamBuildIdentifier(parts[2])
+        if isDecklistView {
             return .fetchURL("https://arkham.build/decklist/\(parts[2])")
         }
         if parts.count == 2, ["share", "deck"].contains(parts[0]) {
