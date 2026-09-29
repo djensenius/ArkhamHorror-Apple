@@ -68,8 +68,16 @@ struct DeckServiceTests {
                 "https://arkhamdb.com/api/public/decklist/4242"
             ),
             (
+                "https://arkhamdb.com/decklist/view/2381/roland-1.0",
+                "https://arkhamdb.com/api/public/decklist/2381"
+            ),
+            (
                 "https://arkham.build/decklist/view/abc123",
-                "https://arkham.build/decklist/view/abc123"
+                "https://arkham.build/decklist/abc123"
+            ),
+            (
+                "HTTPS://User@Arkham.Build:8443/decklist/ABC_123?x=1#fragment",
+                "https://arkham.build/decklist/ABC_123"
             ),
         ]
     )
@@ -86,6 +94,9 @@ struct DeckServiceTests {
             "https://localhost/decklist/view/4242",
             "https://169.254.169.254/latest/meta-data",
             "https://arkhamdb.com.evil.test/decklist/view/4242",
+            "https://arkhamdb.com/decklist/view/not-a-number",
+            "https://аrkham.build/decklist/abc123",
+            "https://arkham.build/decklist/../secret",
             "https://arkham.build/share/abc123",
             "https://arkham.build/deck/view/abc123",
         ]

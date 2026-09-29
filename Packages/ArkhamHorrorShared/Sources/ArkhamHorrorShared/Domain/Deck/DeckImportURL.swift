@@ -29,7 +29,7 @@ enum DeckImportURL: Equatable, Sendable {
             return try arkhamDBURL(from: components)
         }
         if host == "arkham.build" {
-            return try arkhamBuildURL(from: components, original: trimmed)
+            return try arkhamBuildURL(from: components)
         }
         throw ParseError.invalid
     }
@@ -40,29 +40,33 @@ enum DeckImportURL: Equatable, Sendable {
 
     private static func arkhamDBURL(from components: URLComponents) throws -> DeckImportURL {
         let parts = pathParts(components)
-        guard parts.count == 2 || parts.count == 3,
-              ["deck", "decklist"].contains(parts[0])
-        else { throw ParseError.invalid }
+        guard ["deck", "decklist"].contains(parts.first ?? "") else {
+            throw ParseError.invalid
+        }
         let identifier: String
         if parts.count == 2 {
             identifier = parts[1]
-        } else {
+        } else if parts.count == 3 || parts.count == 4 {
             guard parts[1] == "view" else { throw ParseError.invalid }
             identifier = parts[2]
+        } else {
+            throw ParseError.invalid
         }
-        guard !identifier.isEmpty else { throw ParseError.invalid }
+        guard isNumericIdentifier(identifier) else { throw ParseError.invalid }
         return .fetchURL("https://arkhamdb.com/api/public/\(parts[0])/\(identifier)")
     }
 
-    private static func arkhamBuildURL(
-        from components: URLComponents, original: String
-    ) throws -> DeckImportURL {
+    private static func arkhamBuildURL(from components: URLComponents) throws -> DeckImportURL {
         let parts = pathParts(components)
-        if parts.count == 2, parts[0] == "decklist", !parts[1].isEmpty {
-            return .fetchURL(original)
+        if parts.count == 2, parts[0] == "decklist", isArkhamBuildIdentifier(parts[1]) {
+            return .fetchURL("https://arkham.build/decklist/\(parts[1])")
         }
-        if parts.count == 3, parts[0] == "decklist", parts[1] == "view", !parts[2].isEmpty {
-            return .fetchURL(original)
+        if parts.count == 3,
+           parts[0] == "decklist",
+           parts[1] == "view",
+           isArkhamBuildIdentifier(parts[2])
+        {
+            return .fetchURL("https://arkham.build/decklist/\(parts[2])")
         }
         if parts.count == 2, ["share", "deck"].contains(parts[0]) {
             throw ParseError.unsupportedArkhamBuildShare
@@ -77,6 +81,16 @@ enum DeckImportURL: Equatable, Sendable {
 
     private static func pathParts(_ components: URLComponents) -> [String] {
         components.path.split(separator: "/").map(String.init)
+    }
+
+    private static func isNumericIdentifier(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy(\.isNumber)
+    }
+
+    private static func isArkhamBuildIdentifier(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { character in
+            character.isLetter || character.isNumber || character == "-" || character == "_"
+        }
     }
 }
 
