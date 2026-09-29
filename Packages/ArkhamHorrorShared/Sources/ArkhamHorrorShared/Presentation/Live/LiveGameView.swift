@@ -151,9 +151,10 @@ struct LiveGameView: View {
         }
     }
 
+    @ViewBuilder
     private func board(_ projection: BoardProjection) -> some View {
         let renderedPrompt = prompt
-        return BoardView(
+        let board = BoardView(
             projection: projection,
             prompt: renderedPrompt,
             onChoice: { index in
@@ -168,6 +169,17 @@ struct LiveGameView: View {
                 model.retryLocaleCatalog(for: gameID, retry: retry)
             }
         )
+        if let renderedPrompt,
+           LiveChooseDeckQuestion.matches(renderedPrompt.identity.rawQuestion),
+           case let .signedIn(profile, _, _) = model.sessionState
+        {
+            VStack(spacing: 12) {
+                LiveChooseDeckSelectionView(model: model, profile: profile, gameID: gameID)
+                board
+            }
+        } else {
+            board
+        }
     }
 
     /// A retryable failure state: a full ``ContentUnavailableView`` -- deliberately
