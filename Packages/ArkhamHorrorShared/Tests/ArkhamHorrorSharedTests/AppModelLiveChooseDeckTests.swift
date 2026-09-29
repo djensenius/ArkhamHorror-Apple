@@ -138,7 +138,7 @@ struct AppModelLiveChooseDeckTests {
                 connection: connection
             )
 
-            #expect(!(await model.chooseDeckForLivePrompt(deck, in: gameID)))
+            #expect(await !(model.chooseDeckForLivePrompt(deck, in: gameID)))
             #expect(await connection.sentData.isEmpty)
         }
     }
