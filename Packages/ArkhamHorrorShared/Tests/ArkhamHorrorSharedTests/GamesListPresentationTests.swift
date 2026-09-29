@@ -107,6 +107,19 @@ struct GamesListPresentationTests {
         _ = view.body
     }
 
+    @Test("Create-game handoff opens the lobby only after the create sheet dismisses")
+    func createGameHandoffWaitsForDismissal() {
+        var handoff = CreateGameLobbyHandoff()
+        #expect(handoff.completedDismissal() == nil)
+
+        let gameID = GameID(UUID())
+        handoff.created(gameID)
+        #expect(handoff.pendingGameID == gameID)
+        #expect(handoff.completedDismissal() == gameID)
+        #expect(handoff.pendingGameID == nil)
+        #expect(handoff.completedDismissal() == nil)
+    }
+
     @Test(
         """
         identifiedRows keys a .game row by its own GameID and a .failed row by \
@@ -172,6 +185,17 @@ struct GamesListPresentationTests {
         let identifiers = [
             AccountAccessibilityID.gamesRefreshButton,
             AccountAccessibilityID.gamesRetryButton,
+            AccountAccessibilityID.createGameOpenButton,
+            AccountAccessibilityID.createGameSheet,
+            AccountAccessibilityID.createGameModePicker,
+            AccountAccessibilityID.createGameCatalogPicker,
+            AccountAccessibilityID.createGameDifficultyPicker,
+            AccountAccessibilityID.createGamePlayerCountPicker,
+            AccountAccessibilityID.createGameVariantPicker,
+            AccountAccessibilityID.createGameNameField,
+            AccountAccessibilityID.createGameSubmitButton,
+            AccountAccessibilityID.createGameCancelButton,
+            AccountAccessibilityID.createGameFailureText,
             AccountAccessibilityID.gameDeleteConfirmButton,
             AccountAccessibilityID.gameListFailureText,
             AccountAccessibilityID.accountDetailButton,
