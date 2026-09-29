@@ -16,11 +16,19 @@ struct DeckChoiceAnswerTests {
         switch name {
         case "answer-deck":
             return Data(
-                #"{"tag":"DeckAnswer","deckId":"00000000-0000-0000-0000-000000000002","playerId":"00000000-0000-0000-0000-000000000001"}"#.utf8
+                """
+                {"tag":"DeckAnswer","deckId":"00000000-0000-0000-0000-000000000002",
+                "playerId":"00000000-0000-0000-0000-000000000001"}
+                """.utf8
             )
         case "answer-deck-list":
             return Data(
-                #"{"tag":"DeckListAnswer","deckList":{"slots":{},"sideSlots":{},"investigator_code":"c01001","investigator_name":"Contract investigator","meta":null,"taboo_id":null,"url":null,"id":"fixture-deck","name":"Contract deck"},"playerId":"00000000-0000-0000-0000-000000000001"}"#.utf8
+                """
+                {"tag":"DeckListAnswer","deckList":{"slots":{},"sideSlots":{},
+                "investigator_code":"c01001","investigator_name":"Contract investigator",
+                "meta":null,"taboo_id":null,"url":null,"id":"fixture-deck",
+                "name":"Contract deck"},"playerId":"00000000-0000-0000-0000-000000000001"}
+                """.utf8
             )
         default:
             throw TestFailure()

@@ -169,10 +169,10 @@ struct LiveGameView: View {
                 model.retryLocaleCatalog(for: gameID, retry: retry)
             }
         )
-        if let renderedPrompt,
-           LiveChooseDeckQuestion.matches(renderedPrompt.identity.rawQuestion),
-           case let .signedIn(profile, _, _) = model.sessionState
-        {
+        let isLiveChooseDeckPrompt = renderedPrompt.map {
+            LiveChooseDeckQuestion.matches($0.identity.rawQuestion)
+        } ?? false
+        if isLiveChooseDeckPrompt, case let .signedIn(profile, _, _) = model.sessionState {
             VStack(spacing: 12) {
                 LiveChooseDeckSelectionView(model: model, profile: profile, gameID: gameID)
                 board

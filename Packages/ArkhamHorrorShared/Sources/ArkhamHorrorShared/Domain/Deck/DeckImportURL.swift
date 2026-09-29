@@ -67,10 +67,9 @@ enum DeckImportURL: Equatable, Sendable {
         if parts.count == 2, ["share", "deck"].contains(parts[0]) {
             throw ParseError.unsupportedArkhamBuildShare
         }
-        if parts.count == 3,
-           parts[0] == "share" && parts[1] == "view"
-           || parts[0] == "deck" && parts[1] == "view"
-        {
+        let isShareView = parts.count == 3 && parts[0] == "share" && parts[1] == "view"
+        let isDeckView = parts.count == 3 && parts[0] == "deck" && parts[1] == "view"
+        if isShareView || isDeckView {
             throw ParseError.unsupportedArkhamBuildShare
         }
         throw ParseError.invalid

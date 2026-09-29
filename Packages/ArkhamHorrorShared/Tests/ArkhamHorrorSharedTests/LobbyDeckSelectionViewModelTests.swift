@@ -30,7 +30,9 @@ private actor ScriptedLobbyDeckService: DeckServicing {
         throw TestFailure()
     }
 
-    func createDeck(_: CreateDeckRequest, on _: ServerProfile, token _: String) async throws -> Deck {
+    func createDeck(
+        _: CreateDeckRequest, on _: ServerProfile, token _: String
+    ) async throws -> Deck {
         throw TestFailure()
     }
 
@@ -118,8 +120,12 @@ struct LobbyDeckSelectionViewModelTests {
         let daisy = try deck(fixture.deck, investigatorCode: "c01002", name: "Daisy Walker")
         let service = ScriptedLobbyDeckService()
         await service.enqueueList(.success([roland, daisy]))
-        await service.enqueueValidate(.failure(DeckServiceError.validationFailed(fixture.validationErrors)))
-        await service.enqueueValidate(.failure(DeckServiceError.operationFailed(fixture.operationError)))
+        await service.enqueueValidate(
+            .failure(DeckServiceError.validationFailed(fixture.validationErrors))
+        )
+        await service.enqueueValidate(
+            .failure(DeckServiceError.operationFailed(fixture.operationError))
+        )
         let model = makeModel(service: service)
 
         await model.load(allowedInvestigatorIDs: ["01001", "01002"])

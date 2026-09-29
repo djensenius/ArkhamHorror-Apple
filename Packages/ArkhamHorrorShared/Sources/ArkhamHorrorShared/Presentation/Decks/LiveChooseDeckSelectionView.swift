@@ -95,7 +95,9 @@ struct LiveChooseDeckSelectionView: View {
     }
 
     @ViewBuilder
-    private func validationText(for state: LobbyDeckSelectionViewModel.ValidationState) -> some View {
+    private func validationText(
+        for state: LobbyDeckSelectionViewModel.ValidationState
+    ) -> some View {
         switch state {
         case .pending:
             Text("Checking server support…")
