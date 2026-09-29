@@ -19,6 +19,7 @@ struct CreateGameRequestEncodingTests {
         #expect(json["campaignName"] as? String == "The Night of the Zealot")
         #expect(json["multiplayerVariant"] as? String == "WithFriends")
         #expect(json["includeTarotReadings"] as? Bool == false)
+        #expect(json["achievementsEnabled"] as? Bool == true)
         #expect(try #require(json["options"] as? [Any]).isEmpty)
         try expectNullDeckSlots(json, count: 2)
         expectDefaultableKeysOmitted(json)
@@ -36,7 +37,7 @@ struct CreateGameRequestEncodingTests {
             #expect(json["campaignId"] is NSNull)
             #expect(json["scenarioId"] as? String == scenario.id)
             #expect(json["campaignName"] as? String == scenario.title)
-            #expect(json["achievementsEnabled"] as? Bool == false)
+            #expect(json["achievementsEnabled"] as? Bool == true)
             try expectNullDeckSlots(json, count: 1)
         }
     }
@@ -101,7 +102,7 @@ struct CreateGameRequestEncodingTests {
     }
 
     private func expectDefaultableKeysOmitted(_ json: [String: Any]) {
-        for key in ["strictAsIfAt", "asIfRuling", "ultimatumsAndBoons", "achievementsEnabled"] {
+        for key in ["strictAsIfAt", "asIfRuling", "ultimatumsAndBoons"] {
             #expect(json[key] == nil)
         }
     }
