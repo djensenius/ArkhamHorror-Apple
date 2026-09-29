@@ -19,8 +19,8 @@ final class LobbyDeckSelectionViewModel {
         case failed(String)
     }
 
-    typealias TokenProvider = @MainActor () async throws -> String
-    typealias SessionExpiredHandler = @MainActor () async -> Void
+    typealias TokenProvider = @MainActor () async throws -> DeckRequestContext
+    typealias SessionExpiredHandler = @MainActor (DeckRequestContext) async -> Void
 
     private let profile: ServerProfile
     private let deckService: any DeckServicing
@@ -34,7 +34,7 @@ final class LobbyDeckSelectionViewModel {
         profile: ServerProfile,
         deckService: any DeckServicing,
         tokenProvider: @escaping TokenProvider,
-        sessionExpiredHandler: @escaping SessionExpiredHandler = {}
+        sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in }
     ) {
         self.profile = profile
         self.deckService = deckService
@@ -59,9 +59,11 @@ final class LobbyDeckSelectionViewModel {
     func reload(allowedInvestigatorIDs: Set<String>? = nil) async {
         loadState = .loading
         validations = [:]
+        var requestContext: DeckRequestContext?
         do {
-            let token = try await tokenProvider()
-            let loaded = try await deckService.listDecks(on: profile, token: token)
+            let context = try await tokenProvider()
+            requestContext = context
+            let loaded = try await deckService.listDecks(on: profile, token: context.token)
             let matching = loaded
                 .filter { deck in
                     allowedInvestigatorIDs?.contains(deck.normalizedInvestigatorCode) ?? true
@@ -69,9 +71,12 @@ final class LobbyDeckSelectionViewModel {
                 .sortedForPresentation()
             loadState = .loaded(matching)
             do {
-                try await validate(matching, token: token)
+                try await validate(matching, context: context)
             } catch is CancellationError {
                 return
+            } catch DeckServiceError.sessionExpired {
+                requestContext = nil
+                throw DeckServiceError.sessionExpired
             }
         } catch is CancellationError {
             loadState = .idle
@@ -79,7 +84,9 @@ final class LobbyDeckSelectionViewModel {
             loadState = .idle
         } catch DeckServiceError.sessionExpired {
             loadState = .failed(DeckServiceError.sessionExpired.message)
-            await sessionExpiredHandler()
+            if let requestContext {
+                await sessionExpiredHandler(requestContext)
+            }
         } catch {
             loadState = .failed(DecksViewModel.message(for: error))
         }
@@ -95,12 +102,12 @@ final class LobbyDeckSelectionViewModel {
         }?.id
     }
 
-    private func validate(_ decks: [Deck], token: String) async throws {
+    private func validate(_ decks: [Deck], context: DeckRequestContext) async throws {
         for deck in decks {
             validations[deck.id] = .pending
             do {
                 _ = try await deckService.validateDeckList(
-                    DeckListInput(deck.playableList), on: profile, token: token
+                    DeckListInput(deck.playableList), on: profile, token: context.token
                 )
                 validations[deck.id] = .valid
             } catch let cancellation as CancellationError {
@@ -111,7 +118,8 @@ final class LobbyDeckSelectionViewModel {
                     validations[deck.id] = .invalid(errorMessage(for: errors))
                 case .sessionExpired:
                     validations[deck.id] = .failed(error.message)
-                    await sessionExpiredHandler()
+                    await sessionExpiredHandler(context)
+                    throw error
                 default:
                     validations[deck.id] = .failed(error.message)
                 }

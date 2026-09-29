@@ -92,8 +92,10 @@ struct DecksViewModelTests {
 
     private func makeModel(
         service: ScriptedDeckService,
-        tokenProvider: @escaping DecksViewModel.TokenProvider = { "token" },
-        sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = {}
+        tokenProvider: @escaping DecksViewModel.TokenProvider = {
+            DeckRequestContext(token: "token", sessionGeneration: 0, credentialEpoch: 0, globalEpoch: 0)
+        },
+        sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in }
     ) -> DecksViewModel {
         DecksViewModel(
             profile: .hosted,
@@ -183,7 +185,7 @@ struct DecksViewModelTests {
         var expirations = 0
         let model = makeModel(
             service: service,
-            sessionExpiredHandler: { expirations += 1 }
+            sessionExpiredHandler: { _ in expirations += 1 }
         )
 
         await model.load()

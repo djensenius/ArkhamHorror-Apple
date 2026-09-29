@@ -70,8 +70,18 @@ struct LobbyDeckSelectionViewModelTests {
         return try ContractJSON.decode(LobbyDeckFixture.self, from: Data(contentsOf: url))
     }
 
-    private func makeModel(service: ScriptedLobbyDeckService) -> LobbyDeckSelectionViewModel {
-        LobbyDeckSelectionViewModel(profile: .hosted, deckService: service) { "token" }
+    private func makeModel(
+        service: ScriptedLobbyDeckService,
+        sessionExpiredHandler: @escaping LobbyDeckSelectionViewModel.SessionExpiredHandler = { _ in }
+    ) -> LobbyDeckSelectionViewModel {
+        LobbyDeckSelectionViewModel(
+            profile: .hosted,
+            deckService: service,
+            tokenProvider: {
+                DeckRequestContext(token: "token", sessionGeneration: 0, credentialEpoch: 0, globalEpoch: 0)
+            },
+            sessionExpiredHandler: sessionExpiredHandler
+        )
     }
 
     private func deck(_ source: Deck, investigatorCode: String, name: String) throws -> Deck {
@@ -132,6 +142,26 @@ struct LobbyDeckSelectionViewModelTests {
 
         #expect(model.validationState(for: roland) == .invalid("Unsupported card c99999"))
         #expect(model.validationState(for: daisy) == .failed("Could not sync deck"))
+    }
+
+    @Test("validation stops at the first session-expired response")
+    func validationStopsAtSessionExpired() async throws {
+        let fixture = try loadFixture()
+        let roland = fixture.deck
+        let daisy = try deck(fixture.deck, investigatorCode: "c01002", name: "Daisy Walker")
+        let service = ScriptedLobbyDeckService()
+        var expirations = 0
+        await service.enqueueList(.success([roland, daisy]))
+        await service.enqueueValidate(.failure(DeckServiceError.sessionExpired))
+        await service.enqueueValidate(.success(DeckValidationSuccess()))
+        let model = makeModel(service: service) { _ in expirations += 1 }
+
+        await model.load(allowedInvestigatorIDs: ["01001", "01002"])
+
+        #expect(model.validationState(for: roland) == .failed(DeckServiceError.sessionExpired.message))
+        #expect(model.validationState(for: daisy) == .pending)
+        #expect(await service.validatedDeckLists.count == 1)
+        #expect(expirations == 1)
     }
 
     @Test("cancelled validation can be retried by calling load again")

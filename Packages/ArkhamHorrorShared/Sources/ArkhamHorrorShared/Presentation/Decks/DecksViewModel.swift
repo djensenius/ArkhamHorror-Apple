@@ -1,6 +1,13 @@
 import Foundation
 import Observation
 
+struct DeckRequestContext: Sendable, Equatable {
+    let token: String
+    let sessionGeneration: Int
+    let credentialEpoch: Int
+    let globalEpoch: Int
+}
+
 /// Load/import/delete state for the signed-in deck-management screen.
 @MainActor
 @Observable
@@ -18,8 +25,8 @@ final class DecksViewModel {
         case failed(String)
     }
 
-    typealias TokenProvider = @MainActor () async throws -> String
-    typealias SessionExpiredHandler = @MainActor () async -> Void
+    typealias TokenProvider = @MainActor () async throws -> DeckRequestContext
+    typealias SessionExpiredHandler = @MainActor (DeckRequestContext) async -> Void
 
     private let profile: ServerProfile
     private let deckService: any DeckServicing
@@ -37,7 +44,7 @@ final class DecksViewModel {
         profile: ServerProfile,
         deckService: any DeckServicing,
         tokenProvider: @escaping TokenProvider,
-        sessionExpiredHandler: @escaping SessionExpiredHandler = {}
+        sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in }
     ) {
         self.profile = profile
         self.deckService = deckService
@@ -62,9 +69,11 @@ final class DecksViewModel {
 
     func load() async {
         loadState = .loading
+        var requestContext: DeckRequestContext?
         do {
-            let token = try await tokenProvider()
-            let decks = try await deckService.listDecks(on: profile, token: token)
+            let context = try await tokenProvider()
+            requestContext = context
+            let decks = try await deckService.listDecks(on: profile, token: context.token)
             loadState = .loaded(decks.sortedForPresentation())
         } catch is CancellationError {
             loadState = .idle
@@ -72,7 +81,9 @@ final class DecksViewModel {
             loadState = .idle
         } catch DeckServiceError.sessionExpired {
             loadState = .failed(DeckServiceError.sessionExpired.message)
-            await sessionExpiredHandler()
+            if let requestContext {
+                await sessionExpiredHandler(requestContext)
+            }
         } catch {
             loadState = .failed(Self.message(for: error))
         }
@@ -90,9 +101,11 @@ final class DecksViewModel {
             return
         }
         importState = .importing
+        var requestContext: DeckRequestContext?
         do {
-            let token = try await tokenProvider()
-            let deck = try await deckService.importDeck(from: url, on: profile, token: token)
+            let context = try await tokenProvider()
+            requestContext = context
+            let deck = try await deckService.importDeck(from: url, on: profile, token: context.token)
             upsert(deck)
             importURL = ""
             importState = .idle
@@ -102,7 +115,9 @@ final class DecksViewModel {
             importState = .idle
         } catch DeckServiceError.sessionExpired {
             importState = .failed(DeckServiceError.sessionExpired.message)
-            await sessionExpiredHandler()
+            if let requestContext {
+                await sessionExpiredHandler(requestContext)
+            }
         } catch {
             importState = .failed(Self.message(for: error))
         }
@@ -122,9 +137,11 @@ final class DecksViewModel {
         }
         deletingDeckIDs.insert(deck.id)
         deletionFailure = nil
+        var requestContext: DeckRequestContext?
         do {
-            let token = try await tokenProvider()
-            try await deckService.deleteDeck(deck.id, on: profile, token: token)
+            let context = try await tokenProvider()
+            requestContext = context
+            try await deckService.deleteDeck(deck.id, on: profile, token: context.token)
             remove(deck)
         } catch is CancellationError {
             breakDeletion(deck)
@@ -133,7 +150,9 @@ final class DecksViewModel {
         } catch DeckServiceError.sessionExpired {
             breakDeletion(deck)
             deletionFailure = DeckServiceError.sessionExpired.message
-            await sessionExpiredHandler()
+            if let requestContext {
+                await sessionExpiredHandler(requestContext)
+            }
         } catch {
             breakDeletion(deck)
             deletionFailure = Self.message(for: error)

@@ -114,12 +114,41 @@ extension AppModel {
         )
     }
 
-    func handleDeckSessionExpired(profile: ServerProfile) async {
+    func currentDeckRequestContext(for profile: ServerProfile) async throws -> DeckRequestContext {
+        let sessionGeneration = generation
+        let credentialEpoch = currentCredentialEpoch(for: profile.id)
+        let globalEpoch = currentGlobalCredentialEpoch()
+        let token: String?
+        do {
+            token = try await serializedTokenAccess(
+                for: profile.id,
+                epoch: credentialEpoch,
+                globalEpoch: globalEpoch
+            ) { [tokenStore] in
+                try await tokenStore.token(for: profile.id)
+            }
+        } catch is StaleCredentialEpochError {
+            throw GameLifecycleTokenAccessError.stale
+        } catch let cancellation as CancellationError {
+            throw cancellation
+        } catch {
+            throw GameLifecycleTokenAccessError.tokenStore(tokenStoreFailure(from: error))
+        }
+        guard let token else { throw GameLifecycleTokenAccessError.noToken }
+        return DeckRequestContext(
+            token: token,
+            sessionGeneration: sessionGeneration,
+            credentialEpoch: credentialEpoch,
+            globalEpoch: globalEpoch
+        )
+    }
+
+    func handleDeckSessionExpired(profile: ServerProfile, context: DeckRequestContext) async {
         await handleGameLifecycleSessionExpired(
             profile: profile,
-            generation: generation,
-            credentialEpoch: currentCredentialEpoch(for: profile.id),
-            globalEpoch: currentGlobalCredentialEpoch()
+            generation: context.sessionGeneration,
+            credentialEpoch: context.credentialEpoch,
+            globalEpoch: context.globalEpoch
         )
     }
 

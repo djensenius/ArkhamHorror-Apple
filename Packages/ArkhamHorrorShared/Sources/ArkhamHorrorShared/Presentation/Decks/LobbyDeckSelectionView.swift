@@ -27,8 +27,10 @@ struct LobbyDeckSelectionView: View {
             initialValue: LobbyDeckSelectionViewModel(
                 profile: profile,
                 deckService: model.deckService,
-                tokenProvider: { try await model.currentGameLifecycleToken(for: profile) },
-                sessionExpiredHandler: { await model.handleDeckSessionExpired(profile: profile) }
+                tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
+                sessionExpiredHandler: { context in
+                    await model.handleDeckSessionExpired(profile: profile, context: context)
+                }
             )
         )
     }
@@ -97,6 +99,7 @@ struct LobbyDeckSelectionView: View {
                 }
             }
         }
+        .buttonStyle(.borderless)
         .disabled(action != nil || state != .valid || investigatorID == nil)
         .accessibilityIdentifier(AccountAccessibilityID.lobbyDeckButton(
             for: gameID.rawValue, deckID: deck.id.rawValue
