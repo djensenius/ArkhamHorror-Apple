@@ -27,9 +27,15 @@ struct BoardLocationBoardView: View {
     private let baseCellSize = CGSize(width: 150, height: 112)
 
     private var effectiveCellSize: CGSize {
-        let scaled = CGSize(width: baseCellSize.width * zoomScale, height: baseCellSize.height * zoomScale)
+        let scaled = CGSize(
+            width: baseCellSize.width * zoomScale,
+            height: baseCellSize.height * zoomScale
+        )
         let minimum = BoardLocationEnemyTileMetrics.current.minimumCellSize
-        return CGSize(width: max(scaled.width, minimum.width), height: max(scaled.height, minimum.height))
+        return CGSize(
+            width: max(scaled.width, minimum.width),
+            height: max(scaled.height, minimum.height)
+        )
     }
 
     private func center(for position: BoardGridPosition) -> CGPoint {
@@ -83,35 +89,12 @@ struct BoardLocationBoardView: View {
                 0
             )
             VStack(spacing: metrics.verticalSpacing) {
-                BoardEntityTile(
-                    id: id,
-                    accessibilityLabel: BoardAccessibility.summary(location: location),
-                    isFocused: focusedID == id,
-                    focusBinding: focusBinding,
-                    onOutcome: onOutcome
-                ) {
-                    locationTileContent(location, hasEnemies: !enemies.isEmpty)
-                }
-                .frame(maxHeight: headerMaxHeight)
-                .fixedSize(horizontal: false, vertical: true)
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: BoardLocationHeaderHeightPreferenceKey.self,
-                            value: [location.id: proxy.size.height]
-                        )
-                    }
-                }
+                locationHeader(location, id: id, hasEnemies: !enemies.isEmpty)
+                    .frame(maxHeight: headerMaxHeight)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background { headerHeightReader(for: location.id) }
                 if !enemies.isEmpty {
-                    GeometryReader { proxy in
-                        locationEnemyPanel(
-                            enemies,
-                            width: proxy.size.width,
-                            height: proxy.size.height
-                        )
-                    }
-                    .frame(height: enemyPanelHeight, alignment: .top)
-                    .clipped()
+                    measuredLocationEnemyPanel(enemies, height: enemyPanelHeight)
                 }
             }
             .frame(
@@ -121,6 +104,42 @@ struct BoardLocationBoardView: View {
             )
             .position(center(for: position))
         }
+    }
+
+    private func locationHeader(
+        _ location: BoardLocationNode,
+        id: SemanticFocusID,
+        hasEnemies: Bool
+    ) -> some View {
+        BoardEntityTile(
+            id: id,
+            accessibilityLabel: BoardAccessibility.summary(location: location),
+            isFocused: focusedID == id,
+            focusBinding: focusBinding,
+            onOutcome: onOutcome
+        ) {
+            locationTileContent(location, hasEnemies: hasEnemies)
+        }
+    }
+
+    private func headerHeightReader(for locationID: LocationID) -> some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: BoardLocationHeaderHeightPreferenceKey.self,
+                value: [locationID: proxy.size.height]
+            )
+        }
+    }
+
+    private func measuredLocationEnemyPanel(
+        _ enemies: [BoardEnemyNode],
+        height: CGFloat
+    ) -> some View {
+        GeometryReader { proxy in
+            locationEnemyPanel(enemies, width: proxy.size.width, height: proxy.size.height)
+        }
+        .frame(height: height, alignment: .top)
+        .clipped()
     }
 
     private func locationTileContent(
