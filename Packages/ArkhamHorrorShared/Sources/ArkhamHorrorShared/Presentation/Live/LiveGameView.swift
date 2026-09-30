@@ -52,6 +52,7 @@ struct LiveGameView: View {
         #endif
             .onAppear {
                 isViewVisible = true
+                model.loadCardCatalogIfNeeded()
                 syncSubscription()
             }
             .onDisappear {
@@ -151,12 +152,21 @@ struct LiveGameView: View {
         }
     }
 
+    private var localParticipantPlayerID: PlayerID? {
+        guard case let .participant(playerID) = model.liveGameParticipantIdentities[gameID] else {
+            return nil
+        }
+        return playerID
+    }
+
     @ViewBuilder
     private func board(_ projection: BoardProjection) -> some View {
         let renderedPrompt = prompt
         let board = BoardView(
             projection: projection,
             prompt: renderedPrompt,
+            localPlayerID: localParticipantPlayerID,
+            cardCatalog: model.cardCatalog,
             onChoice: { index in
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.submitBasicChoice(identity, choiceIndex: index) }

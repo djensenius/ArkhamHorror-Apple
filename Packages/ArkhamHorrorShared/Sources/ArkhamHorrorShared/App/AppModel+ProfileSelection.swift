@@ -73,6 +73,7 @@ extension AppModel {
         generation += 1
         let currentGeneration = generation
         selectedProfile = profile
+        clearCardCatalogCache()
         operation = .idle
         operationFailure = nil
         guard runStorageVoid(generation: currentGeneration, {

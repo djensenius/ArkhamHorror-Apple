@@ -42,6 +42,16 @@ enum BoardTestFixtures {
         EnemyID(UUID(uuidString: "00000000-0000-0000-0000-\(uuidSuffix)")!)
     }
 
+    static func assetID(_ uuidSuffix: String) -> AssetID {
+        // swiftlint:disable:next force_unwrapping
+        AssetID(UUID(uuidString: "00000000-0000-0000-0000-\(uuidSuffix)")!)
+    }
+
+    static func cardID(_ uuidSuffix: String) -> WireCardID {
+        // swiftlint:disable:next force_unwrapping
+        WireCardID(UUID(uuidString: "00000000-0000-0000-0000-\(uuidSuffix)")!)
+    }
+
     static func treacheryID(_ raw: String) -> TreacheryID {
         // swiftlint:disable:next force_unwrapping
         TreacheryID(UUID(uuidString: raw)!)
