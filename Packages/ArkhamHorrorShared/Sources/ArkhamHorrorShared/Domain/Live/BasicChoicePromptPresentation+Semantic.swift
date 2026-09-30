@@ -180,16 +180,20 @@ extension BasicChoicePromptPresentation {
                 "This choice has no semantic description and cannot be activated."
             )
         }
-        let isActionable = if semanticPresentation.hasSealedOverlay {
-            projection.isSemanticChoiceActionable(
-                descriptor,
-                ownerID: ownerID,
-                labelResolution: choiceLabelResolutions[choice.index],
-                governedSource: semanticPresentation.governedSource
-            )
+        let isActionable = if case .singleChoice = semanticPresentation.presentation.answer {
+            if semanticPresentation.hasSealedOverlay {
+                projection.isSemanticChoiceActionable(
+                    descriptor,
+                    ownerID: ownerID,
+                    labelResolution: choiceLabelResolutions[choice.index],
+                    governedSource: semanticPresentation.governedSource
+                )
+            } else {
+                semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                    && descriptor.selectable
+            }
         } else {
-            semanticPresentation.presentation.supportsCurrentGenericChoiceList
-                && descriptor.selectable
+            false
         }
         guard isActionable else {
             return semanticUnavailableAnnouncement(

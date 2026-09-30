@@ -191,9 +191,11 @@ extension QuestionPresentation: Codable {
         case .chooseN, .chooseSome, .chooseSome1, .chooseUpToN,
              .chooseOneAtATime, .chooseOneAtATimeWithAuto:
             try require(selection, .selection, in: container)
+            try requireSingleChoiceAnswer(in: container)
         case .chooseOneFromEach:
             try require(selection, .selection, in: container)
             try require(groups, .groups, in: container)
+            try requireSingleChoiceAnswer(in: container)
         case .chooseAmounts:
             try require(label, .label, in: container)
             try require(target, .target, in: container)
@@ -221,14 +223,17 @@ extension QuestionPresentation: Codable {
         case .read:
             try require(flavorText, .flavorText, in: container)
             try require(readChoiceKind, .readChoiceKind, in: container)
+            try requireSingleChoiceAnswer(in: container)
         case .chooseOneWizard:
             try require(flavorText, .flavorText, in: container)
             try require(confirmLabel, .confirmLabel, in: container)
             try require(backLabel, .backLabel, in: container)
+            try requireSingleChoiceAnswer(in: container)
         case .pickSupplies:
             try require(pointsRemaining, .pointsRemaining, in: container)
             try require(chosenSupplies, .chosenSupplies, in: container)
             try require(resupply, .resupply, in: container)
+            try requireSingleChoiceAnswer(in: container)
         case .pickDestiny:
             try require(drawings, .drawings, in: container)
             guard case .pickDestiny = answer else { try answerMismatch(in: container) }
@@ -246,7 +251,9 @@ extension QuestionPresentation: Codable {
             guard case .campaignSettings = answer else { try answerMismatch(in: container) }
         case .pickScenarioSettings:
             guard case .standaloneSettings = answer else { try answerMismatch(in: container) }
-        case .chooseOne, .dropDown, .playerWindowChooseOne, .windowChooseOne, .unsupported:
+        case .chooseOne, .dropDown, .playerWindowChooseOne, .windowChooseOne:
+            try requireSingleChoiceAnswer(in: container)
+        case .unsupported:
             break
         }
     }
@@ -286,6 +293,12 @@ extension QuestionPresentation: Codable {
                 debugDescription: "Missing required \(key.stringValue)"
             )
         }
+    }
+
+    private func requireSingleChoiceAnswer(
+        in container: KeyedDecodingContainer<CodingKeys>
+    ) throws {
+        guard case .singleChoice = answer else { try answerMismatch(in: container) }
     }
 
     private func answerMismatch(in container: KeyedDecodingContainer<CodingKeys>) throws -> Never {

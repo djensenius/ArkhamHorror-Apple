@@ -101,6 +101,15 @@ struct QuestionPresentationV2GenericTests {
             note: "answer/kind must match questionKind"
         )
         try expectPresentationMutationRejects(
+            fixture: "question-presentation-generic-invalid-info",
+            pointer: "/answer",
+            value: .object([
+                "kind": .string("amounts"),
+                "tag": .string("AmountsAnswer"),
+            ]),
+            note: "single-choice question kinds must use the single-choice Answer envelope"
+        )
+        try expectPresentationMutationRejects(
             fixture: "question-presentation-generic-choose-amounts",
             pointer: "/label",
             value: nil,

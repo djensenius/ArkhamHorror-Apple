@@ -212,9 +212,11 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
 
     func isChoiceActionable(_ choice: BasicChoice, in projection: BoardProjection) -> Bool {
         if let semanticPresentation {
-            guard let descriptor = semanticPresentation.descriptor(
-                forSourceIndex: choice.index
-            ) else { return false }
+            guard case .singleChoice = semanticPresentation.presentation.answer,
+                  let descriptor = semanticPresentation.descriptor(
+                      forSourceIndex: choice.index
+                  )
+            else { return false }
             if semanticPresentation.hasSealedOverlay {
                 return projection.isSemanticChoiceActionable(
                     descriptor,
@@ -241,10 +243,10 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
 
     var canSubmitSingleChoiceAnswer: Bool {
         guard let semanticPresentation else { return true }
-        if case .singleChoice = semanticPresentation.presentation.answer {
-            return true
+        guard case .singleChoice = semanticPresentation.presentation.answer else {
+            return false
         }
-        return false
+        return true
     }
 
     var canSubmit: Bool {
