@@ -70,6 +70,8 @@ struct QuestionPresentationV2GenericTests {
             ("/choices/1/sourceIndex", .number(.integer(3))),
             ("/choiceCount", .number(.integer(3))),
             ("/tooltip", .null),
+            ("/label", .null),
+            ("/answer/alternateTags", .null),
             ("/selection/extra", .bool(true)),
             ("/answer/extra", .bool(true)),
             ("/selection/min", nil),
@@ -100,6 +102,18 @@ struct QuestionPresentationV2GenericTests {
         )
         try expectPresentationMutationRejects(
             fixture: "question-presentation-generic-choose-amounts",
+            pointer: "/label",
+            value: nil,
+            note: "chooseAmounts label is required"
+        )
+        try expectPresentationMutationRejects(
+            fixture: "question-presentation-generic-choose-amounts",
+            pointer: "/resolveTarget",
+            value: .string("untagged"),
+            note: "resolveTarget must be tagged JSON"
+        )
+        try expectPresentationMutationRejects(
+            fixture: "question-presentation-generic-choose-amounts",
             pointer: "/amountChoices/0/extra",
             value: .bool(true),
             note: "amountChoice is closed"
@@ -121,6 +135,32 @@ struct QuestionPresentationV2GenericTests {
             pointer: "/choices/1/selectable",
             value: .bool(true),
             note: "info must be non-selectable"
+        )
+        try expectPresentationMutationRejects(
+            fixture: "question-presentation-generic-invalid-info",
+            pointer: "/choices/1/flavorText/title",
+            value: nil,
+            note: "flavorText.title is nullable but required"
+        )
+        try expectRepresentativeMutationRejects(
+            pointer: "/choices/0/key",
+            value: .string("untagged"),
+            note: "choice key must be tagged JSON"
+        )
+        try expectRepresentativeMutationRejects(
+            pointer: "/choices/0/target",
+            value: .string("untagged"),
+            note: "choice target must be tagged JSON"
+        )
+        try expectRepresentativeMutationRejects(
+            pointer: "/choices/0/step",
+            value: .string("untagged"),
+            note: "choice step must be a typed chaos-bag step"
+        )
+        try expectRepresentativeMutationRejects(
+            pointer: "/choices/29/cards/0/cardOwner",
+            value: nil,
+            note: "pileCard.cardOwner is nullable but required"
         )
         try expectRepresentativeMutationRejects(
             pointer: "/choices/18/tarotCard/extra",
@@ -146,6 +186,14 @@ struct QuestionPresentationV2GenericTests {
         try expectRepresentativeMutationDecodes(
             pointer: "/choices/29/cards/0/cardOwner",
             value: .null
+        )
+        let nullableSpecificValue = specificPresentation(
+            kind: "pickCampaignSpecific",
+            answerTag: "CampaignSpecificAnswer"
+        ).replacingOccurrences(of: #""value":{"tag":"Value"}"#, with: #""value":null"#)
+        _ = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: Data(nullableSpecificValue.utf8)
         )
     }
 

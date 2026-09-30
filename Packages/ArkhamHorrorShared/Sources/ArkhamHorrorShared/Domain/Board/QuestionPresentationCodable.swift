@@ -824,6 +824,15 @@ extension QuestionPresentation.FlavorText {
             keyedBy: CodingKeys.self,
             allowing: Array(CodingKeys.allCases)
         )
+        guard container.contains(.title) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.title,
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Missing required nullable title"
+                )
+            )
+        }
         let title: String? = if try container.decodeNil(forKey: .title) {
             nil
         } else {
@@ -854,6 +863,15 @@ extension QuestionPresentation.PileCard {
             keyedBy: CodingKeys.self,
             allowing: Array(CodingKeys.allCases)
         )
+        guard container.contains(.cardOwner) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.cardOwner,
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Missing required nullable cardOwner"
+                )
+            )
+        }
         let owner: String? = if try container.decodeNil(forKey: .cardOwner) {
             nil
         } else {
