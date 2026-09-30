@@ -572,9 +572,20 @@ extension QuestionPresentation {
                 governedSource = try rawShape.validateGovernedChoices(for: self)
                 sealedOverlay = hasSupportedGatheringSemantics
             } catch QuestionPresentationBindingError.governedChoicesMismatch {
+                guard requiresGatheringOverlayValidation else {
+                    throw QuestionPresentationBindingError
+                        .governedChoicesMismatch
+                }
                 governedSource = nil
                 sealedOverlay = false
-            } catch QuestionPresentationBindingError.rawChoiceMismatch {
+            } catch QuestionPresentationBindingError.rawChoiceMismatch(
+                let sourceIndex
+            ) {
+                guard requiresGatheringOverlayValidation else {
+                    throw QuestionPresentationBindingError.rawChoiceMismatch(
+                        sourceIndex: sourceIndex
+                    )
+                }
                 governedSource = nil
                 sealedOverlay = false
             }
