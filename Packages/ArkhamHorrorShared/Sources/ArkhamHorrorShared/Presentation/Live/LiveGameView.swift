@@ -152,11 +152,19 @@ struct LiveGameView: View {
         }
     }
 
+    private var localParticipantPlayerID: PlayerID? {
+        guard case let .participant(playerID) = model.liveGameParticipantIdentities[gameID] else {
+            return nil
+        }
+        return playerID
+    }
+
     private func board(_ projection: BoardProjection) -> some View {
         let renderedPrompt = prompt
         return BoardView(
             projection: projection,
             prompt: renderedPrompt,
+            localPlayerID: localParticipantPlayerID,
             cardCatalog: model.cardCatalog,
             onChoice: { index in
                 guard let identity = renderedPrompt?.identity else { return }

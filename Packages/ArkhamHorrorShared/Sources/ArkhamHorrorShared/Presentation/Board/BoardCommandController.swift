@@ -16,6 +16,7 @@ import Observation
 final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
+    private(set) var localPlayerID: PlayerID?
     private(set) var layout: BoardLayout
     private(set) var coordinator: FocusCoordinator
     /// Local zoom scale, clamped to ``zoomRange``. Never mutates backend topology; purely
@@ -45,12 +46,14 @@ final class BoardCommandController {
     init(
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
+        localPlayerID: PlayerID? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onRetry: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
         self.projection = projection
         self.prompt = prompt
+        self.localPlayerID = localPlayerID
         self.onChoice = onChoice
         self.onRetry = onRetry
         self.onCatalogRetry = onCatalogRetry
@@ -114,6 +117,10 @@ final class BoardCommandController {
         _ handler: @escaping (BasicChoiceCatalogRetryPresentation) -> Void
     ) {
         onCatalogRetry = handler
+    }
+
+    func updateLocalPlayerID(_ playerID: PlayerID?) {
+        localPlayerID = playerID
     }
 
     /// Reconciles this already-existing controller against the projection its owning
@@ -345,6 +352,10 @@ final class BoardCommandController {
 
     private func setZoom(_ value: CGFloat) {
         zoomScale = min(max(value, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
+    }
+
+    var fullPlayerAreaPlayerID: PlayerID? {
+        prompt?.ownerID ?? localPlayerID
     }
 
     /// The zone containing ``FocusCoordinator/currentFocus``, or `nil` if nothing is

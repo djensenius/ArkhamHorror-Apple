@@ -123,6 +123,9 @@ struct BoardInvestigatorRowView: View {
         if let fullPlayerAreaPlayerID {
             return investigator.playerID == fullPlayerAreaPlayerID
         }
+        // Fixture/gallery boards and spectator sessions may have no local participant
+        // identity; in that case keep the previous active-investigator fallback so one
+        // full player area remains visible instead of collapsing every hand/play area.
         return investigator.isActiveInvestigator
     }
 
