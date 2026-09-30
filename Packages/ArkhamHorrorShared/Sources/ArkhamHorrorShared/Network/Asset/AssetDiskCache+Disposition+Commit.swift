@@ -165,9 +165,29 @@ extension AssetDiskCache {
         return try issueAuthorityLocked(for: key, trackingOpenIssuance: false).authorityID
     }
 
+    /// The tokenless-removal counterpart to
+    /// ``resolvedMutationAuthorityLocked(for:token:)``. Token-gated
+    /// removals must still use the caller's already-issued authority
+    /// verbatim. Unconditional removals of a key with an existing durable
+    /// record need a fresh authority to fence any older token, but they do
+    /// not admit a new authority-record file: the same `<hash>.applied`
+    /// entry is overwritten and then tombstoned. A pristine key needs no
+    /// file at all because the implicit pristine tombstone already rejects
+    /// every real token.
+    func resolvedRemovalAuthorityLocked(
+        for key: AssetCacheKey,
+        token: AssetCacheService.CacheToken?,
+        currentRecord: KeyAuthorityRecord
+    ) throws -> AuthorityID? {
+        if let authorityID = token?.diskAuthorityID {
+            return authorityID
+        }
+        return try replaceIssuedAuthorityOnExistingRecordLocked(for: key, current: currentRecord)
+    }
+
     /// Durably commits a `.content` disposition for `key` -- the
     /// counterpart, for a successful publish/touch, to
-    /// ``commitRetractionLocked(for:token:destroy:)``'s two-phase
+    /// ``commitRetractionLocked(for:authorityID:destroy:)``'s two-phase
     /// removal. Both ``set(_:payload:metadata:token:)`` and
     /// ``touch(_:metadata:token:)`` resolve `authorityID` themselves (via
     /// ``resolvedMutationAuthorityLocked(for:token:)``, exactly once)
@@ -208,13 +228,11 @@ extension AssetDiskCache {
     /// unreadable to ``AssetDiskCache/get(_:)`` as a confirmed tombstone,
     /// and which self-heals the instant a future mutation for this exact
     /// key commits its own newer disposition over it.
-    @discardableResult
     func commitRetractionLocked(
         for key: AssetCacheKey,
-        token: AssetCacheService.CacheToken?,
+        authorityID: AuthorityID,
         destroy: () throws -> Void
-    ) throws -> AuthorityID {
-        let authorityID = try resolvedMutationAuthorityLocked(for: key, token: token)
+    ) throws {
         try commitDispositionLocked(
             KeyDisposition(authorityID: authorityID, kind: .retiring, contentHash: nil),
             for: key,
@@ -226,7 +244,6 @@ extension AssetDiskCache {
             KeyDisposition(authorityID: authorityID, kind: .tombstone, contentHash: nil),
             for: key
         )
-        return authorityID
     }
 
     /// Returns this cache's lazily-created session owner. Called only

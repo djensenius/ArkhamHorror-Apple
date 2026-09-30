@@ -161,6 +161,41 @@ extension AssetDiskCacheTests {
         }
     }
 
+    @Test("removeIfApplied unlinks the metadata-named payload without listing the directory")
+    func removeIfAppliedUnlinksMetadataPayloadWithoutDirectoryListing() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01006")
+            let payload = Data([6, 6, 6])
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: payload
+            )
+            let issuance = try await cache.beginIssuance(for: cacheKey)
+            let publishToken = token(from: issuance)
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: publishedMetadata(
+                    for: cacheKey,
+                    payload: payload,
+                    issuance: issuance
+                ),
+                token: publishToken
+            )
+            let callsBeforeRetraction = await cache.directoryAccess.listNamesCallCount
+
+            #expect(try await cache.removeIfApplied(cacheKey, token: publishToken) == .applied)
+
+            #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
+            let callsAfterRetraction = await cache.directoryAccess.listNamesCallCount
+            #expect(callsAfterRetraction == callsBeforeRetraction)
+            let record = try await cache.currentKeyRecord(for: cacheKey)
+            #expect(record.disposition.kind == .tombstone)
+        }
+    }
+
     @Test(
         """
         A crash (simulated here as a failed physical deletion) between removeIfApplied's own \
@@ -288,22 +323,22 @@ extension AssetDiskCacheTests {
             // physical deletion attempt) is ever invoked.
             //
             // Note this call passes no `token`, so `remove(_:token:)`'s
-            // own unconditional branch must durably reserve a fresh
-            // identifier of its own first (see
-            // ``AssetDiskCache/resolvedMutationAuthorityLocked(for:token:)``) --
+            // own unconditional branch first overwrites this existing
+            // authority record with a fresh removal identifier (see
+            // ``AssetDiskCache/resolvedRemovalAuthorityLocked(for:token:currentRecord:)``) --
             // a *separate* commit that leaves `disposition` itself
             // completely untouched (still `.content`) -- strictly before
             // ever attempting the `.retiring` disposition transition this
             // method's own doc comment describes. That earlier identifier-
-            // reservation commit is exactly what this fault intercepts:
-            // primary fails on that very first post-fault write, so the
+            // replacement commit is exactly what this fault intercepts:
+            // it fails on that very first post-fault write, so the
             // `.retiring` transition itself is never even attempted, and
-            // the reconciled disposition (mirror wins by revision) is
-            // genuinely, correctly still `.content` -- unlike this
-            // suite's token-gated sibling tests (`AssetCacheService*NotDurableTests.swift`),
-            // whose already-reserved token skips straight to the
-            // `.retiring` commit itself, which is what those tests'
-            // fault instead intercepts.
+            // the disposition is genuinely, correctly still `.content` --
+            // unlike this suite's token-gated sibling tests
+            // (`AssetCacheService*NotDurableTests.swift`), whose
+            // already-reserved token skips straight to the `.retiring`
+            // commit itself, which is what those tests' fault instead
+            // intercepts.
             await cache.directoryAccess.installFaultInjection(failSuffixes: [".applied"])
             await #expect(throws: AssetError.self) {
                 try await cache.remove(cacheKey)

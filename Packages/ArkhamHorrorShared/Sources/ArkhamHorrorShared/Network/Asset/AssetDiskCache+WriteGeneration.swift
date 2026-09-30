@@ -157,8 +157,8 @@ extension AssetDiskCache {
     ///    was cancelled.
     ///
     /// **Compares `key`'s full durable disposition, not merely its
-    /// identifier.** ``commitRetractionLocked(for:token:destroy:)``
-    /// durably commits `.retiring`/`.tombstone` under *exactly* the same
+    /// identifier.** ``beginRetraction(_:token:)``/``completeRetraction(_:token:)``
+    /// durably commit `.retiring`/`.tombstone` under *exactly* the same
     /// identifier the content it is retracting was published under, so a
     /// stale cached entry whose historical stamp equals that unchanged
     /// identifier would otherwise still pass even though the content it

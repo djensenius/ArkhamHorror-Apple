@@ -34,13 +34,17 @@ struct AssetDiskCacheAuthorityBudgetTests {
         try await body(root)
     }
 
-    func limits(diskBudgetBytes: Int = 1_000_000) -> AssetCacheLimits {
+    func limits(
+        diskBudgetBytes: Int = 1_000_000,
+        maxAuthorityRecordCount: Int = 20000
+    ) -> AssetCacheLimits {
         AssetCacheLimits(
             maxEncodedBytes: 1_000_000,
             maxDimension: 8192,
             maxPixelCount: 32_000_000,
             memoryBudgetBytes: 1_000_000,
-            diskBudgetBytes: diskBudgetBytes
+            diskBudgetBytes: diskBudgetBytes,
+            maxAuthorityRecordCount: maxAuthorityRecordCount
         )
     }
 
@@ -177,6 +181,36 @@ struct AssetDiskCacheAuthorityBudgetTests {
             await #expect(throws: AssetError.self) {
                 _ = try await restarted.beginIssuance(for: key("02002"))
             }
+        }
+    }
+
+    @Test(
+        """
+        Tokenless remove remains allowed when authority-record admission is blocked by live \
+        open records, because it tombstones an existing record instead of admitting another one.
+        """
+    )
+    func tokenlessRemoveSucceedsWhileAuthorityAdmissionIsBlocked() async throws {
+        try await withScratchDirectory { directory in
+            let limits = limits(maxAuthorityRecordCount: 4)
+            #expect(limits.highWaterMarkAuthorityRecordCount == 3)
+            let cache = try AssetDiskCache(directory: directory, limits: limits)
+            var issuedKeys: [AssetCacheKey] = []
+            for index in 0 ..< 4 {
+                let cacheKey = try key(String(format: "%05d", 4100 + index))
+                _ = try await cache.beginIssuance(for: cacheKey)
+                issuedKeys.append(cacheKey)
+            }
+
+            await #expect(throws: AssetError.self) {
+                _ = try await cache.beginIssuance(for: key("04150"))
+            }
+
+            let removedKey = try #require(issuedKeys.first)
+            #expect(try await cache.remove(removedKey) == .applied)
+            let record = try await cache.currentKeyRecord(for: removedKey)
+            #expect(record.disposition.kind == .tombstone)
+            #expect(record.openIssuanceOwnerID == nil)
         }
     }
 

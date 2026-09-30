@@ -34,6 +34,51 @@ extension AssetDiskCache {
         }
     }
 
+    /// Best-effort removal for payload generations whose content hashes
+    /// are already known from this key's trusted authority record or its
+    /// own validated metadata sidecar. Unlike
+    /// ``cleanupSupersededPayloads(forKeyHash:keeping:)``, this never
+    /// enumerates the cache directory: it is for single-key removal paths
+    /// that only need to unlink deterministic, already-derived names in
+    /// the common case. Any older orphan generation whose hash is no
+    /// longer discoverable from those O(1) inputs remains covered by
+    /// ``recoverOrphansIfNeeded(forceRetry:)`` and
+    /// ``sweepOrphanFiles(names:referencedPayloadFilenames:)``.
+    func cleanupKnownPayloads(forKeyHash keyHash: String, contentHashes: [String?]) {
+        var removed: Set<String> = []
+        for contentHash in contentHashes {
+            guard let contentHash, Self.isValidContentHash(contentHash) else { continue }
+            let name = payloadFilename(keyHash: keyHash, contentHash: contentHash)
+            guard removed.insert(name).inserted else { continue }
+            _ = try? directoryAccess.remove(name: name)
+        }
+    }
+
+    /// Best-effort extraction of the payload hash named by `key`'s current
+    /// metadata sidecar. A miss, unreadable sidecar, decode failure, wrong
+    /// key, schema mismatch, or invalid hash all collapse to `nil`: this
+    /// helper is only an O(1) physical-cleanup optimization for removal,
+    /// never an authority or correctness proof.
+    func metadataPayloadHash(for key: AssetCacheKey) -> String? {
+        let metadataName = metadataFilename(for: key)
+        guard
+            let data = try? directoryAccess.read(
+                name: metadataName,
+                maxBytes: SecureCacheDirectory.maxMetadataBytes
+            ),
+            let metadata = try? JSONDecoder.assetCache().decode(
+                AssetCacheMetadata.self,
+                from: data
+            ),
+            metadata.schemaVersion == AssetCacheMetadata.currentSchemaVersion,
+            metadata.cacheKeyHex == key.digestHex,
+            Self.isValidContentHash(metadata.payloadSHA256Hex)
+        else {
+            return nil
+        }
+        return metadata.payloadSHA256Hex
+    }
+
     /// Runs once per cache instance lifetime in ordinary steady-state
     /// operation (covering the common "cache created once at app launch"
     /// case, which is what makes this a real restart-recovery pass rather

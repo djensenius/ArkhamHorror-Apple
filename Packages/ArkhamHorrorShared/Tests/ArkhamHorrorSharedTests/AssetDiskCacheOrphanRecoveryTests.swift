@@ -57,4 +57,143 @@ extension AssetDiskCacheTests {
             #expect(!FileManager.default.fileExists(atPath: tempURL.path))
         }
     }
+
+    @Test("Tokenless remove of a pristine key creates no authority record")
+    func tokenlessRemoveOfPristineKeyCreatesNoAuthorityRecord() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            let recordName = await cache.authorityRecordFilename(for: cacheKey)
+
+            #expect(try await cache.remove(cacheKey) == .applied)
+
+            #expect(
+                !FileManager.default.fileExists(
+                    atPath: directory.appendingPathComponent(recordName).path
+                )
+            )
+            let record = try await cache.currentKeyRecord(for: cacheKey)
+            #expect(record == AssetDiskCache.KeyAuthorityRecord.pristine)
+        }
+    }
+
+    @Test("Removing a key unlinks its deterministic payload without listing the directory")
+    func removeUnlinksKnownPayloadWithoutDirectoryListing() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01001")
+            let payload = Data([1, 2, 3])
+            let payloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: payload
+            )
+            let metadataURL = directory.appendingPathComponent("\(cacheKey.digestHex).meta.json")
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: metadata(for: cacheKey, payload: payload)
+            )
+            let callsBeforeRemove = await cache.directoryAccess.listNamesCallCount
+
+            try await cache.remove(cacheKey)
+
+            #expect(!FileManager.default.fileExists(atPath: metadataURL.path))
+            #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
+            let callsAfterRemove = await cache.directoryAccess.listNamesCallCount
+            #expect(callsAfterRemove == callsBeforeRemove)
+        }
+    }
+
+    @Test("Payload orphans no longer listed by remove are swept by the next set")
+    func removeDefersUndiscoverablePayloadOrphansToNextSetSweep() async throws {
+        try await withScratchDirectory { directory in
+            let cacheKey = try key("01001")
+            let currentPayload = Data([1, 2, 3])
+            let orphanPayload = Data([9, 9, 9, 9])
+            let currentPayloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: currentPayload
+            )
+            let orphanPayloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: orphanPayload
+            )
+
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            try await cache.set(
+                cacheKey,
+                payload: currentPayload,
+                metadata: metadata(for: cacheKey, payload: currentPayload)
+            )
+            // Simulate a crash-left generation for the same key after this
+            // instance's set/eviction pass has already completed. Remove
+            // will not enumerate the directory to discover this name.
+            try orphanPayload.write(to: orphanPayloadURL)
+
+            try await cache.remove(cacheKey)
+
+            #expect(!FileManager.default.fileExists(atPath: currentPayloadURL.path))
+            #expect(
+                FileManager.default.fileExists(atPath: orphanPayloadURL.path),
+                "Remove only unlinks hashes it can derive in O(1); orphan sweep owns strays"
+            )
+
+            let nextKey = try key("01003")
+            let nextPayload = Data([4, 4, 4])
+            try await cache.set(
+                nextKey,
+                payload: nextPayload,
+                metadata: metadata(for: nextKey, payload: nextPayload)
+            )
+            #expect(!FileManager.default.fileExists(atPath: orphanPayloadURL.path))
+        }
+    }
+
+    @Test("Payload orphans no longer listed by remove are swept by the next startup recovery")
+    func removeDefersUndiscoverablePayloadOrphansToStartupRecovery() async throws {
+        try await withScratchDirectory { directory in
+            let cacheKey = try key("01001")
+            let currentPayload = Data([1, 2, 3])
+            let orphanPayload = Data([9, 9, 9, 9])
+            let currentPayloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: currentPayload
+            )
+            let orphanPayloadURL = payloadFileURL(
+                directory: directory,
+                cacheKey: cacheKey,
+                payload: orphanPayload
+            )
+
+            do {
+                let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+                try await cache.set(
+                    cacheKey,
+                    payload: currentPayload,
+                    metadata: metadata(for: cacheKey, payload: currentPayload)
+                )
+                // Simulate a crash-left generation for the same key after this
+                // instance's set/eviction pass has already completed. A remove
+                // no longer enumerates the directory just to discover this name.
+                try orphanPayload.write(to: orphanPayloadURL)
+
+                try await cache.remove(cacheKey)
+
+                #expect(!FileManager.default.fileExists(atPath: currentPayloadURL.path))
+                #expect(
+                    FileManager.default.fileExists(atPath: orphanPayloadURL.path),
+                    "Remove only unlinks hashes it can derive in O(1); orphan sweep owns strays"
+                )
+            }
+
+            let restarted = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let unrelatedKey = try key("01002")
+            _ = try await restarted.get(unrelatedKey)
+            #expect(!FileManager.default.fileExists(atPath: orphanPayloadURL.path))
+        }
+    }
 }

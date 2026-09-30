@@ -315,8 +315,8 @@ extension AssetCacheServiceTests {
         (registered via setInFlightRevalidation(_:for:), not merely an authority window) \
         never prunes any genuinely busy key. The small case is padded to capacity before \
         churn so it exercises the same pruning path as the large case. The directory \
-        observations document the old timing root cause: every churn invalidate performs \
-        a full cache-directory listing, so large setup leaves many more entries to scan.
+        observations guard the old timing root cause: churn invalidates must stay at zero \
+        cache-directory listings so larger setup cannot make each touch slower.
         """
     )
     func manyInFlightRevalidationsStayBusyDuringChurn() async throws {
@@ -333,14 +333,46 @@ extension AssetCacheServiceTests {
 
         #expect(smallObservation.trackedBusyKeyCount == smallObservation.busyKeyCount)
         #expect(largeObservation.trackedBusyKeyCount == largeObservation.busyKeyCount)
-        let expectedListNamesCalls = 300 * 2
-        // Each churn invalidate currently performs two full directory listings:
-        // the authority-issuance disk-budget proof plus cleanupSupersededPayloads.
+        let expectedListNamesCalls = 0
+        // Churn invalidates no longer perform directory-wide listings: a tokenless
+        // remove of a pristine key records the implicit pristine tombstone without
+        // admitting an authority record, and physical cleanup only unlinks
+        // deterministic per-key names.
         #expect(smallObservation.listNamesCallsDuringChurn == expectedListNamesCalls)
         #expect(largeObservation.listNamesCallsDuringChurn == expectedListNamesCalls)
         #expect(
             largeObservation.directoryEntryCountBeforeChurn
                 > smallObservation.directoryEntryCountBeforeChurn
         )
+    }
+
+    @Test(
+        """
+        Tokenless invalidate churn for keys that already have durable authority records still \
+        performs zero cache-directory listings: the record-exists removal path overwrites the \
+        existing record instead of running the authority-admission budget proof.
+        """
+    )
+    func invalidateChurnForExistingAuthorityRecordsDoesNotListDirectory() async throws {
+        try await withService { service, _ in
+            let touchCount = 300
+            var churnKeys: [AssetCacheKey] = []
+            for index in 0 ..< touchCount {
+                let rawCode = String(format: "8%05d", index)
+                let cacheKey = try distinctCacheKey(rawCode)
+                _ = try await service.diskCache.beginIssuance(for: cacheKey)
+                churnKeys.append(cacheKey)
+            }
+
+            let directoryAccess = await service.diskCache.directoryAccess
+            let listNamesCallsBeforeChurn = directoryAccess.listNamesCallCount
+            for cacheKey in churnKeys {
+                _ = await service.issueToken(for: cacheKey)
+                try await service.invalidate(cacheKey)
+            }
+            let listNamesCallsDuringChurn = directoryAccess.listNamesCallCount
+                - listNamesCallsBeforeChurn
+            #expect(listNamesCallsDuringChurn == 0)
+        }
     }
 }

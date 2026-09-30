@@ -94,8 +94,8 @@ extension AssetDiskCache {
 
     /// Phase 2 of the two-phase retraction ``removeIfApplied(_:token:)``
     /// composes: performs the actual (best-effort once this transition
-    /// itself durably lands — see ``AssetDiskCache/commitRetractionLocked(for:token:destroy:)``'s
-    /// own doc comment) physical deletion and commits the final
+    /// itself durably lands — see ``AssetDiskCache/remove(_:token:)``'s
+    /// matching physical-cleanup contract) physical deletion and commits the final
     /// `.tombstone` disposition — but **only** if this
     /// exact identifier's disposition is still exactly `.retiring`
     /// (``beginRetraction(_:token:)`` already durably committed it, and
@@ -141,10 +141,14 @@ extension AssetDiskCache {
         guard disposition.kind == .retiring, disposition.authorityID == authorityID else {
             return false
         }
+        let metadataPayloadHash = metadataPayloadHash(for: key)
         let metadataWasPresent = try secureDirectory.remove(name: metadataFilename(for: key))
-        try secureDirectory.fsyncRootDirectory()
-        if metadataWasPresent {
-            cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
+        cleanupKnownPayloads(
+            forKeyHash: key.digestHex,
+            contentHashes: [metadataPayloadHash]
+        )
+        if metadataWasPresent || metadataPayloadHash != nil {
+            try secureDirectory.fsyncRootDirectory()
         }
         try commitDispositionLocked(
             KeyDisposition(authorityID: authorityID, kind: .tombstone, contentHash: nil),
