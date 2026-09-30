@@ -43,6 +43,8 @@ struct AppModelCardCatalogTests {
     }
 
     @Test("Old-profile card catalog completion cannot clear or overwrite a newer load")
+    // Exercises both the new profile's successful load and the deliberately-late stale task.
+    // swiftlint:disable:next function_body_length
     func profileSwitchMidLoadIgnoresOldCompletion() async throws {
         let transport = GatedCardCatalogTransport()
         let model = await model(
