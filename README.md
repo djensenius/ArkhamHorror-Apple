@@ -107,8 +107,8 @@ hashes remain unchanged at Q33, and exercises that same strict prompt path.
 ### Backend replay authority
 
 As of Friday, September 18, 2026, this repository is pinned to backend
-contract commit `612751d047888329698bab5fc035a0d5e72c0424` from
-`djensenius/ArkhamHorror#95`, at contract revision `0.1.44`. That revision adds
+contract commit `a615bdc70ee3e23e3f0e7f6ec48eda47bbfba054` from
+`djensenius/ArkhamHorror#99`, at contract revision `0.1.46`. That revision adds
 the exact treachery-sourced forced-ability semantics used by Cover Up at Q68,
 keeps the locale catalog at revision `1.9178faf9112db6889053977908c1943b`,
 and expands the exact negative-regression inventory to 629 cases. The
@@ -149,7 +149,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.44",
+       "contractSchemaRevision": "0.1.46",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -210,7 +210,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend revision above:
 
 1. Confirm `ContractPin.current` is
-   `612751d047888329698bab5fc035a0d5e72c0424` / `0.1.44`, then build the
+   `a615bdc70ee3e23e3f0e7f6ec48eda47bbfba054` / `0.1.46`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can
