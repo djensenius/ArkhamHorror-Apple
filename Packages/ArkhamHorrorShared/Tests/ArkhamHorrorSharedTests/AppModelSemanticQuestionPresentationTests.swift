@@ -303,6 +303,47 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData == [expected])
     }
 
+    @Test(
+        "Unsupported generic answer families require an app update through AppModel",
+        arguments: [
+            (
+                raw: "question-generic-choose-amounts",
+                presentation: "question-presentation-generic-choose-amounts"
+            ),
+            (
+                raw: "question-generic-choose-deck",
+                presentation: "question-presentation-generic-choose-deck"
+            ),
+        ]
+    )
+    func unsupportedGenericFamiliesAreUpdateRequiredInAppModel(
+        raw: String,
+        presentation: String
+    ) async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: raw,
+            presentationFixture: presentation,
+            questionVersion: 204
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameState(for: gameID).lastKnownProjection)
+        #expect(prompt.readOnlyReason == .updateRequired)
+        #expect(!prompt.isRenderableQuestion)
+        #expect(!prompt.canSubmit)
+        #expect(prompt.choices.allSatisfy { !prompt.isChoiceActionable($0, in: projection) })
+    }
+
     @Test("Gathering seal drift outside 34-42 falls back to generic rendering")
     func gatheringSealDriftOutsideRecordedSequenceFallsBack() throws {
         var presentationJSON = try fixtureJSON("question-presentation-gathering-act-objective")

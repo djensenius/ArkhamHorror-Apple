@@ -103,19 +103,6 @@ struct QuestionPresentationV2GenericTests {
         #expect(chooseN.canSubmitSingleChoiceAnswer)
     }
 
-    @Test("Unsupported generic answer families require an app update in prompt presentation")
-    func unsupportedGenericFamiliesAreUpdateRequired() throws {
-        for fixtureName in [
-            "question-presentation-generic-choose-amounts",
-            "question-presentation-generic-choose-deck",
-        ] {
-            let prompt = try prompt(fixtureName: fixtureName)
-            #expect(prompt.readOnlyReason == .updateRequired, "\(fixtureName)")
-            #expect(!prompt.isRenderableQuestion, "\(fixtureName)")
-            #expect(!prompt.canSubmit, "\(fixtureName)")
-        }
-    }
-
     @Test("Generic rendering still respects selectable on non-info choices")
     func genericChoiceListRespectsSelectableForEveryKind() throws {
         let projection = BoardProjectionBuilder.makeProjection(
