@@ -56,6 +56,26 @@ struct BoardCardAccessibilityTests {
         #expect(!summary.contains("Engaged with c01002"))
     }
 
+    @Test("Threat treachery accessibility does not duplicate clue tokens")
+    func threatTreacheryAccessibilityDoesNotDuplicateClues() {
+        let treachery = BoardThreatTreacheryNode(
+            id: BoardTestFixtures.treacheryID("00000000-0000-0000-0000-000000000711"),
+            cardCode: BoardTestFixtures.cardCode("c01007"),
+            displayName: "Card c01007",
+            ownerID: playerID,
+            clueCount: 2,
+            tokenCounts: [
+                BoardTokenSummary(token: "Clue", count: 2),
+                BoardTokenSummary(token: "Doom", count: 1),
+            ]
+        )
+        let summary = BoardAccessibility.summary(threatTreachery: treachery)
+
+        #expect(summary.contains("Clues 2"))
+        #expect(!summary.contains("Clue 2"))
+        #expect(summary.contains("Doom 1"))
+    }
+
     @Test("Player card badges do not duplicate use-token badges")
     func playerCardBadgesDoNotDuplicateUses() {
         let card = BoardPlayerCardNode(

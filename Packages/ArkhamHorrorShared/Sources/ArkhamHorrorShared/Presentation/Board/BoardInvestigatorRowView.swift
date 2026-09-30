@@ -8,6 +8,18 @@ enum BoardInvestigatorDisplayNames {
     }
 }
 
+enum BoardPlayerAreaVisibility {
+    static func shouldShowFullArea(
+        for investigator: BoardInvestigatorNode,
+        fullPlayerAreaPlayerID: PlayerID?
+    ) -> Bool {
+        if let fullPlayerAreaPlayerID {
+            return investigator.playerID == fullPlayerAreaPlayerID
+        }
+        return investigator.isActiveInvestigator
+    }
+}
+
 /// The investigator row — the board's single "board.investigators" zone, ordered by
 /// `PublicGame.playerOrder`.
 struct BoardInvestigatorRowView: View {
@@ -128,13 +140,13 @@ struct BoardInvestigatorRowView: View {
     }
 
     private func shouldShowFullArea(for investigator: BoardInvestigatorNode) -> Bool {
-        if let fullPlayerAreaPlayerID {
-            return investigator.playerID == fullPlayerAreaPlayerID
-        }
         // Fixture/gallery boards and spectator sessions may have no local participant
         // identity; in that case keep the previous active-investigator fallback so one
         // full player area remains visible instead of collapsing every hand/play area.
-        return investigator.isActiveInvestigator
+        BoardPlayerAreaVisibility.shouldShowFullArea(
+            for: investigator,
+            fullPlayerAreaPlayerID: fullPlayerAreaPlayerID
+        )
     }
 
     private func compactPlayerArea(_ investigator: BoardInvestigatorNode) -> some View {

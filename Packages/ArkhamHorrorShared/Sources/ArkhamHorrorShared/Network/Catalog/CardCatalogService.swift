@@ -14,10 +14,10 @@ struct CardCatalogService: Sendable {
     let transport: any LocaleCatalogTransporting
     /// GET /arkham/cards?cardPool=both is assembled by
     /// backend/arkham-api/library/Api/Handler/Arkham/Cards.hs from every built-in
-    /// CardDef map. The sync backend currently has about 5.6k card modules; multiplying
-    /// by the representative compact CardDef fixture (~262 bytes) estimates ~1.5 MB
-    /// before JSON array punctuation, leaving the 8 MB per-request cap comfortably above
-    /// the expected response while still bounding accidental catalog bloat.
+    /// CardDef map. The sync backend currently has about 5.6k card modules; at a
+    /// realistic 0.5-1 KB per encoded CardDef, the response should be about 2.8-5.6 MB,
+    /// leaving the 8 MB per-request cap above the expected response while still bounding
+    /// accidental catalog bloat.
     private static let maxBytes = 8 * 1024 * 1024
 
     init(transport: any LocaleCatalogTransporting = URLSessionLocaleCatalogTransport()) {

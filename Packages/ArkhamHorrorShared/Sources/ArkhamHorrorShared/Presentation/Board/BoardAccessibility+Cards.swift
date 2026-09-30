@@ -62,8 +62,9 @@ extension BoardAccessibility {
         if treachery.clueCount > 0 {
             parts.append("Clues \(treachery.clueCount)")
         }
-        if !treachery.tokenCounts.isEmpty {
-            parts.append(tokenCountsSummary(treachery.tokenCounts))
+        let unrepresentedTokens = treachery.tokenCounts.filter { $0.token != "Clue" }
+        if !unrepresentedTokens.isEmpty {
+            parts.append(tokenCountsSummary(unrepresentedTokens))
         }
         return parts.joined(separator: ". ")
     }
