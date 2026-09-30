@@ -187,7 +187,7 @@ extension AssetDiskCache {
 
     /// Durably commits a `.content` disposition for `key` -- the
     /// counterpart, for a successful publish/touch, to
-    /// ``commitRetractionLocked(for:token:destroy:)``'s two-phase
+    /// ``commitRetractionLocked(for:authorityID:destroy:)``'s two-phase
     /// removal. Both ``set(_:payload:metadata:token:)`` and
     /// ``touch(_:metadata:token:)`` resolve `authorityID` themselves (via
     /// ``resolvedMutationAuthorityLocked(for:token:)``, exactly once)
@@ -228,17 +228,6 @@ extension AssetDiskCache {
     /// unreadable to ``AssetDiskCache/get(_:)`` as a confirmed tombstone,
     /// and which self-heals the instant a future mutation for this exact
     /// key commits its own newer disposition over it.
-    @discardableResult
-    func commitRetractionLocked(
-        for key: AssetCacheKey,
-        token: AssetCacheService.CacheToken?,
-        destroy: () throws -> Void
-    ) throws -> AuthorityID {
-        let authorityID = try resolvedMutationAuthorityLocked(for: key, token: token)
-        try commitRetractionLocked(for: key, authorityID: authorityID, destroy: destroy)
-        return authorityID
-    }
-
     func commitRetractionLocked(
         for key: AssetCacheKey,
         authorityID: AuthorityID,

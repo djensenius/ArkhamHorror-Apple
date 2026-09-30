@@ -85,7 +85,7 @@ extension AssetDiskCache {
         // or a cancellation-triggered retraction, whose own destructive
         // deletion step failed or has simply not yet run — physical
         // cleanup is deliberately best-effort once the disposition itself
-        // is durable; see ``commitRetractionLocked(for:token:destroy:)``'s
+        // is durable; see ``commitRetractionLocked(for:authorityID:destroy:)``'s
         // own doc comment), or even after a *different*, newer authority's
         // own publication has since landed for this exact key. Without
         // this check, any reader that races ahead of best-effort physical

@@ -374,7 +374,7 @@ extension AssetCacheServiceTests {
             try await publishAsset(key, body: originalBody, via: layers)
 
             // Fails the disposition file's own temp write (`.applied.tmp`)
-            // -- the first of `commitRetractionLocked(for:token:destroy:)`'s
+            // -- the first of `commitRetractionLocked(for:authorityID:destroy:)`'s
             // two durable commits, attempted before any destructive
             // deletion is even tried -- so nothing about this key's
             // durable disposition can be confirmed changed at all. This
