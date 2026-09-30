@@ -22,7 +22,7 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    // swiftlint:disable:next function_body_length
     func semanticUnavailableAnnouncement(
         for descriptor: QuestionPresentation.Choice,
         labelResolution: BasicChoiceLabelResolution?

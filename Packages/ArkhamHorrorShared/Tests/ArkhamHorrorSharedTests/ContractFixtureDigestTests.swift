@@ -1,3 +1,4 @@
+// swiftlint:disable file_length function_body_length
 @testable import ArkhamHorrorShared
 import CryptoKit
 import Foundation

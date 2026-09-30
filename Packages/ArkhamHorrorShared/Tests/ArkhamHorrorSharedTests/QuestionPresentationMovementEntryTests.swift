@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length function_body_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing

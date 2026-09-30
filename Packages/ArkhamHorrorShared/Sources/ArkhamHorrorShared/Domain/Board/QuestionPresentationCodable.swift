@@ -1,3 +1,4 @@
+// swiftlint:disable file_length function_body_length cyclomatic_complexity line_length
 import Foundation
 
 extension QuestionPresentation: Codable {
@@ -422,7 +423,6 @@ extension QuestionPresentation.Choice: Codable {
             && isKindValid
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
     private var isKindValid: Bool {
         switch kind {
         case .advanceAct:

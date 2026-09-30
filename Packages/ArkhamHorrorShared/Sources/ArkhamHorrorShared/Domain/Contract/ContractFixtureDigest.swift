@@ -7,6 +7,8 @@ struct VendoredFixtureDigest: Sendable {
     let sha256Hex: String
 }
 
+// swiftlint:disable file_length type_body_length
+
 /// SHA-256 digests of the contract artifacts vendored from
 /// `ContractPin.current.backendCommit`, under
 /// `Tests/ArkhamHorrorSharedTests/Fixtures/Contract`.

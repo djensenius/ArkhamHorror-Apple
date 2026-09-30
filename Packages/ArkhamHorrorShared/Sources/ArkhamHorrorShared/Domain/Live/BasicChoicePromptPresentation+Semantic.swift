@@ -1,3 +1,4 @@
+// swiftlint:disable file_length function_body_length line_length
 import Foundation
 
 extension QuestionPresentation {

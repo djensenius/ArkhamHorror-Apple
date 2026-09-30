@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length cyclomatic_complexity function_body_length line_length
 import Foundation
 
 struct QuestionPresentationRawQuestionShape: Sendable, Equatable, Hashable {

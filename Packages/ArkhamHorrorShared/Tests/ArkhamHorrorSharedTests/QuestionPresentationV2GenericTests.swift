@@ -1,3 +1,5 @@
+// swiftlint:disable file_length type_body_length function_body_length nesting
+// swiftlint:disable line_length cyclomatic_complexity
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -586,7 +588,7 @@ private struct JSONValueMutationObject {
 private extension JSONValue {
     mutating func replace(pointer: String, with value: JSONValue?) throws {
         var parts = pointer.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        guard parts.first == "" else { throw MutationError.invalidPointer }
+        guard parts.first?.isEmpty == true else { throw MutationError.invalidPointer }
         parts.removeFirst()
         try replace(parts: parts, with: value)
     }

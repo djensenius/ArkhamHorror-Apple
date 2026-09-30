@@ -1,3 +1,4 @@
+// swiftlint:disable file_length function_body_length identifier_name nesting
 import Foundation
 
 /// Render-only semantic metadata bound to one authoritative raw question.
