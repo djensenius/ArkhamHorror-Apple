@@ -12,15 +12,19 @@ struct CardCatalogSnapshot: Sendable, Equatable {
 
 struct CardCatalogService: Sendable {
     let transport: any LocaleCatalogTransporting
+    // GET /arkham/cards?cardPool=both is assembled by
+    // backend/arkham-api/library/Api/Handler/Arkham/Cards.hs from every built-in
+    // CardDef map. The sync backend currently has about 5.6k card modules; multiplying
+    // by the representative compact CardDef fixture (~262 bytes) estimates ~1.5 MB
+    // before JSON array punctuation, leaving the 8 MB per-request cap comfortably above
+    // the expected response while still bounding accidental catalog bloat.
     private static let maxBytes = 8 * 1024 * 1024
 
     init(transport: any LocaleCatalogTransporting = URLSessionLocaleCatalogTransport()) {
         self.transport = transport
     }
 
-    func load(
-        on profile: ServerProfile
-    ) async -> Result<CardCatalogSnapshot, LocaleCatalogFailure> {
+    func load(on profile: ServerProfile) async throws -> CardCatalogSnapshot {
         do {
             let builtIn = try await fetch(path: "/arkham/cards", queryItems: [
                 URLQueryItem(name: "cardPool", value: "both"),
@@ -30,13 +34,14 @@ struct CardCatalogService: Sendable {
             for card in builtIn + homebrew {
                 namesByCode[card.cardCode] = card.name
             }
-            return .success(CardCatalogSnapshot(namesByCode: namesByCode))
+            return CardCatalogSnapshot(namesByCode: namesByCode)
         } catch let failure as LocaleCatalogFailure {
-            return .failure(failure)
-        } catch is CancellationError {
-            return .failure(.transportFailure)
+            throw failure
+        } catch let cancellation as CancellationError {
+            throw cancellation
         } catch {
-            return .failure(.malformedJSON)
+            try Task.checkCancellation()
+            throw LocaleCatalogFailure.malformedJSON
         }
     }
 

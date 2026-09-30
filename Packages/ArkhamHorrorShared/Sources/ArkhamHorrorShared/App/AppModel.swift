@@ -140,6 +140,7 @@ final class AppModel {
     var cardCatalogFailure: LocaleCatalogFailure?
     var isCardCatalogLoading = false
     @ObservationIgnored var cardCatalogTask: Task<Void, Never>?
+    @ObservationIgnored var cardCatalogGeneration = 0
     var storyAssetSource: AssetSourceNamespace?
     var storyAssetSourceFailure: LocaleCatalogFailure?
 
