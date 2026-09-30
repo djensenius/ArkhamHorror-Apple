@@ -118,7 +118,7 @@ struct MovementEntryRuntimeIdentityTests {
             .gatheringHallwayMovement(locationID: hallwayID),
         ]
         let presentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 39,
             questionKind: .playerWindowChooseOne,
             choiceCount: choices.count,

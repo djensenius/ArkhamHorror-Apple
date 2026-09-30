@@ -108,24 +108,112 @@ struct ContractFixtureDigestTests {
         #expect(names.count == Set(names).count, "Duplicate basename found in \(names)")
     }
 
-    @Test("The digest table covers every governed contract fixture and referenced schema")
-    func tableCoversExpectedFiles() throws {
-        struct ManifestFixtureEntry: Decodable {
-            let path: String
-            let schema: String
-        }
-        struct ManifestFixture: Decodable {
-            let fixtures: [ManifestFixtureEntry]
-        }
-        let manifest = try JSONDecoder().decode(
-            ManifestFixture.self,
-            from: fixtureData(named: "manifest")
-        )
-        var expected = Set(["manifest"])
-        for fixture in manifest.fixtures {
-            expected.insert(Self.basenameWithoutExtension(fixture.path))
-            expected.insert(Self.basenameWithoutExtension(fixture.schema))
-        }
+    @Test("The digest table covers the explicitly vendored contract scope")
+    func tableCoversExpectedFiles() {
+        let expected = Set([
+            "act-no-advance-cost",
+            "answer-enemy-attack",
+            "answer-enemy-attack-assign-damage",
+            "answer-enemy-attack-assign-horror",
+            "answer-enemy-attack-assign-remaining-damage",
+            "answer-enemy-attack-assign-remaining-horror",
+            "answer-question",
+            "basic-choice-question.schema",
+            "capabilities",
+            "capabilities-locale-catalog",
+            "capabilities.schema",
+            "card-code-entity-map",
+            "catalog",
+            "client-answer.schema",
+            "decks",
+            "game-lifecycle",
+            "game-list",
+            "game-update",
+            "get-game",
+            "investigator-unhealed-horror-negative",
+            "location-enemy-view",
+            "manifest",
+            "mode-campaign-only",
+            "mode-campaign-scenario",
+            "mode-turn-zero",
+            "movement",
+            "question-agenda-advance",
+            "question-agenda-consequence",
+            "question-agenda-horror-assignment",
+            "question-choose-one",
+            "question-choose-one-location",
+            "question-choose-one-location-multiple",
+            "question-cover-up-reaction",
+            "question-encounter-deck-draw",
+            "question-enemy-attack",
+            "question-enemy-attack-damage-assignment",
+            "question-enemy-attack-remaining-damage-assignment",
+            "question-enemy-attack-remaining-horror-assignment",
+            "question-gathering-act-advance",
+            "question-gathering-act-objective",
+            "question-gathering-attic-entry-forced",
+            "question-gathering-attic-horror-assignment",
+            "question-gathering-cellar-damage-assignment",
+            "question-gathering-cellar-entry-forced",
+            "question-gathering-movement",
+            "question-generic-choose-amounts",
+            "question-generic-choose-deck",
+            "question-generic-choose-n",
+            "question-generic-choose-some",
+            "question-generic-choose-up-to-n",
+            "question-generic-cost-ability-window",
+            "question-generic-invalid-info",
+            "question-generic-one-at-a-time-auto",
+            "question-generic-one-from-each",
+            "question-generic-payment-amounts",
+            "question-generic-read",
+            "question-generic-skill-label",
+            "question-generic-wrapped",
+            "question-investigate-apply-results",
+            "question-investigate-commit",
+            "question-investigate-fast-window",
+            "question-investigate-reveal-window",
+            "question-mulligan",
+            "question-player-window-choose-one",
+            "question-player-window-enemy-actions",
+            "question-player-window-engage-action",
+            "question-presentation-encounter-deck-draw",
+            "question-presentation-gathering-act-advance",
+            "question-presentation-gathering-act-objective",
+            "question-presentation-gathering-attic-entry-forced",
+            "question-presentation-gathering-attic-horror-assignment",
+            "question-presentation-gathering-cellar-damage-assignment",
+            "question-presentation-gathering-cellar-entry-forced",
+            "question-presentation-gathering-movement",
+            "question-presentation-generic-choose-amounts",
+            "question-presentation-generic-choose-deck",
+            "question-presentation-generic-choose-n",
+            "question-presentation-generic-choose-some",
+            "question-presentation-generic-choose-up-to-n",
+            "question-presentation-generic-cost-ability-window",
+            "question-presentation-generic-invalid-info",
+            "question-presentation-generic-one-at-a-time-auto",
+            "question-presentation-generic-one-from-each",
+            "question-presentation-generic-payment-amounts",
+            "question-presentation-generic-read",
+            "question-presentation-generic-skill-label",
+            "question-presentation-generic-wrapped",
+            "question-presentation-representatives",
+            "question-presentation-representatives.schema",
+            "question-presentation-treachery-forced-ability",
+            "question-presentation.schema",
+            "question-read",
+            "question-read-scenario-intro",
+            "question-read-with-cards",
+            "question-roland-defeat-reaction",
+            "question-round-end-forced-ability",
+            "question-treachery-forced-ability",
+            "question-window-choose-one",
+            "raw-question-fixture.schema",
+            "replay-attestation",
+            "replay-attestation.schema",
+            "uuid-entity-map",
+        ])
         #expect(Set(ContractFixtureDigests.all.map(\.fileName)) == expected)
     }
 

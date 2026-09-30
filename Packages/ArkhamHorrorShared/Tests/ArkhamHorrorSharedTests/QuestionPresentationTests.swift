@@ -2,13 +2,13 @@
 import Foundation
 import Testing
 
-@Suite("Semantic question presentation v1")
+@Suite("Semantic question presentation v2")
 // swiftlint:disable:next type_body_length
 struct QuestionPresentationTests {
     @Test("Q34 decodes, binds source index 12, and round-trips")
     func gatheringActObjectiveBinds() throws {
         let presentation = try presentationFixture("question-presentation-gathering-act-objective")
-        #expect(presentation.protocolVersion == 1)
+        #expect(presentation.protocolVersion == 2)
         #expect(presentation.questionVersion == 34)
         #expect(presentation.questionKind == .playerWindowChooseOne)
         #expect(presentation.choiceCount == 13)
@@ -84,7 +84,7 @@ struct QuestionPresentationTests {
         )
 
         let laterPresentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 87,
             questionKind: .chooseOne,
             choiceCount: 1,
@@ -107,14 +107,14 @@ struct QuestionPresentationTests {
             "question-presentation-encounter-deck-draw"
         )
         let wrongActor = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 41,
             questionKind: .chooseOne,
             choiceCount: 1,
             choices: [.encounterDeckDraw(actorID: "c01002")]
         )
         let downgraded = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 41,
             questionKind: .chooseOne,
             choiceCount: 1,
@@ -134,9 +134,10 @@ struct QuestionPresentationTests {
         #expect(throws: QuestionPresentationBindingError.self) {
             try wrongActor.bind(to: raw, expectedQuestionVersion: 41)
         }
-        #expect(throws: QuestionPresentationBindingError.self) {
+        #expect(
             try downgraded.bind(to: raw, expectedQuestionVersion: 41)
-        }
+                .descriptor(forSourceIndex: 0)?.kind == .drawCard
+        )
 
         let mutatedRawData = try #require(
             String(
@@ -172,23 +173,23 @@ struct QuestionPresentationTests {
         "Closed presentation shapes reject malformed or unknown values",
         arguments: [
             #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":0,"choices":[]}"#,
-            #"{"protocolVersion":1,"questionVersion":-1,"questionKind":"chooseOne","choiceCount":0,"choices":[]}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"future","choiceCount":0,"choices":[]}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":0,"choices":[],"extra":true}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"gainResource"}]}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"localizedLabel"}]}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"advanceAct","entity":{"kind":"agenda","id":"a"}}]}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"advanceAct","entity":{"kind":"act","id":"a"},"actorId":"i"}]}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"useAbility","actorId":"i","ability":{"cardCode":"c","index":1,"type":"action","actions":["fight","fight"],"canBeCancelled":true},"cost":{"kind":"free"}}]}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"useAbility","actorId":"i","ability":{"cardCode":"c","index":1,"type":"action","actions":[],"canBeCancelled":true},"cost":{"kind":"all","costs":[]}}]}"#,
-            #"{"protocolVersion":1,"questionVersion":38,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"assignDamage","actorId":"c01001","entity":{"kind":"investigator","id":"c01001"}}]}"#,
-            #"{"protocolVersion":1,"questionVersion":38,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"assignHorror","entity":{"kind":"location","id":"dbaa2d2e-4ceb-44b2-a554-e5fa370e7882"}}]}"#,
-            #"{"protocolVersion":1,"questionVersion":36,"questionKind":"playerWindowChooseOne","choiceCount":12,"choices":[{"sourceIndex":9,"kind":"move","actorId":"c01001","entity":{"kind":"location","id":"a3497b9f-796b-406d-aeb4-9b96fa9f4905"},"ability":{"cardCode":"c01114","index":104,"type":"action","actions":["move"],"canBeCancelled":true}}]}"#,
-            #"{"protocolVersion":1,"questionVersion":37,"questionKind":"windowChooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"resolveForcedAbility","actorId":"c01001","ability":{"cardCode":"c01114","index":1,"type":"forced","actions":[],"canBeCancelled":true},"cost":{"kind":"free"}}]}"#,
-            #"{"protocolVersion":1,"questionVersion":41,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"drawEncounterCard"}]}"#,
-            #"{"protocolVersion":1,"questionVersion":41,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"drawEncounterCard","actorId":"c01001","entity":{"kind":"investigator","id":"c01001"}}]}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":1,"kind":"applySkillTestResults"}]}"#,
-            #"{"protocolVersion":1,"questionVersion":1,"questionKind":"chooseOne","choiceCount":2,"choices":[{"sourceIndex":0,"kind":"applySkillTestResults"},{"sourceIndex":0,"kind":"applySkillTestResults"}]}"#,
+            #"{"protocolVersion":2,"questionVersion":-1,"questionKind":"chooseOne","choiceCount":0,"choices":[]}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"future","choiceCount":0,"choices":[]}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":0,"choices":[],"extra":true}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"gainResource"}]}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"localizedLabel"}]}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"advanceAct","entity":{"kind":"agenda","id":"a"}}]}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"advanceAct","entity":{"kind":"act","id":"a"},"actorId":"i"}]}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"useAbility","actorId":"i","ability":{"cardCode":"c","index":1,"type":"action","actions":["fight","fight"],"canBeCancelled":true},"cost":{"kind":"free"}}]}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"useAbility","actorId":"i","ability":{"cardCode":"c","index":1,"type":"action","actions":[],"canBeCancelled":true},"cost":{"kind":"all","costs":[]}}]}"#,
+            #"{"protocolVersion":2,"questionVersion":38,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"assignDamage","actorId":"c01001","entity":{"kind":"investigator","id":"c01001"}}]}"#,
+            #"{"protocolVersion":2,"questionVersion":38,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"assignHorror","entity":{"kind":"location","id":"dbaa2d2e-4ceb-44b2-a554-e5fa370e7882"}}]}"#,
+            #"{"protocolVersion":2,"questionVersion":36,"questionKind":"playerWindowChooseOne","choiceCount":12,"choices":[{"sourceIndex":9,"kind":"move","actorId":"c01001","entity":{"kind":"location","id":"a3497b9f-796b-406d-aeb4-9b96fa9f4905"},"ability":{"cardCode":"c01114","index":104,"type":"action","actions":["move"],"canBeCancelled":true}}]}"#,
+            #"{"protocolVersion":2,"questionVersion":37,"questionKind":"windowChooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"resolveForcedAbility","actorId":"c01001","ability":{"cardCode":"c01114","index":1,"type":"forced","actions":[],"canBeCancelled":true},"cost":{"kind":"free"}}]}"#,
+            #"{"protocolVersion":2,"questionVersion":41,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"drawEncounterCard"}]}"#,
+            #"{"protocolVersion":2,"questionVersion":41,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"drawEncounterCard","actorId":"c01001","entity":{"kind":"investigator","id":"c01001"}}]}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":1,"kind":"applySkillTestResults"}]}"#,
+            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":2,"choices":[{"sourceIndex":0,"kind":"applySkillTestResults"},{"sourceIndex":0,"kind":"applySkillTestResults"}]}"#,
         ]
     )
     // swiftlint:enable line_length
@@ -225,15 +226,14 @@ struct QuestionPresentationTests {
         "Raw derivation mirrors supported constructors, wrappers, Read variants, and unsupported",
         arguments: [
             (#"{"tag":"ChooseN","amount":2,"choices":[{},{}]}"#, QuestionPresentation.Kind.chooseN, 2),
-            (#"{"tag":"QuestionLabel","label":"x","card":null,"question":{"tag":"ChooseSome1","label":"pick","choices":[{}]}}"#, .chooseSome, 1),
+            (#"{"tag":"QuestionLabel","label":"x","card":null,"question":{"tag":"ChooseSome1","label":"pick","choices":[{}]}}"#, .chooseSome1, 1),
             (#"{"tag":"PayCostQuestion","cost":{"tag":"Free"},"question":{"tag":"ChooseUpToN","amount":1,"choices":[{}]}}"#, .chooseUpToN, 1),
             (#"{"tag":"QuestionWithSource","source":{},"tooltip":null,"question":{"tag":"WindowChooseOne","choices":[{},{}]}}"#, .windowChooseOne, 2),
             (#"{"tag":"Read","flavorText":{},"readChoices":{"tag":"BasicReadChoices","contents":[{}]},"readCards":null}"#, .read, 1),
             (#"{"tag":"Read","flavorText":{},"readChoices":{"tag":"BasicReadChoicesN","contents":[2,[{},{}]]},"readCards":null}"#, .read, 2),
             (#"{"tag":"Read","flavorText":{},"readChoices":{"tag":"BasicReadChoicesUpToN","contents":[1,[{}]]},"readCards":null}"#, .read, 1),
             (#"{"tag":"Read","flavorText":{},"readChoices":{"tag":"LeadInvestigatorMustDecide","contents":[{},{}]},"readCards":null}"#, .read, 2),
-            (#"{"tag":"ChooseOneAtATimeWithAuto","label":"all","choices":[{}]}"#, .unsupported, 0),
-            (#"{"tag":"ChooseAmounts","choices":[{},{}]}"#, .unsupported, 0),
+            (#"{"tag":"ChooseOneAtATimeWithAuto","label":"all","choices":[{}]}"#, .chooseOneAtATimeWithAuto, 2),
         ]
     )
     // swiftlint:enable line_length
@@ -243,7 +243,7 @@ struct QuestionPresentationTests {
         expectedCount: Int
     ) throws {
         let presentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 7,
             questionKind: expectedKind,
             choiceCount: expectedCount,
@@ -269,7 +269,7 @@ struct QuestionPresentationTests {
     // swiftlint:enable line_length
     func negativeRawCountFailsClosed(rawJSON: String) {
         let presentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 7,
             questionKind: .chooseN,
             choiceCount: 1,
@@ -293,7 +293,7 @@ struct QuestionPresentationTests {
         }
         #expect(throws: QuestionPresentationBindingError.self) {
             try QuestionPresentation(
-                protocolVersion: 1,
+                protocolVersion: 2,
                 questionVersion: 35,
                 questionKind: .read,
                 choiceCount: 1,
@@ -302,7 +302,7 @@ struct QuestionPresentationTests {
         }
         #expect(throws: QuestionPresentationBindingError.self) {
             try QuestionPresentation(
-                protocolVersion: 1,
+                protocolVersion: 2,
                 questionVersion: 35,
                 questionKind: .chooseOne,
                 choiceCount: 2,

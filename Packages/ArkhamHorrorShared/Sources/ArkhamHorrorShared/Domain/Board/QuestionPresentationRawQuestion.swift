@@ -16,28 +16,6 @@ struct QuestionPresentationRawQuestionShape: Sendable, Equatable, Hashable {
     }
 }
 
-extension QuestionPresentationRawQuestionShape {
-    func genericGatheringAssignmentSource(
-        for presentation: QuestionPresentation
-    ) -> QuestionPresentation.GovernedSource? {
-        guard presentation.questionVersion == 38,
-              presentation.questionKind == .chooseOne,
-              presentation.choiceCount == 1,
-              let choice = presentation.choices.first,
-              choice.kind == .assignDamage || choice.kind == .assignHorror,
-              let seal = try? GovernedJSONSeal(.array(choices)),
-              seal.dynamicIDs.count == 1,
-              let locationID = seal.dynamicIDs.first,
-              LocationID(codingKey: AnyCodingKey(stringValue: locationID)) != nil
-        else { return nil }
-        let cardCode = choice.kind == .assignDamage ? "c01114" : "c01113"
-        return QuestionPresentation.GovernedSource(
-            entity: .init(kind: .location, id: locationID),
-            cardCode: cardCode
-        )
-    }
-}
-
 enum QuestionPresentationRawQuestionDeriver {
     static func derive(_ value: JSONValue) throws -> QuestionPresentationRawQuestionShape {
         guard case let .object(object) = value,
@@ -77,11 +55,13 @@ enum QuestionPresentationRawQuestionDeriver {
                     kind: .chooseAmounts
                 )
             case "ChooseExchangeAmounts":
+                // Arkham/Question.hs:248-254 derives record-field JSON with defaultOptions.
                 shape = try noChoice(
                     object,
                     keys: [
-                        "tag", "source", "investigator1", "initial1",
-                        "investigator2", "initial2", "token"
+                        "tag", "source", "investigator1Id",
+                        "investigator1InitialAmount", "investigator2Id",
+                        "investigator2InitialAmount", "token",
                     ],
                     kind: .chooseExchangeAmounts
                 )
@@ -104,9 +84,11 @@ enum QuestionPresentationRawQuestionDeriver {
             case "PickCampaignSettings":
                 shape = try noChoice(object, keys: ["tag"], kind: .pickCampaignSettings)
             case "PickCampaignSpecific":
-                shape = try noChoice(object, keys: ["tag", "key", "value"], kind: .pickCampaignSpecific)
+                // Arkham/Question.hs:246 encodes this positional constructor as {tag,contents}.
+                shape = try positionalSpecific(object, kind: .pickCampaignSpecific)
             case "PickScenarioSpecific":
-                shape = try noChoice(object, keys: ["tag", "key", "value"], kind: .pickScenarioSpecific)
+                // Arkham/Question.hs:247 encodes this positional constructor as {tag,contents}.
+                shape = try positionalSpecific(object, kind: .pickScenarioSpecific)
             case "ContinueCampaign":
                 shape = try noChoice(object, keys: ["tag"], kind: .continueCampaign)
             case "Read":
@@ -308,12 +290,27 @@ enum QuestionPresentationRawQuestionDeriver {
     private static func wizardChoices(
         _ object: [String: JSONValue]
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == ["tag", "flavorText", "choices", "confirmLabel", "backLabel"],
-              case let .array(choices)? = object["choices"]
+        // Arkham/Question.hs:234-238 names this field wizardChoices.
+        guard Set(object.keys) == ["tag", "flavorText", "wizardChoices", "confirmLabel", "backLabel"],
+              case let .array(choices)? = object["wizardChoices"]
         else {
             throw invalid("Malformed ChooseOneWizard question")
         }
         return .init(kind: .chooseOneWizard, choices: choices)
+    }
+
+    private static func positionalSpecific(
+        _ object: [String: JSONValue],
+        kind: QuestionPresentation.Kind
+    ) throws -> QuestionPresentationRawQuestionShape {
+        guard Set(object.keys) == ["tag", "contents"],
+              case let .array(contents)? = object["contents"],
+              contents.count == 2,
+              case .string = contents[0]
+        else {
+            throw invalid("Malformed \(tag(of: object)) question")
+        }
+        return .init(kind: kind, choices: [])
     }
 
     private static func pickSuppliesChoices(

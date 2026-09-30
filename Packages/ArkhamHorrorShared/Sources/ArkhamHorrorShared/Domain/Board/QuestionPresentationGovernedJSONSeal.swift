@@ -24,11 +24,28 @@ extension QuestionPresentation.Choice {
         Self(
             sourceIndex: sourceIndex,
             kind: kind,
+            selectable: selectable,
+            completesSelection: completesSelection,
             actorID: actorID,
             entity: entity,
             label: label,
             ability: ability,
-            cost: cost
+            cost: cost,
+            flippable: flippable,
+            face: face,
+            key: key,
+            skillType: skillType,
+            connection: connection,
+            tarotCard: tarotCard,
+            component: component,
+            source: source,
+            step: step,
+            tooltip: tooltip,
+            cards: cards,
+            flavorText: flavorText,
+            uiTag: uiTag,
+            target: target,
+            groupIndex: groupIndex
         )
     }
 }

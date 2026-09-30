@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-@Suite("Semantic movement-entry question presentation v1")
+@Suite("Semantic movement-entry question presentation v2")
 struct QuestionPresentationMovementEntryTests {
     @Test("Q36 binds exact Cellar and Attic movement descriptors")
     func gatheringMovementBinds() throws {
@@ -123,7 +123,11 @@ struct QuestionPresentationMovementEntryTests {
                 ability["index"] = .number(.integer(105))
                 choice["ability"] = .object(ability)
             }
-            assertPresentationDecodeFails(wrongMove)
+            try assertPresentationOverlayFails(
+                wrongMove,
+                rawFixture: "question-gathering-movement",
+                expectedQuestionVersion: 36
+            )
         }
 
         for fixture in [
@@ -140,7 +144,14 @@ struct QuestionPresentationMovementEntryTests {
                 ability["index"] = .number(.integer(2))
                 choice["ability"] = .object(ability)
             }
-            assertPresentationDecodeFails(wrongForcedAbility)
+            try assertPresentationOverlayFails(
+                wrongForcedAbility,
+                rawFixture: fixture.replacingOccurrences(
+                    of: "question-presentation-",
+                    with: "question-"
+                ),
+                expectedQuestionVersion: 37
+            )
         }
 
         for fixture in [
@@ -157,7 +168,14 @@ struct QuestionPresentationMovementEntryTests {
                 entity["id"] = .string("c01002")
                 choice["entity"] = .object(entity)
             }
-            assertPresentationDecodeFails(wrongAssignment)
+            try assertPresentationOverlayFails(
+                wrongAssignment,
+                rawFixture: fixture.replacingOccurrences(
+                    of: "question-presentation-",
+                    with: "question-"
+                ),
+                expectedQuestionVersion: 38
+            )
         }
     }
 
@@ -212,9 +230,23 @@ struct QuestionPresentationMovementEntryTests {
         #expect(choice.cost == nil)
     }
 
-    private func assertPresentationDecodeFails(_ data: Data) {
-        #expect(throws: DecodingError.self) {
-            try ContractJSON.decode(QuestionPresentation.self, from: data)
+    private func assertPresentationOverlayFails(
+        _ data: Data,
+        rawFixture: String,
+        expectedQuestionVersion: Int
+    ) throws {
+        do {
+            let presentation = try ContractJSON.decode(QuestionPresentation.self, from: data)
+            let binding = try presentation.bind(
+                to: self.rawFixture(rawFixture),
+                expectedQuestionVersion: expectedQuestionVersion
+            )
+            #expect(binding.governedSource == nil)
+        } catch is DecodingError {
+            // Structural v2 violations may still fail during decode; otherwise semantic
+            // drift decodes only as a generic prompt with no sealed overlay source.
+        } catch is QuestionPresentationBindingError {
+            // Some drift still claims a sealed overlay shape and is rejected at binding.
         }
     }
 

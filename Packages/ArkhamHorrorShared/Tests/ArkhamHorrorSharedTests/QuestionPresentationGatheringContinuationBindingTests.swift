@@ -83,7 +83,7 @@ struct GatheringContinuationBindingTests {
         )
 
         let substitutedPresentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 42,
             questionKind: .playerWindowChooseOne,
             choiceCount: 1,
@@ -124,7 +124,7 @@ private extension GatheringContinuationBindingTests {
         descriptor: QuestionPresentation.Choice
     ) throws -> QuestionPresentation {
         let presentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: version,
             questionKind: questionKind,
             choiceCount: 1,

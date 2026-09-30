@@ -42,7 +42,7 @@ extension QuestionPresentationRawQuestionShape {
                 expectedRawSHA256:
                 "5fc1b0eece8513294d0abffec2e10780d05c4b58a3ef7fdd9c6a63df5e1e68e3",
                 expectedPresentationSHA256:
-                "07930689d4d3669128a9ce879ee0c53b786e1928b1d653431f29ab0c92e5a5eb",
+                "188ba6aa88e9a29e26073a1dc4ac3e4613b7aae574cd5e145648cc110d5b231f",
                 requireMatchingDynamicIDs: true
             )
             return nil
@@ -124,7 +124,7 @@ extension QuestionPresentationRawQuestionShape {
         guard rawSeal.canonicalSHA256 ==
             "fd794c54be4a1df88577cc0586b17e0d100712249aaa610944ac9154710ccca6",
             presentationSeal.canonicalSHA256 ==
-            "5393915d65cdda2b46b860a1a3e45f56e834823b1cee5d7360528394029b768c",
+            "8bd42efce19180f477d26ea09a044c4b9d34602cbbc511a92fac64bf17427e9a",
             rawSeal.dynamicIDs.count == 8,
             presentationSeal.dynamicIDs == rawSeal.dynamicIDs
         else {
@@ -147,7 +147,7 @@ extension QuestionPresentationRawQuestionShape {
                 expectedRawSHA256:
                 "9980f8cbe880c8475d3896b3d72d4c650dc1bcc3a63aabab44c8e85ac321cf15",
                 expectedPresentationSHA256:
-                "2a9fdaddf69c7bd6d7758df49d33b798144e9be442d13373c868b83eac6185a8",
+                "ac33028ad167ce52c4cefd7b27ca6a27709f2c390f71a101f70e0f5a523c71ba",
                 requireMatchingDynamicIDs: true
             )
         } else if isAttic {
@@ -156,7 +156,7 @@ extension QuestionPresentationRawQuestionShape {
                 expectedRawSHA256:
                 "0cb42ef0f51335143c23a5e101acee98f99c159c14272af6476b1b6d3090a799",
                 expectedPresentationSHA256:
-                "8ee988b07f10c167599bb96c1b825bcc2d85cd7d5b262035153956b7b4e4950c",
+                "179f9b70025de64cc396f28b636ba49646fbe976e4222f0b4e4889ff6588b798",
                 requireMatchingDynamicIDs: true
             )
         } else {
@@ -176,7 +176,7 @@ extension QuestionPresentationRawQuestionShape {
                 expectedRawSHA256:
                 "1f016c224713e192da6a4919ac1194b79445b83e8fb1011c20a674f333664a67",
                 expectedPresentationSHA256:
-                "928744a66d3b488055f6edcfb222361088b0e7936e0c6ef913df8c68046d8fdf"
+                "b0476021e1e7bb3498147e10e171f77b54b8ae1b73f962256b32c642868c0448"
             )
         } else if presentation.choices == [.gatheringAtticHorrorAssignment] {
             cardCode = "c01113"
@@ -185,7 +185,7 @@ extension QuestionPresentationRawQuestionShape {
                 expectedRawSHA256:
                 "f3cb6bba8328b857d6ee9e99d9eae4b6a82cc196625752fe4a7b8b55c5562f78",
                 expectedPresentationSHA256:
-                "2d9c62f296966868f7f1d22779f746bd690c586bf98e89130f41d537236f5068"
+                "d53b03ec619de0966921728035e18fb068c410ef917c4ae10087385b8a61857e"
             )
         } else {
             throw QuestionPresentationBindingError.governedChoicesMismatch
@@ -237,16 +237,16 @@ extension QuestionPresentationRawQuestionShape {
             cardCode: "c01114"
         ) {
             expectedRawSHA256 =
-                "afbd13de745d157511578a67206ce8fc35a21bdb3a9a7d0986241fbe57c31800"
+                "c19f7242a65dbfef89d57fbd09515ed51171f124699de8c826102640377093a4"
             expectedPresentationSHA256 =
-                "062d17ef4072edfa976a4ec946d7a296aaa43d5c0ee4bd5c2baed6bb3ffe3bfb"
+                "188ba6aa88e9a29e26073a1dc4ac3e4613b7aae574cd5e145648cc110d5b231f"
         } else if investigation.matchesGatheringInvestigation(
             cardCode: "c01113"
         ) {
             expectedRawSHA256 =
-                "3bece7fb19ff5c7b0877c684f40ba80712eefd13b2747796571f26122eb82c40"
+                "1db076f96e888332db1a92f434f9c94e5d60c166603a8b6420c73c2e338887c7"
             expectedPresentationSHA256 =
-                "2526973b069dfa5ac8b036696dbaa53d2f673e2acd0b992c081c7dff51a2f739"
+                "64b1c25fd462fc61b04bc67fa8ffc797f29253fc2990136e373d39907ec8fa0a"
         } else {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }

@@ -1,4 +1,13 @@
 extension QuestionPresentation {
+    var requiresGatheringOverlayValidation: Bool {
+        switch questionVersion {
+        case 34 ... 42:
+            true
+        default:
+            choices.contains { $0.kind == .drawEncounterCard }
+        }
+    }
+
     var hasSupportedGatheringSemantics: Bool {
         let encounterDrawChoices = choices.filter {
             $0.kind == .drawEncounterCard

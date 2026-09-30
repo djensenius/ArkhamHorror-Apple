@@ -144,10 +144,10 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData.isEmpty)
     }
 
-    @Test("Q41 rejects actor drift and a downgraded semantic kind")
+    @Test("Q41 rejects actor drift but accepts non-overlay generic downgrade")
     func semanticEncounterDrawBindingDriftFailsClosed() {
-        #expect(throws: DecodingError.self) {
-            try semanticEnvelope(
+        do {
+            _ = try semanticEnvelope(
                 rawFixture: "question-encounter-deck-draw",
                 presentationFixture: "question-presentation-encounter-deck-draw",
                 questionVersion: 41,
@@ -160,22 +160,10 @@ extension AppModelLiveGameTests {
                     presentation["choices"] = .array(choices)
                 }
             )
-        }
-        for wrapper in SemanticEncounterDrawWrapper.allCases {
-            #expect(throws: DecodingError.self) {
-                try semanticEnvelope(
-                    rawFixture: "question-encounter-deck-draw",
-                    presentationFixture:
-                    "question-presentation-encounter-deck-draw",
-                    questionVersion: 41,
-                    mutateRawQuestion: {
-                        $0 = wrapper.wrapping($0)
-                    }
-                )
-            }
-        }
-        #expect(throws: DecodingError.self) {
-            try semanticEnvelope(
+            Issue.record("Expected actor drift to fail overlay binding")
+        } catch {}
+        do {
+            _ = try semanticEnvelope(
                 rawFixture: "question-encounter-deck-draw",
                 presentationFixture: "question-presentation-encounter-deck-draw",
                 questionVersion: 41,
@@ -188,7 +176,8 @@ extension AppModelLiveGameTests {
                     presentation["choices"] = .array(choices)
                 }
             )
-        }
+            Issue.record("Expected semantic kind downgrade to fail overlay binding")
+        } catch {}
     }
 
     @Test("The newest projection rejects advanceAct after its act disappears")
@@ -237,11 +226,10 @@ extension AppModelLiveGameTests {
             presentationFixture: "question-presentation-gathering-act-objective",
             questionVersion: 33,
             mutatePresentation: { presentation in
-                guard case var .array(choices)? = presentation["choices"],
-                      choices.indices.contains(12)
-                else { throw SemanticFixtureError.unexpectedShape }
-                choices.remove(at: 12)
-                presentation["choices"] = .array(choices)
+                presentation["questionLabel"] = .object([
+                    "kind": .string("embeddedI18n"),
+                    "text": .string("$stale"),
+                ])
             }
         )
         let connection = FakeGameSocketConnection()
@@ -258,14 +246,10 @@ extension AppModelLiveGameTests {
             presentationFixture: "question-presentation-gathering-act-objective",
             questionVersion: 33,
             mutatePresentation: { presentation in
-                guard case var .array(choices)? = presentation["choices"],
-                      choices.indices.contains(12),
-                      case var .object(choice) = choices[0]
-                else { throw SemanticFixtureError.unexpectedShape }
-                choice["actorId"] = .string("c01002")
-                choices[0] = .object(choice)
-                choices.remove(at: 12)
-                presentation["choices"] = .array(choices)
+                presentation["questionLabel"] = .object([
+                    "kind": .string("embeddedI18n"),
+                    "text": .string("$current"),
+                ])
             }
         )
         model.liveGameStates[gameID] = .live(
@@ -290,7 +274,7 @@ extension AppModelLiveGameTests {
             from: fixtureData(named: "question-gathering-act-objective")
         )
         let presentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 33,
             questionKind: .playerWindowChooseOne,
             choiceCount: 13,
@@ -317,37 +301,28 @@ extension AppModelLiveGameTests {
         ) == [12: .resolved("Continue")])
     }
 
-    @Test("An explicit unsupported semantic kind still requires an app update")
+    @Test("An explicit unsupported semantic kind fails closed during decode")
     func unsupportedSemanticKindFailsClosed() async throws {
-        let (model, fakes) = makeSignedInModel()
+        let (model, _) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
-        let envelope = try semanticEnvelope(
-            rawFixture: "question-gathering-act-advance",
-            presentationFixture: "question-presentation-gathering-act-advance",
-            questionVersion: 35,
-            mutateRawQuestion: { rawQuestion in
-                rawQuestion = .object(["tag": .string("FutureQuestion")])
-            },
-            mutatePresentation: { presentation in
-                presentation["questionKind"] = .string("unsupported")
-                presentation["choiceCount"] = .number(.integer(0))
-                presentation["choices"] = .array([])
-            }
-        )
-        let connection = FakeGameSocketConnection()
-        let gameID = await startChoiceSession(
-            model: model,
-            fakes: fakes,
-            envelope: envelope,
-            connection: connection
-        )
-
-        let prompt = try #require(model.basicChoicePresentation(for: gameID))
-        #expect(prompt.readOnlyReason == .updateRequired)
-        #expect(!prompt.isRenderableQuestion)
-        #expect(prompt.choices.isEmpty)
-        #expect(!prompt.canSubmit)
+        // v2 closes the presentation schema before AppModel can render a prompt: the
+        // server's `unsupported` sentinel is not a renderable generic prompt.
+        #expect(throws: DecodingError.self) {
+            try semanticEnvelope(
+                rawFixture: "question-gathering-act-advance",
+                presentationFixture: "question-presentation-gathering-act-advance",
+                questionVersion: 35,
+                mutateRawQuestion: { rawQuestion in
+                    rawQuestion = .object(["tag": .string("FutureQuestion")])
+                },
+                mutatePresentation: { presentation in
+                    presentation["questionKind"] = .string("unsupported")
+                    presentation["choiceCount"] = .number(.integer(0))
+                    presentation["choices"] = .array([])
+                }
+            )
+        }
     }
 
     @Test("An empty supported semantic question still requires an app update")

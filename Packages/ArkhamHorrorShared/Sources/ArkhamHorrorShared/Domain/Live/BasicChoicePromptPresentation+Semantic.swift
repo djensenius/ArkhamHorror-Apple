@@ -1,15 +1,52 @@
 import Foundation
 
 extension QuestionPresentation {
-    var isGenericallyRenderable: Bool {
-        protocolVersion == Self.supportedProtocolVersion && questionKind != .unsupported
+    enum GenericSupport: Sendable, Equatable {
+        case singleChoice
+        case multiSelect
+        case amounts
+        case payment
+        case exchange
+        case deck
+        case campaignSettings
+        case deferred
+
+        var isRenderableInCurrentClient: Bool {
+            self == .singleChoice
+        }
+    }
+
+    var genericSupport: GenericSupport {
+        guard protocolVersion == Self.supportedProtocolVersion,
+              questionKind != .unsupported
+        else { return .deferred }
+        return switch answer {
+        case .singleChoice:
+            .singleChoice
+        case .amounts:
+            .amounts
+        case .paymentAmounts:
+            .payment
+        case .exchangeAmounts:
+            .exchange
+        case .deck:
+            .deck
+        case .standaloneSettings, .campaignSettings,
+             .pickDestiny, .campaignSpecific, .scenarioSpecific,
+             .continueCampaign:
+            .campaignSettings
+        }
+    }
+
+    var supportsCurrentGenericChoiceList: Bool {
+        genericSupport.isRenderableInCurrentClient && choiceCount > 0
     }
 }
 
 extension BasicChoicePromptPresentation {
     var isRenderableQuestion: Bool {
         if let semanticPresentation {
-            return semanticPresentation.presentation.isGenericallyRenderable
+            return semanticPresentation.presentation.supportsCurrentGenericChoiceList
                 && !semanticPresentation.rawChoices.isEmpty
         }
         return question.supportedQuestion?.choices.isEmpty == false
@@ -143,7 +180,7 @@ extension BasicChoicePromptPresentation {
                 "This choice has no semantic description and cannot be activated."
             )
         }
-        let isActionable = if semanticPresentation.presentation.hasSupportedGatheringSemantics {
+        let isActionable = if semanticPresentation.hasSealedOverlay {
             projection.isSemanticChoiceActionable(
                 descriptor,
                 ownerID: ownerID,
@@ -151,7 +188,8 @@ extension BasicChoicePromptPresentation {
                 governedSource: semanticPresentation.governedSource
             )
         } else {
-            descriptor.selectable
+            semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && descriptor.selectable
         }
         guard isActionable else {
             return semanticUnavailableAnnouncement(
@@ -399,8 +437,12 @@ extension BasicChoicePromptPresentation {
         labelResolution: BasicChoiceLabelResolution?,
         fallback: String?
     ) -> String {
-        if let title = labelResolution?.title { return title }
-        if let text = descriptor.label?.text, !text.hasPrefix("$") { return text }
+        if let title = labelResolution?.title {
+            return title
+        }
+        if let text = descriptor.label?.text, !text.hasPrefix("$") {
+            return text
+        }
         return fallback ?? semanticLocalized(
             "semantic.choice.title.genericIndexed",
             value: "Choice \(descriptor.sourceIndex + 1)",

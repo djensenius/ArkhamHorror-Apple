@@ -76,8 +76,8 @@ struct SnapshotSemanticPresentationTests {
         }
     }
 
-    @Test("A valid envelope may omit one descriptor without synthesizing it")
-    func sparseQuestionPresentationRemainsSparse() throws {
+    @Test("A sparse semantic envelope fails closed")
+    func sparseQuestionPresentationFailsClosed() throws {
         let mutated = try mutatePresentation { presentation in
             guard case var .array(choices)? = presentation["choices"] else {
                 throw FixtureMutationError.unexpectedShape
@@ -85,14 +85,9 @@ struct SnapshotSemanticPresentationTests {
             choices.remove(at: 2)
             presentation["choices"] = .array(choices)
         }
-        let game = try ContractJSON.decode(GetGameEnvelope.self, from: mutated).game
-        let playerID = try PlayerID(
-            #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
-        )
-        let binding = try #require(game.question[playerID]?.presentation)
-        #expect(binding.presentation.choiceCount == 4)
-        #expect(binding.rawChoices.count == 4)
-        #expect(binding.descriptor(forSourceIndex: 2) == nil)
+        #expect(throws: DecodingError.self) {
+            _ = try ContractJSON.decode(GetGameEnvelope.self, from: mutated)
+        }
     }
 
     private enum FixtureMutationError: Error {

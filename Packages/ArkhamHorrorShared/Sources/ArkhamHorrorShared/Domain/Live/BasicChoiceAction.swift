@@ -215,7 +215,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             guard let descriptor = semanticPresentation.descriptor(
                 forSourceIndex: choice.index
             ) else { return false }
-            if semanticPresentation.presentation.hasSupportedGatheringSemantics {
+            if semanticPresentation.hasSealedOverlay {
                 return projection.isSemanticChoiceActionable(
                     descriptor,
                     ownerID: ownerID,
@@ -223,7 +223,8 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
                     governedSource: semanticPresentation.governedSource
                 )
             }
-            return descriptor.selectable
+            return semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && descriptor.selectable
         }
         return projection.isChoiceActionable(
             choice,
@@ -238,8 +239,16 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         return storyResolution?.isResolved == true
     }
 
+    var canSubmitSingleChoiceAnswer: Bool {
+        guard let semanticPresentation else { return true }
+        if case .singleChoice = semanticPresentation.presentation.answer {
+            return true
+        }
+        return false
+    }
+
     var canSubmit: Bool {
-        guard isAuthorized, isStoryAvailable else { return false }
+        guard isAuthorized, isStoryAvailable, canSubmitSingleChoiceAnswer else { return false }
         switch actionPhase {
         case .sending, .awaitingSnapshot, .uncertain:
             return false

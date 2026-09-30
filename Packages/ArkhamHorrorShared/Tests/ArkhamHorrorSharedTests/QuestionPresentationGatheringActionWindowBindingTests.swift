@@ -223,7 +223,7 @@ private extension GatheringActionWindowBindingTests {
             QuestionPresentation.self,
             from: ContractJSON.encode(
                 QuestionPresentation(
-                    protocolVersion: 1,
+                    protocolVersion: 2,
                     questionVersion: 42,
                     questionKind: .playerWindowChooseOne,
                     choiceCount: driftedChoices.count,
@@ -251,7 +251,7 @@ private extension GatheringActionWindowBindingTests {
             )
         }
         let downgradedPresentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 42,
             questionKind: .playerWindowChooseOne,
             choiceCount: downgradedChoices.count,
@@ -299,7 +299,7 @@ private extension GatheringActionWindowBindingTests {
             QuestionPresentation.self,
             from: ContractJSON.encode(
                 QuestionPresentation(
-                    protocolVersion: 1,
+                    protocolVersion: 2,
                     questionVersion: 42,
                     questionKind: .playerWindowChooseOne,
                     choiceCount: choices.count,

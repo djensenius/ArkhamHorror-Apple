@@ -204,7 +204,7 @@ struct MovementEntryQuestionBindingTests {
             QuestionPresentation.self,
             from: ContractJSON.encode(
                 QuestionPresentation(
-                    protocolVersion: 1,
+                    protocolVersion: 2,
                     questionVersion: 39,
                     questionKind: .playerWindowChooseOne,
                     choiceCount: choices.count,
@@ -335,7 +335,7 @@ private func assertRelabeledPostEntryChoiceFails(
         cost: investigation.cost
     )
     let relabeledPresentation = QuestionPresentation(
-        protocolVersion: 1,
+        protocolVersion: 2,
         questionVersion: 39,
         questionKind: .playerWindowChooseOne,
         choiceCount: relabeledChoices.count,

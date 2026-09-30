@@ -95,8 +95,8 @@ extension QuestionPresentation: Codable {
             flavorText: container.decodePresentIfContained(FlavorText.self, forKey: .flavorText),
             readCards: container.decodePresentIfContained([String].self, forKey: .readCards),
             readChoiceKind: container.decodePresentIfContained(ReadChoiceKind.self, forKey: .readChoiceKind),
-            target: container.decodePresentIfContained(AmountTarget.self, forKey: .target),
-            resolveTarget: container.decodePresentIfContained(JSONValue.self, forKey: .resolveTarget),
+            target: container.decodeNullableIfContained(AmountTarget.self, forKey: .target),
+            resolveTarget: container.decodeTaggedJSONIfContained(forKey: .resolveTarget),
             amountChoices: container.decodePresentIfContained([AmountChoice].self, forKey: .amountChoices),
             paymentChoices: container.decodePresentIfContained([PaymentAmountChoice].self, forKey: .paymentChoices),
             usedInvestigators: container.decodePresentIfContained([String].self, forKey: .usedInvestigators),
@@ -170,7 +170,7 @@ extension QuestionPresentation: Codable {
         in container: KeyedDecodingContainer<CodingKeys>
     ) throws {
         let sourceIndices = choices.map(\.sourceIndex)
-        guard sourceIndices.sorted() == Array(0..<choiceCount) else {
+        guard sourceIndices.sorted() == Array(0 ..< choiceCount) else {
             throw DecodingError.dataCorruptedError(
                 forKey: .choices,
                 in: container,
@@ -196,7 +196,7 @@ extension QuestionPresentation: Codable {
             try require(groups, .groups, in: container)
         case .chooseAmounts:
             try require(label, .label, in: container)
-            try requireContained(.target, in: container)
+            try require(target, .target, in: container)
             try require(resolveTarget, .resolveTarget, in: container)
             try require(amountChoices, .amountChoices, in: container)
             guard case .amounts = answer else { try answerMismatch(in: container) }
@@ -259,13 +259,13 @@ extension QuestionPresentation: Codable {
               choices.allSatisfy(\.isValidShape),
               selection?.isValidShape != false,
               groups?.allSatisfy({ $0 >= 0 }) != false,
-              choices.map(\.sourceIndex).sorted() == Array(0..<choiceCount)
+              choices.map(\.sourceIndex).sorted() == Array(0 ..< choiceCount)
         else { return false }
         return true
     }
 
-    private func require<T>(
-        _ value: T?, _ key: CodingKeys, in container: KeyedDecodingContainer<CodingKeys>
+    private func require(
+        _ value: (some Any)?, _ key: CodingKeys, in container: KeyedDecodingContainer<CodingKeys>
     ) throws {
         guard value != nil else {
             throw DecodingError.dataCorruptedError(
@@ -297,8 +297,10 @@ extension QuestionPresentation: Codable {
     }
 }
 
-extension QuestionPresentation.Selection {
-    fileprivate var isValidShape: Bool { min >= 0 && max >= 0 && min <= max }
+private extension QuestionPresentation.Selection {
+    var isValidShape: Bool {
+        min >= 0 && max >= 0 && min <= max
+    }
 }
 
 extension QuestionPresentation.Choice: Codable {
@@ -347,18 +349,18 @@ extension QuestionPresentation.Choice: Codable {
             cost: container.decodePresentIfContained(QuestionPresentation.Cost.self, forKey: .cost),
             flippable: container.decodePresentIfContained(Bool.self, forKey: .flippable),
             face: container.decodePresentIfContained(String.self, forKey: .face),
-            key: container.decodePresentIfContained(JSONValue.self, forKey: .key),
+            key: container.decodeTaggedJSONIfContained(forKey: .key),
             skillType: container.decodePresentIfContained(QuestionPresentation.SkillType.self, forKey: .skillType),
             connection: container.decodePresentIfContained(QuestionPresentation.LocationSymbol.self, forKey: .connection),
             tarotCard: container.decodePresentIfContained(QuestionPresentation.TarotCard.self, forKey: .tarotCard),
             component: container.decodePresentIfContained(QuestionPresentation.Component.self, forKey: .component),
             source: container.decodePresentIfContained(QuestionPresentation.Source.self, forKey: .source),
-            step: container.decodePresentIfContained(JSONValue.self, forKey: .step),
+            step: container.decodeChaosBagStepIfContained(forKey: .step),
             tooltip: container.decodePresentIfContained(String.self, forKey: .tooltip),
             cards: container.decodePresentIfContained([QuestionPresentation.PileCard].self, forKey: .cards),
             flavorText: container.decodePresentIfContained(QuestionPresentation.FlavorText.self, forKey: .flavorText),
             uiTag: container.decodePresentIfContained(String.self, forKey: .uiTag),
-            target: container.decodePresentIfContained(JSONValue.self, forKey: .target),
+            target: container.decodeTaggedJSONIfContained(forKey: .target),
             groupIndex: container.decodePresentIfContained(Int.self, forKey: .groupIndex)
         )
         try choice.validateDecodedShape(in: container)
@@ -411,51 +413,51 @@ extension QuestionPresentation.Choice: Codable {
     private var isKindValid: Bool {
         switch kind {
         case .advanceAct:
-            return entity?.kind == .act
+            entity?.kind == .act
         case .advanceAgenda:
-            return entity?.kind == .agenda
+            entity?.kind == .agenda
         case .assignDamage, .assignHorror:
-            return actorID == nil && entity?.kind == .investigator && ability == nil && cost == nil
+            actorID == nil && entity?.kind == .investigator && ability == nil && cost == nil
         case .chooseTarget:
-            return entity != nil
+            entity != nil
         case .move:
-            return entity?.kind == .location && ability != nil && cost != nil
+            entity?.kind == .location && ability != nil && cost != nil
         case .resolveForcedAbility:
-            return (entity?.kind == .location || entity?.kind == .treachery) && ability != nil && cost != nil
+            (entity?.kind == .location || entity?.kind == .treachery) && ability != nil && cost != nil
         case .useAbility:
-            return ability != nil && cost != nil
+            ability != nil && cost != nil
         case .drawCard, .drawEncounterCard, .endTurn, .gainResource, .skipTriggers, .startSkillTest:
-            return actorID != nil
+            actorID != nil
         case .localizedLabel, .auto, .wizardChoice:
-            return label != nil
+            label != nil
         case .invalidLabel:
-            return label != nil && !selectable
+            label != nil && !selectable
         case .costLabel:
-            return cost != nil
+            cost != nil
         case .skillLabel:
-            return skillType != nil
+            skillType != nil
         case .info:
-            return flavorText != nil && !selectable
+            flavorText != nil && !selectable
         case .opaque:
-            return uiTag != nil
+            uiTag != nil
         case .connectionLabel:
-            return connection != nil
+            connection != nil
         case .chaosTokenLabel:
-            return face != nil
+            face != nil
         case .keyLabel:
-            return key != nil
+            key != nil
         case .tarotLabel:
-            return tarotCard != nil
+            tarotCard != nil
         case .componentLabel, .auxiliaryComponentLabel:
-            return component != nil
+            component != nil
         case .chaosTokenGroupChoice:
-            return actorID != nil && source != nil && step != nil
+            actorID != nil && source != nil && step != nil
         case .effectActionButton:
-            return entity?.kind == .effect && tooltip != nil
+            entity?.kind == .effect && tooltip != nil
         case .cardPile:
-            return cards != nil
+            cards != nil
         case .applySkillTestResults, .engage, .evade, .fight, .investigate:
-            return true
+            true
         }
     }
 
@@ -541,8 +543,22 @@ extension QuestionPresentation.Answer: Codable {
             self = .scenarioSpecific
         case .continueCampaign:
             let tags = try container.decode([String].self, forKey: .tags)
-            guard !tags.isEmpty && Set(tags).count == tags.count else {
-                throw DecodingError.dataCorruptedError(forKey: .tags, in: container, debugDescription: "Invalid continue-campaign tags")
+            let allowedTags: Set = [
+                "CampaignStepAnswer",
+                "RetireInvestigatorAnswer",
+                "RejoinInvestigatorAnswer",
+                "ApplyOverlayAnswer",
+                "JoinCampaignAnswer",
+            ]
+            guard !tags.isEmpty,
+                  Set(tags).count == tags.count,
+                  Set(tags).isSubset(of: allowedTags)
+            else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .tags,
+                    in: container,
+                    debugDescription: "Invalid continue-campaign tags"
+                )
             }
             self = .continueCampaign(tags: tags)
         }
@@ -646,7 +662,7 @@ extension QuestionPresentation.Source: Codable {
         try container.encodeIfPresent(entity, forKey: .entity)
     }
 
-    private static func validateRawSource(_ value: JSONValue, codingPath: [any CodingKey]) throws {
+    fileprivate static func validateRawSource(_ value: JSONValue, codingPath: [any CodingKey]) throws {
         guard case let .object(object) = value,
               case let .string(tag)? = object["tag"],
               !tag.isEmpty
@@ -755,16 +771,188 @@ extension QuestionPresentation.AmountTarget: Codable {
     }
 }
 
+extension QuestionPresentation.Selection {
+    private enum CodingKeys: String, CodingKey, CaseIterable { case min, max }
+
+    init(from decoder: any Decoder) throws {
+        let container = try questionPresentationClosedContainer(
+            decoder,
+            keyedBy: CodingKeys.self,
+            allowing: Array(CodingKeys.allCases)
+        )
+        try self.init(
+            min: container.decode(Int.self, forKey: .min),
+            max: container.decode(Int.self, forKey: .max)
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(min, forKey: .min)
+        try container.encode(max, forKey: .max)
+    }
+}
+
+extension QuestionPresentation.TarotCard {
+    private enum CodingKeys: String, CodingKey, CaseIterable { case facing, arcana }
+
+    init(from decoder: any Decoder) throws {
+        let container = try questionPresentationClosedContainer(
+            decoder,
+            keyedBy: CodingKeys.self,
+            allowing: Array(CodingKeys.allCases)
+        )
+        try self.init(
+            facing: container.decode(Facing.self, forKey: .facing),
+            arcana: container.decode(String.self, forKey: .arcana)
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(facing, forKey: .facing)
+        try container.encode(arcana, forKey: .arcana)
+    }
+}
+
+extension QuestionPresentation.FlavorText {
+    private enum CodingKeys: String, CodingKey, CaseIterable { case title, body }
+
+    init(from decoder: any Decoder) throws {
+        let container = try questionPresentationClosedContainer(
+            decoder,
+            keyedBy: CodingKeys.self,
+            allowing: Array(CodingKeys.allCases)
+        )
+        let title: String? = if try container.decodeNil(forKey: .title) {
+            nil
+        } else {
+            try container.decode(String.self, forKey: .title)
+        }
+        try self.init(
+            title: title,
+            body: container.decode([JSONValue].self, forKey: .body)
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(title, forKey: .title)
+        if title == nil {
+            try container.encodeNil(forKey: .title)
+        }
+        try container.encode(body, forKey: .body)
+    }
+}
+
 extension QuestionPresentation.PileCard {
-    enum CodingKeys: String, CodingKey { case cardID = "cardId", cardOwner }
+    private enum CodingKeys: String, CodingKey, CaseIterable { case cardID = "cardId", cardOwner }
+
+    init(from decoder: any Decoder) throws {
+        let container = try questionPresentationClosedContainer(
+            decoder,
+            keyedBy: CodingKeys.self,
+            allowing: Array(CodingKeys.allCases)
+        )
+        let owner: String? = if try container.decodeNil(forKey: .cardOwner) {
+            nil
+        } else {
+            try container.decode(String.self, forKey: .cardOwner)
+        }
+        try self.init(
+            cardID: container.decode(String.self, forKey: .cardID),
+            cardOwner: owner
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(cardID, forKey: .cardID)
+        try container.encodeIfPresent(cardOwner, forKey: .cardOwner)
+        if cardOwner == nil {
+            try container.encodeNil(forKey: .cardOwner)
+        }
+    }
 }
 
 extension QuestionPresentation.AmountChoice {
-    enum CodingKeys: String, CodingKey { case choiceID = "choiceId", label, minBound, maxBound }
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case choiceID = "choiceId", label, minBound, maxBound
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try questionPresentationClosedContainer(
+            decoder,
+            keyedBy: CodingKeys.self,
+            allowing: Array(CodingKeys.allCases)
+        )
+        try self.init(
+            choiceID: container.decode(String.self, forKey: .choiceID),
+            label: container.decode(String.self, forKey: .label),
+            minBound: container.decode(Int.self, forKey: .minBound),
+            maxBound: container.decode(Int.self, forKey: .maxBound)
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(choiceID, forKey: .choiceID)
+        try container.encode(label, forKey: .label)
+        try container.encode(minBound, forKey: .minBound)
+        try container.encode(maxBound, forKey: .maxBound)
+    }
 }
 
 extension QuestionPresentation.PaymentAmountChoice {
-    enum CodingKeys: String, CodingKey { case choiceID = "choiceId", investigatorID = "investigatorId", min, max, title }
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case choiceID = "choiceId", investigatorID = "investigatorId", min, max, title
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try questionPresentationClosedContainer(
+            decoder,
+            keyedBy: CodingKeys.self,
+            allowing: Array(CodingKeys.allCases)
+        )
+        try self.init(
+            choiceID: container.decode(String.self, forKey: .choiceID),
+            investigatorID: container.decode(String.self, forKey: .investigatorID),
+            min: container.decode(Int.self, forKey: .min),
+            max: container.decode(Int.self, forKey: .max),
+            title: container.decode(QuestionPresentation.Label.self, forKey: .title)
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(choiceID, forKey: .choiceID)
+        try container.encode(investigatorID, forKey: .investigatorID)
+        try container.encode(min, forKey: .min)
+        try container.encode(max, forKey: .max)
+        try container.encode(title, forKey: .title)
+    }
+}
+
+extension QuestionPresentation.DestinyDrawing {
+    private enum CodingKeys: String, CodingKey, CaseIterable { case scenario, tarot }
+
+    init(from decoder: any Decoder) throws {
+        let container = try questionPresentationClosedContainer(
+            decoder,
+            keyedBy: CodingKeys.self,
+            allowing: Array(CodingKeys.allCases)
+        )
+        try self.init(
+            scenario: container.decode(JSONValue.self, forKey: .scenario),
+            tarot: container.decode(QuestionPresentation.TarotCard.self, forKey: .tarot)
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(scenario, forKey: .scenario)
+        try container.encode(tarot, forKey: .tarot)
+    }
 }
 
 func questionPresentationClosedContainer<Key: CodingKey>(
@@ -792,6 +980,99 @@ extension KeyedDecodingContainer {
         forKey key: Key
     ) throws -> T? {
         guard contains(key) else { return nil }
-        return try decodeIfPresent(type, forKey: key)
+        return try decode(type, forKey: key)
+    }
+
+    func decodeNullableIfContained<T: Decodable>(
+        _ type: T.Type,
+        forKey key: Key
+    ) throws -> T? {
+        guard contains(key) else { return nil }
+        if try decodeNil(forKey: key) {
+            return nil
+        }
+        return try decode(type, forKey: key)
+    }
+
+    func decodeTaggedJSONIfContained(forKey key: Key) throws -> JSONValue? {
+        guard contains(key) else { return nil }
+        let value = try decode(JSONValue.self, forKey: key)
+        try QuestionPresentationJSONShape.validateTaggedJSON(
+            value,
+            codingPath: codingPath + [key]
+        )
+        return value
+    }
+
+    func decodeChaosBagStepIfContained(forKey key: Key) throws -> JSONValue? {
+        guard contains(key) else { return nil }
+        let value = try decode(JSONValue.self, forKey: key)
+        try QuestionPresentationJSONShape.validateChaosBagStep(
+            value,
+            codingPath: codingPath + [key]
+        )
+        return value
+    }
+}
+
+enum QuestionPresentationJSONShape {
+    static func validateTaggedJSON(_ value: JSONValue, codingPath: [any CodingKey]) throws {
+        guard case let .object(object) = value,
+              case .string? = object["tag"],
+              Set(object.keys).isSubset(of: ["tag", "contents"])
+        else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: codingPath,
+                debugDescription: "Expected tagged JSON object"
+            ))
+        }
+    }
+
+    static func validateChaosBagStep(_ value: JSONValue, codingPath: [any CodingKey]) throws {
+        guard case let .object(object) = value,
+              case .string? = object["tag"]
+        else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: codingPath,
+                debugDescription: "Expected chaos bag step object"
+            ))
+        }
+        let taggedKeys: Set = ["tag", "contents"]
+        if Set(object.keys).isSubset(of: taggedKeys) {
+            return
+        }
+        let allowed: Set = [
+            "tag", "source", "amount", "tokenStrategy", "steps", "tokenGroups",
+            "chooseAndThen", "tokenMatcher", "tokenMatcherChoices",
+        ]
+        guard Set(object.keys).isSubset(of: allowed) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: codingPath,
+                debugDescription: "Unexpected chaos bag step keys"
+            ))
+        }
+        if let source = object["source"] {
+            try QuestionPresentation.Source.validateRawSource(
+                source,
+                codingPath: codingPath + [AnyCodingKey(stringValue: "source")]
+            )
+        }
+        if let amount = object["amount"], !isInteger(amount) {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: codingPath + [AnyCodingKey(stringValue: "amount")],
+                debugDescription: "amount must be an integer"
+            ))
+        }
+        if let chooseAndThen = object["chooseAndThen"], chooseAndThen != .null {
+            try validateChaosBagStep(
+                chooseAndThen,
+                codingPath: codingPath + [AnyCodingKey(stringValue: "chooseAndThen")]
+            )
+        }
+    }
+
+    private static func isInteger(_ value: JSONValue) -> Bool {
+        guard case let .number(number) = value else { return false }
+        return number.exponent.isZero
     }
 }
