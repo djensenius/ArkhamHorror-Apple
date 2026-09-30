@@ -77,7 +77,7 @@ struct GameLobbyView: View {
                 }
             }
 
-            if case .active = game.gameState {
+            if game.gameState.showsEnterGameLinkInLobby {
                 Section {
                     NavigationLink(value: gameID) {
                         Label("Enter Game", systemImage: "arrow.right.circle.fill")
@@ -220,6 +220,17 @@ struct GameLobbyView: View {
                 investigators: game.investigators,
                 action: action
             )
+        }
+    }
+}
+
+private extension GameState {
+    var showsEnterGameLinkInLobby: Bool {
+        switch self {
+        case .active, .chooseDecks:
+            true
+        case .pending, .over, .unknown:
+            false
         }
     }
 }

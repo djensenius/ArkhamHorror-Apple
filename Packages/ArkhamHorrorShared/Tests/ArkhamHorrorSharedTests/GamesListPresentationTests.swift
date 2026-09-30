@@ -143,6 +143,14 @@ struct GamesListPresentationTests {
         ])
     }
 
+    @Test("Only active games navigate directly from the games list")
+    func gamesListRoutingDecision() {
+        #expect(GameState.active.opensLiveGameView)
+        #expect(!GameState.chooseDecks([PlayerID(UUID())]).opensLiveGameView)
+        #expect(!GameState.pending([]).opensLiveGameView)
+        #expect(!GameState.over.opensLiveGameView)
+    }
+
     // MARK: - GameRowView body evaluates for every notable game shape
 
     @Test("GameRowView's body evaluates for a plain solo game without crashing")

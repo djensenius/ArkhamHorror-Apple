@@ -235,9 +235,9 @@ struct GamesListView: View {
 
     /// A game already ``GameState/active`` navigates straight into its live board
     /// (via `NavigationLink(value:)`, resolved by `GamesListView`'s own
-    /// `.navigationDestination(for: GameID.self)`); every other state -- still
-    /// forming its lobby, or ended -- keeps opening the existing lobby sheet, which
-    /// has no equivalent presentation for an in-progress game.
+    /// `.navigationDestination(for: GameID.self)`). Pending and choose-deck games keep
+    /// opening the lobby sheet so join/open-seat/deck-upgrade actions remain reachable;
+    /// that sheet offers its own Enter Game link when a live deck prompt is needed.
     @ViewBuilder
     private func rowButton(for summary: GameSummary) -> some View {
         if summary.gameState.opensLiveGameView {
@@ -304,12 +304,12 @@ private struct GameRowSwipeActions: ViewModifier {
     }
 }
 
-private extension GameState {
+extension GameState {
     var opensLiveGameView: Bool {
         switch self {
-        case .active, .chooseDecks:
+        case .active:
             true
-        case .pending, .over, .unknown:
+        case .pending, .chooseDecks, .over, .unknown:
             false
         }
     }
