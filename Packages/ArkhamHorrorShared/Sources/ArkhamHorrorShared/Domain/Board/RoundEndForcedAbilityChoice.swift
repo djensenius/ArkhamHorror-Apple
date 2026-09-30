@@ -16,7 +16,10 @@ extension BasicChoiceParser {
             roundEndWindowMatches(windows[0]),
             object["before"] == .array([]),
             let messages = roundEndMessages(
-                object["messages"], ability: rawAbility, windows: windows
+                object["messages"],
+                investigatorID: object["investigatorId"],
+                ability: rawAbility,
+                windows: windows
             )
         else { return nil }
 
@@ -138,7 +141,10 @@ private extension BasicChoiceParser {
     }
 
     static func roundEndMessages(
-        _ value: JSONValue?, ability: JSONValue, windows: [JSONValue]
+        _ value: JSONValue?,
+        investigatorID: JSONValue?,
+        ability: JSONValue,
+        windows: [JSONValue]
     ) -> [JSONValue]? {
         guard case let .array(messages)? = value else { return nil }
         if messages.isEmpty {
@@ -151,7 +157,7 @@ private extension BasicChoiceParser {
               contents["tag"] == .string("ResolveWindowInitiations"),
               case let .array(payload)? = contents["contents"],
               payload.count == 3,
-              payload[0] == .string("c01001"),
+              payload[0] == investigatorID,
               payload[1] == .array(windows),
               payload[2] == .array([
                   .array([

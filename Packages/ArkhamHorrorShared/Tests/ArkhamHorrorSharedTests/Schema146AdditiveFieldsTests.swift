@@ -42,6 +42,28 @@ struct Schema146AdditiveFieldsTests {
         }
     }
 
+    @Test("round-end forced ability message binds the prompted investigator")
+    func roundEndForcedAbilityAcceptsNonRolandInvestigator() throws {
+        var value = try fixtureValue("question-round-end-forced-ability")
+        for pointer in [
+            "/choices/0/investigatorId",
+            "/choices/0/messages/0/contents/contents/0",
+        ] {
+            value = try applyingReplace(pointer, with: .string("c01002"), to: value)
+        }
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: ContractJSON.encode(value)
+        )
+        guard case let .resolveForcedAbility(choice)? =
+            payload.supportedQuestion?.choices.first?.content
+        else {
+            Issue.record("Expected non-Roland round-end forced ability to parse")
+            return
+        }
+        #expect(choice.ability.investigatorID.rawValue.rawValue == "c01002")
+    }
+
     @Test("raw prompts accept missing additive keys and reject non-default additive values")
     func rawPromptAdditiveDefaults() throws {
         try assertSupported(mutating: "question-round-end-forced-ability", removals: [
@@ -146,6 +168,19 @@ struct Schema146AdditiveFieldsTests {
                 return false
             })
         }
+    }
+
+    private func applyingReplace(
+        _ pointer: String,
+        with replacement: JSONValue,
+        to value: JSONValue
+    ) throws -> JSONValue {
+        try EnemyAttackFixtures.applying(
+            operation: "replace",
+            path: pointer.split(separator: "/"),
+            replacement: replacement,
+            to: value
+        )
     }
 
     private func applyingRemove(_ pointer: String, to value: JSONValue) throws -> JSONValue {
