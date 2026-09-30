@@ -50,9 +50,11 @@ struct BoardLocationBoardView: View {
         if let position = layout.positions[location.id] {
             let id = BoardFocusID.location(location.id)
             let tileSize = CGSize(
-                width: baseCellSize.width * zoomScale * 0.85,
-                height: baseCellSize.height * zoomScale * 0.85
+                width: (baseCellSize.width * zoomScale) - 8,
+                height: (baseCellSize.height * zoomScale) - 8
             )
+            let enemies = enemiesByLocationID[location.id] ?? []
+            let summaryHeight = enemies.isEmpty ? tileSize.height : min(48, tileSize.height * 0.46)
             VStack(spacing: 6) {
                 BoardEntityTile(
                     id: id,
@@ -63,8 +65,8 @@ struct BoardLocationBoardView: View {
                 ) {
                     locationTileContent(location)
                 }
-                .frame(width: tileSize.width, height: tileSize.height * 0.55)
-                locationEnemyPanel(location)
+                .frame(width: tileSize.width, height: summaryHeight)
+                locationEnemyPanel(enemies)
             }
             .frame(width: tileSize.width, height: tileSize.height, alignment: .top)
             .position(center(for: position))
@@ -94,18 +96,15 @@ struct BoardLocationBoardView: View {
     }
 
     @ViewBuilder
-    private func locationEnemyPanel(_ location: BoardLocationNode) -> some View {
-        if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
-            BoardEnemyPanelView(
-                title: "Enemies", enemies: Array(enemies.prefix(3)),
+    private func locationEnemyPanel(_ enemies: [BoardEnemyNode]) -> some View {
+        if !enemies.isEmpty {
+            BoardEnemyCompactPanelView(
+                title: "Enemies",
+                enemies: enemies,
+                visibleCount: 2,
                 choiceLinks: choiceLinks,
                 onLinkedChoice: onLinkedChoice
             )
-            if enemies.count > 3 {
-                Text("+\(enemies.count - 3) more enemies")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 
@@ -180,13 +179,142 @@ struct BoardEnemyLocationsRowView: View {
                 }
             }
             if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
-                BoardEnemyPanelView(
-                    title: "Enemies", enemies: Array(enemies.prefix(3)),
+                BoardEnemyCompactPanelView(
+                    title: "Enemies",
+                    enemies: enemies,
+                    visibleCount: 3,
                     choiceLinks: choiceLinks,
                     onLinkedChoice: onLinkedChoice
                 )
             }
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+private struct BoardEnemyCompactPanelView: View {
+    let title: String
+    let enemies: [BoardEnemyNode]
+    let visibleCount: Int
+    let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    let onLinkedChoice: (Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.bold())
+                .foregroundStyle(.secondary)
+            ForEach(Array(enemies.prefix(visibleCount))) { enemy in
+                BoardEnemyCompactChipView(
+                    enemy: enemy,
+                    linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
+                    onLinkedChoice: onLinkedChoice
+                )
+            }
+            if enemies.count > visibleCount {
+                Menu {
+                    ForEach(enemies) { enemy in
+                        Text(BoardEnemyCompactFormatting.listSummary(enemy))
+                    }
+                } label: {
+                    Text("+\(enemies.count - visibleCount) more enemies")
+                        .font(.caption2.bold())
+                        .foregroundStyle(ArkhamTheme.accent)
+                }
+                .accessibilityLabel(Text("Show all \(enemies.count) enemies"))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct BoardEnemyCompactChipView: View {
+    let enemy: BoardEnemyNode
+    let linkedChoices: [BoardLinkedChoice]
+    let onLinkedChoice: (Int) -> Void
+    @Environment(\.boardCardCatalog) private var cardCatalog
+
+    private var displayName: String {
+        enemy.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? enemy.displayName
+    }
+
+    private var actionableChoices: [BoardLinkedChoice] {
+        linkedChoices.filter(\.isActionable)
+    }
+
+    var body: some View {
+        switch actionableChoices.count {
+        case 0:
+            chip
+        case 1:
+            if let choice = actionableChoices.first {
+                Button { onLinkedChoice(choice.choiceIndex) } label: { chip }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(Text("Activates \(choice.title)"))
+            }
+        default:
+            Menu {
+                ForEach(actionableChoices, id: \.choiceIndex) { choice in
+                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
+                }
+            } label: {
+                chip
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .accessibilityHint(Text("Choose which prompt action to take."))
+        }
+    }
+
+    private var chip: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(displayName)
+                .font(.caption2.bold())
+                .lineLimit(1)
+                .foregroundStyle(ArkhamTheme.bone)
+            Text(BoardEnemyCompactFormatting.statsSummary(enemy))
+                .font(.caption2.monospacedDigit())
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 6))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(outlineColor, lineWidth: linkedChoices.isEmpty ? 1 : 2)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(BoardAccessibility.summary(enemy: enemy)))
+    }
+
+    private var outlineColor: Color {
+        guard !linkedChoices.isEmpty else { return .white.opacity(0.12) }
+        return actionableChoices.isEmpty ? .orange.opacity(0.45) : ArkhamTheme.accent
+    }
+}
+
+private enum BoardEnemyCompactFormatting {
+    static func statsSummary(_ enemy: BoardEnemyNode) -> String {
+        var parts: [String] = []
+        if let fight = enemy.fight {
+            parts.append("F \(fight.displayValue)")
+        }
+        if let health = enemy.health {
+            parts.append("H \(health.displayValue)")
+        }
+        if let evade = enemy.evade {
+            parts.append("E \(evade.displayValue)")
+        }
+        if let damage = enemy.damage, damage > 0 {
+            parts.append("Dmg \(damage)")
+        }
+        return parts.isEmpty ? "Enemy" : parts.joined(separator: "  ")
+    }
+
+    static func listSummary(_ enemy: BoardEnemyNode) -> String {
+        "\(enemy.displayName): \(statsSummary(enemy))"
     }
 }
