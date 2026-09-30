@@ -162,7 +162,7 @@ struct AppModelLiveChooseDeckTests {
             participant: .participant(ownerID),
             connection: legacyConnection
         )
-        #expect(!(await legacyModel.chooseDeckForLivePrompt(deck, in: legacyGameID)))
+        #expect(await !(legacyModel.chooseDeckForLivePrompt(deck, in: legacyGameID)))
         #expect(await legacyConnection.sentData.isEmpty)
 
         let disconnectedModel = await makeSignedInModel(service: ScriptedGameLifecycleService())
@@ -176,7 +176,7 @@ struct AppModelLiveChooseDeckTests {
             connection: disconnectedConnection
         )
         disconnectedModel.liveGameConnections[disconnectedGameID] = nil
-        #expect(!(await disconnectedModel.chooseDeckForLivePrompt(deck, in: disconnectedGameID)))
+        #expect(await !(disconnectedModel.chooseDeckForLivePrompt(deck, in: disconnectedGameID)))
         #expect(await disconnectedConnection.sentData.isEmpty)
     }
 }
