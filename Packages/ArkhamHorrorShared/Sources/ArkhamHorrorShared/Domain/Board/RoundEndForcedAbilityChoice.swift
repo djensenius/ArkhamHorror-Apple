@@ -179,13 +179,4 @@ private extension BasicChoiceParser {
         else { return nil }
         return InvestigatorID(code)
     }
-
-    static func isCanonicalInteger(
-        _ value: JSONValue?, equalTo expected: Int64
-    ) -> Bool {
-        guard isCanonicalInteger(value),
-              case let .number(number)? = value
-        else { return false }
-        return number.rawToken == String(expected)
-    }
 }

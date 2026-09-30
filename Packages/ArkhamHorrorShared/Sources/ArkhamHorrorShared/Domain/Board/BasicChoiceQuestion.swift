@@ -289,6 +289,13 @@ enum BasicChoiceParser {
             && (token == "0" || token.first != "0")
             && Int64(token) != nil
     }
+
+    static func isCanonicalInteger(_ value: JSONValue?, equalTo expected: Int64) -> Bool {
+        guard isCanonicalInteger(value),
+              case let .number(number)? = value
+        else { return false }
+        return number.rawToken == String(expected)
+    }
 }
 
 private extension BasicChoiceParser {
