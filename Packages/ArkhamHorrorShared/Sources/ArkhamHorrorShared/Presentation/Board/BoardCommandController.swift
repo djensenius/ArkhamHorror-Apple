@@ -378,7 +378,20 @@ extension BoardCommandController {
         localPlayerID = playerID
     }
 
+    nonisolated static func fullPlayerAreaPlayerID(
+        promptOwnerID: PlayerID?,
+        localPlayerID: PlayerID?,
+        activeInvestigatorPlayerID: PlayerID?
+    ) -> PlayerID? {
+        promptOwnerID ?? localPlayerID ?? activeInvestigatorPlayerID
+    }
+
     var fullPlayerAreaPlayerID: PlayerID? {
-        prompt?.ownerID ?? localPlayerID
+        Self.fullPlayerAreaPlayerID(
+            promptOwnerID: prompt?.ownerID,
+            localPlayerID: localPlayerID,
+            activeInvestigatorPlayerID: projection.investigators.first(where: \.isActiveInvestigator)?
+                .playerID
+        )
     }
 }

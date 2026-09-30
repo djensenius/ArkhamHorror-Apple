@@ -109,6 +109,21 @@ struct BoardCardRenderingProjectionTests {
         let local = try #require(projection.investigators.first { $0.id == localID })
         let prompt = try #require(projection.investigators.first { $0.id == promptID })
 
+        #expect(BoardCommandController.fullPlayerAreaPlayerID(
+            promptOwnerID: promptPlayerID,
+            localPlayerID: localPlayerID,
+            activeInvestigatorPlayerID: playerID
+        ) == promptPlayerID)
+        #expect(BoardCommandController.fullPlayerAreaPlayerID(
+            promptOwnerID: nil,
+            localPlayerID: localPlayerID,
+            activeInvestigatorPlayerID: playerID
+        ) == localPlayerID)
+        #expect(BoardCommandController.fullPlayerAreaPlayerID(
+            promptOwnerID: nil,
+            localPlayerID: nil,
+            activeInvestigatorPlayerID: playerID
+        ) == playerID)
         #expect(BoardPlayerAreaVisibility.shouldShowFullArea(
             for: prompt,
             fullPlayerAreaPlayerID: promptPlayerID
