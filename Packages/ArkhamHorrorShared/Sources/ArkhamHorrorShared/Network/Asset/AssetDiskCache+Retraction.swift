@@ -141,10 +141,14 @@ extension AssetDiskCache {
         guard disposition.kind == .retiring, disposition.authorityID == authorityID else {
             return false
         }
+        let metadataPayloadHash = metadataPayloadHash(for: key)
         let metadataWasPresent = try secureDirectory.remove(name: metadataFilename(for: key))
-        try secureDirectory.fsyncRootDirectory()
-        if metadataWasPresent {
-            cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
+        cleanupKnownPayloads(
+            forKeyHash: key.digestHex,
+            contentHashes: [metadataPayloadHash]
+        )
+        if metadataWasPresent || metadataPayloadHash != nil {
+            try secureDirectory.fsyncRootDirectory()
         }
         try commitDispositionLocked(
             KeyDisposition(authorityID: authorityID, kind: .tombstone, contentHash: nil),

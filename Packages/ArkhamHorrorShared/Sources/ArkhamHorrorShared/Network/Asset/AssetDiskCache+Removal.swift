@@ -49,15 +49,43 @@ extension AssetDiskCache {
                 return .stale
             }
         }
+        let recordPayloadHash = currentRecord.disposition.kind == .content
+            ? currentRecord.disposition.contentHash
+            : nil
+        let metadataPayloadHash = metadataPayloadHash(for: key)
+        let removeKnownFiles = {
+            _ = try? self.secureDirectory.remove(name: self.metadataFilename(for: key))
+            self.cleanupKnownPayloads(
+                forKeyHash: key.digestHex,
+                contentHashes: [recordPayloadHash, metadataPayloadHash]
+            )
+            try? self.secureDirectory.fsyncRootDirectory()
+        }
+        guard
+            let authorityID = try resolvedRemovalAuthorityLocked(
+                for: key,
+                token: token,
+                currentRecord: currentRecord
+            )
+        else {
+            // No durable record exists for this key, so the implicit
+            // pristine tombstone already rejects every real token and
+            // there is no authority-record slot to admit or tombstone.
+            // Still best-effort remove this key's deterministic files;
+            // any undiscoverable orphan generation remains covered by the
+            // existing startup/write orphan sweeps.
+            removeKnownFiles()
+            return .applied
+        }
         // Two-phase, crash-safe removal via
-        // ``commitRetractionLocked(for:token:destroy:)``: durably commits
-        // `.retiring` *before* this closure ever runs, then
-        // `.tombstone` only once it returns. Physical deletion
-        // itself is deliberately best-effort (`try?`) here, never
-        // propagated: once the final `.tombstone` commit below lands
-        // durably, this key is unreadable by ``get(_:)`` regardless of
-        // whether the metadata sidecar or any payload generation happens
-        // to still be physically present -- a caller (``AssetCacheService/invalidate(_:token:)``)
+        // ``commitRetractionLocked(for:authorityID:destroy:)``: durably
+        // commits `.retiring` *before* this closure ever runs, then
+        // `.tombstone` only once it returns. Physical deletion itself is
+        // deliberately best-effort (`try?`) here, never propagated: once
+        // the final `.tombstone` commit below lands durably, this key is
+        // unreadable by ``get(_:)`` regardless of whether the metadata
+        // sidecar or any payload generation happens to still be physically
+        // present -- a caller (``AssetCacheService/invalidate(_:token:)``)
         // must only ever see this call throw for a genuine failure to
         // commit the *disposition itself* (the two durable JSON writes
         // above), which is the one failure that must actually prevent
@@ -70,11 +98,7 @@ extension AssetDiskCache {
         // durable tombstone itself never landed at all", which is
         // exactly the ambiguity this whole two-phase disposition model
         // exists to remove.
-        try commitRetractionLocked(for: key, token: token) {
-            _ = try? self.secureDirectory.remove(name: self.metadataFilename(for: key))
-            try? self.secureDirectory.fsyncRootDirectory()
-            self.cleanupSupersededPayloads(forKeyHash: key.digestHex, keeping: nil)
-        }
+        try commitRetractionLocked(for: key, authorityID: authorityID, destroy: removeKnownFiles)
         return .applied
     }
 

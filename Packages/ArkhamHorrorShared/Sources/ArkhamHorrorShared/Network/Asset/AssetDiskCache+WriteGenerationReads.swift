@@ -182,6 +182,42 @@ extension AssetDiskCache {
         return (authorityID, revision)
     }
 
+    /// Replaces the issued authority on an authority record the caller has
+    /// already proven exists, without running the directory-wide disk-budget
+    /// proof that ordinary issuance must run before admitting a brand-new
+    /// `<hash>.applied` file. This is intentionally narrower than
+    /// ``issueAuthorityLocked(for:trackingOpenIssuance:)``: a tokenless
+    /// removal of an already-recorded key overwrites that same record with
+    /// a terminal tombstone and removes content bytes, so it cannot
+    /// increase authority-record count or payload usage. If the current
+    /// key is pristine, there is no durable record to overwrite and no
+    /// token can still be authorized by it; callers must use the implicit
+    /// pristine tombstone instead of creating a new file just to record
+    /// another absence.
+    func replaceIssuedAuthorityOnExistingRecordLocked(
+        for key: AssetCacheKey,
+        current: KeyAuthorityRecord
+    ) throws -> AuthorityID? {
+        guard current != .pristine else { return nil }
+        let authorityID = try mintFreshAuthorityIDLocked(distinctFrom: current)
+        let revision = try checkedAdvancedRevision(current.transitionRevision)
+        let currentWasLocallyOpen = current.openIssuanceOwnerID != nil
+            && current.openIssuanceOwnerID == issuanceOwner?.identifier
+        try commitAuthorityRecordLocked(
+            KeyAuthorityRecord(
+                issuedAuthorityID: authorityID,
+                disposition: current.disposition,
+                transitionRevision: revision,
+                openIssuanceOwnerID: nil
+            ),
+            for: key
+        )
+        if currentWasLocallyOpen {
+            retireLocallyOpenIssuanceLocked(current.issuedAuthorityID)
+        }
+        return authorityID
+    }
+
     /// How many times ``mintFreshAuthorityIDLocked(distinctFrom:)`` will
     /// draw a fresh candidate before giving up with a typed failure.
     ///
