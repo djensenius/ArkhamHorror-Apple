@@ -1,11 +1,11 @@
 import SwiftUI
 
+/// Native touch/pointer/VoiceOver board affordance. Keyboard/controller semantic focus for
+/// these linked elements is deliberately deferred to the board-element focus follow-up lane;
+/// the prompt panel remains the keyboard/controller answer surface in this PR.
 struct BoardLinkedChoiceFace<Content: View>: View {
-    let focusID: SemanticFocusID
     let accessibilityLabel: String
     let linkedChoices: [BoardLinkedChoice]
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
-    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @ViewBuilder let content: () -> Content
 
@@ -28,7 +28,6 @@ struct BoardLinkedChoiceFace<Content: View>: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(accessibilityLabel))
                 .accessibilityHint(Text("Activates \(choice.title)"))
-                .focused(focusBinding, equals: focusID)
             }
         default:
             Menu {
@@ -43,7 +42,6 @@ struct BoardLinkedChoiceFace<Content: View>: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
-            .focused(focusBinding, equals: focusID)
         }
     }
 }

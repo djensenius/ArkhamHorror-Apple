@@ -11,8 +11,6 @@ struct BoardPlayerAreaView: View {
     let threatTreacheries: [BoardThreatTreacheryNode]
     let engagedEnemies: [BoardEnemyNode]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
-    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -27,8 +25,6 @@ struct BoardPlayerAreaView: View {
                 BoardEnemyPanelView(
                     title: "Engaged", enemies: engagedEnemies,
                     choiceLinks: choiceLinks,
-                    focusBinding: focusBinding,
-                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -36,8 +32,6 @@ struct BoardPlayerAreaView: View {
                 BoardThreatAreaView(
                     treacheries: threatTreacheries,
                     choiceLinks: choiceLinks,
-                    focusBinding: focusBinding,
-                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -56,10 +50,7 @@ struct BoardPlayerAreaView: View {
                     ForEach(cards) { card in
                         BoardPlayerCardFaceView(
                             card: card,
-                            focusID: BoardFocusID.playerCard(card.id),
                             linkedChoices: choiceLinks[.playerCard(card.id)] ?? [],
-                            focusBinding: focusBinding,
-                            onOutcome: onOutcome,
                             onLinkedChoice: onLinkedChoice
                         )
                     }
@@ -71,10 +62,7 @@ struct BoardPlayerAreaView: View {
 
 struct BoardPlayerCardFaceView: View {
     let card: BoardPlayerCardNode
-    let focusID: SemanticFocusID
     let linkedChoices: [BoardLinkedChoice]
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
-    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -135,11 +123,8 @@ struct BoardPlayerCardFaceView: View {
         @ViewBuilder content: @escaping () -> some View
     ) -> some View {
         BoardLinkedChoiceFace(
-            focusID: focusID,
             accessibilityLabel: accessibilityLabel,
             linkedChoices: linkedChoices,
-            focusBinding: focusBinding,
-            onOutcome: onOutcome,
             onLinkedChoice: onLinkedChoice,
             content: content
         )
@@ -150,8 +135,6 @@ struct BoardEnemyPanelView: View {
     let title: String
     let enemies: [BoardEnemyNode]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
-    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -162,10 +145,7 @@ struct BoardEnemyPanelView: View {
             ForEach(enemies) { enemy in
                 BoardEnemyCardView(
                     enemy: enemy,
-                    focusID: BoardFocusID.enemy(enemy.id),
                     linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
-                    focusBinding: focusBinding,
-                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -175,10 +155,7 @@ struct BoardEnemyPanelView: View {
 
 struct BoardEnemyCardView: View {
     let enemy: BoardEnemyNode
-    let focusID: SemanticFocusID
     let linkedChoices: [BoardLinkedChoice]
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
-    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -255,11 +232,8 @@ struct BoardEnemyCardView: View {
         @ViewBuilder content: @escaping () -> some View
     ) -> some View {
         BoardLinkedChoiceFace(
-            focusID: focusID,
             accessibilityLabel: accessibilityLabel,
             linkedChoices: linkedChoices,
-            focusBinding: focusBinding,
-            onOutcome: onOutcome,
             onLinkedChoice: onLinkedChoice,
             content: content
         )
@@ -269,8 +243,6 @@ struct BoardEnemyCardView: View {
 struct BoardThreatAreaView: View {
     let treacheries: [BoardThreatTreacheryNode]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
-    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -281,10 +253,7 @@ struct BoardThreatAreaView: View {
             ForEach(treacheries) { treachery in
                 BoardThreatTreacheryCardView(
                     treachery: treachery,
-                    focusID: BoardFocusID.threatTreachery(treachery.id),
                     linkedChoices: choiceLinks[.treachery(treachery.id)] ?? [],
-                    focusBinding: focusBinding,
-                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -294,10 +263,7 @@ struct BoardThreatAreaView: View {
 
 struct BoardThreatTreacheryCardView: View {
     let treachery: BoardThreatTreacheryNode
-    let focusID: SemanticFocusID
     let linkedChoices: [BoardLinkedChoice]
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
-    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -332,11 +298,8 @@ struct BoardThreatTreacheryCardView: View {
         @ViewBuilder content: @escaping () -> some View
     ) -> some View {
         BoardLinkedChoiceFace(
-            focusID: focusID,
             accessibilityLabel: accessibilityLabel,
             linkedChoices: linkedChoices,
-            focusBinding: focusBinding,
-            onOutcome: onOutcome,
             onLinkedChoice: onLinkedChoice,
             content: content
         )

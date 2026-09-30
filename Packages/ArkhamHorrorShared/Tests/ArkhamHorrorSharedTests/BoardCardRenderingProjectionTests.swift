@@ -97,8 +97,9 @@ struct BoardCardRenderingProjectionTests {
             layout: BoardLayoutBuilder.makeLayout(locations: []),
             prompt: prompt
         )
-        #expect(graph.contains(BoardFocusID.enemy(enemyID)))
-        #expect(graph.zoneEntryPoints[BoardFocusZone.boardElements] == BoardFocusID.enemy(enemyID))
+        #expect(!graph.order.contains { $0.rawValue.hasPrefix("board.enemy.") })
+        #expect(graph.zoneEntryPoints[BoardFocusZone.prompt] != nil)
+        #expect(graph.contains(BoardFocusID.promptChoice(4)))
     }
 
     @Test("Enemy calculation tags render display values")

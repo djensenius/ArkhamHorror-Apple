@@ -11,7 +11,6 @@ enum BoardFocusZone {
     static let investigators: SemanticFocusZone = "board.investigators"
     static let chaosBag: SemanticFocusZone = "board.chaosBag"
     static let prompt: SemanticFocusZone = "board.prompt"
-    static let boardElements: SemanticFocusZone = "board.elements"
     /// The inspector modal's own zone. Deliberately **not** a member of ``cycleOrder``:
     /// `cycleZone` must never land here, since this zone only ever exists to hold the
     /// inspector's single Close control while a modal is presented.
@@ -22,8 +21,7 @@ enum BoardFocusZone {
     /// own order is insertion order across every zone interleaved, not a meaningful
     /// zone-level sequence).
     static let cycleOrder: [SemanticFocusZone] = [
-        scenario, prompt, boardElements, actAgenda, locations, enemyLocations, investigators,
-        chaosBag,
+        scenario, prompt, actAgenda, locations, enemyLocations, investigators, chaosBag,
     ]
 }
 
@@ -67,18 +65,6 @@ enum BoardFocusID {
     static func investigator(_ id: InvestigatorID) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.investigator.\(id.description)")
     }
-
-    static func playerCard(_ id: BoardPlayerCardID) -> SemanticFocusID {
-        SemanticFocusID(rawValue: "board.card.\(id.rawText)")
-    }
-
-    static func enemy(_ id: EnemyID) -> SemanticFocusID {
-        SemanticFocusID(rawValue: "board.enemy.\(id.description)")
-    }
-
-    static func threatTreachery(_ id: TreacheryID) -> SemanticFocusID {
-        SemanticFocusID(rawValue: "board.treachery.\(id.description)")
-    }
 }
 
 /// Builds a deterministic ``FocusGraph`` from a ``BoardProjection`` and its matching
@@ -101,12 +87,6 @@ enum BoardFocusGraphBuilder {
         let promptChoices = promptFocusIDs(prompt, projection: projection)
         appendVerticalChain(
             promptChoices, zone: BoardFocusZone.prompt,
-            nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
-        )
-
-        let boardElementChain = linkedBoardElementIDs(prompt: prompt, projection: projection)
-        appendHorizontalChain(
-            boardElementChain, zone: BoardFocusZone.boardElements,
             nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
         )
 
@@ -186,9 +166,6 @@ enum BoardFocusGraphBuilder {
         if hasPromptFocus {
             populated.insert(BoardFocusZone.prompt)
         }
-        if !linkedBoardElementIDs(prompt: prompt, projection: projection).isEmpty {
-            populated.insert(BoardFocusZone.boardElements)
-        }
         if !projection.acts.isEmpty || !projection.agendas.isEmpty {
             populated.insert(BoardFocusZone.actAgenda)
         }
@@ -229,13 +206,6 @@ enum BoardFocusGraphBuilder {
             return preModalZone
         }
         return zones.first ?? BoardFocusZone.scenario
-    }
-
-    private static func linkedBoardElementIDs(
-        prompt: BasicChoicePromptPresentation?, projection: BoardProjection
-    ) -> [SemanticFocusID] {
-        BoardPromptChoiceLinker.links(prompt: prompt, projection: projection).keys.map(\.focusID)
-            .sorted { $0.rawValue < $1.rawValue }
     }
 
     private static func appendVerticalChain(

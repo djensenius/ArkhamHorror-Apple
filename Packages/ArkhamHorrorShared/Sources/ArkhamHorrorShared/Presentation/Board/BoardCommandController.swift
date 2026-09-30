@@ -13,7 +13,6 @@ import Observation
 /// adds no new command vocabulary.
 @MainActor
 @Observable
-// swiftlint:disable:next type_body_length
 final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
@@ -200,9 +199,6 @@ final class BoardCommandController {
                 return activatePromptRetry()
             }
             if let index = focusedPromptChoiceIndex {
-                return activatePromptChoice(index)
-            }
-            if let index = focusedBoardChoiceIndex {
                 return activatePromptChoice(index)
             }
             return coordinator.isModalPresented ? closeInspector() : openInspector()

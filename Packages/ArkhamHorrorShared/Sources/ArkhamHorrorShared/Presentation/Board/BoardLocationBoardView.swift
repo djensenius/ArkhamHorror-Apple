@@ -99,8 +99,6 @@ struct BoardLocationBoardView: View {
             BoardEnemyPanelView(
                 title: "Enemies", enemies: Array(enemies.prefix(3)),
                 choiceLinks: choiceLinks,
-                focusBinding: focusBinding,
-                onOutcome: onOutcome,
                 onLinkedChoice: onLinkedChoice
             )
             if enemies.count > 3 {
@@ -185,8 +183,6 @@ struct BoardEnemyLocationsRowView: View {
                 BoardEnemyPanelView(
                     title: "Enemies", enemies: Array(enemies.prefix(3)),
                     choiceLinks: choiceLinks,
-                    focusBinding: focusBinding,
-                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
