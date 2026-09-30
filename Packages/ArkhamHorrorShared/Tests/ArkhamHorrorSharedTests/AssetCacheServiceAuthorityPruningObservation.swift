@@ -5,6 +5,8 @@ import Testing
 struct RevalidationBacklogChurnObservation: Equatable, Sendable {
     let busyKeyCount: Int
     let trackedBusyKeyCount: Int
+    let directoryEntryCountBeforeChurn: Int
+    let listNamesCallsDuringChurn: Int
 }
 
 struct BusyRevalidation: Sendable {
@@ -29,7 +31,9 @@ extension AssetCacheServiceTests {
     ) async throws -> RevalidationBacklogChurnObservation {
         var observation = RevalidationBacklogChurnObservation(
             busyKeyCount: busyKeyCount,
-            trackedBusyKeyCount: 0
+            trackedBusyKeyCount: 0,
+            directoryEntryCountBeforeChurn: 0,
+            listNamesCallsDuringChurn: 0
         )
         try await withService { service, _ in
             let busyRevalidations = try await registerRevalidationBusyKeys(
@@ -43,18 +47,25 @@ extension AssetCacheServiceTests {
                 keyPrefix: keyPrefix + 4
             )
 
+            let directoryAccess = await service.diskCache.directoryAccess
+            let entryCountBeforeChurn = try directoryAccess.listNames().count
+            let listNamesCallsBeforeChurn = directoryAccess.listNamesCallCount
             try await touchDistinctAuthorityKeys(
                 service: service,
                 touchCount: touchCount,
                 keyPrefix: keyPrefix
             )
+            let listNamesCallsDuringChurn = directoryAccess.listNamesCallCount
+                - listNamesCallsBeforeChurn
             let trackedBusyKeyCount = await countTrackedBusyRevalidations(
                 busyRevalidations,
                 service: service
             )
             observation = RevalidationBacklogChurnObservation(
                 busyKeyCount: busyKeyCount,
-                trackedBusyKeyCount: trackedBusyKeyCount
+                trackedBusyKeyCount: trackedBusyKeyCount,
+                directoryEntryCountBeforeChurn: entryCountBeforeChurn,
+                listNamesCallsDuringChurn: listNamesCallsDuringChurn
             )
 
             await assertBusyRevalidationsStayedTracked(busyRevalidations, service: service)
