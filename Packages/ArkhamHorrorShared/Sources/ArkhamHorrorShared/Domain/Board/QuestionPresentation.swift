@@ -131,6 +131,26 @@ extension QuestionPresentation {
         let type: AbilityType
         let actions: [Action]
         let canBeCancelled: Bool
+        let blocksIn: JSONValue?
+        let nonBlocking: Bool?
+
+        init(
+            cardCode: String,
+            index: Int,
+            type: AbilityType,
+            actions: [Action],
+            canBeCancelled: Bool,
+            blocksIn: JSONValue? = nil,
+            nonBlocking: Bool? = nil
+        ) {
+            self.cardCode = cardCode
+            self.index = index
+            self.type = type
+            self.actions = actions
+            self.canBeCancelled = canBeCancelled
+            self.blocksIn = blocksIn
+            self.nonBlocking = nonBlocking
+        }
     }
 
     indirect enum Cost: Sendable, Equatable, Hashable {

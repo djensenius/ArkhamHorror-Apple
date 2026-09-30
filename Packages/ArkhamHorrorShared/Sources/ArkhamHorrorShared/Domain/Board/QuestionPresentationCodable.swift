@@ -304,6 +304,8 @@ extension QuestionPresentation.Ability: Codable {
             keyedBy: CodingKeys.self,
             allowing: Array(CodingKeys.allCases)
         )
+        let blocksIn = try Self.decodeBlocksIn(from: container)
+        let nonBlocking = try Self.decodeNonBlocking(from: container)
         let ability = try Self(
             cardCode: container.decode(String.self, forKey: .cardCode),
             index: container.decode(Int.self, forKey: .index),
@@ -311,15 +313,11 @@ extension QuestionPresentation.Ability: Codable {
             actions: container.decode(
                 [QuestionPresentation.Action].self, forKey: .actions
             ),
-            canBeCancelled: container.decode(Bool.self, forKey: .canBeCancelled)
+            canBeCancelled: container.decode(Bool.self, forKey: .canBeCancelled),
+            blocksIn: blocksIn,
+            nonBlocking: nonBlocking
         )
-        guard ability.isValidShape else {
-            throw DecodingError.dataCorruptedError(
-                forKey: .actions,
-                in: container,
-                debugDescription: "Ability actions must be unique"
-            )
-        }
+        try ability.validateDecodedShape(in: container)
         self = ability
     }
 
@@ -339,10 +337,54 @@ extension QuestionPresentation.Ability: Codable {
         try container.encode(type, forKey: .type)
         try container.encode(actions, forKey: .actions)
         try container.encode(canBeCancelled, forKey: .canBeCancelled)
+        try container.encodeIfPresent(blocksIn, forKey: .blocksIn)
+        try container.encodeIfPresent(nonBlocking, forKey: .nonBlocking)
     }
 
     fileprivate var isValidShape: Bool {
         Set(actions).count == actions.count
+            && (blocksIn == nil || blocksIn == .null)
+            && (nonBlocking == nil || nonBlocking == false)
+    }
+
+    private func validateDecodedShape(
+        in container: KeyedDecodingContainer<CodingKeys>
+    ) throws {
+        guard Set(actions).count == actions.count else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .actions,
+                in: container,
+                debugDescription: "Ability actions must be unique"
+            )
+        }
+        guard blocksIn == nil || blocksIn == .null else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .blocksIn,
+                in: container,
+                debugDescription: "Ability blocksIn must be null when present"
+            )
+        }
+        guard nonBlocking == nil || nonBlocking == false else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .nonBlocking,
+                in: container,
+                debugDescription: "Ability nonBlocking must be false when present"
+            )
+        }
+    }
+
+    private static func decodeBlocksIn(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> JSONValue? {
+        guard container.contains(.blocksIn) else { return nil }
+        return try container.decode(JSONValue.self, forKey: .blocksIn)
+    }
+
+    private static func decodeNonBlocking(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> Bool? {
+        guard container.contains(.nonBlocking) else { return nil }
+        return try container.decode(Bool.self, forKey: .nonBlocking)
     }
 }
 
