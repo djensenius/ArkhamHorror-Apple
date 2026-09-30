@@ -28,7 +28,9 @@ extension AppModel {
         guard case let .signedIn(_, compatibility, _) = sessionState,
               case .modern = compatibility
         else {
-            return .readOnly("Update or reconnect to a contract-compatible server to choose a deck.")
+            return .readOnly(
+                "Update or reconnect to a contract-compatible server to choose a deck."
+            )
         }
         guard let connection = liveGameConnections[gameID],
               liveGameSessions[gameID]?.attemptID == connection.attemptID

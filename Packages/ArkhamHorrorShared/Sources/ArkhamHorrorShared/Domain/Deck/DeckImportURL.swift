@@ -92,7 +92,8 @@ enum DeckImportURL: Equatable, Sendable {
     private static func isArkhamBuildIdentifier(_ value: String) -> Bool {
         !value.isEmpty && value.allSatisfy { character in
             character.isASCII
-                && (character.isLetter || character.isNumber || character == "-" || character == "_")
+                && (character.isLetter || character.isNumber
+                    || character == "-" || character == "_")
         }
     }
 }

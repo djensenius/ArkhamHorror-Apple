@@ -171,7 +171,9 @@ struct LiveGameView: View {
         )
         let answerability = model.canAnswerLiveChooseDeck(for: gameID)
         let isLiveChooseDeckPrompt = answerability.promptKey != nil
-            || renderedPrompt.map { LiveChooseDeckQuestion.matches($0.identity.rawQuestion) } == true
+            || renderedPrompt.map {
+                LiveChooseDeckQuestion.matches($0.identity.rawQuestion)
+            } == true
         if isLiveChooseDeckPrompt, case let .signedIn(profile, _, _) = model.sessionState {
             VStack(spacing: 12) {
                 switch answerability {
