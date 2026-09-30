@@ -119,7 +119,7 @@ struct GatheringRawChoiceBindingMutationTests {
                 to: raw,
                 expectedQuestionVersion: 34
             )
-            #expect(!binding.hasSealedOverlay)
+            #expect(!binding.usesSealedActionabilityOverlay)
             #expect(binding.governedSource == nil)
         }
     }
@@ -184,7 +184,7 @@ struct GatheringRawChoiceBindingMutationTests {
                 to: mutated,
                 expectedQuestionVersion: mutation.questionVersion
             )
-            #expect(!binding.hasSealedOverlay)
+            #expect(!binding.usesSealedActionabilityOverlay)
             #expect(binding.governedSource == nil)
         }
     }

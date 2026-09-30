@@ -120,7 +120,7 @@ struct MovementEntryQuestionBindingTests {
             to: rawQuestion,
             expectedQuestionVersion: 39
         )
-        #expect(binding.hasSealedOverlay)
+        #expect(binding.usesSealedActionabilityOverlay)
         #expect(
             binding.descriptor(
                 forSourceIndex: investigationSourceIndex
@@ -315,7 +315,7 @@ private func assertBindingLosesOverlay(
             to: rawQuestion,
             expectedQuestionVersion: questionVersion
         )
-        #expect(!binding.hasSealedOverlay)
+        #expect(!binding.usesSealedActionabilityOverlay)
         #expect(binding.governedSource == nil)
     } catch {
         Issue.record("Expected failed seal to bind as plain generic rendering, got \(error)")

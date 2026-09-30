@@ -54,8 +54,105 @@ struct QuestionPresentationV2GenericTests {
         #expect(representatives.presentations.count == 37)
         for entry in representatives.presentations {
             #expect(entry.presentation.protocolVersion == 2, "\(entry.name)")
-            #expect(entry.presentation.genericSupport != .deferred, "\(entry.name)")
+            #expect(
+                entry.presentation.genericSupport == expectedGenericSupport(
+                    for: entry.presentation.questionKind
+                ),
+                "\(entry.name)"
+            )
         }
+    }
+
+    private struct GenericSupportExpectation {
+        let fixtureName: String
+        let support: QuestionPresentation.GenericSupport
+        let supportsChoiceList: Bool
+    }
+
+    @Test("Generic support and current choice-list rendering are exact per question kind")
+    func genericSupportMatrix() throws {
+        let expectations: [GenericSupportExpectation] = [
+            .init(fixtureName: "question-presentation-generic-choose-n", support: .multiSelect, supportsChoiceList: false),
+            .init(fixtureName: "question-presentation-generic-choose-some", support: .multiSelect, supportsChoiceList: false),
+            .init(fixtureName: "question-presentation-generic-choose-up-to-n", support: .multiSelect, supportsChoiceList: false),
+            .init(fixtureName: "question-presentation-generic-read", support: .singleChoice, supportsChoiceList: true),
+            .init(fixtureName: "question-presentation-generic-choose-amounts", support: .amounts, supportsChoiceList: false),
+            .init(fixtureName: "question-presentation-generic-payment-amounts", support: .payment, supportsChoiceList: false),
+            .init(fixtureName: "question-presentation-generic-choose-deck", support: .deck, supportsChoiceList: false),
+        ]
+        for expectation in expectations {
+            let presentation = try presentationFixture(expectation.fixtureName)
+            #expect(presentation.genericSupport == expectation.support, "\(expectation.fixtureName)")
+            #expect(
+                presentation.supportsCurrentGenericChoiceList == expectation.supportsChoiceList,
+                "\(expectation.fixtureName)"
+            )
+        }
+    }
+
+    @Test("Non-single-answer presentations cannot submit as basic single choices")
+    func canSubmitSingleChoiceAnswerFollowsGenericSupport() throws {
+        let singleChoice = try prompt(fixtureName: "question-presentation-generic-read")
+        #expect(singleChoice.canSubmitSingleChoiceAnswer)
+        let amounts = try prompt(fixtureName: "question-presentation-generic-choose-amounts")
+        #expect(!amounts.canSubmitSingleChoiceAnswer)
+        let deck = try prompt(fixtureName: "question-presentation-generic-choose-deck")
+        #expect(!deck.canSubmitSingleChoiceAnswer)
+        let multiSelect = try prompt(fixtureName: "question-presentation-generic-choose-n")
+        #expect(!multiSelect.canSubmitSingleChoiceAnswer)
+    }
+
+    @Test("Unsupported generic answer families require an app update in prompt presentation")
+    func unsupportedGenericFamiliesAreUpdateRequired() throws {
+        for fixtureName in [
+            "question-presentation-generic-choose-amounts",
+            "question-presentation-generic-choose-deck",
+        ] {
+            let prompt = try prompt(fixtureName: fixtureName)
+            #expect(prompt.readOnlyReason == .updateRequired, "\(fixtureName)")
+            #expect(!prompt.isRenderableQuestion, "\(fixtureName)")
+            #expect(!prompt.canSubmit, "\(fixtureName)")
+        }
+    }
+
+    @Test("Generic rendering still respects selectable on non-info choices")
+    func genericChoiceListRespectsSelectableForEveryKind() throws {
+        let presentation = QuestionPresentation(
+            protocolVersion: 2,
+            questionVersion: 1,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [
+                .init(sourceIndex: 0, kind: .drawCard, selectable: false, actorID: "c01001"),
+            ]
+        )
+        let rawQuestion: JSONValue = .object([
+            "tag": .string("ChooseOne"),
+            "choices": .array([.object(["tag": .string("DrawCards"), "contents": .number(.integer(1))])]),
+        ])
+        let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 1)
+        let prompt = BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: GameID(UUID()),
+                ownerID: PlayerID(UUID()),
+                questionVersion: 1,
+                rawQuestion: rawQuestion,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: BasicChoiceParser.parseQuestion(rawQuestion),
+            semanticPresentation: binding,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+        let choice = try #require(prompt.choices.first)
+        #expect(!prompt.isChoiceActionable(
+            choice,
+            in: BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        ))
     }
 
     @Test("V2 structural mutations reject")
@@ -210,7 +307,7 @@ struct QuestionPresentationV2GenericTests {
 
     @Test("Raw server question encodings without vendored raw fixtures bind to matching v2 presentations")
     func rawServerQuestionEncodingsWithoutFixturesBind() throws {
-        // Arkham/Question.hs:195 derives record-field JSON with defaultOptions.
+        // Arkham/Question.hs:198 derives record-field JSON with defaultOptions.
         try bindRawPresentationPair(
             raw: singleRawQuestion(tag: "ChooseOneAtATime"),
             presentation: singleChoicePresentation(
@@ -218,7 +315,7 @@ struct QuestionPresentationV2GenericTests {
                 selection: (min: 1, max: 1)
             )
         )
-        // Arkham/Question.hs:193 derives a label plus choices record.
+        // Arkham/Question.hs:196 derives a label plus choices record.
         try bindRawPresentationPair(
             raw: #"{"tag":"ChooseSome1","label":"$choose","choices":[{"tag":"Label","label":"$ok","messages":[]}]}"#,
             presentation: singleChoicePresentation(
@@ -543,6 +640,64 @@ struct QuestionPresentationV2GenericTests {
         """#
     }
 
+    private func prompt(fixtureName: String) throws -> BasicChoicePromptPresentation {
+        let presentation = try presentationFixture(fixtureName)
+        let rawName = fixtureName.replacingOccurrences(
+            of: "question-presentation-",
+            with: "question-"
+        )
+        let rawQuestion = try rawFixture(rawName)
+        let binding = try presentation.bind(
+            to: rawQuestion,
+            expectedQuestionVersion: presentation.questionVersion
+        )
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: GameID(UUID()),
+                ownerID: PlayerID(UUID()),
+                questionVersion: presentation.questionVersion,
+                rawQuestion: rawQuestion,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: BasicChoiceParser.parseQuestion(rawQuestion),
+            semanticPresentation: binding,
+            readOnlyReason: presentation.supportsCurrentGenericChoiceList ? nil : .updateRequired,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private func expectedGenericSupport(
+        for kind: QuestionPresentation.Kind
+    ) -> QuestionPresentation.GenericSupport {
+        switch kind {
+        case .chooseOne, .chooseOneAtATime, .chooseOneAtATimeWithAuto,
+             .dropDown, .pickSupplies, .playerWindowChooseOne, .read,
+             .windowChooseOne:
+            .singleChoice
+        case .chooseN, .chooseOneFromEach, .chooseSome, .chooseSome1,
+             .chooseUpToN:
+            .multiSelect
+        case .chooseAmounts:
+            .amounts
+        case .choosePaymentAmounts:
+            .payment
+        case .chooseExchangeAmounts:
+            .exchange
+        case .chooseDeck, .chooseJoinDeck, .chooseUpgradeDeck:
+            .deck
+        case .continueCampaign, .pickCampaignSettings,
+             .pickCampaignSpecific, .pickDestiny, .pickScenarioSettings,
+             .pickScenarioSpecific:
+            .campaignSettings
+        case .chooseOneWizard, .unsupported:
+            .deferred
+        }
+    }
+
     private func presentationFixture(_ name: String) throws -> QuestionPresentation {
         try ContractJSON.decode(QuestionPresentation.self, from: fixture(name))
     }
@@ -634,3 +789,5 @@ private extension JSONValue {
 private enum MutationError: Error {
     case invalidPointer
 }
+
+// swiftlint:enable file_length type_body_length function_body_length nesting line_length cyclomatic_complexity

@@ -217,16 +217,16 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
                       forSourceIndex: choice.index
                   )
             else { return false }
-            if semanticPresentation.hasSealedOverlay {
-                return projection.isSemanticChoiceActionable(
-                    descriptor,
-                    ownerID: ownerID,
-                    labelResolution: choiceLabelResolutions[choice.index],
-                    governedSource: semanticPresentation.governedSource
-                )
+            guard semanticPresentation.presentation.supportsCurrentGenericChoiceList else {
+                return false
             }
-            return semanticPresentation.presentation.supportsCurrentGenericChoiceList
-                && descriptor.selectable
+            return projection.isSemanticChoiceActionable(
+                descriptor,
+                ownerID: ownerID,
+                labelResolution: choiceLabelResolutions[choice.index],
+                governedSource: semanticPresentation.usesSealedActionabilityOverlay
+                    ? semanticPresentation.governedSource : nil
+            )
         }
         return projection.isChoiceActionable(
             choice,
@@ -243,10 +243,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
 
     var canSubmitSingleChoiceAnswer: Bool {
         guard let semanticPresentation else { return true }
-        guard case .singleChoice = semanticPresentation.presentation.answer else {
-            return false
-        }
-        return true
+        return semanticPresentation.presentation.genericSupport == .singleChoice
     }
 
     var canSubmit: Bool {

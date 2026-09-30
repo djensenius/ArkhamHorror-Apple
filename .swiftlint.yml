@@ -10,7 +10,6 @@ excluded:
 strict: true
 
 disabled_rules:
-  - blanket_disable_command
   - trailing_comma
 
 opt_in_rules:

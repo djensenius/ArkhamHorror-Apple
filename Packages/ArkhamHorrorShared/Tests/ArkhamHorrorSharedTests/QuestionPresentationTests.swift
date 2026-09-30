@@ -135,7 +135,7 @@ struct QuestionPresentationTests {
             to: raw,
             expectedQuestionVersion: 41
         )
-        #expect(!wrongActorBinding.hasSealedOverlay)
+        #expect(!wrongActorBinding.usesSealedActionabilityOverlay)
         let downgradedBinding = try downgraded.bind(
             to: raw,
             expectedQuestionVersion: 41
@@ -143,7 +143,7 @@ struct QuestionPresentationTests {
         #expect(
             downgradedBinding.descriptor(forSourceIndex: 0)?.kind == .drawCard
         )
-        #expect(!downgradedBinding.hasSealedOverlay)
+        #expect(!downgradedBinding.usesSealedActionabilityOverlay)
 
         let mutatedRawData = try #require(
             String(
@@ -162,13 +162,13 @@ struct QuestionPresentationTests {
             to: mutatedRaw,
             expectedQuestionVersion: 41
         )
-        #expect(!mutatedBinding.hasSealedOverlay)
+        #expect(!mutatedBinding.usesSealedActionabilityOverlay)
         for wrapped in encounterDrawWrappers(around: raw) {
             let wrappedBinding = try presentation.bind(
                 to: wrapped,
                 expectedQuestionVersion: 41
             )
-            #expect(!wrappedBinding.hasSealedOverlay)
+            #expect(!wrappedBinding.usesSealedActionabilityOverlay)
         }
     }
 

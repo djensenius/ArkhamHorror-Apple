@@ -293,6 +293,8 @@ extension PublicGameSnapshot: Codable {
                         expectedQuestionVersion: questionVersion
                     )
                 )
+            } catch is QuestionPresentationBindingError {
+                boundQuestions[playerID] = question.markingPresentationUpdateRequired()
             } catch {
                 throw DecodingError.dataCorrupted(
                     .init(

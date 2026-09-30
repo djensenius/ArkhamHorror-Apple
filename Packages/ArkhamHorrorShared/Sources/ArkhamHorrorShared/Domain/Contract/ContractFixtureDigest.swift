@@ -428,3 +428,5 @@ enum ContractFixtureDigests {
         ),
     ]
 }
+
+// swiftlint:enable file_length type_body_length

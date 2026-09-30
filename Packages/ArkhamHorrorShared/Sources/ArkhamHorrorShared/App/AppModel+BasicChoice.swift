@@ -88,13 +88,13 @@ extension AppModel {
     private func readOnlyReason(
         gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload
     ) -> BasicChoiceReadOnlyReason? {
-        let hasGenericPresentation =
-            payload.presentation?.presentation.supportsCurrentGenericChoiceList == true
-        let hasRenderableSupportedQuestion =
+        let hasRenderableQuestion = if let semanticPresentation = payload.presentation {
+            semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && !semanticPresentation.rawChoices.isEmpty
+        } else {
             payload.supportedQuestion?.choices.isEmpty == false
-        guard hasRenderableSupportedQuestion || hasGenericPresentation else {
-            return .updateRequired
         }
+        guard hasRenderableQuestion else { return .updateRequired }
         guard let identity = liveGameParticipantIdentities[gameID] else { return .disconnected }
         switch identity {
         case .spectator:
@@ -355,17 +355,14 @@ extension AppModel {
                 basicChoiceActions[gameID] = nil
                 return
             }
-            if semanticPresentation.hasSealedOverlay {
-                isActionable = projection.isSemanticChoiceActionable(
+            isActionable = semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && projection.isSemanticChoiceActionable(
                     descriptor,
                     ownerID: ownerID,
                     labelResolution: labelResolutions[choiceIndex],
-                    governedSource: semanticPresentation.governedSource
+                    governedSource: semanticPresentation.usesSealedActionabilityOverlay
+                        ? semanticPresentation.governedSource : nil
                 )
-            } else {
-                isActionable = semanticPresentation.presentation.supportsCurrentGenericChoiceList
-                    && descriptor.selectable
-            }
         } else {
             isActionable = projection.isChoiceActionable(
                 originalChoice,

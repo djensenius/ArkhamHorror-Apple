@@ -144,17 +144,50 @@ struct TreacheryForcedAbilityBindingTests {
             QuestionPresentation.self,
             from: ContractJSON.encode(rawPresentation)
         )
-        try assertBindingFails(rawQuestion: rawFixture(), presentation: presentation)
+        try assertBindingFails(
+            rawQuestion: rawFixture(),
+            presentation: presentation,
+            expectedQuestionVersion: 68
+        )
+    }
+
+    @Test(
+        "Presentation drift stays fail-closed independent of scenario step",
+        arguments: [37, 68]
+    )
+    func presentationDriftFailsClosedAtGatheringRangeAndLaterVersions(
+        questionVersion: Int
+    ) throws {
+        var rawPresentation = try replacing(
+            presentationJSON(),
+            at: "/choices/0/actorId",
+            with: .string("c02001")
+        )
+        rawPresentation = try replacing(
+            rawPresentation,
+            at: "/questionVersion",
+            with: .number(.integer(Int64(questionVersion)))
+        )
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: ContractJSON.encode(rawPresentation)
+        )
+        try assertBindingFails(
+            rawQuestion: rawFixture(),
+            presentation: presentation,
+            expectedQuestionVersion: questionVersion
+        )
     }
 
     private func assertBindingFails(
         rawQuestion: JSONValue,
-        presentation: QuestionPresentation
+        presentation: QuestionPresentation,
+        expectedQuestionVersion: Int = 68
     ) {
         #expect(throws: QuestionPresentationBindingError.self) {
             try presentation.bind(
                 to: rawQuestion,
-                expectedQuestionVersion: 68
+                expectedQuestionVersion: expectedQuestionVersion
             )
         }
     }

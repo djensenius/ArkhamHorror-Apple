@@ -31,6 +31,21 @@ struct BasicChoiceQuestionPayload: Sendable, Equatable, Hashable {
     func binding(_ presentation: BoundQuestionPresentation) -> Self {
         Self(rawValue: rawValue, state: state, presentation: presentation)
     }
+
+    func markingPresentationUpdateRequired() -> Self {
+        Self(
+            rawValue: rawValue,
+            state: .updateRequired(tag: rawQuestionTag),
+            presentation: nil
+        )
+    }
+
+    private var rawQuestionTag: String? {
+        guard case let .object(object) = rawValue,
+              case let .string(tag)? = object["tag"]
+        else { return nil }
+        return tag
+    }
 }
 
 extension BasicChoiceQuestionPayload: Codable {

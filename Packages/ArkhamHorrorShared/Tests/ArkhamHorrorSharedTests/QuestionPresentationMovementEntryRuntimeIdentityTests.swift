@@ -99,7 +99,7 @@ struct MovementEntryRuntimeIdentityTests {
             try presentation.bind(
                 to: rawQuestion,
                 expectedQuestionVersion: 39
-            ).hasSealedOverlay
+            ).usesSealedActionabilityOverlay
         )
 
         let drifted = try ContractJSON.decode(
@@ -114,7 +114,7 @@ struct MovementEntryRuntimeIdentityTests {
             to: rawQuestion,
             expectedQuestionVersion: 39
         )
-        #expect(!driftedBinding.hasSealedOverlay)
+        #expect(!driftedBinding.usesSealedActionabilityOverlay)
         #expect(driftedBinding.governedSource == nil)
     }
 
@@ -295,3 +295,5 @@ struct MovementEntryRuntimeIdentityTests {
         case unexpectedShape
     }
 }
+
+// swiftlint:enable type_body_length

@@ -149,12 +149,12 @@ extension AppModelLiveGameTests {
         let actorDrift = try encounterDrawBinding { choice in
             choice["actorId"] = .string("c01002")
         }
-        #expect(!actorDrift.hasSealedOverlay)
+        #expect(!actorDrift.usesSealedActionabilityOverlay)
 
         let downgraded = try encounterDrawBinding { choice in
             choice["kind"] = .string("drawCard")
         }
-        #expect(!downgraded.hasSealedOverlay)
+        #expect(!downgraded.usesSealedActionabilityOverlay)
         #expect(downgraded.descriptor(forSourceIndex: 0)?.kind == .drawCard)
     }
 
@@ -240,6 +240,33 @@ extension AppModelLiveGameTests {
                 == .staleQuestion
         )
         #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Gathering seal drift outside 34-42 falls back to generic rendering")
+    func gatheringSealDriftOutsideRecordedSequenceFallsBack() throws {
+        var presentationJSON = try fixtureJSON("question-presentation-gathering-act-objective")
+        guard case var .object(presentationObject) = presentationJSON else {
+            throw SemanticFixtureError.unexpectedShape
+        }
+        presentationObject["questionVersion"] = .number(.integer(68))
+        presentationJSON = .object(presentationObject)
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: ContractJSON.encode(presentationJSON)
+        )
+        let driftedRaw = try EnemyAttackFixtures.applying(
+            operation: "replace",
+            path: "/choices/12/ability/cardCode".split(separator: "/"),
+            replacement: .string("c01109"),
+            to: fixtureJSON("question-gathering-act-objective")
+        )
+
+        let binding = try presentation.bind(
+            to: driftedRaw,
+            expectedQuestionVersion: 68
+        )
+        #expect(!binding.usesSealedActionabilityOverlay)
+        #expect(binding.governedSource == nil)
     }
 
     @Test("Semantic localized labels are collected by authoritative source index")

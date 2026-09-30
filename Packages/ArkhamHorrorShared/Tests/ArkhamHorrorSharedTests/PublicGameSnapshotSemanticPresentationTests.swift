@@ -66,17 +66,20 @@ struct SnapshotSemanticPresentationTests {
         }
     }
 
-    @Test("Semantic questionVersion must equal authoritative scenarioSteps")
+    @Test("Semantic questionVersion drift marks only that prompt update-required")
     func questionPresentationVersionMismatchFailsClosed() throws {
         let mutated = try mutatePresentation { presentation in
             presentation["questionVersion"] = try jsonValue("4")
         }
-        #expect(throws: DecodingError.self) {
-            _ = try ContractJSON.decode(GetGameEnvelope.self, from: mutated)
-        }
+        let envelope = try ContractJSON.decode(GetGameEnvelope.self, from: mutated)
+        let playerID = try #require(envelope.playerID)
+        let payload = try #require(envelope.game.question[playerID])
+        #expect(payload.presentation == nil)
+        #expect(payload.isUpdateRequired)
+        #expect(envelope.game.name.isEmpty == false)
     }
 
-    @Test("A sparse semantic envelope fails closed")
+    @Test("A sparse semantic envelope fails closed during presentation decode")
     func sparseQuestionPresentationFailsClosed() throws {
         let mutated = try mutatePresentation { presentation in
             guard case var .array(choices)? = presentation["choices"] else {

@@ -452,3 +452,5 @@ struct ContractFixtureDigestTests {
         }
     }
 }
+
+// swiftlint:enable file_length function_body_length

@@ -1,4 +1,4 @@
-// swiftlint:disable file_length function_body_length line_length
+// swiftlint:disable file_length line_length
 import Foundation
 
 extension QuestionPresentation {
@@ -21,21 +21,30 @@ extension QuestionPresentation {
         guard protocolVersion == Self.supportedProtocolVersion,
               questionKind != .unsupported
         else { return .deferred }
-        return switch answer {
-        case .singleChoice:
+        return switch questionKind {
+        case .chooseOne, .chooseOneAtATime, .chooseOneAtATimeWithAuto,
+             .dropDown, .pickSupplies, .playerWindowChooseOne, .read,
+             .windowChooseOne:
             .singleChoice
-        case .amounts:
+        case .chooseN, .chooseOneFromEach, .chooseSome, .chooseSome1,
+             .chooseUpToN:
+            .multiSelect
+        case .chooseAmounts:
             .amounts
-        case .paymentAmounts:
+        case .choosePaymentAmounts:
             .payment
-        case .exchangeAmounts:
+        case .chooseExchangeAmounts:
             .exchange
-        case .deck:
+        case .chooseDeck, .chooseJoinDeck, .chooseUpgradeDeck:
             .deck
-        case .standaloneSettings, .campaignSettings,
-             .pickDestiny, .campaignSpecific, .scenarioSpecific,
-             .continueCampaign:
+        case .continueCampaign, .pickCampaignSettings,
+             .pickCampaignSpecific, .pickDestiny, .pickScenarioSettings,
+             .pickScenarioSpecific:
             .campaignSettings
+        case .chooseOneWizard:
+            .deferred
+        case .unsupported:
+            .deferred
         }
     }
 
@@ -182,17 +191,14 @@ extension BasicChoicePromptPresentation {
             )
         }
         let isActionable = if case .singleChoice = semanticPresentation.presentation.answer {
-            if semanticPresentation.hasSealedOverlay {
-                projection.isSemanticChoiceActionable(
+            semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && projection.isSemanticChoiceActionable(
                     descriptor,
                     ownerID: ownerID,
                     labelResolution: choiceLabelResolutions[choice.index],
-                    governedSource: semanticPresentation.governedSource
+                    governedSource: semanticPresentation.usesSealedActionabilityOverlay
+                        ? semanticPresentation.governedSource : nil
                 )
-            } else {
-                semanticPresentation.presentation.supportsCurrentGenericChoiceList
-                    && descriptor.selectable
-            }
         } else {
             false
         }
@@ -513,3 +519,5 @@ extension BasicChoicePromptPresentation {
         return nil
     }
 }
+
+// swiftlint:enable file_length line_length

@@ -34,6 +34,32 @@ extension AppModelLiveGameTests {
         )
     }
 
+    @Test(
+        "Treachery forced-ability presentation drift fails closed at all scenario steps",
+        arguments: [37, 68]
+    )
+    func treacheryForcedAbilityPresentationDriftBecomesUpdateRequired(
+        questionVersion: Int
+    ) throws {
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-treachery-forced-ability",
+            presentationFixture: "question-presentation-treachery-forced-ability",
+            questionVersion: questionVersion,
+            mutatePresentation: { presentation in
+                try Self.replaceFirstPresentationChoiceField(
+                    in: &presentation,
+                    key: "actorId",
+                    value: .string("c02001")
+                )
+            }
+        )
+        let playerID = try #require(envelope.playerID)
+        let payload = try #require(envelope.game.question[playerID])
+        #expect(payload.presentation == nil)
+        #expect(payload.isUpdateRequired)
+        #expect(envelope.game.name.isEmpty == false)
+    }
+
     @Test("Treachery forced ability revalidates the latest snapshot before sending")
     func treacheryForcedAbilityRejectsStaleSource() async throws {
         let (model, fakes) = makeSignedInModel()
@@ -84,6 +110,19 @@ extension AppModelLiveGameTests {
                 ])
             }
         )
+    }
+
+    private static func replaceFirstPresentationChoiceField(
+        in presentation: inout [String: JSONValue],
+        key: String,
+        value: JSONValue
+    ) throws {
+        guard case var .array(choices)? = presentation["choices"],
+              case var .object(choice)? = choices.first
+        else { throw SemanticFixtureError.unexpectedShape }
+        choice[key] = value
+        choices[0] = .object(choice)
+        presentation["choices"] = .array(choices)
     }
 
     private func treacheryForcedAbilityAnswer() -> Data {

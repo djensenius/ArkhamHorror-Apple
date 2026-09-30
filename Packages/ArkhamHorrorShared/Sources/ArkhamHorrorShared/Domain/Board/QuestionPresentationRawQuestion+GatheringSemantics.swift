@@ -6,37 +6,29 @@ extension QuestionPresentationRawQuestionShape {
     func validateGovernedChoices(
         for presentation: QuestionPresentation
     ) throws -> QuestionPresentation.GovernedSource? {
-        let rawEncounterDrawActorID = encounterDeckDrawActorID()
-        let hasEncounterDrawDescriptor = presentation.choices.contains {
-            $0.kind == .drawEncounterCard
-        }
-        if rawEncounterDrawActorID != nil || hasEncounterDrawDescriptor {
+        switch presentation.sealValidationKind {
+        case .encounterDraw:
             try validateEncounterDeckDraw(
                 for: presentation,
-                rawActorID: rawEncounterDrawActorID
+                rawActorID: encounterDeckDrawActorID()
             )
             return nil
-        }
-        if try validateTreacheryForcedAbilities(for: presentation) {
+        case .treacheryForcedAbility:
+            guard try validateTreacheryForcedAbilities(for: presentation) else {
+                throw QuestionPresentationBindingError.governedChoicesMismatch
+            }
             return nil
-        }
-
-        switch (
-            presentation.questionVersion,
-            presentation.questionKind,
-            presentation.choiceCount
-        ) {
-        case (34, .playerWindowChooseOne, 13):
+        case .gatheringActObjective:
             try validateGatheringActObjectiveChoices(for: presentation)
             return nil
-        case (35, .chooseOne, 1):
+        case .gatheringActAdvance:
             try validateCanonicalChoice(
                 at: 0,
                 expectedSHA256:
                 "4e85cfd95e1abe29f08f8d1cf7eaaf817b23193b77000fe5413b02fdec6f3b7f"
             )
             return nil
-        case (36, .playerWindowChooseOne, 12):
+        case .gatheringMovement:
             _ = try validateGatheringQuestion(
                 for: presentation,
                 expectedRawSHA256:
@@ -46,28 +38,24 @@ extension QuestionPresentationRawQuestionShape {
                 requireMatchingDynamicIDs: true
             )
             return nil
-        case (37, .windowChooseOne, 1):
+        case .gatheringLocationForcedAbility:
             try validateGatheringForcedAbility(for: presentation)
             return nil
-        case (38, .chooseOne, 1):
+        case .gatheringAssignment:
             return try validateGatheringAssignment(for: presentation)
-        case (39, .playerWindowChooseOne, 11):
+        case .gatheringPostEntry:
             try validateGatheringPostEntryChoices(for: presentation)
             return nil
-        case (40, .chooseOne, 1):
+        case .gatheringStartSkillTest:
             try validateGatheringStartSkillTest(for: presentation)
             return nil
-        case (40, .playerWindowChooseOne, 1):
+        case .gatheringEndTurn:
             try validateGatheringEndTurn(for: presentation)
             return nil
-        case (41, .chooseOne, 1):
+        case .gatheringApplySkillTestResults:
             try validateGatheringApplySkillTestResults(for: presentation)
             return nil
-        case (42, .playerWindowChooseOne, 1):
-            try validateGatheringEndTurn(for: presentation)
-            return nil
-        case (42, .playerWindowChooseOne, 12),
-             (42, .playerWindowChooseOne, 13):
+        case .gatheringAtticActionWindow:
             guard try validateGatheringAtticActionWindowIfPresent(
                 for: presentation
             ) else {
@@ -75,7 +63,7 @@ extension QuestionPresentationRawQuestionShape {
                     .governedChoicesMismatch
             }
             return nil
-        default:
+        case nil:
             return nil
         }
     }

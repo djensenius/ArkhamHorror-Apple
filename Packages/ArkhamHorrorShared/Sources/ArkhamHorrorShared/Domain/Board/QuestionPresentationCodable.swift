@@ -1094,6 +1094,21 @@ enum QuestionPresentationJSONShape {
                 debugDescription: "amount must be an integer"
             ))
         }
+        try requireArrayIfPresent(
+            object["steps"],
+            key: "steps",
+            codingPath: codingPath
+        )
+        try requireArrayIfPresent(
+            object["tokenGroups"],
+            key: "tokenGroups",
+            codingPath: codingPath
+        )
+        try requireArrayIfPresent(
+            object["tokenMatcherChoices"],
+            key: "tokenMatcherChoices",
+            codingPath: codingPath
+        )
         if let chooseAndThen = object["chooseAndThen"], chooseAndThen != .null {
             try validateChaosBagStep(
                 chooseAndThen,
@@ -1102,8 +1117,24 @@ enum QuestionPresentationJSONShape {
         }
     }
 
+    private static func requireArrayIfPresent(
+        _ value: JSONValue?,
+        key: String,
+        codingPath: [any CodingKey]
+    ) throws {
+        guard let value else { return }
+        guard case .array = value else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: codingPath + [AnyCodingKey(stringValue: key)],
+                debugDescription: "\(key) must be an array"
+            ))
+        }
+    }
+
     private static func isInteger(_ value: JSONValue) -> Bool {
         guard case let .number(number) = value else { return false }
         return number.exponent.isZero
     }
 }
+
+// swiftlint:enable file_length function_body_length cyclomatic_complexity line_length

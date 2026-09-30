@@ -63,13 +63,14 @@ struct QuestionPresentationMutationTests {
                 of: "question-presentation-",
                 with: "question-"
             )
-            if presentation.hasSupportedGatheringSemantics {
-                #expect(throws: (any Error).self) {
-                    try presentation.bind(
-                        to: fixtureValue(named: rawFixture),
-                        expectedQuestionVersion: presentation.questionVersion
-                    )
-                }
+            do {
+                let binding = try presentation.bind(
+                    to: fixtureValue(named: rawFixture),
+                    expectedQuestionVersion: presentation.questionVersion
+                )
+                #expect(!binding.usesSealedActionabilityOverlay)
+            } catch {
+                // Structural or hard binding failures also prevent sealed overlay use.
             }
         } catch is DecodingError {
             // v2 generic presentations may decode structurally, but any sealed overlay
@@ -244,13 +245,14 @@ struct GatheringAdvanceActSemanticMutationTests {
                     of: "question-presentation-",
                     with: "question-"
                 )
-                if presentation.hasSupportedGatheringSemantics {
-                    #expect(throws: (any Error).self) {
-                        try presentation.bind(
-                            to: fixtureValue(named: rawFixture),
-                            expectedQuestionVersion: presentation.questionVersion
-                        )
-                    }
+                do {
+                    let binding = try presentation.bind(
+                        to: fixtureValue(named: rawFixture),
+                        expectedQuestionVersion: presentation.questionVersion
+                    )
+                    #expect(!binding.usesSealedActionabilityOverlay)
+                } catch {
+                    // Structural or hard binding failures also prevent sealed overlay use.
                 }
             } catch is DecodingError {
                 // Closed v2 decoding still rejects structurally invalid mutations; overlay

@@ -6,7 +6,9 @@ extension BoardProjection {
         labelResolution: BasicChoiceLabelResolution?,
         governedSource: QuestionPresentation.GovernedSource? = nil
     ) -> Bool {
-        guard containsSemanticChoiceIdentities(choice, ownerID: ownerID) else { return false }
+        guard choice.selectable,
+              containsSemanticChoiceIdentities(choice, ownerID: ownerID)
+        else { return false }
         switch choice.kind {
         case .advanceAct:
             return choice.entity?.kind == .act

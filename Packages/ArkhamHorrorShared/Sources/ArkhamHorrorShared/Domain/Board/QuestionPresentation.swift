@@ -515,11 +515,7 @@ struct BoundQuestionPresentation: Sendable, Equatable, Hashable {
     let presentation: QuestionPresentation
     let rawChoices: [JSONValue]
     let governedSource: QuestionPresentation.GovernedSource?
-    let sealedOverlay: Bool
-
-    var hasSealedOverlay: Bool {
-        sealedOverlay
-    }
+    let usesSealedActionabilityOverlay: Bool
 
     func descriptor(forSourceIndex sourceIndex: Int) -> QuestionPresentation.Choice? {
         presentation.choices.first { $0.sourceIndex == sourceIndex }
@@ -564,41 +560,41 @@ extension QuestionPresentation {
                 actual: choiceCount
             )
         }
-        let shouldValidateOverlay = hasSupportedGatheringSemantics
-            || requiresGatheringOverlayValidation
         let governedSource: QuestionPresentation.GovernedSource?
-        let sealedOverlay: Bool
-        if shouldValidateOverlay {
+        let usesSealedActionabilityOverlay: Bool
+        if sealValidationKind != nil {
             do {
                 governedSource = try rawShape.validateGovernedChoices(for: self)
-                sealedOverlay = hasSupportedGatheringSemantics
+                usesSealedActionabilityOverlay = hasSupportedSealedActionabilityOverlay
             } catch QuestionPresentationBindingError.governedChoicesMismatch {
-                guard requiresGatheringOverlayValidation else {
+                guard allowsGenericFallbackOnSealFailure else {
                     throw QuestionPresentationBindingError
                         .governedChoicesMismatch
                 }
                 governedSource = nil
-                sealedOverlay = false
+                usesSealedActionabilityOverlay = false
             } catch let QuestionPresentationBindingError.rawChoiceMismatch(
                 sourceIndex
             ) {
-                guard requiresGatheringOverlayValidation else {
+                guard allowsGenericFallbackOnSealFailure else {
                     throw QuestionPresentationBindingError.rawChoiceMismatch(
                         sourceIndex: sourceIndex
                     )
                 }
                 governedSource = nil
-                sealedOverlay = false
+                usesSealedActionabilityOverlay = false
             }
         } else {
             governedSource = nil
-            sealedOverlay = false
+            usesSealedActionabilityOverlay = false
         }
         return BoundQuestionPresentation(
             presentation: self,
             rawChoices: rawShape.choices,
             governedSource: governedSource,
-            sealedOverlay: sealedOverlay
+            usesSealedActionabilityOverlay: usesSealedActionabilityOverlay
         )
     }
 }
+
+// swiftlint:enable file_length function_body_length identifier_name nesting

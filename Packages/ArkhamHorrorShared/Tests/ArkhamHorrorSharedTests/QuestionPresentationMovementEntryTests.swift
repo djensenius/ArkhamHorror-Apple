@@ -242,6 +242,7 @@ struct QuestionPresentationMovementEntryTests {
                 to: self.rawFixture(rawFixture),
                 expectedQuestionVersion: expectedQuestionVersion
             )
+            #expect(!binding.usesSealedActionabilityOverlay)
             #expect(binding.governedSource == nil)
         } catch is DecodingError {
             // Structural v2 violations may still fail during decode; otherwise semantic
@@ -293,3 +294,5 @@ struct QuestionPresentationMovementEntryTests {
         case unexpectedShape
     }
 }
+
+// swiftlint:enable type_body_length function_body_length
