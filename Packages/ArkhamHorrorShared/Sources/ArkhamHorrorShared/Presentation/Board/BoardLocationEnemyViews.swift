@@ -1,29 +1,35 @@
 import SwiftUI
 
 struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
-    let headerReservedHeight: CGFloat
     let chipRowHeight: CGFloat
     let summaryButtonHeight: CGFloat
+    let compactIndicatorHeight: CGFloat
     let chipMinWidth: CGFloat
     let moreButtonMinWidth: CGFloat
+    let compactIndicatorMinWidth: CGFloat
+    let minimumCellSize: CGSize
     let horizontalSpacing: CGFloat
     let verticalSpacing: CGFloat
 
     static let regular = BoardLocationEnemyTileMetrics(
-        headerReservedHeight: 64,
         chipRowHeight: 24,
         summaryButtonHeight: 18,
+        compactIndicatorHeight: 14,
         chipMinWidth: 70,
         moreButtonMinWidth: 48,
+        compactIndicatorMinWidth: 24,
+        minimumCellSize: CGSize(width: 90, height: 70),
         horizontalSpacing: 4,
-        verticalSpacing: 6
+        verticalSpacing: 4
     )
     static let tvOS = BoardLocationEnemyTileMetrics(
-        headerReservedHeight: 76,
         chipRowHeight: 32,
         summaryButtonHeight: 22,
+        compactIndicatorHeight: 20,
         chipMinWidth: 86,
         moreButtonMinWidth: 64,
+        compactIndicatorMinWidth: 40,
+        minimumCellSize: CGSize(width: 180, height: 160),
         horizontalSpacing: 6,
         verticalSpacing: 6
     )
@@ -39,6 +45,7 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
 
 enum BoardLocationEnemyTileLayoutDecision: Sendable, Equatable {
     case hidden
+    case compactIndicator
     case summaryButton
     case chips(visibleCount: Int, hasMore: Bool)
 }
@@ -51,9 +58,12 @@ enum BoardLocationEnemyTileLayout {
         metrics: BoardLocationEnemyTileMetrics
     ) -> BoardLocationEnemyTileLayoutDecision {
         guard enemyCount > 0,
-              availableHeight >= metrics.summaryButtonHeight,
-              availableWidth >= metrics.moreButtonMinWidth
+              availableHeight >= metrics.compactIndicatorHeight,
+              availableWidth >= metrics.compactIndicatorMinWidth
         else { return .hidden }
+        guard availableHeight >= metrics.summaryButtonHeight,
+              availableWidth >= metrics.moreButtonMinWidth
+        else { return .compactIndicator }
         guard availableHeight >= metrics.chipRowHeight,
               availableWidth >= metrics.chipMinWidth
         else { return .summaryButton }
@@ -193,8 +203,14 @@ struct BoardEnemyTileChipView: View {
     }
 }
 
+enum BoardEnemyOverflowLabelStyle {
+    case text
+    case compactBadge
+}
+
 struct BoardEnemyOverflowMenu: View {
     let label: String
+    var labelStyle: BoardEnemyOverflowLabelStyle = .text
     let enemies: [BoardEnemyNode]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let onLinkedChoice: (Int) -> Void
@@ -220,9 +236,20 @@ struct BoardEnemyOverflowMenu: View {
                 }
             }
         } label: {
-            Text(label)
-                .font(.caption2.bold())
-                .foregroundStyle(ArkhamTheme.accent)
+            switch labelStyle {
+            case .text:
+                Text(label)
+                    .font(.caption2.bold())
+                    .foregroundStyle(ArkhamTheme.accent)
+            case .compactBadge:
+                Label(label, systemImage: "figure.walk")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.25), in: Capsule())
+                    .foregroundStyle(ArkhamTheme.accent)
+            }
         }
         .accessibilityLabel(Text("Show all \(enemies.count) enemies"))
     }

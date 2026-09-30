@@ -1,5 +1,13 @@
 import SwiftUI
 
+private struct BoardLocationHeaderHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: [LocationID: CGFloat] = [:]
+
+    static func reduce(value: inout [LocationID: CGFloat], nextValue: () -> [LocationID: CGFloat]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
 /// The ordinary-location board — the board's single "board.locations" zone, laid out from
 /// ``BoardLayout``'s deterministic grid positions. Connections are drawn as a
 /// noninteractive, accessibility-hidden ``Canvas`` decoration behind the location tiles;
@@ -14,19 +22,26 @@ struct BoardLocationBoardView: View {
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
+    @State private var measuredHeaderHeights: [LocationID: CGFloat] = [:]
 
     private let baseCellSize = CGSize(width: 150, height: 112)
 
+    private var effectiveCellSize: CGSize {
+        let scaled = CGSize(width: baseCellSize.width * zoomScale, height: baseCellSize.height * zoomScale)
+        let minimum = BoardLocationEnemyTileMetrics.current.minimumCellSize
+        return CGSize(width: max(scaled.width, minimum.width), height: max(scaled.height, minimum.height))
+    }
+
     private func center(for position: BoardGridPosition) -> CGPoint {
         CGPoint(
-            x: (CGFloat(position.column) + 0.5) * baseCellSize.width * zoomScale,
-            y: (CGFloat(position.row) + 0.5) * baseCellSize.height * zoomScale
+            x: (CGFloat(position.column) + 0.5) * effectiveCellSize.width,
+            y: (CGFloat(position.row) + 0.5) * effectiveCellSize.height
         )
     }
 
     var body: some View {
-        let width = max(CGFloat(layout.columnCount), 1) * baseCellSize.width * zoomScale
-        let height = max(CGFloat(layout.rowCount), 1) * baseCellSize.height * zoomScale
+        let width = max(CGFloat(layout.columnCount), 1) * effectiveCellSize.width
+        let height = max(CGFloat(layout.rowCount), 1) * effectiveCellSize.height
         VStack(alignment: .leading, spacing: 10) {
             BoardSectionHeading(title: "Locations")
             if locations.isEmpty {
@@ -41,6 +56,9 @@ struct BoardLocationBoardView: View {
                     }
                 }
                 .frame(width: width, height: height)
+                .onPreferenceChange(BoardLocationHeaderHeightPreferenceKey.self) { heights in
+                    measuredHeaderHeights.merge(heights) { _, new in new }
+                }
             }
         }
     }
@@ -50,13 +68,18 @@ struct BoardLocationBoardView: View {
         if let position = layout.positions[location.id] {
             let id = BoardFocusID.location(location.id)
             let tileSize = CGSize(
-                width: (baseCellSize.width * zoomScale) - 8,
-                height: (baseCellSize.height * zoomScale) - 8
+                width: effectiveCellSize.width - 8,
+                height: effectiveCellSize.height - 8
             )
             let enemies = enemiesByLocationID[location.id] ?? []
             let metrics = BoardLocationEnemyTileMetrics.current
+            let measuredHeaderHeight = measuredHeaderHeights[location.id] ?? 0
+            let headerMaxHeight = enemies.isEmpty ? nil : max(
+                tileSize.height - metrics.compactIndicatorHeight - metrics.verticalSpacing,
+                44
+            )
             let enemyPanelHeight = max(
-                tileSize.height - metrics.headerReservedHeight - metrics.verticalSpacing,
+                tileSize.height - measuredHeaderHeight - metrics.verticalSpacing,
                 0
             )
             VStack(spacing: metrics.verticalSpacing) {
@@ -67,39 +90,75 @@ struct BoardLocationBoardView: View {
                     focusBinding: focusBinding,
                     onOutcome: onOutcome
                 ) {
-                    locationTileContent(location)
+                    locationTileContent(location, hasEnemies: !enemies.isEmpty)
                 }
+                .frame(maxHeight: headerMaxHeight)
                 .fixedSize(horizontal: false, vertical: true)
-                locationEnemyPanel(enemies, width: tileSize.width, height: enemyPanelHeight)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: BoardLocationHeaderHeightPreferenceKey.self,
+                            value: [location.id: proxy.size.height]
+                        )
+                    }
+                }
+                if !enemies.isEmpty {
+                    GeometryReader { proxy in
+                        locationEnemyPanel(
+                            enemies,
+                            width: proxy.size.width,
+                            height: proxy.size.height
+                        )
+                    }
                     .frame(height: enemyPanelHeight, alignment: .top)
                     .clipped()
+                }
             }
-            .frame(width: tileSize.width, height: tileSize.height, alignment: .top)
-            .clipped()
+            .frame(
+                width: tileSize.width,
+                height: tileSize.height,
+                alignment: enemies.isEmpty ? .center : .top
+            )
             .position(center(for: position))
         }
     }
 
-    private func locationTileContent(_ location: BoardLocationNode) -> some View {
-        VStack(spacing: 4) {
-            Text(location.displayLabel)
-                .font(.subheadline.bold())
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(ArkhamTheme.bone)
-            HStack(spacing: 4) {
-                BoardStatBadge(systemImage: "sparkles", value: "\(location.clueCount)")
-                if location.enemyCount > 0 {
-                    BoardStatBadge(systemImage: "figure.walk", value: "\(location.enemyCount)")
-                }
-                if !location.investigatorIDs.isEmpty {
-                    BoardStatBadge(
-                        systemImage: "person.fill", value: "\(location.investigatorIDs.count)"
-                    )
+    private func locationTileContent(
+        _ location: BoardLocationNode,
+        hasEnemies: Bool
+    ) -> some View {
+        ViewThatFits(in: .vertical) {
+            VStack(spacing: hasEnemies ? 2 : 4) {
+                locationTitle(location, hasEnemies: hasEnemies)
+                HStack(spacing: 4) {
+                    BoardStatBadge(systemImage: "sparkles", value: "\(location.clueCount)")
+                    if location.enemyCount > 0 {
+                        BoardStatBadge(systemImage: "figure.walk", value: "\(location.enemyCount)")
+                    }
+                    if !location.investigatorIDs.isEmpty {
+                        BoardStatBadge(
+                            systemImage: "person.fill",
+                            value: "\(location.investigatorIDs.count)"
+                        )
+                    }
                 }
             }
+            locationTitle(location, hasEnemies: hasEnemies)
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private func locationTitle(
+        _ location: BoardLocationNode,
+        hasEnemies: Bool
+    ) -> some View {
+        Text(location.displayLabel)
+            .font(.subheadline.bold())
+            .lineLimit(hasEnemies ? 1 : 2)
+            .minimumScaleFactor(hasEnemies ? 0.75 : 1)
+            .truncationMode(.tail)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(ArkhamTheme.bone)
     }
 
     @ViewBuilder
@@ -117,6 +176,14 @@ struct BoardLocationBoardView: View {
         switch decision {
         case .hidden:
             EmptyView()
+        case .compactIndicator:
+            BoardEnemyOverflowMenu(
+                label: "\(enemies.count)",
+                labelStyle: .compactBadge,
+                enemies: enemies,
+                choiceLinks: choiceLinks,
+                onLinkedChoice: onLinkedChoice
+            )
         case .summaryButton:
             BoardEnemyOverflowMenu(
                 label: "\(enemies.count) enemies",
