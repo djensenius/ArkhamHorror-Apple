@@ -77,18 +77,42 @@ struct Schema146AdditiveFieldsTests {
         ])
         try assertUpdateRequired(
             fixture: "question-round-end-forced-ability",
-            pointer: "/choices/0/ability/nonBlocking",
-            replacement: .bool(true)
+            replacements: [
+                ("/choices/0/ability/nonBlocking", .bool(true)),
+                ("/choices/0/messages/0/contents/contents/2/0/0/nonBlocking", .bool(true)),
+            ]
         )
         try assertUpdateRequired(
             fixture: "question-round-end-forced-ability",
-            pointer: "/choices/0/ability/blocksIn",
-            replacement: .object(["tag": .string("Future")])
+            replacements: [
+                ("/choices/0/ability/blocksIn", .object(["tag": .string("Future")])),
+                (
+                    "/choices/0/messages/0/contents/contents/2/0/0/blocksIn",
+                    .object(["tag": .string("Future")])
+                ),
+            ]
         )
         try assertUpdateRequired(
             fixture: "question-round-end-forced-ability",
-            pointer: "/choices/0/windows/0/windowConditionTick",
-            replacement: .number(.integer(1))
+            replacements: [
+                ("/choices/0/windows/0/windowConditionTick", .number(.integer(1))),
+                (
+                    "/choices/0/messages/0/contents/contents/1/0/windowConditionTick",
+                    .number(.integer(1))
+                ),
+                (
+                    "/choices/0/messages/0/contents/contents/2/0/1/0/windowConditionTick",
+                    .number(.integer(1))
+                ),
+            ]
+        )
+        try assertUpdateRequired(
+            fixture: "question-cover-up-reaction",
+            replacements: [("/choices/0/windows/0/windowConditionTick", .number(.integer(1)))]
+        )
+        try assertUpdateRequired(
+            fixture: "question-roland-defeat-reaction",
+            replacements: [("/choices/0/windows/0/windowConditionTick", .number(.integer(1)))]
         )
 
         try assertEnemyAttack(mutating: "question-enemy-attack", removals: [
@@ -96,8 +120,12 @@ struct Schema146AdditiveFieldsTests {
         ])
         try assertUpdateRequired(
             fixture: "question-enemy-attack",
-            pointer: "/choices/0/messages/0/contents/contents/attackDamageReplacement",
-            replacement: .array([.null])
+            replacements: [
+                (
+                    "/choices/0/messages/0/contents/contents/attackDamageReplacement",
+                    .array([.null])
+                ),
+            ]
         )
     }
 
@@ -173,26 +201,42 @@ struct Schema146AdditiveFieldsTests {
 
     private func assertUpdateRequired(
         fixture: String,
-        pointer: String,
-        replacement: JSONValue
+        replacements: [(pointer: String, replacement: JSONValue)]
     ) throws {
-        let mutated = try EnemyAttackFixtures.applying(
-            operation: "replace",
-            path: pointer.split(separator: "/"),
-            replacement: replacement,
-            to: fixtureValue(fixture)
-        )
+        var mutated = try fixtureValue(fixture)
+        for replacement in replacements {
+            mutated = try applyingReplace(
+                replacement.pointer,
+                with: replacement.replacement,
+                to: mutated
+            )
+        }
         let payload = try ContractJSON.decode(
             BasicChoiceQuestionPayload.self,
             from: ContractJSON.encode(mutated)
         )
         if let question = payload.supportedQuestion {
-            #expect(question.choices.allSatisfy { choice in
+            let unsupportedChoices = question.choices.filter { choice in
                 if case .unsupported = choice.content {
                     return true
                 }
                 return false
-            })
+            }
+            let grantsAuthority = question.choices.contains {
+                grantsGovernedAuthority($0.content)
+            }
+            #expect(!unsupportedChoices.isEmpty)
+            #expect(!grantsAuthority)
+        }
+    }
+
+    private func grantsGovernedAuthority(_ content: BasicChoiceContent) -> Bool {
+        switch content {
+        case .resolveForcedAbility, .coverUpReaction, .rolandDefeatReaction,
+             .resolveEnemyAttack:
+            true
+        default:
+            false
         }
     }
 
