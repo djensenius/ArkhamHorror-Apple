@@ -96,13 +96,6 @@ struct AuthorityKeyQueue<Element: Sendable>: Sendable {
 /// within this package's file/type-length conventions; still part of the
 /// single `AssetCacheService` actor's isolated state.
 extension AssetCacheService {
-    /// Passive test-visible counters for ``isAuthorityKeyBusy(_:)``'s per-key work.
-    struct AuthorityBusyCheckMetrics: Equatable, Sendable {
-        var busyCheckCount = 0
-        var revalidationKeyRefCountLookupCount = 0
-        var maxRevalidationEntriesInspectedPerCheck = 0
-    }
-
     /// Records `key` in ``AssetCacheService/authorityKeyOrder`` the first
     /// time it is ever seen by ``issueToken(for:)``,
     /// ``beginAuthorityWindow(for:)``, or ``invalidate(_:token:)``'s
@@ -191,29 +184,13 @@ extension AssetCacheService {
     /// see ``noteAuthorityKeyTouched(_:)`` for why such a key's authority
     /// bookkeeping must never be pruned.
     private func isAuthorityKeyBusy(_ key: AssetCacheKey) -> Bool {
-        authorityBusyCheckMetrics.busyCheckCount += 1
         if inFlight[key] != nil {
             return true
         }
-
-        // One keyed dictionary lookup. A previous implementation used
-        // `inFlightRevalidation.keys.contains(where:)` here, inspecting a
-        // variable number of revalidation slots per busy check; these
-        // counters let tests assert this path stays independent of the
-        // backlog's size without depending on wall-clock timing.
-        authorityBusyCheckMetrics.revalidationKeyRefCountLookupCount += 1
-        authorityBusyCheckMetrics.maxRevalidationEntriesInspectedPerCheck = max(
-            authorityBusyCheckMetrics.maxRevalidationEntriesInspectedPerCheck,
-            1
-        )
         if (revalidationKeyRefCount[key] ?? 0) > 0 {
             return true
         }
         return (openAuthorityWindows[key] ?? 0) > 0
-    }
-
-    func resetAuthorityBusyCheckMetrics() {
-        authorityBusyCheckMetrics = AuthorityBusyCheckMetrics()
     }
 
     /// The sole mutation points for ``inFlightRevalidation``: every insert
