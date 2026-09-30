@@ -124,6 +124,9 @@ final class AppModel {
     /// The injectable authenticated game-lifecycle/lobby client. See
     /// `AppModel+GameLifecycle.swift`.
     @ObservationIgnored let gameLifecycleService: any GameLifecycleServicing
+    /// The injectable authenticated saved-deck client used by deck management and
+    /// lobby deck choice.
+    @ObservationIgnored let deckService: any DeckServicing
     /// The injectable live-game WebSocket connection factory. See
     /// `AppModel+LiveGameSession.swift`.
     @ObservationIgnored let liveGameSocketFactory: any GameSocketFactory
@@ -321,6 +324,7 @@ final class AppModel {
         authenticationSession: any AppAuthenticating = AuthenticationSession(),
         cleanupPendingStore: any TokenCleanupPendingStore = KeychainTokenCleanupPendingStore(),
         gameLifecycleService: any GameLifecycleServicing = GameLifecycleService(),
+        deckService: any DeckServicing = DeckService(),
         liveGameSocketFactory: any GameSocketFactory = URLSessionGameSocketFactory(),
         liveGameClock: any LiveGameClock = SystemLiveGameClock(),
         liveGameRandomSource: any LiveGameRandomSource = SystemLiveGameRandomSource(),
@@ -336,6 +340,7 @@ final class AppModel {
         self.authenticationSession = authenticationSession
         self.cleanupPendingStore = cleanupPendingStore
         self.gameLifecycleService = gameLifecycleService
+        self.deckService = deckService
         self.liveGameSocketFactory = liveGameSocketFactory
         self.liveGameClock = liveGameClock
         self.liveGameRandomSource = liveGameRandomSource

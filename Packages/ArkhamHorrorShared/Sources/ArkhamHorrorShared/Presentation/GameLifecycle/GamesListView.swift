@@ -196,13 +196,12 @@ struct GamesListView: View {
             // triggering delete then would silently supersede and cancel that other
             // action rather than confirming an explicit, intentional delete.
             let actionInFlight = model.gameLifecycleActions[summary.id] != nil
-            // `rowButton(for:)` already applies `liveGameEnterButton` to an active
-            // game's own `NavigationLink`; a later `.accessibilityIdentifier` on the
-            // same node would silently override it, making that identifier
-            // unreachable, so only the non-active (lobby-sheet button) case is
-            // stamped with `gameRow` here.
+            // `rowButton(for:)` already applies `liveGameEnterButton` to live-board
+            // navigation rows; a later `.accessibilityIdentifier` on the same node
+            // would silently override it, making that identifier unreachable, so only
+            // lobby-sheet button rows are stamped with `gameRow` here.
             Group {
-                if case .active = summary.gameState {
+                if summary.gameState.opensLiveGameView {
                     rowButton(for: summary)
                 } else {
                     rowButton(for: summary)
@@ -236,12 +235,12 @@ struct GamesListView: View {
 
     /// A game already ``GameState/active`` navigates straight into its live board
     /// (via `NavigationLink(value:)`, resolved by `GamesListView`'s own
-    /// `.navigationDestination(for: GameID.self)`); every other state -- still
-    /// forming its lobby, or ended -- keeps opening the existing lobby sheet, which
-    /// has no equivalent presentation for an in-progress game.
+    /// `.navigationDestination(for: GameID.self)`). Pending and choose-deck games keep
+    /// opening the lobby sheet so join/open-seat/deck-upgrade actions remain reachable;
+    /// that sheet offers its own Enter Game link when a live deck prompt is needed.
     @ViewBuilder
     private func rowButton(for summary: GameSummary) -> some View {
-        if case .active = summary.gameState {
+        if summary.gameState.opensLiveGameView {
             NavigationLink(value: summary.id) {
                 GameRowView(game: summary)
             }
@@ -302,6 +301,17 @@ private struct GameRowSwipeActions: ViewModifier {
                 )
             }
         #endif
+    }
+}
+
+extension GameState {
+    var opensLiveGameView: Bool {
+        switch self {
+        case .active:
+            true
+        case .pending, .chooseDecks, .over, .unknown:
+            false
+        }
     }
 }
 
