@@ -117,6 +117,17 @@ enum AccountAccessibilityID {
     // discoverable under one consistent root for UI automation.
     static let gamesRefreshButton = "account.games.refresh"
     static let gamesRetryButton = "account.games.retry"
+    static let createGameOpenButton = "account.games.create.open"
+    static let createGameSheet = "account.games.create.sheet"
+    static let createGameModePicker = "account.games.create.mode"
+    static let createGameCatalogPicker = "account.games.create.catalog"
+    static let createGameDifficultyPicker = "account.games.create.difficulty"
+    static let createGamePlayerCountPicker = "account.games.create.playerCount"
+    static let createGameVariantPicker = "account.games.create.variant"
+    static let createGameNameField = "account.games.create.name"
+    static let createGameSubmitButton = "account.games.create.submit"
+    static let createGameCancelButton = "account.games.create.cancel"
+    static let createGameFailureText = "account.games.create.failure"
     static let gameDeleteConfirmButton = "account.games.delete.confirm"
     static let gameListFailureText = "account.games.list.failure"
 

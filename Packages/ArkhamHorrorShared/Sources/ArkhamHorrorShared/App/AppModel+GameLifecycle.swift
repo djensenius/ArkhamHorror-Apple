@@ -304,11 +304,11 @@ extension AppModel {
         }
     }
 
-    // MARK: - Create (typed operation; no polished create UI in this slice)
+    // MARK: - Create (typed operation; option-driven UI)
 
     /// Creates a new game and refreshes the games list on success.
     ///
-    /// Exposed for tests and a future option-driven create surface; this slice never
+    /// Exposed for tests and the native option-driven create surface; this client never
     /// presents a raw-ID creation form.
     ///
     /// Unlike ``refreshGames()`` and every per-game action, `createGame` owns no

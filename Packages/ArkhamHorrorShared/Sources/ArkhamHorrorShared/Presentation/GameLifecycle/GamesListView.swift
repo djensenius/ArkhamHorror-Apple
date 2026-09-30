@@ -12,13 +12,23 @@ struct GamesListView: View {
     let model: AppModel
 
     @State private var pendingDeletion: GameID?
+    @State private var isCreatePresented = false
+    @State private var createHandoff = CreateGameLobbyHandoff()
     @State private var presentedGameID: GameID?
 
     var body: some View {
         content
             .navigationTitle("Games")
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        isCreatePresented = true
+                    } label: {
+                        Label("New Game", systemImage: "plus")
+                    }
+                    .accessibilityLabel("New game")
+                    .accessibilityIdentifier(AccountAccessibilityID.createGameOpenButton)
+
                     Button {
                         model.refreshGames()
                     } label: {
@@ -61,6 +71,21 @@ struct GamesListView: View {
             } message: { _ in
                 Text("This permanently removes the game for every player.")
             }
+            .sheet(
+                isPresented: $isCreatePresented,
+                onDismiss: {
+                    if let gameID = createHandoff.completedDismissal() {
+                        presentedGameID = gameID
+                    }
+                },
+                content: {
+                    NavigationStack {
+                        CreateGameSheetView(model: model) { gameID in
+                            createHandoff.created(gameID)
+                        }
+                    }
+                }
+            )
             .sheet(
                 isPresented: Binding(
                     get: { presentedGameID != nil },
@@ -237,6 +262,21 @@ struct GamesListView: View {
 struct IdentifiedGameListEntry: Identifiable {
     let id: AnyHashable
     let entry: GameListEntry
+}
+
+/// Defers lobby presentation for a newly created game until the create sheet has
+/// actually dismissed, avoiding competing SwiftUI sheet presentations.
+struct CreateGameLobbyHandoff: Equatable {
+    private(set) var pendingGameID: GameID?
+
+    mutating func created(_ gameID: GameID) {
+        pendingGameID = gameID
+    }
+
+    mutating func completedDismissal() -> GameID? {
+        defer { pendingGameID = nil }
+        return pendingGameID
+    }
 }
 
 /// Applies swipe-to-delete on platforms that support list swipe gestures (iOS,
