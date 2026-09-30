@@ -130,10 +130,11 @@ private extension BasicChoiceParser {
 
     static func parseRolandDefeatReactionAbility(_ value: JSONValue?) -> CardCode? {
         guard case let .object(ability)? = value,
-              Set(ability.keys) == rolandAbilityKeys,
+              rolandAbilityHasAllowedKeys(ability),
               rolandAbilityFixedValues.allSatisfy({
                   ability[$0.key] == $0.value
               }),
+              rolandAbilityBlockingFieldsAreCanonical(ability),
               case let .string(cardCodeText)? = ability["cardCode"],
               cardCodeText == rolandCardCode,
               let cardCode = strictCardCode(cardCodeText),
@@ -151,10 +152,32 @@ private extension BasicChoiceParser {
         return InvestigatorID(cardCode)
     }
 
+    static func rolandAbilityHasAllowedKeys(_ ability: [String: JSONValue]) -> Bool {
+        let additiveKeys: Set = ["blocksIn", "nonBlocking"]
+        return Set(ability.keys).subtracting(additiveKeys) == rolandAbilityKeys
+    }
+
+    static func rolandAbilityBlockingFieldsAreCanonical(_ ability: [String: JSONValue]) -> Bool {
+        (ability["blocksIn"] == nil || ability["blocksIn"] == .null)
+            && (ability["nonBlocking"] == nil || ability["nonBlocking"] == .bool(false))
+    }
+
+    static func rolandWindowHasAllowedKeys(_ window: [String: JSONValue]) -> Bool {
+        let additiveKeys: Set = ["windowConditionTick"]
+        return Set(window.keys).subtracting(additiveKeys) == [
+            "windowBatchId", "windowTiming", "windowType",
+        ]
+    }
+
+    static func rolandWindowConditionTickIsCanonical(_ window: [String: JSONValue]) -> Bool {
+        window["windowConditionTick"] == nil || window["windowConditionTick"] == .null
+    }
+
     static func rolandDefeatedEnemyID(_ value: JSONValue) -> EnemyID? {
         guard case let .object(window) = value,
-              Set(window.keys) == ["windowBatchId", "windowTiming", "windowType"],
+              rolandWindowHasAllowedKeys(window),
               window["windowBatchId"] == .null,
+              rolandWindowConditionTickIsCanonical(window),
               window["windowTiming"] == .string("After"),
               case let .object(windowType)? = window["windowType"],
               Set(windowType.keys) == ["tag", "contents"],

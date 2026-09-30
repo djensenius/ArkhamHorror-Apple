@@ -47,6 +47,7 @@ struct PublicGameSnapshot: Sendable {
     let investigators: [InvestigatorID: Investigator]
     let otherInvestigators: [InvestigatorID: Investigator]
     let killedInvestigators: [InvestigatorID: Investigator]
+    let retiredInvestigators: [InvestigatorID: Investigator]?
     let enemies: UUIDEntityMap<EnemyIDTag>
     let assets: UUIDEntityMap<AssetIDTag>
     let acts: [ActID: Act]

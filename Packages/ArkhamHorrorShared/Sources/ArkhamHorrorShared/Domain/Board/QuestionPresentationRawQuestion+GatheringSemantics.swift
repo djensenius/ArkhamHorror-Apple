@@ -40,7 +40,7 @@ extension QuestionPresentationRawQuestionShape {
             _ = try validateGatheringQuestion(
                 for: presentation,
                 expectedRawSHA256:
-                "ba3e81d7664e7222180951b494d0b12f80ba3fcfb12d9cdabf355d635349ab92",
+                "5fc1b0eece8513294d0abffec2e10780d05c4b58a3ef7fdd9c6a63df5e1e68e3",
                 expectedPresentationSHA256:
                 "07930689d4d3669128a9ce879ee0c53b786e1928b1d653431f29ab0c92e5a5eb",
                 requireMatchingDynamicIDs: true
@@ -122,7 +122,7 @@ extension QuestionPresentationRawQuestionShape {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }
         guard rawSeal.canonicalSHA256 ==
-            "d6ebbbb9a4bc4c2110f95a7f086d32499af07115f0f3f3d9f9a167d59f927a65",
+            "fd794c54be4a1df88577cc0586b17e0d100712249aaa610944ac9154710ccca6",
             presentationSeal.canonicalSHA256 ==
             "5393915d65cdda2b46b860a1a3e45f56e834823b1cee5d7360528394029b768c",
             rawSeal.dynamicIDs.count == 8,
@@ -145,7 +145,7 @@ extension QuestionPresentationRawQuestionShape {
             _ = try validateGatheringQuestion(
                 for: presentation,
                 expectedRawSHA256:
-                "3401f36678546880ddd3a05ba238e16bdf59f280e65ba37cc6711557c74b002e",
+                "9980f8cbe880c8475d3896b3d72d4c650dc1bcc3a63aabab44c8e85ac321cf15",
                 expectedPresentationSHA256:
                 "2a9fdaddf69c7bd6d7758df49d33b798144e9be442d13373c868b83eac6185a8",
                 requireMatchingDynamicIDs: true
@@ -154,7 +154,7 @@ extension QuestionPresentationRawQuestionShape {
             _ = try validateGatheringQuestion(
                 for: presentation,
                 expectedRawSHA256:
-                "f06baff35dd9222d91aa85b03cc8824506c09331895ccad20155fdae2e92c2c8",
+                "0cb42ef0f51335143c23a5e101acee98f99c159c14272af6476b1b6d3090a799",
                 expectedPresentationSHA256:
                 "8ee988b07f10c167599bb96c1b825bcc2d85cd7d5b262035153956b7b4e4950c",
                 requireMatchingDynamicIDs: true
@@ -237,14 +237,14 @@ extension QuestionPresentationRawQuestionShape {
             cardCode: "c01114"
         ) {
             expectedRawSHA256 =
-                "238a9dc09dcba4893c264eb51dd8d952fdb3488d6f8eb268a3d7b7f881f6190a"
+                "afbd13de745d157511578a67206ce8fc35a21bdb3a9a7d0986241fbe57c31800"
             expectedPresentationSHA256 =
                 "062d17ef4072edfa976a4ec946d7a296aaa43d5c0ee4bd5c2baed6bb3ffe3bfb"
         } else if investigation.matchesGatheringInvestigation(
             cardCode: "c01113"
         ) {
             expectedRawSHA256 =
-                "d09ef3b29355240dc6663ea46c888bf99a833f916623b170634a13daf1ecdee7"
+                "3bece7fb19ff5c7b0877c684f40ba80712eefd13b2747796571f26122eb82c40"
             expectedPresentationSHA256 =
                 "2526973b069dfa5ac8b036696dbaa53d2f673e2acd0b992c081c7dff51a2f739"
         } else {

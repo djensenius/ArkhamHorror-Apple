@@ -127,10 +127,11 @@ private extension BasicChoiceParser {
         _ value: JSONValue?
     ) -> CoverUpAbilityIdentity? {
         guard case let .object(ability)? = value,
-              Set(ability.keys) == coverUpAbilityKeys,
+              coverUpAbilityHasAllowedKeys(ability),
               coverUpAbilityFixedValues.allSatisfy({
                   ability[$0.key] == $0.value
               }),
+              coverUpAbilityBlockingFieldsAreCanonical(ability),
               case let .string(cardCodeText)? = ability["cardCode"],
               cardCodeText == coverUpCardCode,
               let cardCode = strictCardCode(cardCodeText),
@@ -150,8 +151,9 @@ private extension BasicChoiceParser {
         _ value: JSONValue
     ) -> CoverUpWindowIdentity? {
         guard case let .object(window) = value,
-              Set(window.keys) == ["windowBatchId", "windowTiming", "windowType"],
+              coverUpWindowHasAllowedKeys(window),
               window["windowBatchId"] == .null,
+              coverUpWindowConditionTickIsCanonical(window),
               window["windowTiming"] == .string("When"),
               case let .object(windowType)? = window["windowType"],
               Set(windowType.keys) == ["tag", "contents"],
@@ -165,6 +167,27 @@ private extension BasicChoiceParser {
               coverUpCanonicalInteger(contents[4], equalTo: 1)
         else { return nil }
         return CoverUpWindowIdentity(locationID: locationID, skillTestID: skillTestID)
+    }
+
+    static func coverUpAbilityHasAllowedKeys(_ ability: [String: JSONValue]) -> Bool {
+        let additiveKeys: Set = ["blocksIn", "nonBlocking"]
+        return Set(ability.keys).subtracting(additiveKeys) == coverUpAbilityKeys
+    }
+
+    static func coverUpAbilityBlockingFieldsAreCanonical(_ ability: [String: JSONValue]) -> Bool {
+        (ability["blocksIn"] == nil || ability["blocksIn"] == .null)
+            && (ability["nonBlocking"] == nil || ability["nonBlocking"] == .bool(false))
+    }
+
+    static func coverUpWindowHasAllowedKeys(_ window: [String: JSONValue]) -> Bool {
+        let additiveKeys: Set = ["windowConditionTick"]
+        return Set(window.keys).subtracting(additiveKeys) == [
+            "windowBatchId", "windowTiming", "windowType",
+        ]
+    }
+
+    static func coverUpWindowConditionTickIsCanonical(_ window: [String: JSONValue]) -> Bool {
+        window["windowConditionTick"] == nil || window["windowConditionTick"] == .null
     }
 
     static func coverUpReactionLimitIsCanonical(_ value: JSONValue?) -> Bool {

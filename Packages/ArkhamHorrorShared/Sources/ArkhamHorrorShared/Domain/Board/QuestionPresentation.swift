@@ -131,6 +131,54 @@ extension QuestionPresentation {
         let type: AbilityType
         let actions: [Action]
         let canBeCancelled: Bool
+        let blocksIn: JSONValue?
+        let nonBlocking: Bool?
+
+        init(
+            cardCode: String,
+            index: Int,
+            type: AbilityType,
+            actions: [Action],
+            canBeCancelled: Bool,
+            blocksIn: JSONValue? = nil,
+            nonBlocking: Bool? = nil
+        ) {
+            self.cardCode = cardCode
+            self.index = index
+            self.type = type
+            self.actions = actions
+            self.canBeCancelled = canBeCancelled
+            self.blocksIn = blocksIn
+            self.nonBlocking = nonBlocking
+        }
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.cardCode == rhs.cardCode
+                && lhs.index == rhs.index
+                && lhs.type == rhs.type
+                && lhs.actions == rhs.actions
+                && lhs.canBeCancelled == rhs.canBeCancelled
+                && lhs.normalizedBlocksIn == rhs.normalizedBlocksIn
+                && lhs.normalizedNonBlocking == rhs.normalizedNonBlocking
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(cardCode)
+            hasher.combine(index)
+            hasher.combine(type)
+            hasher.combine(actions)
+            hasher.combine(canBeCancelled)
+            hasher.combine(normalizedBlocksIn)
+            hasher.combine(normalizedNonBlocking)
+        }
+
+        private var normalizedBlocksIn: JSONValue? {
+            blocksIn == .some(.null) ? nil : blocksIn
+        }
+
+        private var normalizedNonBlocking: Bool {
+            nonBlocking ?? false
+        }
     }
 
     indirect enum Cost: Sendable, Equatable, Hashable {
