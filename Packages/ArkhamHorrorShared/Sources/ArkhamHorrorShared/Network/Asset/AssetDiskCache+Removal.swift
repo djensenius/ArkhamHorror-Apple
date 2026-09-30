@@ -6,11 +6,12 @@ import Foundation
 /// and `AssetDiskCache+Read.swift` already are.
 extension AssetDiskCache {
     /// Durably commits a `.retiring` then `.tombstone` disposition for
-    /// `key` (see ``commitRetractionLocked(for:token:destroy:)``), so it
-    /// can never again be served by ``get(_:)`` regardless of whether any
-    /// metadata pointer or payload generation's bytes are still
-    /// physically present on disk afterward, then best-effort attempts to
-    /// actually delete the metadata pointer and every payload generation.
+    /// `key` (see ``commitRetractionLocked(for:authorityID:destroy:)``),
+    /// so it can never again be served by ``get(_:)`` regardless of
+    /// whether any metadata pointer or payload generation's bytes are
+    /// still physically present on disk afterward, then best-effort
+    /// attempts to delete the metadata pointer plus the deterministic
+    /// payload names known from this key's trusted record/metadata.
     /// Throws only if the durable disposition transaction itself could
     /// not be committed (a state-write or its confirming `fsync` failed)
     /// — that is the one failure a caller must react to as a genuine,
@@ -25,6 +26,15 @@ extension AssetDiskCache {
     /// deletes bytes a more-recently-issued operation just published —
     /// returns ``AssetCacheService/MutationOutcome/stale`` (not a silent
     /// `Void` success) in that case.
+    ///
+    /// A tokenless removal deliberately does **not** run
+    /// ``requireDiskWritesEnabledLocked(requiringAuthorityRecordCapacity:)``:
+    /// it either records the implicit pristine tombstone without creating
+    /// an authority file, or overwrites an already-existing record while
+    /// removing content bytes. It therefore cannot admit a new record or
+    /// grow disk usage, and remains allowed when ordinary writes are
+    /// disabled, authority-record admission is blocked, or startup
+    /// retained a retiring-reconciliation failure for write admission.
     @discardableResult
     func remove(
         _ key: AssetCacheKey,

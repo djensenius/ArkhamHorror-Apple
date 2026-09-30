@@ -193,7 +193,13 @@ extension AssetDiskCache {
     /// key is pristine, there is no durable record to overwrite and no
     /// token can still be authorized by it; callers must use the implicit
     /// pristine tombstone instead of creating a new file just to record
-    /// another absence.
+    /// another absence. Because this path never calls
+    /// ``requireDiskWritesEnabledLocked(requiringAuthorityRecordCapacity:)``,
+    /// it also intentionally bypasses write-disabled markers, retained
+    /// retiring-reconciliation write-admission failures, and
+    /// authority-record capacity admission blocks: the operation is a
+    /// deletion transaction against an existing file, not admission of a
+    /// new cache artifact.
     func replaceIssuedAuthorityOnExistingRecordLocked(
         for key: AssetCacheKey,
         current: KeyAuthorityRecord
