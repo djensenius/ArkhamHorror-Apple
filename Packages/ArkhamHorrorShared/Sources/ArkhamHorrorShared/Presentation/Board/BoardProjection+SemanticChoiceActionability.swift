@@ -44,6 +44,11 @@ extension BoardProjection {
             return isSemanticForcedAbilityActionable(choice)
         case .useAbility:
             return choice.actorID != nil && choice.ability != nil && choice.cost != nil
+        case .auto, .auxiliaryComponentLabel, .cardPile, .chaosTokenGroupChoice,
+             .chaosTokenLabel, .componentLabel, .connectionLabel, .costLabel,
+             .effectActionButton, .info, .invalidLabel, .keyLabel, .opaque,
+             .skillLabel, .tarotLabel, .wizardChoice:
+            return choice.selectable
         }
     }
 

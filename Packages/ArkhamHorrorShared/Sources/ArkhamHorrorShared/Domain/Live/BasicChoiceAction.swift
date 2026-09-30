@@ -174,7 +174,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             var defaults: [Int: BasicChoiceLabelResolution] = [:]
             if let semanticPresentation {
                 for choice in semanticPresentation.presentation.choices {
-                    guard choice.kind == .localizedLabel else { continue }
+                    guard choice.label != nil else { continue }
                     defaults[choice.sourceIndex] = .unavailable(.catalog(.notAdvertised))
                 }
             } else {
@@ -215,12 +215,15 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             guard let descriptor = semanticPresentation.descriptor(
                 forSourceIndex: choice.index
             ) else { return false }
-            return projection.isSemanticChoiceActionable(
-                descriptor,
-                ownerID: ownerID,
-                labelResolution: choiceLabelResolutions[choice.index],
-                governedSource: semanticPresentation.governedSource
-            )
+            if semanticPresentation.presentation.hasSupportedGatheringSemantics {
+                return projection.isSemanticChoiceActionable(
+                    descriptor,
+                    ownerID: ownerID,
+                    labelResolution: choiceLabelResolutions[choice.index],
+                    governedSource: semanticPresentation.governedSource
+                )
+            }
+            return descriptor.selectable
         }
         return projection.isChoiceActionable(
             choice,

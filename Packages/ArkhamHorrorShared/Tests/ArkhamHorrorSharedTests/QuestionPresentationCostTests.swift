@@ -39,13 +39,15 @@ extension QuestionPresentationTests {
     private var recursiveCostJSON: String {
         """
         {
-          "protocolVersion": 1,
+          "protocolVersion": 2,
           "questionVersion": 1,
           "questionKind": "chooseOne",
           "choiceCount": 1,
+          "answer": {"kind": "singleChoice", "tag": "Answer"},
           "choices": [{
             "sourceIndex": 0,
             "kind": "useAbility",
+            "selectable": true,
             "actorId": "c01001",
             "ability": {
               "cardCode": "c01001",

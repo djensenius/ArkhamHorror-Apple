@@ -254,7 +254,7 @@ extension AppModel {
         var result: [Int: BasicChoiceLabelResolution] = [:]
         let labels: [(index: Int, wireLabel: String)] = if let semanticPresentation {
             semanticPresentation.presentation.choices.compactMap { choice in
-                guard choice.kind == .localizedLabel, let label = choice.label else { return nil }
+                guard let label = choice.label else { return nil }
                 return (choice.sourceIndex, label.text)
             }
         } else {

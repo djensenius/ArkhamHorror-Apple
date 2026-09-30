@@ -40,6 +40,10 @@ struct ContractFixtureDigestTests {
     /// directory so they're never mistaken for a governed contract artifact.
     private static let contractFixturesSubdirectory = "Fixtures/Contract"
 
+    private static func basenameWithoutExtension(_ path: String) -> String {
+        ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+    }
+
     private func fixtureData(named fileName: String) throws -> Data {
         let url = try #require(
             Bundle.module.url(
@@ -104,58 +108,25 @@ struct ContractFixtureDigestTests {
         #expect(names.count == Set(names).count, "Duplicate basename found in \(names)")
     }
 
-    @Test("The digest table covers every governed contract fixture")
-    func tableCoversExpectedFiles() {
-        let fileNames = Set(ContractFixtureDigests.all.map(\.fileName))
-        #expect(fileNames == [
-            "manifest", "capabilities", "catalog", "decks", "game-lifecycle", "game-list",
-            "get-game", "game-update", "mode-turn-zero", "mode-campaign-only",
-            "mode-campaign-scenario", "location-enemy-view", "movement",
-            "act-no-advance-cost", "investigator-unhealed-horror-negative",
-            "uuid-entity-map", "card-code-entity-map", "question-choose-one",
-            "question-player-window-choose-one", "question-window-choose-one",
-            "question-gathering-act-objective", "question-gathering-act-advance",
-            "question-presentation-gathering-act-objective",
-            "question-presentation-gathering-act-advance",
-            "question-gathering-movement",
-            "question-gathering-cellar-entry-forced",
-            "question-gathering-attic-entry-forced",
-            "question-gathering-cellar-damage-assignment",
-            "question-gathering-attic-horror-assignment",
-            "question-presentation-gathering-movement",
-            "question-presentation-gathering-cellar-entry-forced",
-            "question-presentation-gathering-attic-entry-forced",
-            "question-presentation-gathering-cellar-damage-assignment",
-            "question-presentation-gathering-attic-horror-assignment",
-            "answer-question", "question-read", "question-read-scenario-intro",
-            "question-read-with-cards",
-            "question-choose-one-location", "question-choose-one-location-multiple",
-            "question-mulligan",
-            "question-investigate-fast-window", "question-investigate-commit",
-            "question-investigate-reveal-window", "question-investigate-apply-results",
-            "question-encounter-deck-draw",
-            "question-presentation-encounter-deck-draw",
-            "question-enemy-attack", "answer-enemy-attack",
-            "question-enemy-attack-damage-assignment",
-            "answer-enemy-attack-assign-damage", "answer-enemy-attack-assign-horror",
-            "question-enemy-attack-remaining-damage-assignment",
-            "question-enemy-attack-remaining-horror-assignment",
-            "answer-enemy-attack-assign-remaining-damage",
-            "answer-enemy-attack-assign-remaining-horror",
-            "question-player-window-enemy-actions",
-            "question-player-window-engage-action",
-            "question-roland-defeat-reaction",
-            "question-cover-up-reaction",
-            "question-round-end-forced-ability",
-            "question-treachery-forced-ability", "question-presentation-treachery-forced-ability",
-            "question-agenda-advance",
-            "question-agenda-consequence",
-            "question-agenda-horror-assignment",
-            "replay-attestation",
-            "replay-attestation.schema",
-            "basic-choice-question.schema",
-            "question-presentation.schema",
-        ])
+    @Test("The digest table covers every governed contract fixture and referenced schema")
+    func tableCoversExpectedFiles() throws {
+        struct ManifestFixtureEntry: Decodable {
+            let path: String
+            let schema: String
+        }
+        struct ManifestFixture: Decodable {
+            let fixtures: [ManifestFixtureEntry]
+        }
+        let manifest = try JSONDecoder().decode(
+            ManifestFixture.self,
+            from: fixtureData(named: "manifest")
+        )
+        var expected = Set(["manifest"])
+        for fixture in manifest.fixtures {
+            expected.insert(Self.basenameWithoutExtension(fixture.path))
+            expected.insert(Self.basenameWithoutExtension(fixture.schema))
+        }
+        #expect(Set(ContractFixtureDigests.all.map(\.fileName)) == expected)
     }
 
     @Test("Synthetic auth fixtures are bundled outside the governed Contract subdirectory")
@@ -223,7 +194,7 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "a615bdc70ee3e23e3f0e7f6ec48eda47bbfba054"
+            ContractPin.current.backendCommit == "f3a0acbe2c6952c5fbb3f3374a3ef85f94f250e1"
         )
     }
 

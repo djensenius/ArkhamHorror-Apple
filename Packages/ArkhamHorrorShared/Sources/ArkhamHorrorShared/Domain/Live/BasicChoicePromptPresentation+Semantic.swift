@@ -1,9 +1,15 @@
 import Foundation
 
+extension QuestionPresentation {
+    var isGenericallyRenderable: Bool {
+        protocolVersion == Self.supportedProtocolVersion && questionKind != .unsupported
+    }
+}
+
 extension BasicChoicePromptPresentation {
     var isRenderableQuestion: Bool {
         if let semanticPresentation {
-            return semanticPresentation.presentation.questionKind != .unsupported
+            return semanticPresentation.presentation.isGenericallyRenderable
                 && !semanticPresentation.rawChoices.isEmpty
         }
         return question.supportedQuestion?.choices.isEmpty == false
@@ -85,20 +91,34 @@ extension BasicChoicePromptPresentation {
         case .applySkillTestResults: "checkmark.seal.fill"
         case .assignDamage: "heart.slash.fill"
         case .assignHorror: "brain.head.profile.fill"
+        case .auto: "sparkles"
+        case .auxiliaryComponentLabel, .componentLabel: "circle.grid.cross"
+        case .cardPile: "rectangle.stack.badge.person.crop"
+        case .chaosTokenGroupChoice, .chaosTokenLabel: "circle.hexagongrid.fill"
         case .chooseTarget: "scope"
+        case .connectionLabel: "point.3.connected.trianglepath.dotted"
+        case .costLabel: "creditcard"
         case .drawCard, .drawEncounterCard: "rectangle.stack"
+        case .effectActionButton: "wand.and.stars"
         case .endTurn: "forward.end"
         case .engage: "person.2.fill"
         case .evade: "figure.run"
         case .fight: "burst.fill"
         case .gainResource: "circle.fill"
+        case .info: "info.circle"
+        case .invalidLabel: "nosign"
         case .investigate: "magnifyingglass"
+        case .keyLabel: "key.fill"
         case .localizedLabel: "text.bubble.fill"
         case .move: "figure.walk"
+        case .opaque: "questionmark.square.dashed"
         case .resolveForcedAbility: "exclamationmark.triangle.fill"
+        case .skillLabel: "brain.head.profile"
         case .skipTriggers: "forward.end.alt"
         case .startSkillTest: "play.circle.fill"
+        case .tarotLabel: "sparkles.rectangle.stack"
         case .useAbility: "bolt.circle.fill"
+        case .wizardChoice: "wand.and.rays"
         }
     }
 
@@ -123,12 +143,17 @@ extension BasicChoicePromptPresentation {
                 "This choice has no semantic description and cannot be activated."
             )
         }
-        guard projection.isSemanticChoiceActionable(
-            descriptor,
-            ownerID: ownerID,
-            labelResolution: choiceLabelResolutions[choice.index],
-            governedSource: semanticPresentation.governedSource
-        ) else {
+        let isActionable = if semanticPresentation.presentation.hasSupportedGatheringSemantics {
+            projection.isSemanticChoiceActionable(
+                descriptor,
+                ownerID: ownerID,
+                labelResolution: choiceLabelResolutions[choice.index],
+                governedSource: semanticPresentation.governedSource
+            )
+        } else {
+            descriptor.selectable
+        }
+        guard isActionable else {
             return semanticUnavailableAnnouncement(
                 for: descriptor,
                 labelResolution: choiceLabelResolutions[choice.index]
@@ -202,6 +227,21 @@ extension BasicChoicePromptPresentation {
                     "semantic.choice.title.assignHorror.generic",
                     value: "Assign horror"
                 )
+        case .auto:
+            semanticTitleFromLabel(
+                descriptor,
+                labelResolution: labelResolution,
+                fallback: semanticLocalized("semantic.choice.title.auto", value: "Automatic choice")
+            )
+        case .auxiliaryComponentLabel, .componentLabel:
+            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
+                ?? semanticLocalized("semantic.choice.title.component", value: "Component")
+        case .cardPile:
+            semanticLocalized("semantic.choice.title.cardPile", value: "Card pile")
+        case .chaosTokenGroupChoice:
+            semanticLocalized("semantic.choice.title.chaosTokenGroup", value: "Choose chaos token")
+        case .chaosTokenLabel:
+            descriptor.face ?? semanticLocalized("semantic.choice.title.chaosToken", value: "Chaos token")
         case .chooseTarget:
             descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
                 .map {
@@ -215,11 +255,20 @@ extension BasicChoicePromptPresentation {
                     "semantic.choice.title.chooseTarget",
                     value: "Choose target"
                 )
+        case .connectionLabel:
+            descriptor.connection?.rawValue
+                ?? semanticLocalized("semantic.choice.title.connection", value: "Connection")
+        case .costLabel:
+            descriptor.cost.map { semanticCostSummary($0, in: projection) }
+                ?? semanticLocalized("semantic.choice.title.cost", value: "Cost")
         case .drawCard:
             semanticLocalized(
                 "semantic.choice.title.drawCard",
                 value: "Draw a card"
             )
+        case .effectActionButton:
+            descriptor.tooltip
+                ?? semanticLocalized("semantic.choice.title.effect", value: "Effect")
         case .drawEncounterCard:
             semanticLocalized(
                 "semantic.choice.title.drawEncounterCard",
@@ -250,15 +299,31 @@ extension BasicChoicePromptPresentation {
                 "semantic.choice.title.gainResource",
                 value: "Gain a resource"
             )
+        case .info:
+            descriptor.flavorText?.title
+                ?? semanticLocalized("semantic.choice.title.info", value: "Information")
+        case .invalidLabel:
+            semanticTitleFromLabel(
+                descriptor,
+                labelResolution: labelResolution,
+                fallback: semanticLocalized("semantic.choice.title.invalid", value: "Unavailable action")
+            )
         case .investigate:
             semanticLocalized(
                 "semantic.choice.title.investigate",
                 value: "Investigate"
             )
+        case .keyLabel:
+            semanticLocalized("semantic.choice.title.key", value: "Key")
         case .localizedLabel:
-            labelResolution?.title ?? semanticLocalized(
-                "semantic.choice.title.unavailable",
-                value: "Unavailable action"
+            semanticTitleFromLabel(
+                descriptor,
+                labelResolution: labelResolution,
+                fallback: semanticLocalized(
+                    "semantic.choice.title.genericIndexed",
+                    value: "Choice \(descriptor.sourceIndex + 1)",
+                    arguments: [Int64(descriptor.sourceIndex + 1)]
+                )
             )
         case .move:
             descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
@@ -286,6 +351,22 @@ extension BasicChoicePromptPresentation {
                     "semantic.choice.title.resolveForcedAbility.generic",
                     value: "Resolve forced ability"
                 )
+        case .opaque:
+            descriptor.uiTag
+                ?? semanticLocalized(
+                    "semantic.choice.title.genericIndexed",
+                    value: "Choice \(descriptor.sourceIndex + 1)",
+                    arguments: [Int64(descriptor.sourceIndex + 1)]
+                )
+        case .skillLabel:
+            descriptor.label.flatMap { _ in
+                semanticTitleFromLabel(
+                    descriptor,
+                    labelResolution: labelResolution,
+                    fallback: nil
+                )
+            } ?? descriptor.skillType?.rawValue
+                ?? semanticLocalized("semantic.choice.title.skill", value: "Skill")
         case .skipTriggers:
             semanticLocalized(
                 "semantic.choice.title.skipTriggers",
@@ -296,12 +377,35 @@ extension BasicChoicePromptPresentation {
                 "semantic.choice.title.startSkillTest",
                 value: "Start skill test"
             )
+        case .tarotLabel:
+            descriptor.tarotCard?.arcana
+                ?? semanticLocalized("semantic.choice.title.tarot", value: "Tarot")
         case .useAbility:
             semanticLocalized(
                 "semantic.choice.title.useAbility",
                 value: "Use ability"
             )
+        case .wizardChoice:
+            semanticTitleFromLabel(
+                descriptor,
+                labelResolution: labelResolution,
+                fallback: semanticLocalized("semantic.choice.title.wizard", value: "Wizard choice")
+            )
         }
+    }
+
+    private func semanticTitleFromLabel(
+        _ descriptor: QuestionPresentation.Choice,
+        labelResolution: BasicChoiceLabelResolution?,
+        fallback: String?
+    ) -> String {
+        if let title = labelResolution?.title { return title }
+        if let text = descriptor.label?.text, !text.hasPrefix("$") { return text }
+        return fallback ?? semanticLocalized(
+            "semantic.choice.title.genericIndexed",
+            value: "Choice \(descriptor.sourceIndex + 1)",
+            arguments: [Int64(descriptor.sourceIndex + 1)]
+        )
     }
 
     func semanticLocalized(

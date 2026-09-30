@@ -88,12 +88,10 @@ extension AppModel {
     private func readOnlyReason(
         gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload
     ) -> BasicChoiceReadOnlyReason? {
-        let hasRenderableSemanticPresentation = payload.presentation.map {
-            $0.presentation.questionKind != .unsupported && !$0.rawChoices.isEmpty
-        } ?? false
+        let hasGenericPresentation = payload.presentation?.presentation.isGenericallyRenderable == true
         let hasRenderableSupportedQuestion =
             payload.supportedQuestion?.choices.isEmpty == false
-        guard hasRenderableSupportedQuestion || hasRenderableSemanticPresentation else {
+        guard hasRenderableSupportedQuestion || hasGenericPresentation else {
             return .updateRequired
         }
         guard let identity = liveGameParticipantIdentities[gameID] else { return .disconnected }

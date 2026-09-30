@@ -3,7 +3,7 @@
 /// - Backend PRs: djensenius/ArkhamHorror#20, #22, #24, #45, #49, #51, #57,
 ///   #62, #65, #66, #68, #70, #72, #75, #76, #78, #79, #81, #83, #85, #87, #89, #91,
 ///   #93, #95, #98, #99
-/// - Backend commit: a615bdc70ee3e23e3f0e7f6ec48eda47bbfba054
+/// - Backend commit: f3a0acbe2c6952c5fbb3f3374a3ef85f94f250e1
 struct ContractPin: Sendable {
     /// The backend git commit this client was built against.
     let backendCommit: String
@@ -26,12 +26,12 @@ struct ContractPin: Sendable {
 extension ContractPin {
     /// The canonical pin compiled into this client build.
     ///
-    /// Contract revision `0.1.46` keeps the terminal Gathering route pinned after the
-    /// upstream sync and 0.1.45 tooling-provenance update.
+    /// Contract revision `0.1.47` publishes question presentation protocol version 2
+    /// with generic prompt coverage across all backend question constructors.
     static let current = ContractPin(
-        backendCommit: "a615bdc70ee3e23e3f0e7f6ec48eda47bbfba054",
-        supportedSchemaRevision: .literal(major: 0, minor: 1, patch: 46),
-        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 46),
+        backendCommit: "f3a0acbe2c6952c5fbb3f3374a3ef85f94f250e1",
+        supportedSchemaRevision: .literal(major: 0, minor: 1, patch: 47),
+        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 47),
         expectedApiBasePath: "/api/v1",
         sourceNativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 0)
     )
