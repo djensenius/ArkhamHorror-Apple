@@ -105,24 +105,6 @@ final class BoardCommandController {
         coordinator.applySnapshot(graph)
     }
 
-    func updateChoiceHandler(_ handler: @escaping (Int) -> Void) {
-        onChoice = handler
-    }
-
-    func updateRetryHandler(_ handler: @escaping () -> Void) {
-        onRetry = handler
-    }
-
-    func updateCatalogRetryHandler(
-        _ handler: @escaping (BasicChoiceCatalogRetryPresentation) -> Void
-    ) {
-        onCatalogRetry = handler
-    }
-
-    func updateLocalPlayerID(_ playerID: PlayerID?) {
-        localPlayerID = playerID
-    }
-
     /// Reconciles this already-existing controller against the projection its owning
     /// ``BoardView`` was just handed on re-appearance. `.onChange(of: projection)` only
     /// fires while a view is part of the rendered tree, so a replacement snapshot that
@@ -354,10 +336,6 @@ final class BoardCommandController {
         zoomScale = min(max(value, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
     }
 
-    var fullPlayerAreaPlayerID: PlayerID? {
-        prompt?.ownerID ?? localPlayerID
-    }
-
     /// The zone containing ``FocusCoordinator/currentFocus``, or `nil` if nothing is
     /// currently focused.
     var focusedZone: SemanticFocusZone? {
@@ -378,5 +356,29 @@ final class BoardCommandController {
             return
         }
         coordinator.syncExternalFocus(entry)
+    }
+}
+
+extension BoardCommandController {
+    func updateChoiceHandler(_ handler: @escaping (Int) -> Void) {
+        onChoice = handler
+    }
+
+    func updateRetryHandler(_ handler: @escaping () -> Void) {
+        onRetry = handler
+    }
+
+    func updateCatalogRetryHandler(
+        _ handler: @escaping (BasicChoiceCatalogRetryPresentation) -> Void
+    ) {
+        onCatalogRetry = handler
+    }
+
+    func updateLocalPlayerID(_ playerID: PlayerID?) {
+        localPlayerID = playerID
+    }
+
+    var fullPlayerAreaPlayerID: PlayerID? {
+        prompt?.ownerID ?? localPlayerID
     }
 }

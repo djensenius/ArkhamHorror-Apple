@@ -61,7 +61,9 @@ struct AppModelCardCatalogTests {
         let customBuiltInURL = cardCatalogURL(
             path: "/arkham/cards", on: sampleCustomProfile, cardPool: "both"
         )
-        let customHomebrewURL = cardCatalogURL(path: "/arkham/homebrew/cards", on: sampleCustomProfile)
+        let customHomebrewURL = cardCatalogURL(
+            path: "/arkham/homebrew/cards", on: sampleCustomProfile
+        )
         try await transport.resumeOldest(
             matching: customBuiltInURL,
             with: cardCatalogResponse(for: customBuiltInURL, title: "Custom Machete")
