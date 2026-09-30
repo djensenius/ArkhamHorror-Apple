@@ -66,7 +66,7 @@ struct Schema146AdditiveFieldsTests {
 
     @Test("raw prompts accept missing additive keys and reject non-default additive values")
     func rawPromptAdditiveDefaults() throws {
-        try assertSupported(mutating: "question-round-end-forced-ability", removals: [
+        try assertRoundEndForcedAbility(mutating: "question-round-end-forced-ability", removals: [
             "/choices/0/ability/blocksIn",
             "/choices/0/ability/nonBlocking",
             "/choices/0/windows/0/windowConditionTick",
@@ -91,7 +91,7 @@ struct Schema146AdditiveFieldsTests {
             replacement: .number(.integer(1))
         )
 
-        try assertSupported(mutating: "question-enemy-attack", removals: [
+        try assertEnemyAttack(mutating: "question-enemy-attack", removals: [
             "/choices/0/messages/0/contents/contents/attackDamageReplacement",
         ])
         try assertUpdateRequired(
@@ -133,16 +133,42 @@ struct Schema146AdditiveFieldsTests {
         try ContractJSON.decode(QuestionPresentation.Ability.self, from: Data(json.utf8))
     }
 
-    private func assertSupported(mutating fixture: String, removals: [String]) throws {
+    private func assertRoundEndForcedAbility(mutating fixture: String, removals: [String]) throws {
+        let payload = try payloadAfterRemoving(removals, from: fixture)
+        guard case let .resolveForcedAbility(choice)? =
+            payload.supportedQuestion?.choices.first?.content
+        else {
+            Issue.record("Expected round-end forced ability to parse")
+            return
+        }
+        #expect(choice.ability.cardCode.rawValue == "c01165")
+    }
+
+    private func assertEnemyAttack(mutating fixture: String, removals: [String]) throws {
+        let payload = try payloadAfterRemoving(removals, from: fixture)
+        guard case let .resolveEnemyAttack(enemyID, investigatorID, messages)? =
+            payload.supportedQuestion?.choices.first?.content
+        else {
+            Issue.record("Expected enemy attack to parse")
+            return
+        }
+        #expect(enemyID == EnemyAttackFixtures.enemyID)
+        #expect(investigatorID == EnemyAttackFixtures.investigatorID)
+        #expect(messages.count == 1)
+    }
+
+    private func payloadAfterRemoving(
+        _ removals: [String],
+        from fixture: String
+    ) throws -> BasicChoiceQuestionPayload {
         var value = try fixtureValue(fixture)
         for pointer in removals {
             value = try applyingRemove(pointer, to: value)
         }
-        let payload = try ContractJSON.decode(
+        return try ContractJSON.decode(
             BasicChoiceQuestionPayload.self,
             from: ContractJSON.encode(value)
         )
-        #expect(payload.supportedQuestion != nil)
     }
 
     private func assertUpdateRequired(
