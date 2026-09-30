@@ -90,6 +90,8 @@ struct BoardCardRenderingProjectionTests {
     }
 
     @Test("Full player area selection prefers prompt owner, local player, then active investigator")
+    // Covers the controller priority and the row-level visibility decision together.
+    // swiftlint:disable:next function_body_length
     func fullPlayerAreaSelectionOrder() throws {
         let activeID = BoardTestFixtures.investigatorID("c01001")
         let localID = BoardTestFixtures.investigatorID("c01002")

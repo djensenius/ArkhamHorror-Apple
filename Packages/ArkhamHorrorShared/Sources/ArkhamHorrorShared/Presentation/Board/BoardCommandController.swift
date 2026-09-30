@@ -387,11 +387,11 @@ extension BoardCommandController {
     }
 
     var fullPlayerAreaPlayerID: PlayerID? {
-        Self.fullPlayerAreaPlayerID(
+        let activePlayerID = projection.investigators.first(where: \.isActiveInvestigator)?.playerID
+        return Self.fullPlayerAreaPlayerID(
             promptOwnerID: prompt?.ownerID,
             localPlayerID: localPlayerID,
-            activeInvestigatorPlayerID: projection.investigators.first(where: \.isActiveInvestigator)?
-                .playerID
+            activeInvestigatorPlayerID: activePlayerID
         )
     }
 }
