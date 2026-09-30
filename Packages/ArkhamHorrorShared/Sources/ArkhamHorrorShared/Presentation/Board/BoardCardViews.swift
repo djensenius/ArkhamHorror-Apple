@@ -47,15 +47,13 @@ struct BoardPlayerAreaView: View {
             Text(title)
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 6) {
-                    ForEach(cards) { card in
-                        BoardPlayerCardFaceView(
-                            card: card,
-                            linkedChoices: choiceLinks[.playerCard(card.id)] ?? [],
-                            onLinkedChoice: onLinkedChoice
-                        )
-                    }
+            HStack(alignment: .top, spacing: 6) {
+                ForEach(cards) { card in
+                    BoardPlayerCardFaceView(
+                        card: card,
+                        linkedChoices: choiceLinks[.playerCard(card.id)] ?? [],
+                        onLinkedChoice: onLinkedChoice
+                    )
                 }
             }
         }
