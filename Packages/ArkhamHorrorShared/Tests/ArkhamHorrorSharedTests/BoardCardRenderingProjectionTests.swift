@@ -64,6 +64,34 @@ struct BoardCardRenderingProjectionTests {
         #expect(summary.contains("Damage taken 2"))
         #expect(summary.contains("Attack damage 1"))
         #expect(!summary.contains("Damage 1"))
+        #expect(!summary.contains("Damage 2"))
+    }
+
+    @Test("Player card badges do not duplicate use-token badges")
+    func playerCardBadgesDoNotDuplicateUses() {
+        let card = BoardPlayerCardNode(
+            id: .asset(BoardTestFixtures.assetID("000000000611")),
+            cardID: nil,
+            cardCode: BoardTestFixtures.cardCode("c01018"),
+            displayName: "Card c01018",
+            subtitle: nil,
+            zone: .asset,
+            ownerID: playerID,
+            damage: 1,
+            horror: nil,
+            usesSummary: "Ammo 3, Resource 1",
+            tokenCounts: [
+                BoardTokenSummary(token: "Ammo", count: 3),
+                BoardTokenSummary(token: "Damage", count: 1),
+                BoardTokenSummary(token: "Resource", count: 1),
+            ],
+            imageReference: nil
+        )
+
+        #expect(BoardCardBadgeFormatter.cardBadges(card) == [
+            "Ammo 3, Resource 1",
+            "Damage 1",
+        ])
     }
 
     @Test("Non-active investigator engaged enemies stay visible and focusable")

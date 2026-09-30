@@ -30,8 +30,11 @@ extension BoardAccessibility {
         if let engagedInvestigatorID = enemy.engagedInvestigatorID {
             parts.append("Engaged with \(engagedInvestigatorID.rawValue.rawValue)")
         }
-        if !enemy.tokenCounts.isEmpty {
-            parts.append(tokenCountsSummary(enemy.tokenCounts))
+        let unrepresentedTokens = enemy.tokenCounts.filter { token in
+            token.token != "Damage" && token.token != "Horror"
+        }
+        if !unrepresentedTokens.isEmpty {
+            parts.append(tokenCountsSummary(unrepresentedTokens))
         }
         return parts.joined(separator: ". ")
     }
