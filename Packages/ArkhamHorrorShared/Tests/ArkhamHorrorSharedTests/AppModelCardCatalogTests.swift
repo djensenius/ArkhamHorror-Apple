@@ -53,6 +53,7 @@ struct AppModelCardCatalogTests {
 
         model.loadCardCatalogIfNeeded()
         await transport.waitForRequestCount(1)
+        let staleTask = model.cardCatalogTask
 
         model.selectProfile(sampleCustomProfile)
         model.loadCardCatalogIfNeeded()
@@ -93,6 +94,7 @@ struct AppModelCardCatalogTests {
             matching: hostedHomebrewURL,
             with: emptyCardCatalogResponse(for: hostedHomebrewURL)
         )
+        await staleTask?.value
         await transport.drain()
 
         #expect(model.selectedProfile.id == sampleCustomProfile.id)
