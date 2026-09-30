@@ -266,112 +266,81 @@ extension AssetCacheServiceTests {
 
     @Test(
         """
-        Touching many distinct keys against a large in-flight-revalidation busy backlog \
-        (registered via setInFlightRevalidation(_:for:), not merely an authority window) \
-        takes no meaningfully worse per-touch time than the identical churn against a tiny \
-        busy backlog -- proving isAuthorityKeyBusy(_:)'s revalidation check is O(1) per key \
-        (backed by revalidationKeyRefCount), not an O(m) scan of every currently in-flight \
-        revalidation slot that would otherwise make a large backlog's churn scale with the \
-        backlog's own size. Every busy key, in both the small and large backlog, is also \
-        proven to never be pruned by the churn.
+        Revalidation-busy pruning consults the per-key revalidationKeyRefCount rather than \
+        scanning inFlightRevalidation slots: a real slot whose refcount is missing is \
+        prunable, while a refcount with no slot still protects that key.
         """
     )
-    func manyInFlightRevalidationsStayBusyAndChurnStaysBounded() async throws {
-        let smallElapsedMs = try await measureChurnAgainstRevalidationBacklog(
+    func revalidationBusyStatusComesFromRefCount() async throws {
+        try await withService { service, _ in
+            let rawCode = "200001"
+            let busy = try await registerRevalidationBusyKey(service: service, rawCode: rawCode)
+            let cacheKey = try distinctCacheKey(rawCode)
+            await service.testOnlySetRevalidationRefCount(nil, for: cacheKey)
+            try await fillAuthorityTrackingToCapacity(
+                service: service,
+                existingTrackedKeyCount: 1,
+                keyPrefix: 3
+            )
+
+            let triggeringKey = try distinctCacheKey("390000")
+            _ = await service.issueToken(for: triggeringKey)
+
+            let stillTracked = await service.trackedAuthorityKeys.contains(cacheKey)
+            #expect(!stillTracked, "a slot without a refcount must not keep a key busy")
+            busy.task.cancel()
+        }
+
+        try await withService { service, _ in
+            let cacheKey = try distinctCacheKey("400001")
+            _ = await service.issueToken(for: cacheKey)
+            await service.testOnlySetRevalidationRefCount(1, for: cacheKey)
+            try await fillAuthorityTrackingToCapacity(
+                service: service,
+                existingTrackedKeyCount: 1,
+                keyPrefix: 5
+            )
+
+            let triggeringKey = try distinctCacheKey("590000")
+            _ = await service.issueToken(for: triggeringKey)
+
+            let stillTracked = await service.trackedAuthorityKeys.contains(cacheKey)
+            #expect(stillTracked, "a refcount alone must keep a key busy")
+        }
+    }
+
+    @Test(
+        """
+        Touching many distinct keys against an in-flight-revalidation busy backlog \
+        (registered via setInFlightRevalidation(_:for:), not merely an authority window) \
+        never prunes any genuinely busy key. The small case is padded to capacity before \
+        churn so it exercises the same pruning path as the large case. The directory \
+        observations document the old timing root cause: every churn invalidate performs \
+        a full cache-directory listing, so large setup leaves many more entries to scan.
+        """
+    )
+    func manyInFlightRevalidationsStayBusyDuringChurn() async throws {
+        let smallObservation = try await observeChurnAgainstRevalidationBacklog(
             busyKeyCount: 8,
             touchCount: 300,
             keyPrefix: 1
         )
-        let largeElapsedMs = try await measureChurnAgainstRevalidationBacklog(
+        let largeObservation = try await observeChurnAgainstRevalidationBacklog(
             busyKeyCount: AssetCacheService.maxTrackedAuthorityKeys,
             touchCount: 300,
             keyPrefix: 2
         )
 
-        // A generous ratio bound (not tied to any specific absolute
-        // latency, which would be inherently environment/CI-load
-        // dependent): an O(m)-per-touch scan of a
-        // maxTrackedAuthorityKeys-sized backlog (512x the small
-        // backlog's 8 entries) would make the large run's per-touch cost
-        // scale by roughly that same 512x factor, dwarfing this bound.
-        // The O(1) refcount lookup this test is meant to prove instead
-        // keeps both runs' per-touch cost within the same rough order of
-        // magnitude, regardless of backlog size.
+        #expect(smallObservation.trackedBusyKeyCount == smallObservation.busyKeyCount)
+        #expect(largeObservation.trackedBusyKeyCount == largeObservation.busyKeyCount)
+        let expectedListNamesCalls = 300 * 2
+        // Each churn invalidate currently performs two full directory listings:
+        // the authority-issuance disk-budget proof plus cleanupSupersededPayloads.
+        #expect(smallObservation.listNamesCallsDuringChurn == expectedListNamesCalls)
+        #expect(largeObservation.listNamesCallsDuringChurn == expectedListNamesCalls)
         #expect(
-            largeElapsedMs < smallElapsedMs * 20 + 2000,
-            """
-            Churn against a \(AssetCacheService.maxTrackedAuthorityKeys)-key revalidation \
-            busy backlog took \(largeElapsedMs)ms, versus \(smallElapsedMs)ms for an \
-            otherwise-identical churn against an 8-key backlog -- an O(m)-per-touch \
-            revalidation-busy scan would make this ratio scale with the backlog size \
-            itself, rather than staying roughly flat as the O(1) refcount lookup does
-            """
+            largeObservation.directoryEntryCountBeforeChurn
+                > smallObservation.directoryEntryCountBeforeChurn
         )
-    }
-
-    /// Registers `busyKeyCount` distinct keys each with a genuinely
-    /// in-flight revalidation slot (via
-    /// ``AssetCacheService/setInFlightRevalidation(_:for:)``, not merely
-    /// an authority window), then performs `touchCount` fresh
-    /// issue/invalidate touches against *other*, disjoint keys and
-    /// returns the elapsed wall time of that churn phase alone (the
-    /// setup phase, and the final busy-key liveness assertions, are
-    /// excluded from the timed window since only the churn's own
-    /// per-touch cost is what this file's O(1)-vs-O(m) coverage cares
-    /// about). `keyPrefix` keeps each call's synthetic card codes
-    /// disjoint from any other call's within the same test.
-    private func measureChurnAgainstRevalidationBacklog(
-        busyKeyCount: Int,
-        touchCount: Int,
-        keyPrefix: Int
-    ) async throws -> UInt64 {
-        var elapsedMs: UInt64 = 0
-        try await withService { service, _ in
-            var busyKeys: [AssetCacheKey] = []
-            for index in 0 ..< busyKeyCount {
-                let rawCode = String(format: "%d%05d", keyPrefix, index)
-                let cacheKey = try distinctCacheKey(rawCode)
-                let token = await stampedToken(for: service, key: cacheKey)
-                let slot = try AssetCacheService.RevalidationSlot(
-                    cacheKey: cacheKey,
-                    url: candidateURLs(for: cardArtKey(rawCode))[0],
-                    etag: "etag-\(rawCode)",
-                    lastModified: nil
-                )
-                // A task that simply never finishes: this test only
-                // needs the slot registered as busy, never completed or
-                // cancelled.
-                let neverEndingTask = Task<CachedAsset, Error> {
-                    try await Task.sleep(nanoseconds: .max)
-                    throw CancellationError()
-                }
-                let fetch = AssetCacheService.RevalidationFetch(
-                    task: neverEndingTask,
-                    token: token
-                )
-                await service.setInFlightRevalidation(fetch, for: slot)
-                busyKeys.append(cacheKey)
-            }
-
-            let churnStart = DispatchTime.now().uptimeNanoseconds
-            for index in 0 ..< touchCount {
-                let rawCode = String(format: "%d%05d", keyPrefix, index + 90000)
-                let cacheKey = try distinctCacheKey(rawCode)
-                _ = await service.issueToken(for: cacheKey)
-                try await service.invalidate(cacheKey)
-            }
-            elapsedMs = (DispatchTime.now().uptimeNanoseconds - churnStart) / 1_000_000
-
-            for cacheKey in busyKeys {
-                let stillTracked = await service.trackedAuthorityKeys.contains(cacheKey)
-                #expect(stillTracked, "a busy in-flight-revalidation key must never be pruned")
-            }
-            for cacheKey in busyKeys {
-                let task = await service.inFlightRevalidation.first { $0.key.cacheKey == cacheKey }?
-                    .value.task
-                task?.cancel()
-            }
-        }
-        return elapsedMs
     }
 }

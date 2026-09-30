@@ -88,7 +88,7 @@ actor AssetCacheService {
     /// ``pruneAuthorityKeysIfNeeded(protecting:)``'s pass, that O(m) scan
     /// made a sustained high-cardinality-churn burst (many distinct keys,
     /// many concurrent revalidations) quadratic overall; this refcount
-    /// makes the whole pass, and every single touch, amortized O(1).
+    /// makes the revalidation-busy check inside each considered key O(1).
     var revalidationKeyRefCount: [AssetCacheKey: Int] = [:]
 
     /// Bumped for exactly `key` every time ``invalidate(_:token:)``
