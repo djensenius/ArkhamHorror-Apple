@@ -118,7 +118,7 @@ struct BasicChoiceRoundTransitionTests {
         #expect(forced.ability.investigatorID == RoundTransitionFixtures.investigatorID)
         #expect(forced.ability.cardCode.rawValue == "c01165")
         #expect(forced.ability.before.isEmpty)
-        #expect(forced.ability.messages.isEmpty)
+        #expect(!forced.ability.messages.isEmpty)
     }
 
     private func assertAgendaAdvancePrompt() throws {

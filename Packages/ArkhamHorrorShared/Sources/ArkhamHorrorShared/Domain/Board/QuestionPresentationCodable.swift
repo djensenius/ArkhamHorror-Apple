@@ -294,6 +294,8 @@ extension QuestionPresentation.Ability: Codable {
         case type
         case actions
         case canBeCancelled
+        case blocksIn
+        case nonBlocking
     }
 
     init(from decoder: any Decoder) throws {

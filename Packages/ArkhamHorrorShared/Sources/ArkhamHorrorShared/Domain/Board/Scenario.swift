@@ -46,6 +46,7 @@ struct Scenario: Sendable {
     let completedAgendaStack: [JSONValue]
     /// Free-form scenario counters. Broad, out of scope for this contract slice.
     let counts: [JSONValue]
+    let customChaosBags: JSONValue?
     let deckDiscards: [JSONValue]
     let decks: [JSONValue]
     /// The act/agenda deck row layout, for example `["agenda1 act1"]`.
@@ -125,6 +126,7 @@ extension Scenario: Codable {
         case completedActStack
         case completedAgendaStack
         case counts
+        case customChaosBags
         case deckDiscards
         case decks
         case decksLayout
@@ -196,6 +198,7 @@ extension Scenario: Codable {
             [JSONValue].self, forKey: .completedAgendaStack
         )
         counts = try container.decode([JSONValue].self, forKey: .counts)
+        customChaosBags = try container.decodeIfPresent(JSONValue.self, forKey: .customChaosBags)
         deckDiscards = try container.decode([JSONValue].self, forKey: .deckDiscards)
         decks = try container.decode([JSONValue].self, forKey: .decks)
         decksLayout = try container.decode([String].self, forKey: .decksLayout)
@@ -268,6 +271,7 @@ extension Scenario: Codable {
         try container.encode(completedActStack, forKey: .completedActStack)
         try container.encode(completedAgendaStack, forKey: .completedAgendaStack)
         try container.encode(counts, forKey: .counts)
+        try container.encodeIfPresent(customChaosBags, forKey: .customChaosBags)
         try container.encode(deckDiscards, forKey: .deckDiscards)
         try container.encode(decks, forKey: .decks)
         try container.encode(decksLayout, forKey: .decksLayout)

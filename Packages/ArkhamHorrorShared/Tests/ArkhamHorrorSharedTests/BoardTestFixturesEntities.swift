@@ -155,7 +155,7 @@ extension BoardTestFixtures {
             settings: gameSettings(), gameSettings: gameSettings(), mode: mode, modifiers: [],
             encounterDeckSize: 0, locations: locationMap, investigators: investigators,
             otherInvestigators: otherInvestigators, killedInvestigators: killedInvestigators,
-            enemies: enemies, assets: entityMap(count: assetCount),
+            retiredInvestigators: [:], enemies: enemies, assets: entityMap(count: assetCount),
             acts: acts, agendas: agendas, treacheries: treacheries,
             events: entityMap(count: eventCount), concealed: entityMap(count: concealedCount),
             skills: entityMap(count: skillCount), stories: [:], scarletKeys: [:],

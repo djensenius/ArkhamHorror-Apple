@@ -36,7 +36,8 @@ extension QuestionPresentationRawQuestionShape {
               case .array? = choice["before"],
               case .array? = choice["messages"],
               case let .object(ability)? = choice["ability"],
-              Set(ability.keys) == Self.treacheryForcedAbilityKeys,
+              Self.treacheryForcedAbilityHasAllowedKeys(ability),
+              Self.treacheryForcedAbilityBlockingFieldsAreCanonical(ability),
               case let .object(source)? = ability["source"],
               let treacheryID = Self.treacherySourceID(source),
               ability["requestor"] == .object(source),
@@ -80,6 +81,20 @@ extension QuestionPresentationRawQuestionShape {
         "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
         "window",
     ]
+
+    private static func treacheryForcedAbilityHasAllowedKeys(
+        _ ability: [String: JSONValue]
+    ) -> Bool {
+        let additiveKeys: Set = ["blocksIn", "nonBlocking"]
+        return Set(ability.keys).subtracting(additiveKeys) == treacheryForcedAbilityKeys
+    }
+
+    private static func treacheryForcedAbilityBlockingFieldsAreCanonical(
+        _ ability: [String: JSONValue]
+    ) -> Bool {
+        (ability["blocksIn"] == nil || ability["blocksIn"] == .null)
+            && (ability["nonBlocking"] == nil || ability["nonBlocking"] == .bool(false))
+    }
 
     private static func treacherySourceID(
         _ source: [String: JSONValue]

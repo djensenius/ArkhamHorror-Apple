@@ -71,110 +71,6 @@ extension BasicChoiceParser {
             && discard.investigatorID == nil
     }
 
-    static func parseRoundEndForcedAbility(
-        _ object: [String: JSONValue]
-    ) -> BasicChoiceContent? {
-        guard Set(object.keys) == [
-            "tag", "investigatorId", "ability", "windows", "before", "messages",
-        ],
-            object["tag"] == .string("AbilityLabel"),
-            let investigatorID = roundTransitionInvestigatorID(object["investigatorId"]),
-            let identity = parseDissonantVoicesAbility(object["ability"]),
-            case let .array(windows)? = object["windows"],
-            windows == roundEndWindows,
-            object["before"] == .array([]),
-            object["messages"] == .array([])
-        else { return nil }
-
-        let parsedAbility = BasicChoiceAbility(
-            investigatorID: investigatorID,
-            cardCode: identity.cardCode,
-            rawAbility: object["ability"] ?? .null,
-            windows: windows,
-            before: [],
-            messages: []
-        )
-        return .resolveForcedAbility(ForcedAbilityChoice(
-            ability: parsedAbility,
-            treacheryID: identity.treacheryID
-        ))
-    }
-
-    private struct RoundEndAbilityIdentity {
-        let cardCode: CardCode
-        let treacheryID: TreacheryID
-    }
-
-    private static func parseDissonantVoicesAbility(
-        _ value: JSONValue?
-    ) -> RoundEndAbilityIdentity? {
-        guard case let .object(ability)? = value,
-              Set(ability.keys) == roundEndAbilityKeys,
-              roundEndAbilityFixedValues.allSatisfy({
-                  ability[$0.key] == $0.value
-              }),
-              isCanonicalInteger(ability["index"], equalTo: 1),
-              case let .string(cardCodeText)? = ability["cardCode"],
-              cardCodeText == "c01165",
-              let cardCode = strictCardCode(cardCodeText),
-              let treacheryID = roundTransitionTreacherySource(ability["source"]),
-              roundTransitionTreacherySource(ability["requestor"]) == treacheryID
-        else { return nil }
-        return RoundEndAbilityIdentity(cardCode: cardCode, treacheryID: treacheryID)
-    }
-
-    private static let roundEndAbilityKeys: Set<String> = [
-        "additionalCosts", "basic", "canBeCancelled", "cardCode", "criteria",
-        "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
-        "evadeCriteriaOverride", "fightCriteriaOverride", "highlightFromWindow",
-        "ignoreAllCosts", "index", "limit", "metadata", "requestor", "skipForAll",
-        "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
-        "window",
-    ]
-
-    private static let roundEndAbilityFixedValues: [String: JSONValue] = [
-        "additionalCosts": .array([]),
-        "basic": .bool(false),
-        "canBeCancelled": .bool(true),
-        "criteria": .object([
-            "tag": .string("InThreatAreaOf"),
-            "contents": .object(["tag": .string("You")]),
-        ]),
-        "delayAdditionalCosts": .null,
-        "displayAs": .null,
-        "doesNotProvokeAttacksOfOpportunity": .null,
-        "evadeCriteriaOverride": .null,
-        "fightCriteriaOverride": .null,
-        "highlightFromWindow": .bool(false),
-        "ignoreAllCosts": .bool(false),
-        "limit": .object([
-            "tag": .string("GroupLimit"),
-            "contents": .array([
-                .object(["tag": .string("PerWindow")]),
-                .number(.integer(1)),
-            ]),
-        ]),
-        "metadata": .null,
-        "skipForAll": .bool(false),
-        "target": .null,
-        "tooltip": .null,
-        "triggersSkillTest": .bool(false),
-        "type": .object([
-            "tag": .string("ForcedAbility"),
-            "window": roundEndsWhenWindow,
-        ]),
-        "wantsSkillTest": .null,
-        "window": roundEndsWhenWindow,
-    ]
-
-    private static let roundEndWindows: [JSONValue] = [
-        .object([
-            "windowBatchId": .null,
-            "windowTiming": .string("When"),
-            "windowType": .object(["tag": .string("AtEndOfRound")]),
-        ]),
-    ]
-
     static func parseAdvanceAgendaTarget(
         _ target: [String: JSONValue], messages: [JSONValue]
     ) -> BasicChoiceContent? {
@@ -320,24 +216,6 @@ extension BasicChoiceParser {
             investigatorID: investigatorID,
             messages: messages
         )
-    }
-
-    private static var roundEndsWhenWindow: JSONValue {
-        .object([
-            "tag": .string("RoundEnds"),
-            "contents": .string("When"),
-        ])
-    }
-
-    private static func roundTransitionTreacherySource(
-        _ value: JSONValue?
-    ) -> TreacheryID? {
-        guard case let .object(source)? = value,
-              Set(source.keys) == ["tag", "contents"],
-              source["tag"] == .string("TreacherySource"),
-              case let .string(raw)? = source["contents"]
-        else { return nil }
-        return TreacheryID(codingKey: AnyCodingKey(stringValue: raw))
     }
 
     private static func roundTransitionAgendaSource(

@@ -76,7 +76,7 @@ extension QuestionPresentationRawQuestionShape {
         case 12:
             expectedSeals = GatheringAtticActionWindowExpectedSeals(
                 rawSHA256:
-                "f5c36e8051a3375c37f1e63b5d0d7543f842fa0992797c20cc87468532b352c7",
+                "c0c6386b6f305d3a4199192074232b8c02009fc62ee34b796e7af873bd6ec874",
                 presentationSHA256:
                 "bb8b3bfc28f16b939b10d718c6e4dd00e6ef1912065a00f174509f1b41068266",
                 dynamicIDCount: 9
@@ -84,7 +84,7 @@ extension QuestionPresentationRawQuestionShape {
         case 13:
             expectedSeals = GatheringAtticActionWindowExpectedSeals(
                 rawSHA256:
-                "09c20cc3d7ad012734be82160462616399f305cfc251838f94ab22b96cd93cf1",
+                "0e82aef042eb937bcecdc583305cda643651390125ce771293851aeae0354094",
                 presentationSHA256:
                 "6b0be18f36d804d02875d007ca3694732e617098e378f0b460a10ecb4efe7f48",
                 dynamicIDCount: 10

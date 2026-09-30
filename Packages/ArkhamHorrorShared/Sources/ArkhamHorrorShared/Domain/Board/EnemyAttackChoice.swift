@@ -36,12 +36,7 @@ extension BasicChoiceParser {
               Set(constructor.keys) == ["tag", "contents"],
               constructor["tag"] == .string("EnemyAttack_"),
               case let .object(attack)? = constructor["contents"],
-              Set(attack.keys) == [
-                  "attackTarget", "attackOriginalTarget", "attackEnemy", "attackType",
-                  "attackDamageStrategy", "attackExhaustsEnemy", "attackSource",
-                  "attackCanBeCanceled", "attackAfter", "attackDamaged", "attackDealDamage",
-                  "attackDespiteExhausted", "attackCancelled",
-              ],
+              enemyAttackHasAllowedKeys(attack),
               let investigatorID = attackInvestigatorID(attack["attackTarget"]),
               let originalInvestigatorID = attackInvestigatorID(
                   attack["attackOriginalTarget"]
@@ -59,11 +54,28 @@ extension BasicChoiceParser {
               attack["attackDamaged"] == .array([]),
               attack["attackDealDamage"] == .bool(true),
               attack["attackDespiteExhausted"] == .bool(false),
-              attack["attackCancelled"] == .bool(false)
+              attack["attackCancelled"] == .bool(false),
+              enemyAttackDamageReplacementIsCanonical(attack)
         else { return nil }
         return .resolveEnemyAttack(
             enemyID: targetEnemyID, investigatorID: investigatorID, messages: messages
         )
+    }
+
+    private static func enemyAttackHasAllowedKeys(_ attack: [String: JSONValue]) -> Bool {
+        let additiveKeys: Set = ["attackDamageReplacement"]
+        return Set(attack.keys).subtracting(additiveKeys) == [
+            "attackTarget", "attackOriginalTarget", "attackEnemy", "attackType",
+            "attackDamageStrategy", "attackExhaustsEnemy", "attackSource",
+            "attackCanBeCanceled", "attackAfter", "attackDamaged", "attackDealDamage",
+            "attackDespiteExhausted", "attackCancelled",
+        ]
+    }
+
+    private static func enemyAttackDamageReplacementIsCanonical(
+        _ attack: [String: JSONValue]
+    ) -> Bool {
+        attack["attackDamageReplacement"] == nil || attack["attackDamageReplacement"] == .array([])
     }
 
     private static func enemyID(_ value: JSONValue?) -> EnemyID? {

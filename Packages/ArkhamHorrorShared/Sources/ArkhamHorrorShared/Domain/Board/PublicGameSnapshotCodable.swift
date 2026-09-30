@@ -17,6 +17,7 @@ extension PublicGameSnapshot: Codable {
         case investigators
         case otherInvestigators
         case killedInvestigators
+        case retiredInvestigators
         case enemies
         case assets
         case acts
@@ -92,6 +93,9 @@ extension PublicGameSnapshot: Codable {
         )
         killedInvestigators = try container.decode(
             [InvestigatorID: Investigator].self, forKey: .killedInvestigators
+        )
+        retiredInvestigators = try container.decodeIfPresent(
+            [InvestigatorID: Investigator].self, forKey: .retiredInvestigators
         )
         enemies = try container.decode(UUIDEntityMap<EnemyIDTag>.self, forKey: .enemies)
         assets = try container.decode(UUIDEntityMap<AssetIDTag>.self, forKey: .assets)
@@ -209,6 +213,7 @@ extension PublicGameSnapshot: Codable {
         try container.encode(investigators, forKey: .investigators)
         try container.encode(otherInvestigators, forKey: .otherInvestigators)
         try container.encode(killedInvestigators, forKey: .killedInvestigators)
+        try container.encodeIfPresent(retiredInvestigators, forKey: .retiredInvestigators)
         try container.encode(enemies, forKey: .enemies)
         try container.encode(assets, forKey: .assets)
         try container.encode(acts, forKey: .acts)
