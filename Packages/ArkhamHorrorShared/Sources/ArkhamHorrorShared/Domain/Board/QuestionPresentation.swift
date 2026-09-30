@@ -578,8 +578,8 @@ extension QuestionPresentation {
                 }
                 governedSource = nil
                 sealedOverlay = false
-            } catch QuestionPresentationBindingError.rawChoiceMismatch(
-                let sourceIndex
+            } catch let QuestionPresentationBindingError.rawChoiceMismatch(
+                sourceIndex
             ) {
                 guard requiresGatheringOverlayValidation else {
                     throw QuestionPresentationBindingError.rawChoiceMismatch(
