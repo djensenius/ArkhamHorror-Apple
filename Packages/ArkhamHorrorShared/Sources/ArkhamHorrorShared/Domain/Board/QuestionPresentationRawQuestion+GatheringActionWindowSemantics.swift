@@ -78,7 +78,7 @@ extension QuestionPresentationRawQuestionShape {
                 rawSHA256:
                 "c0c6386b6f305d3a4199192074232b8c02009fc62ee34b796e7af873bd6ec874",
                 presentationSHA256:
-                "bb8b3bfc28f16b939b10d718c6e4dd00e6ef1912065a00f174509f1b41068266",
+                "e25073d730857bf50587f0e2192c1446b97a1813d59712b7a8345b2a481f865b",
                 dynamicIDCount: 9
             )
         case 13:
@@ -86,7 +86,7 @@ extension QuestionPresentationRawQuestionShape {
                 rawSHA256:
                 "0e82aef042eb937bcecdc583305cda643651390125ce771293851aeae0354094",
                 presentationSHA256:
-                "6b0be18f36d804d02875d007ca3694732e617098e378f0b460a10ecb4efe7f48",
+                "06e909dfe60b1117e554eacdefd118dde13b8dabab1f68c7bd895d4f9d63ec6e",
                 dynamicIDCount: 10
             )
         default:

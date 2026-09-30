@@ -237,16 +237,16 @@ extension QuestionPresentationRawQuestionShape {
             cardCode: "c01114"
         ) {
             expectedRawSHA256 =
-                "c19f7242a65dbfef89d57fbd09515ed51171f124699de8c826102640377093a4"
+                "afbd13de745d157511578a67206ce8fc35a21bdb3a9a7d0986241fbe57c31800"
             expectedPresentationSHA256 =
-                "188ba6aa88e9a29e26073a1dc4ac3e4613b7aae574cd5e145648cc110d5b231f"
+                "0840d9d428b0ef23e9a045caa53e18ebd83474952905c1634fe30eefbe678b71"
         } else if investigation.matchesGatheringInvestigation(
             cardCode: "c01113"
         ) {
             expectedRawSHA256 =
-                "1db076f96e888332db1a92f434f9c94e5d60c166603a8b6420c73c2e338887c7"
+                "3bece7fb19ff5c7b0877c684f40ba80712eefd13b2747796571f26122eb82c40"
             expectedPresentationSHA256 =
-                "64b1c25fd462fc61b04bc67fa8ffc797f29253fc2990136e373d39907ec8fa0a"
+                "8c7dd5a42009e69b6b08f2316a02e1fdeff2945d3c0fbddf99c9fdd508c4a05f"
         } else {
             throw QuestionPresentationBindingError.governedChoicesMismatch
         }

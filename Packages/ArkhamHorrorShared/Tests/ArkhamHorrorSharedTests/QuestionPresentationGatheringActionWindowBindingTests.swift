@@ -56,8 +56,8 @@ struct GatheringActionWindowBindingTests {
         }
     }
 
-    @Test("Attic Q42 rejects unsupported hand-card counts")
-    func gatheringAtticQ42RejectsUnsupportedChoiceCount() throws {
+    @Test("Attic Q42 unsupported hand-card counts decode but still reject count mismatch")
+    func gatheringAtticQ42UnsupportedChoiceCountRejectsCountMismatch() throws {
         let presentation = try atticQ42Presentation(
             roleOrder: [
                 .cellarMovement,
@@ -69,16 +69,27 @@ struct GatheringActionWindowBindingTests {
         let unsupported = try presentationData(
             withExtraCardInsertedInto: presentation
         )
-        #expect(throws: DecodingError.self) {
-            try ContractJSON.decode(
-                QuestionPresentation.self,
-                from: unsupported
+        let genericOnly = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: unsupported
+        )
+        #expect(throws: QuestionPresentationBindingError.self) {
+            try genericOnly.bind(
+                to: atticQ42RawQuestion(
+                    roleOrder: [
+                        .cellarMovement,
+                        .atticMovement,
+                        .hallwayInvestigation,
+                    ],
+                    handCardCount: 7
+                ),
+                expectedQuestionVersion: 42
             )
         }
     }
 
-    @Test("Attic Q42 rejects sparse descriptors without trapping")
-    func gatheringAtticQ42RejectsSparseDescriptors() throws {
+    @Test("Attic Q42 sparse descriptors lose their overlay without trapping")
+    func gatheringAtticQ42SparseDescriptorsLoseOverlay() throws {
         for handCardCount in [6, 7] {
             let rawQuestion = try atticQ42RawQuestion(
                 roleOrder: [
@@ -103,7 +114,7 @@ struct GatheringActionWindowBindingTests {
                 choiceCount: complete.choiceCount,
                 choices: Array(complete.choices.prefix(1))
             )
-            assertActionWindowBindingFails(
+            assertActionWindowBindingLosesOverlay(
                 presentation: sparse,
                 rawQuestion: rawQuestion
             )
@@ -128,6 +139,8 @@ private extension GatheringActionWindowBindingTests {
             to: rawQuestion,
             expectedQuestionVersion: 42
         )
+        #expect(binding.hasSealedOverlay)
+        #expect(binding.governedSource == nil)
         #expect(
             binding.presentation.choices.count ==
                 handCardCount + 6
@@ -195,7 +208,7 @@ private extension GatheringActionWindowBindingTests {
             with:
             .string("33333333-3333-4333-8333-333333333333")
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: presentation,
             rawQuestion: driftedRaw
         )
@@ -231,7 +244,7 @@ private extension GatheringActionWindowBindingTests {
                 )
             )
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: driftedPresentation,
             rawQuestion: rawQuestion
         )
@@ -257,7 +270,7 @@ private extension GatheringActionWindowBindingTests {
             choiceCount: downgradedChoices.count,
             choices: downgradedChoices
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: downgradedPresentation,
             rawQuestion: rawQuestion
         )

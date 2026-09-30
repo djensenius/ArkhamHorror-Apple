@@ -22,7 +22,7 @@ struct MovementEntryQuestionBindingTests {
             at: "/choices/9/ability/source/contents",
             with: .string("dbaa2d2e-4ceb-44b2-a554-e5fa370e7882")
         )
-        assertBindingFails(
+        assertBindingLosesOverlay(
             presentation: movement,
             rawQuestion: driftedMovement,
             questionVersion: 36
@@ -34,7 +34,7 @@ struct MovementEntryQuestionBindingTests {
         let atticForcedRaw = try rawFixture(
             "question-gathering-attic-entry-forced"
         )
-        assertBindingFails(
+        assertBindingLosesOverlay(
             presentation: cellarForced,
             rawQuestion: atticForcedRaw,
             questionVersion: 37
@@ -46,7 +46,7 @@ struct MovementEntryQuestionBindingTests {
         let atticHorrorRaw = try rawFixture(
             "question-gathering-attic-horror-assignment"
         )
-        assertBindingFails(
+        assertBindingLosesOverlay(
             presentation: cellarDamage,
             rawQuestion: atticHorrorRaw,
             questionVersion: 38
@@ -57,7 +57,7 @@ struct MovementEntryQuestionBindingTests {
             at: "/source/contents/0/contents",
             with: .string("dbaa2d2e-4ceb-44b2-a554-e5fa370e7882")
         )
-        assertBindingFails(
+        assertBindingLosesOverlay(
             presentation: cellarDamage,
             rawQuestion: driftedAssignment,
             questionVersion: 38
@@ -120,6 +120,7 @@ struct MovementEntryQuestionBindingTests {
             to: rawQuestion,
             expectedQuestionVersion: 39
         )
+        #expect(binding.hasSealedOverlay)
         #expect(
             binding.descriptor(
                 forSourceIndex: investigationSourceIndex
@@ -140,7 +141,7 @@ struct MovementEntryQuestionBindingTests {
             "/choices/\(hallwaySourceIndex)/ability/source/contents",
             with: .string(locationID)
         )
-        assertBindingFails(
+        assertBindingLosesOverlay(
             presentation: presentation,
             rawQuestion: driftedRaw,
             questionVersion: 39
@@ -152,7 +153,7 @@ struct MovementEntryQuestionBindingTests {
             locationID: locationID,
             hallwayID: "33333333-3333-4333-8333-333333333333"
         )
-        assertBindingFails(
+        assertBindingLosesOverlay(
             presentation: driftedPresentation,
             rawQuestion: rawQuestion,
             questionVersion: 39
@@ -304,16 +305,20 @@ struct MovementEntryQuestionBindingTests {
     }
 }
 
-private func assertBindingFails(
+private func assertBindingLosesOverlay(
     presentation: QuestionPresentation,
     rawQuestion: JSONValue,
     questionVersion: Int
 ) {
-    #expect(throws: QuestionPresentationBindingError.self) {
-        try presentation.bind(
+    do {
+        let binding = try presentation.bind(
             to: rawQuestion,
             expectedQuestionVersion: questionVersion
         )
+        #expect(!binding.hasSealedOverlay)
+        #expect(binding.governedSource == nil)
+    } catch {
+        Issue.record("Expected failed seal to bind as plain generic rendering, got \(error)")
     }
 }
 
@@ -341,12 +346,11 @@ private func assertRelabeledPostEntryChoiceFails(
         choiceCount: relabeledChoices.count,
         choices: relabeledChoices
     )
-    #expect(throws: QuestionPresentationBindingError.self) {
-        _ = try relabeledPresentation.bind(
-            to: rawQuestion,
-            expectedQuestionVersion: 39
-        )
-    }
+    assertBindingLosesOverlay(
+        presentation: relabeledPresentation,
+        rawQuestion: rawQuestion,
+        questionVersion: 39
+    )
 }
 
 private enum MovementEntryBindingFixtureError: Error {

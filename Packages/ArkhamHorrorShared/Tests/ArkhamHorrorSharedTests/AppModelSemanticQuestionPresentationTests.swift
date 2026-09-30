@@ -144,40 +144,18 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData.isEmpty)
     }
 
-    @Test("Q41 rejects actor drift but accepts non-overlay generic downgrade")
-    func semanticEncounterDrawBindingDriftFailsClosed() {
-        do {
-            _ = try semanticEnvelope(
-                rawFixture: "question-encounter-deck-draw",
-                presentationFixture: "question-presentation-encounter-deck-draw",
-                questionVersion: 41,
-                mutatePresentation: { presentation in
-                    guard case var .array(choices)? = presentation["choices"],
-                          case var .object(choice) = choices.first
-                    else { throw SemanticFixtureError.unexpectedShape }
-                    choice["actorId"] = .string("c01002")
-                    choices[0] = .object(choice)
-                    presentation["choices"] = .array(choices)
-                }
-            )
-            Issue.record("Expected actor drift to fail overlay binding")
-        } catch {}
-        do {
-            _ = try semanticEnvelope(
-                rawFixture: "question-encounter-deck-draw",
-                presentationFixture: "question-presentation-encounter-deck-draw",
-                questionVersion: 41,
-                mutatePresentation: { presentation in
-                    guard case var .array(choices)? = presentation["choices"],
-                          case var .object(choice) = choices.first
-                    else { throw SemanticFixtureError.unexpectedShape }
-                    choice["kind"] = .string("drawCard")
-                    choices[0] = .object(choice)
-                    presentation["choices"] = .array(choices)
-                }
-            )
-            Issue.record("Expected semantic kind downgrade to fail overlay binding")
-        } catch {}
+    @Test("Q41 drops overlay on actor drift and accepts non-overlay generic downgrade")
+    func semanticEncounterDrawBindingDriftFailsClosed() throws {
+        let actorDrift = try encounterDrawBinding { choice in
+            choice["actorId"] = .string("c01002")
+        }
+        #expect(!actorDrift.hasSealedOverlay)
+
+        let downgraded = try encounterDrawBinding { choice in
+            choice["kind"] = .string("drawCard")
+        }
+        #expect(!downgraded.hasSealedOverlay)
+        #expect(downgraded.descriptor(forSourceIndex: 0)?.kind == .drawCard)
     }
 
     @Test("The newest projection rejects advanceAct after its act disappears")
@@ -389,6 +367,27 @@ extension AppModelLiveGameTests {
         )
         #expect(semanticActionability[12])
         #expect(!legacyActionability[12])
+    }
+
+    func encounterDrawBinding(
+        mutateChoice: (inout [String: JSONValue]) throws -> Void
+    ) throws -> BoundQuestionPresentation {
+        var presentation = try fixtureJSON("question-presentation-encounter-deck-draw")
+        guard case var .object(presentationObject) = presentation,
+              case var .array(choices)? = presentationObject["choices"],
+              case var .object(choice) = choices.first
+        else { throw SemanticFixtureError.unexpectedShape }
+        try mutateChoice(&choice)
+        choices[0] = .object(choice)
+        presentationObject["choices"] = .array(choices)
+        presentation = .object(presentationObject)
+        return try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: ContractJSON.encode(presentation)
+        ).bind(
+            to: fixtureJSON("question-encounter-deck-draw"),
+            expectedQuestionVersion: 41
+        )
     }
 
     func semanticEnvelope(

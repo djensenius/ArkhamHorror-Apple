@@ -514,9 +514,10 @@ struct BoundQuestionPresentation: Sendable, Equatable, Hashable {
     let presentation: QuestionPresentation
     let rawChoices: [JSONValue]
     let governedSource: QuestionPresentation.GovernedSource?
+    let sealedOverlay: Bool
 
     var hasSealedOverlay: Bool {
-        governedSource != nil || presentation.hasSupportedGatheringSemantics
+        sealedOverlay
     }
 
     func descriptor(forSourceIndex sourceIndex: Int) -> QuestionPresentation.Choice? {
@@ -562,17 +563,30 @@ extension QuestionPresentation {
                 actual: choiceCount
             )
         }
-        let governedSource: QuestionPresentation.GovernedSource? = if hasSupportedGatheringSemantics
+        let shouldValidateOverlay = hasSupportedGatheringSemantics
             || requiresGatheringOverlayValidation
-        {
-            try rawShape.validateGovernedChoices(for: self)
+        let governedSource: QuestionPresentation.GovernedSource?
+        let sealedOverlay: Bool
+        if shouldValidateOverlay {
+            do {
+                governedSource = try rawShape.validateGovernedChoices(for: self)
+                sealedOverlay = hasSupportedGatheringSemantics
+            } catch QuestionPresentationBindingError.governedChoicesMismatch {
+                governedSource = nil
+                sealedOverlay = false
+            } catch QuestionPresentationBindingError.rawChoiceMismatch {
+                governedSource = nil
+                sealedOverlay = false
+            }
         } else {
-            nil
+            governedSource = nil
+            sealedOverlay = false
         }
         return BoundQuestionPresentation(
             presentation: self,
             rawChoices: rawShape.choices,
-            governedSource: governedSource
+            governedSource: governedSource,
+            sealedOverlay: sealedOverlay
         )
     }
 }

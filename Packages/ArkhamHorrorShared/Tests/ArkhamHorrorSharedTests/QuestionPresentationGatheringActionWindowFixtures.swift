@@ -100,16 +100,20 @@ extension GatheringActionWindowBindingTests {
     }
 }
 
-func assertActionWindowBindingFails(
+func assertActionWindowBindingLosesOverlay(
     presentation: QuestionPresentation,
     rawQuestion: JSONValue,
     expectedQuestionVersion: Int = 42
 ) {
-    #expect(throws: QuestionPresentationBindingError.self) {
-        try presentation.bind(
+    do {
+        let binding = try presentation.bind(
             to: rawQuestion,
             expectedQuestionVersion: expectedQuestionVersion
         )
+        #expect(!binding.hasSealedOverlay)
+        #expect(binding.governedSource == nil)
+    } catch {
+        Issue.record("Expected failed seal to bind as plain generic rendering, got \(error)")
     }
 }
 

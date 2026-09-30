@@ -43,7 +43,7 @@ struct GatheringContinuationBindingTests {
             questionKind: .chooseOne,
             descriptor: .gatheringStartSkillTest
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: startSkillTest,
             rawQuestion: rawQuestion(
                 kind: .chooseOne,
@@ -57,7 +57,7 @@ struct GatheringContinuationBindingTests {
             questionKind: .chooseOne,
             descriptor: .gatheringApplySkillTestResults
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: applyResults,
             rawQuestion: rawQuestion(
                 kind: .chooseOne,
@@ -74,7 +74,7 @@ struct GatheringContinuationBindingTests {
             questionKind: .playerWindowChooseOne,
             descriptor: .gatheringEndTurn(sourceIndex: 0)
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: endTurn,
             rawQuestion: rawQuestion(
                 kind: .playerWindowChooseOne,
@@ -89,7 +89,7 @@ struct GatheringContinuationBindingTests {
             choiceCount: 1,
             choices: [.gatheringStartSkillTest]
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: substitutedPresentation,
             rawQuestion: rawQuestion(
                 kind: .playerWindowChooseOne,

@@ -107,7 +107,8 @@ struct BoardPromptChoiceLinkingTests {
                 )]
             ),
             rawChoices: choices.map(\.rawValue),
-            governedSource: nil
+            governedSource: nil,
+            sealedOverlay: false
         )
     }
 

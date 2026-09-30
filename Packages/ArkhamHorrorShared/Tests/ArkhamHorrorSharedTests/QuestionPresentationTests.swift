@@ -99,7 +99,7 @@ struct QuestionPresentationTests {
         )
     }
 
-    @Test("Encounter draw binding rejects actor, descriptor, and raw-shape drift")
+    @Test("Encounter draw binding drops overlay on actor, descriptor, and raw-shape drift")
     // swiftlint:disable:next function_body_length
     func encounterDeckDrawMismatchesFailClosed() throws {
         let raw = try rawFixture("question-encounter-deck-draw")
@@ -131,13 +131,19 @@ struct QuestionPresentationTests {
             ]
         )
 
-        #expect(throws: QuestionPresentationBindingError.self) {
-            try wrongActor.bind(to: raw, expectedQuestionVersion: 41)
-        }
-        #expect(
-            try downgraded.bind(to: raw, expectedQuestionVersion: 41)
-                .descriptor(forSourceIndex: 0)?.kind == .drawCard
+        let wrongActorBinding = try wrongActor.bind(
+            to: raw,
+            expectedQuestionVersion: 41
         )
+        #expect(!wrongActorBinding.hasSealedOverlay)
+        let downgradedBinding = try downgraded.bind(
+            to: raw,
+            expectedQuestionVersion: 41
+        )
+        #expect(
+            downgradedBinding.descriptor(forSourceIndex: 0)?.kind == .drawCard
+        )
+        #expect(!downgradedBinding.hasSealedOverlay)
 
         let mutatedRawData = try #require(
             String(
@@ -152,19 +158,17 @@ struct QuestionPresentationTests {
             JSONValue.self,
             from: Data(mutatedRawData.utf8)
         )
-        #expect(throws: QuestionPresentationBindingError.self) {
-            try presentation.bind(
-                to: mutatedRaw,
+        let mutatedBinding = try presentation.bind(
+            to: mutatedRaw,
+            expectedQuestionVersion: 41
+        )
+        #expect(!mutatedBinding.hasSealedOverlay)
+        for wrapped in encounterDrawWrappers(around: raw) {
+            let wrappedBinding = try presentation.bind(
+                to: wrapped,
                 expectedQuestionVersion: 41
             )
-        }
-        for wrapped in encounterDrawWrappers(around: raw) {
-            #expect(throws: QuestionPresentationBindingError.self) {
-                try presentation.bind(
-                    to: wrapped,
-                    expectedQuestionVersion: 41
-                )
-            }
+            #expect(!wrappedBinding.hasSealedOverlay)
         }
     }
 

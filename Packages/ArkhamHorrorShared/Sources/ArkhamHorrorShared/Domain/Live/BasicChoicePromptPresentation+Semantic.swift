@@ -440,6 +440,12 @@ extension BasicChoicePromptPresentation {
         if let title = labelResolution?.title {
             return title
         }
+        if labelResolution?.unavailableReason != nil {
+            return semanticLocalized(
+                "semantic.choice.title.invalid",
+                value: "Unavailable action"
+            )
+        }
         if let text = descriptor.label?.text, !text.hasPrefix("$") {
             return text
         }
