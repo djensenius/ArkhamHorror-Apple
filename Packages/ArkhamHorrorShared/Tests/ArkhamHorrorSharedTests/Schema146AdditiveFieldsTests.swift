@@ -92,7 +92,10 @@ struct Schema146AdditiveFieldsTests {
         var value = try fixtureValue("get-game")
         value = try applyingRemove("/game/retiredInvestigators", to: value)
         value = try applyingRemove("/game/mode/That/customChaosBags", to: value)
-        let oldShape = try ContractJSON.decode(GetGameEnvelope.self, from: ContractJSON.encode(value))
+        let oldShape = try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: ContractJSON.encode(value)
+        )
         #expect(oldShape.game.retiredInvestigators == nil)
         if case let .scenarioOnly(scenario) = oldShape.game.mode {
             #expect(scenario.customChaosBags == nil)
@@ -166,4 +169,11 @@ struct Schema146AdditiveFieldsTests {
         ))
         return try Data(contentsOf: url)
     }
+}
+
+func jsonObjectTag(_ value: JSONValue?) -> String? {
+    guard case let .object(object)? = value,
+          case let .string(tag)? = object["tag"]
+    else { return nil }
+    return tag
 }
