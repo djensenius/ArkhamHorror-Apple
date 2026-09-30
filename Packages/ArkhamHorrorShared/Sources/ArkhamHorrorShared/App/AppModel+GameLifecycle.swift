@@ -114,6 +114,44 @@ extension AppModel {
         )
     }
 
+    func currentDeckRequestContext(for profile: ServerProfile) async throws -> DeckRequestContext {
+        let sessionGeneration = generation
+        let credentialEpoch = currentCredentialEpoch(for: profile.id)
+        let globalEpoch = currentGlobalCredentialEpoch()
+        let token: String?
+        do {
+            token = try await serializedTokenAccess(
+                for: profile.id,
+                epoch: credentialEpoch,
+                globalEpoch: globalEpoch
+            ) { [tokenStore] in
+                try await tokenStore.token(for: profile.id)
+            }
+        } catch is StaleCredentialEpochError {
+            throw GameLifecycleTokenAccessError.stale
+        } catch let cancellation as CancellationError {
+            throw cancellation
+        } catch {
+            throw GameLifecycleTokenAccessError.tokenStore(tokenStoreFailure(from: error))
+        }
+        guard let token else { throw GameLifecycleTokenAccessError.noToken }
+        return DeckRequestContext(
+            token: token,
+            sessionGeneration: sessionGeneration,
+            credentialEpoch: credentialEpoch,
+            globalEpoch: globalEpoch
+        )
+    }
+
+    func handleDeckSessionExpired(profile: ServerProfile, context: DeckRequestContext) async {
+        await handleGameLifecycleSessionExpired(
+            profile: profile,
+            generation: context.sessionGeneration,
+            credentialEpoch: context.credentialEpoch,
+            globalEpoch: context.globalEpoch
+        )
+    }
+
     /// Clears every game-lifecycle/lobby state property back to its initial, empty
     /// value and cancels every in-flight list/action task -- and, via
     /// ``resetLiveGameState()``, tears down every live-game session too (see

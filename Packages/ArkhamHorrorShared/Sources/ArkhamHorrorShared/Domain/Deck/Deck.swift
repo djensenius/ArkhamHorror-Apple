@@ -7,6 +7,35 @@ struct Deck: Sendable, Equatable {
     let name: String
     let investigatorName: String
     let list: DeckList
+    let lastUsedAt: String?
+    let overlay: JSONValue?
+    let playList: DeckList?
+
+    init(
+        id: DeckID,
+        userId: Int,
+        url: String?,
+        name: String,
+        investigatorName: String,
+        list: DeckList,
+        lastUsedAt: String? = nil,
+        overlay: JSONValue? = nil,
+        playList: DeckList? = nil
+    ) {
+        self.id = id
+        self.userId = userId
+        self.url = url
+        self.name = name
+        self.investigatorName = investigatorName
+        self.list = list
+        self.lastUsedAt = lastUsedAt
+        self.overlay = overlay
+        self.playList = playList
+    }
+
+    var playableList: DeckList {
+        playList ?? list
+    }
 }
 
 extension Deck: Codable {
@@ -17,6 +46,9 @@ extension Deck: Codable {
         case name
         case investigatorName
         case list
+        case lastUsedAt
+        case overlay
+        case playList
     }
 
     /// `url` is required by the schema (`required: [..., url, ...]`) but nullable: a
@@ -35,6 +67,9 @@ extension Deck: Codable {
         name = try container.decode(String.self, forKey: .name)
         investigatorName = try container.decode(String.self, forKey: .investigatorName)
         list = try container.decode(DeckList.self, forKey: .list)
+        lastUsedAt = try container.decodeIfPresent(String.self, forKey: .lastUsedAt)
+        overlay = try container.decodeIfPresent(JSONValue.self, forKey: .overlay)
+        playList = try container.decodeIfPresent(DeckList.self, forKey: .playList)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -47,6 +82,9 @@ extension Deck: Codable {
         try container.encode(name, forKey: .name)
         try container.encode(investigatorName, forKey: .investigatorName)
         try container.encode(list, forKey: .list)
+        try container.encodeIfPresent(lastUsedAt, forKey: .lastUsedAt)
+        try container.encodeIfPresent(overlay, forKey: .overlay)
+        try container.encodeIfPresent(playList, forKey: .playList)
     }
 }
 

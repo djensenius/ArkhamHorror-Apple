@@ -68,6 +68,42 @@ struct DeckListInput: Sendable {
 
 extension DeckListInput: Equatable, Hashable {}
 
+extension DeckListInput {
+    /// Converts a backend-normalized saved deck list back into the permissive input
+    /// shape used by create/validate/choose-deck requests. Normalized `CardCode` keys
+    /// are preserved as their raw wire strings; nullable metadata remains nullable.
+    init(_ normalized: DeckList) {
+        slots = CardQuantityMapInput(
+            Dictionary(
+                uniqueKeysWithValues: normalized.slots.quantities.map { code, quantity in
+                    (code.rawValue, quantity)
+                }
+            )
+        )
+        sideSlots = .valid(
+            CardQuantityMapInput(
+                Dictionary(
+                    uniqueKeysWithValues: normalized.sideSlots.quantities.map { code, quantity in
+                        (code.rawValue, quantity)
+                    }
+                )
+            )
+        )
+        guard let convertedInvestigatorCode = try? InvestigatorCode(
+            normalized.investigatorCode.rawValue
+        ) else {
+            preconditionFailure("Normalized card codes are always nonempty")
+        }
+        investigatorCode = convertedInvestigatorCode
+        investigatorName = normalized.investigatorName
+        meta = normalized.meta
+        tabooId = normalized.tabooId
+        url = normalized.url
+        id = normalized.id.map(ExternalID.string)
+        name = normalized.name
+    }
+}
+
 extension DeckListInput: Codable {
     private enum CodingKeys: String, CodingKey {
         case slots

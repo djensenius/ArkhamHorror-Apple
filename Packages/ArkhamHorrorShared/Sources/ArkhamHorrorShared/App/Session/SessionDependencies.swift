@@ -98,3 +98,20 @@ protocol GameLifecycleServicing: Sendable {
 }
 
 extension GameLifecycleService: GameLifecycleServicing {}
+
+/// A narrow, injectable authenticated saved-deck interface used by deck-management and
+/// lobby deck-choice presentation.
+protocol DeckServicing: Sendable {
+    func listDecks(on profile: ServerProfile, token: String) async throws -> DeckListResponse
+    func fetchDeckList(
+        _ request: FetchDeckRequest, on profile: ServerProfile, token: String
+    ) async throws -> DeckList
+    func createDeck(_ request: CreateDeckRequest, on profile: ServerProfile, token: String)
+        async throws -> Deck
+    func importDeck(from url: String, on profile: ServerProfile, token: String) async throws -> Deck
+    func deleteDeck(_ id: DeckID, on profile: ServerProfile, token: String) async throws
+    func validateDeckList(_ deckList: DeckListInput, on profile: ServerProfile, token: String)
+        async throws -> DeckValidationSuccess
+}
+
+extension DeckService: DeckServicing {}

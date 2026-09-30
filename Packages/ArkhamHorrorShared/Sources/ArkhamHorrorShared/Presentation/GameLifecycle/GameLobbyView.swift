@@ -77,7 +77,7 @@ struct GameLobbyView: View {
                 }
             }
 
-            if case .active = game.gameState {
+            if game.gameState.showsEnterGameLinkInLobby {
                 Section {
                     NavigationLink(value: gameID) {
                         Label("Enter Game", systemImage: "arrow.right.circle.fill")
@@ -193,6 +193,7 @@ struct GameLobbyView: View {
         }
     }
 
+    @ViewBuilder
     private func chooseDeckContent(for game: GameSummary) -> some View {
         ForEach(game.investigators, id: \.id) { investigator in
             Button {
@@ -209,6 +210,27 @@ struct GameLobbyView: View {
                     for: gameID.rawValue, investigatorId: investigator.id
                 )
             )
+        }
+
+        if case let .signedIn(profile, _, _) = model.sessionState {
+            LobbyDeckSelectionView(
+                model: model,
+                profile: profile,
+                gameID: gameID,
+                investigators: game.investigators,
+                action: action
+            )
+        }
+    }
+}
+
+private extension GameState {
+    var showsEnterGameLinkInLobby: Bool {
+        switch self {
+        case .active, .chooseDecks:
+            true
+        case .pending, .over, .unknown:
+            false
         }
     }
 }

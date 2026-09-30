@@ -57,6 +57,27 @@ struct LiveGameContractFixtureTests {
         _ = BoardProjectionBuilder.makeProjection(from: snapshot)
     }
 
+    @Test("A ChooseDecks snapshot with a ChooseDeck question decodes to a live projection")
+    func chooseDecksSnapshotDecodesToProjection() throws {
+        let playerID = "00000000-0000-0000-0000-000000000001"
+        let fixture = try fixtureData(named: "get-game")
+        var root = try #require(
+            JSONSerialization.jsonObject(with: fixture) as? [String: Any]
+        )
+        var game = try #require(root["game"] as? [String: Any])
+        game["gameState"] = ["tag": "IsChooseDecks", "contents": [playerID]]
+        game["question"] = [playerID: ["tag": "ChooseDeck"]]
+        game.removeValue(forKey: "questionPresentation")
+        root["game"] = game
+        let data = try JSONSerialization.data(withJSONObject: root)
+
+        let envelope = try ContractJSON.decode(GetGameEnvelope.self, from: data)
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+        let player = try PlayerID(#require(UUID(uuidString: playerID)))
+        let payload = try #require(projection.questions[player])
+        #expect(payload.rawValue == .object(["tag": .string("ChooseDeck")]))
+    }
+
     @Test("An unrecognized ServerMessage tag decodes to .unsupportedMessage, never a decode error")
     func unrecognizedServerMessageTagDecodesToUnsupportedMessage() throws {
         let json = """

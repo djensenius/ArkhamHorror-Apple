@@ -84,6 +84,32 @@ struct AppModelGameLifecycleSessionExpiryTests {
         #expect(tokenAfterStaleRace == "t2-token")
     }
 
+    @Test("A stale deck 401 cannot delete a newer session's token")
+    func staleDeckSessionExpiryCannotDeleteNewerToken() async throws {
+        let service = ScriptedGameLifecycleService()
+        let (model, tokenStore) = makeSignedInModel(
+            service: service,
+            initialToken: "t1-token",
+            reauthenticateWithToken: "t2-token"
+        )
+        await model.flowTask?.value
+        let staleContext = try await model.currentDeckRequestContext(for: .hosted)
+
+        model.signOut()
+        await model.operationTask?.value
+        try await tokenStore.save("t2-token", for: ServerProfile.hosted.id)
+        model.invalidateCredentialEpoch(for: ServerProfile.hosted.id)
+        model.sessionState = .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "t2-token")
+
+        await model.handleDeckSessionExpired(profile: .hosted, context: staleContext)
+
+        #expect(
+            model.sessionState == .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        )
+        #expect(try await tokenStore.token(for: ServerProfile.hosted.id) == "t2-token")
+    }
+
     @Test("A still-current action's 401 does delete its token and transitions to signedOut")
     func currentActionSessionExpiryStillSignsOut() async throws {
         let service = ScriptedGameLifecycleService()
