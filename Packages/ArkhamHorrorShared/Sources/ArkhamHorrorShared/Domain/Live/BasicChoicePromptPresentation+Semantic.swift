@@ -21,30 +21,21 @@ extension QuestionPresentation {
         guard protocolVersion == Self.supportedProtocolVersion,
               questionKind != .unsupported
         else { return .deferred }
-        return switch questionKind {
-        case .chooseOne, .chooseOneAtATime, .chooseOneAtATimeWithAuto,
-             .dropDown, .pickSupplies, .playerWindowChooseOne, .read,
-             .windowChooseOne:
+        return switch answer {
+        case .singleChoice:
             .singleChoice
-        case .chooseN, .chooseOneFromEach, .chooseSome, .chooseSome1,
-             .chooseUpToN:
-            .multiSelect
-        case .chooseAmounts:
+        case .amounts:
             .amounts
-        case .choosePaymentAmounts:
+        case .paymentAmounts:
             .payment
-        case .chooseExchangeAmounts:
+        case .exchangeAmounts:
             .exchange
-        case .chooseDeck, .chooseJoinDeck, .chooseUpgradeDeck:
+        case .deck:
             .deck
-        case .continueCampaign, .pickCampaignSettings,
-             .pickCampaignSpecific, .pickDestiny, .pickScenarioSettings,
-             .pickScenarioSpecific:
+        case .standaloneSettings, .campaignSettings,
+             .pickDestiny, .campaignSpecific, .scenarioSpecific,
+             .continueCampaign:
             .campaignSettings
-        case .chooseOneWizard:
-            .deferred
-        case .unsupported:
-            .deferred
         }
     }
 

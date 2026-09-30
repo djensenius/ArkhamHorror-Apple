@@ -242,6 +242,67 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData.isEmpty)
     }
 
+    @Test("A v2 ChooseN prompt remains actionable through AppModel")
+    // swiftlint:disable:next function_body_length
+    func chooseNGenericSingleChoicePromptIsActionable() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let documents = try SyntheticLocaleCatalogDocuments.make(
+            entryKeys: ["fixture.first", "fixture.second"],
+            chunkEntries: #"""
+            {
+              "fixture.first": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "First"}],
+                "variables": []
+              },
+              "fixture.second": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "Second"}],
+                "variables": []
+              }
+            }
+            """#
+        )
+        model.localeCatalog = try await documents.loadSnapshot()
+        model.localeCatalogRequest = LocaleCatalogRequest(
+            profileID: model.selectedProfile.id,
+            advertisement: documents.advertisement
+        )
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-generic-choose-n",
+            presentationFixture: "question-presentation-generic-choose-n",
+            questionVersion: 204
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let choice = try #require(prompt.choices.first)
+        let projection = try #require(model.liveGameState(for: gameID).lastKnownProjection)
+        #expect(prompt.readOnlyReason == nil)
+        #expect(prompt.isRenderableQuestion)
+        #expect(prompt.canSubmitSingleChoiceAnswer)
+        #expect(prompt.isChoiceActionable(choice, in: projection))
+        #expect(
+            await model.submitBasicChoice(prompt.identity, choiceIndex: choice.index)
+                == .sentAwaitingSnapshot
+        )
+        let expected = try ContractJSON.encode(BasicChoiceAnswer(
+            choice: choice.index,
+            playerID: prompt.ownerID,
+            questionVersion: 204
+        ))
+        #expect(await connection.sentData == [expected])
+    }
+
     @Test("Gathering seal drift outside 34-42 falls back to generic rendering")
     func gatheringSealDriftOutsideRecordedSequenceFallsBack() throws {
         var presentationJSON = try fixtureJSON("question-presentation-gathering-act-objective")

@@ -56,7 +56,7 @@ struct QuestionPresentationV2GenericTests {
             #expect(entry.presentation.protocolVersion == 2, "\(entry.name)")
             #expect(
                 entry.presentation.genericSupport == expectedGenericSupport(
-                    for: entry.presentation.questionKind
+                    for: entry.presentation.answer
                 ),
                 "\(entry.name)"
             )
@@ -72,9 +72,10 @@ struct QuestionPresentationV2GenericTests {
     @Test("Generic support and current choice-list rendering are exact per question kind")
     func genericSupportMatrix() throws {
         let expectations: [GenericSupportExpectation] = [
-            .init(fixtureName: "question-presentation-generic-choose-n", support: .multiSelect, supportsChoiceList: false),
-            .init(fixtureName: "question-presentation-generic-choose-some", support: .multiSelect, supportsChoiceList: false),
-            .init(fixtureName: "question-presentation-generic-choose-up-to-n", support: .multiSelect, supportsChoiceList: false),
+            .init(fixtureName: "question-presentation-generic-choose-n", support: .singleChoice, supportsChoiceList: true),
+            .init(fixtureName: "question-presentation-generic-choose-some", support: .singleChoice, supportsChoiceList: true),
+            .init(fixtureName: "question-presentation-generic-choose-up-to-n", support: .singleChoice, supportsChoiceList: true),
+            .init(fixtureName: "question-presentation-generic-one-from-each", support: .singleChoice, supportsChoiceList: true),
             .init(fixtureName: "question-presentation-generic-read", support: .singleChoice, supportsChoiceList: true),
             .init(fixtureName: "question-presentation-generic-choose-amounts", support: .amounts, supportsChoiceList: false),
             .init(fixtureName: "question-presentation-generic-payment-amounts", support: .payment, supportsChoiceList: false),
@@ -98,8 +99,8 @@ struct QuestionPresentationV2GenericTests {
         #expect(!amounts.canSubmitSingleChoiceAnswer)
         let deck = try prompt(fixtureName: "question-presentation-generic-choose-deck")
         #expect(!deck.canSubmitSingleChoiceAnswer)
-        let multiSelect = try prompt(fixtureName: "question-presentation-generic-choose-n")
-        #expect(!multiSelect.canSubmitSingleChoiceAnswer)
+        let chooseN = try prompt(fixtureName: "question-presentation-generic-choose-n")
+        #expect(chooseN.canSubmitSingleChoiceAnswer)
     }
 
     @Test("Unsupported generic answer families require an app update in prompt presentation")
@@ -671,30 +672,22 @@ struct QuestionPresentationV2GenericTests {
     }
 
     private func expectedGenericSupport(
-        for kind: QuestionPresentation.Kind
+        for answer: QuestionPresentation.Answer
     ) -> QuestionPresentation.GenericSupport {
-        switch kind {
-        case .chooseOne, .chooseOneAtATime, .chooseOneAtATimeWithAuto,
-             .dropDown, .pickSupplies, .playerWindowChooseOne, .read,
-             .windowChooseOne:
+        switch answer {
+        case .singleChoice:
             .singleChoice
-        case .chooseN, .chooseOneFromEach, .chooseSome, .chooseSome1,
-             .chooseUpToN:
-            .multiSelect
-        case .chooseAmounts:
+        case .amounts:
             .amounts
-        case .choosePaymentAmounts:
+        case .paymentAmounts:
             .payment
-        case .chooseExchangeAmounts:
+        case .exchangeAmounts:
             .exchange
-        case .chooseDeck, .chooseJoinDeck, .chooseUpgradeDeck:
+        case .deck:
             .deck
-        case .continueCampaign, .pickCampaignSettings,
-             .pickCampaignSpecific, .pickDestiny, .pickScenarioSettings,
-             .pickScenarioSpecific:
+        case .standaloneSettings, .campaignSettings, .pickDestiny,
+             .campaignSpecific, .scenarioSpecific, .continueCampaign:
             .campaignSettings
-        case .chooseOneWizard, .unsupported:
-            .deferred
         }
     }
 
