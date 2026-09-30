@@ -118,42 +118,21 @@ struct QuestionPresentationV2GenericTests {
 
     @Test("Generic rendering still respects selectable on non-info choices")
     func genericChoiceListRespectsSelectableForEveryKind() throws {
-        let presentation = QuestionPresentation(
-            protocolVersion: 2,
-            questionVersion: 1,
-            questionKind: .chooseOne,
-            choiceCount: 1,
-            choices: [
-                .init(sourceIndex: 0, kind: .drawCard, selectable: false, actorID: "c01001"),
-            ]
+        let projection = BoardProjectionBuilder.makeProjection(
+            from: BoardTestFixtures.snapshot(investigators: [
+                BoardTestFixtures.investigatorID("c01001"):
+                    BoardTestFixtures.investigator(
+                        id: BoardTestFixtures.investigatorID("c01001")
+                    ),
+            ])
         )
-        let rawQuestion: JSONValue = .object([
-            "tag": .string("ChooseOne"),
-            "choices": .array([.object(["tag": .string("DrawCards"), "contents": .number(.integer(1))])]),
-        ])
-        let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 1)
-        let prompt = BasicChoicePromptPresentation(
-            identity: BasicChoicePromptIdentity(
-                gameID: GameID(UUID()),
-                ownerID: PlayerID(UUID()),
-                questionVersion: 1,
-                rawQuestion: rawQuestion,
-                questionPresentation: presentation,
-                sessionAttemptID: nil,
-                connectionID: nil
-            ),
-            question: BasicChoiceParser.parseQuestion(rawQuestion),
-            semanticPresentation: binding,
-            readOnlyReason: nil,
-            actionPhase: nil,
-            actionChoiceIndex: nil,
-            serverFeedback: nil
-        )
-        let choice = try #require(prompt.choices.first)
-        #expect(!prompt.isChoiceActionable(
-            choice,
-            in: BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
-        ))
+        let selectablePrompt = try drawCardPrompt(selectable: true)
+        let selectableChoice = try #require(selectablePrompt.choices.first)
+        #expect(selectablePrompt.isChoiceActionable(selectableChoice, in: projection))
+
+        let disabledPrompt = try drawCardPrompt(selectable: false)
+        let disabledChoice = try #require(disabledPrompt.choices.first)
+        #expect(!disabledPrompt.isChoiceActionable(disabledChoice, in: projection))
     }
 
     @Test("V2 structural mutations reject")
@@ -639,6 +618,42 @@ struct QuestionPresentationV2GenericTests {
           "value":{"tag":"Value"}
         }
         """#
+    }
+
+    private func drawCardPrompt(selectable: Bool) throws -> BasicChoicePromptPresentation {
+        let rawQuestion: JSONValue = .object([
+            "tag": .string("ChooseOne"),
+            "choices": .array([
+                .object(["tag": .string("DrawCards"), "contents": .number(.integer(1))]),
+            ]),
+        ])
+        let presentation = QuestionPresentation(
+            protocolVersion: 2,
+            questionVersion: 1,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [
+                .init(sourceIndex: 0, kind: .drawCard, selectable: selectable, actorID: "c01001"),
+            ]
+        )
+        let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 1)
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: GameID(UUID()),
+                ownerID: PlayerID(UUID()),
+                questionVersion: 1,
+                rawQuestion: rawQuestion,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: BasicChoiceParser.parseQuestion(rawQuestion),
+            semanticPresentation: binding,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
     }
 
     private func prompt(fixtureName: String) throws -> BasicChoicePromptPresentation {
