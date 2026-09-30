@@ -1,5 +1,27 @@
 import SwiftUI
 
+enum BoardLinkedChoicePresentationDecision: Sendable, Equatable {
+    case highlightOnly
+    case submit(BoardLinkedChoice)
+    case menu([BoardLinkedChoice])
+}
+
+enum BoardLinkedChoicePresentationPolicy {
+    static func decision(
+        for linkedChoices: [BoardLinkedChoice]
+    ) -> BoardLinkedChoicePresentationDecision {
+        let actionableChoices = linkedChoices.filter(\.isActionable)
+        switch actionableChoices.count {
+        case 0:
+            return .highlightOnly
+        case 1:
+            return .submit(actionableChoices[0])
+        default:
+            return .menu(actionableChoices)
+        }
+    }
+}
+
 /// Native touch/pointer/VoiceOver board affordance. Keyboard/controller semantic focus for
 /// these linked elements is deliberately deferred to the board-element focus follow-up lane;
 /// the prompt panel remains the keyboard/controller answer surface in this PR.
@@ -9,27 +31,21 @@ struct BoardLinkedChoiceFace<Content: View>: View {
     let onLinkedChoice: (Int) -> Void
     @ViewBuilder let content: () -> Content
 
-    private var actionableChoices: [BoardLinkedChoice] {
-        linkedChoices.filter(\.isActionable)
-    }
-
     var body: some View {
-        switch actionableChoices.count {
-        case 0:
+        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        case .highlightOnly:
             content()
                 .cardFaceStyle(linkedChoices: linkedChoices)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(accessibilityLabel))
-        case 1:
-            if let choice = actionableChoices.first {
-                Button { onLinkedChoice(choice.choiceIndex) } label: {
-                    content().cardFaceStyle(linkedChoices: linkedChoices)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(accessibilityLabel))
-                .accessibilityHint(Text("Activates \(choice.title)"))
+        case let .submit(choice):
+            Button { onLinkedChoice(choice.choiceIndex) } label: {
+                content().cardFaceStyle(linkedChoices: linkedChoices)
             }
-        default:
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(accessibilityLabel))
+            .accessibilityHint(Text("Activates \(choice.title)"))
+        case let .menu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
                     Button(choice.title) { onLinkedChoice(choice.choiceIndex) }

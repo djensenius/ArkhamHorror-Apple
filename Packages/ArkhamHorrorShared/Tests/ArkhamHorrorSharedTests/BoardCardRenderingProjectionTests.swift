@@ -9,28 +9,31 @@ struct BoardCardRenderingProjectionTests {
 
     @Test("Hand, in-play, threat-area, and enemy panels project from snapshot data")
     func visibleBoardEntitiesProject() throws {
+        let getGame = try vendoredGetGameEnvelope()
+        let fixturePlayerID = try #require(getGame.playerID)
+        let fixtureInvestigatorID = try #require(getGame.game.investigators.keys.first)
         let cardID = BoardTestFixtures.cardID("000000000501")
         let assetID = BoardTestFixtures.assetID("000000000601")
         let treacheryID = BoardTestFixtures.treacheryID("00000000-0000-0000-0000-000000000701")
         let enemyID = BoardTestFixtures.enemyID("000000000388")
         let locationID = BoardTestFixtures.locationID("000000000111")
         let investigator = BoardTestFixtures.investigator(
-            id: investigatorID,
+            id: fixtureInvestigatorID,
             engagedEnemies: [enemyID],
             assets: [assetID],
             hand: [playerCard(id: cardID, code: "c01020", title: "Machete")],
             treacheries: [treacheryID],
-            playerID: playerID
+            playerID: fixturePlayerID
         )
         let snapshot = BoardTestFixtures.snapshot(
             locations: [(
                 locationID,
                 .ordinary(BoardTestFixtures.ordinaryLocation(
-                    id: locationID, investigators: [investigatorID], enemies: [enemyID]
+                    id: locationID, investigators: [fixtureInvestigatorID], enemies: [enemyID]
                 ))
             )],
-            investigators: [investigatorID: investigator],
-            playerOrder: [investigatorID],
+            investigators: [fixtureInvestigatorID: investigator],
+            playerOrder: [fixtureInvestigatorID],
             enemyValues: [enemyID: .null],
             assetValues: [assetID: assetObject(id: assetID)],
             treacheryValues: [treacheryID: treacheryObject(id: treacheryID)],
@@ -39,8 +42,13 @@ struct BoardCardRenderingProjectionTests {
 
         let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
 
-        try expectPlayerCards(in: projection, cardID: cardID)
-        try expectEnemies(in: projection, enemyID: enemyID, locationID: locationID)
+        try expectPlayerCards(in: projection, cardID: cardID, playerID: fixturePlayerID)
+        try expectEnemies(
+            in: projection,
+            enemyID: enemyID,
+            locationID: locationID,
+            investigatorID: fixtureInvestigatorID
+        )
     }
 
     @Test("Enemy accessibility label includes stats and state")
@@ -120,7 +128,7 @@ struct BoardCardRenderingProjectionTests {
         ])
     }
 
-    @Test("Non-active investigator engaged enemies stay visible and focusable")
+    @Test("Non-active investigator engaged enemies stay visible and linked from prompt")
     func nonActiveInvestigatorEngagedEnemyIsReachable() throws {
         let enemyID = EnemyActionFixtures.enemyID
         let activeID = BoardTestFixtures.investigatorID("c01001")
@@ -151,7 +159,9 @@ struct BoardCardRenderingProjectionTests {
             layout: BoardLayoutBuilder.makeLayout(locations: []),
             prompt: prompt
         )
+        #expect(!graph.order.contains { $0.rawValue.hasPrefix("board.card.") })
         #expect(!graph.order.contains { $0.rawValue.hasPrefix("board.enemy.") })
+        #expect(!graph.order.contains { $0.rawValue.hasPrefix("board.treachery.") })
         #expect(graph.zoneEntryPoints[BoardFocusZone.prompt] != nil)
         #expect(graph.contains(BoardFocusID.promptChoice(4)))
     }
@@ -182,6 +192,96 @@ struct BoardCardRenderingProjectionTests {
         )
     }
 
+    @Test("Choice-to-board links include hand, in-play, treachery, and semantic entities")
+    func choiceLinksCoverCardEntityPaths() throws {
+        let cardID = BoardTestFixtures.cardID("000000000521")
+        let assetID = BoardTestFixtures.assetID("000000000621")
+        let treacheryID = BoardTestFixtures.treacheryID("00000000-0000-0000-0000-000000000721")
+        let investigator = BoardTestFixtures.investigator(
+            id: investigatorID,
+            assets: [assetID],
+            hand: [playerCard(id: cardID, code: "c01020", title: "Machete")],
+            treacheries: [treacheryID],
+            playerID: playerID
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            investigators: [investigatorID: investigator],
+            playerOrder: [investigatorID],
+            activeInvestigatorID: investigatorID,
+            assetValues: [assetID: assetObject(id: assetID)],
+            treacheryValues: [treacheryID: treacheryObject(id: treacheryID)],
+            cardValues: [cardID: playerCard(id: cardID, code: "c01020", title: "Machete")]
+        ))
+        let choices = [
+            BasicChoice(
+                index: 0,
+                rawValue: .string("hand"),
+                content: .chooseHandCard(cardID: cardID, purpose: .choose, messages: [])
+            ),
+            BasicChoice(
+                index: 1,
+                rawValue: .string("treachery"),
+                content: .resolveForcedAbility(ForcedAbilityChoice(
+                    ability: ability(cardCode: "c01007"),
+                    treacheryID: treacheryID
+                ))
+            ),
+            BasicChoice(
+                index: 2,
+                rawValue: .string("semantic-asset"),
+                content: .gainResource(investigatorID: investigatorID, messages: [])
+            ),
+        ]
+        let semantic = BoundQuestionPresentation(
+            presentation: QuestionPresentation(
+                protocolVersion: QuestionPresentation.supportedProtocolVersion,
+                questionVersion: 1,
+                questionKind: .chooseOne,
+                choiceCount: choices.count,
+                choices: [QuestionPresentation.Choice(
+                    sourceIndex: 2,
+                    kind: .useAbility,
+                    actorID: investigatorID.rawValue.rawValue,
+                    entity: .init(kind: .asset, id: assetID.codingKey.stringValue),
+                    label: nil,
+                    ability: nil,
+                    cost: nil
+                )]
+            ),
+            rawChoices: choices.map(\.rawValue),
+            governedSource: nil
+        )
+        let links = BoardPromptChoiceLinker.links(
+            prompt: prompt(choices: choices, semanticPresentation: semantic),
+            projection: projection
+        )
+
+        #expect(links[.playerCard(.card(cardID))]?.map(\.choiceIndex) == [0])
+        #expect(links[.treachery(treacheryID)]?.map(\.choiceIndex) == [1])
+        #expect(links[.playerCard(.asset(assetID))]?.map(\.choiceIndex) == [2])
+    }
+
+    @Test("Linked board choice presentation chooses highlight, submit, or menu")
+    func linkedChoicePresentationDecision() {
+        let first = BoardLinkedChoice(choiceIndex: 1, title: "First", isActionable: true)
+        let second = BoardLinkedChoice(choiceIndex: 2, title: "Second", isActionable: true)
+        let unavailable = BoardLinkedChoice(
+            choiceIndex: 3,
+            title: "Unavailable",
+            isActionable: false
+        )
+
+        #expect(BoardLinkedChoicePresentationPolicy.decision(for: []) == .highlightOnly)
+        #expect(
+            BoardLinkedChoicePresentationPolicy.decision(for: [unavailable]) == .highlightOnly
+        )
+        #expect(BoardLinkedChoicePresentationPolicy.decision(for: [first]) == .submit(first))
+        #expect(
+            BoardLinkedChoicePresentationPolicy.decision(for: [first, unavailable, second])
+                == .menu([first, second])
+        )
+    }
+
     @Test("Choice-to-board links require actionability and prompt submit authority")
     func choiceLinksHonorActionability() throws {
         let enemyID = EnemyActionFixtures.enemyID
@@ -209,7 +309,11 @@ struct BoardCardRenderingProjectionTests {
         #expect(sendingLinks[.enemy(enemyID)]?.allSatisfy { !$0.isActionable } == true)
     }
 
-    private func expectPlayerCards(in projection: BoardProjection, cardID: WireCardID) throws {
+    private func expectPlayerCards(
+        in projection: BoardProjection,
+        cardID: WireCardID,
+        playerID: PlayerID
+    ) throws {
         let hand = try #require(projection.orderedHandCardsByPlayer[playerID]?.first)
         #expect(hand.displayName == "Machete")
         #expect(hand.cardCode?.rawValue == "c01020")
@@ -222,14 +326,15 @@ struct BoardCardRenderingProjectionTests {
         #expect(asset.horror == 2)
 
         let threat = try #require(projection.threatTreacheriesByPlayer[playerID]?.first)
-        #expect(threat.displayName == "Cover Up")
+        #expect(threat.displayName == "Card c01007")
         #expect(threat.clueCount == 1)
     }
 
     private func expectEnemies(
         in projection: BoardProjection,
         enemyID: EnemyID,
-        locationID: LocationID
+        locationID: LocationID,
+        investigatorID: InvestigatorID
     ) throws {
         #expect(projection.enemiesByLocationID[locationID]?.isEmpty != false)
 
@@ -249,6 +354,15 @@ struct BoardCardRenderingProjectionTests {
                 "name": .object(["title": .string(title)]),
             ]),
         ])
+    }
+
+    private func vendoredGetGameEnvelope() throws -> GetGameEnvelope {
+        let url = try #require(Bundle.module.url(
+            forResource: "get-game",
+            withExtension: "json",
+            subdirectory: "Fixtures/Contract"
+        ))
+        return try ContractJSON.decode(GetGameEnvelope.self, from: Data(contentsOf: url))
     }
 
     private func vendoredEnemyEntityMap() throws -> UUIDEntityMap<EnemyIDTag> {
@@ -286,9 +400,51 @@ struct BoardCardRenderingProjectionTests {
         .object([
             "id": .string(id.codingKey.stringValue),
             "cardCode": .string("c01007"),
-            "name": .string("Cover Up"),
             "tokens": .array([.array([.string("Clue"), number(1)])]),
         ])
+    }
+
+    private func prompt(
+        choices: [BasicChoice],
+        semanticPresentation: BoundQuestionPresentation? = nil
+    ) -> BasicChoicePromptPresentation {
+        let rawQuestion: JSONValue = .object([
+            "tag": .string(BasicChoiceQuestionKind.chooseOne.rawValue),
+            "choices": .array(choices.map(\.rawValue)),
+        ])
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: playerID,
+                questionVersion: 1,
+                rawQuestion: rawQuestion,
+                questionPresentation: semanticPresentation?.presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: .supported(BasicChoiceQuestion(
+                kind: .chooseOne,
+                choices: choices,
+                story: nil,
+                rawValue: rawQuestion
+            )),
+            semanticPresentation: semanticPresentation,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private func ability(cardCode: String) -> BasicChoiceAbility {
+        BasicChoiceAbility(
+            investigatorID: investigatorID,
+            cardCode: BoardTestFixtures.cardCode(cardCode),
+            rawAbility: .null,
+            windows: [],
+            before: [],
+            messages: []
+        )
     }
 
     private func calculation(

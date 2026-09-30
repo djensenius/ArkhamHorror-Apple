@@ -243,16 +243,14 @@ private struct BoardEnemyCompactChipView: View {
     }
 
     var body: some View {
-        switch actionableChoices.count {
-        case 0:
+        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        case .highlightOnly:
             chip
-        case 1:
-            if let choice = actionableChoices.first {
-                Button { onLinkedChoice(choice.choiceIndex) } label: { chip }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(Text("Activates \(choice.title)"))
-            }
-        default:
+        case let .submit(choice):
+            Button { onLinkedChoice(choice.choiceIndex) } label: { chip }
+                .buttonStyle(.plain)
+                .accessibilityHint(Text("Activates \(choice.title)"))
+        case let .menu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
                     Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
