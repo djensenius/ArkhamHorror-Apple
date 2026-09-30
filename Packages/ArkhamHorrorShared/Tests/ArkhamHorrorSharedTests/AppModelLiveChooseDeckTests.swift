@@ -142,4 +142,41 @@ struct AppModelLiveChooseDeckTests {
             #expect(await connection.sentData.isEmpty)
         }
     }
+
+    @Test("DeckAnswer is refused for legacy servers and missing live connections")
+    func refusesLegacyAndDisconnectedPrompts() async throws {
+        let deck = try sampleDeck()
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+
+        let legacyModel = await GameLifecycleTestModel.makeSignedIn(
+            gameService: ScriptedGameLifecycleService()
+        )
+        let legacyConnection = FakeGameSocketConnection()
+        let legacyGameID = GameID(UUID())
+        installLivePrompt(
+            on: legacyModel,
+            gameID: legacyGameID,
+            ownerID: ownerID,
+            participant: .participant(ownerID),
+            connection: legacyConnection
+        )
+        #expect(!(await legacyModel.chooseDeckForLivePrompt(deck, in: legacyGameID)))
+        #expect(await legacyConnection.sentData.isEmpty)
+
+        let disconnectedModel = await makeSignedInModel(service: ScriptedGameLifecycleService())
+        let disconnectedConnection = FakeGameSocketConnection()
+        let disconnectedGameID = GameID(UUID())
+        installLivePrompt(
+            on: disconnectedModel,
+            gameID: disconnectedGameID,
+            ownerID: ownerID,
+            participant: .participant(ownerID),
+            connection: disconnectedConnection
+        )
+        disconnectedModel.liveGameConnections[disconnectedGameID] = nil
+        #expect(!(await disconnectedModel.chooseDeckForLivePrompt(deck, in: disconnectedGameID)))
+        #expect(await disconnectedConnection.sentData.isEmpty)
+    }
 }

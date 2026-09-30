@@ -169,12 +169,24 @@ struct LiveGameView: View {
                 model.retryLocaleCatalog(for: gameID, retry: retry)
             }
         )
-        let isLiveChooseDeckPrompt = renderedPrompt.map {
-            LiveChooseDeckQuestion.matches($0.identity.rawQuestion)
-        } ?? false
+        let answerability = model.canAnswerLiveChooseDeck(for: gameID)
+        let isLiveChooseDeckPrompt = answerability.promptKey != nil
+            || renderedPrompt.map { LiveChooseDeckQuestion.matches($0.identity.rawQuestion) } == true
         if isLiveChooseDeckPrompt, case let .signedIn(profile, _, _) = model.sessionState {
             VStack(spacing: 12) {
-                LiveChooseDeckSelectionView(model: model, profile: profile, gameID: gameID)
+                switch answerability {
+                case let .canAnswer(promptKey):
+                    LiveChooseDeckSelectionView(
+                        model: model, profile: profile, gameID: gameID, promptKey: promptKey
+                    )
+                    .id(promptKey)
+                case let .readOnly(message):
+                    ArkhamCard {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 board
             }
         } else {
