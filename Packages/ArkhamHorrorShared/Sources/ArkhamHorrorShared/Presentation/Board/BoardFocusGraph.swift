@@ -84,18 +84,7 @@ enum BoardFocusGraphBuilder {
         nodes.append(FocusNode(id: BoardFocusID.scenarioHeader, zone: BoardFocusZone.scenario))
         zoneEntryPoints[BoardFocusZone.scenario] = BoardFocusID.scenarioHeader
 
-        var promptChoices: [SemanticFocusID] = []
-        if let prompt, prompt.canSubmit {
-            promptChoices = prompt.choices
-                .filter { prompt.isChoiceActionable($0, in: projection) }
-                .map { BoardFocusID.promptChoice($0.index) }
-        }
-        if prompt?.canRetry == true {
-            promptChoices = [BoardFocusID.promptRetry]
-        }
-        if prompt?.canRetryCatalog == true {
-            promptChoices.append(BoardFocusID.promptCatalogRetry)
-        }
+        let promptChoices = promptFocusIDs(prompt, projection: projection)
         appendVerticalChain(
             promptChoices, zone: BoardFocusZone.prompt,
             nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
@@ -140,6 +129,24 @@ enum BoardFocusGraphBuilder {
         return FocusGraph(
             nodes: nodes, zoneEntryPoints: zoneEntryPoints, wrapPolicy: .wrapWithinZone
         )
+    }
+
+    private static func promptFocusIDs(
+        _ prompt: BasicChoicePromptPresentation?, projection: BoardProjection
+    ) -> [SemanticFocusID] {
+        var promptChoices: [SemanticFocusID] = []
+        if let prompt, prompt.canSubmit {
+            promptChoices = prompt.choices
+                .filter { prompt.isChoiceActionable($0, in: projection) }
+                .map { BoardFocusID.promptChoice($0.index) }
+        }
+        if prompt?.canRetry == true {
+            promptChoices = [BoardFocusID.promptRetry]
+        }
+        if prompt?.canRetryCatalog == true {
+            promptChoices.append(BoardFocusID.promptCatalogRetry)
+        }
+        return promptChoices
     }
 
     /// The zones that currently have at least one navigable node, in

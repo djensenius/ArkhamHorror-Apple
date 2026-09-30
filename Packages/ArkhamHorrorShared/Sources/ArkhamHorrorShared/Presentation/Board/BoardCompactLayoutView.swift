@@ -21,6 +21,10 @@ struct BoardCompactLayoutView: View {
         )
     }
 
+    private var choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]] {
+        BoardPromptChoiceLinker.links(prompt: controller.prompt, projection: controller.projection)
+    }
+
     var body: some View {
         VStack(spacing: 12) {
             zoneSwitcher
@@ -105,31 +109,45 @@ struct BoardCompactLayoutView: View {
     private var locationsZoneContent: some View {
         BoardLocationBoardView(
             locations: controller.projection.locations,
+            enemiesByLocationID: controller.projection.enemiesByLocationID,
+            choiceLinks: choiceLinks,
             layout: controller.layout,
             zoomScale: controller.zoomScale,
             focusedID: controller.coordinator.currentFocus,
             focusBinding: focusBinding,
-            onOutcome: { controller.handle(focusID: $0, $1) }
+            onOutcome: { controller.handle(focusID: $0, $1) },
+            onLinkedChoice: { controller.activatePromptChoice($0) }
         )
     }
 
     private var enemyLocationsZoneContent: some View {
         BoardEnemyLocationsRowView(
             enemyLocations: controller.projection.enemyLocations,
+            enemiesByLocationID: controller.projection.enemiesByLocationID,
+            choiceLinks: choiceLinks,
             focusedID: controller.coordinator.currentFocus,
             focusBinding: focusBinding,
-            onOutcome: { controller.handle(focusID: $0, $1) }
+            onOutcome: { controller.handle(focusID: $0, $1) },
+            onLinkedChoice: { controller.activatePromptChoice($0) }
         )
     }
 
     private var investigatorsZoneContent: some View {
         BoardInvestigatorRowView(
             investigators: controller.projection.investigators,
+            handCardsByPlayer: controller.projection.orderedHandCardsByPlayer,
+            inPlayCardsByPlayer: controller.projection.inPlayCardsByPlayer,
+            threatTreacheriesByPlayer: controller.projection.threatTreacheriesByPlayer,
+            engagedEnemiesByInvestigatorID: controller.projection
+                .engagedEnemiesByInvestigatorID,
+            choiceLinks: choiceLinks,
+            fullPlayerAreaPlayerID: controller.fullPlayerAreaPlayerID,
             otherInvestigatorCount: controller.projection.otherInvestigatorCount,
             killedInvestigatorCount: controller.projection.killedInvestigatorCount,
             focusedID: controller.coordinator.currentFocus,
             focusBinding: focusBinding,
-            onOutcome: { controller.handle(focusID: $0, $1) }
+            onOutcome: { controller.handle(focusID: $0, $1) },
+            onLinkedChoice: { controller.activatePromptChoice($0) }
         )
     }
 

@@ -18,6 +18,9 @@ enum BoardProjectionBuilder {
         let investigators = makeInvestigators(
             from: snapshot, currentLocations: investigatorLocations
         )
+        let enemyPlacement = makeEnemyPlacement(
+            from: snapshot, locations: locations, enemyLocations: enemyLocations
+        )
         return BoardProjection(
             gameName: BoardDisplayFormatting.safeLabel(
                 snapshot.name, fallback: snapshot.id.description
@@ -39,6 +42,11 @@ enum BoardProjectionBuilder {
             otherInvestigatorCount: snapshot.otherInvestigators.count,
             killedInvestigatorCount: snapshot.killedInvestigators.count,
             handCardsByPlayer: makeHandCards(from: snapshot),
+            orderedHandCardsByPlayer: makeOrderedHandCards(from: snapshot),
+            inPlayCardsByPlayer: makeInPlayCards(from: snapshot),
+            threatTreacheriesByPlayer: makeThreatTreacheries(from: snapshot),
+            enemiesByLocationID: enemyPlacement.byLocationID,
+            engagedEnemiesByInvestigatorID: enemyPlacement.engagedByInvestigatorID,
             chaosBag: makeChaosBag(from: snapshot.mode),
             counters: makeCounters(from: snapshot),
             skillTest: BoardSkillTestProjectionBuilder.makeProjection(

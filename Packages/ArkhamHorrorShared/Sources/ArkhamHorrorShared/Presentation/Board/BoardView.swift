@@ -16,6 +16,8 @@ import SwiftUI
 struct BoardView: View {
     let projection: BoardProjection
     let prompt: BasicChoicePromptPresentation?
+    let localPlayerID: PlayerID?
+    let cardCatalog: CardCatalogSnapshot?
     let onChoice: (Int) -> Void
     let onRetryChoice: () -> Void
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
@@ -30,12 +32,16 @@ struct BoardView: View {
     init(
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
+        localPlayerID: PlayerID? = nil,
+        cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onRetryChoice: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
         self.projection = projection
         self.prompt = prompt
+        self.localPlayerID = localPlayerID
+        self.cardCatalog = cardCatalog
         self.onChoice = onChoice
         self.onRetryChoice = onRetryChoice
         self.onCatalogRetry = onCatalogRetry
@@ -55,6 +61,7 @@ struct BoardView: View {
                 controller.updateChoiceHandler(onChoice)
                 controller.updateRetryHandler(onRetryChoice)
                 controller.updateCatalogRetryHandler(onCatalogRetry)
+                controller.updateLocalPlayerID(localPlayerID)
                 activeController = controller
                 // Catches a replacement snapshot that arrived while this view was
                 // off-screen and `.onChange(of: projection)` therefore couldn't fire; see
@@ -65,6 +72,7 @@ struct BoardView: View {
                 let newController = BoardCommandController(
                     projection: projection,
                     prompt: prompt,
+                    localPlayerID: localPlayerID,
                     onChoice: onChoice,
                     onRetry: onRetryChoice,
                     onCatalogRetry: onCatalogRetry
@@ -84,13 +92,18 @@ struct BoardView: View {
             controller?.updateChoiceHandler(onChoice)
             controller?.updateRetryHandler(onRetryChoice)
             controller?.updateCatalogRetryHandler(onCatalogRetry)
+            controller?.updateLocalPlayerID(localPlayerID)
             controller?.applySnapshot(newValue, prompt: prompt)
         }
         .onChange(of: prompt) { _, newValue in
             controller?.updateChoiceHandler(onChoice)
             controller?.updateRetryHandler(onRetryChoice)
             controller?.updateCatalogRetryHandler(onCatalogRetry)
+            controller?.updateLocalPlayerID(localPlayerID)
             controller?.applyPrompt(newValue)
+        }
+        .onChange(of: localPlayerID) { _, newValue in
+            controller?.updateLocalPlayerID(newValue)
         }
     }
 
@@ -109,6 +122,7 @@ struct BoardView: View {
                 )
             }
         }
+        .environment(\.boardCardCatalog, cardCatalog)
         .semanticKeyboardInput { controller.handle($0) }
         #if os(tvOS)
             .semanticSiriRemoteInput(
@@ -212,6 +226,9 @@ struct BoardRegularLayoutView: View {
     let focusBinding: FocusState<SemanticFocusID?>.Binding
 
     var body: some View {
+        let choiceLinks = BoardPromptChoiceLinker.links(
+            prompt: controller.prompt, projection: controller.projection
+        )
         ScrollView([.horizontal, .vertical]) {
             VStack(alignment: .leading, spacing: 20) {
                 header
@@ -226,26 +243,40 @@ struct BoardRegularLayoutView: View {
                     .frame(width: 220)
                     BoardLocationBoardView(
                         locations: controller.projection.locations,
+                        enemiesByLocationID: controller.projection.enemiesByLocationID,
+                        choiceLinks: choiceLinks,
                         layout: controller.layout,
                         zoomScale: controller.zoomScale,
                         focusedID: controller.coordinator.currentFocus,
                         focusBinding: focusBinding,
-                        onOutcome: { controller.handle(focusID: $0, $1) }
+                        onOutcome: { controller.handle(focusID: $0, $1) },
+                        onLinkedChoice: { controller.activatePromptChoice($0) }
                     )
                 }
                 BoardEnemyLocationsRowView(
                     enemyLocations: controller.projection.enemyLocations,
+                    enemiesByLocationID: controller.projection.enemiesByLocationID,
+                    choiceLinks: choiceLinks,
                     focusedID: controller.coordinator.currentFocus,
                     focusBinding: focusBinding,
-                    onOutcome: { controller.handle(focusID: $0, $1) }
+                    onOutcome: { controller.handle(focusID: $0, $1) },
+                    onLinkedChoice: { controller.activatePromptChoice($0) }
                 )
                 BoardInvestigatorRowView(
                     investigators: controller.projection.investigators,
+                    handCardsByPlayer: controller.projection.orderedHandCardsByPlayer,
+                    inPlayCardsByPlayer: controller.projection.inPlayCardsByPlayer,
+                    threatTreacheriesByPlayer: controller.projection.threatTreacheriesByPlayer,
+                    engagedEnemiesByInvestigatorID: controller.projection
+                        .engagedEnemiesByInvestigatorID,
+                    choiceLinks: choiceLinks,
+                    fullPlayerAreaPlayerID: controller.fullPlayerAreaPlayerID,
                     otherInvestigatorCount: controller.projection.otherInvestigatorCount,
                     killedInvestigatorCount: controller.projection.killedInvestigatorCount,
                     focusedID: controller.coordinator.currentFocus,
                     focusBinding: focusBinding,
-                    onOutcome: { controller.handle(focusID: $0, $1) }
+                    onOutcome: { controller.handle(focusID: $0, $1) },
+                    onLinkedChoice: { controller.activatePromptChoice($0) }
                 )
             }
             .padding(24)

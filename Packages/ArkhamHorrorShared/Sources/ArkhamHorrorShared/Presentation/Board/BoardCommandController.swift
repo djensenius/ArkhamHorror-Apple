@@ -16,6 +16,7 @@ import Observation
 final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
+    private(set) var localPlayerID: PlayerID?
     private(set) var layout: BoardLayout
     private(set) var coordinator: FocusCoordinator
     /// Local zoom scale, clamped to ``zoomRange``. Never mutates backend topology; purely
@@ -45,12 +46,14 @@ final class BoardCommandController {
     init(
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
+        localPlayerID: PlayerID? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onRetry: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
         self.projection = projection
         self.prompt = prompt
+        self.localPlayerID = localPlayerID
         self.onChoice = onChoice
         self.onRetry = onRetry
         self.onCatalogRetry = onCatalogRetry
@@ -100,20 +103,6 @@ final class BoardCommandController {
             projection: projection, layout: layout, prompt: newPrompt
         )
         coordinator.applySnapshot(graph)
-    }
-
-    func updateChoiceHandler(_ handler: @escaping (Int) -> Void) {
-        onChoice = handler
-    }
-
-    func updateRetryHandler(_ handler: @escaping () -> Void) {
-        onRetry = handler
-    }
-
-    func updateCatalogRetryHandler(
-        _ handler: @escaping (BasicChoiceCatalogRetryPresentation) -> Void
-    ) {
-        onCatalogRetry = handler
     }
 
     /// Reconciles this already-existing controller against the projection its owning
@@ -367,5 +356,42 @@ final class BoardCommandController {
             return
         }
         coordinator.syncExternalFocus(entry)
+    }
+}
+
+extension BoardCommandController {
+    func updateChoiceHandler(_ handler: @escaping (Int) -> Void) {
+        onChoice = handler
+    }
+
+    func updateRetryHandler(_ handler: @escaping () -> Void) {
+        onRetry = handler
+    }
+
+    func updateCatalogRetryHandler(
+        _ handler: @escaping (BasicChoiceCatalogRetryPresentation) -> Void
+    ) {
+        onCatalogRetry = handler
+    }
+
+    func updateLocalPlayerID(_ playerID: PlayerID?) {
+        localPlayerID = playerID
+    }
+
+    nonisolated static func fullPlayerAreaPlayerID(
+        promptOwnerID: PlayerID?,
+        localPlayerID: PlayerID?,
+        activeInvestigatorPlayerID: PlayerID?
+    ) -> PlayerID? {
+        promptOwnerID ?? localPlayerID ?? activeInvestigatorPlayerID
+    }
+
+    var fullPlayerAreaPlayerID: PlayerID? {
+        let activePlayerID = projection.investigators.first(where: \.isActiveInvestigator)?.playerID
+        return Self.fullPlayerAreaPlayerID(
+            promptOwnerID: prompt?.ownerID,
+            localPlayerID: localPlayerID,
+            activeInvestigatorPlayerID: activePlayerID
+        )
     }
 }
