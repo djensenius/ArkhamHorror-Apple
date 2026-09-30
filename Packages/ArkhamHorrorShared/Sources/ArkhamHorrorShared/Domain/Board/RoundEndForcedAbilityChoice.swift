@@ -10,17 +10,20 @@ extension BasicChoiceParser {
             object["tag"] == .string("AbilityLabel"),
             let investigatorID = roundEndInvestigatorID(object["investigatorId"]),
             let identity = parseDissonantVoicesAbility(object["ability"]),
+            let rawAbility = object["ability"],
             case let .array(windows)? = object["windows"],
             windows.count == 1,
             roundEndWindowMatches(windows[0]),
             object["before"] == .array([]),
-            let messages = roundEndMessages(object["messages"])
+            let messages = roundEndMessages(
+                object["messages"], ability: rawAbility, windows: windows
+            )
         else { return nil }
 
         let parsedAbility = BasicChoiceAbility(
             investigatorID: investigatorID,
             cardCode: identity.cardCode,
-            rawAbility: object["ability"] ?? .null,
+            rawAbility: rawAbility,
             windows: windows,
             before: [],
             messages: messages
@@ -134,14 +137,29 @@ private extension BasicChoiceParser {
             && (window["windowConditionTick"] == nil || window["windowConditionTick"] == .null)
     }
 
-    static func roundEndMessages(_ value: JSONValue?) -> [JSONValue]? {
-        guard case let .array(messages)? = value,
-              messages.allSatisfy({ message in
-                  guard case let .object(object) = message,
-                        case let .string(tag)? = object["tag"]
-                  else { return false }
-                  return !tag.isEmpty
-              })
+    static func roundEndMessages(
+        _ value: JSONValue?, ability: JSONValue, windows: [JSONValue]
+    ) -> [JSONValue]? {
+        guard case let .array(messages)? = value else { return nil }
+        if messages.isEmpty {
+            return messages
+        }
+        guard messages.count == 1,
+              case let .object(message) = messages[0],
+              message["tag"] == .string("MoveWithSkillTest"),
+              case let .object(contents)? = message["contents"],
+              contents["tag"] == .string("ResolveWindowInitiations"),
+              case let .array(payload)? = contents["contents"],
+              payload.count == 3,
+              payload[0] == .string("c01001"),
+              payload[1] == .array(windows),
+              payload[2] == .array([
+                  .array([
+                      ability,
+                      .array(windows),
+                      .array([]),
+                  ]),
+              ])
         else { return nil }
         return messages
     }

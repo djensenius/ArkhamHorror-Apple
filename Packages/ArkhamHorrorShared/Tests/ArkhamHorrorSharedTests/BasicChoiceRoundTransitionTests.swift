@@ -118,7 +118,12 @@ struct BasicChoiceRoundTransitionTests {
         #expect(forced.ability.investigatorID == RoundTransitionFixtures.investigatorID)
         #expect(forced.ability.cardCode.rawValue == "c01165")
         #expect(forced.ability.before.isEmpty)
-        #expect(!forced.ability.messages.isEmpty)
+        #expect(forced.ability.messages.count == 1)
+        if case let .object(message) = forced.ability.messages.first {
+            #expect(message["tag"] == .string("MoveWithSkillTest"))
+        } else {
+            Issue.record("Expected the governed forced ability message")
+        }
     }
 
     private func assertAgendaAdvancePrompt() throws {
