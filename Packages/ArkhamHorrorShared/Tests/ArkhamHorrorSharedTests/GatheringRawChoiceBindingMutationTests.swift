@@ -93,8 +93,8 @@ struct GatheringRawChoiceBindingMutationTests {
         ),
     ]
 
-    @Test("Every governed Q34 semantic choice is bound to the complete raw array")
-    func governedSemanticChoiceMutationsFailClosed() throws {
+    @Test("Every governed Q34 semantic choice loses overlay when full-array seal fails")
+    func governedSemanticChoiceMutationsLoseOverlay() throws {
         let mutations: [(pointer: String, replacement: JSONValue)] = [
             ("/choices/0/actorId", .string("c01002")),
             (
@@ -115,9 +115,12 @@ struct GatheringRawChoiceBindingMutationTests {
                 QuestionPresentation.self,
                 from: ContractJSON.encode(presentationValue)
             )
-            #expect(throws: QuestionPresentationBindingError.self) {
-                try presentation.bind(to: raw, expectedQuestionVersion: 34)
-            }
+            let binding = try presentation.bind(
+                to: raw,
+                expectedQuestionVersion: 34
+            )
+            #expect(!binding.hasSealedOverlay)
+            #expect(binding.governedSource == nil)
         }
     }
 
@@ -163,8 +166,8 @@ struct GatheringRawChoiceBindingMutationTests {
         )
     }
 
-    @Test("Every governed raw choice mutation fails during binding")
-    func governedRawChoiceMutationsFailClosed() throws {
+    @Test("Every governed raw choice mutation loses overlay during binding")
+    func governedRawChoiceMutationsLoseOverlay() throws {
         for mutation in Self.mutations {
             let raw = try fixtureValue(named: mutation.rawFixture)
             let mutated = try EnemyAttackFixtures.applying(
@@ -177,12 +180,12 @@ struct GatheringRawChoiceBindingMutationTests {
                 QuestionPresentation.self,
                 from: fixtureData(named: mutation.presentationFixture)
             )
-            #expect(throws: QuestionPresentationBindingError.self) {
-                try presentation.bind(
-                    to: mutated,
-                    expectedQuestionVersion: mutation.questionVersion
-                )
-            }
+            let binding = try presentation.bind(
+                to: mutated,
+                expectedQuestionVersion: mutation.questionVersion
+            )
+            #expect(!binding.hasSealedOverlay)
+            #expect(binding.governedSource == nil)
         }
     }
 
