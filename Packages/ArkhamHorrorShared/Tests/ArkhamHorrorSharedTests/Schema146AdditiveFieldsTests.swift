@@ -28,6 +28,42 @@ struct Schema146AdditiveFieldsTests {
         #expect(object["nonBlocking"] == JSONValue.bool(false))
     }
 
+    @Test("explicit presentation ability defaults still match Gathering references")
+    func presentationAbilityDefaultsAreSemanticallyEquivalent() throws {
+        var value = try fixtureValue("question-presentation-gathering-movement")
+        for sourceIndex in [9, 10, 11] {
+            value = try applyingReplace(
+                "/choices/\(sourceIndex)/ability/blocksIn",
+                with: .null,
+                to: value
+            )
+            value = try applyingReplace(
+                "/choices/\(sourceIndex)/ability/nonBlocking",
+                with: .bool(false),
+                to: value
+            )
+        }
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: ContractJSON.encode(value)
+        )
+        #expect(presentation.choices[9] == .gatheringMovement(
+            sourceIndex: 9,
+            cardCode: "c01114",
+            locationID: "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
+        ))
+        #expect(presentation.choices[10] == .gatheringMovement(
+            sourceIndex: 10,
+            cardCode: "c01113",
+            locationID: "dbaa2d2e-4ceb-44b2-a554-e5fa370e7882"
+        ))
+        #expect(presentation.choices[11] == .gatheringInvestigation(
+            sourceIndex: 11,
+            cardCode: "c01112",
+            locationID: "fda9afef-4166-4c9f-962e-eed6e8cbee25"
+        ))
+    }
+
     @Test("presentation abilities reject non-default additive fields")
     func presentationAbilityRejectsNonDefaults() {
         #expect(throws: DecodingError.self) {
