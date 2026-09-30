@@ -149,8 +149,80 @@ struct QuestionPresentationV2GenericTests {
         )
     }
 
-    @Test("Raw server question encodings bind to matching v2 presentations")
-    func rawServerQuestionEncodingsBind() throws {
+    @Test("Raw server question encodings without vendored raw fixtures bind to matching v2 presentations")
+    func rawServerQuestionEncodingsWithoutFixturesBind() throws {
+        // Arkham/Question.hs:195 derives record-field JSON with defaultOptions.
+        try bindRawPresentationPair(
+            raw: singleRawQuestion(tag: "ChooseOneAtATime"),
+            presentation: singleChoicePresentation(
+                kind: "chooseOneAtATime",
+                selection: (min: 1, max: 1)
+            )
+        )
+        // Arkham/Question.hs:193 derives a label plus choices record.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"ChooseSome1","label":"$choose","choices":[{"tag":"Label","label":"$ok","messages":[]}]}"#,
+            presentation: singleChoicePresentation(
+                kind: "chooseSome1",
+                selection: (min: 1, max: 1)
+            )
+        )
+        // Arkham/Question.hs:218 is a nullary constructor encoded as {tag}.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"ChooseUpgradeDeck"}"#,
+            presentation: deckPresentation(kind: "chooseUpgradeDeck")
+        )
+        // Arkham/Question.hs:222 derives the usedInvestigators record field.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"ChooseJoinDeck","usedInvestigators":["c01001"]}"#,
+            presentation: deckPresentation(
+                kind: "chooseJoinDeck",
+                usedInvestigators: ["c01001"]
+            )
+        )
+        // Arkham/Question.hs:240-241 derives PickSupplies record fields.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"PickSupplies","pointsRemaining":2,"chosenSupplies":["Provisions"],"choices":[{"tag":"Label","label":"$supply","messages":[]}],"resupply":false}"#,
+            presentation: pickSuppliesPresentation()
+        )
+        // Arkham/Question.hs:242 derives the drawings record field.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"PickDestiny","drawings":[]}"#,
+            presentation: pickDestinyPresentation()
+        )
+        // Arkham/Question.hs:243 derives the options record field.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"DropDown","options":[["$option",{"tag":"Value"}]]}"#,
+            presentation: singleChoicePresentation(kind: "dropDown")
+        )
+        // Arkham/Question.hs:244 is a nullary constructor encoded as {tag}.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"PickScenarioSettings"}"#,
+            presentation: settingsPresentation(
+                kind: "pickScenarioSettings",
+                answerKind: "standaloneSettings",
+                answerTag: "StandaloneSettingsAnswer"
+            )
+        )
+        // Arkham/Question.hs:245 is a nullary constructor encoded as {tag}.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"PickCampaignSettings"}"#,
+            presentation: settingsPresentation(
+                kind: "pickCampaignSettings",
+                answerKind: "campaignSettings",
+                answerTag: "CampaignSettingsAnswer"
+            )
+        )
+        // Arkham/Question.hs:246 positional constructor encodes as {tag,contents}.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"PickCampaignSpecific","contents":["key",{"tag":"Value"}]}"#,
+            presentation: specificPresentation(kind: "pickCampaignSpecific", answerTag: "CampaignSpecificAnswer")
+        )
+        // Arkham/Question.hs:247 positional constructor encodes as {tag,contents}.
+        try bindRawPresentationPair(
+            raw: #"{"tag":"PickScenarioSpecific","contents":["key",{"tag":"Value"}]}"#,
+            presentation: specificPresentation(kind: "pickScenarioSpecific", answerTag: "ScenarioSpecificAnswer")
+        )
         // Arkham/Question.hs:248-254 derives these record field names via
         // deriveToJSON defaultOptions ''Question at Question.hs:362.
         try bindRawPresentationPair(
@@ -182,15 +254,19 @@ struct QuestionPresentationV2GenericTests {
             }
             """#
         )
-        // Arkham/Question.hs:246 positional constructor encodes as {tag,contents}.
+        // Arkham/Question.hs:256 is a nullary constructor encoded as {tag}.
         try bindRawPresentationPair(
-            raw: #"{"tag":"PickCampaignSpecific","contents":["key",{"tag":"Value"}]}"#,
-            presentation: specificPresentation(kind: "pickCampaignSpecific", answerTag: "CampaignSpecificAnswer")
-        )
-        // Arkham/Question.hs:247 positional constructor encodes as {tag,contents}.
-        try bindRawPresentationPair(
-            raw: #"{"tag":"PickScenarioSpecific","contents":["key",{"tag":"Value"}]}"#,
-            presentation: specificPresentation(kind: "pickScenarioSpecific", answerTag: "ScenarioSpecificAnswer")
+            raw: #"{"tag":"ContinueCampaign"}"#,
+            presentation: #"""
+            {
+              "protocolVersion":2,
+              "questionVersion":1,
+              "questionKind":"continueCampaign",
+              "choiceCount":0,
+              "choices":[],
+              "answer":{"kind":"continueCampaign","tags":["CampaignStepAnswer"]}
+            }
+            """#
         )
         // Arkham/Question.hs:234-238 names the choice field wizardChoices.
         try bindRawPresentationPair(
@@ -298,6 +374,98 @@ struct QuestionPresentationV2GenericTests {
             expectedQuestionVersion: decodedPresentation.questionVersion
         )
         #expect(binding.rawChoices.count == decodedPresentation.choiceCount)
+    }
+
+    private func singleRawQuestion(tag: String) -> String {
+        #"{"tag":"\#(tag)","choices":[{"tag":"Label","label":"$ok","messages":[]}]}"#
+    }
+
+    private func singleChoicePresentation(
+        kind: String,
+        selection: (min: Int, max: Int)? = nil
+    ) -> String {
+        let selectionFields = selection.map {
+            #", "selection":{"min":\#($0.min),"max":\#($0.max)}"#
+        } ?? ""
+        return #"""
+        {
+          "protocolVersion":2,
+          "questionVersion":1,
+          "questionKind":"\#(kind)",
+          "choiceCount":1,
+          "choices":[{"sourceIndex":0,"kind":"localizedLabel","selectable":true,"label":{"kind":"embeddedI18n","text":"$ok"}}],
+          "answer":{"kind":"singleChoice","tag":"Answer"}
+          \#(selectionFields)
+        }
+        """#
+    }
+
+    private func deckPresentation(
+        kind: String,
+        usedInvestigators: [String]? = nil
+    ) -> String {
+        let usedInvestigatorsField = usedInvestigators.map {
+            let encoded = $0.map { #""\#($0)""# }.joined(separator: ",")
+            return #", "usedInvestigators":[\#(encoded)]"#
+        } ?? ""
+        return #"""
+        {
+          "protocolVersion":2,
+          "questionVersion":1,
+          "questionKind":"\#(kind)",
+          "choiceCount":0,
+          "choices":[],
+          "answer":{"kind":"deck","tags":["DeckAnswer","DeckListAnswer"]}
+          \#(usedInvestigatorsField)
+        }
+        """#
+    }
+
+    private func pickSuppliesPresentation() -> String {
+        #"""
+        {
+          "protocolVersion":2,
+          "questionVersion":1,
+          "questionKind":"pickSupplies",
+          "choiceCount":1,
+          "choices":[{"sourceIndex":0,"kind":"localizedLabel","selectable":true,"label":{"kind":"embeddedI18n","text":"$supply"}}],
+          "answer":{"kind":"singleChoice","tag":"Answer"},
+          "pointsRemaining":2,
+          "chosenSupplies":["Provisions"],
+          "resupply":false
+        }
+        """#
+    }
+
+    private func pickDestinyPresentation() -> String {
+        #"""
+        {
+          "protocolVersion":2,
+          "questionVersion":1,
+          "questionKind":"pickDestiny",
+          "choiceCount":0,
+          "choices":[],
+          "answer":{"kind":"pickDestiny","tag":"PickDestinyAnswer"},
+          "drawings":[{"scenario":{"tag":"CampaignScope"},"tarot":{"facing":"Upright","arcana":"The Fool"}}]
+        }
+        """#
+    }
+
+    private func settingsPresentation(
+        kind: String,
+        answerKind: String,
+        answerTag: String
+    ) -> String {
+        #"""
+        {
+          "protocolVersion":2,
+          "questionVersion":1,
+          "questionKind":"\#(kind)",
+          "choiceCount":0,
+          "choices":[],
+          "answer":{"kind":"\#(answerKind)","tag":"\#(answerTag)"}
+        }
+        """#
     }
 
     private func specificPresentation(kind: String, answerTag: String) -> String {
