@@ -82,12 +82,37 @@ struct DeckTests {
 
     @Test("deck decodes the sync contract's 0.1.46 fixture with null additive fields")
     func deckDecodesRevision146SyncFixture() throws {
-        let url = URL(fileURLWithPath: "/Users/david/Developer/ArkhamHorror/"
-            + "ArkhamHorror-sync/contracts/fixtures/decks.json")
-        let fixture = try ContractJSON.decode(DecksFixture.self, from: Data(contentsOf: url))
-        #expect(fixture.deck.lastUsedAt == nil)
-        #expect(fixture.deck.overlay == nil)
-        #expect(fixture.deck.playList == fixture.deck.list)
+        // Copied from the 0.1.46 sync worktree's contracts/fixtures/decks.json `deck`
+        // object so this compatibility test remains self-contained under CI.
+        let json = """
+        {
+          "id": "00000000-0000-0000-0000-000000000017",
+          "investigatorName": "Roland Banks",
+          "lastUsedAt": null,
+          "list": {
+            "id": "4242.0", "investigator_code": "c01001",
+            "investigator_name": "Roland Banks", "meta": null,
+            "name": "Contract deck", "sideSlots": {},
+            "slots": {"c01016": 2, "c01018": 1}, "taboo_id": null,
+            "url": "https://arkhamdb.com/decklist/view/4242"
+          },
+          "name": "Contract deck",
+          "overlay": null,
+          "playList": {
+            "id": "4242.0", "investigator_code": "c01001",
+            "investigator_name": "Roland Banks", "meta": null,
+            "name": "Contract deck", "sideSlots": {},
+            "slots": {"c01016": 2, "c01018": 1}, "taboo_id": null,
+            "url": "https://arkhamdb.com/decklist/view/4242"
+          },
+          "url": "https://arkhamdb.com/decklist/view/4242",
+          "userId": 7
+        }
+        """
+        let deck = try ContractJSON.decode(Deck.self, from: Data(json.utf8))
+        #expect(deck.lastUsedAt == nil)
+        #expect(deck.overlay == nil)
+        #expect(deck.playList == deck.list)
     }
 
     @Test("deck decodes additive 0.1.46 lastUsedAt, overlay, and playList fields")
