@@ -266,16 +266,58 @@ extension AssetCacheServiceTests {
 
     @Test(
         """
-        Touching many distinct keys against a large in-flight-revalidation busy backlog \
-        (registered via setInFlightRevalidation(_:for:), not merely an authority window) \
-        keeps each individual isAuthorityKeyBusy(_:)'s revalidation check to the same \
-        single keyed revalidationKeyRefCount lookup as an identical churn against a tiny \
-        busy backlog -- proving that check is O(1) per considered key, not an O(m) scan \
-        of every currently in-flight revalidation slot. Every busy key, in both the small \
-        and large backlog, is also proven to never be pruned by the churn.
+        Revalidation-busy pruning consults the per-key revalidationKeyRefCount rather than \
+        scanning inFlightRevalidation slots: a real slot whose refcount is missing is \
+        prunable, while a refcount with no slot still protects that key.
         """
     )
-    func manyInFlightRevalidationsStayBusyAndUseConstantPerKeyBusyChecks() async throws {
+    func revalidationBusyStatusComesFromRefCount() async throws {
+        try await withService { service, _ in
+            let rawCode = "200001"
+            let busy = try await registerRevalidationBusyKey(service: service, rawCode: rawCode)
+            let cacheKey = try distinctCacheKey(rawCode)
+            await service.testOnlySetRevalidationRefCount(nil, for: cacheKey)
+            try await fillAuthorityTrackingToCapacity(
+                service: service,
+                existingTrackedKeyCount: 1,
+                keyPrefix: 3
+            )
+
+            let triggeringKey = try distinctCacheKey("390000")
+            _ = await service.issueToken(for: triggeringKey)
+
+            let stillTracked = await service.trackedAuthorityKeys.contains(cacheKey)
+            #expect(!stillTracked, "a slot without a refcount must not keep a key busy")
+            busy.task.cancel()
+        }
+
+        try await withService { service, _ in
+            let cacheKey = try distinctCacheKey("400001")
+            _ = await service.issueToken(for: cacheKey)
+            await service.testOnlySetRevalidationRefCount(1, for: cacheKey)
+            try await fillAuthorityTrackingToCapacity(
+                service: service,
+                existingTrackedKeyCount: 1,
+                keyPrefix: 5
+            )
+
+            let triggeringKey = try distinctCacheKey("590000")
+            _ = await service.issueToken(for: triggeringKey)
+
+            let stillTracked = await service.trackedAuthorityKeys.contains(cacheKey)
+            #expect(stillTracked, "a refcount alone must keep a key busy")
+        }
+    }
+
+    @Test(
+        """
+        Touching many distinct keys against an in-flight-revalidation busy backlog \
+        (registered via setInFlightRevalidation(_:for:), not merely an authority window) \
+        never prunes any genuinely busy key. The small case is padded to capacity before \
+        churn so it exercises the same pruning path as the large case.
+        """
+    )
+    func manyInFlightRevalidationsStayBusyDuringChurn() async throws {
         let smallObservation = try await observeChurnAgainstRevalidationBacklog(
             busyKeyCount: 8,
             touchCount: 300,
@@ -287,30 +329,7 @@ extension AssetCacheServiceTests {
             keyPrefix: 2
         )
 
-        #expect(smallObservation.metrics.busyCheckCount > 0)
-        #expect(largeObservation.metrics.busyCheckCount > 0)
-        #expect(
-            smallObservation.metrics.revalidationKeyRefCountLookupCount
-                == smallObservation.metrics.busyCheckCount,
-            "Small-backlog busy checks should each reach exactly one refcount lookup"
-        )
-        #expect(
-            largeObservation.metrics.revalidationKeyRefCountLookupCount
-                == largeObservation.metrics.busyCheckCount,
-            "Large-backlog busy checks should each reach exactly one refcount lookup"
-        )
-        #expect(
-            largeObservation.metrics.maxRevalidationEntriesInspectedPerCheck
-                == smallObservation.metrics.maxRevalidationEntriesInspectedPerCheck,
-            """
-            A busy check against \(largeObservation.busyKeyCount) in-flight revalidation keys \
-            must inspect no more revalidation entries than the same check against \
-            \(smallObservation.busyKeyCount) keys
-            """
-        )
-        #expect(
-            largeObservation.metrics.maxRevalidationEntriesInspectedPerCheck == 1,
-            "isAuthorityKeyBusy(_:)'s revalidation path must remain one keyed refcount lookup"
-        )
+        #expect(smallObservation.trackedBusyKeyCount == smallObservation.busyKeyCount)
+        #expect(largeObservation.trackedBusyKeyCount == largeObservation.busyKeyCount)
     }
 }
