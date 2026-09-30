@@ -84,12 +84,15 @@ enum DeckImportURL: Equatable, Sendable {
     }
 
     private static func isNumericIdentifier(_ value: String) -> Bool {
-        !value.isEmpty && value.allSatisfy(\.isNumber)
+        !value.isEmpty && value.allSatisfy { character in
+            character.isASCII && character.isNumber
+        }
     }
 
     private static func isArkhamBuildIdentifier(_ value: String) -> Bool {
         !value.isEmpty && value.allSatisfy { character in
-            character.isLetter || character.isNumber || character == "-" || character == "_"
+            character.isASCII
+                && (character.isLetter || character.isNumber || character == "-" || character == "_")
         }
     }
 }
