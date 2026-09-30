@@ -1,8 +1,12 @@
 import Foundation
 
 extension BoardAccessibility {
-    static func summary(playerCard card: BoardPlayerCardNode) -> String {
-        var parts = ["\(card.displayName), \(card.zone.displayTitle.lowercased()) card"]
+    static func summary(
+        playerCard card: BoardPlayerCardNode,
+        displayName: String? = nil
+    ) -> String {
+        let name = displayName ?? card.displayName
+        var parts = ["\(name), \(card.zone.displayTitle.lowercased()) card"]
         if let cardCode = card.cardCode {
             parts.append("Code \(cardCode.rawValue)")
         }
@@ -18,8 +22,13 @@ extension BoardAccessibility {
         return parts.joined(separator: ". ")
     }
 
-    static func summary(enemy: BoardEnemyNode) -> String {
-        var parts = ["\(enemy.displayName), enemy"]
+    static func summary(
+        enemy: BoardEnemyNode,
+        displayName: String? = nil,
+        engagedInvestigatorName: String? = nil
+    ) -> String {
+        let name = displayName ?? enemy.displayName
+        var parts = ["\(name), enemy"]
         if let cardCode = enemy.cardCode {
             parts.append("Code \(cardCode.rawValue)")
         }
@@ -28,7 +37,9 @@ extension BoardAccessibility {
             parts.append("Exhausted")
         }
         if let engagedInvestigatorID = enemy.engagedInvestigatorID {
-            parts.append("Engaged with \(engagedInvestigatorID.rawValue.rawValue)")
+            parts.append(
+                "Engaged with \(engagedInvestigatorName ?? engagedInvestigatorID.rawValue.rawValue)"
+            )
         }
         let unrepresentedTokens = enemy.tokenCounts.filter { token in
             token.token != "Damage" && token.token != "Horror"
@@ -39,8 +50,12 @@ extension BoardAccessibility {
         return parts.joined(separator: ". ")
     }
 
-    static func summary(threatTreachery treachery: BoardThreatTreacheryNode) -> String {
-        var parts = ["\(treachery.displayName), threat area treachery"]
+    static func summary(
+        threatTreachery treachery: BoardThreatTreacheryNode,
+        displayName: String? = nil
+    ) -> String {
+        let name = displayName ?? treachery.displayName
+        var parts = ["\(name), threat area treachery"]
         if let cardCode = treachery.cardCode {
             parts.append("Code \(cardCode.rawValue)")
         }

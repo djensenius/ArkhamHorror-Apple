@@ -10,6 +10,7 @@ struct BoardPlayerAreaView: View {
     let inPlayCards: [BoardPlayerCardNode]
     let threatTreacheries: [BoardThreatTreacheryNode]
     let engagedEnemies: [BoardEnemyNode]
+    let investigatorDisplayNames: [InvestigatorID: String]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let onLinkedChoice: (Int) -> Void
 
@@ -24,6 +25,7 @@ struct BoardPlayerAreaView: View {
             if !engagedEnemies.isEmpty {
                 BoardEnemyPanelView(
                     title: "Engaged", enemies: engagedEnemies,
+                    investigatorDisplayNames: investigatorDisplayNames,
                     choiceLinks: choiceLinks,
                     onLinkedChoice: onLinkedChoice
                 )
@@ -71,8 +73,7 @@ struct BoardPlayerCardFaceView: View {
     }
 
     private var accessibilitySummary: String {
-        BoardAccessibility.summary(playerCard: card)
-            .replacingOccurrences(of: card.displayName, with: displayName)
+        BoardAccessibility.summary(playerCard: card, displayName: displayName)
     }
 
     var body: some View {
@@ -134,6 +135,7 @@ struct BoardPlayerCardFaceView: View {
 struct BoardEnemyPanelView: View {
     let title: String
     let enemies: [BoardEnemyNode]
+    var investigatorDisplayNames: [InvestigatorID: String] = [:]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let onLinkedChoice: (Int) -> Void
 
@@ -145,6 +147,7 @@ struct BoardEnemyPanelView: View {
             ForEach(enemies) { enemy in
                 BoardEnemyCardView(
                     enemy: enemy,
+                    investigatorDisplayNames: investigatorDisplayNames,
                     linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
                     onLinkedChoice: onLinkedChoice
                 )
@@ -155,6 +158,7 @@ struct BoardEnemyPanelView: View {
 
 struct BoardEnemyCardView: View {
     let enemy: BoardEnemyNode
+    let investigatorDisplayNames: [InvestigatorID: String]
     let linkedChoices: [BoardLinkedChoice]
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
@@ -164,8 +168,13 @@ struct BoardEnemyCardView: View {
     }
 
     private var accessibilitySummary: String {
-        BoardAccessibility.summary(enemy: enemy)
-            .replacingOccurrences(of: enemy.displayName, with: displayName)
+        BoardAccessibility.summary(
+            enemy: enemy,
+            displayName: displayName,
+            engagedInvestigatorName: enemy.engagedInvestigatorID.flatMap {
+                investigatorDisplayNames[$0]
+            }
+        )
     }
 
     var body: some View {
@@ -272,8 +281,7 @@ struct BoardThreatTreacheryCardView: View {
     }
 
     private var accessibilitySummary: String {
-        BoardAccessibility.summary(threatTreachery: treachery)
-            .replacingOccurrences(of: treachery.displayName, with: displayName)
+        BoardAccessibility.summary(threatTreachery: treachery, displayName: displayName)
     }
 
     var body: some View {

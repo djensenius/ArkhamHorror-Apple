@@ -67,6 +67,32 @@ struct BoardCardRenderingProjectionTests {
         #expect(!summary.contains("Damage 2"))
     }
 
+    @Test("Enemy accessibility can announce engaged investigator display name")
+    func enemyAccessibilityUsesEngagedInvestigatorDisplayName() throws {
+        let enemyID = EnemyActionFixtures.enemyID
+        let investigatorID = BoardTestFixtures.investigatorID("c01002")
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            investigators: [
+                investigatorID: BoardTestFixtures.investigator(
+                    id: investigatorID,
+                    name: CardName(title: "Skids O'Toole", subtitle: nil),
+                    engagedEnemies: [enemyID]
+                ),
+            ],
+            playerOrder: [investigatorID],
+            activeInvestigatorID: investigatorID,
+            enemyValues: [enemyID: .null]
+        ))
+        let enemy = try #require(projection.engagedEnemiesByInvestigatorID[investigatorID]?.first)
+        let summary = BoardAccessibility.summary(
+            enemy: enemy,
+            engagedInvestigatorName: projection.investigators.first?.displayName
+        )
+
+        #expect(summary.contains("Engaged with Skids O'Toole"))
+        #expect(!summary.contains("Engaged with c01002"))
+    }
+
     @Test("Player card badges do not duplicate use-token badges")
     func playerCardBadgesDoNotDuplicateUses() {
         let card = BoardPlayerCardNode(

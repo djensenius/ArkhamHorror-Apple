@@ -106,12 +106,17 @@ struct BoardInvestigatorRowView: View {
                 inPlayCards: inPlayCardsByPlayer[investigator.playerID] ?? [],
                 threatTreacheries: threatTreacheriesByPlayer[investigator.playerID] ?? [],
                 engagedEnemies: engagedEnemiesByInvestigatorID[investigator.id] ?? [],
+                investigatorDisplayNames: investigatorDisplayNamesByID,
                 choiceLinks: choiceLinks,
                 onLinkedChoice: onLinkedChoice
             )
         } else {
             compactPlayerArea(investigator)
         }
+    }
+
+    private var investigatorDisplayNamesByID: [InvestigatorID: String] {
+        Dictionary(uniqueKeysWithValues: investigators.map { ($0.id, $0.displayName) })
     }
 
     private func shouldShowFullArea(for investigator: BoardInvestigatorNode) -> Bool {
@@ -131,6 +136,7 @@ struct BoardInvestigatorRowView: View {
             if let enemies = engagedEnemiesByInvestigatorID[investigator.id], !enemies.isEmpty {
                 BoardEnemyPanelView(
                     title: "Engaged", enemies: enemies,
+                    investigatorDisplayNames: investigatorDisplayNamesByID,
                     choiceLinks: choiceLinks,
                     onLinkedChoice: onLinkedChoice
                 )
