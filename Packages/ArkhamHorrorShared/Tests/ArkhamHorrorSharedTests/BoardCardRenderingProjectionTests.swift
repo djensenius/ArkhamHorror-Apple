@@ -89,6 +89,27 @@ struct BoardCardRenderingProjectionTests {
         #expect(graph.contains(BoardFocusID.promptChoice(4)))
     }
 
+    @Test("Investigator display-name lookup tolerates repeated player order entries")
+    func investigatorDisplayNameLookupToleratesRepeatedPlayerOrder() {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            investigators: [
+                investigatorID: BoardTestFixtures.investigator(
+                    id: investigatorID,
+                    name: CardName(title: "Roland Banks", subtitle: nil)
+                ),
+            ],
+            playerOrder: [investigatorID, investigatorID],
+            activeInvestigatorID: investigatorID
+        ))
+
+        #expect(projection.investigators.map(\.id) == [investigatorID, investigatorID])
+        #expect(
+            BoardInvestigatorDisplayNames.map(projection.investigators)[investigatorID]
+                == "Roland Banks"
+        )
+    }
+
     @Test("Enemy calculation tags render display values")
     func enemyCalculationTagsRender() {
         #expect(calculation("Static", number(2), players: 3)?.displayValue == "2")

@@ -1,5 +1,13 @@
 import SwiftUI
 
+enum BoardInvestigatorDisplayNames {
+    static func map(_ investigators: [BoardInvestigatorNode]) -> [InvestigatorID: String] {
+        Dictionary(investigators.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in
+            first
+        })
+    }
+}
+
 /// The investigator row — the board's single "board.investigators" zone, ordered by
 /// `PublicGame.playerOrder`.
 struct BoardInvestigatorRowView: View {
@@ -116,7 +124,7 @@ struct BoardInvestigatorRowView: View {
     }
 
     private var investigatorDisplayNamesByID: [InvestigatorID: String] {
-        Dictionary(uniqueKeysWithValues: investigators.map { ($0.id, $0.displayName) })
+        BoardInvestigatorDisplayNames.map(investigators)
     }
 
     private func shouldShowFullArea(for investigator: BoardInvestigatorNode) -> Bool {
