@@ -161,6 +161,37 @@ extension AssetDiskCacheTests {
         }
     }
 
+    @Test("removeIfApplied unlinks the metadata-named payload without listing the directory")
+    func removeIfAppliedUnlinksMetadataPayloadWithoutDirectoryListing() async throws {
+        try await withScratchDirectory { directory in
+            let cache = try AssetDiskCache(directory: directory, limits: smallLimits())
+            let cacheKey = try key("01006")
+            let payload = Data([6, 6, 6])
+            let payloadURL = payloadFileURL(directory: directory, cacheKey: cacheKey, payload: payload)
+            let issuance = try await cache.beginIssuance(for: cacheKey)
+            let publishToken = token(from: issuance)
+            try await cache.set(
+                cacheKey,
+                payload: payload,
+                metadata: publishedMetadata(
+                    for: cacheKey,
+                    payload: payload,
+                    issuance: issuance
+                ),
+                token: publishToken
+            )
+            let callsBeforeRetraction = await cache.directoryAccess.listNamesCallCount
+
+            #expect(try await cache.removeIfApplied(cacheKey, token: publishToken) == .applied)
+
+            #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
+            let callsAfterRetraction = await cache.directoryAccess.listNamesCallCount
+            #expect(callsAfterRetraction == callsBeforeRetraction)
+            let record = try await cache.currentKeyRecord(for: cacheKey)
+            #expect(record.disposition.kind == .tombstone)
+        }
+    }
+
     @Test(
         """
         A crash (simulated here as a failed physical deletion) between removeIfApplied's own \

@@ -345,4 +345,34 @@ extension AssetCacheServiceTests {
                 > smallObservation.directoryEntryCountBeforeChurn
         )
     }
+
+    @Test(
+        """
+        Tokenless invalidate churn for keys that already have durable authority records still \
+        performs zero cache-directory listings: the record-exists removal path overwrites the \
+        existing record instead of running the authority-admission budget proof.
+        """
+    )
+    func invalidateChurnForExistingAuthorityRecordsDoesNotListDirectory() async throws {
+        try await withService { service, _ in
+            let touchCount = 300
+            var churnKeys: [AssetCacheKey] = []
+            for index in 0 ..< touchCount {
+                let rawCode = String(format: "8%05d", index)
+                let cacheKey = try distinctCacheKey(rawCode)
+                _ = try await service.diskCache.beginIssuance(for: cacheKey)
+                churnKeys.append(cacheKey)
+            }
+
+            let directoryAccess = await service.diskCache.directoryAccess
+            let listNamesCallsBeforeChurn = directoryAccess.listNamesCallCount
+            for cacheKey in churnKeys {
+                _ = await service.issueToken(for: cacheKey)
+                try await service.invalidate(cacheKey)
+            }
+            let listNamesCallsDuringChurn = directoryAccess.listNamesCallCount
+                - listNamesCallsBeforeChurn
+            #expect(listNamesCallsDuringChurn == 0)
+        }
+    }
 }
