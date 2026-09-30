@@ -193,7 +193,7 @@ struct BoardCardRenderingProjectionTests {
     }
 
     @Test("Choice-to-board links include hand, in-play, treachery, and semantic entities")
-    func choiceLinksCoverCardEntityPaths() throws {
+    func choiceLinksCoverCardEntityPaths() {
         let cardID = BoardTestFixtures.cardID("000000000521")
         let assetID = BoardTestFixtures.assetID("000000000621")
         let treacheryID = BoardTestFixtures.treacheryID("00000000-0000-0000-0000-000000000721")

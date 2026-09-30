@@ -14,7 +14,7 @@ struct AppModelCardCatalogTests {
         model.loadCardCatalogIfNeeded()
         await model.cardCatalogTask?.value
 
-        #expect(model.cardCatalog?.displayName(for: try CardCode("c01020")) == "Hosted Machete")
+        #expect(try model.cardCatalog?.displayName(for: CardCode("c01020")) == "Hosted Machete")
         #expect(model.cardCatalogFailure == nil)
         #expect(!model.isCardCatalogLoading)
         #expect(model.cardCatalogTask == nil)
@@ -28,8 +28,8 @@ struct AppModelCardCatalogTests {
         ]
         let transport = FixtureLocaleCatalogTransport(responses: responses)
         let model = await model(transport: transport)
-        model.cardCatalog = CardCatalogSnapshot(namesByCode: [
-            try CardCode("c01020"): CardName(title: "Stale", subtitle: nil),
+        model.cardCatalog = try CardCatalogSnapshot(namesByCode: [
+            CardCode("c01020"): CardName(title: "Stale", subtitle: nil),
         ])
         model.cardCatalog = nil
 
@@ -62,9 +62,9 @@ struct AppModelCardCatalogTests {
             path: "/arkham/cards", on: sampleCustomProfile, cardPool: "both"
         )
         let customHomebrewURL = cardCatalogURL(path: "/arkham/homebrew/cards", on: sampleCustomProfile)
-        await transport.resumeOldest(
+        try await transport.resumeOldest(
             matching: customBuiltInURL,
-            with: try cardCatalogResponse(for: customBuiltInURL, title: "Custom Machete")
+            with: cardCatalogResponse(for: customBuiltInURL, title: "Custom Machete")
         )
         await transport.waitForRequestCount(3)
         await transport.resumeOldest(
@@ -73,7 +73,7 @@ struct AppModelCardCatalogTests {
         )
         await model.cardCatalogTask?.value
 
-        #expect(model.cardCatalog?.displayName(for: try CardCode("c01020")) == "Custom Machete")
+        #expect(try model.cardCatalog?.displayName(for: CardCode("c01020")) == "Custom Machete")
         #expect(model.cardCatalogFailure == nil)
         #expect(!model.isCardCatalogLoading)
         #expect(model.cardCatalogTask == nil)
@@ -82,9 +82,9 @@ struct AppModelCardCatalogTests {
             path: "/arkham/cards", on: .hosted, cardPool: "both"
         )
         let hostedHomebrewURL = cardCatalogURL(path: "/arkham/homebrew/cards", on: .hosted)
-        await transport.resumeOldest(
+        try await transport.resumeOldest(
             matching: hostedBuiltInURL,
-            with: try cardCatalogResponse(for: hostedBuiltInURL, title: "Old Hosted Machete")
+            with: cardCatalogResponse(for: hostedBuiltInURL, title: "Old Hosted Machete")
         )
         await transport.waitForRequestCount(4)
         await transport.resumeOldest(
@@ -94,7 +94,7 @@ struct AppModelCardCatalogTests {
         await transport.drain()
 
         #expect(model.selectedProfile.id == sampleCustomProfile.id)
-        #expect(model.cardCatalog?.displayName(for: try CardCode("c01020")) == "Custom Machete")
+        #expect(try model.cardCatalog?.displayName(for: CardCode("c01020")) == "Custom Machete")
         #expect(model.cardCatalogFailure == nil)
         #expect(!model.isCardCatalogLoading)
         #expect(model.cardCatalogTask == nil)
@@ -134,8 +134,8 @@ struct AppModelCardCatalogTests {
     ) throws -> [URL: LocaleCatalogResponse] {
         let builtInURL = cardCatalogURL(path: "/arkham/cards", on: profile, cardPool: "both")
         let homebrewURL = cardCatalogURL(path: "/arkham/homebrew/cards", on: profile)
-        return [
-            builtInURL: try cardCatalogResponse(for: builtInURL, title: title),
+        return try [
+            builtInURL: cardCatalogResponse(for: builtInURL, title: title),
             homebrewURL: emptyCardCatalogResponse(for: homebrewURL),
         ]
     }
@@ -221,7 +221,9 @@ private actor GatedCardCatalogTransport: LocaleCatalogTransporting {
     }
 
     func waitForRequestCount(_ count: Int) async {
-        if requests.count >= count { return }
+        if requests.count >= count {
+            return
+        }
         await withCheckedContinuation { waiters.append((count, $0)) }
     }
 
