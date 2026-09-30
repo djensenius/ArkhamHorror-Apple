@@ -116,6 +116,18 @@ struct BoardCardRenderingProjectionTests {
         #expect(calculation("ValueStar", nil, players: 3)?.displayValue == "–")
     }
 
+    @Test("Enemy per-player calculations clamp instead of trapping on overflow")
+    func enemyCalculationOverflowClamps() {
+        let huge = Int64.max
+        #expect(
+            calculation("PerPlayer", number(huge), players: 2)?.staticValue == Int.max
+        )
+        #expect(
+            calculation("StaticWithPerPlayer", numbers([huge, huge]), players: 2)?.staticValue
+                == Int.max
+        )
+    }
+
     @Test("Choice-to-board links require actionability and prompt submit authority")
     func choiceLinksHonorActionability() throws {
         let enemyID = EnemyActionFixtures.enemyID

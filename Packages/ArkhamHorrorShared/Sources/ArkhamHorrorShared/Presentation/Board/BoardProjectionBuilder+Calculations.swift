@@ -36,10 +36,10 @@ extension BoardProjectionBuilder {
         case "Static":
             return safeInteger(object["contents"])
         case "PerPlayer":
-            return safeInteger(object["contents"]).map { $0 * playerCount }
+            return safeInteger(object["contents"]).map { clampedProduct($0, playerCount) }
         case "StaticWithPerPlayer":
             guard let values = fixedIntegerArray(object["contents"], count: 2) else { return nil }
-            return values[0] + values[1] * playerCount
+            return clampedSum(values[0], clampedProduct(values[1], playerCount))
         case "ByPlayerCount":
             guard let values = fixedIntegerArray(object["contents"], count: 4) else { return nil }
             let index = min(max(playerCount, 1), 4) - 1
@@ -53,5 +53,17 @@ extension BoardProjectionBuilder {
         guard case let .array(values)? = value, values.count == count else { return nil }
         let result = values.compactMap(safeInteger)
         return result.count == count ? result : nil
+    }
+
+    private static func clampedProduct(_ lhs: Int, _ rhs: Int) -> Int {
+        let product = lhs.multipliedReportingOverflow(by: rhs)
+        guard product.overflow else { return product.partialValue }
+        return (lhs < 0) == (rhs < 0) ? Int.max : Int.min
+    }
+
+    private static func clampedSum(_ lhs: Int, _ rhs: Int) -> Int {
+        let sum = lhs.addingReportingOverflow(rhs)
+        guard sum.overflow else { return sum.partialValue }
+        return lhs >= 0 ? Int.max : Int.min
     }
 }
