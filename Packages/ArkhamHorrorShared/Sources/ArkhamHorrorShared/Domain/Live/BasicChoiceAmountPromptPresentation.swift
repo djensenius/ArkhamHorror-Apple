@@ -31,10 +31,14 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
         return result
     }
 
-    func total(for amounts: [String: Int]) -> Int {
-        rows.reduce(0) { partial, row in
-            partial + (amounts[row.id] ?? 0)
+    func total(for amounts: [String: Int]) -> Int? {
+        var total = 0
+        for row in rows {
+            let result = total.addingReportingOverflow(amounts[row.id] ?? 0)
+            guard !result.overflow else { return nil }
+            total = result.partialValue
         }
+        return total
     }
 
     func row(id: String) -> BasicChoiceAmountPromptRow? {
@@ -47,12 +51,15 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
         guard let row = row(id: rowID), row.isVisible else { return normalizedAmounts(amounts) }
         var result = normalizedAmounts(amounts)
         let current = result[rowID] ?? 0
-        let adjusted: Int = if delta > 0, current < row.minBound {
-            min(row.maxBound, row.minBound)
+        let adjusted: Int
+        if delta > 0, current < row.minBound {
+            adjusted = min(row.maxBound, row.minBound)
         } else if delta < 0, current > row.maxBound {
-            max(row.minBound, row.maxBound)
+            adjusted = max(row.minBound, row.maxBound)
         } else {
-            current + delta
+            let addition = current.addingReportingOverflow(delta)
+            guard !addition.overflow else { return normalizedAmounts(amounts) }
+            adjusted = addition.partialValue
         }
         result[rowID] = min(max(adjusted, row.minBound), row.maxBound)
         return result
@@ -83,7 +90,8 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
                   amount <= row.maxBound
             else { return false }
         }
-        return targetSatisfied(total: total(for: amounts))
+        guard let total = total(for: amounts) else { return false }
+        return targetSatisfied(total: total)
     }
 
     func targetHint(in presentation: BasicChoicePromptPresentation) -> String {
@@ -142,7 +150,7 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
                 value: "Keep each amount within its allowed range."
             )
         }
-        if !targetSatisfied(total: total(for: amounts)) {
+        guard let total = total(for: amounts), targetSatisfied(total: total) else {
             return targetHint(in: presentation)
         }
         return nil
@@ -209,33 +217,48 @@ struct BasicChoiceExchangePrompt: Sendable, Equatable {
     let toInitialAmount: Int
     let token: String
 
+    var bounds: ClosedRange<Int>? {
+        guard fromInitialAmount >= 0, toInitialAmount >= 0 else { return nil }
+        let lower = 0.subtractingReportingOverflow(toInitialAmount)
+        guard !lower.overflow, lower.partialValue <= fromInitialAmount else { return nil }
+        return lower.partialValue ... fromInitialAmount
+    }
+
     var lowerBound: Int {
-        -toInitialAmount
+        bounds?.lowerBound ?? 1
     }
 
     var upperBound: Int {
-        fromInitialAmount
+        bounds?.upperBound ?? 0
     }
 
-    func fromCount(for amount: Int) -> Int {
-        fromInitialAmount - amount
+    func fromCount(for amount: Int) -> Int? {
+        let result = fromInitialAmount.subtractingReportingOverflow(amount)
+        guard !result.overflow else { return nil }
+        return result.partialValue
     }
 
-    func toCount(for amount: Int) -> Int {
-        toInitialAmount + amount
+    func toCount(for amount: Int) -> Int? {
+        let result = toInitialAmount.addingReportingOverflow(amount)
+        guard !result.overflow else { return nil }
+        return result.partialValue
     }
 
     func isLegal(_ amount: Int) -> Bool {
-        fromInitialAmount >= 0 && toInitialAmount >= 0
-            && lowerBound <= upperBound && amount >= lowerBound && amount <= upperBound
+        guard let bounds, bounds.contains(amount) else { return false }
+        return fromCount(for: amount) != nil && toCount(for: amount) != nil
     }
 
     func canAdjust(amount: Int, delta: Int) -> Bool {
-        isLegal(amount + delta)
+        let result = amount.addingReportingOverflow(delta)
+        guard !result.overflow else { return false }
+        return isLegal(result.partialValue)
     }
 
     func adjustedAmount(_ amount: Int, delta: Int) -> Int {
-        min(max(amount + delta, lowerBound), upperBound)
+        let result = amount.addingReportingOverflow(delta)
+        guard !result.overflow, let bounds else { return amount }
+        return min(max(result.partialValue, bounds.lowerBound), bounds.upperBound)
     }
 }
 

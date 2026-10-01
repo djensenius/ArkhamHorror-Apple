@@ -18,6 +18,7 @@
 "amountPrompt.disabled.bounds" = "Jede Menge muss im erlaubten Bereich bleiben.";
 "amountPrompt.disabled.labels" = "Der Text für %@ ist derzeit nicht verfügbar.";
 "amountPrompt.total" = "Gesamt: %lld";
+"amountPrompt.total.overflow" = "Gesamt: zu groß";
 "amountPrompt.submit" = "Absenden";
 "amountPrompt.submit.hint" = "Sendet diese Verteilung mit Versionsprüfung.";
 "amountPrompt.row.bounds" = "Erlaubt %1$lld–%2$lld";
@@ -30,6 +31,7 @@
 "amountPrompt.exchange.decrease.accessibility" = "Eine %1$@ zurück zu %2$@ bewegen";
 "amountPrompt.exchange.increase.accessibility" = "Eine %1$@ zu %2$@ bewegen";
 "amountPrompt.exchange.accessibility" = "%1$@ hat %2$lld. %3$@ hat %4$lld.";
+"amountPrompt.exchange.accessibility.overflow" = "%1$@ oder %2$@ hat zu viele Marker zur Anzeige.";
 "amountPrompt.exchange.hint" = "Zum Verschieben von Markern zwischen Ermittlern nach oben oder unten streichen.";
 "amountPrompt.exchange.none" = "Keine Marker bewegt";
 "amountPrompt.exchange.forward" = "%1$lld zu %2$@";

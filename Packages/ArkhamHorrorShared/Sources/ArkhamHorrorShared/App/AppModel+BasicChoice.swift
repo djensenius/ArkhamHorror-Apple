@@ -555,9 +555,11 @@ private extension BasicChoicePromptPresentation {
               presentation.token != nil
         else { return false }
         guard fromInitialAmount >= 0, toInitialAmount >= 0 else { return false }
-        let lowerBound = -toInitialAmount
-        let upperBound = fromInitialAmount
-        return lowerBound <= upperBound && amount >= lowerBound && amount <= upperBound
+        let lowerBound = 0.subtractingReportingOverflow(toInitialAmount)
+        guard !lowerBound.overflow, lowerBound.partialValue <= fromInitialAmount else {
+            return false
+        }
+        return amount >= lowerBound.partialValue && amount <= fromInitialAmount
     }
 
     struct AmountChoiceBounds: Sendable, Equatable {
@@ -598,7 +600,9 @@ private extension BasicChoicePromptPresentation {
                   amount >= choice.lowerBound,
                   amount <= choice.upperBound
             else { return false }
-            total += amount
+            let result = total.addingReportingOverflow(amount)
+            guard !result.overflow else { return false }
+            total = result.partialValue
         }
         return amountTargetSatisfied(target, total: total)
     }

@@ -16,7 +16,7 @@ extension BasicChoicePromptView {
                 amountRow(row, index: index, amount: normalized[row.id] ?? 0)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(promptString("amountPrompt.total", value: "Total: \(total)", Int64(total)))
+                Text(totalText(total))
                     .font(.footnote.monospacedDigit())
                     .accessibilityIdentifier("liveGame.prompt.amount.total")
                 Text(amountPrompt.targetHint(in: presentation))
@@ -153,8 +153,12 @@ extension BasicChoicePromptView {
         let toName = exchangePrompt.toDisplayName
         let fromCount = exchangePrompt.fromCount(for: amount)
         let toCount = exchangePrompt.toCount(for: amount)
-        let accessibilityValue: String.LocalizationValue =
-            "\(fromName) has \(fromCount). \(toName) has \(toCount)."
+        let accessibilityText = exchangeAccessibilityText(
+            fromName: fromName,
+            fromCount: fromCount,
+            toName: toName,
+            toCount: toCount
+        )
         return VStack(alignment: .leading, spacing: 10) {
             Text(promptString(
                 "amountPrompt.exchange.legend",
@@ -166,7 +170,7 @@ extension BasicChoicePromptView {
             HStack(spacing: 12) {
                 exchangeInvestigatorColumn(
                     name: exchangePrompt.fromDisplayName,
-                    count: exchangePrompt.fromCount(for: amount)
+                    count: fromCount
                 )
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
@@ -200,18 +204,11 @@ extension BasicChoicePromptView {
                 }
                 exchangeInvestigatorColumn(
                     name: exchangePrompt.toDisplayName,
-                    count: exchangePrompt.toCount(for: amount)
+                    count: toCount
                 )
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(promptString(
-                "amountPrompt.exchange.accessibility",
-                value: accessibilityValue,
-                fromName,
-                Int64(fromCount),
-                toName,
-                Int64(toCount)
-            ))
+            .accessibilityLabel(accessibilityText)
             .accessibilityHint(promptString(
                 "amountPrompt.exchange.hint",
                 value: "Swipe up or down to move tokens between investigators."
@@ -255,16 +252,50 @@ extension BasicChoicePromptView {
         .accessibilityIdentifier("liveGame.prompt.exchange")
     }
 
-    private func exchangeInvestigatorColumn(name: String, count: Int) -> some View {
+    private func exchangeInvestigatorColumn(name: String, count: Int?) -> some View {
         VStack(spacing: 4) {
             Text(name)
                 .font(.caption.weight(.semibold))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-            Text("\(count)")
+            Text(count.map(String.init) ?? "—")
                 .font(.title3.monospacedDigit().weight(.bold))
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func totalText(_ total: Int?) -> String {
+        guard let total else {
+            return promptString(
+                "amountPrompt.total.overflow",
+                value: "Total: too large"
+            )
+        }
+        return promptString("amountPrompt.total", value: "Total: \(total)", Int64(total))
+    }
+
+    private func exchangeAccessibilityText(
+        fromName: String,
+        fromCount: Int?,
+        toName: String,
+        toCount: Int?
+    ) -> String {
+        guard let fromCount, let toCount else {
+            return promptString(
+                "amountPrompt.exchange.accessibility.overflow",
+                value: "\(fromName) or \(toName) has too many tokens to display.",
+                fromName,
+                toName
+            )
+        }
+        return promptString(
+            "amountPrompt.exchange.accessibility",
+            value: "\(fromName) has \(fromCount). \(toName) has \(toCount).",
+            fromName,
+            Int64(fromCount),
+            toName,
+            Int64(toCount)
+        )
     }
 
     private func exchangeTokenTitle(_ token: String) -> String {

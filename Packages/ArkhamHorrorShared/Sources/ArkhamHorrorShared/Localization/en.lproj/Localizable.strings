@@ -18,6 +18,7 @@
 "amountPrompt.disabled.bounds" = "Keep each amount within its allowed range.";
 "amountPrompt.disabled.labels" = "The text for %@ is not currently available.";
 "amountPrompt.total" = "Total: %lld";
+"amountPrompt.total.overflow" = "Total: too large";
 "amountPrompt.submit" = "Submit";
 "amountPrompt.submit.hint" = "Sends this allocation with version checking.";
 "amountPrompt.row.bounds" = "Allowed %1$lld–%2$lld";
@@ -30,6 +31,7 @@
 "amountPrompt.exchange.decrease.accessibility" = "Move one %1$@ back to %2$@";
 "amountPrompt.exchange.increase.accessibility" = "Move one %1$@ to %2$@";
 "amountPrompt.exchange.accessibility" = "%1$@ has %2$lld. %3$@ has %4$lld.";
+"amountPrompt.exchange.accessibility.overflow" = "%1$@ or %2$@ has too many tokens to display.";
 "amountPrompt.exchange.hint" = "Swipe up or down to move tokens between investigators.";
 "amountPrompt.exchange.none" = "No tokens moved";
 "amountPrompt.exchange.forward" = "%1$lld to %2$@";

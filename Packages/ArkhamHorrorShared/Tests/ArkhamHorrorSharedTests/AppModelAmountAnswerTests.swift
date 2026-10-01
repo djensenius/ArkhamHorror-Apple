@@ -268,6 +268,68 @@ extension AppModelLiveGameTests {
         }
     }
 
+    @Test("Overflowing amount totals are refused without trapping or sending")
+    @MainActor
+    func overflowingAmountTotalsAreRefused() async throws {
+        let firstID = "00000000-0000-0000-0000-0000000000b3"
+        let secondID = "00000000-0000-0000-0000-0000000000b4"
+        let choices = [
+            amountChoice(firstID, min: 0, max: Int.max, label: "A"),
+            amountChoice(secondID, min: 0, max: Int.max, label: "B"),
+        ]
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .min(0)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .min(0),
+                questionVersion: 644
+            ),
+            questionVersion: 644
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let amountPrompt = try #require(prompt.amountPrompt(in: projection))
+        let amounts = [firstID: Int.max, secondID: 1]
+
+        #expect(amountPrompt.total(for: amounts) == nil)
+        #expect(!amountPrompt.isLegal(amounts))
+        #expect(amountPrompt.disabledReason(for: amounts, in: prompt) != nil)
+        #expect(
+            await model.submitAmountsAnswer(prompt.identity, amounts: amounts) == .unsupportedChoice
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Exchange bound arithmetic refuses Int.min without trapping or sending")
+    @MainActor
+    func exchangeIntMinBoundIsRefused() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try exchangeEnvelope(fromInitialAmount: 1, toInitialAmount: Int.min)
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let exchangePrompt = try #require(prompt.exchangePrompt(in: projection))
+
+        #expect(exchangePrompt.bounds == nil)
+        #expect(!exchangePrompt.isLegal(0))
+        #expect(
+            await model.submitExchangeAmountsAnswer(prompt.identity, amount: 0) == .unsupportedChoice
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
     @Test("Illegal payment and exchange allocations are refused without sending")
     func illegalPaymentAndExchangeAllocationsAreRefused() async throws {
         let (model, fakes) = makeSignedInModel()
