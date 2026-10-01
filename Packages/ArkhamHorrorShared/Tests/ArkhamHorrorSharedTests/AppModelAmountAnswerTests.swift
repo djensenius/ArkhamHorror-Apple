@@ -358,9 +358,10 @@ extension AppModelLiveGameTests {
         ]
         for (index, testCase) in cases.enumerated() {
             let (target, amounts) = testCase
-            let (model, fakes) = makeSignedInModel()
+            let documents = try amountLabelCatalogDocuments()
+            let (model, fakes) = makeAmountCatalogModel(documents: documents)
             await model.flowTask?.value
-            makeModern(model)
+            await model.localeCatalogTask?.value
             let choices = [
                 amountChoice("00000000-0000-0000-0000-0000000000f1", min: 0, max: 3),
                 amountChoice("00000000-0000-0000-0000-0000000000f2", min: 0, max: 3),
@@ -387,6 +388,53 @@ extension AppModelLiveGameTests {
                 amountAnswerBytes(amounts: amounts, version: version),
             ])
         }
+    }
+
+    @Test("Model refuses amount submissions while visible row labels are unresolved")
+    func unresolvedAmountLabelsAreRefusedByModel() async throws {
+        let choiceID = "00000000-0000-0000-0000-0000000000f3"
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try oneChoiceAmountEnvelope(choiceID: choiceID, questionVersion: 619)
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let result = await model.submitAmountsAnswer(prompt.identity, amounts: [choiceID: 1])
+        #expect(result == .unsupportedChoice)
+        #expect(await connection.sentData.isEmpty)
+
+        let (paymentModel, paymentFakes) = makeSignedInModel()
+        await paymentModel.flowTask?.value
+        makeModern(paymentModel)
+        let paymentEnvelope = try amountEnvelope(
+            rawQuestion: paymentRawQuestion(
+                choiceID: "00000000-0000-0000-0000-00000000004d",
+                min: 0,
+                max: 3,
+                target: .null
+            ),
+            presentation: representativePresentation(named: "choosePaymentAmounts-null-target"),
+            questionVersion: 620
+        )
+        let paymentConnection = FakeGameSocketConnection()
+        let paymentGameID = await startChoiceSession(
+            model: paymentModel,
+            fakes: paymentFakes,
+            envelope: paymentEnvelope,
+            connection: paymentConnection
+        )
+        let paymentPrompt = try #require(
+            paymentModel.basicChoicePresentation(for: paymentGameID)
+        )
+        let paymentResult = await paymentModel.submitPaymentAmountsAnswer(
+            paymentPrompt.identity,
+            amounts: ["00000000-0000-0000-0000-00000000004d": 0]
+        )
+        #expect(paymentResult == .unsupportedChoice)
+        #expect(await paymentConnection.sentData.isEmpty)
     }
 
     @Test("Unsupported wrappers remain update-required and cannot send amount answers")

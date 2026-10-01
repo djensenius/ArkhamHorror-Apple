@@ -489,7 +489,16 @@ private extension BasicChoicePromptPresentation {
                   rawQuestion: identity.rawQuestion,
                   presentation: presentation
               ),
-              let choices = presentation.amountChoices
+              let choices = presentation.amountChoices,
+              amountRowLabelsResolved(
+                  choices.map {
+                      AmountRowLabel(
+                          key: amountChoicePromptLabelKey($0.choiceID),
+                          text: $0.label,
+                          upperBound: $0.maxBound
+                      )
+                  }
+              )
         else { return false }
         return amountAllocationValid(
             amounts: amounts,
@@ -511,7 +520,16 @@ private extension BasicChoicePromptPresentation {
                   rawQuestion: identity.rawQuestion,
                   presentation: presentation
               ),
-              let choices = presentation.paymentChoices
+              let choices = presentation.paymentChoices,
+              amountRowLabelsResolved(
+                  choices.map {
+                      AmountRowLabel(
+                          key: paymentChoicePromptLabelKey($0.choiceID),
+                          text: $0.title.text,
+                          upperBound: $0.max
+                      )
+                  }
+              )
         else { return false }
         return amountAllocationValid(
             amounts: amounts,
@@ -546,6 +564,20 @@ private extension BasicChoicePromptPresentation {
         let id: String
         let lowerBound: Int
         let upperBound: Int
+    }
+
+    struct AmountRowLabel: Sendable, Equatable {
+        let key: String
+        let text: String
+        let upperBound: Int
+    }
+
+    func amountRowLabelsResolved(_ labels: [AmountRowLabel]) -> Bool {
+        labels.allSatisfy { label in
+            guard label.upperBound != 0, label.text.hasPrefix("$") else { return true }
+            return promptLabelResolutions[label.key]?.unavailableReason == nil
+                && promptLabelResolutions[label.key]?.title != nil
+        }
     }
 
     func amountAllocationValid(

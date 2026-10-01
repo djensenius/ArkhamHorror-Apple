@@ -22,6 +22,12 @@ extension BasicChoicePromptView {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(submitEnabled ? Color.secondary : Color.orange)
                     .accessibilityIdentifier("liveGame.prompt.amount.targetHint")
+                if let disabledReason {
+                    Text(disabledReason)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("liveGame.prompt.amount.disabledReason")
+                }
             }
             SemanticActionControl(
                 accessibilityLabel: Text(promptString("amountPrompt.submit", value: "Submit")),
