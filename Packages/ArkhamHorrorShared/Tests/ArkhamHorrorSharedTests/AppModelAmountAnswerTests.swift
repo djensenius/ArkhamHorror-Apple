@@ -440,6 +440,38 @@ extension AppModelLiveGameTests {
         #expect(await paymentConnection.sentData.isEmpty)
     }
 
+    @Test("Amount retry re-checks unresolved row labels before sending again")
+    func amountRetryRefusesWhenCatalogDisappears() async throws {
+        let choiceID = "00000000-0000-0000-0000-0000000000f4"
+        let documents = try amountLabelCatalogDocuments()
+        let (model, fakes) = makeAmountCatalogModel(documents: documents)
+        await model.flowTask?.value
+        await model.localeCatalogTask?.value
+        let envelope = try oneChoiceAmountEnvelope(choiceID: choiceID, questionVersion: 621)
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.failure(GameSocketTransportError()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let amounts = [choiceID: 1]
+        #expect(
+            await model.submitAmountsAnswer(prompt.identity, amounts: amounts) == .retryableFailure
+        )
+        #expect(try await connection.sentData == [
+            amountAnswerBytes(amounts: amounts, version: 621),
+        ])
+
+        model.invalidateLocaleCatalog()
+        let retryPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(retryPrompt.canRetry)
+        await connection.enqueueSendResult(.success(()))
+        #expect(await model.retryBasicChoice(retryPrompt.identity) == .unsupportedChoice)
+        #expect(try await connection.sentData == [
+            amountAnswerBytes(amounts: amounts, version: 621),
+        ])
+    }
+
     @Test("Unsupported wrappers remain update-required and cannot send amount answers")
     // swiftlint:disable:next function_body_length
     func unsupportedAmountWrappersAreRefused() async throws {
@@ -861,11 +893,19 @@ extension AppModelLiveGameTests {
         let english = amountChromeStrings(in: englishPrompt)
         #expect(english == [
             "Total: 2",
+            "Choice 4",
+            "Choose at least 1",
+            "Choose at most 3",
+            "Choose exactly 2",
+            "Choose one of 1, 3",
+            "The text for $clues is not currently available.",
             "Allowed 0–3",
             "Decrease Clues",
             "Increase Clues",
             "2, allowed 0 to 3",
             "Exchange resource",
+            "Move one resource back to Roland",
+            "Move one resource to Daisy",
             "2 to Daisy",
             "1 to Roland",
             "Roland has 3. Daisy has 1.",
@@ -876,11 +916,19 @@ extension AppModelLiveGameTests {
         let german = amountChromeStrings(in: germanPrompt)
         #expect(german == [
             "Gesamt: 2",
+            "Auswahl 4",
+            "Mindestens 1 wählen",
+            "Höchstens 3 wählen",
+            "Genau 2 wählen",
+            "Einen Wert aus 1, 3 wählen",
+            "Der Text für $clues ist derzeit nicht verfügbar.",
             "Erlaubt 0–3",
             "Clues verringern",
             "Clues erhöhen",
             "2, erlaubt 0 bis 3",
             "Ressource tauschen",
+            "Eine Ressource zurück zu Roland bewegen",
+            "Eine Ressource zu Daisy bewegen",
             "2 zu Daisy",
             "1 zu Roland",
             "Roland hat 3. Daisy hat 1.",
@@ -1056,12 +1104,43 @@ extension AppModelLiveGameTests {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     private func amountChromeStrings(in prompt: BasicChoicePromptPresentation) -> [String] {
         [
             prompt.semanticLocalized(
                 "amountPrompt.total",
                 value: "Total: %lld",
                 arguments: [Int64(2)]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.row.fallback",
+                value: "Choice 4",
+                arguments: [Int64(4)]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.target.min",
+                value: "Choose at least 1",
+                arguments: [Int64(1)]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.target.max",
+                value: "Choose at most 3",
+                arguments: [Int64(3)]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.target.total",
+                value: "Choose exactly 2",
+                arguments: [Int64(2)]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.target.oneOf",
+                value: "Choose one of 1, 3",
+                arguments: ["1, 3"]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.disabled.labels",
+                value: "The text for $clues is not currently available.",
+                arguments: ["$clues"]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.row.bounds",
@@ -1090,6 +1169,22 @@ extension AppModelLiveGameTests {
                     "amountPrompt.token.resource",
                     value: "resource"
                 )]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.exchange.decrease.accessibility",
+                value: "Move one %@ back to %@",
+                arguments: [prompt.semanticLocalized(
+                    "amountPrompt.token.resource",
+                    value: "resource"
+                ), "Roland"]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.exchange.increase.accessibility",
+                value: "Move one %@ to %@",
+                arguments: [prompt.semanticLocalized(
+                    "amountPrompt.token.resource",
+                    value: "resource"
+                ), "Daisy"]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.exchange.forward",
