@@ -1308,7 +1308,9 @@ extension AppModelLiveGameTests {
         presentation["amountChoices"] = .array(amountChoices)
     }
 
-    private func localizeFirstPaymentChoiceTitle(in presentation: inout [String: JSONValue]) throws {
+    private func localizeFirstPaymentChoiceTitle(
+        in presentation: inout [String: JSONValue]
+    ) throws {
         var presentationValue = JSONValue.object(presentation)
         try localizeFirstPaymentChoiceTitle(in: &presentationValue)
         guard case let .object(updatedPresentation) = presentationValue else { throw TestFailure() }
