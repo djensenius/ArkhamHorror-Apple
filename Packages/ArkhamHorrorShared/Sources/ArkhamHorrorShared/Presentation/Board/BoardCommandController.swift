@@ -191,7 +191,7 @@ final class BoardCommandController {
             zoomOut()
             return true
         case let .adjustFocusedAmount(delta):
-            if adjustFocusedAmountControl(delta: delta) {
+            if consumeFocusedAmountAdjustment(delta: delta) {
                 return true
             }
             setZoom(zoomScale + (CGFloat(delta) * Self.zoomStep))

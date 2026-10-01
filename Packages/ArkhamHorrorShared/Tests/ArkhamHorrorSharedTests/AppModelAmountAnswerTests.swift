@@ -822,6 +822,12 @@ extension AppModelLiveGameTests {
         #expect(controller.zoomScale == 1.25)
         #expect(controller.handle(.command(.adjustFocusedAmount(1))))
         #expect(controller.amountDraft[visibleID] == 2)
+        #expect(controller.handle(.command(.adjustFocusedAmount(1))))
+        #expect(controller.amountDraft[visibleID] == 3)
+        let zoomAtAmountBound = controller.zoomScale
+        #expect(controller.handle(.command(.adjustFocusedAmount(1))))
+        #expect(controller.amountDraft[visibleID] == 3)
+        #expect(controller.zoomScale == zoomAtAmountBound)
     }
 
     @Test("Amount and exchange chrome strings format with and without a catalog locale")
