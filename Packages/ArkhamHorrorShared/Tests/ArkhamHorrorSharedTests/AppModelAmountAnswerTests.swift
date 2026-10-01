@@ -517,18 +517,21 @@ extension AppModelLiveGameTests {
         #expect(payment.targetHint(in: paymentPrompt) == "Choose any amount")
         #expect(payment.isLegal(payment.initialAmounts))
 
+        let (exchangeModel, exchangeFakes) = makeSignedInModel()
+        await exchangeModel.flowTask?.value
+        makeModern(exchangeModel)
         let exchangeEnvelope = try exchangeEnvelope(fromInitialAmount: 2, toInitialAmount: 1)
         let exchangeGameID = await startChoiceSession(
-            model: model,
-            fakes: fakes,
+            model: exchangeModel,
+            fakes: exchangeFakes,
             envelope: exchangeEnvelope,
             connection: FakeGameSocketConnection()
         )
         let exchangePromptPresentation = try #require(
-            model.basicChoicePresentation(for: exchangeGameID)
+            exchangeModel.basicChoicePresentation(for: exchangeGameID)
         )
         let exchangeProjection = try #require(
-            model.liveGameStates[exchangeGameID]?.lastKnownProjection
+            exchangeModel.liveGameStates[exchangeGameID]?.lastKnownProjection
         )
         let exchange = try #require(
             exchangePromptPresentation.exchangePrompt(in: exchangeProjection)
