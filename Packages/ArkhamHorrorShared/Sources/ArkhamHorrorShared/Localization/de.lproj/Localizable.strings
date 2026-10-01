@@ -28,8 +28,8 @@
 "amountPrompt.increase.accessibility" = "%@ erhöhen";
 "amountPrompt.exchange.legend" = "%@ tauschen";
 "amountPrompt.exchange.submit" = "Tauschen";
-"amountPrompt.exchange.decrease.accessibility" = "Eine %1$@ zurück zu %2$@ bewegen";
-"amountPrompt.exchange.increase.accessibility" = "Eine %1$@ zu %2$@ bewegen";
+"amountPrompt.exchange.decrease.accessibility" = "1 × %1$@ zurück zu %2$@ bewegen";
+"amountPrompt.exchange.increase.accessibility" = "1 × %1$@ zu %2$@ bewegen";
 "amountPrompt.exchange.accessibility" = "%1$@ hat %2$lld. %3$@ hat %4$lld.";
 "amountPrompt.exchange.accessibility.overflow" = "%1$@ oder %2$@ hat zu viele Marker zur Anzeige.";
 "amountPrompt.exchange.hint" = "Zum Verschieben von Markern zwischen Ermittlern nach oben oder unten streichen.";
