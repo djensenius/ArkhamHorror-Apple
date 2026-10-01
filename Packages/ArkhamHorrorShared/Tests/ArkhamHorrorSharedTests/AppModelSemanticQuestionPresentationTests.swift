@@ -565,6 +565,10 @@ extension AppModelLiveGameTests {
             choices: choices
         )
         let bound = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 701)
+        let cardCode = try CardCode("c01001")
+        let cardCatalog = CardCatalogSnapshot(namesByCode: [
+            cardCode: CardName(title: cardName, subtitle: nil),
+        ])
         return BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
                 gameID: BoardTestFixtures.gameID(),
@@ -577,9 +581,7 @@ extension AppModelLiveGameTests {
             question: BasicChoiceParser.parseQuestion(rawQuestion),
             semanticPresentation: bound,
             semanticLocaleIdentifier: locale,
-            cardCatalog: try CardCatalogSnapshot(namesByCode: [
-                CardCode("c01001"): CardName(title: cardName, subtitle: nil),
-            ]),
+            cardCatalog: cardCatalog,
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
