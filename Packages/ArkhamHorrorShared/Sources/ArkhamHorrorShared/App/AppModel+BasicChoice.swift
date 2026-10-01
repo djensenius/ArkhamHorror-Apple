@@ -493,7 +493,13 @@ private extension BasicChoicePromptPresentation {
         else { return false }
         return amountAllocationValid(
             amounts: amounts,
-            choices: choices.map { ($0.choiceID, $0.minBound, $0.maxBound) },
+            choices: choices.map {
+                AmountChoiceBounds(
+                    id: $0.choiceID,
+                    lowerBound: $0.minBound,
+                    upperBound: $0.maxBound
+                )
+            },
             target: presentation.target
         )
     }
@@ -509,7 +515,9 @@ private extension BasicChoicePromptPresentation {
         else { return false }
         return amountAllocationValid(
             amounts: amounts,
-            choices: choices.map { ($0.choiceID, $0.min, $0.max) },
+            choices: choices.map {
+                AmountChoiceBounds(id: $0.choiceID, lowerBound: $0.min, upperBound: $0.max)
+            },
             target: presentation.target
         )
     }
@@ -533,9 +541,15 @@ private extension BasicChoicePromptPresentation {
         return lowerBound <= upperBound && amount >= lowerBound && amount <= upperBound
     }
 
+    struct AmountChoiceBounds: Sendable, Equatable {
+        let id: String
+        let lowerBound: Int
+        let upperBound: Int
+    }
+
     func amountAllocationValid(
         amounts: [String: Int],
-        choices: [(id: String, lowerBound: Int, upperBound: Int)],
+        choices: [AmountChoiceBounds],
         target: QuestionPresentation.AmountTarget?
     ) -> Bool {
         let choiceIDs = Set(choices.map(\.id))

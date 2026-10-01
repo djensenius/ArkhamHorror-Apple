@@ -1075,8 +1075,6 @@ extension BasicChoicePromptPresentation {
     }
 }
 
-// swiftlint:enable file_length line_length
-
 private extension JSONValue {
     func hasTag(_ expected: String) -> Bool {
         guard case let .object(object) = self,
@@ -1093,3 +1091,5 @@ private extension JSONValue {
         return inner.hasTag(expectedInnerTag)
     }
 }
+
+// swiftlint:enable file_length line_length

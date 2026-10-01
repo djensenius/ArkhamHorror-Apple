@@ -1,7 +1,19 @@
-// swiftlint:disable file_length function_body_length type_body_length line_length
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
+
+private struct IllegalAmountAllocationCase {
+    let target: QuestionPresentation.AmountTarget
+    let amounts: [String: Int]
+    let label: String
+}
+
+private struct UnsupportedAmountWrapperCase {
+    let label: String
+    let rawFixture: String
+    let presentationFixture: String
+}
 
 extension AppModelLiveGameTests {
     @Test("Amount answer encoders match the vendored contract fixtures")
@@ -60,11 +72,15 @@ extension AppModelLiveGameTests {
         let first = Task { await model.submitAmountsAnswer(prompt.identity, amounts: amounts) }
         await connection.waitUntilSendPending(1)
         #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == .sending)
-        #expect(await model.submitAmountsAnswer(prompt.identity, amounts: amounts) == .alreadyPending)
+        #expect(
+            await model.submitAmountsAnswer(prompt.identity, amounts: amounts) == .alreadyPending
+        )
         await connection.resumeOldestSend(with: .success(()))
         #expect(await first.value == .sentAwaitingSnapshot)
         #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == .awaitingSnapshot)
-        #expect(try await connection.sentData == [amountAnswerBytes(amounts: amounts, version: 207)])
+        #expect(
+            try await connection.sentData == [amountAnswerBytes(amounts: amounts, version: 207)]
+        )
     }
 
     @Test("ChoosePaymentAmounts sends exact bytes and null target imposes no total constraint")
@@ -97,7 +113,11 @@ extension AppModelLiveGameTests {
             await model.submitPaymentAmountsAnswer(prompt.identity, amounts: amounts)
                 == .sentAwaitingSnapshot
         )
-        #expect(try await connection.sentData == [paymentAmountAnswerBytes(amounts: amounts, version: 310)])
+        let expectedPaymentAnswer = try paymentAmountAnswerBytes(
+            amounts: amounts,
+            version: 310
+        )
+        #expect(try await connection.sentData == [expectedPaymentAnswer])
     }
 
     @Test("ChooseExchangeAmounts sends exact bytes and allows the web-compatible zero move")
@@ -115,7 +135,10 @@ extension AppModelLiveGameTests {
         #expect(prompt.readOnlyReason == nil)
         #expect(prompt.isRenderableQuestion)
         #expect(prompt.requiresDedicatedAmountUI)
-        #expect(await model.submitExchangeAmountsAnswer(prompt.identity, amount: 2) == .sentAwaitingSnapshot)
+        #expect(
+            await model.submitExchangeAmountsAnswer(prompt.identity, amount: 2)
+                == .sentAwaitingSnapshot
+        )
         #expect(try await connection.sentData == [exchangeAnswerBytes(amount: 2)])
 
         let (zeroModel, zeroFakes) = makeSignedInModel()
@@ -125,87 +148,109 @@ extension AppModelLiveGameTests {
         let zeroConnection = FakeGameSocketConnection()
         await zeroConnection.enqueueSendResult(.success(()))
         let zeroGameID = await startChoiceSession(
-            model: zeroModel, fakes: zeroFakes, envelope: zeroEnvelope, connection: zeroConnection
+            model: zeroModel,
+            fakes: zeroFakes,
+            envelope: zeroEnvelope,
+            connection: zeroConnection
         )
         let zeroPrompt = try #require(zeroModel.basicChoicePresentation(for: zeroGameID))
-        #expect(await zeroModel.submitExchangeAmountsAnswer(zeroPrompt.identity, amount: 0) == .sentAwaitingSnapshot)
+        #expect(
+            await zeroModel.submitExchangeAmountsAnswer(zeroPrompt.identity, amount: 0)
+                == .sentAwaitingSnapshot
+        )
         #expect(try await zeroConnection.sentData == [exchangeAnswerBytes(amount: 0)])
     }
 
     @Test("Illegal amount allocations are refused without sending")
+    // swiftlint:disable:next function_body_length
     func illegalAmountAllocationsAreRefused() async throws {
         let choices: [[String: JSONValue]] = [
             amountChoice("00000000-0000-0000-0000-0000000000a1", min: 0, max: 2),
             amountChoice("00000000-0000-0000-0000-0000000000a2", min: 0, max: 2),
         ]
-        let cases: [(QuestionPresentation.AmountTarget, [String: Int], String)] = [
-            (.total(2), ["00000000-0000-0000-0000-0000000000a1": 1], "missing choice"),
-            (
-                .total(2),
-                [
+        let cases: [IllegalAmountAllocationCase] = [
+            .init(
+                target: .total(2),
+                amounts: ["00000000-0000-0000-0000-0000000000a1": 1],
+                label: "missing choice"
+            ),
+            .init(
+                target: .total(2),
+                amounts: [
                     "00000000-0000-0000-0000-0000000000a1": 1,
                     "00000000-0000-0000-0000-0000000000a2": 1,
                     "00000000-0000-0000-0000-0000000000ff": 0,
                 ],
-                "extra choice"
+                label: "extra choice"
             ),
-            (
-                .total(2),
-                [
+            .init(
+                target: .total(2),
+                amounts: [
                     "00000000-0000-0000-0000-0000000000a1": -1,
                     "00000000-0000-0000-0000-0000000000a2": 3,
                 ],
-                "bounds"
+                label: "bounds"
             ),
-            (
-                .min(2),
-                [
+            .init(
+                target: .min(2),
+                amounts: [
                     "00000000-0000-0000-0000-0000000000a1": 1,
                     "00000000-0000-0000-0000-0000000000a2": 0,
                 ],
-                "min target"
+                label: "min target"
             ),
-            (
-                .max(1),
-                [
+            .init(
+                target: .max(1),
+                amounts: [
                     "00000000-0000-0000-0000-0000000000a1": 1,
                     "00000000-0000-0000-0000-0000000000a2": 1,
                 ],
-                "max target"
+                label: "max target"
             ),
-            (
-                .total(2),
-                [
+            .init(
+                target: .total(2),
+                amounts: [
                     "00000000-0000-0000-0000-0000000000a1": 1,
                     "00000000-0000-0000-0000-0000000000a2": 0,
                 ],
-                "total target"
+                label: "total target"
             ),
-            (
-                .oneOf([1, 3]),
-                [
+            .init(
+                target: .oneOf([1, 3]),
+                amounts: [
                     "00000000-0000-0000-0000-0000000000a1": 2,
                     "00000000-0000-0000-0000-0000000000a2": 0,
                 ],
-                "one-of target"
+                label: "one-of target"
             ),
         ]
-        for (target, amounts, label) in cases {
+        for testCase in cases {
             let (model, fakes) = makeSignedInModel()
             await model.flowTask?.value
             makeModern(model)
             let envelope = try amountEnvelope(
-                rawQuestion: chooseAmountsRawQuestion(choices: choices, target: target),
-                presentation: chooseAmountsPresentation(choices: choices, target: target, questionVersion: 411),
+                rawQuestion: chooseAmountsRawQuestion(choices: choices, target: testCase.target),
+                presentation: chooseAmountsPresentation(
+                    choices: choices,
+                    target: testCase.target,
+                    questionVersion: 411
+                ),
                 questionVersion: 411
             )
             let connection = FakeGameSocketConnection()
             let gameID = await startChoiceSession(
                 model: model, fakes: fakes, envelope: envelope, connection: connection
             )
-            let prompt = try #require(model.basicChoicePresentation(for: gameID), "\(label)")
-            #expect(await model.submitAmountsAnswer(prompt.identity, amounts: amounts) == .unsupportedChoice, "\(label)")
-            #expect(await connection.sentData.isEmpty, "\(label)")
+            let prompt = try #require(
+                model.basicChoicePresentation(for: gameID),
+                "\(testCase.label)"
+            )
+            #expect(
+                await model.submitAmountsAnswer(prompt.identity, amounts: testCase.amounts)
+                    == .unsupportedChoice,
+                "\(testCase.label)"
+            )
+            #expect(await connection.sentData.isEmpty, "\(testCase.label)")
         }
     }
 
@@ -243,28 +288,45 @@ extension AppModelLiveGameTests {
             envelope: exchangeEnvelope,
             connection: exchangeConnection
         )
-        let exchangePrompt = try #require(exchangeModel.basicChoicePresentation(for: exchangeGameID))
-        #expect(await exchangeModel.submitExchangeAmountsAnswer(exchangePrompt.identity, amount: 2) == .unsupportedChoice)
-        #expect(await exchangeModel.submitExchangeAmountsAnswer(exchangePrompt.identity, amount: -2) == .unsupportedChoice)
+        let exchangePrompt = try #require(
+            exchangeModel.basicChoicePresentation(for: exchangeGameID)
+        )
+        #expect(
+            await exchangeModel.submitExchangeAmountsAnswer(exchangePrompt.identity, amount: 2)
+                == .unsupportedChoice
+        )
+        #expect(
+            await exchangeModel.submitExchangeAmountsAnswer(exchangePrompt.identity, amount: -2)
+                == .unsupportedChoice
+        )
         #expect(await exchangeConnection.sentData.isEmpty)
     }
 
     @Test("Unsupported wrappers remain update-required and cannot send amount answers")
+    // swiftlint:disable:next function_body_length
     func unsupportedAmountWrappersAreRefused() async throws {
-        let wrappers: [(String, String, String)] = [
-            ("amounts in PayCostQuestion", "question-generic-choose-amounts", "question-presentation-generic-choose-amounts"),
-            ("payment in QuestionLabel", "question-generic-payment-amounts", "question-presentation-generic-payment-amounts"),
+        let wrappers: [UnsupportedAmountWrapperCase] = [
+            .init(
+                label: "amounts in PayCostQuestion",
+                rawFixture: "question-generic-choose-amounts",
+                presentationFixture: "question-presentation-generic-choose-amounts"
+            ),
+            .init(
+                label: "payment in QuestionLabel",
+                rawFixture: "question-generic-payment-amounts",
+                presentationFixture: "question-presentation-generic-payment-amounts"
+            ),
         ]
-        for (label, rawFixture, presentationFixture) in wrappers {
+        for wrapper in wrappers {
             let (model, fakes) = makeSignedInModel()
             await model.flowTask?.value
             makeModern(model)
             let envelope = try semanticEnvelope(
-                rawFixture: rawFixture,
-                presentationFixture: presentationFixture,
+                rawFixture: wrapper.rawFixture,
+                presentationFixture: wrapper.presentationFixture,
                 questionVersion: 515,
                 mutateRawQuestion: { rawQuestion in
-                    if rawFixture.contains("choose-amounts") {
+                    if wrapper.rawFixture.contains("choose-amounts") {
                         rawQuestion = payCostWrapped(rawQuestion)
                     } else {
                         rawQuestion = questionLabelWrapped(rawQuestion)
@@ -275,16 +337,19 @@ extension AppModelLiveGameTests {
             let gameID = await startChoiceSession(
                 model: model, fakes: fakes, envelope: envelope, connection: connection
             )
-            let prompt = try #require(model.basicChoicePresentation(for: gameID), "\(label)")
-            #expect(prompt.readOnlyReason == .updateRequired, "\(label)")
-            #expect(!prompt.isRenderableQuestion, "\(label)")
-            if rawFixture.contains("choose-amounts") {
+            let prompt = try #require(
+                model.basicChoicePresentation(for: gameID),
+                "\(wrapper.label)"
+            )
+            #expect(prompt.readOnlyReason == .updateRequired, "\(wrapper.label)")
+            #expect(!prompt.isRenderableQuestion, "\(wrapper.label)")
+            if wrapper.rawFixture.contains("choose-amounts") {
                 #expect(
                     await model.submitAmountsAnswer(
                         prompt.identity,
                         amounts: ["00000000-0000-0000-0000-000000000065": 1]
                     ) == .readOnly,
-                    "\(label)"
+                    "\(wrapper.label)"
                 )
             } else {
                 #expect(
@@ -292,10 +357,10 @@ extension AppModelLiveGameTests {
                         prompt.identity,
                         amounts: ["00000000-0000-0000-0000-000000000066": 2]
                     ) == .readOnly,
-                    "\(label)"
+                    "\(wrapper.label)"
                 )
             }
-            #expect(await connection.sentData.isEmpty, "\(label)")
+            #expect(await connection.sentData.isEmpty, "\(wrapper.label)")
         }
     }
 
@@ -318,12 +383,18 @@ extension AppModelLiveGameTests {
 
         model.liveGameParticipantIdentities[gameID] = .spectator
         #expect(await model.submitAmountsAnswer(identity, amounts: amounts) == .readOnly)
-        model.liveGameParticipantIdentities[gameID] = .participant(BoardTestFixtures.playerID("000000000002"))
+        model.liveGameParticipantIdentities[gameID] = .participant(
+            BoardTestFixtures.playerID("000000000002")
+        )
         #expect(await model.submitAmountsAnswer(identity, amounts: amounts) == .staleQuestion)
         model.liveGameParticipantIdentities[gameID] = try .participant(#require(envelope.playerID))
         model.liveGameConnections[gameID] = nil
-        let disconnectedIdentity = try #require(model.basicChoicePresentation(for: gameID)?.identity)
-        #expect(await model.submitAmountsAnswer(disconnectedIdentity, amounts: amounts) == .readOnly)
+        let disconnectedIdentity = try #require(
+            model.basicChoicePresentation(for: gameID)?.identity
+        )
+        #expect(
+            await model.submitAmountsAnswer(disconnectedIdentity, amounts: amounts) == .readOnly
+        )
         #expect(await connection.sentData.isEmpty)
     }
 
@@ -339,7 +410,9 @@ extension AppModelLiveGameTests {
         )
         let first = FakeGameSocketConnection()
         await first.enqueueSendResult(.failure(GameSocketTransportError()))
-        let gameID = await startChoiceSession(model: model, fakes: fakes, envelope: envelope, connection: first)
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: first
+        )
         let oldIdentity = try #require(model.basicChoicePresentation(for: gameID)?.identity)
         let amounts = ["00000000-0000-0000-0000-000000000065": 1]
         #expect(await model.submitAmountsAnswer(oldIdentity, amounts: amounts) == .retryableFailure)
@@ -369,7 +442,10 @@ extension AppModelLiveGameTests {
         _ fixture: String,
         encodes answer: some Encodable
     ) throws {
-        let fixtureValue = try ContractJSON.decode(JSONValue.self, from: fixtureData(named: fixture))
+        let fixtureValue = try ContractJSON.decode(
+            JSONValue.self,
+            from: fixtureData(named: fixture)
+        )
         let actual = try ContractJSON.encode(answer)
         let expected = try ContractJSON.encode(fixtureValue)
         #expect(actual == expected)
@@ -537,11 +613,20 @@ extension AppModelLiveGameTests {
     private func amountTargetJSON(_ target: QuestionPresentation.AmountTarget) -> JSONValue {
         switch target {
         case let .min(value):
-            .object(["tag": .string("MinAmountTarget"), "contents": .number(.integer(Int64(value)))])
+            .object([
+                "tag": .string("MinAmountTarget"),
+                "contents": .number(.integer(Int64(value))),
+            ])
         case let .max(value):
-            .object(["tag": .string("MaxAmountTarget"), "contents": .number(.integer(Int64(value)))])
+            .object([
+                "tag": .string("MaxAmountTarget"),
+                "contents": .number(.integer(Int64(value))),
+            ])
         case let .total(value):
-            .object(["tag": .string("TotalAmountTarget"), "contents": .number(.integer(Int64(value)))])
+            .object([
+                "tag": .string("TotalAmountTarget"),
+                "contents": .number(.integer(Int64(value))),
+            ])
         case let .oneOf(values):
             .object([
                 "tag": .string("AmountOneOf"),
