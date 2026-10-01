@@ -15,6 +15,10 @@ private struct UnsupportedAmountWrapperCase {
     let presentationFixture: String
 }
 
+private struct AmountPromptPreferredLanguages: PreferredLanguagesProviding {
+    let preferredLanguages: [String]
+}
+
 extension AppModelLiveGameTests {
     @Test("Amount answer encoders match the vendored contract fixtures")
     func amountAnswerEncodingMatchesFixtures() throws {
@@ -534,6 +538,53 @@ extension AppModelLiveGameTests {
         #expect(controller.amountDraft[visibleID] == 2)
     }
 
+    @Test("Amount submit is disabled while visible row labels are unresolved")
+    @MainActor
+    func unresolvedAmountLabelsDisableSubmitUntilCatalogLoads() async throws {
+        let choiceID = "00000000-0000-0000-0000-0000000000e1"
+        let choices = [amountChoice(choiceID, min: 0, max: 1)]
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .total(1)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .total(1),
+                questionVersion: 615
+            ),
+            questionVersion: 615
+        )
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let promptWithoutCatalog = try #require(prompt.amountPrompt(in: projection))
+        let legalAmounts = [choiceID: 1]
+        #expect(!promptWithoutCatalog.isLegal(legalAmounts))
+        #expect(promptWithoutCatalog.disabledReason(for: legalAmounts, in: prompt) != nil)
+
+        let documents = try amountLabelCatalogDocuments()
+        let (catalogModel, catalogFakes) = makeAmountCatalogModel(documents: documents)
+        await catalogModel.flowTask?.value
+        await catalogModel.localeCatalogTask?.value
+        let catalogGameID = await startChoiceSession(
+            model: catalogModel,
+            fakes: catalogFakes,
+            envelope: envelope,
+            connection: FakeGameSocketConnection()
+        )
+        let catalogPrompt = try #require(catalogModel.basicChoicePresentation(for: catalogGameID))
+        let catalogProjection = try #require(
+            catalogModel.liveGameStates[catalogGameID]?.lastKnownProjection
+        )
+        let promptWithCatalog = try #require(catalogPrompt.amountPrompt(in: catalogProjection))
+        #expect(promptWithCatalog.visibleRows.first?.title == "Localized clue")
+        #expect(promptWithCatalog.isLegal(legalAmounts))
+        #expect(promptWithCatalog.disabledReason(for: legalAmounts, in: catalogPrompt) == nil)
+    }
+
     @Test("Payment and exchange prompts expose target hints, investigator names, and bounds")
     @MainActor
     // swiftlint:disable:next function_body_length
@@ -630,6 +681,55 @@ extension AppModelLiveGameTests {
         await connection.resumeOldestSend(with: .success(()))
         let expected = try amountAnswerBytes(amounts: [rowID: 1], version: 613)
         #expect(await connection.sentData == [expected])
+    }
+
+    private func amountLabelCatalogDocuments() throws -> SyntheticLocaleCatalogDocuments {
+        try SyntheticLocaleCatalogDocuments.make(
+            entryKeys: ["clues"],
+            chunkEntries: """
+            {"clues":{"form":"message","nodes":[{"type":"text","value":"Localized clue"}],\
+            "variables":[]}}
+            """
+        )
+    }
+
+    private func makeAmountCatalogModel(
+        documents: SyntheticLocaleCatalogDocuments
+    ) -> (model: AppModel, fakes: Fakes) {
+        let tokenStore = FakeTokenStore(tokens: [documents.profile.id: "catalog-token"])
+        let service = ScriptedGameLifecycleService()
+        let socketFactory = FakeGameSocketFactory()
+        let clock = FakeLiveGameClock()
+        let random = FakeLiveGameRandomSource(values: [0])
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(
+                profiles: [.hosted, documents.profile],
+                selectedID: documents.profile.id
+            ),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.compatible(
+                capabilities: [LocaleCatalogLimits.capabilityIdentifier],
+                localeCatalog: documents.advertisement
+            ))),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            gameLifecycleService: service,
+            liveGameSocketFactory: socketFactory,
+            liveGameClock: clock,
+            liveGameRandomSource: random,
+            localeCatalogLoader: documents.loader(),
+            preferredLanguagesProvider: AmountPromptPreferredLanguages(preferredLanguages: ["en"])
+        )
+        return (
+            model,
+            Fakes(
+                tokenStore: tokenStore,
+                service: service,
+                socketFactory: socketFactory,
+                clock: clock,
+                random: random
+            )
+        )
     }
 
     private func expectCanonicalFixture(

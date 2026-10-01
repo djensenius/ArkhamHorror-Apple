@@ -69,6 +69,7 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
     }
 
     func isLegal(_ amounts: [String: Int]) -> Bool {
+        guard visibleRows.allSatisfy(\.isLabelResolved) else { return false }
         let choiceIDs = Set(rows.map(\.id))
         guard choiceIDs.count == rows.count,
               Set(amounts.keys) == choiceIDs
@@ -120,6 +121,13 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
     func disabledReason(
         for amounts: [String: Int], in presentation: BasicChoicePromptPresentation
     ) -> String? {
+        if let unresolvedReason = visibleRows.first(where: { !$0.isLabelResolved }) {
+            return presentation.semanticLocalized(
+                "amountPrompt.disabled.labels",
+                value: "The text for \(unresolvedReason.title) is not currently available.",
+                arguments: [unresolvedReason.title]
+            )
+        }
         if !hasExactChoiceKeys(amounts) {
             return presentation.semanticLocalized(
                 "amountPrompt.disabled.incomplete",
@@ -179,9 +187,14 @@ struct BasicChoiceAmountPromptRow: Sendable, Equatable, Identifiable {
     let title: String
     let minBound: Int
     let maxBound: Int
+    let labelUnavailableReason: StoryUnavailableReason?
 
     var isVisible: Bool {
         maxBound != 0
+    }
+
+    var isLabelResolved: Bool {
+        labelUnavailableReason == nil
     }
 }
 
@@ -259,7 +272,11 @@ extension BasicChoicePromptPresentation {
                             )
                         ),
                         minBound: choice.minBound,
-                        maxBound: choice.maxBound
+                        maxBound: choice.maxBound,
+                        labelUnavailableReason: promptLabelUnavailableReason(
+                            key: amountChoicePromptLabelKey(choice.choiceID),
+                            labelText: choice.label
+                        )
                     )
                 },
                 target: presentation.target
@@ -289,7 +306,11 @@ extension BasicChoicePromptPresentation {
                             )
                         ),
                         minBound: choice.min,
-                        maxBound: choice.max
+                        maxBound: choice.max,
+                        labelUnavailableReason: promptLabelUnavailableReason(
+                            key: paymentChoicePromptLabelKey(choice.choiceID),
+                            labelText: choice.title.text
+                        )
                     )
                 },
                 target: presentation.target
@@ -339,6 +360,17 @@ extension BasicChoicePromptPresentation {
         fallback: String
     ) -> String {
         promptLabel(key: key, labelText: label?.text, fallback: fallback)
+    }
+
+    private func promptLabelUnavailableReason(
+        key: String,
+        labelText: String?
+    ) -> StoryUnavailableReason? {
+        guard labelText?.hasPrefix("$") == true else { return nil }
+        if promptLabelResolutions[key]?.title != nil {
+            return nil
+        }
+        return promptLabelResolutions[key]?.unavailableReason ?? .catalog(.notAdvertised)
     }
 
     private func promptLabel(

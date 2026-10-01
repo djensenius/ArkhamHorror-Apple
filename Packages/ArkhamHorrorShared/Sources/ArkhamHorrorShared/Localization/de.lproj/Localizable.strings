@@ -16,6 +16,7 @@
 "amountPrompt.target.oneOf" = "Einen Wert aus %@ wählen";
 "amountPrompt.disabled.incomplete" = "Jede Mengenzeile benötigt einen Wert.";
 "amountPrompt.disabled.bounds" = "Jede Menge muss im erlaubten Bereich bleiben.";
+"amountPrompt.disabled.labels" = "Der Text für %@ ist derzeit nicht verfügbar.";
 "amountPrompt.total" = "Gesamt: %lld";
 "amountPrompt.submit" = "Absenden";
 "amountPrompt.submit.hint" = "Sendet diese Verteilung mit Versionsprüfung.";

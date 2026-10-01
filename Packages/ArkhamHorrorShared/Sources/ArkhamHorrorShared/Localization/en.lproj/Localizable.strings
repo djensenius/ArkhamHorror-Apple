@@ -16,6 +16,7 @@
 "amountPrompt.target.oneOf" = "Choose one of %@";
 "amountPrompt.disabled.incomplete" = "Every amount row needs a value.";
 "amountPrompt.disabled.bounds" = "Keep each amount within its allowed range.";
+"amountPrompt.disabled.labels" = "The text for %@ is not currently available.";
 "amountPrompt.total" = "Total: %lld";
 "amountPrompt.submit" = "Submit";
 "amountPrompt.submit.hint" = "Sends this allocation with version checking.";
