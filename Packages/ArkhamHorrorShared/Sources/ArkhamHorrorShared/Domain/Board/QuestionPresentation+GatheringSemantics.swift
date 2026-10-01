@@ -160,14 +160,6 @@ extension QuestionPresentation {
         }
     }
 
-    var hasSupportedGatheringSemantics: Bool {
-        guard let kind = sealValidationKind,
-              kind != .encounterDraw,
-              kind != .treacheryForcedAbility
-        else { return false }
-        return hasSupportedSealedActionabilityOverlay
-    }
-
     var allowsGenericFallbackOnSealFailure: Bool {
         sealValidationKind?.allowsGenericFallbackOnFailure == true
     }
