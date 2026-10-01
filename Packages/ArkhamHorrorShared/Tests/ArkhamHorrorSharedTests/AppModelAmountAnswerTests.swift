@@ -232,14 +232,20 @@ extension AppModelLiveGameTests {
         )
         #expect(await paymentConnection.sentData.isEmpty)
 
+        let (exchangeModel, exchangeFakes) = makeSignedInModel()
+        await exchangeModel.flowTask?.value
+        makeModern(exchangeModel)
         let exchangeEnvelope = try exchangeEnvelope(fromInitialAmount: 1, toInitialAmount: 1)
         let exchangeConnection = FakeGameSocketConnection()
         let exchangeGameID = await startChoiceSession(
-            model: model, fakes: fakes, envelope: exchangeEnvelope, connection: exchangeConnection
+            model: exchangeModel,
+            fakes: exchangeFakes,
+            envelope: exchangeEnvelope,
+            connection: exchangeConnection
         )
-        let exchangePrompt = try #require(model.basicChoicePresentation(for: exchangeGameID))
-        #expect(await model.submitExchangeAmountsAnswer(exchangePrompt.identity, amount: 2) == .unsupportedChoice)
-        #expect(await model.submitExchangeAmountsAnswer(exchangePrompt.identity, amount: -2) == .unsupportedChoice)
+        let exchangePrompt = try #require(exchangeModel.basicChoicePresentation(for: exchangeGameID))
+        #expect(await exchangeModel.submitExchangeAmountsAnswer(exchangePrompt.identity, amount: 2) == .unsupportedChoice)
+        #expect(await exchangeModel.submitExchangeAmountsAnswer(exchangePrompt.identity, amount: -2) == .unsupportedChoice)
         #expect(await exchangeConnection.sentData.isEmpty)
     }
 
