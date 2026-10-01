@@ -366,22 +366,12 @@ extension AppModelLiveGameTests {
         )
         try await assertRepresentativePromptSends(
             name: "chooseSome1",
-            rawQuestion: .object([
-                "tag": .string("ChooseSome1"),
-                "label": .string("$done"),
-                "choices": .array([rawLabel("$a"), rawLabel("$done")]),
-            ]),
+            rawQuestion: rawChooseSome1Question(),
             choiceIndex: 0
         )
         try await assertRepresentativePromptSends(
             name: "chooseOneWizard",
-            rawQuestion: .object([
-                "tag": .string("ChooseOneWizard"),
-                "flavorText": .object(["title": .null, "body": .array([])]),
-                "wizardChoices": .array([rawLabel("$wizard")]),
-                "confirmLabel": .string("$confirm"),
-                "backLabel": .string("$back"),
-            ]),
+            rawQuestion: rawChooseOneWizardQuestion(),
             choiceIndex: 0
         )
     }
@@ -492,12 +482,54 @@ extension AppModelLiveGameTests {
         ])
     }
 
+    private func rawChooseSome1Question() -> JSONValue {
+        // Arkham/Question.hs:196 declares ChooseSome1's raw label/choices fields;
+        // Arkham/Question/Presentation.hs:463-470 adds selection and completionLabel.
+        .object([
+            "tag": .string("ChooseSome1"),
+            "label": .string("$done"),
+            "choices": .array([rawLabel("$a"), rawDone("$done")]),
+        ])
+    }
+
+    private func rawChooseOneWizardQuestion() -> JSONValue {
+        // Arkham/Question.hs:156-159 and 234-238 define WizardChoice and
+        // ChooseOneWizard; Arkham/Question/Presentation.hs:528-533 binds
+        // wizardChoices to source-indexed wizardChoice descriptors.
+        .object([
+            "tag": .string("ChooseOneWizard"),
+            "flavorText": flavorText(),
+            "wizardChoices": .array([rawWizardChoice("$wizard")]),
+            "confirmLabel": .string("$confirm"),
+            "backLabel": .string("$back"),
+        ])
+    }
+
     private func rawLabel(_ label: String) -> JSONValue {
         .object([
             "tag": .string("Label"),
             "label": .string(label),
             "messages": .array([]),
         ])
+    }
+
+    private func rawDone(_ label: String) -> JSONValue {
+        .object([
+            "tag": .string("Done"),
+            "label": .string(label),
+        ])
+    }
+
+    private func rawWizardChoice(_ label: String) -> JSONValue {
+        .object([
+            "label": .string(label),
+            "flavorText": flavorText(),
+            "messages": .array([]),
+        ])
+    }
+
+    private func flavorText() -> JSONValue {
+        .object(["title": .null, "body": .array([])])
     }
 }
 
