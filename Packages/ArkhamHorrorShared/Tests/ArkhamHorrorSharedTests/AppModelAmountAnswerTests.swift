@@ -892,6 +892,12 @@ extension AppModelLiveGameTests {
             .command(.focusMove(.right))
         ))
         #expect(controller.exchangeAmount == 2)
+        #expect(controller.coordinator.graph.node(for: BoardFocusID.promptExchangeIncrease) == nil)
+        #expect(!controller.handle(
+            focusID: BoardFocusID.promptExchangeIncrease,
+            .command(.primaryAction)
+        ))
+        #expect(controller.exchangeAmount == 2)
         #expect(controller.handle(.command(.focusMove(.left))))
         #expect(controller.exchangeAmount == 1)
         #expect(controller.activateExchangeSubmit())
@@ -1048,9 +1054,17 @@ extension AppModelLiveGameTests {
             prompt: prompt,
             onAmounts: { submitted = $0 }
         )
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptAmountIncrease(0))
         #expect(!controller.activateAmountSubmit())
         #expect(controller.adjustAmount(rowID: visibleID, delta: 1))
         #expect(controller.handle(
+            focusID: BoardFocusID.promptAmountIncrease(0),
+            .command(.primaryAction)
+        ))
+        #expect(controller.coordinator.graph.node(for: BoardFocusID.promptAmountIncrease(0)) == nil)
+        #expect(controller.coordinator.graph.node(for: BoardFocusID.promptAmountSubmit) != nil)
+        #expect(!controller.handle(
             focusID: BoardFocusID.promptAmountIncrease(0),
             .command(.primaryAction)
         ))

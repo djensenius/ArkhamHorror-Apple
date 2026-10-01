@@ -89,7 +89,9 @@ enum BoardFocusGraphBuilder {
     static func makeGraph(
         projection: BoardProjection,
         layout: BoardLayout,
-        prompt: BasicChoicePromptPresentation? = nil
+        prompt: BasicChoicePromptPresentation? = nil,
+        amountDraft: [String: Int] = [:],
+        exchangeAmount: Int = 0
     ) -> FocusGraph {
         var nodes: [FocusNode] = []
         var zoneEntryPoints: [SemanticFocusZone: SemanticFocusID] = [:]
@@ -97,7 +99,12 @@ enum BoardFocusGraphBuilder {
         nodes.append(FocusNode(id: BoardFocusID.scenarioHeader, zone: BoardFocusZone.scenario))
         zoneEntryPoints[BoardFocusZone.scenario] = BoardFocusID.scenarioHeader
 
-        let promptChoices = promptFocusIDs(prompt, projection: projection)
+        let promptChoices = promptFocusIDs(
+            prompt,
+            projection: projection,
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount
+        )
         appendVerticalChain(
             promptChoices, zone: BoardFocusZone.prompt,
             nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
@@ -145,24 +152,38 @@ enum BoardFocusGraphBuilder {
     }
 
     private static func promptFocusIDs(
-        _ prompt: BasicChoicePromptPresentation?, projection: BoardProjection
+        _ prompt: BasicChoicePromptPresentation?,
+        projection: BoardProjection,
+        amountDraft: [String: Int],
+        exchangeAmount: Int
     ) -> [SemanticFocusID] {
         var promptChoices: [SemanticFocusID] = []
         if let prompt, prompt.canSubmit {
             if let amountPrompt = prompt.amountPrompt(in: projection) {
-                promptChoices = amountPrompt.visibleRows.indices.flatMap { index in
-                    [
-                        BoardFocusID.promptAmountDecrease(index),
-                        BoardFocusID.promptAmountIncrease(index),
-                    ]
+                let normalized = amountPrompt.normalizedAmounts(amountDraft)
+                promptChoices = amountPrompt.visibleRows.enumerated().flatMap { index, row in
+                    var rowChoices: [SemanticFocusID] = []
+                    if amountPrompt.canAdjust(normalized, rowID: row.id, delta: -1) {
+                        rowChoices.append(BoardFocusID.promptAmountDecrease(index))
+                    }
+                    if amountPrompt.canAdjust(normalized, rowID: row.id, delta: 1) {
+                        rowChoices.append(BoardFocusID.promptAmountIncrease(index))
+                    }
+                    return rowChoices
                 }
-                promptChoices.append(BoardFocusID.promptAmountSubmit)
-            } else if prompt.exchangePrompt(in: projection) != nil {
-                promptChoices = [
-                    BoardFocusID.promptExchangeDecrease,
-                    BoardFocusID.promptExchangeIncrease,
-                    BoardFocusID.promptExchangeSubmit,
-                ]
+                if amountPrompt.isLegal(normalized) {
+                    promptChoices.append(BoardFocusID.promptAmountSubmit)
+                }
+            } else if let exchangePrompt = prompt.exchangePrompt(in: projection) {
+                if exchangePrompt.canAdjust(amount: exchangeAmount, delta: -1) {
+                    promptChoices.append(BoardFocusID.promptExchangeDecrease)
+                }
+                if exchangePrompt.canAdjust(amount: exchangeAmount, delta: 1) {
+                    promptChoices.append(BoardFocusID.promptExchangeIncrease)
+                }
+                if exchangePrompt.isLegal(exchangeAmount) {
+                    promptChoices.append(BoardFocusID.promptExchangeSubmit)
+                }
             } else {
                 promptChoices = prompt.choices
                     .filter { prompt.isChoiceActionable($0, in: projection) }
@@ -183,14 +204,22 @@ enum BoardFocusGraphBuilder {
     /// empty optional zone (for example no acts/agendas at all) is simply skipped rather
     /// than cycled into and left with nothing to focus.
     static func nonEmptyZonesInCycleOrder(
-        projection: BoardProjection, prompt: BasicChoicePromptPresentation? = nil
+        projection: BoardProjection,
+        prompt: BasicChoicePromptPresentation? = nil,
+        amountDraft: [String: Int] = [:],
+        exchangeAmount: Int = 0
     ) -> [SemanticFocusZone] {
         var populated: Set<SemanticFocusZone> = [BoardFocusZone.scenario, BoardFocusZone.chaosBag]
         let hasActionableChoice = prompt?.choices.contains {
             prompt?.isChoiceActionable($0, in: projection) == true
         } == true
         let hasAmountControls = prompt.map {
-            $0.amountPrompt(in: projection) != nil || $0.exchangePrompt(in: projection) != nil
+            !promptFocusIDs(
+                $0,
+                projection: projection,
+                amountDraft: amountDraft,
+                exchangeAmount: exchangeAmount
+            ).isEmpty
         } == true
         let hasPromptFocus = prompt?.canRetryCatalog == true
             || prompt?.canRetry == true

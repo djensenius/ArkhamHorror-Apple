@@ -77,11 +77,18 @@ final class BoardCommandController {
             preferredRootID: Self.activeLocationID(in: projection)
         )
         self.layout = layout
+        let initialAmountDraft = prompt?.amountPrompt(in: projection)?.initialAmounts ?? [:]
+        amountDraft = initialAmountDraft
+        exchangeAmount = 0
+        promptInputKey = prompt?.identity.promptKey
         let graph = BoardFocusGraphBuilder.makeGraph(
-            projection: projection, layout: layout, prompt: prompt
+            projection: projection,
+            layout: layout,
+            prompt: prompt,
+            amountDraft: initialAmountDraft,
+            exchangeAmount: 0
         )
         coordinator = FocusCoordinator(graph: graph, initialFocus: graph.order.first)
-        resetPromptInputStateIfNeeded(prompt: prompt)
     }
 
     private static func activeLocationID(in projection: BoardProjection) -> LocationID? {
@@ -108,7 +115,11 @@ final class BoardCommandController {
             preferredRootID: Self.activeLocationID(in: newProjection)
         )
         let newGraph = BoardFocusGraphBuilder.makeGraph(
-            projection: newProjection, layout: layout, prompt: newPrompt
+            projection: newProjection,
+            layout: layout,
+            prompt: newPrompt,
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount
         )
         coordinator.applySnapshot(newGraph)
     }
@@ -118,7 +129,11 @@ final class BoardCommandController {
         prompt = newPrompt
         resetPromptInputStateIfNeeded(prompt: newPrompt)
         let graph = BoardFocusGraphBuilder.makeGraph(
-            projection: projection, layout: layout, prompt: newPrompt
+            projection: projection,
+            layout: layout,
+            prompt: newPrompt,
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount
         )
         coordinator.applySnapshot(graph)
     }
@@ -293,7 +308,10 @@ final class BoardCommandController {
     private func cycleZone(_ direction: CycleDirection) -> Bool {
         guard !coordinator.isModalPresented else { return false }
         let zones = BoardFocusGraphBuilder.nonEmptyZonesInCycleOrder(
-            projection: projection, prompt: prompt
+            projection: projection,
+            prompt: prompt,
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount
         )
         guard !zones.isEmpty else { return false }
         let current = focusedZone ?? zones[0]
@@ -315,6 +333,11 @@ final class BoardCommandController {
         }
         if prompt?.canRetry == true {
             coordinator.syncExternalFocus(BoardFocusID.promptRetry)
+            return true
+        }
+        if prompt?.requiresDedicatedAmountUI == true,
+           let entry = coordinator.graph.zoneEntryPoints[BoardFocusZone.prompt] {
+            coordinator.syncExternalFocus(entry)
             return true
         }
         guard prompt?.canSubmit == true,
@@ -360,6 +383,7 @@ final class BoardCommandController {
               amountPrompt.canAdjust(amountDraft, rowID: rowID, delta: delta)
         else { return false }
         amountDraft = amountPrompt.adjustedAmounts(amountDraft, rowID: rowID, delta: delta)
+        refreshFocusGraphForPromptControls()
         return true
     }
 
@@ -375,6 +399,7 @@ final class BoardCommandController {
               exchangePrompt.canAdjust(amount: exchangeAmount, delta: delta)
         else { return false }
         exchangeAmount = exchangePrompt.adjustedAmount(exchangeAmount, delta: delta)
+        refreshFocusGraphForPromptControls()
         return true
     }
 
@@ -435,6 +460,17 @@ final class BoardCommandController {
             amountDraft = [:]
         }
         exchangeAmount = 0
+    }
+
+    private func refreshFocusGraphForPromptControls() {
+        let graph = BoardFocusGraphBuilder.makeGraph(
+            projection: projection,
+            layout: layout,
+            prompt: prompt,
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount
+        )
+        coordinator.applySnapshot(graph)
     }
 
     private func activateFocusedAmountControl(primary: Bool) -> Bool {
