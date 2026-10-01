@@ -139,26 +139,32 @@ struct BasicChoicePromptView: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("liveGame.prompt.story")
-        } else if let flavor = presentation.semanticPresentation?.presentation.flavorText {
+        } else if presentation.semanticPresentation?.presentation.flavorText != nil {
             VStack(alignment: .leading, spacing: 8) {
-                if let title = flavor.title, !title.hasPrefix("$") {
-                    Text(title)
-                        .font(.callout.monospaced())
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("liveGame.prompt.story.title")
-                }
-                let lines = genericFlavorLines(flavor)
-                if !lines.isEmpty {
+                if let resolved = presentation.storyResolution?.story {
+                    if let title = resolved.title {
+                        Text(title)
+                            .font(.callout.monospaced())
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("liveGame.prompt.story.title")
+                    }
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                                Text(line)
-                                    .font(.callout)
+                            ForEach(Array(resolved.body.enumerated()), id: \.offset) { _, entry in
+                                ResolvedStoryEntryView(entry: entry)
                             }
                         }
                     }
                     .frame(maxHeight: isCompact ? 240 : 420)
                     .accessibilityIdentifier("liveGame.prompt.story.body")
+                } else {
+                    Label(
+                        presentation.storyResolution?.unavailableReason?.announcement
+                            ?? "This story text is not currently available.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("liveGame.prompt.story.unavailable")
                 }
                 if let codes = presentation.semanticPresentation?.presentation.readCards {
                     if !codes.isEmpty {
@@ -187,30 +193,6 @@ struct BasicChoicePromptView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Cards added: \(joined)")
         .accessibilityIdentifier("liveGame.prompt.story.readCards")
-    }
-
-    private func genericFlavorLines(
-        _ flavor: QuestionPresentation.FlavorText
-    ) -> [String] {
-        flavor.body.compactMap { entry in
-            guard case let .object(object) = entry,
-                  case let .string(tag)? = object["tag"]
-            else { return nil }
-            switch tag {
-            case "BasicEntry":
-                guard case let .string(text)? = object["text"], !text.hasPrefix("$") else {
-                    return nil
-                }
-                return text
-            case "HeaderEntry":
-                guard case let .string(key)? = object["key"], !key.hasPrefix("$") else {
-                    return nil
-                }
-                return key
-            default:
-                return nil
-            }
-        }
     }
 
     private var choices: some View {
