@@ -335,6 +335,9 @@ extension BasicChoicePromptPresentation {
               semanticPresentation.presentation.supportsCurrentGenericChoiceList,
               descriptor.selectable
         else { return false }
+        guard labelResolutionAllowsAction(choiceLabelResolutions[descriptor.sourceIndex]) else {
+            return false
+        }
         guard !semanticPresentation.requiresSealedActionabilityOverlay
             || semanticPresentation.usesSealedActionabilityOverlay
         else { return false }
@@ -345,6 +348,12 @@ extension BasicChoicePromptPresentation {
             labelResolution: choiceLabelResolutions[descriptor.sourceIndex],
             governedSource: semanticPresentation.governedSource
         )
+    }
+
+    private func labelResolutionAllowsAction(
+        _ labelResolution: BasicChoiceLabelResolution?
+    ) -> Bool {
+        labelResolution?.unavailableReason == nil
     }
 
     private static func rawChoiceTag(_ value: JSONValue) -> String? {

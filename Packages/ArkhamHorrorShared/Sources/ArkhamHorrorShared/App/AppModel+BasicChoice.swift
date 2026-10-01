@@ -173,12 +173,11 @@ extension AppModel {
         guard presentation.isAuthorized else {
             return .reject(.readOnly)
         }
-        // Revalidated against the current authoritative projection immediately before
-        // send -- never the projection captured whenever this choice was last rendered
-        // -- so a `.chooseLocation` choice whose target has meanwhile stopped being
-        // known to the board, a `.continueReading` choice whose story this client
-        // cannot lawfully resolve, or a stale rendered action racing a snapshot
-        // replacement can never be claimed/answered on the wire.
+        // Revalidated immediately before send using the current authoritative prompt
+        // identity and actionability rules -- never the projection captured whenever
+        // this choice was last rendered. Governed legacy choices still re-check their
+        // board identities; generic semantic choices trust the server-owned descriptor
+        // except for client display prerequisites such as resolvable deployment text.
         guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
               let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
               presentation.isChoiceActionable(choice, in: projection),
@@ -362,13 +361,15 @@ extension AppModel {
                 basicChoiceActions[gameID] = nil
                 return
             }
+            let labelResolution = labelResolutions[choiceIndex]
             isActionable = semanticPresentation.isRenderableInCurrentClient
                 && descriptor.selectable
+                && labelResolution?.unavailableReason == nil
                 && (!semanticPresentation.usesSealedActionabilityOverlay
                     || projection.isSemanticChoiceActionable(
                         descriptor,
                         ownerID: ownerID,
-                        labelResolution: labelResolutions[choiceIndex],
+                        labelResolution: labelResolution,
                         governedSource: semanticPresentation.governedSource
                     ))
         } else {

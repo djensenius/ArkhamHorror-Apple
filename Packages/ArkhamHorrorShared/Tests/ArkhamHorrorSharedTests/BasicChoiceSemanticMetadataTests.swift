@@ -2,22 +2,22 @@
 import Testing
 
 extension BasicChoiceSemanticPresentationTests {
-    @Test("Semantic localized labels use catalog resolution with generic fallback")
-    func localizedLabelUsesSemanticSourceIndex() throws {
+    @Test("Semantic localized labels use catalog resolution and fail closed")
+    func localizedLabelUsesSemanticSourceIndexAndFailsClosed() throws {
         let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
         let unavailable = try semanticPrompt(
             choice: localizedLabelChoice,
             choiceLabelResolutions: [0: .unavailable(.missingKey)]
         )
         let unavailableChoice = try #require(unavailable.choices.first)
-        #expect(unavailable.isChoiceActionable(unavailableChoice, in: projection))
+        #expect(!unavailable.isChoiceActionable(unavailableChoice, in: projection))
         #expect(
             unavailable.displayTitle(for: unavailableChoice, in: projection)
                 == "Choice 1"
         )
         #expect(
             unavailable.accessibilityHint(for: unavailableChoice, in: projection)
-                == "Activates choice 1."
+                == "This server publishes no usable text for this choice."
         )
 
         let resolved = try semanticPrompt(
