@@ -224,7 +224,8 @@ struct BasicChoiceExchangePrompt: Sendable, Equatable {
     }
 
     func isLegal(_ amount: Int) -> Bool {
-        lowerBound <= upperBound && amount >= lowerBound && amount <= upperBound
+        fromInitialAmount >= 0 && toInitialAmount >= 0
+            && lowerBound <= upperBound && amount >= lowerBound && amount <= upperBound
     }
 
     func canAdjust(amount: Int, delta: Int) -> Bool {

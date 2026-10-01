@@ -536,6 +536,7 @@ private extension BasicChoicePromptPresentation {
               presentation.toInvestigator != nil,
               presentation.token != nil
         else { return false }
+        guard fromInitialAmount >= 0, toInitialAmount >= 0 else { return false }
         let lowerBound = -toInitialAmount
         let upperBound = fromInitialAmount
         return lowerBound <= upperBound && amount >= lowerBound && amount <= upperBound

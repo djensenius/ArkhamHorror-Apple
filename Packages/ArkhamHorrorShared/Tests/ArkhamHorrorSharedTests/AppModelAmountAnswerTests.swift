@@ -403,6 +403,27 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData.isEmpty)
     }
 
+    @Test("Exchange prompts with negative starting amounts cannot submit")
+    func exchangeNegativeInitialAmountsAreRefused() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try exchangeEnvelope(fromInitialAmount: -1, toInitialAmount: 3)
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let exchangePrompt = try #require(prompt.exchangePrompt(in: projection))
+        #expect(!exchangePrompt.isLegal(-1))
+        #expect(
+            await model.submitExchangeAmountsAnswer(prompt.identity, amount: -1)
+                == .unsupportedChoice
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
     @Test("Amount retry uses the current transport and stale identities cannot send")
     func amountRetryAndStaleSendUseExistingStateMachine() async throws {
         let (model, fakes) = makeSignedInModel()
