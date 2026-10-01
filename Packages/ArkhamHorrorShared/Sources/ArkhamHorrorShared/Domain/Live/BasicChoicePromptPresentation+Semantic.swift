@@ -192,17 +192,226 @@ extension BasicChoicePromptPresentation {
         case .singleChoice:
             true
         case .amounts:
-            rawQuestion.hasTag("ChooseAmounts")
-                || rawQuestion.wrapsQuestion(tag: "QuestionLabel", innerTag: "ChooseAmounts")
+            supportsAmountPrompt(rawQuestion: rawQuestion, presentation: presentation)
         case .paymentAmounts:
-            rawQuestion.hasTag("ChoosePaymentAmounts")
-                || rawQuestion.wrapsQuestion(tag: "PayCostQuestion", innerTag: "ChoosePaymentAmounts")
+            supportsPaymentPrompt(rawQuestion: rawQuestion, presentation: presentation)
         case .exchangeAmounts:
-            presentation.questionKind == .chooseExchangeAmounts
+            supportsExchangePrompt(rawQuestion: rawQuestion, presentation: presentation)
         case .deck, .standaloneSettings, .campaignSettings, .pickDestiny,
              .campaignSpecific, .scenarioSpecific, .continueCampaign:
             false
         }
+    }
+
+    private static func supportsAmountPrompt(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation
+    ) -> Bool {
+        guard presentation.questionKind == .chooseAmounts,
+              let raw = rawAmountQuestion(rawQuestion),
+              presentation.label?.text == raw.label,
+              presentation.resolveTarget == raw.resolveTarget,
+              presentation.amountChoices == raw.choices,
+              amountTargetMatches(presentation.target, raw.target)
+        else { return false }
+        return true
+    }
+
+    private static func supportsPaymentPrompt(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation
+    ) -> Bool {
+        guard presentation.questionKind == .choosePaymentAmounts,
+              let raw = rawPaymentQuestion(rawQuestion),
+              presentation.label?.text == raw.label,
+              amountTargetMatches(presentation.target, raw.target),
+              paymentChoicesMatch(presentation.paymentChoices, raw.choices)
+        else { return false }
+        return true
+    }
+
+    private static func supportsExchangePrompt(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation
+    ) -> Bool {
+        guard presentation.questionKind == .chooseExchangeAmounts,
+              let raw = rawExchangeQuestion(rawQuestion),
+              presentation.source?.raw == raw.source,
+              presentation.fromInvestigator == raw.fromInvestigator,
+              presentation.fromInitialAmount == raw.fromInitialAmount,
+              presentation.toInvestigator == raw.toInvestigator,
+              presentation.toInitialAmount == raw.toInitialAmount,
+              presentation.token == raw.token
+        else { return false }
+        return true
+    }
+
+    private struct RawAmountQuestion {
+        let label: String
+        let target: JSONValue
+        let choices: [QuestionPresentation.AmountChoice]
+        let resolveTarget: JSONValue
+    }
+
+    private struct RawPaymentQuestion {
+        struct Choice: Equatable {
+            let choiceID: String
+            let investigatorID: String
+            let minBound: Int
+            let maxBound: Int
+            let title: String
+        }
+
+        let label: String
+        let target: JSONValue
+        let choices: [Choice]
+    }
+
+    private struct RawExchangeQuestion {
+        let source: JSONValue
+        let fromInvestigator: String
+        let fromInitialAmount: Int
+        let toInvestigator: String
+        let toInitialAmount: Int
+        let token: String
+    }
+
+    private static func rawAmountQuestion(_ rawQuestion: JSONValue) -> RawAmountQuestion? {
+        guard let object = rawQuestion.unwrappedObject(
+            directTag: "ChooseAmounts",
+            wrapperTag: "QuestionLabel"
+        ),
+            Set(object.keys) == ["tag", "label", "amountTargetValue", "amountChoices", "target"],
+            case let .string(label)? = object["label"],
+            let target = object["amountTargetValue"],
+            case let .array(choiceValues)? = object["amountChoices"],
+            let choices = decodeAmountChoices(choiceValues),
+            let resolveTarget = object["target"]
+        else { return nil }
+        return RawAmountQuestion(
+            label: label,
+            target: target,
+            choices: choices,
+            resolveTarget: resolveTarget
+        )
+    }
+
+    private static func rawPaymentQuestion(_ rawQuestion: JSONValue) -> RawPaymentQuestion? {
+        guard let object = rawQuestion.unwrappedObject(
+            directTag: "ChoosePaymentAmounts",
+            wrapperTag: "PayCostQuestion"
+        ),
+            Set(object.keys) == ["tag", "label", "paymentAmountTargetValue", "paymentAmountChoices"],
+            case let .string(label)? = object["label"],
+            let target = object["paymentAmountTargetValue"],
+            case let .array(choiceValues)? = object["paymentAmountChoices"],
+            let choices = decodePaymentChoices(choiceValues)
+        else { return nil }
+        return RawPaymentQuestion(label: label, target: target, choices: choices)
+    }
+
+    private static func rawExchangeQuestion(_ rawQuestion: JSONValue) -> RawExchangeQuestion? {
+        guard case let .object(object) = rawQuestion,
+              Set(object.keys) == [
+                  "tag", "source", "investigator1Id", "investigator1InitialAmount",
+                  "investigator2Id", "investigator2InitialAmount", "token",
+              ],
+              object["tag"] == .string("ChooseExchangeAmounts"),
+              let source = object["source"],
+              case let .string(fromInvestigator)? = object["investigator1Id"],
+              let fromInitialAmount = object["investigator1InitialAmount"]?.integerValue,
+              case let .string(toInvestigator)? = object["investigator2Id"],
+              let toInitialAmount = object["investigator2InitialAmount"]?.integerValue,
+              case let .string(token)? = object["token"]
+        else { return nil }
+        return RawExchangeQuestion(
+            source: source,
+            fromInvestigator: fromInvestigator,
+            fromInitialAmount: fromInitialAmount,
+            toInvestigator: toInvestigator,
+            toInitialAmount: toInitialAmount,
+            token: token
+        )
+    }
+
+    private static func decodeAmountChoices(
+        _ values: [JSONValue]
+    ) -> [QuestionPresentation.AmountChoice]? {
+        var choices: [QuestionPresentation.AmountChoice] = []
+        for value in values {
+            guard case let .object(object) = value,
+                  Set(object.keys) == ["choiceId", "label", "minBound", "maxBound"],
+                  case let .string(choiceID)? = object["choiceId"],
+                  case let .string(label)? = object["label"],
+                  let minBound = object["minBound"]?.integerValue,
+                  let maxBound = object["maxBound"]?.integerValue
+            else { return nil }
+            choices.append(QuestionPresentation.AmountChoice(
+                choiceID: choiceID,
+                label: label,
+                minBound: minBound,
+                maxBound: maxBound
+            ))
+        }
+        return choices
+    }
+
+    private static func decodePaymentChoices(
+        _ values: [JSONValue]
+    ) -> [RawPaymentQuestion.Choice]? {
+        var choices: [RawPaymentQuestion.Choice] = []
+        for value in values {
+            guard case let .object(object) = value,
+                  Set(object.keys) == [
+                      "choiceId", "investigatorId", "minBound", "maxBound", "title", "message",
+                  ],
+                  case let .string(choiceID)? = object["choiceId"],
+                  case let .string(investigatorID)? = object["investigatorId"],
+                  let minBound = object["minBound"]?.integerValue,
+                  let maxBound = object["maxBound"]?.integerValue,
+                  case let .string(title)? = object["title"]
+            else { return nil }
+            choices.append(RawPaymentQuestion.Choice(
+                choiceID: choiceID,
+                investigatorID: investigatorID,
+                minBound: minBound,
+                maxBound: maxBound,
+                title: title
+            ))
+        }
+        return choices
+    }
+
+    private static func paymentChoicesMatch(
+        _ presentationChoices: [QuestionPresentation.PaymentAmountChoice]?,
+        _ rawChoices: [RawPaymentQuestion.Choice]
+    ) -> Bool {
+        guard let presentationChoices, presentationChoices.count == rawChoices.count else {
+            return false
+        }
+        for (presentationChoice, rawChoice) in zip(presentationChoices, rawChoices) {
+            guard presentationChoice.choiceID == rawChoice.choiceID,
+                  presentationChoice.investigatorID == rawChoice.investigatorID,
+                  presentationChoice.min == rawChoice.minBound,
+                  presentationChoice.max == rawChoice.maxBound,
+                  presentationChoice.title.text == rawChoice.title
+            else { return false }
+        }
+        return true
+    }
+
+    private static func amountTargetMatches(
+        _ presentationTarget: QuestionPresentation.AmountTarget?,
+        _ rawTarget: JSONValue
+    ) -> Bool {
+        guard rawTarget != .null else { return presentationTarget == nil }
+        guard let presentationTarget,
+              let decoded = try? ContractJSON.decode(
+                  QuestionPresentation.AmountTarget.self,
+                  from: ContractJSON.encode(rawTarget)
+              )
+        else { return false }
+        return presentationTarget == decoded
     }
 
     private func selectionHint(for presentation: QuestionPresentation) -> String? {
@@ -1084,19 +1293,55 @@ extension BasicChoicePromptPresentation {
 }
 
 private extension JSONValue {
-    func hasTag(_ expected: String) -> Bool {
+    var integerValue: Int? {
+        guard case let .number(number) = self,
+              let magnitude = number.wholeNumberMagnitude
+        else { return nil }
+        let text = number.sign == .minus ? "-\(magnitude)" : magnitude
+        return Int(text)
+    }
+
+    func unwrappedObject(directTag: String, wrapperTag: String) -> [String: JSONValue]? {
         guard case let .object(object) = self,
-              object["tag"] == .string(expected)
-        else { return false }
+              case let .string(tag)? = object["tag"]
+        else { return nil }
+        if tag == directTag {
+            return object
+        }
+        guard tag == wrapperTag,
+              wrapperHasExpectedShape(object, tag: wrapperTag),
+              case let .object(inner)? = object["question"],
+              inner["tag"] == .string(directTag)
+        else { return nil }
+        return inner
+    }
+
+    private func wrapperHasExpectedShape(
+        _ object: [String: JSONValue], tag: String
+    ) -> Bool {
+        switch tag {
+        case "QuestionLabel":
+            Set(object.keys) == ["tag", "label", "card", "question"]
+                && object["tag"] == .string("QuestionLabel")
+                && (object["card"] == .null || Self.isString(object["card"]))
+                && Self.isString(object["label"])
+        case "PayCostQuestion":
+            Set(object.keys) == ["tag", "cost", "question"]
+                && object["tag"] == .string("PayCostQuestion")
+                && Self.isObject(object["cost"])
+        default:
+            false
+        }
+    }
+
+    private static func isString(_ value: JSONValue?) -> Bool {
+        guard case .string? = value else { return false }
         return true
     }
 
-    func wrapsQuestion(tag expectedTag: String, innerTag expectedInnerTag: String) -> Bool {
-        guard case let .object(object) = self,
-              object["tag"] == .string(expectedTag),
-              let inner = object["question"]
-        else { return false }
-        return inner.hasTag(expectedInnerTag)
+    private static func isObject(_ value: JSONValue?) -> Bool {
+        guard case .object? = value else { return false }
+        return true
     }
 }
 
