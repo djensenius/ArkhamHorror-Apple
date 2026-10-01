@@ -363,20 +363,6 @@ final class BoardCommandController {
         return true
     }
 
-    @discardableResult
-    func setAmount(rowID: String, value: Int) -> Bool {
-        guard let prompt,
-              prompt.canSubmit,
-              let amountPrompt = prompt.amountPrompt(in: projection),
-              let row = amountPrompt.row(id: rowID),
-              row.isVisible
-        else { return false }
-        var amounts = amountPrompt.normalizedAmounts(amountDraft)
-        amounts[rowID] = min(max(value, row.minBound), row.maxBound)
-        amountDraft = amounts
-        return true
-    }
-
     func exchangeAmount(for _: BasicChoicePromptPresentation) -> Int {
         exchangeAmount
     }
@@ -478,12 +464,25 @@ final class BoardCommandController {
     private func adjustFocusedAmountControl(direction: FocusDirection) -> Bool {
         switch direction {
         case .left:
-            adjustFocusedAmountControl(delta: -1)
+            consumeFocusedAmountAdjustment(delta: -1)
         case .right:
-            adjustFocusedAmountControl(delta: 1)
+            consumeFocusedAmountAdjustment(delta: 1)
         case .up, .down:
             false
         }
+    }
+
+    private func consumeFocusedAmountAdjustment(delta: Int) -> Bool {
+        guard focusedAmountControlCanHandleAdjustment else { return false }
+        _ = adjustFocusedAmountControl(delta: delta)
+        return true
+    }
+
+    private var focusedAmountControlCanHandleAdjustment: Bool {
+        guard let focus = coordinator.currentFocus else { return false }
+        return AmountControlFocus(focus) != nil
+            || focus == BoardFocusID.promptExchangeDecrease
+            || focus == BoardFocusID.promptExchangeIncrease
     }
 
     private func adjustFocusedAmountControl(delta: Int) -> Bool {

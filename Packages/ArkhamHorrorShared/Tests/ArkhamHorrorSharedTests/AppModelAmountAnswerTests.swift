@@ -726,6 +726,9 @@ extension AppModelLiveGameTests {
             .command(.primaryAction)
         ))
         #expect(!controller.adjustAmount(rowID: visibleID, delta: 1))
+        let focusAtUpperBound = controller.coordinator.currentFocus
+        #expect(controller.handle(.command(.focusMove(.right))))
+        #expect(controller.coordinator.currentFocus == focusAtUpperBound)
         #expect(controller.activateAmountSubmit())
         #expect(submitted == [visibleID: 2, hiddenID: 0])
     }
