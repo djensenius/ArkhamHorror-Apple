@@ -165,9 +165,12 @@ extension AppModelLiveGameTests {
         try SyntheticLocaleCatalogDocuments.make(
             entryKeys: ["read.continue", "story.body", "story.heading"],
             chunkEntries: """
-            {"read.continue":{"form":"message","nodes":[{"type":"text","value":"Continue"}],"variables":[]},\
-            "story.body":{"form":"message","nodes":[{"type":"text","value":"Localized body"}],"variables":[]},\
-            "story.heading":{"form":"message","nodes":[{"type":"text","value":"Localized heading"}],"variables":[]}}
+            {"read.continue":{"form":"message","nodes":[{"type":"text",\
+            "value":"Continue"}],"variables":[]},\
+            "story.body":{"form":"message","nodes":[{"type":"text",\
+            "value":"Localized body"}],"variables":[]},\
+            "story.heading":{"form":"message","nodes":[{"type":"text",\
+            "value":"Localized heading"}],"variables":[]}}
             """
         )
     }

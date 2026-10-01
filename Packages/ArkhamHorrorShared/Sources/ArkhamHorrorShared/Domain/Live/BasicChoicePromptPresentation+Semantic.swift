@@ -99,7 +99,6 @@ extension BasicChoicePromptPresentation {
         return question.supportedQuestion?.kind == .read
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
     func headerTitle(in _: BoardProjection) -> String {
         guard let presentation = semanticPresentation?.presentation else {
             return isStoryPrompt ? "Story" : "Choose an action"
@@ -649,10 +648,10 @@ extension BasicChoicePromptPresentation {
         if let title = labelResolution?.title {
             return title
         }
-        if let text = descriptor.label?.text,
-           let inline = semanticInlineLabel(text)
-        {
-            return inline
+        if let text = descriptor.label?.text {
+            if let inline = semanticInlineLabel(text) {
+                return inline
+            }
         }
         if labelResolution?.unavailableReason != nil {
             return fallback ?? semanticLocalized(
@@ -886,15 +885,15 @@ extension BasicChoicePromptPresentation {
 
     private func semanticInfoTitle(for descriptor: QuestionPresentation.Choice) -> String {
         let resolved = choiceFlavorResolutions[descriptor.sourceIndex]?.story
-        if let title = resolved?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !title.isEmpty
-        {
-            return title
+        if let title = resolved?.title?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            if !title.isEmpty {
+                return title
+            }
         }
-        if let title = descriptor.flavorText?.title,
-           let inline = semanticInlineLabel(title)
-        {
-            return inline
+        if let title = descriptor.flavorText?.title {
+            if let inline = semanticInlineLabel(title) {
+                return inline
+            }
         }
         if let body = semanticFlavorBodySummary(for: descriptor) {
             return body
@@ -918,10 +917,10 @@ extension BasicChoicePromptPresentation {
     }
 
     private func semanticFlavorBodySummary(for descriptor: QuestionPresentation.Choice) -> String? {
-        if let entry = choiceFlavorResolutions[descriptor.sourceIndex]?.story?.body.first,
-           let text = semanticStoryEntrySummary(entry)
-        {
-            return text
+        if let entry = choiceFlavorResolutions[descriptor.sourceIndex]?.story?.body.first {
+            if let text = semanticStoryEntrySummary(entry) {
+                return text
+            }
         }
         return semanticFlavorSummary(descriptor.flavorText)
     }
