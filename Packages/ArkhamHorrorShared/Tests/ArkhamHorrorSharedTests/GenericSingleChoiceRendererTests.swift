@@ -87,7 +87,7 @@ struct GenericSingleChoiceRendererTests {
             "question-presentation-gathering-cellar-entry-forced",
         ]
         for name in fixtureNames {
-            kinds.formUnion(try presentationFixture(name).choices.map(\.kind))
+            try kinds.formUnion(presentationFixture(name).choices.map(\.kind))
         }
         // No vendored 0.1.47 fixture currently exercises advanceAgenda; keep the
         // explicit synthetic resolver assertion below as coverage for that final kind.
@@ -107,7 +107,7 @@ struct GenericSingleChoiceRendererTests {
         )
         let rawQuestion = rawQuestion(tag: "ChooseOne", count: choices.count)
         let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 777)
-        return BasicChoicePromptPresentation(
+        return try BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
                 gameID: BoardTestFixtures.gameID(),
                 ownerID: BoardTestFixtures.playerID(),
@@ -121,9 +121,9 @@ struct GenericSingleChoiceRendererTests {
             semanticPresentation: binding,
             semanticLocaleIdentifier: "en",
             cardCatalog: CardCatalogSnapshot(namesByCode: [
-                try CardCode("c01001"): CardName(title: "Roland Banks", subtitle: nil),
-                try CardCode("c01111"): CardName(title: "Machete", subtitle: nil),
-                try CardCode("c01112"): CardName(title: "The Barrier", subtitle: nil),
+                CardCode("c01001"): CardName(title: "Roland Banks", subtitle: nil),
+                CardCode("c01111"): CardName(title: "Machete", subtitle: nil),
+                CardCode("c01112"): CardName(title: "The Barrier", subtitle: nil),
             ]),
             choiceLabelResolutions: labelResolutions(),
             readOnlyReason: nil,
@@ -446,7 +446,7 @@ extension AppModelLiveGameTests {
         )
         let expected = try ContractJSON.encode(BasicChoiceAnswer(
             choice: choiceIndex,
-            playerID: try #require(envelope.playerID),
+            playerID: #require(envelope.playerID),
             questionVersion: envelope.game.scenarioSteps
         ))
         #expect(await connection.sentData == [expected], "\(note)")
@@ -462,8 +462,8 @@ extension AppModelLiveGameTests {
               case let .string(playerID)? = root["playerId"]
         else { throw GenericRendererTestError.unexpectedFixture }
         game["question"] = .object([playerID: rawQuestion])
-        game["questionPresentation"] = .object([
-            playerID: try ContractJSON.decode(
+        game["questionPresentation"] = try .object([
+            playerID: ContractJSON.decode(
                 JSONValue.self,
                 from: ContractJSON.encode(presentation)
             ),

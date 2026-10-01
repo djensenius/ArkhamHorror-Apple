@@ -160,7 +160,8 @@ struct BasicChoicePromptView: View {
                     .accessibilityIdentifier("liveGame.prompt.story.body")
                 }
                 if let codes = presentation.semanticPresentation?.presentation.readCards,
-                   !codes.isEmpty {
+                   !codes.isEmpty
+                {
                     genericReadCardsSummary(codes)
                 }
             }

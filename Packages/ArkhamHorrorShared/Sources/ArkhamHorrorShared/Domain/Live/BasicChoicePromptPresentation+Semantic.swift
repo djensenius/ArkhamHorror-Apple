@@ -67,7 +67,7 @@ extension BasicChoicePromptPresentation {
         return question.supportedQuestion?.kind == .read
     }
 
-    func headerTitle(in projection: BoardProjection) -> String {
+    func headerTitle(in _: BoardProjection) -> String {
         guard let presentation = semanticPresentation?.presentation else {
             return isStoryPrompt ? "Story" : "Choose an action"
         }
@@ -112,7 +112,8 @@ extension BasicChoicePromptPresentation {
             parts.append("Cost: \(semanticCostSummary(cost, in: projection))")
         }
         if let cardCode = presentation.cardCode,
-           let cardName = semanticCardName(cardCode, in: projection) {
+           let cardName = semanticCardName(cardCode, in: projection)
+        {
             parts.append(cardName)
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
@@ -317,7 +318,7 @@ extension BasicChoicePromptPresentation {
               descriptor.selectable
         else { return false }
         guard !semanticPresentation.requiresSealedActionabilityOverlay
-                || semanticPresentation.usesSealedActionabilityOverlay
+            || semanticPresentation.usesSealedActionabilityOverlay
         else { return false }
         guard semanticPresentation.usesSealedActionabilityOverlay else { return true }
         return projection.isSemanticChoiceActionable(
@@ -659,7 +660,8 @@ extension BasicChoicePromptPresentation {
                for: descriptor,
                in: projection,
                labelResolution: labelResolution
-           ) {
+           )
+        {
             return tooltip
         }
         if let ability = descriptor.ability {
@@ -770,7 +772,7 @@ extension BasicChoicePromptPresentation {
 
     private func semanticComponentSubtitle(
         _ component: QuestionPresentation.Component,
-        in projection: BoardProjection
+        in _: BoardProjection
     ) -> String? {
         switch component {
         case let .investigator(_, tokenType), let .asset(_, tokenType):
@@ -817,7 +819,8 @@ extension BasicChoicePromptPresentation {
         var result = ""
         for scalar in raw.unicodeScalars {
             if CharacterSet.uppercaseLetters.contains(scalar), !result.isEmpty,
-               result.last != " " {
+               result.last != " "
+            {
                 result.append(" ")
             }
             result.append(String(scalar))
