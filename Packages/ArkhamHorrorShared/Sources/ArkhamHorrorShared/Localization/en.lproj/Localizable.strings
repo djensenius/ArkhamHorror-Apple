@@ -6,6 +6,34 @@
 
 "semantic.question.title.selections" = "Make selections";
 
+"amountPrompt.legend.amounts" = "Choose amounts";
+"amountPrompt.legend.payment" = "Choose payment amounts";
+"amountPrompt.row.fallback" = "Choice %lld";
+"amountPrompt.target.any" = "Choose any amount";
+"amountPrompt.target.min" = "Choose at least %lld";
+"amountPrompt.target.max" = "Choose at most %lld";
+"amountPrompt.target.total" = "Choose exactly %lld";
+"amountPrompt.target.oneOf" = "Choose one of %@";
+"amountPrompt.disabled.incomplete" = "Every amount row needs a value.";
+"amountPrompt.disabled.bounds" = "Keep each amount within its allowed range.";
+"amountPrompt.total" = "Total: %lld";
+"amountPrompt.submit" = "Submit";
+"amountPrompt.submit.hint" = "Sends this allocation with version checking.";
+"amountPrompt.row.bounds" = "Allowed %1$lld–%2$lld";
+"amountPrompt.row.value" = "%1$lld, allowed %2$lld to %3$lld";
+"amountPrompt.row.hint" = "Swipe up or down to adjust. Left and right controls also change this value.";
+"amountPrompt.decrease.accessibility" = "Decrease %@";
+"amountPrompt.increase.accessibility" = "Increase %@";
+"amountPrompt.exchange.legend" = "Exchange %@";
+"amountPrompt.exchange.submit" = "Exchange";
+"amountPrompt.exchange.decrease.accessibility" = "Move one %1$@ back to %2$@";
+"amountPrompt.exchange.increase.accessibility" = "Move one %1$@ to %2$@";
+"amountPrompt.exchange.accessibility" = "%1$@ has %2$lld. %3$@ has %4$lld.";
+"amountPrompt.exchange.hint" = "Swipe up or down to move tokens between investigators.";
+"amountPrompt.exchange.none" = "No tokens moved";
+"amountPrompt.exchange.forward" = "%1$lld to %2$@";
+"amountPrompt.exchange.backward" = "%1$lld to %2$@";
+
 "semantic.choice.title.advanceAct" = "Advance act";
 "semantic.choice.title.advanceAgenda" = "Advance agenda";
 "semantic.choice.title.applyResults" = "Apply results";

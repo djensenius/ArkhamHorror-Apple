@@ -171,6 +171,18 @@ struct LiveGameView: View {
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.submitBasicChoice(identity, choiceIndex: index) }
             },
+            onAmounts: { amounts in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitAmountsAnswer(identity, amounts: amounts) }
+            },
+            onPaymentAmounts: { amounts in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitPaymentAmountsAnswer(identity, amounts: amounts) }
+            },
+            onExchangeAmount: { amount in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitExchangeAmountsAnswer(identity, amount: amount) }
+            },
             onRetryChoice: {
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.retryBasicChoice(identity) }

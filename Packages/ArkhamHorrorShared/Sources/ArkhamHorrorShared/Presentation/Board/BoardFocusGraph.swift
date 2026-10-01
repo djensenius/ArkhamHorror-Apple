@@ -46,6 +46,19 @@ enum BoardFocusID {
         SemanticFocusID(rawValue: "board.prompt.choice.\(index)")
     }
 
+    static func promptAmountDecrease(_ index: Int) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.prompt.amount.\(index).decrease")
+    }
+
+    static func promptAmountIncrease(_ index: Int) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.prompt.amount.\(index).increase")
+    }
+
+    static let promptAmountSubmit: SemanticFocusID = "board.prompt.amount.submit"
+    static let promptExchangeDecrease: SemanticFocusID = "board.prompt.exchange.decrease"
+    static let promptExchangeIncrease: SemanticFocusID = "board.prompt.exchange.increase"
+    static let promptExchangeSubmit: SemanticFocusID = "board.prompt.exchange.submit"
+
     static func act(_ id: ActID) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.act.\(id.description)")
     }
@@ -136,9 +149,25 @@ enum BoardFocusGraphBuilder {
     ) -> [SemanticFocusID] {
         var promptChoices: [SemanticFocusID] = []
         if let prompt, prompt.canSubmit {
-            promptChoices = prompt.choices
-                .filter { prompt.isChoiceActionable($0, in: projection) }
-                .map { BoardFocusID.promptChoice($0.index) }
+            if let amountPrompt = prompt.amountPrompt(in: projection) {
+                promptChoices = amountPrompt.visibleRows.enumerated().flatMap { index, _ in
+                    [
+                        BoardFocusID.promptAmountDecrease(index),
+                        BoardFocusID.promptAmountIncrease(index),
+                    ]
+                }
+                promptChoices.append(BoardFocusID.promptAmountSubmit)
+            } else if prompt.exchangePrompt(in: projection) != nil {
+                promptChoices = [
+                    BoardFocusID.promptExchangeDecrease,
+                    BoardFocusID.promptExchangeIncrease,
+                    BoardFocusID.promptExchangeSubmit,
+                ]
+            } else {
+                promptChoices = prompt.choices
+                    .filter { prompt.isChoiceActionable($0, in: projection) }
+                    .map { BoardFocusID.promptChoice($0.index) }
+            }
         }
         if prompt?.canRetry == true {
             promptChoices = [BoardFocusID.promptRetry]
@@ -160,9 +189,12 @@ enum BoardFocusGraphBuilder {
         let hasActionableChoice = prompt?.choices.contains {
             prompt?.isChoiceActionable($0, in: projection) == true
         } == true
+        let hasAmountControls = prompt.map {
+            $0.amountPrompt(in: projection) != nil || $0.exchangePrompt(in: projection) != nil
+        } == true
         let hasPromptFocus = prompt?.canRetryCatalog == true
             || prompt?.canRetry == true
-            || (prompt?.canSubmit == true && hasActionableChoice)
+            || (prompt?.canSubmit == true && (hasActionableChoice || hasAmountControls))
         if hasPromptFocus {
             populated.insert(BoardFocusZone.prompt)
         }

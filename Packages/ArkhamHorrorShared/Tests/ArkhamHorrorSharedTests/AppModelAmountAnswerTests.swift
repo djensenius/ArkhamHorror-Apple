@@ -439,6 +439,144 @@ extension AppModelLiveGameTests {
         #expect(await replacement.sentData == [expected])
     }
 
+    @Test("Amount prompt presentation starts at zero, hides zero rows, gates submit, and supports semantic input")
+    @MainActor
+    func amountPromptPresentationAndInput() async throws {
+        let visibleID = "00000000-0000-0000-0000-0000000000b1"
+        let hiddenID = "00000000-0000-0000-0000-0000000000b2"
+        let choices = [
+            amountChoice(visibleID, min: 0, max: 2),
+            amountChoice(hiddenID, min: 0, max: 0),
+        ]
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .total(2)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .total(2),
+                questionVersion: 611
+            ),
+            questionVersion: 611
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let amountPrompt = try #require(prompt.amountPrompt(in: projection))
+        #expect(amountPrompt.initialAmounts == [visibleID: 0, hiddenID: 0])
+        #expect(amountPrompt.visibleRows.map(\.id) == [visibleID])
+        #expect(amountPrompt.targetHint(in: prompt) == "Choose exactly 2")
+        #expect(amountPrompt.disabledReason(for: amountPrompt.initialAmounts, in: prompt) == "Choose exactly 2")
+
+        var submitted: [String: Int]?
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            onAmounts: { submitted = $0 }
+        )
+        #expect(!controller.activateAmountSubmit())
+        #expect(controller.adjustAmount(rowID: visibleID, delta: 1))
+        #expect(controller.handle(focusID: BoardFocusID.promptAmountIncrease(0), .command(.primaryAction)))
+        #expect(!controller.adjustAmount(rowID: visibleID, delta: 1))
+        #expect(controller.activateAmountSubmit())
+        #expect(submitted == [visibleID: 2, hiddenID: 0])
+    }
+
+    @Test("Payment and exchange prompts expose target hints, investigator names, and bounds")
+    @MainActor
+    func paymentAndExchangePromptPresentation() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let paymentEnvelope = try amountEnvelope(
+            rawQuestion: paymentRawQuestion(
+                choiceID: "00000000-0000-0000-0000-0000000000c1",
+                min: 0,
+                max: 3,
+                target: .null
+            ),
+            presentation: representativePresentation(named: "choosePaymentAmounts-null-target"),
+            questionVersion: 612
+        )
+        let paymentGameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: paymentEnvelope,
+            connection: FakeGameSocketConnection()
+        )
+        let paymentPrompt = try #require(model.basicChoicePresentation(for: paymentGameID))
+        let paymentProjection = try #require(
+            model.liveGameStates[paymentGameID]?.lastKnownProjection
+        )
+        let payment = try #require(paymentPrompt.amountPrompt(in: paymentProjection))
+        #expect(payment.kind == .payment)
+        #expect(payment.targetHint(in: paymentPrompt) == "Choose any amount")
+        #expect(payment.isLegal(payment.initialAmounts))
+
+        let exchangeEnvelope = try exchangeEnvelope(fromInitialAmount: 2, toInitialAmount: 1)
+        let exchangeGameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: exchangeEnvelope,
+            connection: FakeGameSocketConnection()
+        )
+        let exchangePromptPresentation = try #require(
+            model.basicChoicePresentation(for: exchangeGameID)
+        )
+        let exchangeProjection = try #require(
+            model.liveGameStates[exchangeGameID]?.lastKnownProjection
+        )
+        let exchange = try #require(
+            exchangePromptPresentation.exchangePrompt(in: exchangeProjection)
+        )
+        #expect(exchange.lowerBound == -1)
+        #expect(exchange.upperBound == 2)
+        #expect(exchange.isLegal(0))
+        #expect(!exchange.isLegal(3))
+        #expect(exchange.fromDisplayName != exchange.fromInvestigator)
+        #expect(exchange.toDisplayName != exchange.toInvestigator)
+    }
+
+    @Test("Amount controller drives a legal allocation through AppModel and sends exact bytes")
+    @MainActor
+    func amountControllerSubmitsExactBytesThroughAppModel() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-generic-choose-amounts",
+            presentationFixture: "question-presentation-generic-choose-amounts",
+            questionVersion: 613
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.setSendGated(true)
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let amountPrompt = try #require(prompt.amountPrompt(in: projection))
+        let rowID = try #require(amountPrompt.visibleRows.first?.id)
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            onAmounts: { amounts in
+                Task { await model.submitAmountsAnswer(prompt.identity, amounts: amounts) }
+            }
+        )
+
+        #expect(controller.adjustAmount(rowID: rowID, delta: 1))
+        #expect(controller.activateAmountSubmit())
+        await connection.waitUntilSendPending(1)
+        await connection.resumeOldestSend(with: .success(()))
+        let expected = try amountAnswerBytes(amounts: [rowID: 1], version: 613)
+        #expect(await connection.sentData == [expected])
+    }
+
     private func expectCanonicalFixture(
         _ fixture: String,
         encodes answer: some Encodable
