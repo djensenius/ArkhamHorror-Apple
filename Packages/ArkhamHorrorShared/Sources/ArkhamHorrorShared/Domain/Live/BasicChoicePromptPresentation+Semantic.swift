@@ -650,7 +650,8 @@ extension BasicChoicePromptPresentation {
             return title
         }
         if let text = descriptor.label?.text,
-           let inline = semanticInlineLabel(text) {
+           let inline = semanticInlineLabel(text)
+        {
             return inline
         }
         if labelResolution?.unavailableReason != nil {
@@ -886,11 +887,13 @@ extension BasicChoicePromptPresentation {
     private func semanticInfoTitle(for descriptor: QuestionPresentation.Choice) -> String {
         let resolved = choiceFlavorResolutions[descriptor.sourceIndex]?.story
         if let title = resolved?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !title.isEmpty {
+           !title.isEmpty
+        {
             return title
         }
         if let title = descriptor.flavorText?.title,
-           let inline = semanticInlineLabel(title) {
+           let inline = semanticInlineLabel(title)
+        {
             return inline
         }
         if let body = semanticFlavorBodySummary(for: descriptor) {
@@ -916,21 +919,21 @@ extension BasicChoicePromptPresentation {
 
     private func semanticFlavorBodySummary(for descriptor: QuestionPresentation.Choice) -> String? {
         if let entry = choiceFlavorResolutions[descriptor.sourceIndex]?.story?.body.first,
-           let text = semanticStoryEntrySummary(entry) {
+           let text = semanticStoryEntrySummary(entry)
+        {
             return text
         }
         return semanticFlavorSummary(descriptor.flavorText)
     }
 
     private func semanticStoryEntrySummary(_ entry: ResolvedStoryEntry) -> String? {
-        let text: String
-        switch entry {
+        let text: String = switch entry {
         case let .text(value):
-            text = value
+            value
         case let .nodes(nodes), let .heading(_, nodes):
-            text = nodes.map(\.plainText).joined()
+            nodes.map(\.plainText).joined()
         case let .list(items):
-            text = items.compactMap { semanticStoryEntrySummary($0.entry) }.joined(separator: "; ")
+            items.compactMap { semanticStoryEntrySummary($0.entry) }.joined(separator: "; ")
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed

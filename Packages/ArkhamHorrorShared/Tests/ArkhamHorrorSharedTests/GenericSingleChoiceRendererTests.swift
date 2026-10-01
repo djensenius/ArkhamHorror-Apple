@@ -615,7 +615,6 @@ extension AppModelLiveGameTests {
                 choiceIndex: fixtureCase.choice
             )
         }
-
     }
 
     private func assertFixturePromptSends(
