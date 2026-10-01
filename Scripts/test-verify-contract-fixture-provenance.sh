@@ -21,44 +21,35 @@ script_under_test="$repo_root/Scripts/verify-contract-fixture-provenance.sh"
 harness_root="$repo_root/.build/contract-fixture-provenance-selftest"
 real_contract_pin_file="$repo_root/Packages/ArkhamHorrorShared/Sources/ArkhamHorrorShared/Domain/Contract/ContractPin.swift"
 
-fixture_names="capabilities.json catalog.json decks.json game-lifecycle.json game-list.json \
-get-game.json game-update.json mode-turn-zero.json mode-campaign-only.json \
-mode-campaign-scenario.json location-enemy-view.json movement.json \
-act-no-advance-cost.json investigator-unhealed-horror-negative.json \
-uuid-entity-map.json card-code-entity-map.json question-choose-one.json \
-question-player-window-choose-one.json question-window-choose-one.json \
-question-gathering-act-objective.json question-gathering-act-advance.json \
-question-presentation-gathering-act-objective.json \
-question-presentation-gathering-act-advance.json \
-question-gathering-movement.json question-gathering-attic-entry-forced.json \
-question-gathering-cellar-entry-forced.json \
-question-gathering-attic-horror-assignment.json \
-question-gathering-cellar-damage-assignment.json \
-question-presentation-gathering-movement.json \
-question-presentation-gathering-attic-entry-forced.json \
-question-presentation-gathering-cellar-entry-forced.json \
-question-presentation-gathering-attic-horror-assignment.json \
-question-presentation-gathering-cellar-damage-assignment.json \
-answer-question.json question-read.json question-read-scenario-intro.json \
-question-read-with-cards.json \
-question-choose-one-location.json question-choose-one-location-multiple.json \
-question-mulligan.json question-investigate-fast-window.json \
-question-investigate-commit.json question-investigate-reveal-window.json \
-question-investigate-apply-results.json question-encounter-deck-draw.json \
-question-presentation-encounter-deck-draw.json \
-question-enemy-attack.json answer-enemy-attack.json \
-question-enemy-attack-damage-assignment.json \
-answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json \
-question-enemy-attack-remaining-damage-assignment.json \
-question-enemy-attack-remaining-horror-assignment.json \
-answer-enemy-attack-assign-remaining-damage.json \
-answer-enemy-attack-assign-remaining-horror.json \
-question-player-window-enemy-actions.json question-player-window-engage-action.json \
-question-roland-defeat-reaction.json question-cover-up-reaction.json \
-question-round-end-forced-ability.json question-treachery-forced-ability.json \
-question-presentation-treachery-forced-ability.json question-agenda-advance.json \
-question-agenda-consequence.json question-agenda-horror-assignment.json \
-replay-attestation.json"
+fixture_names="
+act-no-advance-cost.json answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json answer-enemy-attack-assign-remaining-damage.json \
+answer-enemy-attack-assign-remaining-horror.json answer-enemy-attack.json answer-question.json capabilities-locale-catalog.json \
+capabilities.json card-code-entity-map.json catalog.json decks.json \
+game-lifecycle.json game-list.json game-update.json get-game.json \
+investigator-unhealed-horror-negative.json location-enemy-view.json mode-campaign-only.json mode-campaign-scenario.json \
+mode-turn-zero.json movement.json question-agenda-advance.json question-agenda-consequence.json \
+question-agenda-horror-assignment.json question-choose-one-location-multiple.json question-choose-one-location.json question-choose-one.json \
+question-cover-up-reaction.json question-encounter-deck-draw.json question-enemy-attack-damage-assignment.json question-enemy-attack-remaining-damage-assignment.json \
+question-enemy-attack-remaining-horror-assignment.json question-enemy-attack.json question-gathering-act-advance.json question-gathering-act-objective.json \
+question-gathering-attic-entry-forced.json question-gathering-attic-horror-assignment.json question-gathering-cellar-damage-assignment.json question-gathering-cellar-entry-forced.json \
+question-gathering-movement.json question-generic-choose-amounts.json question-generic-choose-deck.json question-generic-choose-n.json \
+question-generic-choose-some.json question-generic-choose-up-to-n.json question-generic-cost-ability-window.json question-generic-invalid-info.json \
+question-generic-one-at-a-time-auto.json question-generic-one-from-each.json question-generic-payment-amounts.json question-generic-read.json \
+question-generic-skill-label.json question-generic-wrapped.json question-investigate-apply-results.json question-investigate-commit.json \
+question-investigate-fast-window.json question-investigate-reveal-window.json question-mulligan.json question-player-window-choose-one.json \
+question-player-window-enemy-actions.json question-player-window-engage-action.json question-presentation-encounter-deck-draw.json question-presentation-gathering-act-advance.json \
+question-presentation-gathering-act-objective.json question-presentation-gathering-attic-entry-forced.json question-presentation-gathering-attic-horror-assignment.json question-presentation-gathering-cellar-damage-assignment.json \
+question-presentation-gathering-cellar-entry-forced.json question-presentation-gathering-movement.json question-presentation-generic-choose-amounts.json question-presentation-generic-choose-deck.json \
+question-presentation-generic-choose-n.json question-presentation-generic-choose-some.json question-presentation-generic-choose-up-to-n.json question-presentation-generic-cost-ability-window.json \
+question-presentation-generic-invalid-info.json question-presentation-generic-one-at-a-time-auto.json question-presentation-generic-one-from-each.json question-presentation-generic-payment-amounts.json \
+question-presentation-generic-read.json question-presentation-generic-skill-label.json question-presentation-generic-wrapped.json question-presentation-representatives.json \
+question-presentation-treachery-forced-ability.json question-read-scenario-intro.json question-read-with-cards.json question-read.json \
+question-roland-defeat-reaction.json question-round-end-forced-ability.json question-treachery-forced-ability.json question-window-choose-one.json \
+replay-attestation.json uuid-entity-map.json"
+
+schema_names="
+basic-choice-question.schema.json capabilities.schema.json client-answer.schema.json question-presentation-representatives.schema.json \
+question-presentation.schema.json raw-question-fixture.schema.json replay-attestation.schema.json"
 
 failures=0
 scenario_count=0
@@ -142,19 +133,31 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.46",'
+    echo '  "schemaRevision": "0.1.47",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
       if [ "$first" -eq 0 ]; then echo ','; fi
       first=0
-      schema="contracts/schemas/basic-choice-question.schema.json"
+      schema="contracts/schemas/raw-question-fixture.schema.json"
       case "$name" in
-        replay-attestation.json)
-          schema="contracts/schemas/replay-attestation.schema.json"
+        answer-*.json)
+          schema="contracts/schemas/client-answer.schema.json"
+          ;;
+        capabilities*.json)
+          schema="contracts/schemas/capabilities.schema.json"
+          ;;
+        question-choose-one.json)
+          schema="contracts/schemas/basic-choice-question.schema.json"
+          ;;
+        question-presentation-representatives.json)
+          schema="contracts/schemas/question-presentation-representatives.schema.json"
           ;;
         question-presentation-*.json)
           schema="contracts/schemas/question-presentation.schema.json"
+          ;;
+        replay-attestation.json)
+          schema="contracts/schemas/replay-attestation.schema.json"
           ;;
       esac
       printf '    {"path": "contracts/fixtures/%s", "schema": "%s"}' "$name" "$schema"
@@ -168,11 +171,10 @@ write_backend_manifest() {
 for name in $fixture_names; do
   echo "{\"fixture\": \"$name\", \"value\": 1}" >"$backend_repo/contracts/fixtures/$name"
 done
-echo '{"type":"object"}' >"$backend_repo/contracts/schemas/basic-choice-question.schema.json"
-echo '{"title":"replay-attestation","type":"object"}' \
-  >"$backend_repo/contracts/schemas/replay-attestation.schema.json"
-echo '{"title":"question-presentation","type":"object"}' \
-  >"$backend_repo/contracts/schemas/question-presentation.schema.json"
+for schema_name in $schema_names; do
+  echo "{\"title\": \"$schema_name\", \"type\": \"object\"}" \
+    >"$backend_repo/contracts/schemas/$schema_name"
+done
 # shellcheck disable=SC2086
 write_backend_manifest "$backend_repo/contracts/manifest.json" $fixture_names
 git -C "$backend_repo" add -A
@@ -219,9 +221,9 @@ reset_local_good_state() {
   for name in $fixture_names; do
     cp "$backend_repo/contracts/fixtures/$name" "$local_fixture_dir/$name"
   done
-  cp "$backend_repo/contracts/schemas/basic-choice-question.schema.json" "$local_fixture_dir/"
-  cp "$backend_repo/contracts/schemas/replay-attestation.schema.json" "$local_fixture_dir/"
-  cp "$backend_repo/contracts/schemas/question-presentation.schema.json" "$local_fixture_dir/"
+  for schema_name in $schema_names; do
+    cp "$backend_repo/contracts/schemas/$schema_name" "$local_fixture_dir/"
+  done
   # shellcheck disable=SC2086
   write_backend_manifest "$local_fixture_dir/manifest.json" $fixture_names
   rm -rf "$local_repo/.git"
