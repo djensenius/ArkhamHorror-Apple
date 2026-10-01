@@ -318,6 +318,19 @@ extension AppModel {
         return FlavorTextListItem(entry: entry, nested: nested)
     }
 
+    func choiceFlavorResolutions(
+        for semanticPresentation: BoundQuestionPresentation?
+    ) -> [Int: StoryResolution] {
+        guard let semanticPresentation else { return [:] }
+        var result: [Int: StoryResolution] = [:]
+        for choice in semanticPresentation.presentation.choices {
+            if let resolution = storyResolution(for: choice.flavorText) {
+                result[choice.sourceIndex] = resolution
+            }
+        }
+        return result
+    }
+
     func promptLabelResolutions(
         for presentation: QuestionPresentation?
     ) -> [String: BasicChoiceLabelResolution] {

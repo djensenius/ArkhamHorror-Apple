@@ -59,11 +59,13 @@ extension AppModel {
             for: supportedQuestion,
             semanticPresentation: payload.presentation
         )
+        let choiceFlavorResolutions = choiceFlavorResolutions(for: payload.presentation)
         let promptLabelResolutions = promptLabelResolutions(
             for: payload.presentation?.presentation
         )
         let localizationReasons = [storyResolution?.unavailableReason].compactMap(\.self)
             + labelResolutions.values.compactMap(\.unavailableReason)
+            + choiceFlavorResolutions.values.compactMap(\.unavailableReason)
             + promptLabelResolutions.values.compactMap(\.unavailableReason)
         return BasicChoicePromptPresentation(
             identity: promptIdentity,
@@ -73,6 +75,7 @@ extension AppModel {
             cardCatalog: cardCatalog,
             storyResolution: storyResolution,
             choiceLabelResolutions: labelResolutions,
+            choiceFlavorResolutions: choiceFlavorResolutions,
             promptLabelResolutions: promptLabelResolutions,
             readOnlyReason: readOnlyReason,
             actionPhase: phase,

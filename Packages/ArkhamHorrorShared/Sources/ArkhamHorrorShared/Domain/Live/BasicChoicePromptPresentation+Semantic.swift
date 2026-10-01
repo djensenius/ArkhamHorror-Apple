@@ -541,8 +541,7 @@ extension BasicChoicePromptPresentation {
                 value: "Gain a resource"
             )
         case .info:
-            descriptor.flavorText?.title
-                ?? semanticLocalized("semantic.choice.title.info", value: "Information")
+            semanticInfoTitle(for: descriptor)
         case .invalidLabel:
             semanticTitleFromLabel(
                 descriptor,
@@ -675,7 +674,7 @@ extension BasicChoicePromptPresentation {
         labelResolution: BasicChoiceLabelResolution?
     ) -> String? {
         if descriptor.kind == .info {
-            return semanticFlavorSummary(descriptor.flavorText)
+            return semanticInfoSubtitle(for: descriptor)
         }
         if descriptor.kind == .invalidLabel {
             return semanticLocalized(
@@ -839,16 +838,66 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    private func semanticFlavorSummary(_ flavorText: QuestionPresentation.FlavorText?) -> String? {
-        if let title = flavorText?.title, !title.hasPrefix("$"), !title.isEmpty {
+    private func semanticInfoTitle(for descriptor: QuestionPresentation.Choice) -> String {
+        let resolved = choiceFlavorResolutions[descriptor.sourceIndex]?.story
+        if let title = resolved?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !title.isEmpty {
             return title
         }
+        if let title = descriptor.flavorText?.title,
+           let inline = semanticInlineLabel(title) {
+            return inline
+        }
+        if let body = semanticFlavorBodySummary(for: descriptor) {
+            return body
+        }
+        return semanticLocalized("semantic.choice.title.info", value: "Information")
+    }
+
+    private func semanticInfoSubtitle(for descriptor: QuestionPresentation.Choice) -> String? {
+        let inlineTitle: String? = if let rawTitle = descriptor.flavorText?.title {
+            semanticInlineLabel(rawTitle)
+        } else {
+            nil
+        }
+        guard let title = choiceFlavorResolutions[descriptor.sourceIndex]?.story?.title
+            ?? inlineTitle,
+            !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let body = semanticFlavorBodySummary(for: descriptor),
+            body != title
+        else { return nil }
+        return body
+    }
+
+    private func semanticFlavorBodySummary(for descriptor: QuestionPresentation.Choice) -> String? {
+        if let entry = choiceFlavorResolutions[descriptor.sourceIndex]?.story?.body.first,
+           let text = semanticStoryEntrySummary(entry) {
+            return text
+        }
+        return semanticFlavorSummary(descriptor.flavorText)
+    }
+
+    private func semanticStoryEntrySummary(_ entry: ResolvedStoryEntry) -> String? {
+        let text: String
+        switch entry {
+        case let .text(value):
+            text = value
+        case let .nodes(nodes), let .heading(_, nodes):
+            text = nodes.map(\.plainText).joined()
+        case let .list(items):
+            text = items.compactMap { semanticStoryEntrySummary($0.entry) }.joined(separator: "; ")
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func semanticFlavorSummary(_ flavorText: QuestionPresentation.FlavorText?) -> String? {
         guard let first = flavorText?.body.first,
               case let .object(object) = first,
               case let .string(text)? = object["text"],
-              !text.hasPrefix("$")
+              let inline = semanticInlineLabel(text)
         else { return nil }
-        return text
+        return inline
     }
 
     private func semanticCardName(_ rawCardCode: String, in projection: BoardProjection) -> String? {

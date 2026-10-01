@@ -139,6 +139,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     /// Localized labels keyed by authoritative source index. Missing entries fall back to
     /// generic choice text while still powering catalog retry affordances.
     let choiceLabelResolutions: [Int: BasicChoiceLabelResolution]
+    let choiceFlavorResolutions: [Int: StoryResolution]
     let promptLabelResolutions: [String: BasicChoiceLabelResolution]
     let readOnlyReason: BasicChoiceReadOnlyReason?
     let actionPhase: BasicChoiceActionPhase?
@@ -154,6 +155,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         cardCatalog: CardCatalogSnapshot? = nil,
         storyResolution: StoryResolution? = nil,
         choiceLabelResolutions: [Int: BasicChoiceLabelResolution]? = nil,
+        choiceFlavorResolutions: [Int: StoryResolution] = [:],
         promptLabelResolutions: [String: BasicChoiceLabelResolution] = [:],
         readOnlyReason: BasicChoiceReadOnlyReason?,
         actionPhase: BasicChoiceActionPhase?,
@@ -192,6 +194,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             }
             self.choiceLabelResolutions = defaults
         }
+        self.choiceFlavorResolutions = choiceFlavorResolutions
         self.promptLabelResolutions = promptLabelResolutions
         self.readOnlyReason = readOnlyReason
         self.actionPhase = actionPhase

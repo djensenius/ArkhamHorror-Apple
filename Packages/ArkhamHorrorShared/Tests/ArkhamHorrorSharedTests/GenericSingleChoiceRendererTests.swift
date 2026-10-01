@@ -48,7 +48,7 @@ struct GenericSingleChoiceRendererTests {
             .evade: "Evade Ghoul Priest",
             .fight: "Fight Ghoul Priest",
             .gainResource: "Gain a resource",
-            .info: "Info title",
+            .info: "Localized info title",
             .invalidLabel: "Invalid option",
             .investigate: "Investigate Study",
             .keyLabel: "Red Key",
@@ -64,6 +64,7 @@ struct GenericSingleChoiceRendererTests {
             .wizardChoice: "Wizard option",
         ]
         #expect(rendered == expected)
+        #expect(subtitles[.info] == "Localized info body")
         #expect(subtitles[.invalidLabel] == "Not selectable")
         #expect(subtitles[.localizedLabel] == nil)
 
@@ -160,6 +161,7 @@ struct GenericSingleChoiceRendererTests {
                 CardCode("c01112"): CardName(title: "The Barrier", subtitle: nil),
             ]),
             choiceLabelResolutions: labelResolutions(),
+            choiceFlavorResolutions: choiceFlavorResolutions(),
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
@@ -237,7 +239,16 @@ struct GenericSingleChoiceRendererTests {
             .init(sourceIndex: 19, kind: .evade, entity: .init(kind: .enemy, id: enemy)),
             .init(sourceIndex: 20, kind: .fight, entity: .init(kind: .enemy, id: enemy)),
             .init(sourceIndex: 21, kind: .gainResource, actorID: "c01001"),
-            .init(sourceIndex: 22, kind: .info, selectable: false, flavorText: .init(title: "Info title", body: [])),
+            .init(
+                sourceIndex: 22,
+                kind: .info,
+                selectable: false,
+                flavorText: .init(title: "$info.title", body: [.object([
+                    "tag": .string("I18nEntry"),
+                    "key": .string("info.body"),
+                    "variables": .object([:]),
+                ])])
+            ),
             .init(sourceIndex: 23, kind: .invalidLabel, selectable: false, label: label("$invalid")),
             .init(sourceIndex: 24, kind: .investigate, entity: .init(kind: .location, id: location)),
             .init(sourceIndex: 25, kind: .keyLabel, key: .object(["tag": .string("RedKey")])),
@@ -277,6 +288,15 @@ struct GenericSingleChoiceRendererTests {
             23: .resolved("Invalid option"),
             26: .resolved("Basic option"),
             35: .resolved("Wizard option"),
+        ]
+    }
+
+    private func choiceFlavorResolutions() -> [Int: StoryResolution] {
+        [
+            22: .resolved(ResolvedStory(
+                title: "Localized info title",
+                body: [.nodes([.text("Localized info body")])]
+            )),
         ]
     }
 
