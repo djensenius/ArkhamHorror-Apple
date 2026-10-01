@@ -14,7 +14,7 @@ extension BasicChoiceSemanticPresentationTests {
 
         #expect(
             prompt.displayTitle(for: choice, in: projection)
-                == "Resolve forced ability (free)"
+                == "Resolve forced ability (Free)"
         )
         #expect(
             prompt.systemImage(for: choice)

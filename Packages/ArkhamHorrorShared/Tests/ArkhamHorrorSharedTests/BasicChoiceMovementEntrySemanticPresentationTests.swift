@@ -70,7 +70,7 @@ extension BasicChoiceSemanticPresentationTests {
         let cellar = try #require(cellarPrompt.choices.first)
         #expect(
             cellarPrompt.displayTitle(for: cellar, in: projection)
-                == "Resolve forced ability at Cellar (free)"
+                == "Resolve forced ability at Cellar (Free)"
         )
         #expect(
             cellarPrompt.systemImage(for: cellar)
@@ -96,7 +96,7 @@ extension BasicChoiceSemanticPresentationTests {
         let attic = try #require(atticPrompt.choices.first)
         #expect(
             atticPrompt.displayTitle(for: attic, in: projection)
-                == "Resolve forced ability at Attic (free)"
+                == "Resolve forced ability at Attic (Free)"
         )
         #expect(atticPrompt.isChoiceActionable(attic, in: projection))
 

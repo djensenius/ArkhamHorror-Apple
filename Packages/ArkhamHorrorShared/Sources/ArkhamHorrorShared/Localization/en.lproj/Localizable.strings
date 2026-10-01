@@ -30,7 +30,7 @@
 "semantic.choice.title.startSkillTest" = "Start skill test";
 "semantic.choice.title.useAbility" = "Use ability";
 
-"semantic.cost.free" = "free";
+"semantic.cost.free" = "Free";
 "semantic.cost.join.scope" = "%1$@ %2$@";
 "semantic.cost.additional" = "additional cost";
 "semantic.cost.join.all" = "%1$@ and %2$@";

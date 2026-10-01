@@ -40,7 +40,7 @@ struct GenericSingleChoiceRendererTests {
             .chooseTarget: "Choose Roland Banks",
             .componentLabel: "Damage on .45 Automatic",
             .connectionLabel: "Circle",
-            .costLabel: "free",
+            .costLabel: "Free",
             .drawCard: "Draw a card",
             .drawEncounterCard: "Draw encounter card",
             .effectActionButton: "Effect tooltip",
@@ -56,11 +56,11 @@ struct GenericSingleChoiceRendererTests {
             .localizedLabel: "Basic option",
             .move: "Move to Study (1 action)",
             .opaque: "OpaqueTag",
-            .resolveForcedAbility: "Resolve forced ability at Study (free)",
-            .skillLabel: "Willpower",
+            .resolveForcedAbility: "Resolve forced ability at Study (Free)",
+            .skillLabel: "Use Willpower: Boost test",
             .skipTriggers: "Skip triggers",
             .startSkillTest: "Start skill test",
-            .tarotLabel: "The Fool0",
+            .tarotLabel: "The Fool",
             .useAbility: "Use Machete ability 2 (1 resource)",
             .wizardChoice: "Wizard option",
         ]
@@ -76,6 +76,68 @@ struct GenericSingleChoiceRendererTests {
         #expect(!prompt.accessibilityLabel(for: localized, in: projection).hasPrefix("Choice "))
         #expect(prompt.accessibilityHint(for: invalid, in: projection) == "This choice is not selectable.")
         #expect(prompt.accessibilityHint(for: info, in: projection) == "This choice is not selectable.")
+    }
+
+    @Test("Choose-N prompts keep the count in the hint without duplicating the header")
+    func chooseNPromptAvoidsDuplicateCountChrome() throws {
+        let choices = [
+            QuestionPresentation.Choice(sourceIndex: 0, kind: .localizedLabel, label: label("One")),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .localizedLabel, label: label("Two")),
+        ]
+        let presentation = QuestionPresentation(
+            protocolVersion: 2,
+            questionVersion: 779,
+            questionKind: .chooseN,
+            choiceCount: choices.count,
+            choices: choices,
+            selection: .init(min: 2, max: 2)
+        )
+        let rawQuestion: JSONValue = .object([
+            "tag": .string("ChooseN"),
+            "amount": .number(.integer(2)),
+            "choices": .array((0 ..< choices.count).map { index in
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string("$choice.\(index)"),
+                    "messages": .array([]),
+                ])
+            }),
+        ])
+        let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 779)
+        let prompt = BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: 779,
+                rawQuestion: rawQuestion,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: BasicChoiceParser.parseQuestion(rawQuestion),
+            semanticPresentation: binding,
+            semanticLocaleIdentifier: "en",
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+
+        #expect(prompt.headerTitle(in: rendererProjection()) == "Choose choices")
+        #expect(prompt.questionHint() == "Choose 2")
+    }
+
+    @Test("Tarot arcana titles use display names without appended ordinals")
+    func tarotArcanaDisplayNameStripsOrdinal() throws {
+        let prompt = try singleChoicePrompt(
+            choice: .init(
+                sourceIndex: 0,
+                kind: .tarotLabel,
+                tarotCard: .init(facing: .upright, arcana: "TheHighPriestessII")
+            )
+        )
+        let choice = try #require(prompt.choices.first)
+        #expect(prompt.displayTitle(for: choice, in: rendererProjection()) == "The High Priestess")
     }
 
     @MainActor
@@ -247,6 +309,38 @@ struct GenericSingleChoiceRendererTests {
         )
     }
 
+    private func singleChoicePrompt(
+        choice: QuestionPresentation.Choice
+    ) throws -> BasicChoicePromptPresentation {
+        let presentation = QuestionPresentation(
+            protocolVersion: 2,
+            questionVersion: 780,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [choice]
+        )
+        let rawQuestion = rawQuestion(tag: "ChooseOne", count: 1)
+        let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 780)
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: 780,
+                rawQuestion: rawQuestion,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: BasicChoiceParser.parseQuestion(rawQuestion),
+            semanticPresentation: binding,
+            semanticLocaleIdentifier: "en",
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
     private func inlineLabelPrompt() throws -> BasicChoicePromptPresentation {
         let choices = [
             QuestionPresentation.Choice(
@@ -334,7 +428,7 @@ struct GenericSingleChoiceRendererTests {
             .init(sourceIndex: 27, kind: .move, entity: .init(kind: .location, id: location), ability: ability(index: 1), cost: .action(1)),
             .init(sourceIndex: 28, kind: .opaque, uiTag: "OpaqueTag"),
             .init(sourceIndex: 29, kind: .resolveForcedAbility, entity: .init(kind: .location, id: location), ability: ability(index: 1, type: .forced), cost: .free),
-            .init(sourceIndex: 30, kind: .skillLabel, skillType: .willpower),
+            .init(sourceIndex: 30, kind: .skillLabel, label: label("Boost test"), skillType: .willpower),
             .init(sourceIndex: 31, kind: .skipTriggers, actorID: "c01001"),
             .init(sourceIndex: 32, kind: .startSkillTest, actorID: "c01001"),
             .init(sourceIndex: 33, kind: .tarotLabel, tarotCard: .init(facing: .upright, arcana: "TheFool0")),

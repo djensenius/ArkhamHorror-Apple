@@ -88,10 +88,8 @@ extension BasicChoicePromptPresentation {
         switch presentation.questionKind {
         case .read:
             return "Story"
-        case .chooseN:
-            return selectionHint(for: presentation) ?? "Choose N"
-        case .chooseUpToN:
-            return selectionHint(for: presentation) ?? "Choose up to N"
+        case .chooseN, .chooseUpToN:
+            return "Choose choices"
         case .chooseOneAtATime, .chooseOneAtATimeWithAuto:
             return "Choose one at a time"
         case .chooseOneFromEach:
@@ -606,14 +604,7 @@ extension BasicChoicePromptPresentation {
                     arguments: [Int64(descriptor.sourceIndex + 1)]
                 )
         case .skillLabel:
-            descriptor.label.flatMap { _ in
-                semanticTitleFromLabel(
-                    descriptor,
-                    labelResolution: labelResolution,
-                    fallback: nil
-                )
-            } ?? descriptor.skillType.map(semanticSkillTitle)
-                ?? semanticLocalized("semantic.choice.title.skill", value: "Skill")
+            semanticSkillLabelTitle(descriptor, labelResolution: labelResolution)
         case .skipTriggers:
             semanticLocalized(
                 "semantic.choice.title.skipTriggers",
@@ -733,6 +724,24 @@ extension BasicChoicePromptPresentation {
         }
     }
 
+    private func semanticSkillLabelTitle(
+        _ descriptor: QuestionPresentation.Choice,
+        labelResolution: BasicChoiceLabelResolution?
+    ) -> String {
+        let skill = descriptor.skillType.map(semanticSkillTitle)
+        guard let label = descriptor.label.map({ _ in
+            semanticTitleFromLabel(descriptor, labelResolution: labelResolution, fallback: nil)
+        }) else {
+            return skill ?? semanticLocalized("semantic.choice.title.skill", value: "Skill")
+        }
+        guard let skill else { return label }
+        return semanticLocalized(
+            "semantic.choice.title.skillWithLabel",
+            value: "Use \(skill): \(label)",
+            arguments: [skill, label]
+        )
+    }
+
     private func semanticSkillTitle(_ skill: QuestionPresentation.SkillType) -> String {
         switch skill {
         case .willpower: "Willpower"
@@ -761,11 +770,39 @@ extension BasicChoicePromptPresentation {
     }
 
     private func semanticTarotTitle(_ tarot: QuestionPresentation.TarotCard) -> String {
-        let arcana = splitCamelCase(tarot.arcana)
+        let arcana = semanticTarotArcanaTitle(tarot.arcana)
         switch tarot.facing {
         case .upright: return arcana
         case .reversed: return "\(arcana) (reversed)"
         }
+    }
+
+    private func semanticTarotArcanaTitle(_ raw: String) -> String {
+        let titles = [
+            "TheFool0": "The Fool",
+            "TheMagicianI": "The Magician",
+            "TheHighPriestessII": "The High Priestess",
+            "TheEmpressIII": "The Empress",
+            "TheEmperorIV": "The Emperor",
+            "TheHierophantV": "The Hierophant",
+            "TheLoversVI": "The Lovers",
+            "TheChariotVII": "The Chariot",
+            "StrengthVIII": "Strength",
+            "TheHermitIX": "The Hermit",
+            "WheelOfFortuneX": "Wheel of Fortune",
+            "JusticeXI": "Justice",
+            "TheHangedManXII": "The Hanged Man",
+            "DeathXIII": "Death",
+            "TemperanceXIV": "Temperance",
+            "TheDevilXV": "The Devil",
+            "TheTowerXVI": "The Tower",
+            "TheStarXVII": "The Star",
+            "TheMoonXVIII": "The Moon",
+            "TheSunXIX": "The Sun",
+            "JudgementXX": "Judgement",
+            "TheWorldXXI": "The World",
+        ]
+        return titles[raw] ?? splitCamelCase(raw)
     }
 
     private func semanticAbilityTitle(
