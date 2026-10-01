@@ -623,7 +623,8 @@ extension AppModelLiveGameTests {
                 choiceID: "00000000-0000-0000-0000-00000000004d",
                 min: 0,
                 max: 3,
-                target: .null
+                target: .null,
+                title: "$resource"
             ),
             presentation: representativePresentation(named: "choosePaymentAmounts-null-target"),
             questionVersion: 620
@@ -979,11 +980,20 @@ extension AppModelLiveGameTests {
         #expect(controller.amountDraft[choiceID] == 1)
         #expect(controller.handle(.command(.secondaryAction)))
         #expect(controller.amountDraft[choiceID] == 0)
+        #expect(!controller.handle(
+            focusID: BoardFocusID.promptAmountDecrease(0),
+            .command(.secondaryAction)
+        ))
+        #expect(controller.amountDraft[choiceID] == 0)
+        #expect(controller.handle(
+            focusID: BoardFocusID.promptAmountIncrease(0),
+            .command(.primaryAction)
+        ))
         #expect(controller.handle(
             focusID: BoardFocusID.promptAmountDecrease(0),
             .command(.secondaryAction)
         ))
-        #expect(controller.amountDraft[choiceID] == 1)
+        #expect(controller.amountDraft[choiceID] == 2)
     }
 
     @Test("Amount retry uses the current transport and stale identities cannot send")
@@ -1252,7 +1262,7 @@ extension AppModelLiveGameTests {
         try localizeFirstPaymentChoiceTitle(in: &paymentPresentation)
         let paymentEnvelope = try amountEnvelope(
             rawQuestion: paymentRawQuestion(
-                choiceID: "00000000-0000-0000-0000-0000000000c1",
+                choiceID: "00000000-0000-0000-0000-00000000004d",
                 min: 0,
                 max: 3,
                 target: .null,
