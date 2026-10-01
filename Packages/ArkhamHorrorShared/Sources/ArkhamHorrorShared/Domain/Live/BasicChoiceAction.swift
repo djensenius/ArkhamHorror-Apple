@@ -240,7 +240,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
 
     var canSubmitSingleChoiceAnswer: Bool {
         guard let semanticPresentation else { return true }
-        return semanticPresentation.presentation.genericSupport == .singleChoice
+        return semanticPresentation.isRenderableInCurrentClient
     }
 
     var canSubmit: Bool {

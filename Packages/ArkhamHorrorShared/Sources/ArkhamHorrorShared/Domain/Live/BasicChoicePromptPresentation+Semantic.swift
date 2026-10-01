@@ -51,11 +51,18 @@ extension QuestionPresentation {
     }
 }
 
+extension BoundQuestionPresentation {
+    var isRenderableInCurrentClient: Bool {
+        presentation.supportsCurrentGenericChoiceList
+            && !rawChoices.isEmpty
+            && (!requiresSealedActionabilityOverlay || usesSealedActionabilityOverlay)
+    }
+}
+
 extension BasicChoicePromptPresentation {
     var isRenderableQuestion: Bool {
         if let semanticPresentation {
-            return semanticPresentation.presentation.supportsCurrentGenericChoiceList
-                && !semanticPresentation.rawChoices.isEmpty
+            return semanticPresentation.isRenderableInCurrentClient
         }
         return question.supportedQuestion?.choices.isEmpty == false
     }

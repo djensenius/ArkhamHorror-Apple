@@ -97,8 +97,7 @@ extension AppModel {
         gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload
     ) -> BasicChoiceReadOnlyReason? {
         let hasRenderableQuestion = if let semanticPresentation = payload.presentation {
-            semanticPresentation.presentation.supportsCurrentGenericChoiceList
-                && !semanticPresentation.rawChoices.isEmpty
+            semanticPresentation.isRenderableInCurrentClient
         } else {
             payload.supportedQuestion?.choices.isEmpty == false
         }
@@ -363,11 +362,8 @@ extension AppModel {
                 basicChoiceActions[gameID] = nil
                 return
             }
-            isActionable = semanticPresentation.presentation.supportsCurrentGenericChoiceList
-                && semanticPresentation.presentation.genericSupport == .singleChoice
+            isActionable = semanticPresentation.isRenderableInCurrentClient
                 && descriptor.selectable
-                && (!semanticPresentation.requiresSealedActionabilityOverlay
-                    || semanticPresentation.usesSealedActionabilityOverlay)
                 && (!semanticPresentation.usesSealedActionabilityOverlay
                     || projection.isSemanticChoiceActionable(
                         descriptor,
