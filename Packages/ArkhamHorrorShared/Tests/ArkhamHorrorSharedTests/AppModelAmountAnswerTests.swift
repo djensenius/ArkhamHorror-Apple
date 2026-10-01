@@ -403,6 +403,43 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData.isEmpty)
     }
 
+    @Test("Exchange prompts without a source expose no enabled submit path")
+    @MainActor
+    func exchangeWithoutSourceHasNoEnabledSubmit() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        var presentation = try representativePresentation(named: "chooseExchangeAmounts")
+        guard case var .object(presentationObject) = presentation else { throw TestFailure() }
+        presentationObject["source"] = nil
+        presentation = .object(presentationObject)
+        let envelope = try amountEnvelope(
+            rawQuestion: .object([
+                "tag": .string("ChooseExchangeAmounts"),
+                "source": .object(["tag": .string("GameSource")]),
+                "investigator1Id": .string("c01001"),
+                "investigator1InitialAmount": .number(.integer(2)),
+                "investigator2Id": .string("c01002"),
+                "investigator2InitialAmount": .number(.integer(1)),
+                "token": .string("Resource"),
+            ]),
+            presentation: presentation,
+            questionVersion: 616
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        #expect(prompt.exchangePrompt(in: projection) == nil)
+        let controller = BoardCommandController(projection: projection, prompt: prompt)
+        #expect(!controller.activateExchangeSubmit())
+        let result = await model.submitExchangeAmountsAnswer(prompt.identity, amount: 0)
+        #expect(result == .readOnly)
+        #expect(await connection.sentData.isEmpty)
+    }
+
     @Test("Exchange prompts with negative starting amounts cannot submit")
     func exchangeNegativeInitialAmountsAreRefused() async throws {
         let (model, fakes) = makeSignedInModel()

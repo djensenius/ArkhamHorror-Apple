@@ -334,7 +334,8 @@ extension BasicChoicePromptPresentation {
               let fromInitialAmount = presentation.fromInitialAmount,
               let toInvestigator = presentation.toInvestigator,
               let toInitialAmount = presentation.toInitialAmount,
-              let token = presentation.token
+              let token = presentation.token,
+              presentation.source != nil
         else { return nil }
         return BasicChoiceExchangePrompt(
             fromInvestigator: fromInvestigator,
