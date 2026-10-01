@@ -327,17 +327,15 @@ struct BoardRegularLayoutView: View {
     }
 }
 
-/// A small on-screen zoom control cluster for touch/pointer platforms, dispatching the
-/// exact same ``SemanticCommand/zoomIn``/``SemanticCommand/zoomOut``/
-/// ``SemanticCommand/resetCamera`` commands the keyboard/controller/Siri Remote adapters
-/// already do — never a bespoke pinch/drag gesture or virtual cursor.
+/// A small on-screen zoom control cluster for touch/pointer platforms. These buttons mutate
+/// camera zoom directly so they never inherit prompt-specific keyboard +/- amount behavior.
 struct BoardZoomControlsView: View {
     let controller: BoardCommandController
 
     var body: some View {
         HStack(spacing: 12) {
             Button {
-                controller.handle(.command(.zoomOut))
+                controller.zoomOut()
             } label: {
                 Image(systemName: "minus.magnifyingglass")
             }
@@ -349,7 +347,7 @@ struct BoardZoomControlsView: View {
             }
             .accessibilityLabel(Text("Reset view"))
             Button {
-                controller.handle(.command(.zoomIn))
+                controller.zoomIn()
             } label: {
                 Image(systemName: "plus.magnifyingglass")
             }

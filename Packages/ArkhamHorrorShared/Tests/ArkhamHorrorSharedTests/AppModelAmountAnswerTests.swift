@@ -497,6 +497,43 @@ extension AppModelLiveGameTests {
         #expect(submitted == [visibleID: 2, hiddenID: 0])
     }
 
+    @Test("Camera zoom commands without a focus ID never alter amount drafts")
+    @MainActor
+    func zoomWithoutFocusIDLeavesAmountDraftUnchanged() async throws {
+        let visibleID = "00000000-0000-0000-0000-0000000000d1"
+        let choices = [amountChoice(visibleID, min: 0, max: 3)]
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .min(0)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .min(0),
+                questionVersion: 614
+            ),
+            questionVersion: 614
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let controller = BoardCommandController(projection: projection, prompt: prompt)
+
+        #expect(controller.handle(
+            focusID: BoardFocusID.promptAmountIncrease(0),
+            .command(.primaryAction)
+        ))
+        let draftBeforeZoom = controller.amountDraft
+        #expect(controller.handle(.command(.zoomIn)))
+        #expect(controller.amountDraft == draftBeforeZoom)
+        #expect(controller.zoomScale == 1.25)
+        #expect(controller.handle(.command(.adjustFocusedAmount(1))))
+        #expect(controller.amountDraft[visibleID] == 2)
+    }
+
     @Test("Payment and exchange prompts expose target hints, investigator names, and bounds")
     @MainActor
     // swiftlint:disable:next function_body_length

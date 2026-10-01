@@ -185,16 +185,16 @@ final class BoardCommandController {
         case let .cycleZone(direction):
             return cycleZone(direction)
         case .zoomIn:
-            if adjustFocusedAmountControl(delta: 1) {
-                return true
-            }
-            setZoom(zoomScale + Self.zoomStep)
+            zoomIn()
             return true
         case .zoomOut:
-            if adjustFocusedAmountControl(delta: -1) {
+            zoomOut()
+            return true
+        case let .adjustFocusedAmount(delta):
+            if adjustFocusedAmountControl(delta: delta) {
                 return true
             }
-            setZoom(zoomScale - Self.zoomStep)
+            setZoom(zoomScale + (CGFloat(delta) * Self.zoomStep))
             return true
         case .resetCamera:
             zoomScale = 1
@@ -524,6 +524,14 @@ final class BoardCommandController {
         guard focusedZone == BoardFocusZone.prompt else { return false }
         coordinator.syncExternalFocus(BoardFocusID.scenarioHeader)
         return true
+    }
+
+    func zoomIn() {
+        setZoom(zoomScale + Self.zoomStep)
+    }
+
+    func zoomOut() {
+        setZoom(zoomScale - Self.zoomStep)
     }
 
     private func setZoom(_ value: CGFloat) {
