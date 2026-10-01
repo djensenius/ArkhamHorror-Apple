@@ -22,9 +22,9 @@ extension QuestionPresentation {
         var isRenderableInCurrentClient: Bool {
             switch self {
             case .singleChoice, .amounts, .payment, .exchange:
-                return true
+                true
             case .multiSelect, .deck, .campaignSettings, .deferred:
-                return false
+                false
             }
         }
     }
@@ -60,13 +60,13 @@ extension BoundQuestionPresentation {
     var isRenderableInCurrentClient: Bool {
         switch presentation.genericSupport {
         case .singleChoice:
-            return presentation.supportsCurrentGenericChoiceList
+            presentation.supportsCurrentGenericChoiceList
                 && !rawChoices.isEmpty
                 && (!requiresSealedActionabilityOverlay || usesSealedActionabilityOverlay)
         case .amounts, .payment, .exchange:
-            return rawChoices.isEmpty
+            rawChoices.isEmpty
         case .multiSelect, .deck, .campaignSettings, .deferred:
-            return false
+            false
         }
     }
 }
@@ -190,18 +190,18 @@ extension BasicChoicePromptPresentation {
     ) -> Bool {
         switch presentation.answer {
         case .singleChoice:
-            return true
+            true
         case .amounts:
-            return rawQuestion.hasTag("ChooseAmounts")
+            rawQuestion.hasTag("ChooseAmounts")
                 || rawQuestion.wrapsQuestion(tag: "QuestionLabel", innerTag: "ChooseAmounts")
         case .paymentAmounts:
-            return rawQuestion.hasTag("ChoosePaymentAmounts")
+            rawQuestion.hasTag("ChoosePaymentAmounts")
                 || rawQuestion.wrapsQuestion(tag: "PayCostQuestion", innerTag: "ChoosePaymentAmounts")
         case .exchangeAmounts:
-            return presentation.questionKind == .chooseExchangeAmounts
+            presentation.questionKind == .chooseExchangeAmounts
         case .deck, .standaloneSettings, .campaignSettings, .pickDestiny,
              .campaignSpecific, .scenarioSpecific, .continueCampaign:
-            return false
+            false
         }
     }
 

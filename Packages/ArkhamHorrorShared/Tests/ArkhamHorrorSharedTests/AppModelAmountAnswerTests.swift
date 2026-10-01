@@ -64,7 +64,7 @@ extension AppModelLiveGameTests {
         await connection.resumeOldestSend(with: .success(()))
         #expect(await first.value == .sentAwaitingSnapshot)
         #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == .awaitingSnapshot)
-        #expect(await connection.sentData == [try amountAnswerBytes(amounts: amounts, version: 207)])
+        #expect(try await connection.sentData == [amountAnswerBytes(amounts: amounts, version: 207)])
     }
 
     @Test("ChoosePaymentAmounts sends exact bytes and null target imposes no total constraint")
@@ -79,7 +79,7 @@ extension AppModelLiveGameTests {
                 max: 3,
                 target: .null
             ),
-            presentation: try representativePresentation(named: "choosePaymentAmounts-null-target"),
+            presentation: representativePresentation(named: "choosePaymentAmounts-null-target"),
             questionVersion: 310
         )
         let connection = FakeGameSocketConnection()
@@ -97,7 +97,7 @@ extension AppModelLiveGameTests {
             await model.submitPaymentAmountsAnswer(prompt.identity, amounts: amounts)
                 == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData == [try paymentAmountAnswerBytes(amounts: amounts, version: 310)])
+        #expect(try await connection.sentData == [paymentAmountAnswerBytes(amounts: amounts, version: 310)])
     }
 
     @Test("ChooseExchangeAmounts sends exact bytes and allows the web-compatible zero move")
@@ -116,7 +116,7 @@ extension AppModelLiveGameTests {
         #expect(prompt.isRenderableQuestion)
         #expect(prompt.requiresDedicatedAmountUI)
         #expect(await model.submitExchangeAmountsAnswer(prompt.identity, amount: 2) == .sentAwaitingSnapshot)
-        #expect(await connection.sentData == [try exchangeAnswerBytes(amount: 2)])
+        #expect(try await connection.sentData == [exchangeAnswerBytes(amount: 2)])
 
         let (zeroModel, zeroFakes) = makeSignedInModel()
         await zeroModel.flowTask?.value
@@ -129,7 +129,7 @@ extension AppModelLiveGameTests {
         )
         let zeroPrompt = try #require(zeroModel.basicChoicePresentation(for: zeroGameID))
         #expect(await zeroModel.submitExchangeAmountsAnswer(zeroPrompt.identity, amount: 0) == .sentAwaitingSnapshot)
-        #expect(await zeroConnection.sentData == [try exchangeAnswerBytes(amount: 0)])
+        #expect(try await zeroConnection.sentData == [exchangeAnswerBytes(amount: 0)])
     }
 
     @Test("Illegal amount allocations are refused without sending")
@@ -320,7 +320,7 @@ extension AppModelLiveGameTests {
         #expect(await model.submitAmountsAnswer(identity, amounts: amounts) == .readOnly)
         model.liveGameParticipantIdentities[gameID] = .participant(BoardTestFixtures.playerID("000000000002"))
         #expect(await model.submitAmountsAnswer(identity, amounts: amounts) == .staleQuestion)
-        model.liveGameParticipantIdentities[gameID] = .participant(try #require(envelope.playerID))
+        model.liveGameParticipantIdentities[gameID] = try .participant(#require(envelope.playerID))
         model.liveGameConnections[gameID] = nil
         let disconnectedIdentity = try #require(model.basicChoicePresentation(for: gameID)?.identity)
         #expect(await model.submitAmountsAnswer(disconnectedIdentity, amounts: amounts) == .readOnly)
@@ -537,13 +537,13 @@ extension AppModelLiveGameTests {
     private func amountTargetJSON(_ target: QuestionPresentation.AmountTarget) -> JSONValue {
         switch target {
         case let .min(value):
-            return .object(["tag": .string("MinAmountTarget"), "contents": .number(.integer(Int64(value)))])
+            .object(["tag": .string("MinAmountTarget"), "contents": .number(.integer(Int64(value)))])
         case let .max(value):
-            return .object(["tag": .string("MaxAmountTarget"), "contents": .number(.integer(Int64(value)))])
+            .object(["tag": .string("MaxAmountTarget"), "contents": .number(.integer(Int64(value)))])
         case let .total(value):
-            return .object(["tag": .string("TotalAmountTarget"), "contents": .number(.integer(Int64(value)))])
+            .object(["tag": .string("TotalAmountTarget"), "contents": .number(.integer(Int64(value)))])
         case let .oneOf(values):
-            return .object([
+            .object([
                 "tag": .string("AmountOneOf"),
                 "contents": .array(values.map { .number(.integer(Int64($0))) }),
             ])

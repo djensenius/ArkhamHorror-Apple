@@ -538,7 +538,7 @@ private extension BasicChoicePromptPresentation {
         choices: [(id: String, lowerBound: Int, upperBound: Int)],
         target: QuestionPresentation.AmountTarget?
     ) -> Bool {
-        let choiceIDs = Set(choices.map { $0.id })
+        let choiceIDs = Set(choices.map(\.id))
         guard choiceIDs.count == choices.count,
               Set(amounts.keys) == choiceIDs
         else { return false }
@@ -559,15 +559,15 @@ private extension BasicChoicePromptPresentation {
     ) -> Bool {
         switch target {
         case nil:
-            return true
+            true
         case let .min(minimum):
-            return total >= minimum
+            total >= minimum
         case let .max(maximum):
-            return total <= maximum
+            total <= maximum
         case let .total(required):
-            return total == required
+            total == required
         case let .oneOf(allowed):
-            return allowed.contains(total)
+            allowed.contains(total)
         }
     }
 }
