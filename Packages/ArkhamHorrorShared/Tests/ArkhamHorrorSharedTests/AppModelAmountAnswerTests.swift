@@ -776,6 +776,39 @@ extension AppModelLiveGameTests {
         #expect(controller.amountDraft[visibleID] == 2)
     }
 
+    @Test("Amount and exchange chrome strings format with and without a catalog locale")
+    func amountChromeStringsFormatWithoutRawPlaceholders() {
+        let englishPrompt = amountChromePrompt(locale: nil)
+        let english = amountChromeStrings(in: englishPrompt)
+        #expect(english == [
+            "Total: 2",
+            "Allowed 0–3",
+            "Decrease Clues",
+            "Increase Clues",
+            "2, allowed 0 to 3",
+            "Exchange resource",
+            "2 to Daisy",
+            "1 to Roland",
+            "Roland has 3. Daisy has 1.",
+        ])
+        #expect(!english.contains { $0.contains("%") })
+
+        let germanPrompt = amountChromePrompt(locale: "de")
+        let german = amountChromeStrings(in: germanPrompt)
+        #expect(german == [
+            "Gesamt: 2",
+            "Erlaubt 0–3",
+            "Clues verringern",
+            "Clues erhöhen",
+            "2, erlaubt 0 bis 3",
+            "Ressource tauschen",
+            "2 zu Daisy",
+            "1 zu Roland",
+            "Roland hat 3. Daisy hat 1.",
+        ])
+        #expect(!german.contains { $0.contains("%") })
+    }
+
     @Test("Amount submit is disabled while visible row labels are unresolved")
     @MainActor
     func unresolvedAmountLabelsDisableSubmitUntilCatalogLoads() async throws {
@@ -923,6 +956,78 @@ extension AppModelLiveGameTests {
         await connection.resumeOldestSend(with: .success(()))
         let expected = try amountAnswerBytes(amounts: [rowID: 1], version: 613)
         #expect(await connection.sentData == [expected])
+    }
+
+    private func amountChromePrompt(locale: String?) -> BasicChoicePromptPresentation {
+        BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID("000000000001"),
+                questionVersion: 1,
+                rawQuestion: .object(["tag": .string("ChooseAmounts")]),
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: .updateRequired(tag: "ChooseAmounts"),
+            semanticLocaleIdentifier: locale,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private func amountChromeStrings(in prompt: BasicChoicePromptPresentation) -> [String] {
+        [
+            prompt.semanticLocalized(
+                "amountPrompt.total",
+                value: "Total: %lld",
+                arguments: [Int64(2)]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.row.bounds",
+                value: "Allowed %1$lld–%2$lld",
+                arguments: [Int64(0), Int64(3)]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.decrease.accessibility",
+                value: "Decrease %@",
+                arguments: ["Clues"]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.increase.accessibility",
+                value: "Increase %@",
+                arguments: ["Clues"]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.row.value",
+                value: "%lld, allowed %lld to %lld",
+                arguments: [Int64(2), Int64(0), Int64(3)]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.exchange.legend",
+                value: "Exchange %@",
+                arguments: [prompt.semanticLocalized(
+                    "amountPrompt.token.resource",
+                    value: "resource"
+                )]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.exchange.forward",
+                value: "%1$lld to %2$@",
+                arguments: [Int64(2), "Daisy"]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.exchange.backward",
+                value: "%1$lld to %2$@",
+                arguments: [Int64(1), "Roland"]
+            ),
+            prompt.semanticLocalized(
+                "amountPrompt.exchange.accessibility",
+                value: "%1$@ has %2$lld. %3$@ has %4$lld.",
+                arguments: ["Roland", Int64(3), "Daisy", Int64(1)]
+            ),
+        ]
     }
 
     private func oneChoiceAmountEnvelope(
