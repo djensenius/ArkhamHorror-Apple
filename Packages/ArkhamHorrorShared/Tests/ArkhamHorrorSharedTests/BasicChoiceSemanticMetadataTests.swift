@@ -2,7 +2,7 @@
 import Testing
 
 extension BasicChoiceSemanticPresentationTests {
-    @Test("Semantic localized labels use catalog resolution and fail closed")
+    @Test("Semantic localized labels use catalog resolution with generic fallback")
     func localizedLabelUsesSemanticSourceIndex() throws {
         let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
         let unavailable = try semanticPrompt(
@@ -10,14 +10,14 @@ extension BasicChoiceSemanticPresentationTests {
             choiceLabelResolutions: [0: .unavailable(.missingKey)]
         )
         let unavailableChoice = try #require(unavailable.choices.first)
-        #expect(!unavailable.isChoiceActionable(unavailableChoice, in: projection))
+        #expect(unavailable.isChoiceActionable(unavailableChoice, in: projection))
         #expect(
             unavailable.displayTitle(for: unavailableChoice, in: projection)
-                == "Unavailable action"
+                == "Choice 1"
         )
         #expect(
             unavailable.accessibilityHint(for: unavailableChoice, in: projection)
-                == "This server publishes no usable text for this choice."
+                == "Activates choice 1."
         )
 
         let resolved = try semanticPrompt(
@@ -38,7 +38,7 @@ extension BasicChoiceSemanticPresentationTests {
         let prompt = try semanticPrompt(choice: recursiveCostChoice)
         let projection = gatheringProjection(includeAct: false, includeInvestigator: true)
         let choice = try #require(prompt.choices.first)
-        let expectedTitle = "Use ability (1 action and "
+        let expectedTitle = "Use c01001 ability 1 (1 action and "
             + "(2 resources or 1 resource + 2 resources per investigator at the same location) "
             + "and 1/2/3/4 clues by player count and X clues and ★ clues "
             + "and an unknown number of clues and additional cost)"

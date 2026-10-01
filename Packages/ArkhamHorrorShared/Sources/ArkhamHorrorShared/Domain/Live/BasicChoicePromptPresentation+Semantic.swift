@@ -188,9 +188,7 @@ extension BasicChoicePromptPresentation {
         for choice: BasicChoice,
         in projection: BoardProjection
     ) -> BasicChoiceResolvedChoiceLabel {
-        guard let semanticPresentation,
-              let descriptor = semanticPresentation.descriptor(forSourceIndex: choice.index)
-        else {
+        guard let semanticPresentation else {
             let title = BoardDisplayFormatting.choiceDisplayTitle(
                 for: choice,
                 in: projection,
@@ -201,6 +199,19 @@ extension BasicChoicePromptPresentation {
                 title: title,
                 subtitle: nil,
                 systemImage: choice.systemImage,
+                accessibilityLabel: title
+            )
+        }
+        guard let descriptor = semanticPresentation.descriptor(forSourceIndex: choice.index) else {
+            let title = semanticLocalized(
+                "semantic.choice.unavailable.index",
+                value: "Unavailable action (choice \(choice.index + 1))",
+                arguments: [Int64(choice.index + 1)]
+            )
+            return BasicChoiceResolvedChoiceLabel(
+                title: title,
+                subtitle: nil,
+                systemImage: "exclamationmark.triangle",
                 accessibilityLabel: title
             )
         }
