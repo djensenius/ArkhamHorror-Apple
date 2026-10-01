@@ -75,6 +75,17 @@ extension AppModelLiveGameTests {
         #expect(presentation.displayTitle(for: choice, in: projection) == "Continue")
     }
 
+    @Test("Unconvertible presentation flavor text reports unsupported entry")
+    func unconvertiblePresentationFlavorTextIsUnsupportedEntry() {
+        let (model, _) = makeSignedInModel()
+        let flavorText = QuestionPresentation.FlavorText(
+            title: nil,
+            body: [.object(["tag": .string("UnknownEntry")])]
+        )
+
+        #expect(model.storyResolution(for: flavorText) == .unavailable(.unsupportedEntry))
+    }
+
     private func startVerifiedHeaderEntrySession() async throws -> HeaderEntrySession {
         let documents = try headerEntryCatalogDocuments()
         let (model, fakes) = makeCatalogSignedInModel(documents: documents)

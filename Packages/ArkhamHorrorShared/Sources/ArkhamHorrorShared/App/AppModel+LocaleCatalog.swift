@@ -248,7 +248,7 @@ extension AppModel {
     ) -> StoryResolution? {
         guard let flavorText else { return nil }
         guard let converted = presentationFlavorText(flavorText) else {
-            return .unavailable(localeCatalogUnavailability ?? .catalog(.notAdvertised))
+            return .unavailable(.unsupportedEntry)
         }
         return StoryNarrativeLocalization.resolve(
             converted,
