@@ -174,8 +174,8 @@ extension BasicChoicePromptView {
                             label: "←",
                             accessibilityLabel: promptString(
                                 "amountPrompt.exchange.decrease.accessibility",
-                                value: "Move one \(tokenTitle) back to \(exchangePrompt.fromDisplayName)",
-                                tokenTitle, exchangePrompt.fromDisplayName
+                                value: "Move one \(tokenTitle) back to \(fromName)",
+                                tokenTitle, fromName
                             ),
                             focusID: BoardFocusID.promptExchangeDecrease,
                             disabled: !exchangePrompt.canAdjust(amount: amount, delta: -1)
@@ -187,8 +187,8 @@ extension BasicChoicePromptView {
                             label: "→",
                             accessibilityLabel: promptString(
                                 "amountPrompt.exchange.increase.accessibility",
-                                value: "Move one \(tokenTitle) to \(exchangePrompt.toDisplayName)",
-                                tokenTitle, exchangePrompt.toDisplayName
+                                value: "Move one \(tokenTitle) to \(toName)",
+                                tokenTitle, toName
                             ),
                             focusID: BoardFocusID.promptExchangeIncrease,
                             disabled: !exchangePrompt.canAdjust(amount: amount, delta: 1)

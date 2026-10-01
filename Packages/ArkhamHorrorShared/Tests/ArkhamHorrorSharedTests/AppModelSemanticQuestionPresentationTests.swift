@@ -512,6 +512,7 @@ extension AppModelLiveGameTests {
         case unexpectedShape
     }
 
+    // swiftlint:disable:next function_body_length
     private func percentInterpolationPrompt(
         locale: String?,
         cardName: String
@@ -603,7 +604,10 @@ extension AppModelLiveGameTests {
         game["locations"] = .object(locations)
         root["game"] = .object(game)
         envelope = .object(root)
-        let decoded = try ContractJSON.decode(GetGameEnvelope.self, from: ContractJSON.encode(envelope))
+        let decoded = try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: ContractJSON.encode(envelope)
+        )
         return BoardProjectionBuilder.makeProjection(from: decoded.game)
     }
 
