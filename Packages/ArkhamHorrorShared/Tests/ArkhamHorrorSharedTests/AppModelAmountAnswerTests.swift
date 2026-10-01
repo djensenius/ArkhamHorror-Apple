@@ -572,10 +572,30 @@ extension AppModelLiveGameTests {
 
     @Test("Exchange prompts with negative starting amounts cannot submit")
     func exchangeNegativeInitialAmountsAreRefused() async throws {
+        try await assertExchangeNegativeInitialAmountRefused(
+            fromInitialAmount: -1,
+            toInitialAmount: 3,
+            submittedAmount: -1
+        )
+        try await assertExchangeNegativeInitialAmountRefused(
+            fromInitialAmount: 3,
+            toInitialAmount: -1,
+            submittedAmount: 1
+        )
+    }
+
+    private func assertExchangeNegativeInitialAmountRefused(
+        fromInitialAmount: Int,
+        toInitialAmount: Int,
+        submittedAmount: Int
+    ) async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
-        let envelope = try exchangeEnvelope(fromInitialAmount: -1, toInitialAmount: 3)
+        let envelope = try exchangeEnvelope(
+            fromInitialAmount: fromInitialAmount,
+            toInitialAmount: toInitialAmount
+        )
         let connection = FakeGameSocketConnection()
         let gameID = await startChoiceSession(
             model: model, fakes: fakes, envelope: envelope, connection: connection
@@ -583,9 +603,9 @@ extension AppModelLiveGameTests {
         let prompt = try #require(model.basicChoicePresentation(for: gameID))
         let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
         let exchangePrompt = try #require(prompt.exchangePrompt(in: projection))
-        #expect(!exchangePrompt.isLegal(-1))
+        #expect(!exchangePrompt.isLegal(submittedAmount))
         #expect(
-            await model.submitExchangeAmountsAnswer(prompt.identity, amount: -1)
+            await model.submitExchangeAmountsAnswer(prompt.identity, amount: submittedAmount)
                 == .unsupportedChoice
         )
         #expect(await connection.sentData.isEmpty)
