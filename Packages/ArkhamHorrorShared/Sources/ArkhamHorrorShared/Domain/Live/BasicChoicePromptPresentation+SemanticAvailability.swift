@@ -1,4 +1,5 @@
 extension BasicChoicePromptPresentation {
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     func semanticEntityTitle(
         _ entity: QuestionPresentation.Entity,
         in projection: BoardProjection
@@ -29,8 +30,12 @@ extension BasicChoicePromptPresentation {
             return cardCatalog?.displayName(for: code) ?? code.rawValue
         case .enemy:
             guard let id = semanticEnemyID(entity.id) else { return nil }
-            return projection.enemiesByLocationID.values.flatMap(\.self).first { $0.id == id }?.displayName
-                ?? projection.engagedEnemiesByInvestigatorID.values.flatMap(\.self).first { $0.id == id }?.displayName
+            return projection.enemiesByLocationID.values.flatMap(\.self).first {
+                $0.id == id
+            }?.displayName
+                ?? projection.engagedEnemiesByInvestigatorID.values.flatMap(\.self).first {
+                    $0.id == id
+                }?.displayName
         case .event:
             guard let id = semanticEventID(entity.id) else { return nil }
             return projection.inPlayCardsByPlayer.values.flatMap(\.self).first {

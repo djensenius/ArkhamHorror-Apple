@@ -1,5 +1,6 @@
 import SwiftUI
 
+// swiftlint:disable:next type_body_length
 struct BasicChoicePromptView: View {
     let presentation: BasicChoicePromptPresentation
     let controller: BoardCommandController
@@ -159,10 +160,10 @@ struct BasicChoicePromptView: View {
                     .frame(maxHeight: isCompact ? 240 : 420)
                     .accessibilityIdentifier("liveGame.prompt.story.body")
                 }
-                if let codes = presentation.semanticPresentation?.presentation.readCards,
-                   !codes.isEmpty
-                {
-                    genericReadCardsSummary(codes)
+                if let codes = presentation.semanticPresentation?.presentation.readCards {
+                    if !codes.isEmpty {
+                        genericReadCardsSummary(codes)
+                    }
                 }
             }
             .accessibilityElement(children: .contain)

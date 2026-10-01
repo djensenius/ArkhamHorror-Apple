@@ -1,4 +1,4 @@
-// swiftlint:disable file_length function_body_length type_body_length
+// swiftlint:disable file_length function_body_length type_body_length line_length large_tuple
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -505,4 +505,4 @@ private enum GenericRendererTestError: Error {
     case unexpectedFixture
 }
 
-// swiftlint:enable file_length function_body_length type_body_length
+// swiftlint:enable file_length function_body_length type_body_length line_length large_tuple

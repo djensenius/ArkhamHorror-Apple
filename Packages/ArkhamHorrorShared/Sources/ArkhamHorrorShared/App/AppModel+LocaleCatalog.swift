@@ -269,6 +269,7 @@ extension AppModel {
         return FlavorText(title: flavorText.title, body: body)
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private func presentationFlavorEntry(_ entry: JSONValue) -> FlavorTextEntry? {
         guard case let .object(object) = entry,
               case let .string(tag)? = object["tag"]

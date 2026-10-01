@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 
 private enum BasicChoiceSendPreparation {
@@ -406,3 +407,5 @@ extension AppModel {
         }
     }
 }
+
+// swiftlint:enable file_length

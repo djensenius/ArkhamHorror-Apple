@@ -67,6 +67,7 @@ extension BasicChoicePromptPresentation {
         return question.supportedQuestion?.kind == .read
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     func headerTitle(in _: BoardProjection) -> String {
         guard let presentation = semanticPresentation?.presentation else {
             return isStoryPrompt ? "Story" : "Choose an action"
@@ -111,10 +112,10 @@ extension BasicChoicePromptPresentation {
         if let cost = presentation.payCost {
             parts.append("Cost: \(semanticCostSummary(cost, in: projection))")
         }
-        if let cardCode = presentation.cardCode,
-           let cardName = semanticCardName(cardCode, in: projection)
-        {
-            parts.append(cardName)
+        if let cardCode = presentation.cardCode {
+            if let cardName = semanticCardName(cardCode, in: projection) {
+                parts.append(cardName)
+            }
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
@@ -266,7 +267,6 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    // swiftlint:disable:next function_body_length
     func accessibilityHint(for choice: BasicChoice, in projection: BoardProjection) -> String {
         guard let semanticPresentation else {
             return BoardDisplayFormatting.choiceAccessibilityHint(
@@ -655,14 +655,15 @@ extension BasicChoicePromptPresentation {
                 value: "Not selectable"
             )
         }
-        if let tooltip = descriptor.tooltip.flatMap(semanticInlineLabel),
-           tooltip != semanticTitle(
-               for: descriptor,
-               in: projection,
-               labelResolution: labelResolution
-           )
-        {
-            return tooltip
+        if let tooltip = descriptor.tooltip.flatMap(semanticInlineLabel) {
+            let title = semanticTitle(
+                for: descriptor,
+                in: projection,
+                labelResolution: labelResolution
+            )
+            if tooltip != title {
+                return tooltip
+            }
         }
         if let ability = descriptor.ability {
             return semanticAbilitySubtitle(ability)
@@ -818,9 +819,9 @@ extension BasicChoicePromptPresentation {
     private func splitCamelCase(_ raw: String) -> String {
         var result = ""
         for scalar in raw.unicodeScalars {
-            if CharacterSet.uppercaseLetters.contains(scalar), !result.isEmpty,
-               result.last != " "
-            {
+            let needsSeparator = CharacterSet.uppercaseLetters.contains(scalar)
+                && !result.isEmpty && result.last != " "
+            if needsSeparator {
                 result.append(" ")
             }
             result.append(String(scalar))
