@@ -1,5 +1,7 @@
 import Foundation
 
+// swiftlint:disable file_length
+
 struct BasicChoiceAmountPrompt: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
         case amounts

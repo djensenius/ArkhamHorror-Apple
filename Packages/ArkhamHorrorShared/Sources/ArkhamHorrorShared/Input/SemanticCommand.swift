@@ -104,7 +104,10 @@ public enum SemanticCommand: Hashable, Sendable {
             ]
             + CycleDirection.allCases.map(SemanticCommand.cyclePlayer)
             + CycleDirection.allCases.map(SemanticCommand.cycleZone)
-            + [.jumpToActivePrompt, .zoomIn, .zoomOut, .adjustFocusedAmount(1), .adjustFocusedAmount(-1)]
+            + [
+                .jumpToActivePrompt, .zoomIn, .zoomOut,
+                .adjustFocusedAmount(1), .adjustFocusedAmount(-1),
+            ]
             + RotationDirection.allCases.map(SemanticCommand.rotateCamera)
             + [
                 .resetCamera, .confirmMultiselect, .cancelMultiselect, .undo,

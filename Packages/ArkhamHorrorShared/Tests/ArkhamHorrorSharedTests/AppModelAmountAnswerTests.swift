@@ -19,6 +19,12 @@ private struct AmountPromptPreferredLanguages: PreferredLanguagesProviding {
     let preferredLanguages: [String]
 }
 
+private struct WrappedAmountSendCase {
+    let prompt: BasicChoicePromptPresentation
+    let projection: BoardProjection
+    let connection: FakeGameSocketConnection
+}
+
 extension AppModelLiveGameTests {
     @Test("Amount answer encoders match the vendored contract fixtures")
     func amountAnswerEncodingMatchesFixtures() throws {
@@ -936,11 +942,7 @@ extension AppModelLiveGameTests {
         )
     }
 
-    private func sendWrappedAmountsAnswer() async throws -> (
-        prompt: BasicChoicePromptPresentation,
-        projection: BoardProjection,
-        connection: FakeGameSocketConnection
-    ) {
+    private func sendWrappedAmountsAnswer() async throws -> WrappedAmountSendCase {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -965,14 +967,14 @@ extension AppModelLiveGameTests {
             ) == .sentAwaitingSnapshot
         )
         let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
-        return (prompt, projection, connection)
+        return WrappedAmountSendCase(
+            prompt: prompt,
+            projection: projection,
+            connection: connection
+        )
     }
 
-    private func sendWrappedPaymentAmountsAnswer() async throws -> (
-        prompt: BasicChoicePromptPresentation,
-        projection: BoardProjection,
-        connection: FakeGameSocketConnection
-    ) {
+    private func sendWrappedPaymentAmountsAnswer() async throws -> WrappedAmountSendCase {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -997,7 +999,11 @@ extension AppModelLiveGameTests {
             ) == .sentAwaitingSnapshot
         )
         let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
-        return (prompt, projection, connection)
+        return WrappedAmountSendCase(
+            prompt: prompt,
+            projection: projection,
+            connection: connection
+        )
     }
 
     private func amountLabelCatalogDocuments() throws -> SyntheticLocaleCatalogDocuments {
