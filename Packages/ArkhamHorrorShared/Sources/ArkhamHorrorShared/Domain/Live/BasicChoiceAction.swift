@@ -243,11 +243,21 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
 
     var canSubmitSingleChoiceAnswer: Bool {
         guard let semanticPresentation else { return true }
+        guard case .singleChoice = semanticPresentation.presentation.answer else { return false }
         return semanticPresentation.isRenderableInCurrentClient
     }
 
+    var canSubmitPromptAnswer: Bool {
+        guard let semanticPresentation else { return true }
+        return semanticPresentation.isRenderableInCurrentClient
+            && Self.supportsSemanticPrompt(
+                rawQuestion: identity.rawQuestion,
+                presentation: semanticPresentation.presentation
+            )
+    }
+
     var canSubmit: Bool {
-        guard isAuthorized, isStoryAvailable, canSubmitSingleChoiceAnswer else { return false }
+        guard isAuthorized, isStoryAvailable, canSubmitPromptAnswer else { return false }
         switch actionPhase {
         case .sending, .awaitingSnapshot, .uncertain:
             return false
@@ -357,12 +367,28 @@ enum BasicChoiceSubmitResult: Sendable, Equatable {
     case unsupportedChoice
 }
 
+enum BasicChoiceSubmission: Sendable, Equatable {
+    case singleChoice(Int)
+    case amounts([String: Int])
+    case paymentAmounts([String: Int])
+    case exchangeAmount(Int)
+
+    var choiceIndex: Int? {
+        guard case let .singleChoice(index) = self else { return nil }
+        return index
+    }
+}
+
 struct BasicChoiceActionRecord: Sendable, Equatable {
     var identity: BasicChoicePromptIdentity
-    let choiceIndex: Int
+    let submission: BasicChoiceSubmission
     let attemptID: UUID
     var connectionID: UUID
     var phase: BasicChoiceActionPhase
+
+    var choiceIndex: Int? {
+        submission.choiceIndex
+    }
 }
 
 struct LiveGameConnectionHandle: Sendable {

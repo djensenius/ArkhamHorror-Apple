@@ -38,7 +38,10 @@ struct BasicChoicePromptView: View {
                 SkillTestSummaryView(projection: skillTest)
             }
 
-            if !presentation.isRenderableQuestion {
+            if !presentation.isRenderableQuestion || presentation.requiresDedicatedAmountUI {
+                // Step A of task-1.2.9 makes amount/payment/exchange prompts legal at the
+                // model and socket layers. Dedicated controls land in Step B, so the live
+                // view deliberately keeps the user-facing Update Required affordance for now.
                 Label("Update required", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             } else {

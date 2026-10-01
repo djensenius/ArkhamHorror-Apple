@@ -20,7 +20,12 @@ extension QuestionPresentation {
         case deferred
 
         var isRenderableInCurrentClient: Bool {
-            self == .singleChoice
+            switch self {
+            case .singleChoice, .amounts, .payment, .exchange:
+                return true
+            case .multiSelect, .deck, .campaignSettings, .deferred:
+                return false
+            }
         }
     }
 
@@ -47,15 +52,22 @@ extension QuestionPresentation {
     }
 
     var supportsCurrentGenericChoiceList: Bool {
-        genericSupport.isRenderableInCurrentClient && choiceCount > 0
+        genericSupport == .singleChoice && choiceCount > 0
     }
 }
 
 extension BoundQuestionPresentation {
     var isRenderableInCurrentClient: Bool {
-        presentation.supportsCurrentGenericChoiceList
-            && !rawChoices.isEmpty
-            && (!requiresSealedActionabilityOverlay || usesSealedActionabilityOverlay)
+        switch presentation.genericSupport {
+        case .singleChoice:
+            return presentation.supportsCurrentGenericChoiceList
+                && !rawChoices.isEmpty
+                && (!requiresSealedActionabilityOverlay || usesSealedActionabilityOverlay)
+        case .amounts, .payment, .exchange:
+            return rawChoices.isEmpty
+        case .multiSelect, .deck, .campaignSettings, .deferred:
+            return false
+        }
     }
 }
 
@@ -88,8 +100,23 @@ extension BasicChoicePromptPresentation {
     var isRenderableQuestion: Bool {
         if let semanticPresentation {
             return semanticPresentation.isRenderableInCurrentClient
+                && Self.supportsSemanticPrompt(
+                    rawQuestion: identity.rawQuestion,
+                    presentation: semanticPresentation.presentation
+                )
         }
         return question.supportedQuestion?.choices.isEmpty == false
+    }
+
+    var requiresDedicatedAmountUI: Bool {
+        guard let presentation = semanticPresentation?.presentation else { return false }
+        switch presentation.answer {
+        case .amounts, .paymentAmounts, .exchangeAmounts:
+            return isRenderableQuestion
+        case .singleChoice, .deck, .standaloneSettings, .campaignSettings,
+             .pickDestiny, .campaignSpecific, .scenarioSpecific, .continueCampaign:
+            return false
+        }
     }
 
     var isStoryPrompt: Bool {
@@ -155,6 +182,27 @@ extension BasicChoicePromptPresentation {
     func questionHint() -> String? {
         guard let presentation = semanticPresentation?.presentation else { return nil }
         return selectionHint(for: presentation)
+    }
+
+    static func supportsSemanticPrompt(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation
+    ) -> Bool {
+        switch presentation.answer {
+        case .singleChoice:
+            return true
+        case .amounts:
+            return rawQuestion.hasTag("ChooseAmounts")
+                || rawQuestion.wrapsQuestion(tag: "QuestionLabel", innerTag: "ChooseAmounts")
+        case .paymentAmounts:
+            return rawQuestion.hasTag("ChoosePaymentAmounts")
+                || rawQuestion.wrapsQuestion(tag: "PayCostQuestion", innerTag: "ChoosePaymentAmounts")
+        case .exchangeAmounts:
+            return presentation.questionKind == .chooseExchangeAmounts
+        case .deck, .standaloneSettings, .campaignSettings, .pickDestiny,
+             .campaignSpecific, .scenarioSpecific, .continueCampaign:
+            return false
+        }
     }
 
     private func selectionHint(for presentation: QuestionPresentation) -> String? {
@@ -1028,3 +1076,20 @@ extension BasicChoicePromptPresentation {
 }
 
 // swiftlint:enable file_length line_length
+
+private extension JSONValue {
+    func hasTag(_ expected: String) -> Bool {
+        guard case let .object(object) = self,
+              object["tag"] == .string(expected)
+        else { return false }
+        return true
+    }
+
+    func wrapsQuestion(tag expectedTag: String, innerTag expectedInnerTag: String) -> Bool {
+        guard case let .object(object) = self,
+              object["tag"] == .string(expectedTag),
+              let inner = object["question"]
+        else { return false }
+        return inner.hasTag(expectedInnerTag)
+    }
+}
