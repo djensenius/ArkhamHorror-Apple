@@ -49,6 +49,43 @@ extension AppModelLiveGameTests {
         ])
     }
 
+    @Test("Generic read presentation resolves header and I18n body through AppModel")
+    func genericReadStoryPresentationResolvesCatalogBody() async throws {
+        let documents = try genericReadCatalogDocuments()
+        let (model, fakes) = makeCatalogSignedInModel(documents: documents)
+        await model.flowTask?.value
+        await model.localeCatalogTask?.value
+        let envelope = try genericReadEnvelope()
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let presentation = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let choice = try #require(presentation.choices.first)
+
+        #expect(presentation.question.supportedQuestion == nil)
+        #expect(presentation.storyResolution == .resolved(ResolvedStory(
+            title: nil,
+            body: [
+                .heading(level: .level1, nodes: [.text("Localized heading")]),
+                .nodes([.text("Localized body")]),
+            ]
+        )))
+        #expect(presentation.displayTitle(for: choice, in: projection) == "Continue")
+    }
+
+    @Test("Unconvertible presentation flavor text reports unsupported entry")
+    func unconvertiblePresentationFlavorTextIsUnsupportedEntry() {
+        let (model, _) = makeSignedInModel()
+        let flavorText = QuestionPresentation.FlavorText(
+            title: nil,
+            body: [.object(["tag": .string("UnknownEntry")])]
+        )
+
+        #expect(model.storyResolution(for: flavorText) == .unavailable(.unsupportedEntry))
+    }
+
     private func startVerifiedHeaderEntrySession() async throws -> HeaderEntrySession {
         let documents = try headerEntryCatalogDocuments()
         let (model, fakes) = makeCatalogSignedInModel(documents: documents)
@@ -78,6 +115,66 @@ extension AppModelLiveGameTests {
         )
     }
 
+    private func genericReadEnvelope() throws -> GetGameEnvelope {
+        let data = try fixtureData(named: "get-game")
+        var root = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        var game = try #require(root["game"] as? [String: Any])
+        let playerID = try #require(root["playerId"] as? String)
+        let flavor: [String: Any] = [
+            "title": NSNull(),
+            "body": [
+                ["tag": "HeaderEntry", "level": 1, "key": "story.heading"],
+                ["tag": "I18nEntry", "key": "story.body", "variables": [:]],
+            ],
+        ]
+        let rawQuestion: [String: Any] = [
+            "tag": "Read",
+            "flavorText": flavor,
+            "readChoices": [
+                "tag": "BasicReadChoices",
+                "contents": [["tag": "Label", "label": "$read.continue", "messages": []]],
+            ],
+            "readCards": NSNull(),
+        ]
+        game["question"] = [playerID: rawQuestion]
+        game["questionPresentation"] = [
+            playerID: [
+                "answer": ["kind": "singleChoice", "tag": "Answer"],
+                "choiceCount": 1,
+                "choices": [[
+                    "kind": "localizedLabel",
+                    "label": ["kind": "embeddedI18n", "text": "$read.continue"],
+                    "selectable": true,
+                    "sourceIndex": 0,
+                ]],
+                "flavorText": flavor,
+                "protocolVersion": 2,
+                "questionKind": "read",
+                "questionVersion": game["scenarioSteps"] ?? 3,
+                "readChoiceKind": "basic",
+            ],
+        ]
+        root["game"] = game
+        let encoded = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        return try ContractJSON.decode(GetGameEnvelope.self, from: encoded)
+    }
+
+    private func genericReadCatalogDocuments() throws -> SyntheticLocaleCatalogDocuments {
+        try SyntheticLocaleCatalogDocuments.make(
+            entryKeys: ["read.continue", "story.body", "story.heading"],
+            chunkEntries: """
+            {"read.continue":{"form":"message","nodes":[{"type":"text",\
+            "value":"Continue"}],"variables":[]},\
+            "story.body":{"form":"message","nodes":[{"type":"text",\
+            "value":"Localized body"}],"variables":[]},\
+            "story.heading":{"form":"message","nodes":[{"type":"text",\
+            "value":"Localized heading"}],"variables":[]}}
+            """
+        )
+    }
+
     private func headerEntryCatalogDocuments() throws -> SyntheticLocaleCatalogDocuments {
         try SyntheticLocaleCatalogDocuments.make(
             pack: "nightOfTheZealot",
@@ -94,7 +191,7 @@ extension AppModelLiveGameTests {
         )
     }
 
-    private func makeCatalogSignedInModel(
+    func makeCatalogSignedInModel(
         documents: SyntheticLocaleCatalogDocuments
     ) -> (model: AppModel, fakes: Fakes) {
         let tokenStore = FakeTokenStore(tokens: [documents.profile.id: "catalog-token"])

@@ -26,7 +26,7 @@ extension BasicChoicePromptPresentation {
         case .free:
             return semanticLocalized(
                 "semantic.cost.free",
-                value: "free"
+                value: "Free"
             )
         case let .action(amount):
             return semanticCount(amount, unit: .action)

@@ -243,26 +243,136 @@ extension AppModel {
         )
     }
 
+    func storyResolution(
+        for flavorText: QuestionPresentation.FlavorText?
+    ) -> StoryResolution? {
+        guard let flavorText else { return nil }
+        guard let converted = presentationFlavorText(flavorText) else {
+            return .unavailable(.unsupportedEntry)
+        }
+        return StoryNarrativeLocalization.resolve(
+            converted,
+            resolver: localeCatalogResolver,
+            catalogUnavailability: localeCatalogUnavailability
+        )
+    }
+
+    private func presentationFlavorText(
+        _ flavorText: QuestionPresentation.FlavorText
+    ) -> FlavorText? {
+        var body: [FlavorTextEntry] = []
+        body.reserveCapacity(flavorText.body.count)
+        for entry in flavorText.body {
+            guard let converted = presentationFlavorEntry(entry) else { return nil }
+            body.append(converted)
+        }
+        return FlavorText(title: flavorText.title, body: body)
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity
+    private func presentationFlavorEntry(_ entry: JSONValue) -> FlavorTextEntry? {
+        guard case let .object(object) = entry,
+              case let .string(tag)? = object["tag"]
+        else { return nil }
+        switch tag {
+        case "BasicEntry":
+            guard case let .string(text)? = object["text"] else { return nil }
+            return .basic(text: text)
+        case "HeaderEntry":
+            guard case let .number(levelNumber)? = object["level"],
+                  let magnitude = levelNumber.wholeNumberMagnitude,
+                  let integerLevel = Int(magnitude),
+                  let level = FlavorTextHeadingLevel(rawValue: integerLevel),
+                  case let .string(key)? = object["key"]
+            else { return nil }
+            return .header(level: level, key: key)
+        case "I18nEntry":
+            guard case let .string(key)? = object["key"],
+                  case let .object(variables)? = object["variables"]
+            else { return nil }
+            return .i18n(key: key, variables: .object(variables))
+        case "ListEntry":
+            guard case let .array(rawItems)? = object["list"] else { return nil }
+            var items: [FlavorTextListItem] = []
+            for rawItem in rawItems {
+                guard let item = presentationFlavorListItem(rawItem) else { return nil }
+                items.append(item)
+            }
+            return .list(items: items)
+        default:
+            return nil
+        }
+    }
+
+    private func presentationFlavorListItem(_ item: JSONValue) -> FlavorTextListItem? {
+        guard case let .object(object) = item,
+              let entryValue = object["entry"],
+              let entry = presentationFlavorEntry(entryValue),
+              case let .array(rawNested)? = object["nested"]
+        else { return nil }
+        var nested: [FlavorTextListItem] = []
+        for raw in rawNested {
+            guard let child = presentationFlavorListItem(raw) else { return nil }
+            nested.append(child)
+        }
+        return FlavorTextListItem(entry: entry, nested: nested)
+    }
+
+    func choiceFlavorResolutions(
+        for semanticPresentation: BoundQuestionPresentation?
+    ) -> [Int: StoryResolution] {
+        guard let semanticPresentation else { return [:] }
+        var result: [Int: StoryResolution] = [:]
+        for choice in semanticPresentation.presentation.choices {
+            if let resolution = storyResolution(for: choice.flavorText) {
+                result[choice.sourceIndex] = resolution
+            }
+        }
+        return result
+    }
+
+    func promptLabelResolutions(
+        for presentation: QuestionPresentation?
+    ) -> [String: BasicChoiceLabelResolution] {
+        guard let presentation else { return [:] }
+        let labels: [(key: String, label: QuestionPresentation.Label?)] = [
+            ("label", presentation.label),
+            ("questionLabel", presentation.questionLabel),
+            ("completionLabel", presentation.completionLabel),
+            ("confirmLabel", presentation.confirmLabel),
+            ("backLabel", presentation.backLabel),
+        ]
+        return labelResolutions(labels.compactMap { key, label in
+            label.map { (key: key, wireLabel: $0.text) }
+        })
+    }
+
     /// Resolves every deployment-owned choice label against one current catalog snapshot,
     /// retaining authoritative source indices so unresolved entries stay visible in place.
     func choiceLabelResolutions(
         for question: BasicChoiceQuestion?,
         semanticPresentation: BoundQuestionPresentation? = nil
     ) -> [Int: BasicChoiceLabelResolution] {
-        let resolver = localeCatalogResolver
-        let unavailability = localeCatalogUnavailability ?? .catalog(.notAdvertised)
-        var result: [Int: BasicChoiceLabelResolution] = [:]
-        let labels: [(index: Int, wireLabel: String)] = if let semanticPresentation {
+        let labels: [(key: Int, wireLabel: String)] = if let semanticPresentation {
             semanticPresentation.presentation.choices.compactMap { choice in
-                guard let label = choice.label else { return nil }
-                return (choice.sourceIndex, label.text)
+                guard let label = choice.label, label.text.hasPrefix("$") else { return nil }
+                return (key: choice.sourceIndex, wireLabel: label.text)
             }
         } else {
             (question?.choices ?? []).compactMap { choice in
                 guard let localizationKey = choice.localizationKey else { return nil }
-                return (choice.index, "$\(localizationKey)")
+                return (key: choice.index, wireLabel: "$\(localizationKey)")
             }
         }
+        return labelResolutions(labels)
+    }
+
+    private func labelResolutions<Key: Hashable>(
+        _ labels: [(key: Key, wireLabel: String)]
+    ) -> [Key: BasicChoiceLabelResolution] {
+        let resolver = localeCatalogResolver
+        let unavailability = localeCatalogUnavailability ?? .catalog(.notAdvertised)
+        var result: [Key: BasicChoiceLabelResolution] = [:]
         for label in labels {
             switch StoryNarrativeLocalization.resolveProductionChoiceLabel(
                 label.wireLabel,
@@ -270,9 +380,9 @@ extension AppModel {
                 catalogUnavailability: unavailability
             ) {
             case let .success(value):
-                result[label.index] = .resolved(value)
+                result[label.key] = .resolved(value)
             case let .failure(reason):
-                result[label.index] = .unavailable(reason)
+                result[label.key] = .unavailable(reason)
             }
         }
         return result

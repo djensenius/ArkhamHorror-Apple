@@ -4,6 +4,8 @@
 "semantic.choice.accessibility.readOnly" = "This choice is currently read-only.";
 "semantic.choice.accessibility.activatesIndex" = "Activates choice %lld.";
 
+"semantic.question.title.selections" = "Make selections";
+
 "semantic.choice.title.advanceAct" = "Advance act";
 "semantic.choice.title.advanceAgenda" = "Advance agenda";
 "semantic.choice.title.applyResults" = "Apply results";
@@ -30,7 +32,7 @@
 "semantic.choice.title.startSkillTest" = "Start skill test";
 "semantic.choice.title.useAbility" = "Use ability";
 
-"semantic.cost.free" = "free";
+"semantic.cost.free" = "Free";
 "semantic.cost.join.scope" = "%1$@ %2$@";
 "semantic.cost.additional" = "additional cost";
 "semantic.cost.join.all" = "%1$@ and %2$@";

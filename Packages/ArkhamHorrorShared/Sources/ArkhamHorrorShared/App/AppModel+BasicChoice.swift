@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 
 private enum BasicChoiceSendPreparation {
@@ -53,19 +54,29 @@ extension AppModel {
         }
         let supportedQuestion = payload.state.supportedQuestion
         let storyResolution = storyResolution(for: supportedQuestion?.story)
+            ?? storyResolution(for: payload.presentation?.presentation.flavorText)
         let labelResolutions = choiceLabelResolutions(
             for: supportedQuestion,
             semanticPresentation: payload.presentation
         )
+        let choiceFlavorResolutions = choiceFlavorResolutions(for: payload.presentation)
+        let promptLabelResolutions = promptLabelResolutions(
+            for: payload.presentation?.presentation
+        )
         let localizationReasons = [storyResolution?.unavailableReason].compactMap(\.self)
             + labelResolutions.values.compactMap(\.unavailableReason)
+            + choiceFlavorResolutions.values.compactMap(\.unavailableReason)
+            + promptLabelResolutions.values.compactMap(\.unavailableReason)
         return BasicChoicePromptPresentation(
             identity: promptIdentity,
             question: payload.state,
             semanticPresentation: payload.presentation,
             semanticLocaleIdentifier: localeCatalogResolver?.snapshot.identity.locale,
+            cardCatalog: cardCatalog,
             storyResolution: storyResolution,
             choiceLabelResolutions: labelResolutions,
+            choiceFlavorResolutions: choiceFlavorResolutions,
+            promptLabelResolutions: promptLabelResolutions,
             readOnlyReason: readOnlyReason,
             actionPhase: phase,
             actionChoiceIndex: isSamePrompt ? record?.choiceIndex : nil,
@@ -89,8 +100,7 @@ extension AppModel {
         gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload
     ) -> BasicChoiceReadOnlyReason? {
         let hasRenderableQuestion = if let semanticPresentation = payload.presentation {
-            semanticPresentation.presentation.supportsCurrentGenericChoiceList
-                && !semanticPresentation.rawChoices.isEmpty
+            semanticPresentation.isRenderableInCurrentClient
         } else {
             payload.supportedQuestion?.choices.isEmpty == false
         }
@@ -166,12 +176,11 @@ extension AppModel {
         guard presentation.isAuthorized else {
             return .reject(.readOnly)
         }
-        // Revalidated against the current authoritative projection immediately before
-        // send -- never the projection captured whenever this choice was last rendered
-        // -- so a `.chooseLocation` choice whose target has meanwhile stopped being
-        // known to the board, a `.continueReading` choice whose story this client
-        // cannot lawfully resolve, or a stale rendered action racing a snapshot
-        // replacement can never be claimed/answered on the wire.
+        // Revalidated immediately before send using the current authoritative prompt
+        // identity and actionability rules -- never the projection captured whenever
+        // this choice was last rendered. Governed legacy choices still re-check their
+        // board identities; generic semantic choices trust the server-owned descriptor
+        // except for client display prerequisites such as resolvable label text.
         guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
               let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
               presentation.isChoiceActionable(choice, in: projection),
@@ -355,16 +364,12 @@ extension AppModel {
                 basicChoiceActions[gameID] = nil
                 return
             }
-            isActionable = semanticPresentation.presentation.supportsCurrentGenericChoiceList
-                && (!semanticPresentation.requiresSealedActionabilityOverlay
-                    || semanticPresentation.usesSealedActionabilityOverlay)
-                && projection.isSemanticChoiceActionable(
-                    descriptor,
-                    ownerID: ownerID,
-                    labelResolution: labelResolutions[choiceIndex],
-                    governedSource: semanticPresentation.usesSealedActionabilityOverlay
-                        ? semanticPresentation.governedSource : nil
-                )
+            isActionable = semanticPresentation.canActivateSemanticChoice(
+                descriptor,
+                ownerID: ownerID,
+                projection: projection,
+                labelResolution: labelResolutions[choiceIndex]
+            )
         } else {
             isActionable = projection.isChoiceActionable(
                 originalChoice,
@@ -397,3 +402,5 @@ extension AppModel {
         }
     }
 }
+
+// swiftlint:enable file_length

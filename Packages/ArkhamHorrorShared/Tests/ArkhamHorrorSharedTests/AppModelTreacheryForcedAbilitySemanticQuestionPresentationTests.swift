@@ -60,6 +60,48 @@ extension AppModelLiveGameTests {
         #expect(envelope.game.name.isEmpty == false)
     }
 
+    @Test("Unsealed treachery-containing prompts require an app update")
+    func unsealedTreacheryContainingPromptRequiresUpdateInAppModel() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-treachery-forced-ability",
+            presentationFixture: "question-presentation-treachery-forced-ability",
+            questionVersion: 68,
+            mutateRawQuestion: { rawQuestion in
+                guard case var .object(rawObject) = rawQuestion else {
+                    throw SemanticFixtureError.unexpectedShape
+                }
+                rawObject["tag"] = .string("ChooseOne")
+                rawQuestion = .object(rawObject)
+            },
+            mutatePresentation: { presentation in
+                presentation["questionKind"] = .string("chooseOne")
+            }
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameState(for: gameID).lastKnownProjection)
+        let choice = try #require(prompt.choices.first)
+        #expect(prompt.readOnlyReason == .updateRequired)
+        #expect(!prompt.isRenderableQuestion)
+        #expect(!prompt.canSubmit)
+        #expect(!prompt.isChoiceActionable(choice, in: projection))
+        #expect(
+            await model.submitBasicChoice(prompt.identity, choiceIndex: choice.index)
+                == .readOnly
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
     @Test("Treachery forced ability revalidates the latest snapshot before sending")
     func treacheryForcedAbilityRejectsStaleSource() async throws {
         let (model, fakes) = makeSignedInModel()
