@@ -78,9 +78,8 @@ extension AppModelLiveGameTests {
         await connection.resumeOldestSend(with: .success(()))
         #expect(await first.value == .sentAwaitingSnapshot)
         #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == .awaitingSnapshot)
-        #expect(
-            try await connection.sentData == [amountAnswerBytes(amounts: amounts, version: 207)]
-        )
+        let expectedAmountAnswer = try amountAnswerBytes(amounts: amounts, version: 207)
+        #expect(await connection.sentData == [expectedAmountAnswer])
     }
 
     @Test("ChoosePaymentAmounts sends exact bytes and null target imposes no total constraint")
@@ -117,7 +116,7 @@ extension AppModelLiveGameTests {
             amounts: amounts,
             version: 310
         )
-        #expect(try await connection.sentData == [expectedPaymentAnswer])
+        #expect(await connection.sentData == [expectedPaymentAnswer])
     }
 
     @Test("ChooseExchangeAmounts sends exact bytes and allows the web-compatible zero move")
@@ -139,7 +138,8 @@ extension AppModelLiveGameTests {
             await model.submitExchangeAmountsAnswer(prompt.identity, amount: 2)
                 == .sentAwaitingSnapshot
         )
-        #expect(try await connection.sentData == [exchangeAnswerBytes(amount: 2)])
+        let expectedExchangeAnswer = try exchangeAnswerBytes(amount: 2)
+        #expect(await connection.sentData == [expectedExchangeAnswer])
 
         let (zeroModel, zeroFakes) = makeSignedInModel()
         await zeroModel.flowTask?.value
@@ -158,7 +158,8 @@ extension AppModelLiveGameTests {
             await zeroModel.submitExchangeAmountsAnswer(zeroPrompt.identity, amount: 0)
                 == .sentAwaitingSnapshot
         )
-        #expect(try await zeroConnection.sentData == [exchangeAnswerBytes(amount: 0)])
+        let expectedZeroExchangeAnswer = try exchangeAnswerBytes(amount: 0)
+        #expect(await zeroConnection.sentData == [expectedZeroExchangeAnswer])
     }
 
     @Test("Illegal amount allocations are refused without sending")
