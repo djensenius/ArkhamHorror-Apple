@@ -1,6 +1,7 @@
 import SwiftUI
 
 extension BasicChoicePromptView {
+    // swiftlint:disable:next function_body_length
     func amountAllocationPrompt(_ amountPrompt: BasicChoiceAmountPrompt) -> some View {
         let amounts = controller.amountDraft(for: presentation)
         let normalized = amountPrompt.normalizedAmounts(amounts)
