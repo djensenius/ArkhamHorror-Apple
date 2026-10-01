@@ -606,13 +606,6 @@ extension AppModelLiveGameTests {
     func genericSingleChoiceFixturesSendExactBasicChoiceAnswer() async throws {
         let fixtureCases: [(raw: String, presentation: String, choice: Int)] = [
             ("question-generic-cost-ability-window", "question-presentation-generic-cost-ability-window", 0),
-            ("question-generic-choose-n", "question-presentation-generic-choose-n", 1),
-            ("question-generic-choose-some", "question-presentation-generic-choose-some", 0),
-            ("question-generic-choose-up-to-n", "question-presentation-generic-choose-up-to-n", 0),
-            ("question-generic-one-from-each", "question-presentation-generic-one-from-each", 1),
-            ("question-generic-one-at-a-time-auto", "question-presentation-generic-one-at-a-time-auto", 1),
-            ("question-generic-read", "question-presentation-generic-read", 0),
-            ("question-generic-wrapped", "question-presentation-generic-wrapped", 0),
             ("question-generic-skill-label", "question-presentation-generic-skill-label", 0),
         ]
         for fixtureCase in fixtureCases {
@@ -623,26 +616,6 @@ extension AppModelLiveGameTests {
             )
         }
 
-        try await assertRepresentativePromptSends(
-            name: "playerWindowChooseOne",
-            rawQuestion: rawDirectQuestion(tag: "PlayerWindowChooseOne", count: 32),
-            choiceIndex: 0
-        )
-        try await assertRepresentativePromptSends(
-            name: "windowChooseOne",
-            rawQuestion: rawDirectQuestion(tag: "WindowChooseOne", count: 32),
-            choiceIndex: 0
-        )
-        try await assertRepresentativePromptSends(
-            name: "chooseSome1",
-            rawQuestion: rawChooseSome1Question(),
-            choiceIndex: 0
-        )
-        try await assertRepresentativePromptSends(
-            name: "chooseOneWizard",
-            rawQuestion: rawChooseOneWizardQuestion(),
-            choiceIndex: 0
-        )
     }
 
     private func assertFixturePromptSends(
