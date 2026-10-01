@@ -8,6 +8,7 @@ struct GenericSingleChoiceRendererTests {
     @Test("Resolver renders every v2 choice kind with concrete text")
     func resolverRendersEveryChoiceKind() throws {
         try assertFixtureCoverage()
+        try assertFixtureTitles()
         let projection = rendererProjection()
         let prompt = try syntheticAllKindsPrompt()
         var rendered: [QuestionPresentation.ChoiceKind: String] = [:]
@@ -129,6 +130,83 @@ struct GenericSingleChoiceRendererTests {
         let missing = Set(QuestionPresentation.ChoiceKind.allRendererCases)
             .subtracting(kinds)
         #expect(missing == [.advanceAgenda])
+    }
+
+    private func assertFixtureTitles() throws {
+        let projection = rendererProjection()
+        let fixtureCases: [(
+            raw: String,
+            presentation: String,
+            labels: [Int: BasicChoiceLabelResolution],
+            titles: [Int: String]
+        )] = [
+            (
+                "question-generic-one-at-a-time-auto",
+                "question-presentation-generic-one-at-a-time-auto",
+                [
+                    0: .resolved("Auto fixture"),
+                    1: .resolved("First fixture"),
+                    2: .resolved("Second fixture"),
+                ],
+                [0: "Auto fixture", 1: "First fixture", 2: "Second fixture"]
+            ),
+            (
+                "question-encounter-deck-draw",
+                "question-presentation-encounter-deck-draw",
+                [:],
+                [0: "Draw encounter card"]
+            ),
+            (
+                "question-generic-skill-label",
+                "question-presentation-generic-skill-label",
+                [:],
+                [0: "Willpower"]
+            ),
+        ]
+        for fixtureCase in fixtureCases {
+            let prompt = try fixturePrompt(
+                rawFixture: fixtureCase.raw,
+                presentationFixture: fixtureCase.presentation,
+                choiceLabelResolutions: fixtureCase.labels
+            )
+            let rendered = Dictionary(uniqueKeysWithValues: prompt.choices.map {
+                ($0.index, prompt.displayTitle(for: $0, in: projection))
+            })
+            #expect(rendered == fixtureCase.titles, "\(fixtureCase.presentation)")
+        }
+    }
+
+    private func fixturePrompt(
+        rawFixture: String,
+        presentationFixture fixtureName: String,
+        choiceLabelResolutions: [Int: BasicChoiceLabelResolution]
+    ) throws -> BasicChoicePromptPresentation {
+        let raw = try ContractJSON.decode(JSONValue.self, from: fixture(rawFixture))
+        let presentation = try presentationFixture(fixtureName)
+        let binding = try presentation.bind(
+            to: raw,
+            expectedQuestionVersion: presentation.questionVersion
+        )
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: presentation.questionVersion,
+                rawQuestion: raw,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: BasicChoiceParser.parseQuestion(raw),
+            semanticPresentation: binding,
+            semanticLocaleIdentifier: "en",
+            cardCatalog: nil,
+            choiceLabelResolutions: choiceLabelResolutions,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
     }
 
     private func syntheticAllKindsPrompt() throws -> BasicChoicePromptPresentation {
