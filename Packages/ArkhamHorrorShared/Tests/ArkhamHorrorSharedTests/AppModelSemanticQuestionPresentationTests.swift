@@ -434,6 +434,44 @@ extension AppModelLiveGameTests {
         #expect(!prompt.canSubmit)
     }
 
+    @Test("Semantic localization keeps percent-bearing interpolated values verbatim")
+    func semanticLocalizationPercentInterpolationsAreVerbatim() throws {
+        let percentName = "50% off %@ %lld"
+        let cases: [(locale: String?, expected: [String])] = [
+            (nil, [
+                "Fight \(percentName)",
+                "Move to \(percentName)",
+                "Choose \(percentName)",
+                "Use Combat: \(percentName)",
+                "1 clue at \(percentName)",
+                percentName,
+                "The text for \(percentName) is not currently available.",
+            ]),
+            ("de", [
+                "Fight \(percentName)",
+                "Zu \(percentName) bewegen",
+                "\(percentName) wählen",
+                "Use Combat: \(percentName)",
+                "1 Hinweis bei \(percentName)",
+                percentName,
+                "Der Text für \(percentName) ist derzeit nicht verfügbar.",
+            ]),
+        ]
+        let projection = try percentInterpolationProjection(locationLabel: percentName)
+        for testCase in cases {
+            let prompt = try percentInterpolationPrompt(
+                locale: testCase.locale,
+                cardName: percentName
+            )
+            let titles = prompt.choices.map { prompt.displayTitle(for: $0, in: projection) }
+            let disabledReason = percentDisabledLabelReason(
+                title: percentName,
+                in: prompt
+            )
+            #expect(titles + [disabledReason] == testCase.expected)
+        }
+    }
+
     @Test("An empty supported semantic question still requires an app update")
     func emptySupportedSemanticQuestionFailsClosed() async throws {
         let (model, fakes) = makeSignedInModel()
@@ -472,6 +510,122 @@ extension AppModelLiveGameTests {
 
     enum SemanticFixtureError: Error {
         case unexpectedShape
+    }
+
+    private func percentInterpolationPrompt(
+        locale: String?,
+        cardName: String
+    ) throws -> BasicChoicePromptPresentation {
+        let rawChoices: [JSONValue] = (0 ..< 6).map { .object(["tag": .string("Choice\($0)")]) }
+        let rawQuestion: JSONValue = .object([
+            "tag": .string("ChooseOne"),
+            "choices": .array(rawChoices),
+        ])
+        let choices: [QuestionPresentation.Choice] = [
+            .init(
+                sourceIndex: 0,
+                kind: .fight,
+                entity: .init(kind: .cardCode, id: "c01001")
+            ),
+            .init(
+                sourceIndex: 1,
+                kind: .move,
+                entity: .init(kind: .cardCode, id: "c01001")
+            ),
+            .init(
+                sourceIndex: 2,
+                kind: .chooseTarget,
+                entity: .init(kind: .cardCode, id: "c01001")
+            ),
+            .init(
+                sourceIndex: 3,
+                kind: .skillLabel,
+                label: .init(kind: .embeddedI18n, text: cardName),
+                skillType: .combat
+            ),
+            .init(
+                sourceIndex: 4,
+                kind: .costLabel,
+                cost: .groupClue(
+                    amount: .fixed(1),
+                    scope: .location("d5a66e84-c729-4066-8475-d8a155609025")
+                )
+            ),
+            .init(
+                sourceIndex: 5,
+                kind: .localizedLabel,
+                label: .init(kind: .embeddedI18n, text: cardName)
+            ),
+        ]
+        let presentation = QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: 701,
+            questionKind: .chooseOne,
+            choiceCount: rawChoices.count,
+            choices: choices
+        )
+        let bound = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 701)
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID("000000000001"),
+                questionVersion: 701,
+                rawQuestion: rawQuestion,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: BasicChoiceParser.parseQuestion(rawQuestion),
+            semanticPresentation: bound,
+            semanticLocaleIdentifier: locale,
+            cardCatalog: try CardCatalogSnapshot(namesByCode: [
+                CardCode("c01001"): CardName(title: cardName, subtitle: nil),
+            ]),
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private func percentInterpolationProjection(locationLabel: String) throws -> BoardProjection {
+        var envelope = try fixtureJSON("get-game")
+        guard case var .object(root) = envelope,
+              case var .object(game)? = root["game"],
+              case var .object(locations)? = game["locations"],
+              case var .object(location)? = locations[
+                  "d5a66e84-c729-4066-8475-d8a155609025"
+              ]
+        else { throw SemanticFixtureError.unexpectedShape }
+        location["label"] = .string(locationLabel)
+        locations["d5a66e84-c729-4066-8475-d8a155609025"] = .object(location)
+        game["locations"] = .object(locations)
+        root["game"] = .object(game)
+        envelope = .object(root)
+        let decoded = try ContractJSON.decode(GetGameEnvelope.self, from: ContractJSON.encode(envelope))
+        return BoardProjectionBuilder.makeProjection(from: decoded.game)
+    }
+
+    private func percentDisabledLabelReason(
+        title: String,
+        in prompt: BasicChoicePromptPresentation
+    ) -> String {
+        let row = BasicChoiceAmountPromptRow(
+            id: "percent-label",
+            title: title,
+            minBound: 0,
+            maxBound: 1,
+            labelUnavailableReason: .catalog(.notAdvertised)
+        )
+        let amountPrompt = BasicChoiceAmountPrompt(
+            kind: .amounts,
+            legend: "Choose amounts",
+            rows: [row],
+            target: .total(1)
+        )
+        return amountPrompt.disabledReason(
+            for: ["percent-label": 1],
+            in: prompt
+        ) ?? ""
     }
 
     private func assertLegacyActionabilityParity(

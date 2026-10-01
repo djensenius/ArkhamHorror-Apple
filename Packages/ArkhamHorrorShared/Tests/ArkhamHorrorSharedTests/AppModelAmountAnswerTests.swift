@@ -1106,100 +1106,97 @@ extension AppModelLiveGameTests {
 
     // swiftlint:disable:next function_body_length
     private func amountChromeStrings(in prompt: BasicChoicePromptPresentation) -> [String] {
-        [
+        let resource = prompt.semanticLocalized("amountPrompt.token.resource", value: "resource")
+        let rowTitle = "Clues"
+        let unresolvedLabel = "$clues"
+        let allowed = "1, 3"
+        let roland = "Roland"
+        let daisy = "Daisy"
+        return [
             prompt.semanticLocalized(
                 "amountPrompt.total",
-                value: "Total: %lld",
+                value: "Total: \(2)",
                 arguments: [Int64(2)]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.row.fallback",
-                value: "Choice 4",
+                value: "Choice \(4)",
                 arguments: [Int64(4)]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.target.min",
-                value: "Choose at least 1",
+                value: "Choose at least \(1)",
                 arguments: [Int64(1)]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.target.max",
-                value: "Choose at most 3",
+                value: "Choose at most \(3)",
                 arguments: [Int64(3)]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.target.total",
-                value: "Choose exactly 2",
+                value: "Choose exactly \(2)",
                 arguments: [Int64(2)]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.target.oneOf",
-                value: "Choose one of 1, 3",
-                arguments: ["1, 3"]
+                value: "Choose one of \(allowed)",
+                arguments: [allowed]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.disabled.labels",
-                value: "The text for $clues is not currently available.",
-                arguments: ["$clues"]
+                value: "The text for \(unresolvedLabel) is not currently available.",
+                arguments: [unresolvedLabel]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.row.bounds",
-                value: "Allowed %1$lld–%2$lld",
+                value: "Allowed \(0)–\(3)",
                 arguments: [Int64(0), Int64(3)]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.decrease.accessibility",
-                value: "Decrease %@",
-                arguments: ["Clues"]
+                value: "Decrease \(rowTitle)",
+                arguments: [rowTitle]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.increase.accessibility",
-                value: "Increase %@",
-                arguments: ["Clues"]
+                value: "Increase \(rowTitle)",
+                arguments: [rowTitle]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.row.value",
-                value: "%lld, allowed %lld to %lld",
+                value: "\(2), allowed \(0) to \(3)",
                 arguments: [Int64(2), Int64(0), Int64(3)]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.exchange.legend",
-                value: "Exchange %@",
-                arguments: [prompt.semanticLocalized(
-                    "amountPrompt.token.resource",
-                    value: "resource"
-                )]
+                value: "Exchange \(resource)",
+                arguments: [resource]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.exchange.decrease.accessibility",
-                value: "Move one %@ back to %@",
-                arguments: [prompt.semanticLocalized(
-                    "amountPrompt.token.resource",
-                    value: "resource"
-                ), "Roland"]
+                value: "Move one \(resource) back to \(roland)",
+                arguments: [resource, roland]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.exchange.increase.accessibility",
-                value: "Move one %@ to %@",
-                arguments: [prompt.semanticLocalized(
-                    "amountPrompt.token.resource",
-                    value: "resource"
-                ), "Daisy"]
+                value: "Move one \(resource) to \(daisy)",
+                arguments: [resource, daisy]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.exchange.forward",
-                value: "%1$lld to %2$@",
-                arguments: [Int64(2), "Daisy"]
+                value: "\(2) to \(daisy)",
+                arguments: [Int64(2), daisy]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.exchange.backward",
-                value: "%1$lld to %2$@",
-                arguments: [Int64(1), "Roland"]
+                value: "\(1) to \(roland)",
+                arguments: [Int64(1), roland]
             ),
             prompt.semanticLocalized(
                 "amountPrompt.exchange.accessibility",
-                value: "%1$@ has %2$lld. %3$@ has %4$lld.",
-                arguments: ["Roland", Int64(3), "Daisy", Int64(1)]
+                value: "\(roland) has \(3). \(daisy) has \(1).",
+                arguments: [roland, Int64(3), daisy, Int64(1)]
             ),
         ]
     }

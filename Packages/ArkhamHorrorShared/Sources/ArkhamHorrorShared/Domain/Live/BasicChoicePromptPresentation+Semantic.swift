@@ -1029,15 +1029,11 @@ extension BasicChoicePromptPresentation {
     ) -> String {
         let locale = semanticLocaleIdentifier.map(Locale.init(identifier:)) ?? .current
         guard let bundle = semanticLocalizationBundle else {
-            return Self.formatSemanticLocalized(
-                String(
-                    localized: key,
-                    defaultValue: value,
-                    bundle: .module,
-                    locale: locale
-                ),
-                locale: locale,
-                arguments: arguments
+            return String(
+                localized: key,
+                defaultValue: value,
+                bundle: .module,
+                locale: locale
             )
         }
         // Resolve the chosen .lproj directly because Xcode 26 can ignore an injected locale
@@ -1049,15 +1045,11 @@ extension BasicChoicePromptPresentation {
             table: nil
         )
         guard format != keyString else {
-            return Self.formatSemanticLocalized(
-                String(
-                    localized: key,
-                    defaultValue: value,
-                    bundle: .module,
-                    locale: locale
-                ),
-                locale: locale,
-                arguments: arguments
+            return String(
+                localized: key,
+                defaultValue: value,
+                bundle: .module,
+                locale: locale
             )
         }
         return Self.formatSemanticLocalized(format, locale: locale, arguments: arguments)

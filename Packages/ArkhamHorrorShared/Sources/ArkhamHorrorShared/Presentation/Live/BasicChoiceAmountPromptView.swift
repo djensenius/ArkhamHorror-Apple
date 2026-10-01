@@ -16,7 +16,7 @@ extension BasicChoicePromptView {
                 amountRow(row, index: index, amount: normalized[row.id] ?? 0)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(promptString("amountPrompt.total", value: "Total: %lld", Int64(total)))
+                Text(promptString("amountPrompt.total", value: "Total: \(total)", Int64(total)))
                     .font(.footnote.monospacedDigit())
                     .accessibilityIdentifier("liveGame.prompt.amount.total")
                 Text(amountPrompt.targetHint(in: presentation))
@@ -69,7 +69,7 @@ extension BasicChoicePromptView {
                     .font(.body)
                 Text(promptString(
                     "amountPrompt.row.bounds",
-                    value: "Allowed %1$lld–%2$lld",
+                    value: "Allowed \(row.minBound)–\(row.maxBound)",
                     Int64(row.minBound), Int64(row.maxBound)
                 ))
                 .font(.caption)
@@ -80,7 +80,7 @@ extension BasicChoicePromptView {
                 label: "−",
                 accessibilityLabel: promptString(
                     "amountPrompt.decrease.accessibility",
-                    value: "Decrease %@",
+                    value: "Decrease \(row.title)",
                     row.title
                 ),
                 focusID: BoardFocusID.promptAmountDecrease(index),
@@ -94,7 +94,7 @@ extension BasicChoicePromptView {
                 label: "+",
                 accessibilityLabel: promptString(
                     "amountPrompt.increase.accessibility",
-                    value: "Increase %@",
+                    value: "Increase \(row.title)",
                     row.title
                 ),
                 focusID: BoardFocusID.promptAmountIncrease(index),
@@ -106,7 +106,7 @@ extension BasicChoicePromptView {
         .accessibilityLabel(row.title)
         .accessibilityValue(promptString(
             "amountPrompt.row.value",
-            value: "%lld, allowed %lld to %lld",
+            value: "\(amount), allowed \(row.minBound) to \(row.maxBound)",
             Int64(amount), Int64(row.minBound), Int64(row.maxBound)
         ))
         .accessibilityHint(promptString(
@@ -149,10 +149,16 @@ extension BasicChoicePromptView {
         let amount = controller.exchangeAmount(for: presentation)
         let submitEnabled = presentation.canSubmit && exchangePrompt.isLegal(amount)
         let tokenTitle = exchangeTokenTitle(exchangePrompt.token)
+        let fromName = exchangePrompt.fromDisplayName
+        let toName = exchangePrompt.toDisplayName
+        let fromCount = exchangePrompt.fromCount(for: amount)
+        let toCount = exchangePrompt.toCount(for: amount)
+        let accessibilityValue: String.LocalizationValue =
+            "\(fromName) has \(fromCount). \(toName) has \(toCount)."
         return VStack(alignment: .leading, spacing: 10) {
             Text(promptString(
                 "amountPrompt.exchange.legend",
-                value: "Exchange %@",
+                value: "Exchange \(tokenTitle)",
                 tokenTitle
             ))
             .font(.callout.weight(.semibold))
@@ -168,7 +174,7 @@ extension BasicChoicePromptView {
                             label: "←",
                             accessibilityLabel: promptString(
                                 "amountPrompt.exchange.decrease.accessibility",
-                                value: "Move one %@ back to %@",
+                                value: "Move one \(tokenTitle) back to \(exchangePrompt.fromDisplayName)",
                                 tokenTitle, exchangePrompt.fromDisplayName
                             ),
                             focusID: BoardFocusID.promptExchangeDecrease,
@@ -181,7 +187,7 @@ extension BasicChoicePromptView {
                             label: "→",
                             accessibilityLabel: promptString(
                                 "amountPrompt.exchange.increase.accessibility",
-                                value: "Move one %@ to %@",
+                                value: "Move one \(tokenTitle) to \(exchangePrompt.toDisplayName)",
                                 tokenTitle, exchangePrompt.toDisplayName
                             ),
                             focusID: BoardFocusID.promptExchangeIncrease,
@@ -200,11 +206,11 @@ extension BasicChoicePromptView {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(promptString(
                 "amountPrompt.exchange.accessibility",
-                value: "%1$@ has %2$lld. %3$@ has %4$lld.",
-                exchangePrompt.fromDisplayName,
-                Int64(exchangePrompt.fromCount(for: amount)),
-                exchangePrompt.toDisplayName,
-                Int64(exchangePrompt.toCount(for: amount))
+                value: accessibilityValue,
+                fromName,
+                Int64(fromCount),
+                toName,
+                Int64(toCount)
             ))
             .accessibilityHint(promptString(
                 "amountPrompt.exchange.hint",
@@ -285,13 +291,13 @@ extension BasicChoicePromptView {
         if amount > 0 {
             return promptString(
                 "amountPrompt.exchange.forward",
-                value: "%1$lld to %2$@",
+                value: "\(amount) to \(exchangePrompt.toDisplayName)",
                 Int64(amount), exchangePrompt.toDisplayName
             )
         }
         return promptString(
             "amountPrompt.exchange.backward",
-            value: "%1$lld to %2$@",
+            value: "\(abs(amount)) to \(exchangePrompt.fromDisplayName)",
             Int64(abs(amount)), exchangePrompt.fromDisplayName
         )
     }
