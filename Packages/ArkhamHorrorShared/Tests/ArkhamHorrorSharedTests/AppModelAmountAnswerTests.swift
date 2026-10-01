@@ -98,6 +98,8 @@ extension AppModelLiveGameTests {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
+        var presentation = try representativePresentation(named: "choosePaymentAmounts-null-target")
+        try localizeFirstPaymentChoiceTitle(in: &presentation)
         let envelope = try amountEnvelope(
             rawQuestion: paymentRawQuestion(
                 choiceID: "00000000-0000-0000-0000-00000000004d",
@@ -105,7 +107,7 @@ extension AppModelLiveGameTests {
                 max: 3,
                 target: .null
             ),
-            presentation: representativePresentation(named: "choosePaymentAmounts-null-target"),
+            presentation: presentation,
             questionVersion: 310
         )
         let connection = FakeGameSocketConnection()
