@@ -102,10 +102,13 @@ extension BasicChoiceSemanticPresentationTests {
 
         #expect(binding.presentation.sealValidationKind == .treacheryForcedAbility)
         #expect(!binding.usesSealedActionabilityOverlay)
+        let mixedMove = try #require(prompt.choices.first { $0.index == 1 })
+        #expect(!prompt.isChoiceActionable(mixedMove, in: projection))
         #expect(prompt.choices.allSatisfy { !prompt.isChoiceActionable($0, in: projection) })
 
         let moveOnlyPrompt = try promptForCellarMoveOnly(moveRaw)
         let moveOnlyChoice = try #require(moveOnlyPrompt.choices.first)
+        #expect(moveOnlyPrompt.semanticPresentation?.presentation.sealValidationKind == nil)
         #expect(moveOnlyPrompt.isChoiceActionable(moveOnlyChoice, in: projection))
     }
 
