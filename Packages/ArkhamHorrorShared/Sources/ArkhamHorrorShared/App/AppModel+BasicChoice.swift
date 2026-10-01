@@ -364,17 +364,12 @@ extension AppModel {
                 basicChoiceActions[gameID] = nil
                 return
             }
-            let labelResolution = labelResolutions[choiceIndex]
-            isActionable = semanticPresentation.isRenderableInCurrentClient
-                && descriptor.selectable
-                && labelResolution?.unavailableReason == nil
-                && (!semanticPresentation.usesSealedActionabilityOverlay
-                    || projection.isSemanticChoiceActionable(
-                        descriptor,
-                        ownerID: ownerID,
-                        labelResolution: labelResolution,
-                        governedSource: semanticPresentation.governedSource
-                    ))
+            isActionable = semanticPresentation.canActivateSemanticChoice(
+                descriptor,
+                ownerID: ownerID,
+                projection: projection,
+                labelResolution: labelResolutions[choiceIndex]
+            )
         } else {
             isActionable = projection.isChoiceActionable(
                 originalChoice,

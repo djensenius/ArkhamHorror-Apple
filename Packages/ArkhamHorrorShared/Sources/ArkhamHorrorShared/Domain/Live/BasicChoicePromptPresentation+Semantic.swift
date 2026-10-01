@@ -59,6 +59,31 @@ extension BoundQuestionPresentation {
     }
 }
 
+extension BoundQuestionPresentation {
+    func canActivateSemanticChoice(
+        _ descriptor: QuestionPresentation.Choice,
+        ownerID: PlayerID,
+        projection: BoardProjection,
+        labelResolution: BasicChoiceLabelResolution?
+    ) -> Bool {
+        guard case .singleChoice = presentation.answer,
+              presentation.supportsCurrentGenericChoiceList,
+              descriptor.selectable,
+              labelResolution?.unavailableReason == nil
+        else { return false }
+        guard !requiresSealedActionabilityOverlay || usesSealedActionabilityOverlay else {
+            return false
+        }
+        guard usesSealedActionabilityOverlay else { return true }
+        return projection.isSemanticChoiceActionable(
+            descriptor,
+            ownerID: ownerID,
+            labelResolution: labelResolution,
+            governedSource: governedSource
+        )
+    }
+}
+
 extension BasicChoicePromptPresentation {
     var isRenderableQuestion: Bool {
         if let semanticPresentation {
@@ -328,30 +353,13 @@ extension BasicChoicePromptPresentation {
         _ descriptor: QuestionPresentation.Choice,
         in projection: BoardProjection
     ) -> Bool {
-        guard let semanticPresentation,
-              case .singleChoice = semanticPresentation.presentation.answer,
-              semanticPresentation.presentation.supportsCurrentGenericChoiceList,
-              descriptor.selectable
-        else { return false }
-        guard labelResolutionAllowsAction(choiceLabelResolutions[descriptor.sourceIndex]) else {
-            return false
-        }
-        guard !semanticPresentation.requiresSealedActionabilityOverlay
-            || semanticPresentation.usesSealedActionabilityOverlay
-        else { return false }
-        guard semanticPresentation.usesSealedActionabilityOverlay else { return true }
-        return projection.isSemanticChoiceActionable(
+        guard let semanticPresentation else { return false }
+        return semanticPresentation.canActivateSemanticChoice(
             descriptor,
             ownerID: ownerID,
-            labelResolution: choiceLabelResolutions[descriptor.sourceIndex],
-            governedSource: semanticPresentation.governedSource
+            projection: projection,
+            labelResolution: choiceLabelResolutions[descriptor.sourceIndex]
         )
-    }
-
-    private func labelResolutionAllowsAction(
-        _ labelResolution: BasicChoiceLabelResolution?
-    ) -> Bool {
-        labelResolution?.unavailableReason == nil
     }
 
     private static func rawChoiceTag(_ value: JSONValue) -> String? {
