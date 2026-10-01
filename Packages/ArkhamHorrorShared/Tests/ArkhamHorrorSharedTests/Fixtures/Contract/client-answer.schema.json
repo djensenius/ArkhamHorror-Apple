@@ -1,0 +1,403 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arkhamhorror.app/contracts/client-answer.schema.json",
+  "title": "ClientAnswer",
+  "description": "Every documented top-level answer envelope decoded by Entity.Answer.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "contents"
+      ],
+      "properties": {
+        "tag": {
+          "const": "Answer"
+        },
+        "contents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "choice",
+            "playerId",
+            "questionVersion"
+          ],
+          "properties": {
+            "choice": {
+              "$ref": "./non-negative-int64.schema.json",
+              "description": "Zero-based index into the authoritative question choices array."
+            },
+            "playerId": {
+              "$ref": "./uuid.schema.json",
+              "description": "Required canonical lowercase, hyphenated UUID map key for the answering player."
+            },
+            "questionVersion": {
+              "$ref": "./non-negative-int64.schema.json",
+              "description": "Required for native clients: the authoritative PublicGame.scenarioSteps value from the snapshot that supplied the active question. The runtime decoder's legacy omission behavior is intentionally outside this native contract."
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "contents"
+      ],
+      "properties": {
+        "tag": {
+          "const": "OrderedAnswer"
+        },
+        "contents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "choices",
+            "playerId",
+            "questionVersion"
+          ],
+          "properties": {
+            "choices": {
+              "type": "array",
+              "items": {
+                "$ref": "./non-negative-int64.schema.json"
+              },
+              "description": "Ordered raw choice indexes for ChooseOneAtATime. ChooseOneAtATimeWithAuto is answered with repeated Answer using the presented sourceIndex values."
+            },
+            "playerId": {
+              "$ref": "./uuid.schema.json"
+            },
+            "questionVersion": {
+              "$ref": "./non-negative-int64.schema.json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "contents"
+      ],
+      "properties": {
+        "tag": {
+          "const": "Raw"
+        },
+        "contents": {
+          "type": "object",
+          "description": "Arkham.Message; nested constructor coverage is pending."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "contents"
+      ],
+      "properties": {
+        "tag": {
+          "enum": [
+            "PaymentAmountsAnswer",
+            "AmountsAnswer"
+          ]
+        },
+        "contents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "amounts"
+          ],
+          "properties": {
+            "amounts": {
+              "type": "object",
+              "propertyNames": {
+                "format": "uuid"
+              },
+              "additionalProperties": {
+                "type": "integer"
+              }
+            },
+            "questionVersion": {
+              "$ref": "./non-negative-int64.schema.json",
+              "description": "Optional optimistic-concurrency guard for the active question."
+            },
+            "playerId": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Optional; defaults to the active player when omitted."
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "contents"
+      ],
+      "properties": {
+        "tag": {
+          "const": "StandaloneSettingsAnswer"
+        },
+        "contents": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "StandaloneSetting values; nested constructor coverage is pending."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "contents"
+      ],
+      "properties": {
+        "tag": {
+          "const": "CampaignSettingsAnswer"
+        },
+        "contents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "keys",
+            "counts",
+            "sets",
+            "options"
+          ],
+          "properties": {
+            "keys": {
+              "type": "array"
+            },
+            "counts": {
+              "type": "array"
+            },
+            "sets": {
+              "type": "array"
+            },
+            "options": {
+              "type": "array"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "deckId",
+        "playerId"
+      ],
+      "properties": {
+        "tag": {
+          "const": "DeckAnswer"
+        },
+        "deckId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "playerId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "overlay": {
+          "type": ["object", "null"],
+          "description": "Optional DeckOverlay; web sends this when custom-card overlays are applied."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "deckList",
+        "playerId"
+      ],
+      "properties": {
+        "tag": {
+          "const": "DeckListAnswer"
+        },
+        "deckList": {
+          "type": "object",
+          "description": "ArkhamDBDecklist; complete deck-list coverage is pending."
+        },
+        "playerId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "contents"
+      ],
+      "properties": {
+        "tag": {
+          "const": "PickDestinyAnswer"
+        },
+        "contents": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "contents"
+      ],
+      "properties": {
+        "tag": {
+          "enum": [
+            "CampaignSpecificAnswer",
+            "ScenarioSpecificAnswer"
+          ]
+        },
+        "contents": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string"
+            },
+            {}
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "source",
+        "fromInvestigator",
+        "toInvestigator",
+        "token",
+        "amount"
+      ],
+      "properties": {
+        "tag": {
+          "const": "ExchangeAmountsAnswer"
+        },
+        "source": {
+          "type": "object",
+          "description": "Arkham.Source; nested constructor coverage is pending."
+        },
+        "fromInvestigator": {
+          "type": "string"
+        },
+        "toInvestigator": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "contents"
+      ],
+      "properties": {
+        "tag": {
+          "const": "CampaignStepAnswer"
+        },
+        "contents": {
+          "type": "object",
+          "required": [
+            "tag"
+          ],
+          "properties": {
+            "tag": {
+              "type": "string"
+            }
+          },
+          "description": "CampaignStep; nested constructor coverage is pending."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "investigatorId"
+      ],
+      "properties": {
+        "tag": {
+          "enum": [
+            "RetireInvestigatorAnswer",
+            "RejoinInvestigatorAnswer"
+          ]
+        },
+        "investigatorId": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "investigatorId",
+        "overlay"
+      ],
+      "properties": {
+        "tag": {
+          "const": "ApplyOverlayAnswer"
+        },
+        "investigatorId": {
+          "type": "string"
+        },
+        "overlay": {
+          "type": ["object", "null"],
+          "description": "Optional DeckOverlay; inner shape is not yet governed."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag"
+      ],
+      "properties": {
+        "tag": {
+          "const": "JoinCampaignAnswer"
+        }
+      }
+    }
+  ]
+}

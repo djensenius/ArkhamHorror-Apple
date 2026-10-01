@@ -1,0 +1,18 @@
+{
+  "answer": {
+    "kind": "singleChoice",
+    "tag": "Answer"
+  },
+  "choiceCount": 1,
+  "choices": [
+    {
+      "kind": "skillLabel",
+      "selectable": true,
+      "skillType": "SkillWillpower",
+      "sourceIndex": 0
+    }
+  ],
+  "protocolVersion": 2,
+  "questionKind": "chooseOne",
+  "questionVersion": 202
+}

@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -87,24 +88,34 @@ struct MovementEntryRuntimeIdentityTests {
         )
     }
 
-    @Test("Q39 accepts a runtime Hallway identity and rejects semantic drift")
+    @Test("Q39 accepts a runtime Hallway identity and drops overlay on semantic drift")
     func gatheringPostEntryMovementBinds() throws {
         let hallwayID = "33333333-3333-4333-8333-333333333333"
+        let rawQuestion = try postEntryRawQuestion(hallwayID: hallwayID)
         let presentation = try postEntryPresentation(hallwayID: hallwayID)
         #expect(presentation.choiceCount == 11)
         #expect(presentation.choices.last?.entity?.id == hallwayID)
-
-        let drifted = try replacing(
-            presentation,
-            choiceIndex: 10,
-            abilityCardCode: "c01113"
+        #expect(
+            try presentation.bind(
+                to: rawQuestion,
+                expectedQuestionVersion: 39
+            ).usesSealedActionabilityOverlay
         )
-        #expect(throws: DecodingError.self) {
-            try ContractJSON.decode(
-                QuestionPresentation.self,
-                from: drifted
+
+        let drifted = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: replacing(
+                presentation,
+                choiceIndex: 10,
+                abilityCardCode: "c01113"
             )
-        }
+        )
+        let driftedBinding = try drifted.bind(
+            to: rawQuestion,
+            expectedQuestionVersion: 39
+        )
+        #expect(!driftedBinding.usesSealedActionabilityOverlay)
+        #expect(driftedBinding.governedSource == nil)
     }
 
     private func postEntryPresentation(
@@ -118,7 +129,7 @@ struct MovementEntryRuntimeIdentityTests {
             .gatheringHallwayMovement(locationID: hallwayID),
         ]
         let presentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 39,
             questionKind: .playerWindowChooseOne,
             choiceCount: choices.count,
@@ -135,6 +146,44 @@ struct MovementEntryRuntimeIdentityTests {
             cardCode: "c01114",
             locationID: remappedCellarID
         )
+    }
+
+    private func postEntryRawQuestion(hallwayID: String) throws -> JSONValue {
+        guard case var .object(root) = try rawFixture("question-gathering-movement"),
+              case let .array(movementChoices)? = root["choices"],
+              movementChoices.indices.contains(11)
+        else {
+            throw RuntimeIdentityFixtureError.unexpectedShape
+        }
+        let investigation = replacingStrings(
+            in: movementChoices[11],
+            replacements: [
+                "fda9afef-4166-4c9f-962e-eed6e8cbee25": remappedCellarID,
+                "c01112": "c01114",
+            ]
+        )
+        let cellarMovementAsHallway = replacingStrings(
+            in: movementChoices[9],
+            replacements: [
+                cellarFixtureID: hallwayID,
+                "c01114": "c01112",
+            ]
+        )
+        let hallwayMovement = try replacing(
+            cellarMovementAsHallway,
+            at: "/ability/type/cost",
+            with: .object([
+                "contents": .number(.integer(1)),
+                "tag": .string("ActionCost"),
+            ])
+        )
+        root["choices"] = .array(
+            Array(movementChoices.prefix(9)) + [
+                investigation,
+                hallwayMovement,
+            ]
+        )
+        return .object(root)
     }
 
     private func replacing(
@@ -158,6 +207,19 @@ struct MovementEntryRuntimeIdentityTests {
         choices[choiceIndex] = .object(choice)
         root["choices"] = .array(choices)
         return try ContractJSON.encode(JSONValue.object(root))
+    }
+
+    private func replacing(
+        _ value: JSONValue,
+        at pointer: String,
+        with replacement: JSONValue
+    ) throws -> JSONValue {
+        try EnemyAttackFixtures.applying(
+            operation: "replace",
+            path: pointer.split(separator: "/"),
+            replacement: replacement,
+            to: value
+        )
     }
 
     private func remappedPresentation(
@@ -233,3 +295,5 @@ struct MovementEntryRuntimeIdentityTests {
         case unexpectedShape
     }
 }
+
+// swiftlint:enable type_body_length

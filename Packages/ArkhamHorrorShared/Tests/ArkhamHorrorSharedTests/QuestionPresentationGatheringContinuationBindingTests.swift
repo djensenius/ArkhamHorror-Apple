@@ -43,7 +43,7 @@ struct GatheringContinuationBindingTests {
             questionKind: .chooseOne,
             descriptor: .gatheringStartSkillTest
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: startSkillTest,
             rawQuestion: rawQuestion(
                 kind: .chooseOne,
@@ -57,7 +57,7 @@ struct GatheringContinuationBindingTests {
             questionKind: .chooseOne,
             descriptor: .gatheringApplySkillTestResults
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: applyResults,
             rawQuestion: rawQuestion(
                 kind: .chooseOne,
@@ -74,7 +74,7 @@ struct GatheringContinuationBindingTests {
             questionKind: .playerWindowChooseOne,
             descriptor: .gatheringEndTurn(sourceIndex: 0)
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: endTurn,
             rawQuestion: rawQuestion(
                 kind: .playerWindowChooseOne,
@@ -83,13 +83,13 @@ struct GatheringContinuationBindingTests {
         )
 
         let substitutedPresentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 42,
             questionKind: .playerWindowChooseOne,
             choiceCount: 1,
             choices: [.gatheringStartSkillTest]
         )
-        assertActionWindowBindingFails(
+        assertActionWindowBindingLosesOverlay(
             presentation: substitutedPresentation,
             rawQuestion: rawQuestion(
                 kind: .playerWindowChooseOne,
@@ -124,7 +124,7 @@ private extension GatheringContinuationBindingTests {
         descriptor: QuestionPresentation.Choice
     ) throws -> QuestionPresentation {
         let presentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: version,
             questionKind: questionKind,
             choiceCount: 1,

@@ -88,14 +88,13 @@ extension AppModel {
     private func readOnlyReason(
         gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload
     ) -> BasicChoiceReadOnlyReason? {
-        let hasRenderableSemanticPresentation = payload.presentation.map {
-            $0.presentation.questionKind != .unsupported && !$0.rawChoices.isEmpty
-        } ?? false
-        let hasRenderableSupportedQuestion =
+        let hasRenderableQuestion = if let semanticPresentation = payload.presentation {
+            semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && !semanticPresentation.rawChoices.isEmpty
+        } else {
             payload.supportedQuestion?.choices.isEmpty == false
-        guard hasRenderableSupportedQuestion || hasRenderableSemanticPresentation else {
-            return .updateRequired
         }
+        guard hasRenderableQuestion else { return .updateRequired }
         guard let identity = liveGameParticipantIdentities[gameID] else { return .disconnected }
         switch identity {
         case .spectator:
@@ -175,7 +174,8 @@ extension AppModel {
         // replacement can never be claimed/answered on the wire.
         guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
               let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
-              presentation.isChoiceActionable(choice, in: projection)
+              presentation.isChoiceActionable(choice, in: projection),
+              presentation.canSubmitSingleChoiceAnswer
         else { return .reject(.unsupportedChoice) }
         guard isRetry || presentation.canSubmit else {
             return .reject(.readOnly)
@@ -355,12 +355,16 @@ extension AppModel {
                 basicChoiceActions[gameID] = nil
                 return
             }
-            isActionable = projection.isSemanticChoiceActionable(
-                descriptor,
-                ownerID: ownerID,
-                labelResolution: labelResolutions[choiceIndex],
-                governedSource: semanticPresentation.governedSource
-            )
+            isActionable = semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && (!semanticPresentation.requiresSealedActionabilityOverlay
+                    || semanticPresentation.usesSealedActionabilityOverlay)
+                && projection.isSemanticChoiceActionable(
+                    descriptor,
+                    ownerID: ownerID,
+                    labelResolution: labelResolutions[choiceIndex],
+                    governedSource: semanticPresentation.usesSealedActionabilityOverlay
+                        ? semanticPresentation.governedSource : nil
+                )
         } else {
             isActionable = projection.isChoiceActionable(
                 originalChoice,

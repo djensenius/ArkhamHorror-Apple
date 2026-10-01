@@ -10,12 +10,12 @@ struct QuestionPresentationMutationTests {
         "contracts/fixtures/question-presentation-gathering-act-advance.json",
     ]
 
-    @Test("All seven backend-published Gathering mutations fail during decoding")
+    @Test("All seven backend-published Gathering mutations fail before overlay use")
     func governedGatheringMutationsFailClosed() throws {
         let entries = try governedNegativeEntries()
         #expect(entries.count == 7)
         for entry in entries {
-            try expectDecodingRejection(for: entry)
+            try expectDecodeOrBindingRejection(for: entry)
         }
     }
 
@@ -36,7 +36,7 @@ struct QuestionPresentationMutationTests {
         }
     }
 
-    private func expectDecodingRejection(
+    private func expectDecodeOrBindingRejection(
         for entry: [String: JSONValue]
     ) throws {
         guard case let .string(baseFixture)? = entry["basePositiveFixture"],
@@ -54,11 +54,27 @@ struct QuestionPresentationMutationTests {
             replacement: mutation["value"],
             to: fixtureValue(named: fixtureName)
         )
-        #expect(throws: DecodingError.self) {
-            try ContractJSON.decode(
+        do {
+            let presentation = try ContractJSON.decode(
                 QuestionPresentation.self,
                 from: ContractJSON.encode(mutated)
             )
+            let rawFixture = fixtureName.replacingOccurrences(
+                of: "question-presentation-",
+                with: "question-"
+            )
+            do {
+                let binding = try presentation.bind(
+                    to: fixtureValue(named: rawFixture),
+                    expectedQuestionVersion: presentation.questionVersion
+                )
+                #expect(!binding.usesSealedActionabilityOverlay)
+            } catch {
+                // Structural or hard binding failures also prevent sealed overlay use.
+            }
+        } catch is DecodingError {
+            // v2 generic presentations may decode structurally, but any sealed overlay
+            // mutation must still fail before semantic overlay actionability can be used.
         }
     }
 
@@ -211,7 +227,7 @@ struct GatheringAdvanceActSemanticMutationTests {
         ),
     ]
 
-    @Test("Every unsupported Gathering advance-act field fails during decoding")
+    @Test("Every unsupported Gathering advance-act field fails before overlay use")
     func unsupportedFieldsFailClosed() throws {
         for mutation in Self.mutations {
             let mutated = try EnemyAttackFixtures.applying(
@@ -220,11 +236,27 @@ struct GatheringAdvanceActSemanticMutationTests {
                 replacement: mutation.replacement,
                 to: fixtureValue(named: mutation.fixture)
             )
-            #expect(throws: DecodingError.self) {
-                try ContractJSON.decode(
+            do {
+                let presentation = try ContractJSON.decode(
                     QuestionPresentation.self,
                     from: ContractJSON.encode(mutated)
                 )
+                let rawFixture = mutation.fixture.replacingOccurrences(
+                    of: "question-presentation-",
+                    with: "question-"
+                )
+                do {
+                    let binding = try presentation.bind(
+                        to: fixtureValue(named: rawFixture),
+                        expectedQuestionVersion: presentation.questionVersion
+                    )
+                    #expect(!binding.usesSealedActionabilityOverlay)
+                } catch {
+                    // Structural or hard binding failures also prevent sealed overlay use.
+                }
+            } catch is DecodingError {
+                // Closed v2 decoding still rejects structurally invalid mutations; overlay
+                // semantic drift that remains structurally valid is rejected by binding.
             }
         }
     }

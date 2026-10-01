@@ -144,51 +144,18 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData.isEmpty)
     }
 
-    @Test("Q41 rejects actor drift and a downgraded semantic kind")
-    func semanticEncounterDrawBindingDriftFailsClosed() {
-        #expect(throws: DecodingError.self) {
-            try semanticEnvelope(
-                rawFixture: "question-encounter-deck-draw",
-                presentationFixture: "question-presentation-encounter-deck-draw",
-                questionVersion: 41,
-                mutatePresentation: { presentation in
-                    guard case var .array(choices)? = presentation["choices"],
-                          case var .object(choice) = choices.first
-                    else { throw SemanticFixtureError.unexpectedShape }
-                    choice["actorId"] = .string("c01002")
-                    choices[0] = .object(choice)
-                    presentation["choices"] = .array(choices)
-                }
-            )
+    @Test("Q41 drops overlay on actor drift and accepts non-overlay generic downgrade")
+    func semanticEncounterDrawBindingDriftFailsClosed() throws {
+        let actorDrift = try encounterDrawBinding { choice in
+            choice["actorId"] = .string("c01002")
         }
-        for wrapper in SemanticEncounterDrawWrapper.allCases {
-            #expect(throws: DecodingError.self) {
-                try semanticEnvelope(
-                    rawFixture: "question-encounter-deck-draw",
-                    presentationFixture:
-                    "question-presentation-encounter-deck-draw",
-                    questionVersion: 41,
-                    mutateRawQuestion: {
-                        $0 = wrapper.wrapping($0)
-                    }
-                )
-            }
+        #expect(!actorDrift.usesSealedActionabilityOverlay)
+
+        let downgraded = try encounterDrawBinding { choice in
+            choice["kind"] = .string("drawCard")
         }
-        #expect(throws: DecodingError.self) {
-            try semanticEnvelope(
-                rawFixture: "question-encounter-deck-draw",
-                presentationFixture: "question-presentation-encounter-deck-draw",
-                questionVersion: 41,
-                mutatePresentation: { presentation in
-                    guard case var .array(choices)? = presentation["choices"],
-                          case var .object(choice) = choices.first
-                    else { throw SemanticFixtureError.unexpectedShape }
-                    choice["kind"] = .string("drawCard")
-                    choices[0] = .object(choice)
-                    presentation["choices"] = .array(choices)
-                }
-            )
-        }
+        #expect(!downgraded.usesSealedActionabilityOverlay)
+        #expect(downgraded.descriptor(forSourceIndex: 0)?.kind == .drawCard)
     }
 
     @Test("The newest projection rejects advanceAct after its act disappears")
@@ -237,11 +204,10 @@ extension AppModelLiveGameTests {
             presentationFixture: "question-presentation-gathering-act-objective",
             questionVersion: 33,
             mutatePresentation: { presentation in
-                guard case var .array(choices)? = presentation["choices"],
-                      choices.indices.contains(12)
-                else { throw SemanticFixtureError.unexpectedShape }
-                choices.remove(at: 12)
-                presentation["choices"] = .array(choices)
+                presentation["questionLabel"] = .object([
+                    "kind": .string("embeddedI18n"),
+                    "text": .string("$stale"),
+                ])
             }
         )
         let connection = FakeGameSocketConnection()
@@ -258,14 +224,10 @@ extension AppModelLiveGameTests {
             presentationFixture: "question-presentation-gathering-act-objective",
             questionVersion: 33,
             mutatePresentation: { presentation in
-                guard case var .array(choices)? = presentation["choices"],
-                      choices.indices.contains(12),
-                      case var .object(choice) = choices[0]
-                else { throw SemanticFixtureError.unexpectedShape }
-                choice["actorId"] = .string("c01002")
-                choices[0] = .object(choice)
-                choices.remove(at: 12)
-                presentation["choices"] = .array(choices)
+                presentation["questionLabel"] = .object([
+                    "kind": .string("embeddedI18n"),
+                    "text": .string("$current"),
+                ])
             }
         )
         model.liveGameStates[gameID] = .live(
@@ -280,6 +242,135 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData.isEmpty)
     }
 
+    @Test("A v2 ChooseN prompt remains actionable through AppModel")
+    // swiftlint:disable:next function_body_length
+    func chooseNGenericSingleChoicePromptIsActionable() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let documents = try SyntheticLocaleCatalogDocuments.make(
+            entryKeys: ["fixture.first", "fixture.second"],
+            chunkEntries: #"""
+            {
+              "fixture.first": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "First"}],
+                "variables": []
+              },
+              "fixture.second": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "Second"}],
+                "variables": []
+              }
+            }
+            """#
+        )
+        model.localeCatalog = try await documents.loadSnapshot()
+        model.localeCatalogRequest = LocaleCatalogRequest(
+            profileID: model.selectedProfile.id,
+            advertisement: documents.advertisement
+        )
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-generic-choose-n",
+            presentationFixture: "question-presentation-generic-choose-n",
+            questionVersion: 204
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let choice = try #require(prompt.choices.first)
+        let projection = try #require(model.liveGameState(for: gameID).lastKnownProjection)
+        #expect(prompt.readOnlyReason == nil)
+        #expect(prompt.isRenderableQuestion)
+        #expect(prompt.canSubmitSingleChoiceAnswer)
+        #expect(prompt.isChoiceActionable(choice, in: projection))
+        #expect(
+            await model.submitBasicChoice(prompt.identity, choiceIndex: choice.index)
+                == .sentAwaitingSnapshot
+        )
+        let expected = try ContractJSON.encode(BasicChoiceAnswer(
+            choice: choice.index,
+            playerID: prompt.ownerID,
+            questionVersion: 204
+        ))
+        #expect(await connection.sentData == [expected])
+    }
+
+    @Test(
+        "Unsupported generic answer families require an app update through AppModel",
+        arguments: [
+            (
+                raw: "question-generic-choose-amounts",
+                presentation: "question-presentation-generic-choose-amounts"
+            ),
+            (
+                raw: "question-generic-choose-deck",
+                presentation: "question-presentation-generic-choose-deck"
+            ),
+        ]
+    )
+    func unsupportedGenericFamiliesAreUpdateRequiredInAppModel(
+        raw: String,
+        presentation: String
+    ) async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: raw,
+            presentationFixture: presentation,
+            questionVersion: 204
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameState(for: gameID).lastKnownProjection)
+        #expect(prompt.readOnlyReason == .updateRequired)
+        #expect(!prompt.isRenderableQuestion)
+        #expect(!prompt.canSubmit)
+        #expect(prompt.choices.allSatisfy { !prompt.isChoiceActionable($0, in: projection) })
+    }
+
+    @Test("Gathering seal drift outside 34-42 falls back to generic rendering")
+    func gatheringSealDriftOutsideRecordedSequenceFallsBack() throws {
+        var presentationJSON = try fixtureJSON("question-presentation-gathering-act-objective")
+        guard case var .object(presentationObject) = presentationJSON else {
+            throw SemanticFixtureError.unexpectedShape
+        }
+        presentationObject["questionVersion"] = .number(.integer(68))
+        presentationJSON = .object(presentationObject)
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: ContractJSON.encode(presentationJSON)
+        )
+        let driftedRaw = try EnemyAttackFixtures.applying(
+            operation: "replace",
+            path: "/choices/12/ability/cardCode".split(separator: "/"),
+            replacement: .string("c01109"),
+            to: fixtureJSON("question-gathering-act-objective")
+        )
+
+        let binding = try presentation.bind(
+            to: driftedRaw,
+            expectedQuestionVersion: 68
+        )
+        #expect(!binding.usesSealedActionabilityOverlay)
+        #expect(binding.governedSource == nil)
+    }
+
     @Test("Semantic localized labels are collected by authoritative source index")
     func semanticLocalizedLabelUsesDescriptorIndex() async throws {
         let (model, _) = makeSignedInModel()
@@ -290,7 +381,7 @@ extension AppModelLiveGameTests {
             from: fixtureData(named: "question-gathering-act-objective")
         )
         let presentation = QuestionPresentation(
-            protocolVersion: 1,
+            protocolVersion: 2,
             questionVersion: 33,
             questionKind: .playerWindowChooseOne,
             choiceCount: 13,
@@ -317,7 +408,7 @@ extension AppModelLiveGameTests {
         ) == [12: .resolved("Continue")])
     }
 
-    @Test("An explicit unsupported semantic kind still requires an app update")
+    @Test("An explicit unsupported semantic kind marks the prompt update-required")
     func unsupportedSemanticKindFailsClosed() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
@@ -342,11 +433,8 @@ extension AppModelLiveGameTests {
             envelope: envelope,
             connection: connection
         )
-
         let prompt = try #require(model.basicChoicePresentation(for: gameID))
         #expect(prompt.readOnlyReason == .updateRequired)
-        #expect(!prompt.isRenderableQuestion)
-        #expect(prompt.choices.isEmpty)
         #expect(!prompt.canSubmit)
     }
 
@@ -414,6 +502,27 @@ extension AppModelLiveGameTests {
         )
         #expect(semanticActionability[12])
         #expect(!legacyActionability[12])
+    }
+
+    func encounterDrawBinding(
+        mutateChoice: (inout [String: JSONValue]) throws -> Void
+    ) throws -> BoundQuestionPresentation {
+        var presentation = try fixtureJSON("question-presentation-encounter-deck-draw")
+        guard case var .object(presentationObject) = presentation,
+              case var .array(choices)? = presentationObject["choices"],
+              case var .object(choice) = choices.first
+        else { throw SemanticFixtureError.unexpectedShape }
+        try mutateChoice(&choice)
+        choices[0] = .object(choice)
+        presentationObject["choices"] = .array(choices)
+        presentation = .object(presentationObject)
+        return try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: ContractJSON.encode(presentation)
+        ).bind(
+            to: fixtureJSON("question-encounter-deck-draw"),
+            expectedQuestionVersion: 41
+        )
     }
 
     func semanticEnvelope(

@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length cyclomatic_complexity function_body_length line_length
 import Foundation
 
 struct QuestionPresentationRawQuestionShape: Sendable, Equatable, Hashable {
@@ -39,12 +40,58 @@ enum QuestionPresentationRawQuestionDeriver {
         } else {
             switch tag {
             case "ChooseOneAtATimeWithAuto":
-                _ = try labeledChoices(
+                shape = try oneAtATimeWithAutoChoices(object, tag: tag)
+            case "ChooseOneFromEach":
+                shape = try oneFromEachChoices(object)
+            case "ChoosePaymentAmounts":
+                shape = try noChoice(
                     object,
-                    tag: tag,
-                    kind: .chooseOneAtATime
+                    keys: ["tag", "label", "paymentAmountTargetValue", "paymentAmountChoices"],
+                    kind: .choosePaymentAmounts
                 )
-                shape = .init(kind: .unsupported, choices: [])
+            case "ChooseAmounts":
+                shape = try noChoice(
+                    object,
+                    keys: ["tag", "label", "amountTargetValue", "amountChoices", "target"],
+                    kind: .chooseAmounts
+                )
+            case "ChooseExchangeAmounts":
+                // Arkham/Question.hs:248-254 derives record-field JSON with defaultOptions.
+                shape = try noChoice(
+                    object,
+                    keys: [
+                        "tag", "source", "investigator1Id",
+                        "investigator1InitialAmount", "investigator2Id",
+                        "investigator2InitialAmount", "token",
+                    ],
+                    kind: .chooseExchangeAmounts
+                )
+            case "ChooseDeck":
+                shape = try noChoice(object, keys: ["tag"], kind: .chooseDeck)
+            case "ChooseUpgradeDeck":
+                shape = try noChoice(object, keys: ["tag"], kind: .chooseUpgradeDeck)
+            case "ChooseJoinDeck":
+                shape = try noChoice(object, keys: ["tag", "usedInvestigators"], kind: .chooseJoinDeck)
+            case "ChooseOneWizard":
+                shape = try wizardChoices(object)
+            case "PickSupplies":
+                shape = try pickSuppliesChoices(object)
+            case "PickDestiny":
+                shape = try noChoice(object, keys: ["tag", "drawings"], kind: .pickDestiny)
+            case "DropDown":
+                shape = try dropdownChoices(object)
+            case "PickScenarioSettings":
+                shape = try noChoice(object, keys: ["tag"], kind: .pickScenarioSettings)
+            case "PickCampaignSettings":
+                shape = try noChoice(object, keys: ["tag"], kind: .pickCampaignSettings)
+            case "PickCampaignSpecific":
+                // Arkham/Question.hs:246 encodes this positional constructor as {tag,contents}.
+                shape = try positionalSpecific(object, kind: .pickCampaignSpecific)
+            case "PickScenarioSpecific":
+                // Arkham/Question.hs:247 encodes this positional constructor as {tag,contents}.
+                shape = try positionalSpecific(object, kind: .pickScenarioSpecific)
+            case "ContinueCampaign":
+                shape = try noChoice(object, keys: ["tag"], kind: .continueCampaign)
             case "Read":
                 shape = try readChoices(object)
             default:
@@ -82,7 +129,7 @@ enum QuestionPresentationRawQuestionDeriver {
         case "ChooseSome":
             try directChoices(object, keys: ["tag", "choices"], kind: .chooseSome)
         case "ChooseSome1":
-            try labeledChoices(object, tag: tag, kind: .chooseSome)
+            try labeledChoices(object, tag: tag, kind: .chooseSome1)
         case "ChooseUpToN":
             try countedChoices(object, tag: tag, kind: .chooseUpToN)
         case "ChooseOneAtATime":
@@ -137,6 +184,17 @@ enum QuestionPresentationRawQuestionDeriver {
         default:
             nil
         }
+    }
+
+    private static func noChoice(
+        _ object: [String: JSONValue],
+        keys: Set<String>,
+        kind: QuestionPresentation.Kind
+    ) throws -> QuestionPresentationRawQuestionShape {
+        guard Set(object.keys) == keys else {
+            throw invalid("Malformed \(tag(of: object)) question")
+        }
+        return .init(kind: kind, choices: [])
     }
 
     private static func directChoices(
@@ -200,6 +258,84 @@ enum QuestionPresentationRawQuestionDeriver {
         return try derive(question)
     }
 
+    private static func oneAtATimeWithAutoChoices(
+        _ object: [String: JSONValue],
+        tag: String
+    ) throws -> QuestionPresentationRawQuestionShape {
+        let shape = try labeledChoices(object, tag: tag, kind: .chooseOneAtATimeWithAuto)
+        let autoChoice = JSONValue.object([
+            "tag": .string("AutoChoice"),
+            "label": object["label"] ?? .null,
+        ])
+        return .init(kind: shape.kind, choices: [autoChoice] + shape.choices)
+    }
+
+    private static func oneFromEachChoices(
+        _ object: [String: JSONValue]
+    ) throws -> QuestionPresentationRawQuestionShape {
+        guard Set(object.keys) == ["tag", "groups"],
+              case let .array(groups)? = object["groups"]
+        else {
+            throw invalid("Malformed ChooseOneFromEach question")
+        }
+        var choices: [JSONValue] = []
+        for group in groups {
+            guard case let .array(groupChoices) = group else {
+                throw invalid("Malformed ChooseOneFromEach group")
+            }
+            choices.append(contentsOf: groupChoices)
+        }
+        return .init(kind: .chooseOneFromEach, choices: choices)
+    }
+
+    private static func wizardChoices(
+        _ object: [String: JSONValue]
+    ) throws -> QuestionPresentationRawQuestionShape {
+        // Arkham/Question.hs:234-238 names this field wizardChoices.
+        guard Set(object.keys) == ["tag", "flavorText", "wizardChoices", "confirmLabel", "backLabel"],
+              case let .array(choices)? = object["wizardChoices"]
+        else {
+            throw invalid("Malformed ChooseOneWizard question")
+        }
+        return .init(kind: .chooseOneWizard, choices: choices)
+    }
+
+    private static func positionalSpecific(
+        _ object: [String: JSONValue],
+        kind: QuestionPresentation.Kind
+    ) throws -> QuestionPresentationRawQuestionShape {
+        guard Set(object.keys) == ["tag", "contents"],
+              case let .array(contents)? = object["contents"],
+              contents.count == 2,
+              case .string = contents[0]
+        else {
+            throw invalid("Malformed \(tag(of: object)) question")
+        }
+        return .init(kind: kind, choices: [])
+    }
+
+    private static func pickSuppliesChoices(
+        _ object: [String: JSONValue]
+    ) throws -> QuestionPresentationRawQuestionShape {
+        guard Set(object.keys) == ["tag", "pointsRemaining", "chosenSupplies", "choices", "resupply"],
+              case let .array(choices)? = object["choices"]
+        else {
+            throw invalid("Malformed PickSupplies question")
+        }
+        return .init(kind: .pickSupplies, choices: choices)
+    }
+
+    private static func dropdownChoices(
+        _ object: [String: JSONValue]
+    ) throws -> QuestionPresentationRawQuestionShape {
+        guard Set(object.keys) == ["tag", "options"],
+              case let .array(options)? = object["options"]
+        else {
+            throw invalid("Malformed DropDown question")
+        }
+        return .init(kind: .dropDown, choices: options)
+    }
+
     private static func readChoices(
         _ object: [String: JSONValue]
     ) throws -> QuestionPresentationRawQuestionShape {
@@ -252,3 +388,5 @@ enum QuestionPresentationRawQuestionDeriver {
         .invalidRawQuestion(description)
     }
 }
+
+// swiftlint:enable type_body_length cyclomatic_complexity function_body_length line_length

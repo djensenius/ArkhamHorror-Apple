@@ -6,12 +6,9 @@ import Testing
 struct LocaleCatalogFixtureProvenanceTests {
     private let expectedDigests = [
         "Contract/capabilities-locale-catalog.json":
-            "21ce03ec5f3bf26ecf2f64ad74ddb6112c675bf7772961df0c49f081bd5770b6",
+            "43a700d52e6776260e5714476ebaf60969b71735222c4d4fceaf9484c5ffc78d",
         "Contract/locale-catalog-backend-registry.json":
             "3f39e0f443341bc194a2ba645584007a161875d2e1981bb9c16c8f466880c6c4",
-        // swiftlint:disable:next line_length
-        "Contract/locale-catalog-chunk-d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693.json":
-            "d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693",
         // swiftlint:disable:next line_length
         "Contract/locale-catalog-chunk-2efb9d458b5dd9b7ae9a284c277ca68e47a40212c95ce85da5b50f598d9fc448.json":
             "2efb9d458b5dd9b7ae9a284c277ca68e47a40212c95ce85da5b50f598d9fc448",
@@ -21,8 +18,13 @@ struct LocaleCatalogFixtureProvenanceTests {
         // swiftlint:disable:next line_length
         "Contract/locale-catalog-chunk-932fbfdd3570550d2bd7255599e7b54cb8ceac12d4597686613d97254b67c12d.json":
             "932fbfdd3570550d2bd7255599e7b54cb8ceac12d4597686613d97254b67c12d",
+        // swiftlint:disable:next line_length
+        "Contract/locale-catalog-chunk-d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693.json":
+            "d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693",
         "Contract/locale-catalog-manifest.json":
-            "71210c8ea9793deb49b611dd36410232d0d11189373b1c50c2d99c75c7d919ec",
+            "252eadfb84255735d3ba37cb06e13eda29fac7ce97110f605875e356c8056506",
+        "Contract/locale-catalog-owned-files.json":
+            "139e69af182999d7a9164c87bb7395c702717b0afaf0dd7d1de1082b613f979e",
         "Contract/locale-catalog-source-de.json":
             "1d60ade53a4b4d7241c88ce8f0cab1b4027e81cd25f10f1ad815948e198fd0bb",
         "Contract/locale-catalog-source-en.json":
@@ -30,9 +32,9 @@ struct LocaleCatalogFixtureProvenanceTests {
         "Contract/locale-catalog-source-pt-BR.json":
             "cd7593ead3708918f8d8df4dea9775659a78351d90c485f3c82ad8fe69f4f241",
         "Contract/manifest.json":
-            "6ff8811f01fc9b783eddce4463e089eb0ba2db10ef37074e48777917c7eab679",
+            "496675d91ca082c9f7f3aef4bbf60a2a59f0298d394c2e95a3a206be64d1b23f",
         "Schemas/capabilities.schema.json":
-            "a9f4424e0a09d76c74e29289c98a53194e5e6690b2f0f33d2efba23720a373dc",
+            "c0638d27e54ede08d37afaf77d2c6d063e1f46a5c44066bf361b22b5fe980103",
         "Schemas/chunk.schema.json":
             "545e12548f904617e6cc9143ac6da4d6181f11bf727bdac8856007316b19ed9b",
         "Schemas/manifest.schema.json":

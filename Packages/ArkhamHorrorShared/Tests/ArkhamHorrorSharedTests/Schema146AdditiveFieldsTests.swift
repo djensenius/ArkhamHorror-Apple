@@ -4,33 +4,22 @@ import Testing
 
 @Suite("Schema 0.1.46 additive fields")
 struct Schema146AdditiveFieldsTests {
-    @Test("presentation abilities preserve default additive fields and still accept old shape")
-    func presentationAbilityDefaultFields() throws {
-        let oldShape = try decodeSchema146Ability(schema146PresentationAbilityJSON)
-        #expect(oldShape.blocksIn == nil)
-        #expect(oldShape.nonBlocking == nil)
-
-        let withDefaults = try decodeSchema146Ability(
-            schema146PresentationAbilityJSON.dropLast()
-                + #", "blocksIn": null, "nonBlocking": false}"#
-        )
-        #expect(withDefaults.blocksIn == JSONValue.null)
-        #expect(withDefaults.nonBlocking == false)
-
-        let encoded = try ContractJSON.decode(
-            JSONValue.self,
-            from: ContractJSON.encode(withDefaults)
-        )
-        guard case let .object(object) = encoded else {
-            Issue.record("Expected ability object")
-            return
+    @Test("v2 presentation abilities reject removed additive fields")
+    func presentationAbilityRemovedFieldsReject() throws {
+        _ = try decodeSchema146Ability(schema146PresentationAbilityJSON)
+        // `blocksIn`/`nonBlocking` were raw Ability compatibility fields in schema 0.1.46.
+        // Question/Presentation.hs no longer publishes them in protocolVersion 2, so the
+        // closed presentation decoder rejects even their former default values.
+        #expect(throws: DecodingError.self) {
+            try decodeSchema146Ability(
+                schema146PresentationAbilityJSON.dropLast()
+                    + #", "blocksIn": null, "nonBlocking": false}"#
+            )
         }
-        #expect(object["blocksIn"] == JSONValue.null)
-        #expect(object["nonBlocking"] == JSONValue.bool(false))
     }
 
-    @Test("explicit presentation ability defaults still match Gathering references")
-    func presentationAbilityDefaultsAreSemanticallyEquivalent() throws {
+    @Test("explicit presentation ability defaults no longer decode as Gathering references")
+    func presentationAbilityDefaultsRejectBeforeOverlayMatching() throws {
         var value = try schema146FixtureValue("question-presentation-gathering-movement")
         for sourceIndex in [9, 10, 11] {
             value = try schema146ApplyingReplace(
@@ -40,25 +29,12 @@ struct Schema146AdditiveFieldsTests {
                 "/choices/\(sourceIndex)/ability/nonBlocking", with: .bool(false), to: value
             )
         }
-        let presentation = try ContractJSON.decode(
-            QuestionPresentation.self,
-            from: ContractJSON.encode(value)
-        )
-        #expect(presentation.choices[9] == .gatheringMovement(
-            sourceIndex: 9,
-            cardCode: "c01114",
-            locationID: "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
-        ))
-        #expect(presentation.choices[10] == .gatheringMovement(
-            sourceIndex: 10,
-            cardCode: "c01113",
-            locationID: "dbaa2d2e-4ceb-44b2-a554-e5fa370e7882"
-        ))
-        #expect(presentation.choices[11] == .gatheringInvestigation(
-            sourceIndex: 11,
-            cardCode: "c01112",
-            locationID: "fda9afef-4166-4c9f-962e-eed6e8cbee25"
-        ))
+        #expect(throws: DecodingError.self) {
+            try ContractJSON.decode(
+                QuestionPresentation.self,
+                from: ContractJSON.encode(value)
+            )
+        }
     }
 
     @Test("presentation abilities reject non-default additive fields")

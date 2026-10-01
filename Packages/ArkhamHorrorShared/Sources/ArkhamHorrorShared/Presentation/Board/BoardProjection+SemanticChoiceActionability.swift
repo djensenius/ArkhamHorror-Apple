@@ -6,7 +6,9 @@ extension BoardProjection {
         labelResolution: BasicChoiceLabelResolution?,
         governedSource: QuestionPresentation.GovernedSource? = nil
     ) -> Bool {
-        guard containsSemanticChoiceIdentities(choice, ownerID: ownerID) else { return false }
+        guard choice.selectable,
+              containsSemanticChoiceIdentities(choice, ownerID: ownerID)
+        else { return false }
         switch choice.kind {
         case .advanceAct:
             return choice.entity?.kind == .act
@@ -44,6 +46,11 @@ extension BoardProjection {
             return isSemanticForcedAbilityActionable(choice)
         case .useAbility:
             return choice.actorID != nil && choice.ability != nil && choice.cost != nil
+        case .auto, .auxiliaryComponentLabel, .cardPile, .chaosTokenGroupChoice,
+             .chaosTokenLabel, .componentLabel, .connectionLabel, .costLabel,
+             .effectActionButton, .info, .invalidLabel, .keyLabel, .opaque,
+             .skillLabel, .tarotLabel, .wizardChoice:
+            return choice.selectable
         }
     }
 

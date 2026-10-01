@@ -66,33 +66,50 @@ struct SnapshotSemanticPresentationTests {
         }
     }
 
-    @Test("Semantic questionVersion must equal authoritative scenarioSteps")
+    @Test("Semantic questionVersion drift marks only that prompt update-required")
     func questionPresentationVersionMismatchFailsClosed() throws {
         let mutated = try mutatePresentation { presentation in
             presentation["questionVersion"] = try jsonValue("4")
         }
-        #expect(throws: DecodingError.self) {
-            _ = try ContractJSON.decode(GetGameEnvelope.self, from: mutated)
-        }
+        let envelope = try ContractJSON.decode(GetGameEnvelope.self, from: mutated)
+        let playerID = try #require(envelope.playerID)
+        let payload = try #require(envelope.game.question[playerID])
+        #expect(payload.presentation == nil)
+        #expect(payload.isUpdateRequired)
+        #expect(envelope.game.name.isEmpty == false)
     }
 
-    @Test("A valid envelope may omit one descriptor without synthesizing it")
-    func sparseQuestionPresentationRemainsSparse() throws {
-        let mutated = try mutatePresentation { presentation in
+    @Test("A sparse semantic map entry marks only that player update-required")
+    func sparseQuestionPresentationFailsClosed() throws {
+        let otherKey = "00000000-0000-0000-0000-000000000002"
+        let mutated = try mutateGetGame { game in
+            var questions = try object(game["question"])
+            var presentations = try object(game["questionPresentation"])
+            let playerKey = "00000000-0000-0000-0000-000000000001"
+            questions[otherKey] = questions[playerKey]
+            presentations[otherKey] = presentations[playerKey]
+            var presentation = try object(presentations[playerKey])
             guard case var .array(choices)? = presentation["choices"] else {
                 throw FixtureMutationError.unexpectedShape
             }
             choices.remove(at: 2)
             presentation["choices"] = .array(choices)
+            presentations[playerKey] = .object(presentation)
+            game["question"] = .object(questions)
+            game["questionPresentation"] = .object(presentations)
         }
-        let game = try ContractJSON.decode(GetGameEnvelope.self, from: mutated).game
-        let playerID = try PlayerID(
-            #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
-        )
-        let binding = try #require(game.question[playerID]?.presentation)
-        #expect(binding.presentation.choiceCount == 4)
-        #expect(binding.rawChoices.count == 4)
-        #expect(binding.descriptor(forSourceIndex: 2) == nil)
+        let envelope = try ContractJSON.decode(GetGameEnvelope.self, from: mutated)
+        let playerID = try #require(envelope.playerID)
+        let otherPlayerID = try PlayerID(#require(UUID(uuidString: otherKey)))
+        let failedPayload = try #require(envelope.game.question[playerID])
+        let otherPayload = try #require(envelope.game.question[otherPlayerID])
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+
+        #expect(envelope.game.name.isEmpty == false)
+        #expect(failedPayload.presentation == nil)
+        #expect(failedPayload.isUpdateRequired)
+        #expect(otherPayload.presentation != nil)
+        #expect(projection.questions[otherPlayerID]?.presentation != nil)
     }
 
     private enum FixtureMutationError: Error {

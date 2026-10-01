@@ -174,7 +174,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             var defaults: [Int: BasicChoiceLabelResolution] = [:]
             if let semanticPresentation {
                 for choice in semanticPresentation.presentation.choices {
-                    guard choice.kind == .localizedLabel else { continue }
+                    guard choice.label != nil else { continue }
                     defaults[choice.sourceIndex] = .unavailable(.catalog(.notAdvertised))
                 }
             } else {
@@ -212,14 +212,21 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
 
     func isChoiceActionable(_ choice: BasicChoice, in projection: BoardProjection) -> Bool {
         if let semanticPresentation {
-            guard let descriptor = semanticPresentation.descriptor(
-                forSourceIndex: choice.index
-            ) else { return false }
+            guard case .singleChoice = semanticPresentation.presentation.answer,
+                  let descriptor = semanticPresentation.descriptor(
+                      forSourceIndex: choice.index
+                  )
+            else { return false }
+            guard semanticPresentation.presentation.supportsCurrentGenericChoiceList,
+                  !semanticPresentation.requiresSealedActionabilityOverlay
+                  || semanticPresentation.usesSealedActionabilityOverlay
+            else { return false }
             return projection.isSemanticChoiceActionable(
                 descriptor,
                 ownerID: ownerID,
                 labelResolution: choiceLabelResolutions[choice.index],
-                governedSource: semanticPresentation.governedSource
+                governedSource: semanticPresentation.usesSealedActionabilityOverlay
+                    ? semanticPresentation.governedSource : nil
             )
         }
         return projection.isChoiceActionable(
@@ -235,8 +242,13 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         return storyResolution?.isResolved == true
     }
 
+    var canSubmitSingleChoiceAnswer: Bool {
+        guard let semanticPresentation else { return true }
+        return semanticPresentation.presentation.genericSupport == .singleChoice
+    }
+
     var canSubmit: Bool {
-        guard isAuthorized, isStoryAvailable else { return false }
+        guard isAuthorized, isStoryAvailable, canSubmitSingleChoiceAnswer else { return false }
         switch actionPhase {
         case .sending, .awaitingSnapshot, .uncertain:
             return false

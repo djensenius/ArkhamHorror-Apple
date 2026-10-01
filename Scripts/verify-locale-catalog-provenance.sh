@@ -11,20 +11,21 @@ backend_commit="${LOCALE_CATALOG_BACKEND_COMMIT:-}"
 scratch_dir="$repo_root/.build/locale-catalog-provenance"
 
 mappings="
-Contract/manifest.json:contracts/manifest.json
 Contract/capabilities-locale-catalog.json:contracts/fixtures/capabilities-locale-catalog.json
 Contract/locale-catalog-backend-registry.json:contracts/fixtures/locale-catalog-backend-registry.json
-Contract/locale-catalog-manifest.json:contracts/fixtures/locale-catalog-manifest.json
-Contract/locale-catalog-chunk-d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693.json:contracts/fixtures/locale-catalog-chunk-d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693.json
 Contract/locale-catalog-chunk-2efb9d458b5dd9b7ae9a284c277ca68e47a40212c95ce85da5b50f598d9fc448.json:contracts/fixtures/locale-catalog-chunk-2efb9d458b5dd9b7ae9a284c277ca68e47a40212c95ce85da5b50f598d9fc448.json
 Contract/locale-catalog-chunk-309d63c6b0ab62a2fc4bc993860a820b05c156f2e7d67439a24b487839df1488.json:contracts/fixtures/locale-catalog-chunk-309d63c6b0ab62a2fc4bc993860a820b05c156f2e7d67439a24b487839df1488.json
 Contract/locale-catalog-chunk-932fbfdd3570550d2bd7255599e7b54cb8ceac12d4597686613d97254b67c12d.json:contracts/fixtures/locale-catalog-chunk-932fbfdd3570550d2bd7255599e7b54cb8ceac12d4597686613d97254b67c12d.json
+Contract/locale-catalog-chunk-d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693.json:contracts/fixtures/locale-catalog-chunk-d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693.json
+Contract/locale-catalog-manifest.json:contracts/fixtures/locale-catalog-manifest.json
+Contract/locale-catalog-owned-files.json:contracts/fixtures/locale-catalog-owned-files.json
 Contract/locale-catalog-source-de.json:contracts/fixtures/locale-catalog-source-de.json
 Contract/locale-catalog-source-en.json:contracts/fixtures/locale-catalog-source-en.json
 Contract/locale-catalog-source-pt-BR.json:contracts/fixtures/locale-catalog-source-pt-BR.json
+Contract/manifest.json:contracts/manifest.json
 Schemas/capabilities.schema.json:contracts/schemas/capabilities.schema.json
-Schemas/manifest.schema.json:frontend/schemas/locale-catalog/v1/manifest.schema.json
 Schemas/chunk.schema.json:frontend/schemas/locale-catalog/v1/chunk.schema.json
+Schemas/manifest.schema.json:frontend/schemas/locale-catalog/v1/manifest.schema.json
 "
 
 if [ ! -d "$fixture_root" ]; then

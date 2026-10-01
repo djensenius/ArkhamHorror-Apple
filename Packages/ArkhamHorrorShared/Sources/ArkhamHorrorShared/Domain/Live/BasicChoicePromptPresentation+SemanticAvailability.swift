@@ -22,12 +22,12 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    // swiftlint:disable:next function_body_length
     func semanticUnavailableAnnouncement(
         for descriptor: QuestionPresentation.Choice,
         labelResolution: BasicChoiceLabelResolution?
     ) -> String {
-        if descriptor.kind == .localizedLabel {
+        if descriptor.label != nil {
             return labelResolution?.announcement
                 ?? semanticLocalized(
                     "semantic.choice.unavailable.text",
@@ -83,15 +83,13 @@ extension BasicChoicePromptPresentation {
                 value:
                 "The investigator for this choice is not currently available."
             )
-        case .applySkillTestResults:
+        case .applySkillTestResults, .auto, .auxiliaryComponentLabel, .cardPile,
+             .chaosTokenGroupChoice, .chaosTokenLabel, .componentLabel, .connectionLabel,
+             .costLabel, .effectActionButton, .info, .invalidLabel, .keyLabel,
+             .localizedLabel, .opaque, .skillLabel, .tarotLabel, .wizardChoice:
             return semanticLocalized(
                 "semantic.choice.unavailable.generic",
                 value: "This choice is not currently available."
-            )
-        case .localizedLabel:
-            return semanticLocalized(
-                "semantic.choice.unavailable.text",
-                value: "The text for this choice is not currently available."
             )
         }
     }

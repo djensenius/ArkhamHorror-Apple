@@ -98,15 +98,15 @@ extension BasicChoiceSemanticPresentationTests {
     ) throws -> BasicChoicePromptPresentation {
         let payload = try rawPayload("question-gathering-act-advance")
         let presentation = QuestionPresentation(
-            protocolVersion: 1,
-            questionVersion: 35,
+            protocolVersion: 2,
+            questionVersion: 135,
             questionKind: .chooseOne,
             choiceCount: 1,
             choices: [choice]
         )
         let bound = try presentation.bind(
             to: payload.rawValue,
-            expectedQuestionVersion: 35
+            expectedQuestionVersion: 135
         )
         return makePrompt(
             payload: payload,
