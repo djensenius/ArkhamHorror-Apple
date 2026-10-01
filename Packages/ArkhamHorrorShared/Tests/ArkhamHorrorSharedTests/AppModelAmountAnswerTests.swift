@@ -520,6 +520,9 @@ extension AppModelLiveGameTests {
         let (exchangeModel, exchangeFakes) = makeSignedInModel()
         await exchangeModel.flowTask?.value
         makeModern(exchangeModel)
+        exchangeModel.cardCatalog = try CardCatalogSnapshot(namesByCode: [
+            CardCode("c01002"): CardName(title: "Daisy Walker", subtitle: nil),
+        ])
         let exchangeEnvelope = try exchangeEnvelope(fromInitialAmount: 2, toInitialAmount: 1)
         let exchangeGameID = await startChoiceSession(
             model: exchangeModel,

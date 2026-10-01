@@ -360,6 +360,8 @@ extension BasicChoicePromptPresentation {
     private func investigatorName(_ rawID: String, in projection: BoardProjection) -> String {
         guard let cardCode = try? CardCode(rawID) else { return rawID }
         let id = InvestigatorID(cardCode)
-        return projection.investigators.first { $0.id == id }?.displayName ?? rawID
+        return projection.investigators.first { $0.id == id }?.displayName
+            ?? cardCatalog?.displayName(for: cardCode)
+            ?? rawID
     }
 }
