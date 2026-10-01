@@ -41,7 +41,7 @@ struct SemanticCommandTests {
         // "expected" derivation.
         let repeatableCommands: Set<SemanticCommand> = [
             .focusMove(.up), .focusMove(.down), .focusMove(.left), .focusMove(.right),
-            .zoomIn, .zoomOut,
+            .zoomIn, .zoomOut, .adjustFocusedAmount(1), .adjustFocusedAmount(-1),
             .rotateCamera(.clockwise), .rotateCamera(.counterclockwise),
             .cyclePlayer(.next), .cyclePlayer(.previous),
             .cycleZone(.next), .cycleZone(.previous),
