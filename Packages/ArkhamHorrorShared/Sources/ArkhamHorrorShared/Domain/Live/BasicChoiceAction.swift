@@ -217,9 +217,10 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
                       forSourceIndex: choice.index
                   )
             else { return false }
-            guard semanticPresentation.presentation.supportsCurrentGenericChoiceList else {
-                return false
-            }
+            guard semanticPresentation.presentation.supportsCurrentGenericChoiceList,
+                  !semanticPresentation.requiresSealedActionabilityOverlay
+                  || semanticPresentation.usesSealedActionabilityOverlay
+            else { return false }
             return projection.isSemanticChoiceActionable(
                 descriptor,
                 ownerID: ownerID,

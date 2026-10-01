@@ -517,6 +517,10 @@ struct BoundQuestionPresentation: Sendable, Equatable, Hashable {
     let governedSource: QuestionPresentation.GovernedSource?
     let usesSealedActionabilityOverlay: Bool
 
+    var requiresSealedActionabilityOverlay: Bool {
+        presentation.sealValidationKind == .treacheryForcedAbility
+    }
+
     func descriptor(forSourceIndex sourceIndex: Int) -> QuestionPresentation.Choice? {
         presentation.choices.first { $0.sourceIndex == sourceIndex }
     }

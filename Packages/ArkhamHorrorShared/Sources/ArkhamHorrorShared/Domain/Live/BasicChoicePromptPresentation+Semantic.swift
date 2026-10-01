@@ -160,6 +160,7 @@ extension BasicChoicePromptPresentation {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     func accessibilityHint(for choice: BasicChoice, in projection: BoardProjection) -> String {
         guard let semanticPresentation else {
             return BoardDisplayFormatting.choiceAccessibilityHint(
@@ -183,6 +184,8 @@ extension BasicChoicePromptPresentation {
         }
         let isActionable = if case .singleChoice = semanticPresentation.presentation.answer {
             semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && (!semanticPresentation.requiresSealedActionabilityOverlay
+                    || semanticPresentation.usesSealedActionabilityOverlay)
                 && projection.isSemanticChoiceActionable(
                     descriptor,
                     ownerID: ownerID,

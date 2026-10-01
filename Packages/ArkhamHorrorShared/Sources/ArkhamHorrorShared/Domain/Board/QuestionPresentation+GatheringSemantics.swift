@@ -20,11 +20,11 @@ enum QuestionPresentationSealValidationKind: Sendable, Equatable {
 
 extension QuestionPresentation {
     var sealValidationKind: QuestionPresentationSealValidationKind? {
-        if isEncounterDrawSealCandidate {
-            return .encounterDraw
-        }
         if isTreacheryForcedAbilitySealCandidate {
             return .treacheryForcedAbility
+        }
+        if isEncounterDrawSealCandidate {
+            return .encounterDraw
         }
         if isGatheringAtticActionWindowSealCandidate {
             return .gatheringAtticActionWindow
@@ -180,9 +180,7 @@ extension QuestionPresentation {
     }
 
     private var isTreacheryForcedAbilitySealCandidate: Bool {
-        questionKind == .windowChooseOne
-            && !treacheryForcedChoices.isEmpty
-            && governedChoices == treacheryForcedChoices
+        !treacheryForcedChoices.isEmpty
     }
 
     private var isGatheringActObjectiveSealCandidate: Bool {

@@ -356,6 +356,8 @@ extension AppModel {
                 return
             }
             isActionable = semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && (!semanticPresentation.requiresSealedActionabilityOverlay
+                    || semanticPresentation.usesSealedActionabilityOverlay)
                 && projection.isSemanticChoiceActionable(
                     descriptor,
                     ownerID: ownerID,
