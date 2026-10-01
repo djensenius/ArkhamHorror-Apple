@@ -340,9 +340,8 @@ final class BoardCommandController {
         return true
     }
 
-    func amountDraft(for prompt: BasicChoicePromptPresentation) -> [String: Int] {
-        resetPromptInputStateIfNeeded(prompt: prompt)
-        return amountDraft
+    func amountDraft(for _: BasicChoicePromptPresentation) -> [String: Int] {
+        amountDraft
     }
 
     func adjustmentAvailable(rowID: String, delta: Int) -> Bool {
@@ -378,9 +377,8 @@ final class BoardCommandController {
         return true
     }
 
-    func exchangeAmount(for prompt: BasicChoicePromptPresentation) -> Int {
-        resetPromptInputStateIfNeeded(prompt: prompt)
-        return exchangeAmount
+    func exchangeAmount(for _: BasicChoicePromptPresentation) -> Int {
+        exchangeAmount
     }
 
     @discardableResult
