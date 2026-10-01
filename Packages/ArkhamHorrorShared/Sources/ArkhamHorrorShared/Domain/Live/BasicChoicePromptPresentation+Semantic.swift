@@ -642,15 +642,16 @@ extension BasicChoicePromptPresentation {
         if let title = labelResolution?.title {
             return title
         }
+        if let text = descriptor.label?.text,
+           let inline = semanticInlineLabel(text) {
+            return inline
+        }
         if labelResolution?.unavailableReason != nil {
             return fallback ?? semanticLocalized(
                 "semantic.choice.title.genericIndexed",
                 value: "Choice \(descriptor.sourceIndex + 1)",
                 arguments: [Int64(descriptor.sourceIndex + 1)]
             )
-        }
-        if let text = descriptor.label?.text, !text.hasPrefix("$") {
-            return text
         }
         return fallback ?? semanticLocalized(
             "semantic.choice.title.genericIndexed",
@@ -703,7 +704,25 @@ extension BasicChoicePromptPresentation {
             return nil
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard !trimmed.isEmpty else { return nil }
+        return semanticReplacingChaosTokenPlaceholders(in: trimmed)
+    }
+
+    private func semanticReplacingChaosTokenPlaceholders(in text: String) -> String {
+        let replacements = [
+            "{skull}": "Skull",
+            "{cultist}": "Cultist",
+            "{tablet}": "Tablet",
+            "{elderThing}": "Elder Thing",
+            "{autoFail}": "Auto-fail",
+            "{elderSign}": "Elder Sign",
+            "{curse}": "Curse",
+            "{bless}": "Bless",
+            "{frost}": "Frost",
+        ]
+        return replacements.reduce(text) { partial, replacement in
+            partial.replacingOccurrences(of: replacement.key, with: replacement.value)
+        }
     }
 
     private func semanticSkillTitle(_ skill: QuestionPresentation.SkillType) -> String {

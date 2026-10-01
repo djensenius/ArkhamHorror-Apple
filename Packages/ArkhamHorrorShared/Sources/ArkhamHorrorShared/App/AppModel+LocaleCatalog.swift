@@ -342,7 +342,7 @@ extension AppModel {
     ) -> [Int: BasicChoiceLabelResolution] {
         let labels: [(key: Int, wireLabel: String)] = if let semanticPresentation {
             semanticPresentation.presentation.choices.compactMap { choice in
-                guard let label = choice.label else { return nil }
+                guard let label = choice.label, label.text.hasPrefix("$") else { return nil }
                 return (key: choice.sourceIndex, wireLabel: label.text)
             }
         } else {
