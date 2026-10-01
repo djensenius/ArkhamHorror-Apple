@@ -437,7 +437,8 @@ final class BoardCommandController {
         guard promptInputKey != newKey else { return }
         promptInputKey = newKey
         if let prompt,
-           let amountPrompt = prompt.amountPrompt(in: projection) {
+           let amountPrompt = prompt.amountPrompt(in: projection)
+        {
             amountDraft = amountPrompt.initialAmounts
         } else {
             amountDraft = [:]
@@ -472,11 +473,11 @@ final class BoardCommandController {
     private func adjustFocusedAmountControl(direction: FocusDirection) -> Bool {
         switch direction {
         case .left:
-            return adjustFocusedAmountControl(delta: -1)
+            adjustFocusedAmountControl(delta: -1)
         case .right:
-            return adjustFocusedAmountControl(delta: 1)
+            adjustFocusedAmountControl(delta: 1)
         case .up, .down:
-            return false
+            false
         }
     }
 
@@ -491,7 +492,8 @@ final class BoardCommandController {
             }
         }
         if focus == BoardFocusID.promptExchangeDecrease
-            || focus == BoardFocusID.promptExchangeIncrease {
+            || focus == BoardFocusID.promptExchangeIncrease
+        {
             return adjustExchangeAmount(delta: delta)
         }
         return false

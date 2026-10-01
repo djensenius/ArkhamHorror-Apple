@@ -45,13 +45,12 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
         guard let row = row(id: rowID), row.isVisible else { return normalizedAmounts(amounts) }
         var result = normalizedAmounts(amounts)
         let current = result[rowID] ?? 0
-        let adjusted: Int
-        if delta > 0, current < row.minBound {
-            adjusted = min(row.maxBound, row.minBound)
+        let adjusted: Int = if delta > 0, current < row.minBound {
+            min(row.maxBound, row.minBound)
         } else if delta < 0, current > row.maxBound {
-            adjusted = max(row.minBound, row.maxBound)
+            max(row.minBound, row.maxBound)
         } else {
-            adjusted = current + delta
+            current + delta
         }
         result[rowID] = min(max(adjusted, row.minBound), row.maxBound)
         return result
@@ -87,30 +86,30 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
     func targetHint(in presentation: BasicChoicePromptPresentation) -> String {
         switch target {
         case nil:
-            return presentation.semanticLocalized(
+            presentation.semanticLocalized(
                 "amountPrompt.target.any",
                 value: "Choose any amount"
             )
         case let .min(minimum):
-            return presentation.semanticLocalized(
+            presentation.semanticLocalized(
                 "amountPrompt.target.min",
                 value: "Choose at least \(minimum)",
                 arguments: [Int64(minimum)]
             )
         case let .max(maximum):
-            return presentation.semanticLocalized(
+            presentation.semanticLocalized(
                 "amountPrompt.target.max",
                 value: "Choose at most \(maximum)",
                 arguments: [Int64(maximum)]
             )
         case let .total(required):
-            return presentation.semanticLocalized(
+            presentation.semanticLocalized(
                 "amountPrompt.target.total",
                 value: "Choose exactly \(required)",
                 arguments: [Int64(required)]
             )
         case let .oneOf(allowed):
-            return presentation.semanticLocalized(
+            presentation.semanticLocalized(
                 "amountPrompt.target.oneOf",
                 value: "Choose one of \(Self.joinedNumbers(allowed))",
                 arguments: [Self.joinedNumbers(allowed)]
