@@ -824,6 +824,10 @@ extension AppModelLiveGameTests {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
+        var paymentPresentation = try representativePresentation(
+            named: "choosePaymentAmounts-null-target"
+        )
+        try localizeFirstPaymentChoiceTitle(in: &paymentPresentation)
         let paymentEnvelope = try amountEnvelope(
             rawQuestion: paymentRawQuestion(
                 choiceID: "00000000-0000-0000-0000-0000000000c1",
@@ -831,7 +835,7 @@ extension AppModelLiveGameTests {
                 max: 3,
                 target: .null
             ),
-            presentation: representativePresentation(named: "choosePaymentAmounts-null-target"),
+            presentation: paymentPresentation,
             questionVersion: 612
         )
         let paymentGameID = await startChoiceSession(
@@ -885,10 +889,10 @@ extension AppModelLiveGameTests {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
-        let envelope = try semanticEnvelope(
-            rawFixture: "question-generic-choose-amounts",
-            presentationFixture: "question-presentation-generic-choose-amounts",
-            questionVersion: 613
+        let envelope = try oneChoiceAmountEnvelope(
+            choiceID: "00000000-0000-0000-0000-000000000065",
+            questionVersion: 613,
+            label: "Clues"
         )
         let connection = FakeGameSocketConnection()
         await connection.setSendGated(true)
@@ -917,9 +921,10 @@ extension AppModelLiveGameTests {
 
     private func oneChoiceAmountEnvelope(
         choiceID: String,
-        questionVersion: Int
+        questionVersion: Int,
+        label: String = "$clues"
     ) throws -> GetGameEnvelope {
-        let choices = [amountChoice(choiceID, min: 0, max: 2)]
+        let choices = [amountChoice(choiceID, min: 0, max: 2, label: label)]
         return try amountEnvelope(
             rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .min(0)),
             presentation: chooseAmountsPresentation(
@@ -1100,6 +1105,19 @@ extension AppModelLiveGameTests {
             return presentation
         }
         throw TestFailure()
+    }
+
+    private func localizeFirstPaymentChoiceTitle(in presentation: inout JSONValue) throws {
+        guard case var .object(root) = presentation,
+              case var .array(paymentChoices)? = root["paymentChoices"],
+              case var .object(choice)? = paymentChoices.first,
+              case var .object(title)? = choice["title"]
+        else { throw TestFailure() }
+        title["text"] = .string("Resources")
+        choice["title"] = .object(title)
+        paymentChoices[0] = .object(choice)
+        root["paymentChoices"] = .array(paymentChoices)
+        presentation = .object(root)
     }
 
     private func amountEnvelope(
