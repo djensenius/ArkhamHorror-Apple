@@ -113,11 +113,14 @@ struct ContractFixtureDigestTests {
     func tableCoversExpectedFiles() {
         let expected = Set([
             "act-no-advance-cost",
+            "answer-amounts",
             "answer-enemy-attack",
             "answer-enemy-attack-assign-damage",
             "answer-enemy-attack-assign-horror",
             "answer-enemy-attack-assign-remaining-damage",
             "answer-enemy-attack-assign-remaining-horror",
+            "answer-exchange-amounts",
+            "answer-payment-amounts",
             "answer-question",
             "basic-choice-question.schema",
             "capabilities",

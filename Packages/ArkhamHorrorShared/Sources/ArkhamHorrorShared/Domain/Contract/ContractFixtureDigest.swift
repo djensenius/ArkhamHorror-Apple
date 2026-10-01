@@ -23,6 +23,10 @@ enum ContractFixtureDigests {
             sha256Hex: "ef6aa891184deafe2166b58b0df9c0818237a50efa93e3aa69db4aea0dc30a01"
         ),
         VendoredFixtureDigest(
+            fileName: "answer-amounts",
+            sha256Hex: "9e2344dd6b03c2ca40b0ede6f223dc50cac0c20f9af7a5b65d9ddd770e4fd555"
+        ),
+        VendoredFixtureDigest(
             fileName: "answer-enemy-attack",
             sha256Hex: "d99928af1d38ffe97adbeea9861e8f5edc43b937a309e90e27f5fb6071b555b4"
         ),
@@ -41,6 +45,14 @@ enum ContractFixtureDigests {
         VendoredFixtureDigest(
             fileName: "answer-enemy-attack-assign-remaining-horror",
             sha256Hex: "e7c4bcbd8f246c8c34c3c1ef42e11bd342ca18fe88d8193c46b4647fd424a767"
+        ),
+        VendoredFixtureDigest(
+            fileName: "answer-exchange-amounts",
+            sha256Hex: "358e6dbd9a75ddf0080df46954cc58dd0df538205375cab61bd882396bf84f9e"
+        ),
+        VendoredFixtureDigest(
+            fileName: "answer-payment-amounts",
+            sha256Hex: "d55055b00a8d4d7c93ca121af1d870367dd110ae95e271b47770b14bcf12bd1e"
         ),
         VendoredFixtureDigest(
             fileName: "answer-question",
