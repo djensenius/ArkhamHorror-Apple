@@ -335,9 +335,8 @@ final class BoardCommandController {
             coordinator.syncExternalFocus(BoardFocusID.promptRetry)
             return true
         }
-        if prompt?.requiresDedicatedAmountUI == true,
-           let entry = coordinator.graph.zoneEntryPoints[BoardFocusZone.prompt]
-        {
+        let promptEntry = coordinator.graph.zoneEntryPoints[BoardFocusZone.prompt]
+        if prompt?.requiresDedicatedAmountUI == true, let entry = promptEntry {
             coordinator.syncExternalFocus(entry)
             return true
         }

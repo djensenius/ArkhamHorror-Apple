@@ -337,7 +337,8 @@ extension AppModelLiveGameTests {
         #expect(exchangePrompt.bounds == nil)
         #expect(!exchangePrompt.isLegal(0))
         #expect(
-            await model.submitExchangeAmountsAnswer(prompt.identity, amount: 0) == .unsupportedChoice
+            await model.submitExchangeAmountsAnswer(prompt.identity, amount: 0)
+                == .unsupportedChoice
         )
         #expect(await connection.sentData.isEmpty)
     }
@@ -441,6 +442,7 @@ extension AppModelLiveGameTests {
 
     @Test("Amount and payment presentation drift is update-required and cannot send")
     @MainActor
+    // swiftlint:disable:next function_body_length
     func amountAndPaymentPresentationDriftIsUpdateRequired() async throws {
         let amountCases = amountBindingMutationCases()
         for testCase in amountCases {
@@ -457,8 +459,14 @@ extension AppModelLiveGameTests {
             let gameID = await startChoiceSession(
                 model: model, fakes: fakes, envelope: envelope, connection: connection
             )
-            let prompt = try #require(model.basicChoicePresentation(for: gameID), Comment(rawValue: testCase.label))
-            #expect(prompt.readOnlyReason == BasicChoiceReadOnlyReason.updateRequired, Comment(rawValue: testCase.label))
+            let prompt = try #require(
+                model.basicChoicePresentation(for: gameID),
+                Comment(rawValue: testCase.label)
+            )
+            #expect(
+                prompt.readOnlyReason == BasicChoiceReadOnlyReason.updateRequired,
+                Comment(rawValue: testCase.label)
+            )
             #expect(!prompt.isRenderableQuestion, Comment(rawValue: testCase.label))
             #expect(
                 await model.submitAmountsAnswer(
@@ -485,8 +493,14 @@ extension AppModelLiveGameTests {
             let gameID = await startChoiceSession(
                 model: model, fakes: fakes, envelope: envelope, connection: connection
             )
-            let prompt = try #require(model.basicChoicePresentation(for: gameID), Comment(rawValue: testCase.label))
-            #expect(prompt.readOnlyReason == BasicChoiceReadOnlyReason.updateRequired, Comment(rawValue: testCase.label))
+            let prompt = try #require(
+                model.basicChoicePresentation(for: gameID),
+                Comment(rawValue: testCase.label)
+            )
+            #expect(
+                prompt.readOnlyReason == BasicChoiceReadOnlyReason.updateRequired,
+                Comment(rawValue: testCase.label)
+            )
             #expect(!prompt.isRenderableQuestion, Comment(rawValue: testCase.label))
             #expect(
                 await model.submitPaymentAmountsAnswer(
@@ -517,11 +531,18 @@ extension AppModelLiveGameTests {
             let gameID = await startChoiceSession(
                 model: model, fakes: fakes, envelope: envelope, connection: connection
             )
-            let prompt = try #require(model.basicChoicePresentation(for: gameID), Comment(rawValue: testCase.label))
-            #expect(prompt.readOnlyReason == BasicChoiceReadOnlyReason.updateRequired, Comment(rawValue: testCase.label))
+            let prompt = try #require(
+                model.basicChoicePresentation(for: gameID),
+                Comment(rawValue: testCase.label)
+            )
+            #expect(
+                prompt.readOnlyReason == BasicChoiceReadOnlyReason.updateRequired,
+                Comment(rawValue: testCase.label)
+            )
             #expect(!prompt.isRenderableQuestion, Comment(rawValue: testCase.label))
             #expect(
-                await model.submitExchangeAmountsAnswer(prompt.identity, amount: 0) == .readOnly,
+                await model.submitExchangeAmountsAnswer(prompt.identity, amount: 0)
+                    == .readOnly,
                 Comment(rawValue: testCase.label)
             )
             #expect(await connection.sentData.isEmpty, Comment(rawValue: testCase.label))
@@ -1014,6 +1035,7 @@ extension AppModelLiveGameTests {
         """
     )
     @MainActor
+    // swiftlint:disable:next function_body_length
     func amountPromptPresentationAndInput() async throws {
         let visibleID = "00000000-0000-0000-0000-0000000000b1"
         let hiddenID = "00000000-0000-0000-0000-0000000000b2"
@@ -1062,7 +1084,9 @@ extension AppModelLiveGameTests {
             focusID: BoardFocusID.promptAmountIncrease(0),
             .command(.primaryAction)
         ))
-        #expect(controller.coordinator.graph.node(for: BoardFocusID.promptAmountIncrease(0)) == nil)
+        #expect(
+            controller.coordinator.graph.node(for: BoardFocusID.promptAmountIncrease(0)) == nil
+        )
         #expect(controller.coordinator.graph.node(for: BoardFocusID.promptAmountSubmit) != nil)
         #expect(!controller.handle(
             focusID: BoardFocusID.promptAmountIncrease(0),

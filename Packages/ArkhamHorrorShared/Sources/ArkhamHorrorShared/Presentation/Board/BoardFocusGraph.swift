@@ -159,36 +159,12 @@ enum BoardFocusGraphBuilder {
     ) -> [SemanticFocusID] {
         var promptChoices: [SemanticFocusID] = []
         if let prompt, prompt.canSubmit {
-            if let amountPrompt = prompt.amountPrompt(in: projection) {
-                let normalized = amountPrompt.normalizedAmounts(amountDraft)
-                promptChoices = amountPrompt.visibleRows.enumerated().flatMap { index, row in
-                    var rowChoices: [SemanticFocusID] = []
-                    if amountPrompt.canAdjust(normalized, rowID: row.id, delta: -1) {
-                        rowChoices.append(BoardFocusID.promptAmountDecrease(index))
-                    }
-                    if amountPrompt.canAdjust(normalized, rowID: row.id, delta: 1) {
-                        rowChoices.append(BoardFocusID.promptAmountIncrease(index))
-                    }
-                    return rowChoices
-                }
-                if amountPrompt.isLegal(normalized) {
-                    promptChoices.append(BoardFocusID.promptAmountSubmit)
-                }
-            } else if let exchangePrompt = prompt.exchangePrompt(in: projection) {
-                if exchangePrompt.canAdjust(amount: exchangeAmount, delta: -1) {
-                    promptChoices.append(BoardFocusID.promptExchangeDecrease)
-                }
-                if exchangePrompt.canAdjust(amount: exchangeAmount, delta: 1) {
-                    promptChoices.append(BoardFocusID.promptExchangeIncrease)
-                }
-                if exchangePrompt.isLegal(exchangeAmount) {
-                    promptChoices.append(BoardFocusID.promptExchangeSubmit)
-                }
-            } else {
-                promptChoices = prompt.choices
-                    .filter { prompt.isChoiceActionable($0, in: projection) }
-                    .map { BoardFocusID.promptChoice($0.index) }
-            }
+            promptChoices = submittablePromptFocusIDs(
+                prompt,
+                projection: projection,
+                amountDraft: amountDraft,
+                exchangeAmount: exchangeAmount
+            )
         }
         if prompt?.canRetry == true {
             promptChoices = [BoardFocusID.promptRetry]
@@ -197,6 +173,61 @@ enum BoardFocusGraphBuilder {
             promptChoices.append(BoardFocusID.promptCatalogRetry)
         }
         return promptChoices
+    }
+
+    private static func submittablePromptFocusIDs(
+        _ prompt: BasicChoicePromptPresentation,
+        projection: BoardProjection,
+        amountDraft: [String: Int],
+        exchangeAmount: Int
+    ) -> [SemanticFocusID] {
+        if let amountPrompt = prompt.amountPrompt(in: projection) {
+            return amountPromptFocusIDs(amountPrompt, amountDraft: amountDraft)
+        }
+        if let exchangePrompt = prompt.exchangePrompt(in: projection) {
+            return exchangePromptFocusIDs(exchangePrompt, exchangeAmount: exchangeAmount)
+        }
+        return prompt.choices
+            .filter { prompt.isChoiceActionable($0, in: projection) }
+            .map { BoardFocusID.promptChoice($0.index) }
+    }
+
+    private static func amountPromptFocusIDs(
+        _ amountPrompt: BasicChoiceAmountPrompt,
+        amountDraft: [String: Int]
+    ) -> [SemanticFocusID] {
+        let normalized = amountPrompt.normalizedAmounts(amountDraft)
+        var ids = amountPrompt.visibleRows.enumerated().flatMap { index, row in
+            var rowChoices: [SemanticFocusID] = []
+            if amountPrompt.canAdjust(normalized, rowID: row.id, delta: -1) {
+                rowChoices.append(BoardFocusID.promptAmountDecrease(index))
+            }
+            if amountPrompt.canAdjust(normalized, rowID: row.id, delta: 1) {
+                rowChoices.append(BoardFocusID.promptAmountIncrease(index))
+            }
+            return rowChoices
+        }
+        if amountPrompt.isLegal(normalized) {
+            ids.append(BoardFocusID.promptAmountSubmit)
+        }
+        return ids
+    }
+
+    private static func exchangePromptFocusIDs(
+        _ exchangePrompt: BasicChoiceExchangePrompt,
+        exchangeAmount: Int
+    ) -> [SemanticFocusID] {
+        var ids: [SemanticFocusID] = []
+        if exchangePrompt.canAdjust(amount: exchangeAmount, delta: -1) {
+            ids.append(BoardFocusID.promptExchangeDecrease)
+        }
+        if exchangePrompt.canAdjust(amount: exchangeAmount, delta: 1) {
+            ids.append(BoardFocusID.promptExchangeIncrease)
+        }
+        if exchangePrompt.isLegal(exchangeAmount) {
+            ids.append(BoardFocusID.promptExchangeSubmit)
+        }
+        return ids
     }
 
     /// The zones that currently have at least one navigable node, in

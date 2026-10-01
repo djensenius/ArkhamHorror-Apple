@@ -253,18 +253,18 @@ extension BasicChoicePromptPresentation {
         let resolveTarget: JSONValue
     }
 
-    private struct RawPaymentQuestion {
-        struct Choice: Equatable {
-            let choiceID: String
-            let investigatorID: String
-            let minBound: Int
-            let maxBound: Int
-            let title: String
-        }
+    private struct RawPaymentChoice: Equatable {
+        let choiceID: String
+        let investigatorID: String
+        let minBound: Int
+        let maxBound: Int
+        let title: String
+    }
 
+    private struct RawPaymentQuestion {
         let label: String
         let target: JSONValue
-        let choices: [Choice]
+        let choices: [RawPaymentChoice]
     }
 
     private struct RawExchangeQuestion {
@@ -358,8 +358,8 @@ extension BasicChoicePromptPresentation {
 
     private static func decodePaymentChoices(
         _ values: [JSONValue]
-    ) -> [RawPaymentQuestion.Choice]? {
-        var choices: [RawPaymentQuestion.Choice] = []
+    ) -> [RawPaymentChoice]? {
+        var choices: [RawPaymentChoice] = []
         for value in values {
             guard case let .object(object) = value,
                   Set(object.keys) == [
@@ -371,7 +371,7 @@ extension BasicChoicePromptPresentation {
                   let maxBound = object["maxBound"]?.integerValue,
                   case let .string(title)? = object["title"]
             else { return nil }
-            choices.append(RawPaymentQuestion.Choice(
+            choices.append(RawPaymentChoice(
                 choiceID: choiceID,
                 investigatorID: investigatorID,
                 minBound: minBound,
@@ -384,7 +384,7 @@ extension BasicChoicePromptPresentation {
 
     private static func paymentChoicesMatch(
         _ presentationChoices: [QuestionPresentation.PaymentAmountChoice]?,
-        _ rawChoices: [RawPaymentQuestion.Choice]
+        _ rawChoices: [RawPaymentChoice]
     ) -> Bool {
         guard let presentationChoices, presentationChoices.count == rawChoices.count else {
             return false
