@@ -141,11 +141,12 @@ extension BasicChoicePromptView {
     func exchangeAmountPrompt(_ exchangePrompt: BasicChoiceExchangePrompt) -> some View {
         let amount = controller.exchangeAmount(for: presentation)
         let submitEnabled = presentation.canSubmit && exchangePrompt.isLegal(amount)
+        let tokenTitle = exchangeTokenTitle(exchangePrompt.token)
         return VStack(alignment: .leading, spacing: 10) {
             Text(promptString(
                 "amountPrompt.exchange.legend",
                 value: "Exchange %@",
-                exchangePrompt.token
+                tokenTitle
             ))
             .font(.callout.weight(.semibold))
             .accessibilityIdentifier("liveGame.prompt.exchange.legend")
@@ -161,7 +162,7 @@ extension BasicChoicePromptView {
                             accessibilityLabel: promptString(
                                 "amountPrompt.exchange.decrease.accessibility",
                                 value: "Move one %@ back to %@",
-                                exchangePrompt.token, exchangePrompt.fromDisplayName
+                                tokenTitle, exchangePrompt.fromDisplayName
                             ),
                             focusID: BoardFocusID.promptExchangeDecrease,
                             disabled: !exchangePrompt.canAdjust(amount: amount, delta: -1)
@@ -174,7 +175,7 @@ extension BasicChoicePromptView {
                             accessibilityLabel: promptString(
                                 "amountPrompt.exchange.increase.accessibility",
                                 value: "Move one %@ to %@",
-                                exchangePrompt.token, exchangePrompt.toDisplayName
+                                tokenTitle, exchangePrompt.toDisplayName
                             ),
                             focusID: BoardFocusID.promptExchangeIncrease,
                             disabled: !exchangePrompt.canAdjust(amount: amount, delta: 1)
@@ -253,6 +254,21 @@ extension BasicChoicePromptView {
         .frame(maxWidth: .infinity)
     }
 
+    private func exchangeTokenTitle(_ token: String) -> String {
+        switch token {
+        case "Resource":
+            promptString("amountPrompt.token.resource", value: "resource")
+        case "Clue":
+            promptString("amountPrompt.token.clue", value: "clue")
+        case "Damage":
+            promptString("amountPrompt.token.damage", value: "damage")
+        case "Horror":
+            promptString("amountPrompt.token.horror", value: "horror")
+        default:
+            token
+        }
+    }
+
     private func exchangeDirectionText(
         _ exchangePrompt: BasicChoiceExchangePrompt, amount: Int
     ) -> String {
@@ -272,14 +288,12 @@ extension BasicChoicePromptView {
             Int64(abs(amount)), exchangePrompt.fromDisplayName
         )
     }
-}
 
-private func promptString(
-    _ key: String,
-    value: String,
-    _ arguments: CVarArg...
-) -> String {
-    let format = Bundle.module.localizedString(forKey: key, value: value, table: nil)
-    guard !arguments.isEmpty else { return format }
-    return String(format: format, locale: Locale.current, arguments: arguments)
+    private func promptString(
+        _ key: StaticString,
+        value: String.LocalizationValue,
+        _ arguments: CVarArg...
+    ) -> String {
+        presentation.semanticLocalized(key, value: value, arguments: arguments)
+    }
 }

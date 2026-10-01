@@ -683,8 +683,8 @@ extension AppModelLiveGameTests {
         let visibleID = "00000000-0000-0000-0000-0000000000b1"
         let hiddenID = "00000000-0000-0000-0000-0000000000b2"
         let choices = [
-            amountChoice(visibleID, min: 0, max: 2),
-            amountChoice(hiddenID, min: 0, max: 0),
+            amountChoice(visibleID, min: 0, max: 2, label: "Clues"),
+            amountChoice(hiddenID, min: 0, max: 0, label: "Hidden"),
         ]
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
@@ -1181,10 +1181,12 @@ extension AppModelLiveGameTests {
         ])
     }
 
-    private func amountChoice(_ id: String, min: Int, max: Int) -> [String: JSONValue] {
+    private func amountChoice(
+        _ id: String, min: Int, max: Int, label: String = "$clues"
+    ) -> [String: JSONValue] {
         [
             "choiceId": .string(id),
-            "label": .string("$clues"),
+            "label": .string(label),
             "minBound": .number(.integer(Int64(min))),
             "maxBound": .number(.integer(Int64(max))),
         ]

@@ -34,6 +34,10 @@
 "amountPrompt.exchange.none" = "No tokens moved";
 "amountPrompt.exchange.forward" = "%1$lld to %2$@";
 "amountPrompt.exchange.backward" = "%1$lld to %2$@";
+"amountPrompt.token.resource" = "resource";
+"amountPrompt.token.clue" = "clue";
+"amountPrompt.token.damage" = "damage";
+"amountPrompt.token.horror" = "horror";
 
 "semantic.choice.title.advanceAct" = "Advance act";
 "semantic.choice.title.advanceAgenda" = "Advance agenda";
