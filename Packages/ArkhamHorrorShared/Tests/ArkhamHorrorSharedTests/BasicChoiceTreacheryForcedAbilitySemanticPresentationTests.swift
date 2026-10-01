@@ -98,11 +98,15 @@ extension BasicChoiceSemanticPresentationTests {
             ),
             presentation: binding
         )
-        let projection = treacheryForcedAbilityProjection()
+        let projection = treacheryForcedAbilityProjection(includeCellar: true)
 
         #expect(binding.presentation.sealValidationKind == .treacheryForcedAbility)
         #expect(!binding.usesSealedActionabilityOverlay)
         #expect(prompt.choices.allSatisfy { !prompt.isChoiceActionable($0, in: projection) })
+
+        let moveOnlyPrompt = try promptForCellarMoveOnly(moveRaw)
+        let moveOnlyChoice = try #require(moveOnlyPrompt.choices.first)
+        #expect(moveOnlyPrompt.isChoiceActionable(moveOnlyChoice, in: projection))
     }
 
     @Test("Treachery forced abilities require current matching board identities")
@@ -132,10 +136,12 @@ extension BasicChoiceSemanticPresentationTests {
     func treacheryForcedAbilityProjection(
         includeTreachery: Bool = true,
         treacheryCardCode: String = "c01007",
-        includeInvestigator: Bool = true
+        includeInvestigator: Bool = true,
+        includeCellar: Bool = false
     ) -> BoardProjection {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
         let treacheryID = exactTreacheryID(treacheryForcedAbilityFixtureID)
+        let cellarID = exactLocationID(Self.cellarLocationID)
         let treacheries: [TreacheryID: JSONValue] = includeTreachery
             ? [
                 treacheryID: .object([
@@ -145,8 +151,20 @@ extension BasicChoiceSemanticPresentationTests {
                 ]),
             ]
             : [:]
+        let locations: [(LocationID, Location)] = includeCellar
+            ? [(
+                cellarID,
+                .ordinary(BoardTestFixtures.ordinaryLocation(
+                    id: cellarID,
+                    cardCode: BoardTestFixtures.cardCode("c01114"),
+                    label: "Cellar",
+                    investigators: [investigatorID]
+                ))
+            )]
+            : []
         return BoardProjectionBuilder.makeProjection(
             from: BoardTestFixtures.snapshot(
+                locations: locations,
                 investigators: includeInvestigator
                     ? [
                         investigatorID:
@@ -186,6 +204,36 @@ extension BasicChoiceSemanticPresentationTests {
         return choices[9]
     }
 
+    private func promptForCellarMoveOnly(
+        _ moveRaw: JSONValue
+    ) throws -> BasicChoicePromptPresentation {
+        let raw: JSONValue = .object([
+            "tag": .string("PlayerWindowChooseOne"),
+            "choices": .array([moveRaw]),
+        ])
+        let presentation = QuestionPresentation(
+            protocolVersion: 2,
+            questionVersion: 68,
+            questionKind: .playerWindowChooseOne,
+            choiceCount: 1,
+            choices: [
+                .gatheringMovement(
+                    sourceIndex: 0,
+                    cardCode: "c01114",
+                    locationID: Self.cellarLocationID
+                ),
+            ]
+        )
+        let binding = try presentation.bind(to: raw, expectedQuestionVersion: 68)
+        return makePrompt(
+            payload: BasicChoiceQuestionPayload(
+                rawValue: raw,
+                state: BasicChoiceParser.parseQuestion(raw)
+            ),
+            presentation: binding
+        )
+    }
+
     private func fixtureJSON(_ name: String) throws -> JSONValue {
         try ContractJSON.decode(JSONValue.self, from: fixtureData(name))
     }
@@ -201,9 +249,16 @@ extension BasicChoiceSemanticPresentationTests {
         return try Data(contentsOf: url)
     }
 
+    private static let cellarLocationID = "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
+
     private func exactTreacheryID(_ raw: String) -> TreacheryID {
         // swiftlint:disable:next force_unwrapping
         TreacheryID(UUID(uuidString: raw)!)
+    }
+
+    private func exactLocationID(_ raw: String) -> LocationID {
+        // swiftlint:disable:next force_unwrapping
+        LocationID(UUID(uuidString: raw)!)
     }
 }
 
