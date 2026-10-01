@@ -408,28 +408,34 @@ extension AppModelLiveGameTests {
         ) == [12: .resolved("Continue")])
     }
 
-    @Test("An explicit unsupported semantic kind fails closed during decode")
+    @Test("An explicit unsupported semantic kind marks the prompt update-required")
     func unsupportedSemanticKindFailsClosed() async throws {
-        let (model, _) = makeSignedInModel()
+        let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
-        // v2 closes the presentation schema before AppModel can render a prompt: the
-        // server's `unsupported` sentinel is not a renderable generic prompt.
-        #expect(throws: DecodingError.self) {
-            try semanticEnvelope(
-                rawFixture: "question-gathering-act-advance",
-                presentationFixture: "question-presentation-gathering-act-advance",
-                questionVersion: 35,
-                mutateRawQuestion: { rawQuestion in
-                    rawQuestion = .object(["tag": .string("FutureQuestion")])
-                },
-                mutatePresentation: { presentation in
-                    presentation["questionKind"] = .string("unsupported")
-                    presentation["choiceCount"] = .number(.integer(0))
-                    presentation["choices"] = .array([])
-                }
-            )
-        }
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-gathering-act-advance",
+            presentationFixture: "question-presentation-gathering-act-advance",
+            questionVersion: 35,
+            mutateRawQuestion: { rawQuestion in
+                rawQuestion = .object(["tag": .string("FutureQuestion")])
+            },
+            mutatePresentation: { presentation in
+                presentation["questionKind"] = .string("unsupported")
+                presentation["choiceCount"] = .number(.integer(0))
+                presentation["choices"] = .array([])
+            }
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(prompt.readOnlyReason == .updateRequired)
+        #expect(!prompt.canSubmit)
     }
 
     @Test("An empty supported semantic question still requires an app update")

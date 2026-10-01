@@ -165,7 +165,7 @@ extension PublicGameSnapshot: Codable {
                 debugDescription: "scenarioSteps must be non-negative"
             )
         }
-        questionPresentation = decodedPresentations
+        questionPresentation = decodedPresentations?.presentations
         question = try Self.bindQuestionPresentations(
             decodedPresentations,
             to: decodedQuestions,
@@ -261,14 +261,21 @@ extension PublicGameSnapshot: Codable {
         try container.encode(enemyAttackTargets, forKey: .enemyAttackTargets)
     }
 
+    private struct DecodedQuestionPresentations {
+        let presentations: UUIDKeyedMap<PlayerIDTag, QuestionPresentation>
+        let invalidPlayerIDs: Set<PlayerID>
+    }
+
     private static func bindQuestionPresentations(
-        _ presentations: UUIDKeyedMap<PlayerIDTag, QuestionPresentation>?,
+        _ decodedPresentations: DecodedQuestionPresentations?,
         to questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>,
         questionVersion: Int,
         codingPath: [any CodingKey]
     ) throws -> UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload> {
-        guard let presentations else { return questions }
-        guard Set(presentations.keys) == Set(questions.keys) else {
+        guard let decodedPresentations else { return questions }
+        let presentationKeys = Set(decodedPresentations.presentations.keys)
+            .union(decodedPresentations.invalidPlayerIDs)
+        guard presentationKeys == Set(questions.keys) else {
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: codingPath,
@@ -277,7 +284,10 @@ extension PublicGameSnapshot: Codable {
             )
         }
         var boundQuestions = questions
-        for (playerID, presentation) in presentations {
+        for playerID in decodedPresentations.invalidPlayerIDs {
+            boundQuestions[playerID] = questions[playerID]?.markingPresentationUpdateRequired()
+        }
+        for (playerID, presentation) in decodedPresentations.presentations {
             guard let question = questions[playerID] else {
                 throw DecodingError.dataCorrupted(
                     .init(
@@ -309,11 +319,41 @@ extension PublicGameSnapshot: Codable {
 
     private static func decodeQuestionPresentations(
         from container: KeyedDecodingContainer<CodingKeys>
-    ) throws -> UUIDKeyedMap<PlayerIDTag, QuestionPresentation>? {
+    ) throws -> DecodedQuestionPresentations? {
         guard container.contains(.questionPresentation) else { return nil }
-        return try container.decode(
-            UUIDKeyedMap<PlayerIDTag, QuestionPresentation>.self,
+        let presentationContainer = try container.nestedContainer(
+            keyedBy: AnyCodingKey.self,
             forKey: .questionPresentation
+        )
+        var presentations = UUIDKeyedMap<PlayerIDTag, QuestionPresentation>()
+        var invalidPlayerIDs = Set<PlayerID>()
+        for key in presentationContainer.allKeys {
+            let raw = key.stringValue
+            guard let playerID = PlayerID(codingKey: key) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: presentationContainer.codingPath + [key],
+                    debugDescription: "Invalid UUID map key \"\(raw)\": expected the exact "
+                        + "canonical lowercase-hyphenated UUID text the backend emits"
+                ))
+            }
+            guard presentations[playerID] == nil, !invalidPlayerIDs.contains(playerID) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: presentationContainer.codingPath + [key],
+                    debugDescription: "Duplicate UUID map key \"\(raw)\" after normalization"
+                ))
+            }
+            do {
+                presentations[playerID] = try presentationContainer.decode(
+                    QuestionPresentation.self,
+                    forKey: key
+                )
+            } catch is DecodingError {
+                invalidPlayerIDs.insert(playerID)
+            }
+        }
+        return DecodedQuestionPresentations(
+            presentations: presentations,
+            invalidPlayerIDs: invalidPlayerIDs
         )
     }
 }

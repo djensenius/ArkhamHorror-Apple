@@ -79,18 +79,37 @@ struct SnapshotSemanticPresentationTests {
         #expect(envelope.game.name.isEmpty == false)
     }
 
-    @Test("A sparse semantic envelope fails closed during presentation decode")
+    @Test("A sparse semantic map entry marks only that player update-required")
     func sparseQuestionPresentationFailsClosed() throws {
-        let mutated = try mutatePresentation { presentation in
+        let otherKey = "00000000-0000-0000-0000-000000000002"
+        let mutated = try mutateGetGame { game in
+            var questions = try object(game["question"])
+            var presentations = try object(game["questionPresentation"])
+            let playerKey = "00000000-0000-0000-0000-000000000001"
+            questions[otherKey] = questions[playerKey]
+            presentations[otherKey] = presentations[playerKey]
+            var presentation = try object(presentations[playerKey])
             guard case var .array(choices)? = presentation["choices"] else {
                 throw FixtureMutationError.unexpectedShape
             }
             choices.remove(at: 2)
             presentation["choices"] = .array(choices)
+            presentations[playerKey] = .object(presentation)
+            game["question"] = .object(questions)
+            game["questionPresentation"] = .object(presentations)
         }
-        #expect(throws: DecodingError.self) {
-            _ = try ContractJSON.decode(GetGameEnvelope.self, from: mutated)
-        }
+        let envelope = try ContractJSON.decode(GetGameEnvelope.self, from: mutated)
+        let playerID = try #require(envelope.playerID)
+        let otherPlayerID = try PlayerID(#require(UUID(uuidString: otherKey)))
+        let failedPayload = try #require(envelope.game.question[playerID])
+        let otherPayload = try #require(envelope.game.question[otherPlayerID])
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+
+        #expect(envelope.game.name.isEmpty == false)
+        #expect(failedPayload.presentation == nil)
+        #expect(failedPayload.isUpdateRequired)
+        #expect(otherPayload.presentation != nil)
+        #expect(projection.questions[otherPlayerID]?.presentation != nil)
     }
 
     private enum FixtureMutationError: Error {
