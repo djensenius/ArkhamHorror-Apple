@@ -307,6 +307,82 @@ extension AppModelLiveGameTests {
         #expect(await exchangeConnection.sentData.isEmpty)
     }
 
+    @Test("Allowed amount wrappers render and send exact bytes")
+    func allowedAmountWrappersRenderAndSendExactBytes() async throws {
+        let amountsCase = try await sendWrappedAmountsAnswer()
+        #expect(amountsCase.prompt.isRenderableQuestion)
+        #expect(amountsCase.prompt.amountPrompt(in: amountsCase.projection) != nil)
+        #expect(
+            try await amountsCase.connection.sentData == [
+                amountAnswerBytes(
+                    amounts: ["00000000-0000-0000-0000-000000000065": 1],
+                    version: 617
+                ),
+            ]
+        )
+
+        let paymentCase = try await sendWrappedPaymentAmountsAnswer()
+        #expect(paymentCase.prompt.isRenderableQuestion)
+        #expect(paymentCase.prompt.amountPrompt(in: paymentCase.projection) != nil)
+        #expect(
+            try await paymentCase.connection.sentData == [
+                paymentAmountAnswerBytes(
+                    amounts: ["00000000-0000-0000-0000-000000000066": 2],
+                    version: 618
+                ),
+            ]
+        )
+    }
+
+    @Test("Legal Min, Max, and OneOf amount allocations are accepted")
+    func legalNonTotalAmountTargetsAreAccepted() async throws {
+        let cases: [(QuestionPresentation.AmountTarget, [String: Int])] = [
+            (.min(2), [
+                "00000000-0000-0000-0000-0000000000f1": 1,
+                "00000000-0000-0000-0000-0000000000f2": 1,
+            ]),
+            (.max(2), [
+                "00000000-0000-0000-0000-0000000000f1": 2,
+                "00000000-0000-0000-0000-0000000000f2": 0,
+            ]),
+            (.oneOf([1, 3]), [
+                "00000000-0000-0000-0000-0000000000f1": 2,
+                "00000000-0000-0000-0000-0000000000f2": 1,
+            ]),
+        ]
+        for (index, testCase) in cases.enumerated() {
+            let (target, amounts) = testCase
+            let (model, fakes) = makeSignedInModel()
+            await model.flowTask?.value
+            makeModern(model)
+            let choices = [
+                amountChoice("00000000-0000-0000-0000-0000000000f1", min: 0, max: 3),
+                amountChoice("00000000-0000-0000-0000-0000000000f2", min: 0, max: 3),
+            ]
+            let version = 630 + index
+            let envelope = try amountEnvelope(
+                rawQuestion: chooseAmountsRawQuestion(choices: choices, target: target),
+                presentation: chooseAmountsPresentation(
+                    choices: choices,
+                    target: target,
+                    questionVersion: version
+                ),
+                questionVersion: version
+            )
+            let connection = FakeGameSocketConnection()
+            await connection.enqueueSendResult(.success(()))
+            let gameID = await startChoiceSession(
+                model: model, fakes: fakes, envelope: envelope, connection: connection
+            )
+            let prompt = try #require(model.basicChoicePresentation(for: gameID))
+            let result = await model.submitAmountsAnswer(prompt.identity, amounts: amounts)
+            #expect(result == .sentAwaitingSnapshot)
+            #expect(try await connection.sentData == [
+                amountAnswerBytes(amounts: amounts, version: version),
+            ])
+        }
+    }
+
     @Test("Unsupported wrappers remain update-required and cannot send amount answers")
     // swiftlint:disable:next function_body_length
     func unsupportedAmountWrappersAreRefused() async throws {
@@ -459,6 +535,101 @@ extension AppModelLiveGameTests {
                 == .unsupportedChoice
         )
         #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Exchange controller adjusts, submits, and handles left/right focus commands")
+    @MainActor
+    func exchangeControllerPathSubmitsAmount() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try exchangeEnvelope(fromInitialAmount: 2, toInitialAmount: 1)
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        var submitted: [Int] = []
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            onExchangeAmount: { submitted.append($0) }
+        )
+        #expect(controller.adjustExchangeAmount(delta: 1))
+        #expect(controller.exchangeAmount == 1)
+        #expect(controller.handle(
+            focusID: BoardFocusID.promptExchangeIncrease,
+            .command(.focusMove(.right))
+        ))
+        #expect(controller.exchangeAmount == 2)
+        #expect(controller.handle(.command(.focusMove(.left))))
+        #expect(controller.exchangeAmount == 1)
+        #expect(controller.activateExchangeSubmit())
+        #expect(submitted == [1])
+    }
+
+    @Test("Amount drafts reset when the prompt changes")
+    @MainActor
+    func amountDraftResetsWhenPromptChanges() async throws {
+        let firstID = "00000000-0000-0000-0000-0000000000aa"
+        let secondID = "00000000-0000-0000-0000-0000000000bb"
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let firstEnvelope = try oneChoiceAmountEnvelope(choiceID: firstID, questionVersion: 641)
+        let secondEnvelope = try oneChoiceAmountEnvelope(choiceID: secondID, questionVersion: 642)
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: firstEnvelope,
+            connection: FakeGameSocketConnection()
+        )
+        let firstPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        let firstProjection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let controller = BoardCommandController(projection: firstProjection, prompt: firstPrompt)
+        #expect(controller.adjustAmount(rowID: firstID, delta: 1))
+        #expect(controller.amountDraft == [firstID: 1])
+
+        model.liveGameStates[gameID] = .live(
+            BoardProjectionBuilder.makeProjection(from: secondEnvelope.game)
+        )
+        let secondPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        controller.applyPrompt(secondPrompt)
+        #expect(controller.amountDraft == [secondID: 0])
+    }
+
+    @Test("Secondary actions reverse amount increment and decrement controls")
+    @MainActor
+    func secondaryActionsReverseAmountControls() async throws {
+        let choiceID = "00000000-0000-0000-0000-0000000000cc"
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try oneChoiceAmountEnvelope(choiceID: choiceID, questionVersion: 643)
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let controller = BoardCommandController(projection: projection, prompt: prompt)
+        #expect(controller.handle(
+            focusID: BoardFocusID.promptAmountIncrease(0),
+            .command(.primaryAction)
+        ))
+        #expect(controller.amountDraft[choiceID] == 1)
+        #expect(controller.handle(.command(.secondaryAction)))
+        #expect(controller.amountDraft[choiceID] == 0)
+        #expect(controller.handle(
+            focusID: BoardFocusID.promptAmountDecrease(0),
+            .command(.secondaryAction)
+        ))
+        #expect(controller.amountDraft[choiceID] == 1)
     }
 
     @Test("Amount retry uses the current transport and stale identities cannot send")
@@ -739,6 +910,86 @@ extension AppModelLiveGameTests {
         await connection.resumeOldestSend(with: .success(()))
         let expected = try amountAnswerBytes(amounts: [rowID: 1], version: 613)
         #expect(await connection.sentData == [expected])
+    }
+
+    private func oneChoiceAmountEnvelope(
+        choiceID: String,
+        questionVersion: Int
+    ) throws -> GetGameEnvelope {
+        let choices = [amountChoice(choiceID, min: 0, max: 2)]
+        return try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .min(0)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .min(0),
+                questionVersion: questionVersion
+            ),
+            questionVersion: questionVersion
+        )
+    }
+
+    private func sendWrappedAmountsAnswer() async throws -> (
+        prompt: BasicChoicePromptPresentation,
+        projection: BoardProjection,
+        connection: FakeGameSocketConnection
+    ) {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-generic-choose-amounts",
+            presentationFixture: "question-presentation-generic-choose-amounts",
+            questionVersion: 617,
+            mutateRawQuestion: { rawQuestion in
+                rawQuestion = questionLabelWrapped(rawQuestion)
+            }
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(
+            await model.submitAmountsAnswer(
+                prompt.identity,
+                amounts: ["00000000-0000-0000-0000-000000000065": 1]
+            ) == .sentAwaitingSnapshot
+        )
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        return (prompt, projection, connection)
+    }
+
+    private func sendWrappedPaymentAmountsAnswer() async throws -> (
+        prompt: BasicChoicePromptPresentation,
+        projection: BoardProjection,
+        connection: FakeGameSocketConnection
+    ) {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-generic-payment-amounts",
+            presentationFixture: "question-presentation-generic-payment-amounts",
+            questionVersion: 618,
+            mutateRawQuestion: { rawQuestion in
+                rawQuestion = payCostWrapped(rawQuestion)
+            }
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(
+            await model.submitPaymentAmountsAnswer(
+                prompt.identity,
+                amounts: ["00000000-0000-0000-0000-000000000066": 2]
+            ) == .sentAwaitingSnapshot
+        )
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        return (prompt, projection, connection)
     }
 
     private func amountLabelCatalogDocuments() throws -> SyntheticLocaleCatalogDocuments {
