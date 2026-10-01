@@ -604,23 +604,126 @@ private extension QuestionPresentation.ChoiceKind {
 extension AppModelLiveGameTests {
     @Test("Generic single-choice fixture prompts render and send exact Answer envelopes")
     func genericSingleChoiceFixturesSendExactBasicChoiceAnswer() async throws {
+        let documents = try genericSingleChoiceCatalogDocuments()
         let fixtureCases: [(raw: String, presentation: String, choice: Int)] = [
             ("question-generic-cost-ability-window", "question-presentation-generic-cost-ability-window", 0),
+            ("question-generic-choose-n", "question-presentation-generic-choose-n", 1),
+            ("question-generic-choose-some", "question-presentation-generic-choose-some", 0),
+            ("question-generic-choose-up-to-n", "question-presentation-generic-choose-up-to-n", 0),
+            ("question-generic-one-from-each", "question-presentation-generic-one-from-each", 1),
+            ("question-generic-one-at-a-time-auto", "question-presentation-generic-one-at-a-time-auto", 1),
+            ("question-generic-read", "question-presentation-generic-read", 0),
+            ("question-generic-wrapped", "question-presentation-generic-wrapped", 0),
             ("question-generic-skill-label", "question-presentation-generic-skill-label", 0),
         ]
         for fixtureCase in fixtureCases {
             try await assertFixturePromptSends(
                 rawFixture: fixtureCase.raw,
                 presentationFixture: fixtureCase.presentation,
-                choiceIndex: fixtureCase.choice
+                choiceIndex: fixtureCase.choice,
+                documents: documents
             )
         }
+
+        try await assertRepresentativePromptSends(
+            name: "playerWindowChooseOne",
+            rawQuestion: rawDirectQuestion(tag: "PlayerWindowChooseOne", count: 32),
+            choiceIndex: 0,
+            documents: documents
+        )
+        try await assertRepresentativePromptSends(
+            name: "windowChooseOne",
+            rawQuestion: rawDirectQuestion(tag: "WindowChooseOne", count: 32),
+            choiceIndex: 0,
+            documents: documents
+        )
+        try await assertRepresentativePromptSends(
+            name: "chooseSome1",
+            rawQuestion: rawChooseSome1Question(),
+            choiceIndex: 0,
+            documents: documents
+        )
+        try await assertRepresentativePromptSends(
+            name: "chooseOneWizard",
+            rawQuestion: rawChooseOneWizardQuestion(),
+            choiceIndex: 0,
+            documents: documents
+        )
+    }
+
+    @Test("Generic dollar labels fail closed without a catalog")
+    func genericDollarLabelWithoutCatalogIsNotActionable() async throws {
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: fixtureData(named: "question-presentation-generic-choose-n")
+        )
+        let envelope = try semanticEnvelope(
+            rawFixture: "question-generic-choose-n",
+            presentationFixture: "question-presentation-generic-choose-n",
+            questionVersion: presentation.questionVersion
+        )
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameState(for: gameID).lastKnownProjection)
+        let choice = try #require(prompt.choices.first { $0.index == 1 })
+
+        #expect(!prompt.isChoiceActionable(choice, in: projection))
+        #expect(
+            await model.submitBasicChoice(prompt.identity, choiceIndex: 1)
+                == .unsupportedChoice
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    private func genericSingleChoiceCatalogDocuments() throws -> SyntheticLocaleCatalogDocuments {
+        let keys = [
+            "a": "A choice",
+            "auto": "Auto choice",
+            "back": "Back",
+            "confirm": "Confirm",
+            "done": "Done",
+            "effect.tooltip": "Effect tooltip",
+            "fixture.first": "First fixture",
+            "fixture.second": "Second fixture",
+            "group.one": "Group one",
+            "group.two": "Group two",
+            "label.basic": "Basic label",
+            "label.grid": "Grid label",
+            "label.invalid": "Invalid label",
+            "label.skill": "Skill label",
+            "label.tooltip": "Tooltip label",
+            "read.continue": "Continue",
+            "scenario": "Scenario",
+            "tooltip": "Tooltip",
+            "tooltip.body": "Tooltip body",
+            "wizard": "Wizard choice",
+            "wrapped": "Wrapped prompt",
+            "wrapped.choice": "Wrapped choice",
+        ]
+        let entries = keys.keys.sorted().map { key in
+            let value = keys[key] ?? key
+            return "\"\(key)\":{\"form\":\"message\",\"nodes\":[{\"type\":\"text\",\"value\":\"\(value)\"}],\"variables\":[]}"
+        }.joined(separator: ",")
+        return try SyntheticLocaleCatalogDocuments.make(
+            entryKeys: keys.keys.sorted(),
+            chunkEntries: "{\(entries)}"
+        )
     }
 
     private func assertFixturePromptSends(
         rawFixture: String,
         presentationFixture: String,
-        choiceIndex: Int
+        choiceIndex: Int,
+        documents: SyntheticLocaleCatalogDocuments
     ) async throws {
         let presentation = try ContractJSON.decode(
             QuestionPresentation.self,
@@ -634,28 +737,36 @@ extension AppModelLiveGameTests {
         try await assertEnvelopeSends(
             envelope,
             choiceIndex: choiceIndex,
-            note: presentationFixture
+            note: presentationFixture,
+            documents: documents
         )
     }
 
     private func assertRepresentativePromptSends(
         name: String,
         rawQuestion: JSONValue,
-        choiceIndex: Int
+        choiceIndex: Int,
+        documents: SyntheticLocaleCatalogDocuments
     ) async throws {
         let representative = try representativePresentation(named: name)
         let envelope = try envelope(rawQuestion: rawQuestion, presentation: representative.presentation)
-        try await assertEnvelopeSends(envelope, choiceIndex: choiceIndex, note: name)
+        try await assertEnvelopeSends(
+            envelope,
+            choiceIndex: choiceIndex,
+            note: name,
+            documents: documents
+        )
     }
 
     private func assertEnvelopeSends(
         _ envelope: GetGameEnvelope,
         choiceIndex: Int,
-        note: String
+        note: String,
+        documents: SyntheticLocaleCatalogDocuments
     ) async throws {
-        let (model, fakes) = makeSignedInModel()
+        let (model, fakes) = makeCatalogSignedInModel(documents: documents)
         await model.flowTask?.value
-        makeModern(model)
+        await model.localeCatalogTask?.value
         let connection = FakeGameSocketConnection()
         await connection.enqueueSendResult(.success(()))
         let gameID = await startChoiceSession(

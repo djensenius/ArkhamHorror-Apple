@@ -191,7 +191,7 @@ extension AppModelLiveGameTests {
         )
     }
 
-    private func makeCatalogSignedInModel(
+    func makeCatalogSignedInModel(
         documents: SyntheticLocaleCatalogDocuments
     ) -> (model: AppModel, fakes: Fakes) {
         let tokenStore = FakeTokenStore(tokens: [documents.profile.id: "catalog-token"])
