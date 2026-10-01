@@ -1,6 +1,8 @@
 import CoreGraphics
 import Observation
 
+// swiftlint:disable file_length
+
 /// The `@MainActor` owner of one board's live focus graph, local zoom presentation state,
 /// and inspector selection — one instance per ``BoardView`` instance, so multiple
 /// simultaneous board windows/instances (for example two visionOS windows, or a gallery
@@ -13,6 +15,7 @@ import Observation
 /// adds no new command vocabulary.
 @MainActor
 @Observable
+// swiftlint:disable:next type_body_length
 final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
@@ -163,6 +166,7 @@ final class BoardCommandController {
         return true
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private func apply(_ command: SemanticCommand) -> Bool {
         switch command {
         case let .focusMove(direction):
@@ -436,9 +440,12 @@ final class BoardCommandController {
         let newKey = prompt?.identity.promptKey
         guard promptInputKey != newKey else { return }
         promptInputKey = newKey
-        if let prompt,
-           let amountPrompt = prompt.amountPrompt(in: projection)
-        {
+        guard let prompt else {
+            amountDraft = [:]
+            exchangeAmount = 0
+            return
+        }
+        if let amountPrompt = prompt.amountPrompt(in: projection) {
             amountDraft = amountPrompt.initialAmounts
         } else {
             amountDraft = [:]
@@ -491,9 +498,9 @@ final class BoardCommandController {
                 return false
             }
         }
-        if focus == BoardFocusID.promptExchangeDecrease
+        let isExchangeControl = focus == BoardFocusID.promptExchangeDecrease
             || focus == BoardFocusID.promptExchangeIncrease
-        {
+        if isExchangeControl {
             return adjustExchangeAmount(delta: delta)
         }
         return false

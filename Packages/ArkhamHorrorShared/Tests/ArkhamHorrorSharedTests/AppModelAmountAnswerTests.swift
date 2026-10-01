@@ -439,7 +439,12 @@ extension AppModelLiveGameTests {
         #expect(await replacement.sentData == [expected])
     }
 
-    @Test("Amount prompt presentation starts at zero, hides zero rows, gates submit, and supports semantic input")
+    @Test(
+        """
+        Amount prompt presentation starts at zero, hides zero rows, gates submit, and supports \
+        semantic input
+        """
+    )
     @MainActor
     func amountPromptPresentationAndInput() async throws {
         let visibleID = "00000000-0000-0000-0000-0000000000b1"
@@ -470,7 +475,10 @@ extension AppModelLiveGameTests {
         #expect(amountPrompt.initialAmounts == [visibleID: 0, hiddenID: 0])
         #expect(amountPrompt.visibleRows.map(\.id) == [visibleID])
         #expect(amountPrompt.targetHint(in: prompt) == "Choose exactly 2")
-        #expect(amountPrompt.disabledReason(for: amountPrompt.initialAmounts, in: prompt) == "Choose exactly 2")
+        #expect(
+            amountPrompt.disabledReason(for: amountPrompt.initialAmounts, in: prompt)
+                == "Choose exactly 2"
+        )
 
         var submitted: [String: Int]?
         let controller = BoardCommandController(
@@ -480,7 +488,10 @@ extension AppModelLiveGameTests {
         )
         #expect(!controller.activateAmountSubmit())
         #expect(controller.adjustAmount(rowID: visibleID, delta: 1))
-        #expect(controller.handle(focusID: BoardFocusID.promptAmountIncrease(0), .command(.primaryAction)))
+        #expect(controller.handle(
+            focusID: BoardFocusID.promptAmountIncrease(0),
+            .command(.primaryAction)
+        ))
         #expect(!controller.adjustAmount(rowID: visibleID, delta: 1))
         #expect(controller.activateAmountSubmit())
         #expect(submitted == [visibleID: 2, hiddenID: 0])
@@ -488,6 +499,7 @@ extension AppModelLiveGameTests {
 
     @Test("Payment and exchange prompts expose target hints, investigator names, and bounds")
     @MainActor
+    // swiftlint:disable:next function_body_length
     func paymentAndExchangePromptPresentation() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value

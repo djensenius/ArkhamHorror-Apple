@@ -224,6 +224,7 @@ struct BasicChoiceExchangePrompt: Sendable, Equatable {
 }
 
 extension BasicChoicePromptPresentation {
+    // swiftlint:disable:next function_body_length
     func amountPrompt(in _: BoardProjection) -> BasicChoiceAmountPrompt? {
         guard let presentation = semanticPresentation?.presentation,
               canSubmitPromptAnswer,

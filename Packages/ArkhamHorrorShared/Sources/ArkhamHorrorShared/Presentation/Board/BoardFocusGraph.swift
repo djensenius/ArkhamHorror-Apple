@@ -150,7 +150,7 @@ enum BoardFocusGraphBuilder {
         var promptChoices: [SemanticFocusID] = []
         if let prompt, prompt.canSubmit {
             if let amountPrompt = prompt.amountPrompt(in: projection) {
-                promptChoices = amountPrompt.visibleRows.enumerated().flatMap { index, _ in
+                promptChoices = amountPrompt.visibleRows.indices.flatMap { index in
                     [
                         BoardFocusID.promptAmountDecrease(index),
                         BoardFocusID.promptAmountIncrease(index),

@@ -1,5 +1,7 @@
 import Foundation
 
+// swiftlint:disable file_length
+
 /// The Apple preferred-language input the catalog's locale selection reads.
 ///
 /// Injectable so tests are deterministic: locale selection must be exercised against a fixed

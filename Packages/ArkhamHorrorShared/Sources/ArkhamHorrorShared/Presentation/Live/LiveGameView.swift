@@ -160,6 +160,7 @@ struct LiveGameView: View {
     }
 
     @ViewBuilder
+    // swiftlint:disable:next function_body_length
     private func board(_ projection: BoardProjection) -> some View {
         let renderedPrompt = prompt
         let board = BoardView(
