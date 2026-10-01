@@ -132,12 +132,14 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     let question: BasicChoiceQuestionState
     let semanticPresentation: BoundQuestionPresentation?
     let semanticLocaleIdentifier: String?
+    let cardCatalog: CardCatalogSnapshot?
     /// The complete story outcome captured from one immutable catalog snapshot. This exact
     /// value drives rendering, focus, accessibility, controller dispatch, and send fencing.
     let storyResolution: StoryResolution?
-    /// Localized labels keyed by authoritative source index. Missing entries fail closed for
-    /// choices whose wire constructor requires deployment-owned text.
+    /// Localized labels keyed by authoritative source index. Missing entries fall back to
+    /// generic choice text while still powering catalog retry affordances.
     let choiceLabelResolutions: [Int: BasicChoiceLabelResolution]
+    let promptLabelResolutions: [String: BasicChoiceLabelResolution]
     let readOnlyReason: BasicChoiceReadOnlyReason?
     let actionPhase: BasicChoiceActionPhase?
     let actionChoiceIndex: Int?
@@ -149,8 +151,10 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         question: BasicChoiceQuestionState,
         semanticPresentation: BoundQuestionPresentation? = nil,
         semanticLocaleIdentifier: String? = nil,
+        cardCatalog: CardCatalogSnapshot? = nil,
         storyResolution: StoryResolution? = nil,
         choiceLabelResolutions: [Int: BasicChoiceLabelResolution]? = nil,
+        promptLabelResolutions: [String: BasicChoiceLabelResolution] = [:],
         readOnlyReason: BasicChoiceReadOnlyReason?,
         actionPhase: BasicChoiceActionPhase?,
         actionChoiceIndex: Int?,
@@ -161,6 +165,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         self.question = question
         self.semanticPresentation = semanticPresentation
         self.semanticLocaleIdentifier = semanticLocaleIdentifier
+        self.cardCatalog = cardCatalog
         self.storyResolution = storyResolution ?? question.supportedQuestion?.story.map {
             StoryNarrativeLocalization.resolve(
                 $0.flavorText,
@@ -187,6 +192,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             }
             self.choiceLabelResolutions = defaults
         }
+        self.promptLabelResolutions = promptLabelResolutions
         self.readOnlyReason = readOnlyReason
         self.actionPhase = actionPhase
         self.actionChoiceIndex = actionChoiceIndex
@@ -217,17 +223,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
                       forSourceIndex: choice.index
                   )
             else { return false }
-            guard semanticPresentation.presentation.supportsCurrentGenericChoiceList,
-                  !semanticPresentation.requiresSealedActionabilityOverlay
-                  || semanticPresentation.usesSealedActionabilityOverlay
-            else { return false }
-            return projection.isSemanticChoiceActionable(
-                descriptor,
-                ownerID: ownerID,
-                labelResolution: choiceLabelResolutions[choice.index],
-                governedSource: semanticPresentation.usesSealedActionabilityOverlay
-                    ? semanticPresentation.governedSource : nil
-            )
+            return isSemanticChoiceActionable(descriptor, in: projection)
         }
         return projection.isChoiceActionable(
             choice,

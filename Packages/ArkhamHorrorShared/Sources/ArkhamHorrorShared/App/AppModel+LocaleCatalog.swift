@@ -243,26 +243,48 @@ extension AppModel {
         )
     }
 
+    func promptLabelResolutions(
+        for presentation: QuestionPresentation?
+    ) -> [String: BasicChoiceLabelResolution] {
+        guard let presentation else { return [:] }
+        let labels: [(key: String, label: QuestionPresentation.Label?)] = [
+            ("label", presentation.label),
+            ("questionLabel", presentation.questionLabel),
+            ("completionLabel", presentation.completionLabel),
+            ("confirmLabel", presentation.confirmLabel),
+            ("backLabel", presentation.backLabel),
+        ]
+        return labelResolutions(labels.compactMap { key, label in
+            label.map { (key: key, wireLabel: $0.text) }
+        })
+    }
+
     /// Resolves every deployment-owned choice label against one current catalog snapshot,
     /// retaining authoritative source indices so unresolved entries stay visible in place.
     func choiceLabelResolutions(
         for question: BasicChoiceQuestion?,
         semanticPresentation: BoundQuestionPresentation? = nil
     ) -> [Int: BasicChoiceLabelResolution] {
-        let resolver = localeCatalogResolver
-        let unavailability = localeCatalogUnavailability ?? .catalog(.notAdvertised)
-        var result: [Int: BasicChoiceLabelResolution] = [:]
-        let labels: [(index: Int, wireLabel: String)] = if let semanticPresentation {
+        let labels: [(key: Int, wireLabel: String)] = if let semanticPresentation {
             semanticPresentation.presentation.choices.compactMap { choice in
                 guard let label = choice.label else { return nil }
-                return (choice.sourceIndex, label.text)
+                return (key: choice.sourceIndex, wireLabel: label.text)
             }
         } else {
             (question?.choices ?? []).compactMap { choice in
                 guard let localizationKey = choice.localizationKey else { return nil }
-                return (choice.index, "$\(localizationKey)")
+                return (key: choice.index, wireLabel: "$\(localizationKey)")
             }
         }
+        return labelResolutions(labels)
+    }
+
+    private func labelResolutions<Key: Hashable>(
+        _ labels: [(key: Key, wireLabel: String)]
+    ) -> [Key: BasicChoiceLabelResolution] {
+        let resolver = localeCatalogResolver
+        let unavailability = localeCatalogUnavailability ?? .catalog(.notAdvertised)
+        var result: [Key: BasicChoiceLabelResolution] = [:]
         for label in labels {
             switch StoryNarrativeLocalization.resolveProductionChoiceLabel(
                 label.wireLabel,
@@ -270,9 +292,9 @@ extension AppModel {
                 catalogUnavailability: unavailability
             ) {
             case let .success(value):
-                result[label.index] = .resolved(value)
+                result[label.key] = .resolved(value)
             case let .failure(reason):
-                result[label.index] = .unavailable(reason)
+                result[label.key] = .unavailable(reason)
             }
         }
         return result

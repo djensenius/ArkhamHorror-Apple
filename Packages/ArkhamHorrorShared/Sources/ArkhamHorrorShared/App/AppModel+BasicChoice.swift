@@ -57,15 +57,21 @@ extension AppModel {
             for: supportedQuestion,
             semanticPresentation: payload.presentation
         )
+        let promptLabelResolutions = promptLabelResolutions(
+            for: payload.presentation?.presentation
+        )
         let localizationReasons = [storyResolution?.unavailableReason].compactMap(\.self)
             + labelResolutions.values.compactMap(\.unavailableReason)
+            + promptLabelResolutions.values.compactMap(\.unavailableReason)
         return BasicChoicePromptPresentation(
             identity: promptIdentity,
             question: payload.state,
             semanticPresentation: payload.presentation,
             semanticLocaleIdentifier: localeCatalogResolver?.snapshot.identity.locale,
+            cardCatalog: cardCatalog,
             storyResolution: storyResolution,
             choiceLabelResolutions: labelResolutions,
+            promptLabelResolutions: promptLabelResolutions,
             readOnlyReason: readOnlyReason,
             actionPhase: phase,
             actionChoiceIndex: isSamePrompt ? record?.choiceIndex : nil,
@@ -356,15 +362,17 @@ extension AppModel {
                 return
             }
             isActionable = semanticPresentation.presentation.supportsCurrentGenericChoiceList
+                && semanticPresentation.presentation.genericSupport == .singleChoice
+                && descriptor.selectable
                 && (!semanticPresentation.requiresSealedActionabilityOverlay
                     || semanticPresentation.usesSealedActionabilityOverlay)
-                && projection.isSemanticChoiceActionable(
-                    descriptor,
-                    ownerID: ownerID,
-                    labelResolution: labelResolutions[choiceIndex],
-                    governedSource: semanticPresentation.usesSealedActionabilityOverlay
-                        ? semanticPresentation.governedSource : nil
-                )
+                && (!semanticPresentation.usesSealedActionabilityOverlay
+                    || projection.isSemanticChoiceActionable(
+                        descriptor,
+                        ownerID: ownerID,
+                        labelResolution: labelResolutions[choiceIndex],
+                        governedSource: semanticPresentation.governedSource
+                    ))
         } else {
             isActionable = projection.isChoiceActionable(
                 originalChoice,

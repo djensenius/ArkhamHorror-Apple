@@ -15,11 +15,18 @@ struct BasicChoicePromptView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label(
-                    isStoryPrompt ? "Story" : "Choose an action",
-                    systemImage: isStoryPrompt ? "book.closed.fill" : "questionmark.circle.fill"
-                )
-                .font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(
+                        presentation.headerTitle(in: controller.projection),
+                        systemImage: isStoryPrompt ? "book.closed.fill" : "questionmark.circle.fill"
+                    )
+                    .font(.headline)
+                    if let subtitle = presentation.headerSubtitle(in: controller.projection) {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
                 Text("Step \(presentation.questionVersion)")
                     .font(.caption.monospacedDigit())
@@ -36,6 +43,12 @@ struct BasicChoicePromptView: View {
             } else {
                 if isStoryPrompt {
                     story
+                }
+                if let hint = presentation.questionHint() {
+                    Text(hint)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("liveGame.prompt.selectionHint")
                 }
                 choices
             }
@@ -125,11 +138,43 @@ struct BasicChoicePromptView: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("liveGame.prompt.story")
+        } else if let flavor = presentation.semanticPresentation?.presentation.flavorText {
+            VStack(alignment: .leading, spacing: 8) {
+                if let title = flavor.title, !title.hasPrefix("$") {
+                    Text(title)
+                        .font(.callout.monospaced())
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("liveGame.prompt.story.title")
+                }
+                let lines = genericFlavorLines(flavor)
+                if !lines.isEmpty {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                                Text(line)
+                                    .font(.callout)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: isCompact ? 240 : 420)
+                    .accessibilityIdentifier("liveGame.prompt.story.body")
+                }
+                if let codes = presentation.semanticPresentation?.presentation.readCards,
+                   !codes.isEmpty {
+                    genericReadCardsSummary(codes)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("liveGame.prompt.story")
         }
     }
 
     private func readCardsSummary(_ codes: [CardCode]) -> some View {
-        let joined = codes.map(\.rawValue).joined(separator: ", ")
+        genericReadCardsSummary(codes.map(\.rawValue))
+    }
+
+    private func genericReadCardsSummary(_ codes: [String]) -> some View {
+        let joined = codes.joined(separator: ", ")
         return HStack(spacing: 8) {
             Image(systemName: "rectangle.stack.badge.plus")
                 .foregroundStyle(.secondary)
@@ -142,24 +187,59 @@ struct BasicChoicePromptView: View {
         .accessibilityIdentifier("liveGame.prompt.story.readCards")
     }
 
+    private func genericFlavorLines(
+        _ flavor: QuestionPresentation.FlavorText
+    ) -> [String] {
+        flavor.body.compactMap { entry in
+            guard case let .object(object) = entry,
+                  case let .string(tag)? = object["tag"]
+            else { return nil }
+            switch tag {
+            case "BasicEntry":
+                guard case let .string(text)? = object["text"], !text.hasPrefix("$") else {
+                    return nil
+                }
+                return text
+            case "HeaderEntry":
+                guard case let .string(key)? = object["key"], !key.hasPrefix("$") else {
+                    return nil
+                }
+                return key
+            default:
+                return nil
+            }
+        }
+    }
+
     private var choices: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(presentation.choices) { choice in
                 let focusID = BoardFocusID.promptChoice(choice.index)
-                let title = displayTitle(for: choice)
+                let resolved = presentation.resolvedChoiceLabel(
+                    for: choice,
+                    in: controller.projection
+                )
+                let title = resolved.title
                 let isActionable = presentation.isChoiceActionable(
                     choice, in: controller.projection
                 )
                 SemanticActionControl(
-                    accessibilityLabel: Text(title),
+                    accessibilityLabel: Text(resolved.accessibilityLabel),
                     semanticFocusID: focusID,
                     onOutcome: { controller.handle(focusID: $0, $1) },
                     label: {
                         HStack(spacing: 10) {
-                            Image(systemName: presentation.systemImage(for: choice))
+                            Image(systemName: resolved.systemImage)
                                 .frame(width: 22)
-                            Text(title)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(title)
+                                if let subtitle = resolved.subtitle {
+                                    Text(subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             let isSendingChoice = presentation.actionChoiceIndex == choice.index
                                 && presentation.actionPhase == .sending
                             if isSendingChoice {
@@ -171,6 +251,7 @@ struct BasicChoicePromptView: View {
                     }
                 )
                 .buttonStyle(.bordered)
+                .tint(choiceTint(for: choice))
                 .focused(focusBinding, equals: focusID)
                 .disabled(!isActionable || !presentation.canSubmit)
                 // `SemanticActionControl` already applies `accessibilityLabel: Text(title)`
@@ -200,6 +281,20 @@ struct BasicChoicePromptView: View {
 
     private func accessibilityHint(for choice: BasicChoice) -> String {
         presentation.accessibilityHint(for: choice, in: controller.projection)
+    }
+
+    private func choiceTint(for choice: BasicChoice) -> Color? {
+        guard let descriptor = presentation.semanticPresentation?.descriptor(
+            forSourceIndex: choice.index
+        ) else { return nil }
+        switch descriptor.kind {
+        case .info:
+            return .blue
+        case .invalidLabel:
+            return .secondary
+        default:
+            return nil
+        }
     }
 }
 
