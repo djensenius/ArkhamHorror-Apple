@@ -66,6 +66,40 @@ struct GenericSingleChoiceRendererTests {
         #expect(rendered == expected)
         #expect(subtitles[.invalidLabel] == "Not selectable")
         #expect(subtitles[.localizedLabel] == nil)
+
+        let localized = try #require(prompt.choices.first { $0.index == 26 })
+        let invalid = try #require(prompt.choices.first { $0.index == 23 })
+        let info = try #require(prompt.choices.first { $0.index == 22 })
+        #expect(prompt.accessibilityLabel(for: localized, in: projection) == "Basic option")
+        #expect(!prompt.accessibilityLabel(for: localized, in: projection).hasPrefix("Choice "))
+        #expect(prompt.accessibilityHint(for: invalid, in: projection) == "This choice is not selectable.")
+        #expect(prompt.accessibilityHint(for: info, in: projection) == "This choice is not selectable.")
+    }
+
+    @MainActor
+    @Test("Generic prompt choices expose meaningful accessibility and prompt-list focus")
+    func genericPromptAccessibilityAndFocusUsePromptCoordinator() throws {
+        let prompt = try inlineLabelPrompt()
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let enabledChoice = try #require(prompt.choices.first { $0.index == 0 })
+        let disabledChoice = try #require(prompt.choices.first { $0.index == 1 })
+
+        #expect(prompt.accessibilityLabel(for: enabledChoice, in: projection) == "Real option")
+        #expect(prompt.accessibilityLabel(for: disabledChoice, in: projection) == "Disabled option")
+        #expect(prompt.accessibilityHint(for: disabledChoice, in: projection) == "This choice is not selectable.")
+
+        var submitted: [Int] = []
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            onChoice: { submitted.append($0) }
+        )
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
+        #expect(controller.handle(.command(.primaryAction)))
+        #expect(submitted == [0])
+        #expect(!controller.activatePromptChoice(1))
+        #expect(submitted == [0])
     }
 
     private func assertFixtureCoverage() throws {
@@ -126,6 +160,49 @@ struct GenericSingleChoiceRendererTests {
                 CardCode("c01112"): CardName(title: "The Barrier", subtitle: nil),
             ]),
             choiceLabelResolutions: labelResolutions(),
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private func inlineLabelPrompt() throws -> BasicChoicePromptPresentation {
+        let choices = [
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .localizedLabel,
+                label: label("Real option")
+            ),
+            QuestionPresentation.Choice(
+                sourceIndex: 1,
+                kind: .localizedLabel,
+                selectable: false,
+                label: label("Disabled option")
+            ),
+        ]
+        let presentation = QuestionPresentation(
+            protocolVersion: 2,
+            questionVersion: 778,
+            questionKind: .chooseOne,
+            choiceCount: choices.count,
+            choices: choices
+        )
+        let rawQuestion = rawQuestion(tag: "ChooseOne", count: choices.count)
+        let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 778)
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: 778,
+                rawQuestion: rawQuestion,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: BasicChoiceParser.parseQuestion(rawQuestion),
+            semanticPresentation: binding,
+            semanticLocaleIdentifier: "en",
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,

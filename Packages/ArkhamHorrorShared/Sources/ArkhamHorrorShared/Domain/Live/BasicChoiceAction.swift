@@ -179,7 +179,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
             var defaults: [Int: BasicChoiceLabelResolution] = [:]
             if let semanticPresentation {
                 for choice in semanticPresentation.presentation.choices {
-                    guard choice.label != nil else { continue }
+                    guard choice.label?.text.hasPrefix("$") == true else { continue }
                     defaults[choice.sourceIndex] = .unavailable(.catalog(.notAdvertised))
                 }
             } else {

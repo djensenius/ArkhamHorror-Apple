@@ -68,11 +68,17 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     func semanticUnavailableAnnouncement(
         for descriptor: QuestionPresentation.Choice,
         labelResolution: BasicChoiceLabelResolution?
     ) -> String {
+        guard descriptor.selectable else {
+            return semanticLocalized(
+                "semantic.choice.unavailable.notSelectable",
+                value: "This choice is not selectable."
+            )
+        }
         if descriptor.label != nil {
             return labelResolution?.announcement
                 ?? semanticLocalized(
