@@ -113,7 +113,10 @@ extension BasicChoicePromptPresentation {
         case .read:
             return "Story"
         case .chooseN, .chooseUpToN:
-            return "Choose choices"
+            return semanticLocalized(
+                "semantic.question.title.selections",
+                value: "Make selections"
+            )
         case .chooseOneAtATime, .chooseOneAtATimeWithAuto:
             return "Choose one at a time"
         case .chooseOneFromEach:

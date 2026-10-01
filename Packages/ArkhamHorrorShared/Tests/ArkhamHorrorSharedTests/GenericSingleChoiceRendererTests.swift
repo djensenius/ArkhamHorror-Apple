@@ -9,6 +9,7 @@ struct GenericSingleChoiceRendererTests {
     func resolverRendersEveryChoiceKind() throws {
         try assertFixtureCoverage()
         try assertFixtureTitles()
+        try assertRepresentativeTitles()
         let projection = rendererProjection()
         let prompt = try syntheticAllKindsPrompt()
         var rendered: [QuestionPresentation.ChoiceKind: String] = [:]
@@ -123,7 +124,7 @@ struct GenericSingleChoiceRendererTests {
             serverFeedback: nil
         )
 
-        #expect(prompt.headerTitle(in: rendererProjection()) == "Choose choices")
+        #expect(prompt.headerTitle(in: rendererProjection()) == "Make selections")
         #expect(prompt.questionHint() == "Choose 2")
     }
 
@@ -203,6 +204,12 @@ struct GenericSingleChoiceRendererTests {
             titles: [Int: String]
         )] = [
             (
+                "question-generic-cost-ability-window",
+                "question-presentation-generic-cost-ability-window",
+                [:],
+                [0: "Free", 1: "Use c01104 ability 1 (Free)"]
+            ),
+            (
                 "question-generic-one-at-a-time-auto",
                 "question-presentation-generic-one-at-a-time-auto",
                 [
@@ -211,6 +218,18 @@ struct GenericSingleChoiceRendererTests {
                     2: .resolved("Second fixture"),
                 ],
                 [0: "Auto fixture", 1: "First fixture", 2: "Second fixture"]
+            ),
+            (
+                "question-generic-read",
+                "question-presentation-generic-read",
+                [0: .resolved("Continue")],
+                [0: "Continue"]
+            ),
+            (
+                "question-generic-wrapped",
+                "question-presentation-generic-wrapped",
+                [0: .resolved("Wrapped choice")],
+                [0: "Wrapped choice"]
             ),
             (
                 "question-encounter-deck-draw",
@@ -238,6 +257,107 @@ struct GenericSingleChoiceRendererTests {
         }
     }
 
+    private func assertRepresentativeTitles() throws {
+        let projection = rendererProjection()
+        let cases: [(
+            name: String,
+            rawQuestion: JSONValue,
+            labels: [Int: BasicChoiceLabelResolution],
+            title: String
+        )] = [
+            (
+                "playerWindowChooseOne",
+                rawDirectQuestion(tag: "PlayerWindowChooseOne", count: 32),
+                [0: .resolved("Basic label")],
+                "Basic label"
+            ),
+            (
+                "windowChooseOne",
+                rawDirectQuestion(tag: "WindowChooseOne", count: 32),
+                [0: .resolved("Basic label")],
+                "Basic label"
+            ),
+            (
+                "chooseSome1",
+                rawChooseSome1Question(),
+                [0: .resolved("A choice")],
+                "A choice"
+            ),
+            (
+                "chooseOneWizard",
+                rawChooseOneWizardQuestion(),
+                [0: .resolved("Wizard choice")],
+                "Wizard choice"
+            ),
+        ]
+        for testCase in cases {
+            let representative = try representativePresentation(named: testCase.name)
+            let prompt = try prompt(
+                rawQuestion: testCase.rawQuestion,
+                presentation: representative.presentation,
+                choiceLabelResolutions: testCase.labels
+            )
+            let choice = try #require(prompt.choices.first { $0.index == 0 })
+            #expect(prompt.displayTitle(for: choice, in: projection) == testCase.title)
+        }
+    }
+
+    private func representativePresentation(named name: String) throws -> RepresentativePresentation {
+        try #require(representativePresentations().first { $0.name == name })
+    }
+
+    private func rawDirectQuestion(tag: String, count: Int) -> JSONValue {
+        .object([
+            "tag": .string(tag),
+            "choices": .array((0 ..< count).map { rawLabel("$choice.\($0)") }),
+        ])
+    }
+
+    private func rawChooseSome1Question() -> JSONValue {
+        .object([
+            "tag": .string("ChooseSome1"),
+            "label": .string("$done"),
+            "choices": .array([rawLabel("$a"), rawDone("$done")]),
+        ])
+    }
+
+    private func rawChooseOneWizardQuestion() -> JSONValue {
+        .object([
+            "tag": .string("ChooseOneWizard"),
+            "flavorText": flavorText(),
+            "wizardChoices": .array([rawWizardChoice("$wizard")]),
+            "confirmLabel": .string("$confirm"),
+            "backLabel": .string("$back"),
+        ])
+    }
+
+    private func rawLabel(_ label: String) -> JSONValue {
+        .object([
+            "tag": .string("Label"),
+            "label": .string(label),
+            "messages": .array([]),
+        ])
+    }
+
+    private func rawDone(_ label: String) -> JSONValue {
+        .object([
+            "tag": .string("Done"),
+            "label": .string(label),
+        ])
+    }
+
+    private func rawWizardChoice(_ label: String) -> JSONValue {
+        .object([
+            "label": .string(label),
+            "flavorText": flavorText(),
+            "messages": .array([]),
+        ])
+    }
+
+    private func flavorText() -> JSONValue {
+        .object(["title": .null, "body": .array([])])
+    }
+
     private func fixturePrompt(
         rawFixture: String,
         presentationFixture fixtureName: String,
@@ -245,8 +365,20 @@ struct GenericSingleChoiceRendererTests {
     ) throws -> BasicChoicePromptPresentation {
         let raw = try ContractJSON.decode(JSONValue.self, from: fixture(rawFixture))
         let presentation = try presentationFixture(fixtureName)
+        return try prompt(
+            rawQuestion: raw,
+            presentation: presentation,
+            choiceLabelResolutions: choiceLabelResolutions
+        )
+    }
+
+    private func prompt(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation,
+        choiceLabelResolutions: [Int: BasicChoiceLabelResolution]
+    ) throws -> BasicChoicePromptPresentation {
         let binding = try presentation.bind(
-            to: raw,
+            to: rawQuestion,
             expectedQuestionVersion: presentation.questionVersion
         )
         return BasicChoicePromptPresentation(
@@ -254,12 +386,12 @@ struct GenericSingleChoiceRendererTests {
                 gameID: BoardTestFixtures.gameID(),
                 ownerID: BoardTestFixtures.playerID(),
                 questionVersion: presentation.questionVersion,
-                rawQuestion: raw,
+                rawQuestion: rawQuestion,
                 questionPresentation: presentation,
                 sessionAttemptID: nil,
                 connectionID: nil
             ),
-            question: BasicChoiceParser.parseQuestion(raw),
+            question: BasicChoiceParser.parseQuestion(rawQuestion),
             semanticPresentation: binding,
             semanticLocaleIdentifier: "en",
             cardCatalog: nil,

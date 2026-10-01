@@ -180,7 +180,7 @@ extension AppModel {
         // identity and actionability rules -- never the projection captured whenever
         // this choice was last rendered. Governed legacy choices still re-check their
         // board identities; generic semantic choices trust the server-owned descriptor
-        // except for client display prerequisites such as resolvable deployment text.
+        // except for client display prerequisites such as resolvable label text.
         guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
               let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
               presentation.isChoiceActionable(choice, in: projection),

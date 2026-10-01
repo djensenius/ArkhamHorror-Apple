@@ -109,6 +109,10 @@ extension BasicChoiceSemanticPresentationTests {
         let moveOnlyPrompt = try promptForCellarMoveOnly(moveRaw)
         let moveOnlyChoice = try #require(moveOnlyPrompt.choices.first)
         #expect(moveOnlyPrompt.semanticPresentation?.presentation.sealValidationKind == nil)
+        #expect(moveOnlyPrompt.isChoiceActionable(
+            moveOnlyChoice,
+            in: treacheryForcedAbilityProjection(includeCellar: false)
+        ))
         #expect(moveOnlyPrompt.isChoiceActionable(moveOnlyChoice, in: projection))
     }
 
