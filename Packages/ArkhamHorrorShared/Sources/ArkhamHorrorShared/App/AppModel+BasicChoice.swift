@@ -53,6 +53,7 @@ extension AppModel {
         }
         let supportedQuestion = payload.state.supportedQuestion
         let storyResolution = storyResolution(for: supportedQuestion?.story)
+            ?? storyResolution(for: payload.presentation?.presentation.flavorText)
         let labelResolutions = choiceLabelResolutions(
             for: supportedQuestion,
             semanticPresentation: payload.presentation
