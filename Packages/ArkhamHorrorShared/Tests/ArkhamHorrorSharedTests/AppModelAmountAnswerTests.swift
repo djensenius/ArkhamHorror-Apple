@@ -440,6 +440,37 @@ extension AppModelLiveGameTests {
         #expect(await paymentConnection.sentData.isEmpty)
     }
 
+    @Test("A fallback title does not make an unavailable amount label submittable")
+    @MainActor
+    func amountLabelWithTitleAndUnavailableReasonIsRefused() async throws {
+        let choiceID = "00000000-0000-0000-0000-0000000000e2"
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try oneChoiceAmountEnvelope(choiceID: choiceID, questionVersion: 622)
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let amountPrompt = try #require(prompt.amountPrompt(in: projection))
+        let row = try #require(amountPrompt.visibleRows.first)
+        let amounts = [choiceID: 1]
+
+        #expect(row.title == "Choice 1")
+        #expect(row.labelUnavailableReason != nil)
+        #expect(!amountPrompt.isLegal(amounts))
+        #expect(
+            amountPrompt.disabledReason(for: amounts, in: prompt)
+                == "The text for Choice 1 is not currently available."
+        )
+        #expect(
+            await model.submitAmountsAnswer(prompt.identity, amounts: amounts) == .unsupportedChoice
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
     @Test("Amount retry re-checks unresolved row labels before sending again")
     func amountRetryRefusesWhenCatalogDisappears() async throws {
         let choiceID = "00000000-0000-0000-0000-0000000000f4"
@@ -795,7 +826,7 @@ extension AppModelLiveGameTests {
         let hiddenID = "00000000-0000-0000-0000-0000000000b2"
         let choices = [
             amountChoice(visibleID, min: 0, max: 2, label: "Clues"),
-            amountChoice(hiddenID, min: 0, max: 0, label: "Hidden"),
+            amountChoice(hiddenID, min: 0, max: 0, label: "$hidden"),
         ]
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value

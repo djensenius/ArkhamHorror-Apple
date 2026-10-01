@@ -574,9 +574,11 @@ private extension BasicChoicePromptPresentation {
 
     func amountRowLabelsResolved(_ labels: [AmountRowLabel]) -> Bool {
         labels.allSatisfy { label in
-            guard label.upperBound != 0, label.text.hasPrefix("$") else { return true }
-            return promptLabelResolutions[label.key]?.unavailableReason == nil
-                && promptLabelResolutions[label.key]?.title != nil
+            amountRowLabelUnavailableReason(
+                key: label.key,
+                labelText: label.text,
+                upperBound: label.upperBound
+            ) == nil
         }
     }
 

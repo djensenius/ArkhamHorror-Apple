@@ -276,9 +276,10 @@ extension BasicChoicePromptPresentation {
                         ),
                         minBound: choice.minBound,
                         maxBound: choice.maxBound,
-                        labelUnavailableReason: promptLabelUnavailableReason(
+                        labelUnavailableReason: amountRowLabelUnavailableReason(
                             key: amountChoicePromptLabelKey(choice.choiceID),
-                            labelText: choice.label
+                            labelText: choice.label,
+                            upperBound: choice.maxBound
                         )
                     )
                 },
@@ -310,9 +311,10 @@ extension BasicChoicePromptPresentation {
                         ),
                         minBound: choice.min,
                         maxBound: choice.max,
-                        labelUnavailableReason: promptLabelUnavailableReason(
+                        labelUnavailableReason: amountRowLabelUnavailableReason(
                             key: paymentChoicePromptLabelKey(choice.choiceID),
-                            labelText: choice.title.text
+                            labelText: choice.title.text,
+                            upperBound: choice.max
                         )
                     )
                 },
@@ -366,15 +368,17 @@ extension BasicChoicePromptPresentation {
         promptLabel(key: key, labelText: label?.text, fallback: fallback)
     }
 
-    private func promptLabelUnavailableReason(
+    func amountRowLabelUnavailableReason(
         key: String,
-        labelText: String?
+        labelText: String?,
+        upperBound: Int
     ) -> StoryUnavailableReason? {
-        guard labelText?.hasPrefix("$") == true else { return nil }
-        if promptLabelResolutions[key]?.title != nil {
+        guard upperBound != 0, labelText?.hasPrefix("$") == true else { return nil }
+        let resolution = promptLabelResolutions[key]
+        if resolution?.title != nil, resolution?.unavailableReason == nil {
             return nil
         }
-        return promptLabelResolutions[key]?.unavailableReason ?? .catalog(.notAdvertised)
+        return resolution?.unavailableReason ?? .catalog(.notAdvertised)
     }
 
     private func promptLabel(
