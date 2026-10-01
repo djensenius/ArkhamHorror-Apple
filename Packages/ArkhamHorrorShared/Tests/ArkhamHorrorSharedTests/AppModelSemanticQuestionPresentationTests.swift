@@ -307,10 +307,6 @@ extension AppModelLiveGameTests {
         "Unsupported generic answer families require an app update through AppModel",
         arguments: [
             (
-                raw: "question-generic-choose-amounts",
-                presentation: "question-presentation-generic-choose-amounts"
-            ),
-            (
                 raw: "question-generic-choose-deck",
                 presentation: "question-presentation-generic-choose-deck"
             ),
