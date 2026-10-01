@@ -65,7 +65,8 @@ extension AppModelLiveGameTests {
         let envelope = try semanticEnvelope(
             rawFixture: "question-generic-choose-amounts",
             presentationFixture: "question-presentation-generic-choose-amounts",
-            questionVersion: 207
+            questionVersion: 207,
+            mutatePresentation: localizeFirstAmountChoiceLabel
         )
         let connection = FakeGameSocketConnection()
         await connection.setSendGated(true)
@@ -176,8 +177,8 @@ extension AppModelLiveGameTests {
     // swiftlint:disable:next function_body_length
     func illegalAmountAllocationsAreRefused() async throws {
         let choices: [[String: JSONValue]] = [
-            amountChoice("00000000-0000-0000-0000-0000000000a1", min: 0, max: 2),
-            amountChoice("00000000-0000-0000-0000-0000000000a2", min: 0, max: 2),
+            amountChoice("00000000-0000-0000-0000-0000000000a1", min: 0, max: 2, label: "A"),
+            amountChoice("00000000-0000-0000-0000-0000000000a2", min: 0, max: 2, label: "B"),
         ]
         let cases: [IllegalAmountAllocationCase] = [
             .init(
@@ -507,7 +508,8 @@ extension AppModelLiveGameTests {
         let envelope = try semanticEnvelope(
             rawFixture: "question-generic-choose-amounts",
             presentationFixture: "question-presentation-generic-choose-amounts",
-            questionVersion: 207
+            questionVersion: 207,
+            mutatePresentation: localizeFirstAmountChoiceLabel
         )
         let connection = FakeGameSocketConnection()
         let gameID = await startChoiceSession(
@@ -714,7 +716,8 @@ extension AppModelLiveGameTests {
         let envelope = try semanticEnvelope(
             rawFixture: "question-generic-choose-amounts",
             presentationFixture: "question-presentation-generic-choose-amounts",
-            questionVersion: 207
+            questionVersion: 207,
+            mutatePresentation: localizeFirstAmountChoiceLabel
         )
         let first = FakeGameSocketConnection()
         await first.enqueueSendResult(.failure(GameSocketTransportError()))
@@ -1131,7 +1134,8 @@ extension AppModelLiveGameTests {
             questionVersion: 617,
             mutateRawQuestion: { rawQuestion in
                 rawQuestion = questionLabelWrapped(rawQuestion)
-            }
+            },
+            mutatePresentation: localizeFirstAmountChoiceLabel
         )
         let connection = FakeGameSocketConnection()
         await connection.enqueueSendResult(.success(()))
@@ -1163,7 +1167,8 @@ extension AppModelLiveGameTests {
             questionVersion: 618,
             mutateRawQuestion: { rawQuestion in
                 rawQuestion = payCostWrapped(rawQuestion)
-            }
+            },
+            mutatePresentation: localizeFirstPaymentChoiceTitle
         )
         let connection = FakeGameSocketConnection()
         await connection.enqueueSendResult(.success(()))
@@ -1290,6 +1295,22 @@ extension AppModelLiveGameTests {
             return presentation
         }
         throw TestFailure()
+    }
+
+    private func localizeFirstAmountChoiceLabel(in presentation: inout [String: JSONValue]) throws {
+        guard case var .array(amountChoices)? = presentation["amountChoices"],
+              case var .object(choice)? = amountChoices.first
+        else { throw TestFailure() }
+        choice["label"] = .string("Clues")
+        amountChoices[0] = .object(choice)
+        presentation["amountChoices"] = .array(amountChoices)
+    }
+
+    private func localizeFirstPaymentChoiceTitle(in presentation: inout [String: JSONValue]) throws {
+        var presentationValue = JSONValue.object(presentation)
+        try localizeFirstPaymentChoiceTitle(in: &presentationValue)
+        guard case let .object(updatedPresentation) = presentationValue else { throw TestFailure() }
+        presentation = updatedPresentation
     }
 
     private func localizeFirstPaymentChoiceTitle(in presentation: inout JSONValue) throws {
