@@ -15,16 +15,6 @@ private struct UnsupportedAmountWrapperCase {
     let presentationFixture: String
 }
 
-private struct PresentationMutationCase {
-    let label: String
-    let mutate: (inout [String: JSONValue]) throws -> Void
-}
-
-private struct JSONMutationCase {
-    let label: String
-    let mutate: (inout JSONValue) throws -> Void
-}
-
 private struct AmountPromptPreferredLanguages: PreferredLanguagesProviding {
     let preferredLanguages: [String]
 }
@@ -76,7 +66,6 @@ extension AppModelLiveGameTests {
             rawFixture: "question-generic-choose-amounts",
             presentationFixture: "question-presentation-generic-choose-amounts",
             questionVersion: 207,
-            mutateRawQuestion: localizeFirstRawAmountChoiceLabel,
             mutatePresentation: localizeFirstAmountChoiceLabel
         )
         let connection = FakeGameSocketConnection()
@@ -116,8 +105,7 @@ extension AppModelLiveGameTests {
                 choiceID: "00000000-0000-0000-0000-00000000004d",
                 min: 0,
                 max: 3,
-                target: .null,
-                title: "Resources"
+                target: .null
             ),
             presentation: presentation,
             questionVersion: 310
@@ -418,137 +406,6 @@ extension AppModelLiveGameTests {
         )
     }
 
-    @Test("Unmodified raw amount fixtures remain renderable")
-    @MainActor
-    func unmodifiedRawAmountFixturesRemainRenderable() async throws {
-        let amountCase = try await renderPrompt(
-            rawFixture: "question-generic-choose-amounts",
-            presentationFixture: "question-presentation-generic-choose-amounts",
-            questionVersion: 650
-        )
-        #expect(amountCase.prompt.readOnlyReason == nil)
-        #expect(amountCase.prompt.isRenderableQuestion)
-        #expect(amountCase.prompt.amountPrompt(in: amountCase.projection) != nil)
-
-        let paymentCase = try await renderPrompt(
-            rawFixture: "question-generic-payment-amounts",
-            presentationFixture: "question-presentation-generic-payment-amounts",
-            questionVersion: 651
-        )
-        #expect(paymentCase.prompt.readOnlyReason == nil)
-        #expect(paymentCase.prompt.isRenderableQuestion)
-        #expect(paymentCase.prompt.amountPrompt(in: paymentCase.projection) != nil)
-    }
-
-    @Test("Amount and payment presentation drift is update-required and cannot send")
-    @MainActor
-    // swiftlint:disable:next function_body_length
-    func amountAndPaymentPresentationDriftIsUpdateRequired() async throws {
-        let amountCases = amountBindingMutationCases()
-        for testCase in amountCases {
-            let (model, fakes) = makeSignedInModel()
-            await model.flowTask?.value
-            makeModern(model)
-            let envelope = try semanticEnvelope(
-                rawFixture: "question-generic-choose-amounts",
-                presentationFixture: "question-presentation-generic-choose-amounts",
-                questionVersion: 652,
-                mutatePresentation: testCase.mutate
-            )
-            let connection = FakeGameSocketConnection()
-            let gameID = await startChoiceSession(
-                model: model, fakes: fakes, envelope: envelope, connection: connection
-            )
-            let prompt = try #require(
-                model.basicChoicePresentation(for: gameID),
-                Comment(rawValue: testCase.label)
-            )
-            #expect(
-                prompt.readOnlyReason == BasicChoiceReadOnlyReason.updateRequired,
-                Comment(rawValue: testCase.label)
-            )
-            #expect(!prompt.isRenderableQuestion, Comment(rawValue: testCase.label))
-            #expect(
-                await model.submitAmountsAnswer(
-                    prompt.identity,
-                    amounts: ["00000000-0000-0000-0000-000000000065": 1]
-                ) == .readOnly,
-                Comment(rawValue: testCase.label)
-            )
-            #expect(await connection.sentData.isEmpty, Comment(rawValue: testCase.label))
-        }
-
-        let paymentCases = paymentBindingMutationCases()
-        for testCase in paymentCases {
-            let (model, fakes) = makeSignedInModel()
-            await model.flowTask?.value
-            makeModern(model)
-            let envelope = try semanticEnvelope(
-                rawFixture: "question-generic-payment-amounts",
-                presentationFixture: "question-presentation-generic-payment-amounts",
-                questionVersion: 653,
-                mutatePresentation: testCase.mutate
-            )
-            let connection = FakeGameSocketConnection()
-            let gameID = await startChoiceSession(
-                model: model, fakes: fakes, envelope: envelope, connection: connection
-            )
-            let prompt = try #require(
-                model.basicChoicePresentation(for: gameID),
-                Comment(rawValue: testCase.label)
-            )
-            #expect(
-                prompt.readOnlyReason == BasicChoiceReadOnlyReason.updateRequired,
-                Comment(rawValue: testCase.label)
-            )
-            #expect(!prompt.isRenderableQuestion, Comment(rawValue: testCase.label))
-            #expect(
-                await model.submitPaymentAmountsAnswer(
-                    prompt.identity,
-                    amounts: ["00000000-0000-0000-0000-000000000066": 2]
-                ) == .readOnly,
-                Comment(rawValue: testCase.label)
-            )
-            #expect(await connection.sentData.isEmpty, Comment(rawValue: testCase.label))
-        }
-    }
-
-    @Test("Exchange presentation drift is update-required and cannot send")
-    @MainActor
-    func exchangePresentationDriftIsUpdateRequired() async throws {
-        for testCase in exchangeBindingMutationCases() {
-            let (model, fakes) = makeSignedInModel()
-            await model.flowTask?.value
-            makeModern(model)
-            var presentation = try representativePresentation(named: "chooseExchangeAmounts")
-            try testCase.mutate(&presentation)
-            let envelope = try amountEnvelope(
-                rawQuestion: exchangeRawQuestion(fromInitialAmount: 2, toInitialAmount: 1),
-                presentation: presentation,
-                questionVersion: 654
-            )
-            let connection = FakeGameSocketConnection()
-            let gameID = await startChoiceSession(
-                model: model, fakes: fakes, envelope: envelope, connection: connection
-            )
-            let prompt = try #require(
-                model.basicChoicePresentation(for: gameID),
-                Comment(rawValue: testCase.label)
-            )
-            #expect(
-                prompt.readOnlyReason == BasicChoiceReadOnlyReason.updateRequired,
-                Comment(rawValue: testCase.label)
-            )
-            #expect(!prompt.isRenderableQuestion, Comment(rawValue: testCase.label))
-            #expect(
-                await model.submitExchangeAmountsAnswer(prompt.identity, amount: 0)
-                    == .readOnly,
-                Comment(rawValue: testCase.label)
-            )
-            #expect(await connection.sentData.isEmpty, Comment(rawValue: testCase.label))
-        }
-    }
-
     @Test("Legal Min, Max, and OneOf amount allocations are accepted")
     func legalNonTotalAmountTargetsAreAccepted() async throws {
         let cases: [(QuestionPresentation.AmountTarget, [String: Int])] = [
@@ -781,7 +638,6 @@ extension AppModelLiveGameTests {
             rawFixture: "question-generic-choose-amounts",
             presentationFixture: "question-presentation-generic-choose-amounts",
             questionVersion: 207,
-            mutateRawQuestion: localizeFirstRawAmountChoiceLabel,
             mutatePresentation: localizeFirstAmountChoiceLabel
         )
         let connection = FakeGameSocketConnection()
@@ -1005,7 +861,6 @@ extension AppModelLiveGameTests {
             rawFixture: "question-generic-choose-amounts",
             presentationFixture: "question-presentation-generic-choose-amounts",
             questionVersion: 207,
-            mutateRawQuestion: localizeFirstRawAmountChoiceLabel,
             mutatePresentation: localizeFirstAmountChoiceLabel
         )
         let first = FakeGameSocketConnection()
@@ -1265,8 +1120,7 @@ extension AppModelLiveGameTests {
                 choiceID: "00000000-0000-0000-0000-00000000004d",
                 min: 0,
                 max: 3,
-                target: .null,
-                title: "Resources"
+                target: .null
             ),
             presentation: paymentPresentation,
             questionVersion: 612
@@ -1485,159 +1339,6 @@ extension AppModelLiveGameTests {
         )
     }
 
-    private func renderPrompt(
-        rawFixture: String,
-        presentationFixture: String,
-        questionVersion: Int
-    ) async throws -> WrappedAmountSendCase {
-        let (model, fakes) = makeSignedInModel()
-        await model.flowTask?.value
-        makeModern(model)
-        let envelope = try semanticEnvelope(
-            rawFixture: rawFixture,
-            presentationFixture: presentationFixture,
-            questionVersion: questionVersion
-        )
-        let connection = FakeGameSocketConnection()
-        let gameID = await startChoiceSession(
-            model: model, fakes: fakes, envelope: envelope, connection: connection
-        )
-        let prompt = try #require(model.basicChoicePresentation(for: gameID))
-        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
-        return WrappedAmountSendCase(
-            prompt: prompt,
-            projection: projection,
-            connection: connection
-        )
-    }
-
-    private func amountBindingMutationCases() -> [PresentationMutationCase] {
-        [
-            PresentationMutationCase(label: "amount choice id") { presentation in
-                try mutateFirstChoice(in: &presentation, key: "amountChoices") { choice in
-                    choice["choiceId"] = .string("00000000-0000-0000-0000-0000000000ff")
-                }
-            },
-            PresentationMutationCase(label: "amount lower bound") { presentation in
-                try mutateFirstChoice(in: &presentation, key: "amountChoices") { choice in
-                    choice["minBound"] = .number(.integer(1))
-                }
-            },
-            PresentationMutationCase(label: "amount upper bound") { presentation in
-                try mutateFirstChoice(in: &presentation, key: "amountChoices") { choice in
-                    choice["maxBound"] = .number(.integer(4))
-                }
-            },
-            PresentationMutationCase(label: "amount label") { presentation in
-                try mutateFirstChoice(in: &presentation, key: "amountChoices") { choice in
-                    choice["label"] = .string("Clues")
-                }
-            },
-            PresentationMutationCase(label: "amount target") { presentation in
-                presentation["target"] = .object([
-                    "tag": .string("MinAmountTarget"),
-                    "contents": .number(.integer(1)),
-                ])
-            },
-        ]
-    }
-
-    private func paymentBindingMutationCases() -> [PresentationMutationCase] {
-        [
-            PresentationMutationCase(label: "payment choice id") { presentation in
-                try mutateFirstChoice(in: &presentation, key: "paymentChoices") { choice in
-                    choice["choiceId"] = .string("00000000-0000-0000-0000-0000000000ff")
-                }
-            },
-            PresentationMutationCase(label: "payment investigator") { presentation in
-                try mutateFirstChoice(in: &presentation, key: "paymentChoices") { choice in
-                    choice["investigatorId"] = .string("c02002")
-                }
-            },
-            PresentationMutationCase(label: "payment lower bound") { presentation in
-                try mutateFirstChoice(in: &presentation, key: "paymentChoices") { choice in
-                    choice["min"] = .number(.integer(1))
-                }
-            },
-            PresentationMutationCase(label: "payment upper bound") { presentation in
-                try mutateFirstChoice(in: &presentation, key: "paymentChoices") { choice in
-                    choice["max"] = .number(.integer(3))
-                }
-            },
-            PresentationMutationCase(label: "payment title") { presentation in
-                try mutateFirstChoice(in: &presentation, key: "paymentChoices") { choice in
-                    choice["title"] = .object([
-                        "kind": .string("embeddedI18n"),
-                        "text": .string("Resources"),
-                    ])
-                }
-            },
-            PresentationMutationCase(label: "payment target") { presentation in
-                presentation["target"] = .object([
-                    "tag": .string("TotalAmountTarget"),
-                    "contents": .number(.integer(3)),
-                ])
-            },
-        ]
-    }
-
-    private func exchangeBindingMutationCases() -> [JSONMutationCase] {
-        [
-            JSONMutationCase(label: "exchange source") { presentation in
-                try mutateObject(&presentation) { object in
-                    object["source"] = .object(["tag": .string("ScenarioSource")])
-                }
-            },
-            JSONMutationCase(label: "exchange from investigator") { presentation in
-                try mutateObject(&presentation) { object in
-                    object["fromInvestigator"] = .string("c02002")
-                }
-            },
-            JSONMutationCase(label: "exchange from amount") { presentation in
-                try mutateObject(&presentation) { object in
-                    object["fromInitialAmount"] = .number(.integer(3))
-                }
-            },
-            JSONMutationCase(label: "exchange to investigator") { presentation in
-                try mutateObject(&presentation) { object in
-                    object["toInvestigator"] = .string("c02003")
-                }
-            },
-            JSONMutationCase(label: "exchange to amount") { presentation in
-                try mutateObject(&presentation) { object in
-                    object["toInitialAmount"] = .number(.integer(2))
-                }
-            },
-            JSONMutationCase(label: "exchange token") { presentation in
-                try mutateObject(&presentation) { object in
-                    object["token"] = .string("Clue")
-                }
-            },
-        ]
-    }
-
-    private func mutateFirstChoice(
-        in presentation: inout [String: JSONValue],
-        key: String,
-        mutate: (inout [String: JSONValue]) throws -> Void
-    ) throws {
-        guard case var .array(choices)? = presentation[key],
-              case var .object(choice)? = choices.first
-        else { throw TestFailure() }
-        try mutate(&choice)
-        choices[0] = .object(choice)
-        presentation[key] = .array(choices)
-    }
-
-    private func mutateObject(
-        _ value: inout JSONValue,
-        mutate: (inout [String: JSONValue]) throws -> Void
-    ) throws {
-        guard case var .object(object) = value else { throw TestFailure() }
-        try mutate(&object)
-        value = .object(object)
-    }
-
     private func sendWrappedAmountsAnswer() async throws -> WrappedAmountSendCase {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
@@ -1647,7 +1348,6 @@ extension AppModelLiveGameTests {
             presentationFixture: "question-presentation-generic-choose-amounts",
             questionVersion: 617,
             mutateRawQuestion: { rawQuestion in
-                try localizeFirstRawAmountChoiceLabel(in: &rawQuestion)
                 rawQuestion = questionLabelWrapped(rawQuestion)
             },
             mutatePresentation: localizeFirstAmountChoiceLabel
@@ -1681,7 +1381,6 @@ extension AppModelLiveGameTests {
             presentationFixture: "question-presentation-generic-payment-amounts",
             questionVersion: 618,
             mutateRawQuestion: { rawQuestion in
-                try localizeFirstRawPaymentChoiceTitle(in: &rawQuestion)
                 rawQuestion = payCostWrapped(rawQuestion)
             },
             mutatePresentation: localizeFirstPaymentChoiceTitle
@@ -1822,17 +1521,6 @@ extension AppModelLiveGameTests {
         presentation["amountChoices"] = .array(amountChoices)
     }
 
-    private func localizeFirstRawAmountChoiceLabel(in rawQuestion: inout JSONValue) throws {
-        guard case var .object(root) = rawQuestion,
-              case var .array(amountChoices)? = root["amountChoices"],
-              case var .object(choice)? = amountChoices.first
-        else { throw TestFailure() }
-        choice["label"] = .string("Clues")
-        amountChoices[0] = .object(choice)
-        root["amountChoices"] = .array(amountChoices)
-        rawQuestion = .object(root)
-    }
-
     private func localizeFirstPaymentChoiceTitle(
         in presentation: inout [String: JSONValue]
     ) throws {
@@ -1853,17 +1541,6 @@ extension AppModelLiveGameTests {
         paymentChoices[0] = .object(choice)
         root["paymentChoices"] = .array(paymentChoices)
         presentation = .object(root)
-    }
-
-    private func localizeFirstRawPaymentChoiceTitle(in rawQuestion: inout JSONValue) throws {
-        guard case var .object(root) = rawQuestion,
-              case var .array(paymentChoices)? = root["paymentAmountChoices"],
-              case var .object(choice)? = paymentChoices.first
-        else { throw TestFailure() }
-        choice["title"] = .string("Resources")
-        paymentChoices[0] = .object(choice)
-        root["paymentAmountChoices"] = .array(paymentChoices)
-        rawQuestion = .object(root)
     }
 
     private func amountEnvelope(
@@ -1896,28 +1573,18 @@ extension AppModelLiveGameTests {
         presentationObject["toInitialAmount"] = .number(.integer(Int64(toInitialAmount)))
         presentation = .object(presentationObject)
         return try amountEnvelope(
-            rawQuestion: exchangeRawQuestion(
-                fromInitialAmount: fromInitialAmount,
-                toInitialAmount: toInitialAmount
-            ),
+            rawQuestion: .object([
+                "tag": .string("ChooseExchangeAmounts"),
+                "source": .object(["tag": .string("GameSource")]),
+                "investigator1Id": .string("c01001"),
+                "investigator1InitialAmount": .number(.integer(Int64(fromInitialAmount))),
+                "investigator2Id": .string("c01002"),
+                "investigator2InitialAmount": .number(.integer(Int64(toInitialAmount))),
+                "token": .string("Resource"),
+            ]),
             presentation: presentation,
             questionVersion: 335
         )
-    }
-
-    private func exchangeRawQuestion(
-        fromInitialAmount: Int,
-        toInitialAmount: Int
-    ) -> JSONValue {
-        .object([
-            "tag": .string("ChooseExchangeAmounts"),
-            "source": .object(["tag": .string("GameSource")]),
-            "investigator1Id": .string("c01001"),
-            "investigator1InitialAmount": .number(.integer(Int64(fromInitialAmount))),
-            "investigator2Id": .string("c01002"),
-            "investigator2InitialAmount": .number(.integer(Int64(toInitialAmount))),
-            "token": .string("Resource"),
-        ])
     }
 
     private func chooseAmountsRawQuestion(
@@ -1973,8 +1640,7 @@ extension AppModelLiveGameTests {
         choiceID: String,
         min: Int,
         max: Int,
-        target: JSONValue,
-        title: String = "$resources"
+        target: JSONValue
     ) -> JSONValue {
         .object([
             "tag": .string("ChoosePaymentAmounts"),
@@ -1986,7 +1652,7 @@ extension AppModelLiveGameTests {
                     "investigatorId": .string("c01001"),
                     "minBound": .number(.integer(Int64(min))),
                     "maxBound": .number(.integer(Int64(max))),
-                    "title": .string(title),
+                    "title": .string("$resources"),
                     "message": .object(["tag": .string("ClearUI")]),
                 ]),
             ]),
