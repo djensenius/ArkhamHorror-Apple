@@ -97,7 +97,8 @@ private struct CampaignPromptDeckFixture: Decodable {
 
 func campaignPromptProjection(
     base: BoardProjection,
-    questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>
+    questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>,
+    counters: BoardCounters? = nil
 ) -> BoardProjection {
     BoardProjection(
         gameName: base.gameName,
@@ -121,7 +122,7 @@ func campaignPromptProjection(
         enemiesByLocationID: base.enemiesByLocationID,
         engagedEnemiesByInvestigatorID: base.engagedEnemiesByInvestigatorID,
         chaosBag: base.chaosBag,
-        counters: base.counters,
+        counters: counters ?? base.counters,
         skillTest: base.skillTest,
         questions: questions
     )
@@ -203,7 +204,8 @@ struct AppModelCampaignPromptTests {
     func continuationProjection(
         ownerID: PlayerID,
         mode: GameMode,
-        rawQuestion: JSONValue = .object(["tag": .string("ContinueCampaign")])
+        rawQuestion: JSONValue = .object(["tag": .string("ContinueCampaign")]),
+        answerTags: [String] = ["CampaignStepAnswer"]
     ) throws -> BoardProjection {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
         let snapshot = BoardTestFixtures.snapshot(
@@ -225,7 +227,7 @@ struct AppModelCampaignPromptTests {
             questionKind: .continueCampaign,
             choiceCount: 0,
             choices: [],
-            answer: .continueCampaign(tags: ["CampaignStepAnswer"])
+            answer: .continueCampaign(tags: answerTags)
         )
         var questions = UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>()
         questions[ownerID] = try BasicChoiceQuestionPayload(

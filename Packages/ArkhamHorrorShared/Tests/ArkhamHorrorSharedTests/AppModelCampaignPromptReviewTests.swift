@@ -6,7 +6,8 @@ import Testing
 extension AppModelCampaignPromptTests {
     func chooseUpgradeDeckProjection(
         ownerID: PlayerID,
-        mode: GameMode
+        mode: GameMode,
+        questionVersion: Int? = nil
     ) throws -> BoardProjection {
         let rawQuestion: JSONValue = .object(["tag": .string("ChooseUpgradeDeck")])
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
@@ -23,9 +24,10 @@ extension AppModelCampaignPromptTests {
             playerOrder: [investigatorID]
         )
         let base = BoardProjectionBuilder.makeProjection(from: snapshot)
+        let version = questionVersion ?? base.counters.scenarioSteps
         let presentation = QuestionPresentation(
             protocolVersion: QuestionPresentation.supportedProtocolVersion,
-            questionVersion: base.counters.scenarioSteps,
+            questionVersion: version,
             questionKind: .chooseUpgradeDeck,
             choiceCount: 0,
             choices: [],
@@ -37,10 +39,36 @@ extension AppModelCampaignPromptTests {
             state: .updateRequired(tag: "ChooseUpgradeDeck"),
             presentation: presentation.bind(
                 to: rawQuestion,
-                expectedQuestionVersion: base.counters.scenarioSteps
+                expectedQuestionVersion: version
             )
         )
-        return campaignPromptProjection(base: base, questions: questions)
+        return campaignPromptProjection(
+            base: base,
+            questions: questions,
+            counters: questionVersion.map {
+                campaignPromptCounters(base: base.counters, scenarioSteps: $0)
+            }
+        )
+    }
+
+    func campaignPromptCounters(
+        base: BoardCounters,
+        scenarioSteps: Int
+    ) -> BoardCounters {
+        BoardCounters(
+            totalDoom: base.totalDoom,
+            totalClues: base.totalClues,
+            encounterDeckSize: base.encounterDeckSize,
+            scenarioSteps: scenarioSteps,
+            playerCount: base.playerCount,
+            phase: base.phase,
+            phaseStepSummary: base.phaseStepSummary,
+            gameStateSummary: base.gameStateSummary,
+            inSetup: base.inSetup,
+            inAction: base.inAction,
+            pendingPromptCount: base.pendingPromptCount,
+            entityCounters: base.entityCounters
+        )
     }
 
     @Test("ChooseUpgradeDeck owner can open and submit while spectators cannot")
@@ -97,6 +125,39 @@ extension AppModelCampaignPromptTests {
                 == "Spectators can view this prompt but cannot answer it."
         )
         #expect(!spectatorPrompt.canUseCampaignDeckPrompt)
+    }
+
+    @Test("ContinueCampaign without CampaignStepAnswer remains update-required and cannot send")
+    func continueCampaignWithoutCampaignStepAnswerCannotSend() async throws {
+        let service = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: service)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try continuationProjection(
+            ownerID: ownerID,
+            mode: campaignOnlyMode(),
+            answerTags: ["RetireInvestigatorAnswer"]
+        )
+        let continuation = try #require(projection.campaignContinuation)
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        #expect(prompt.readOnlyReason == .updateRequired)
+        #expect(!prompt.isRenderableQuestion)
+        #expect(await model.submitContinueCampaignAnswer(
+            prompt.identity,
+            step: continuation.nextStep
+        ) == .readOnly)
+        #expect(await connection.sentData.isEmpty)
     }
 
     @Test("Upgrade deck wrapper is fenced off when the server flag is false")
@@ -325,8 +386,8 @@ extension AppModelCampaignPromptTests {
         #expect(request.deckList == DeckListInput(deckList, urlOverride: fetchURL))
     }
 
-    @Test("Stale ChooseUpgradeDeck prompt cannot submit")
-    func staleChooseUpgradeDeckPromptCannotSubmit() async throws {
+    @Test("Stale ChooseUpgradeDeck prompt version cannot submit")
+    func staleChooseUpgradeDeckPromptVersionCannotSubmit() async throws {
         let gameService = ScriptedGameLifecycleService()
         let model = await makeSignedInModel(gameService: gameService)
         let gameID = GameID(UUID())
@@ -344,8 +405,10 @@ extension AppModelCampaignPromptTests {
             connection: FakeGameSocketConnection()
         )
         let stalePrompt = try #require(model.basicChoicePresentation(for: gameID))
-        model.liveGameStates[gameID] = .live(BoardProjectionBuilder.makeProjection(
-            from: BoardTestFixtures.snapshot(mode: campaignMode(canUpgradeDecks: true))
+        model.liveGameStates[gameID] = try .live(chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true),
+            questionVersion: stalePrompt.questionVersion + 1
         ))
 
         let result = await model.continueCampaignWithoutUpgrading(
@@ -355,6 +418,97 @@ extension AppModelCampaignPromptTests {
         )
 
         #expect(result == .failed(
+            "This deck prompt changed. Review the game and try again."
+        ))
+        #expect(await gameService.lastChooseDeckRequest == nil)
+    }
+
+    @Test("ChooseUpgradeDeck submission requires local prompt owner")
+    func chooseUpgradeDeckSubmissionRequiresLocalPromptOwner() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        try installPrompt(
+            chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        model.liveGameParticipantIdentities[gameID] = .spectator
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .failed(
+            "This deck prompt changed. Review the game and try again."
+        ))
+
+        let otherID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000002")
+        ))
+        model.liveGameParticipantIdentities[gameID] = .participant(otherID)
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .failed(
+            "This deck prompt changed. Review the game and try again."
+        ))
+        #expect(await gameService.lastChooseDeckRequest == nil)
+    }
+
+    @Test("ChooseUpgradeDeck prompt change during fetch blocks the PUT")
+    func chooseUpgradeDeckPromptChangeDuringFetchBlocksPut() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        try installPrompt(
+            chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        await deckService.setFetchGated(true)
+        let deckList = try deckListFixture()
+
+        let submission = Task { @MainActor in
+            await model.upgradeCampaignDeck(
+                from: "https://arkhamdb.com/decklist/view/4242",
+                investigatorId: "c01001",
+                in: gameID,
+                promptIdentity: prompt.identity
+            )
+        }
+        await deckService.waitUntilFetchPending(1)
+        model.liveGameStates[gameID] = try .live(chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true),
+            questionVersion: prompt.questionVersion + 1
+        ))
+        await deckService.resumeOldestFetch(with: .success(deckList))
+
+        #expect(await submission.value == .failed(
             "This deck prompt changed. Review the game and try again."
         ))
         #expect(await gameService.lastChooseDeckRequest == nil)
@@ -496,6 +650,45 @@ extension AppModelCampaignPromptTests {
                 "Der Server konnte dieses Deck nicht aktualisieren. Versuche es erneut."
             ))
         }
+    }
+
+    @Test("Campaign deck fetch surfaces server-authored operation messages verbatim")
+    func campaignDeckFetchSurfacesServerAuthoredOperationMessage() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        try installPrompt(
+            chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let message = "Fetch rejected: server details"
+        await deckService.enqueueFetch(.failure(
+            DeckServiceError.operationFailed(DeckOperationError(errorMsg: message))
+        ))
+
+        let result = await model.upgradeCampaignDeck(
+            from: "https://arkhamdb.com/decklist/view/4242",
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        )
+
+        #expect(result == .failed(message))
+        #expect(await gameService.lastChooseDeckRequest == nil)
     }
 
     @Test("Campaign deck upgrade surfaces server deck endpoint messages")
