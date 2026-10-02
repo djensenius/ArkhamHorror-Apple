@@ -176,6 +176,21 @@ struct BasicChoiceSemanticPresentationTests {
         #expect(submitted.isEmpty)
     }
 
+    @Test("Multi-select progress text localizes in German")
+    func multiSelectProgressLocalizesInGerman() throws {
+        let prompt = try prompt(
+            rawFixture: "question-generic-one-from-each",
+            presentationFixture: "question-presentation-generic-one-from-each",
+            semanticLocaleIdentifier: "de"
+        )
+
+        #expect(prompt.questionHint() == "Aus jeder Gruppe eine wählen (2 Gruppen übrig)")
+        #expect(
+            prompt.questionHintAccessibilityLabel()
+                == "Aus jeder Gruppe eine wählen (2 Gruppen übrig)"
+        )
+    }
+
     @Test("Changed semantic metadata changes prompt identity with raw bytes/version unchanged")
     func semanticMetadataParticipatesInIdentity() throws {
         let payload = try rawPayload("question-gathering-act-advance")

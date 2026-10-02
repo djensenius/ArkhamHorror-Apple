@@ -3,8 +3,19 @@
 "semantic.choice.accessibility.missingDescription" = "Diese Auswahl hat keine semantische Beschreibung und kann nicht aktiviert werden.";
 "semantic.choice.accessibility.readOnly" = "Diese Auswahl ist derzeit schreibgeschützt.";
 "semantic.choice.accessibility.activatesIndex" = "Aktiviert Auswahl %lld.";
+"semantic.choice.accessibility.completesSelection" = "Schließt diese Auswahl ab.";
+"semantic.choice.subtitle.completesSelection" = "Schließt diese Auswahl ab";
 
 "semantic.question.title.selections" = "Auswahlen treffen";
+"semantic.selection.progress.required.one" = "1 weitere wählen";
+"semantic.selection.progress.required.many" = "%lld weitere wählen";
+"semantic.selection.progress.upTo.one" = "Bis zu 1 weitere wählen";
+"semantic.selection.progress.upTo.many" = "Bis zu %lld weitere wählen";
+"semantic.selection.progress.atLeast.one" = "Mindestens 1 weitere wählen";
+"semantic.selection.progress.atLeast.many" = "Mindestens %lld weitere wählen";
+"semantic.selection.progress.oneFromEach.one" = "Aus jeder Gruppe eine wählen (1 Gruppe übrig)";
+"semantic.selection.progress.oneFromEach.many" = "Aus jeder Gruppe eine wählen (%lld Gruppen übrig)";
+"semantic.selection.progress.done" = "Fertig ist verfügbar";
 
 "amountPrompt.legend.amounts" = "Mengen wählen";
 "amountPrompt.legend.payment" = "Zahlungsmengen wählen";

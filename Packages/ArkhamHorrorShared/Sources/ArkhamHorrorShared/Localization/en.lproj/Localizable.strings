@@ -3,8 +3,19 @@
 "semantic.choice.accessibility.missingDescription" = "This choice has no semantic description and cannot be activated.";
 "semantic.choice.accessibility.readOnly" = "This choice is currently read-only.";
 "semantic.choice.accessibility.activatesIndex" = "Activates choice %lld.";
+"semantic.choice.accessibility.completesSelection" = "Finishes this selection.";
+"semantic.choice.subtitle.completesSelection" = "Completes this selection";
 
 "semantic.question.title.selections" = "Make selections";
+"semantic.selection.progress.required.one" = "Choose 1 more";
+"semantic.selection.progress.required.many" = "Choose %lld more";
+"semantic.selection.progress.upTo.one" = "Choose up to 1 more";
+"semantic.selection.progress.upTo.many" = "Choose up to %lld more";
+"semantic.selection.progress.atLeast.one" = "Choose at least 1 more";
+"semantic.selection.progress.atLeast.many" = "Choose at least %lld more";
+"semantic.selection.progress.oneFromEach.one" = "Choose one from each group (1 group left)";
+"semantic.selection.progress.oneFromEach.many" = "Choose one from each group (%lld groups left)";
+"semantic.selection.progress.done" = "Done is available";
 
 "amountPrompt.legend.amounts" = "Choose amounts";
 "amountPrompt.legend.payment" = "Choose payment amounts";
