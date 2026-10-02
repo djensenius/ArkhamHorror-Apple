@@ -185,6 +185,7 @@ struct CampaignUpgradeDeckSheet: View {
     @State private var isSubmitting = false
     @State private var failure: String?
     @State private var isSkipConfirmationPresented = false
+    @State private var submissionTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -274,7 +275,13 @@ struct CampaignUpgradeDeckSheet: View {
                     Button(campaignLocalized("campaign.upgrade.done", "Done")) {
                         dismiss()
                     }
+                    .disabled(isSubmitting)
                 }
+            }
+            .interactiveDismissDisabled(isSubmitting)
+            .onDisappear {
+                submissionTask?.cancel()
+                submissionTask = nil
             }
             .confirmationDialog(
                 campaignLocalized(
@@ -307,7 +314,8 @@ struct CampaignUpgradeDeckSheet: View {
     }
 
     private func submitUpgrade() {
-        Task {
+        submissionTask?.cancel()
+        submissionTask = Task { @MainActor in
             isSubmitting = true
             failure = nil
             let result = await model.upgradeCampaignDeck(
@@ -316,12 +324,14 @@ struct CampaignUpgradeDeckSheet: View {
                 in: gameID,
                 promptIdentity: promptIdentity
             )
+            guard !Task.isCancelled else { return }
             finish(result)
         }
     }
 
     private func continueWithoutUpgrading() {
-        Task {
+        submissionTask?.cancel()
+        submissionTask = Task { @MainActor in
             isSubmitting = true
             failure = nil
             let result = await model.continueCampaignWithoutUpgrading(
@@ -329,11 +339,13 @@ struct CampaignUpgradeDeckSheet: View {
                 in: gameID,
                 promptIdentity: promptIdentity
             )
+            guard !Task.isCancelled else { return }
             finish(result)
         }
     }
 
     private func finish(_ result: CampaignDeckUpgradeSubmissionResult) {
+        submissionTask = nil
         isSubmitting = false
         switch result {
         case .submitted:
