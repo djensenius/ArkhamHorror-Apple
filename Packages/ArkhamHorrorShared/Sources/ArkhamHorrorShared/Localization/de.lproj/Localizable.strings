@@ -16,6 +16,8 @@
 "semantic.selection.progress.oneFromEach.one" = "Aus jeder Gruppe eine wählen (1 Gruppe übrig)";
 "semantic.selection.progress.oneFromEach.many" = "Aus jeder Gruppe eine wählen (%lld Gruppen übrig)";
 "semantic.selection.progress.done" = "Fertig ist verfügbar";
+"semantic.choice.unavailable.completeSelection.one" = "Zuerst 1 weitere wählen";
+"semantic.choice.unavailable.completeSelection.many" = "Zuerst %lld weitere wählen";
 
 "amountPrompt.legend.amounts" = "Mengen wählen";
 "amountPrompt.legend.payment" = "Zahlungsmengen wählen";

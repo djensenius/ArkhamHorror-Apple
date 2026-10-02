@@ -349,7 +349,7 @@ extension AppModelLiveGameTests {
                 presentation: representativePresentationJSON(named: "chooseSome1"),
                 questionVersion: 306,
                 expectedHint: "Choose at least 1 more",
-                expectedDisplayedIndices: [0],
+                expectedDisplayedIndices: [0, 1],
                 completionIndex: 1,
                 completionIsActionable: false,
                 submitIndex: 0
@@ -416,8 +416,7 @@ extension AppModelLiveGameTests {
                 "\(testCase.name) accessibility hint"
             )
             #expect(
-                prompt.choices.filter { prompt.shouldDisplayChoice($0) }.map(\.index)
-                    == testCase.expectedDisplayedIndices,
+                prompt.displayOrderedChoices().map(\.index) == testCase.expectedDisplayedIndices,
                 "\(testCase.name) displayed choices"
             )
 
@@ -439,6 +438,11 @@ extension AppModelLiveGameTests {
                             == "Finishes this selection."
                     )
                 } else {
+                    #expect(prompt.displayTitle(for: completion, in: projection) == "Done")
+                    #expect(
+                        prompt.accessibilityHint(for: completion, in: projection)
+                            == "Choose 1 more first"
+                    )
                     #expect(
                         await model.submitBasicChoice(
                             prompt.identity,

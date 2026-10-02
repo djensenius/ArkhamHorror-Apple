@@ -217,8 +217,8 @@ extension BasicChoicePromptPresentation {
         descriptor(for: choice)?.completesSelection == true
     }
 
-    func shouldDisplayChoice(_ choice: BasicChoice) -> Bool {
-        !isCompletingSelection(choice) || selectionAllowsCompletion
+    func shouldDisplayChoice(_: BasicChoice) -> Bool {
+        true
     }
 
     func displayOrderedChoices() -> [BasicChoice] {
@@ -319,6 +319,23 @@ extension BasicChoicePromptPresentation {
         semanticLocalized(
             "semantic.selection.progress.done",
             value: "Done is available"
+        )
+    }
+
+    private func selectionCompletionUnavailableReason() -> String? {
+        guard let remaining = semanticPresentation?.presentation.selection?.min,
+              remaining > 0
+        else { return nil }
+        if remaining == 1 {
+            return semanticLocalized(
+                "semantic.choice.unavailable.completeSelection.one",
+                value: "Choose 1 more first"
+            )
+        }
+        return semanticLocalized(
+            "semantic.choice.unavailable.completeSelection.many",
+            value: "Choose \(remaining) more first",
+            arguments: [Int64(remaining)]
         )
     }
 
@@ -485,6 +502,12 @@ extension BasicChoicePromptPresentation {
         }
         let isActionable = isSemanticChoiceActionable(descriptor, in: projection)
         guard isActionable else {
+            let completionUnavailableReason = descriptor.completesSelection == true
+                ? selectionCompletionUnavailableReason()
+                : nil
+            if let completionUnavailableReason {
+                return completionUnavailableReason
+            }
             return semanticUnavailableAnnouncement(
                 for: descriptor,
                 labelResolution: choiceLabelResolutions[choice.index]
