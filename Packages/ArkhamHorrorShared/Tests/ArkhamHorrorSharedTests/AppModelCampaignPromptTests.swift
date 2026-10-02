@@ -6,9 +6,42 @@ actor CampaignPromptDeckService: DeckServicing {
     private(set) var lastFetchRequest: FetchDeckRequest?
     private(set) var callOrder: [String] = []
     private var fetchQueue: [Result<DeckList, any Error>] = []
+    private var isFetchGated = false
+    private var fetchContinuations: [CheckedContinuation<DeckList, any Error>] = []
+    private var fetchPendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
 
     func enqueueFetch(_ result: Result<DeckList, any Error>) {
         fetchQueue.append(result)
+    }
+
+    func setFetchGated(_ gated: Bool) {
+        isFetchGated = gated
+    }
+
+    func waitUntilFetchPending(_ count: Int) async {
+        if fetchContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { fetchPendingWaiters.append((count, $0)) }
+    }
+
+    func resumeOldestFetch(with result: Result<DeckList, any Error>) {
+        guard !fetchContinuations.isEmpty else { return }
+        let continuation = fetchContinuations.removeFirst()
+        switch result {
+        case let .success(value): continuation.resume(returning: value)
+        case let .failure(error): continuation.resume(throwing: error)
+        }
+    }
+
+    private func notifyFetchWaiters() {
+        fetchPendingWaiters.removeAll { entry in
+            guard fetchContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
     }
 
     private func consume<T>(_ queue: inout [Result<T, any Error>]) throws -> T {
@@ -25,6 +58,12 @@ actor CampaignPromptDeckService: DeckServicing {
     ) async throws -> DeckList {
         callOrder.append("fetchDeckList")
         lastFetchRequest = request
+        if isFetchGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                fetchContinuations.append(continuation)
+                notifyFetchWaiters()
+            }
+        }
         return try consume(&fetchQueue)
     }
 
@@ -316,6 +355,20 @@ struct AppModelCampaignPromptTests {
             deckService: deckService
         )
         let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        installPrompt(
+            try chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
         let deckList = try deckListFixture()
         await deckService.enqueueFetch(.success(deckList))
         await gameService.enqueueChooseDeckResult(.success(()))
@@ -323,7 +376,8 @@ struct AppModelCampaignPromptTests {
         let result = await model.upgradeCampaignDeck(
             from: "https://arkhamdb.com/decklist/view/4242",
             investigatorId: "c01001",
-            in: gameID
+            in: gameID,
+            promptIdentity: prompt.identity
         )
 
         #expect(result == .submitted)
@@ -344,11 +398,26 @@ struct AppModelCampaignPromptTests {
         let gameService = ScriptedGameLifecycleService()
         let model = await makeSignedInModel(gameService: gameService)
         let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        installPrompt(
+            try chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
         await gameService.enqueueChooseDeckResult(.success(()))
 
         let result = await model.continueCampaignWithoutUpgrading(
             investigatorId: "c01001",
-            in: gameID
+            in: gameID,
+            promptIdentity: prompt.identity
         )
 
         #expect(result == .submitted)

@@ -78,12 +78,14 @@ extension AppModelCampaignPromptTests {
         #expect(await model.upgradeCampaignDeck(
             from: "https://arkhamdb.com/decklist/view/4242",
             investigatorId: "c01001",
-            in: gameID
+            in: gameID,
+            promptIdentity: ownerPrompt.identity
         ) == .submitted)
         await gameService.enqueueChooseDeckResult(.success(()))
         #expect(await model.continueCampaignWithoutUpgrading(
             investigatorId: "c01001",
-            in: gameID
+            in: gameID,
+            promptIdentity: ownerPrompt.identity
         ) == .submitted)
 
         model.liveGameParticipantIdentities[gameID] = .spectator
@@ -247,6 +249,20 @@ extension AppModelCampaignPromptTests {
             deckService: deckService
         )
         let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        installPrompt(
+            try chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
         let deckList = try deckListFixture()
         await deckService.enqueueFetch(.success(deckList))
         await gameService.enqueueChooseDeckResult(.success(()))
@@ -254,7 +270,8 @@ extension AppModelCampaignPromptTests {
         let result = await model.upgradeCampaignDeck(
             from: "https://arkham.build/share/abc123",
             investigatorId: "c01001",
-            in: gameID
+            in: gameID,
+            promptIdentity: prompt.identity
         )
 
         #expect(result == .submitted)
@@ -274,6 +291,20 @@ extension AppModelCampaignPromptTests {
             deckService: deckService
         )
         let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        installPrompt(
+            try chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
         let deckList = try deckListFixture()
         await deckService.enqueueFetch(.success(deckList))
         await gameService.enqueueChooseDeckResult(.success(()))
@@ -281,7 +312,8 @@ extension AppModelCampaignPromptTests {
         let result = await model.upgradeCampaignDeck(
             from: "https://arkham.build/decklist/view/abc123",
             investigatorId: "c01001",
-            in: gameID
+            in: gameID,
+            promptIdentity: prompt.identity
         )
 
         #expect(result == .submitted)
@@ -290,6 +322,179 @@ extension AppModelCampaignPromptTests {
         let request = try #require(await gameService.lastChooseDeckRequest)
         #expect(request.deckUrl == fetchURL)
         #expect(request.deckList == DeckListInput(deckList, urlOverride: fetchURL))
+    }
+
+    @Test("Stale ChooseUpgradeDeck prompt cannot submit")
+    func staleChooseUpgradeDeckPromptCannotSubmit() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        installPrompt(
+            try chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let stalePrompt = try #require(model.basicChoicePresentation(for: gameID))
+        model.liveGameStates[gameID] = .live(BoardProjectionBuilder.makeProjection(
+            from: BoardTestFixtures.snapshot(mode: campaignMode(canUpgradeDecks: true))
+        ))
+
+        let result = await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: stalePrompt.identity
+        )
+
+        #expect(result == .failed(
+            "This deck prompt changed. Review the game and try again."
+        ))
+        #expect(await gameService.lastChooseDeckRequest == nil)
+    }
+
+    @Test("ChooseUpgradeDeck submission requires investigator ownership")
+    func chooseUpgradeDeckSubmissionRequiresInvestigatorOwnership() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        installPrompt(
+            try chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        let result = await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c99999",
+            in: gameID,
+            promptIdentity: prompt.identity
+        )
+
+        #expect(result == .failed(
+            "This investigator is no longer yours to update."
+        ))
+        #expect(await gameService.lastChooseDeckRequest == nil)
+    }
+
+    @Test("ChooseUpgradeDeck duplicate taps are deduplicated while the first is in flight")
+    func chooseUpgradeDeckDuplicateTapsDeduplicateInFlightSubmission() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        installPrompt(
+            try chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        await deckService.setFetchGated(true)
+        let deckList = try deckListFixture()
+
+        let firstSubmission = Task { @MainActor in
+            await model.upgradeCampaignDeck(
+                from: "https://arkhamdb.com/decklist/view/4242",
+                investigatorId: "c01001",
+                in: gameID,
+                promptIdentity: prompt.identity
+            )
+        }
+        await deckService.waitUntilFetchPending(1)
+
+        let duplicate = await model.upgradeCampaignDeck(
+            from: "https://arkhamdb.com/decklist/view/4242",
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        )
+
+        #expect(duplicate == .failed("A deck update is already being submitted."))
+        await gameService.enqueueChooseDeckResult(.success(()))
+        await deckService.resumeOldestFetch(with: .success(deckList))
+        #expect(await firstSubmission.value == .submitted)
+        let request = try #require(await gameService.lastChooseDeckRequest)
+        #expect(request.investigatorId.rawValue == "c01001")
+    }
+
+    @Test("Campaign prompt client errors localize in German")
+    func campaignPromptClientErrorsLocalizeInGerman() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        installPrompt(
+            try chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        await CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
+            #expect(await model.upgradeCampaignDeck(
+                from: "not a deck URL",
+                investigatorId: "c01001",
+                in: gameID,
+                promptIdentity: prompt.identity
+            ) == .failed(
+                "Gib eine https-ArkhamDB-Deck-/Decklisten-URL oder arkham.build-Deck-/Share-URL ein."
+            ))
+
+            await deckService.enqueueFetch(.failure(DeckServiceError.transportFailure("offline")))
+            #expect(await model.upgradeCampaignDeck(
+                from: "https://arkhamdb.com/decklist/view/4242",
+                investigatorId: "c01001",
+                in: gameID,
+                promptIdentity: prompt.identity
+            ) == .failed(
+                "Der Server konnte dieses Deck nicht abrufen. Versuche es erneut."
+            ))
+
+            await gameService.enqueueChooseDeckResult(.failure(GameLifecycleError.malformedPayload))
+            #expect(await model.continueCampaignWithoutUpgrading(
+                investigatorId: "c01001",
+                in: gameID,
+                promptIdentity: prompt.identity
+            ) == .failed(
+                "Der Server konnte dieses Deck nicht aktualisieren. Versuche es erneut."
+            ))
+        }
     }
 
     @Test("Campaign deck upgrade surfaces server deck endpoint messages")
@@ -301,6 +506,20 @@ extension AppModelCampaignPromptTests {
             deckService: deckService
         )
         let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        installPrompt(
+            try chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
         let message = "Could not upgrade deck: server details"
         try await deckService.enqueueFetch(.success(deckListFixture()))
         await gameService.enqueueChooseDeckResult(.failure(
@@ -310,7 +529,8 @@ extension AppModelCampaignPromptTests {
         let result = await model.upgradeCampaignDeck(
             from: "https://arkhamdb.com/decklist/view/4242",
             investigatorId: "c01001",
-            in: gameID
+            in: gameID,
+            promptIdentity: prompt.identity
         )
 
         #expect(result == .failed(message))

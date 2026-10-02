@@ -302,6 +302,8 @@ final class AppModel {
     @ObservationIgnored var liveGameConnections: [GameID: LiveGameConnectionHandle] = [:]
     /// Process-global answer authority: at most one claimed answer per game.
     var basicChoiceActions: [GameID: BasicChoiceActionRecord] = [:]
+    /// REST deck-upgrade submissions claimed for the live game currently being answered.
+    @ObservationIgnored var campaignDeckSubmissionGameIDs: Set<GameID> = []
     /// Sanitized room-wide feedback, never treated as correlated answer rejection.
     var basicChoiceServerFeedback: [GameID: String] = [:]
 

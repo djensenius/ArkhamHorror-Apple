@@ -109,8 +109,12 @@
 "campaign.between.continue" = "Fortsetzen";
 "campaign.between.upgradeDeck" = "Deck verbessern";
 "campaign.between.retry" = "Erneut versuchen";
+"campaign.error.deckPromptChanged" = "Diese Deck-Aufforderung hat sich geändert. Prüfe das Spiel und versuche es erneut.";
+"campaign.error.deckSubmissionInFlight" = "Eine Deck-Aktualisierung wird bereits gesendet.";
 "campaign.error.fetchDeckFailed" = "Der Server konnte dieses Deck nicht abrufen. Versuche es erneut.";
+"campaign.error.invalidDeckLink" = "Gib eine https-ArkhamDB-Deck-/Decklisten-URL oder arkham.build-Deck-/Share-URL ein.";
 "campaign.error.invalidInvestigator" = "Dieser Ermittler konnte nicht sicher gesendet werden.";
+"campaign.error.investigatorOwnerChanged" = "Dieser Ermittler gehört dir nicht mehr zur Aktualisierung.";
 "campaign.error.sessionExpiredDecks" = "Deine Sitzung ist abgelaufen. Melde dich erneut an, um Decks zu verwalten.";
 "campaign.error.signInContinue" = "Melde dich erneut an, um diese Kampagne fortzusetzen.";
 "campaign.error.signInUpgrade" = "Melde dich erneut an, um dieses Deck zu verbessern.";

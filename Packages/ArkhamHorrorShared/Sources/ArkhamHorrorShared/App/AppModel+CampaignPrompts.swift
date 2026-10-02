@@ -13,6 +13,7 @@ enum CampaignDeckUpgradeSubmissionResult: Sendable, Equatable {
 private struct CampaignDeckSubmissionContext: Sendable {
     let profile: ServerProfile
     let deckContext: DeckRequestContext
+    let promptIdentity: BasicChoicePromptIdentity
 }
 
 extension AppModel {
@@ -23,7 +24,8 @@ extension AppModel {
     func upgradeCampaignDeck(
         from rawURL: String,
         investigatorId rawInvestigatorId: String,
-        in gameID: GameID
+        in gameID: GameID,
+        promptIdentity: BasicChoicePromptIdentity
     ) async -> CampaignDeckUpgradeSubmissionResult {
         let profile: ServerProfile
         guard case let .signedIn(signedInProfile, _, _) = sessionState else {
@@ -34,13 +36,29 @@ extension AppModel {
         }
         profile = signedInProfile
 
+        guard let investigatorId = try? InvestigatorCode(rawInvestigatorId) else {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.invalidInvestigator",
+                "This investigator could not be sent safely."
+            ))
+        }
+        if let failure = beginCampaignDeckSubmission(
+            promptIdentity: promptIdentity,
+            investigatorId: investigatorId,
+            in: gameID
+        ) {
+            return failure
+        }
+        defer { finishCampaignDeckSubmission(promptIdentity: promptIdentity) }
+
         let fetchURL: String
         do {
             fetchURL = try DeckImportURL.parse(rawURL).fetchURL
-        } catch let error as DeckImportURL.ParseError {
-            return .failed(error.message)
         } catch {
-            return .failed(DeckImportURL.ParseError.invalid.message)
+            return .failed(campaignPromptLocalized(
+                "campaign.error.invalidDeckLink",
+                "Enter an https ArkhamDB deck/decklist URL or arkham.build deck/share URL."
+            ))
         }
 
         let context: DeckRequestContext
@@ -62,7 +80,7 @@ extension AppModel {
             if case .sessionExpired = error {
                 await handleDeckSessionExpired(profile: profile, context: context)
             }
-            return .failed(error.message)
+            return .failed(campaignDeckFetchFailureMessage(error))
         } catch {
             return .failed(campaignPromptLocalized(
                 "campaign.error.fetchDeckFailed",
@@ -73,15 +91,20 @@ extension AppModel {
         return await submitCampaignDeck(
             deckURL: fetchURL,
             deckList: DeckListInput(deckList, urlOverride: fetchURL),
-            investigatorId: rawInvestigatorId,
+            investigatorId: investigatorId,
             gameID: gameID,
-            context: CampaignDeckSubmissionContext(profile: profile, deckContext: context)
+            context: CampaignDeckSubmissionContext(
+                profile: profile,
+                deckContext: context,
+                promptIdentity: promptIdentity
+            )
         )
     }
 
     func continueCampaignWithoutUpgrading(
         investigatorId rawInvestigatorId: String,
-        in gameID: GameID
+        in gameID: GameID,
+        promptIdentity: BasicChoicePromptIdentity
     ) async -> CampaignDeckUpgradeSubmissionResult {
         let profile: ServerProfile
         guard case let .signedIn(signedInProfile, _, _) = sessionState else {
@@ -91,6 +114,21 @@ extension AppModel {
             ))
         }
         profile = signedInProfile
+
+        guard let investigatorId = try? InvestigatorCode(rawInvestigatorId) else {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.invalidInvestigator",
+                "This investigator could not be sent safely."
+            ))
+        }
+        if let failure = beginCampaignDeckSubmission(
+            promptIdentity: promptIdentity,
+            investigatorId: investigatorId,
+            in: gameID
+        ) {
+            return failure
+        }
+        defer { finishCampaignDeckSubmission(promptIdentity: promptIdentity) }
 
         let context: DeckRequestContext
         do {
@@ -105,24 +143,86 @@ extension AppModel {
         return await submitCampaignDeck(
             deckURL: nil,
             deckList: nil,
-            investigatorId: rawInvestigatorId,
+            investigatorId: investigatorId,
             gameID: gameID,
-            context: CampaignDeckSubmissionContext(profile: profile, deckContext: context)
+            context: CampaignDeckSubmissionContext(
+                profile: profile,
+                deckContext: context,
+                promptIdentity: promptIdentity
+            )
         )
+    }
+
+    private func beginCampaignDeckSubmission(
+        promptIdentity: BasicChoicePromptIdentity,
+        investigatorId: InvestigatorCode,
+        in gameID: GameID
+    ) -> CampaignDeckUpgradeSubmissionResult? {
+        if let failure = validateCampaignDeckPrompt(
+            promptIdentity: promptIdentity,
+            investigatorId: investigatorId,
+            in: gameID
+        ) {
+            return failure
+        }
+        guard !campaignDeckSubmissionGameIDs.contains(gameID) else {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.deckSubmissionInFlight",
+                "A deck update is already being submitted."
+            ))
+        }
+        campaignDeckSubmissionGameIDs.insert(gameID)
+        return nil
+    }
+
+    private func finishCampaignDeckSubmission(promptIdentity: BasicChoicePromptIdentity) {
+        campaignDeckSubmissionGameIDs.remove(promptIdentity.gameID)
+    }
+
+    private func validateCampaignDeckPrompt(
+        promptIdentity: BasicChoicePromptIdentity,
+        investigatorId: InvestigatorCode,
+        in gameID: GameID
+    ) -> CampaignDeckUpgradeSubmissionResult? {
+        guard case let .participant(playerID) = liveGameParticipantIdentities[gameID],
+              playerID == promptIdentity.ownerID,
+              let prompt = basicChoicePresentation(for: gameID),
+              prompt.identity == promptIdentity,
+              prompt.isChooseUpgradeDeckPrompt,
+              prompt.canUseCampaignDeckPrompt
+        else {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.deckPromptChanged",
+                "This deck prompt changed. Review the game and try again."
+            ))
+        }
+        guard let projection = liveGameStates[gameID]?.lastKnownProjection,
+              projection.investigators.contains(where: { investigator in
+                  investigator.playerID == playerID
+                      && investigator.id.rawValue.rawValue == investigatorId.rawValue
+              })
+        else {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.investigatorOwnerChanged",
+                "This investigator is no longer yours to update."
+            ))
+        }
+        return nil
     }
 
     private func submitCampaignDeck(
         deckURL: String?,
         deckList: DeckListInput?,
-        investigatorId rawInvestigatorId: String,
+        investigatorId: InvestigatorCode,
         gameID: GameID,
         context: CampaignDeckSubmissionContext
     ) async -> CampaignDeckUpgradeSubmissionResult {
-        guard let investigatorId = try? InvestigatorCode(rawInvestigatorId) else {
-            return .failed(campaignPromptLocalized(
-                "campaign.error.invalidInvestigator",
-                "This investigator could not be sent safely."
-            ))
+        if let failure = validateCampaignDeckPrompt(
+            promptIdentity: context.promptIdentity,
+            investigatorId: investigatorId,
+            in: gameID
+        ) {
+            return failure
         }
         do {
             try await gameLifecycleService.chooseDeck(
@@ -144,7 +244,7 @@ extension AppModel {
                     context: context.deckContext
                 )
             }
-            return .failed(error.message)
+            return .failed(campaignDeckUpdateFailureMessage(error))
         } catch {
             return .failed(campaignPromptLocalized(
                 "campaign.error.updateDeckFailed",
@@ -154,6 +254,63 @@ extension AppModel {
     }
 }
 
+enum CampaignPromptLocalization {
+    @TaskLocal static var localizationIdentifierOverride: String?
+
+    @MainActor
+    static func localized(_ key: String, _ fallback: String) -> String {
+        let bundle: Bundle
+        if let localizationIdentifierOverride,
+           let path = Bundle.module.path(
+               forResource: localizationIdentifierOverride,
+               ofType: "lproj"
+           ),
+           let localizedBundle = Bundle(path: path) {
+            bundle = localizedBundle
+        } else {
+            bundle = .module
+        }
+        return NSLocalizedString(key, bundle: bundle, value: fallback, comment: "")
+    }
+}
+
+@MainActor
 private func campaignPromptLocalized(_ key: String, _ fallback: String) -> String {
-    NSLocalizedString(key, bundle: .module, value: fallback, comment: "")
+    CampaignPromptLocalization.localized(key, fallback)
+}
+
+@MainActor
+private func campaignDeckFetchFailureMessage(_ error: DeckServiceError) -> String {
+    switch error {
+    case .operationFailed(let operationError):
+        operationError.errorMsg
+    case .sessionExpired:
+        campaignPromptLocalized(
+            "campaign.error.sessionExpiredDecks",
+            "Your session expired. Sign in again to manage decks."
+        )
+    default:
+        campaignPromptLocalized(
+            "campaign.error.fetchDeckFailed",
+            "The server could not fetch that deck. Try again."
+        )
+    }
+}
+
+@MainActor
+private func campaignDeckUpdateFailureMessage(_ error: GameLifecycleError) -> String {
+    switch error {
+    case .operationFailed(let operationError):
+        operationError.errorMsg
+    case .sessionExpired:
+        campaignPromptLocalized(
+            "campaign.error.sessionExpiredDecks",
+            "Your session expired. Sign in again to manage decks."
+        )
+    default:
+        campaignPromptLocalized(
+            "campaign.error.updateDeckFailed",
+            "The server could not update that deck. Try again."
+        )
+    }
 }

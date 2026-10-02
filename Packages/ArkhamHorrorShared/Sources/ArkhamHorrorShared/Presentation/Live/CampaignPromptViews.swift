@@ -154,6 +154,7 @@ struct BetweenScenariosView: View {
                 CampaignUpgradeDeckSheet(
                     model: model,
                     gameID: gameID,
+                    promptIdentity: prompt.identity,
                     investigator: investigator
                 )
             }
@@ -176,6 +177,7 @@ struct BetweenScenariosView: View {
 struct CampaignUpgradeDeckSheet: View {
     let model: AppModel
     let gameID: GameID
+    let promptIdentity: BasicChoicePromptIdentity
     let investigator: BoardInvestigatorNode
 
     @Environment(\.dismiss) private var dismiss
@@ -311,7 +313,8 @@ struct CampaignUpgradeDeckSheet: View {
             let result = await model.upgradeCampaignDeck(
                 from: deckURL,
                 investigatorId: investigator.id.rawValue.rawValue,
-                in: gameID
+                in: gameID,
+                promptIdentity: promptIdentity
             )
             finish(result)
         }
@@ -323,7 +326,8 @@ struct CampaignUpgradeDeckSheet: View {
             failure = nil
             let result = await model.continueCampaignWithoutUpgrading(
                 investigatorId: investigator.id.rawValue.rawValue,
-                in: gameID
+                in: gameID,
+                promptIdentity: promptIdentity
             )
             finish(result)
         }

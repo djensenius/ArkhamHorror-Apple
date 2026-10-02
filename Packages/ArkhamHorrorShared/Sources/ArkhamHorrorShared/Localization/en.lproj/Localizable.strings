@@ -109,8 +109,12 @@
 "campaign.between.continue" = "Continue";
 "campaign.between.upgradeDeck" = "Upgrade deck";
 "campaign.between.retry" = "Retry";
+"campaign.error.deckPromptChanged" = "This deck prompt changed. Review the game and try again.";
+"campaign.error.deckSubmissionInFlight" = "A deck update is already being submitted.";
 "campaign.error.fetchDeckFailed" = "The server could not fetch that deck. Try again.";
+"campaign.error.invalidDeckLink" = "Enter an https ArkhamDB deck/decklist URL or arkham.build deck/share URL.";
 "campaign.error.invalidInvestigator" = "This investigator could not be sent safely.";
+"campaign.error.investigatorOwnerChanged" = "This investigator is no longer yours to update.";
 "campaign.error.sessionExpiredDecks" = "Your session expired. Sign in again to manage decks.";
 "campaign.error.signInContinue" = "Sign in again to continue this campaign.";
 "campaign.error.signInUpgrade" = "Sign in again to upgrade this deck.";
