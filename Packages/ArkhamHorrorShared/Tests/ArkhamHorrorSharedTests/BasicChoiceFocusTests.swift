@@ -1,10 +1,10 @@
-// swiftlint:disable type_body_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
 
 @MainActor
 @Suite("Basic choice focus")
+// swiftlint:disable:next type_body_length
 struct BasicChoiceFocusTests {
     private func actionablePrompt() throws -> BasicChoicePromptPresentation {
         let payload = try ContractJSON.decode(
