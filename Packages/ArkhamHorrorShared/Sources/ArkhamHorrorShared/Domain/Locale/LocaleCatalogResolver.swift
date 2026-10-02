@@ -10,6 +10,11 @@ private struct LocaleCatalogResolutionKey: Hashable {
     let key: String
 }
 
+struct LocaleCatalogRenderedNodes: Sendable, Equatable {
+    let nodes: [StoryNode]
+    let degradedReason: StoryUnavailableReason?
+}
+
 /// Resolves an entry against one immutable snapshot without crossing locale contexts.
 struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_length
     let snapshot: LocaleCatalogSnapshot
@@ -30,13 +35,32 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         key: String, variables: JSONValue
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         var budget = LocaleCatalogLimits.maxRenderedNodes
+        var degradedReason: StoryUnavailableReason?
         return render(
             key: key,
             startingLocale: snapshot.identity.locale,
             variables: variables,
             visiting: [],
-            budget: &budget
+            budget: &budget,
+            imageFallback: false,
+            degradedReason: &degradedReason
         )
+    }
+
+    func renderAllowingImageFallback(
+        key: String, variables: JSONValue
+    ) -> Result<LocaleCatalogRenderedNodes, StoryUnavailableReason> {
+        var budget = LocaleCatalogLimits.maxRenderedNodes
+        var degradedReason: StoryUnavailableReason?
+        return render(
+            key: key,
+            startingLocale: snapshot.identity.locale,
+            variables: variables,
+            visiting: [],
+            budget: &budget,
+            imageFallback: true,
+            degradedReason: &degradedReason
+        ).map { LocaleCatalogRenderedNodes(nodes: $0, degradedReason: degradedReason) }
     }
 
     private func render(
@@ -44,7 +68,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         startingLocale: String,
         variables: JSONValue,
         visiting: Set<LocaleCatalogResolutionKey>,
-        budget: inout Int
+        budget: inout Int,
+        imageFallback: Bool,
+        degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         guard visiting.count < LocaleCatalogLimits.maxLinkDepth else {
             return .failure(.tooComplex)
@@ -82,7 +108,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             locale: located.locale,
             variables: variables,
             visiting: nextVisiting,
-            budget: &budget
+            budget: &budget,
+            imageFallback: imageFallback,
+            degradedReason: &degradedReason
         )
     }
 
@@ -103,7 +131,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         locale: String,
         variables: JSONValue,
         visiting: Set<LocaleCatalogResolutionKey>,
-        budget: inout Int
+        budget: inout Int,
+        imageFallback: Bool,
+        degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         var rendered: [StoryNode] = []
         rendered.reserveCapacity(nodes.count)
@@ -115,7 +145,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
                 locale: locale,
                 variables: variables,
                 visiting: visiting,
-                budget: &budget
+                budget: &budget,
+                imageFallback: imageFallback,
+                degradedReason: &degradedReason
             ) {
             case let .success(children):
                 rendered.append(contentsOf: children)
@@ -132,7 +164,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         locale: String,
         variables: JSONValue,
         visiting: Set<LocaleCatalogResolutionKey>,
-        budget: inout Int
+        budget: inout Int,
+        imageFallback: Bool,
+        degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         switch node {
         case let .text(text):
@@ -146,22 +180,30 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
                 locale: locale,
                 variables: variables,
                 visiting: visiting,
-                budget: &budget
+                budget: &budget,
+                imageFallback: imageFallback,
+                degradedReason: &degradedReason
             )
         case .lineBreak:
             .success([.lineBreak])
         case .rule:
             .success([.rule])
         case let .block(isParagraph, children):
-            mapChildren(children, locale, variables, visiting, &budget) {
+            mapChildren(
+                children, locale, variables, visiting, &budget, imageFallback, &degradedReason
+            ) {
                 isParagraph ? .paragraph($0) : .group($0)
             }
         case let .heading(level, children):
-            mapChildren(children, locale, variables, visiting, &budget) {
+            mapChildren(
+                children, locale, variables, visiting, &budget, imageFallback, &degradedReason
+            ) {
                 .heading(level: level, children: $0)
             }
         case let .emphasis(style, children):
-            mapChildren(children, locale, variables, visiting, &budget) {
+            mapChildren(
+                children, locale, variables, visiting, &budget, imageFallback, &degradedReason
+            ) {
                 .emphasis(style, $0)
             }
         case let .list(ordered, items):
@@ -171,12 +213,19 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
                 locale: locale,
                 variables: variables,
                 visiting: visiting,
-                budget: &budget
+                budget: &budget,
+                imageFallback: imageFallback,
+                degradedReason: &degradedReason
             )
         case let .image(role, assetPath, alt):
-            renderImage(role: role, assetPath: assetPath, alt: alt)
+            renderImage(
+                role: role, assetPath: assetPath, alt: alt,
+                imageFallback: imageFallback, degradedReason: &degradedReason
+            )
         case let .cardReference(code, children):
-            mapChildren(children, locale, variables, visiting, &budget) {
+            mapChildren(
+                children, locale, variables, visiting, &budget, imageFallback, &degradedReason
+            ) {
                 .cardReference(code: code, children: $0)
             }
         case let .table(head, body):
@@ -186,25 +235,64 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
                 locale: locale,
                 variables: variables,
                 visiting: visiting,
-                budget: &budget
+                budget: &budget,
+                imageFallback: imageFallback,
+                degradedReason: &degradedReason
             )
         }
     }
 
     private func renderImage(
-        role: LocaleCatalogAssetRole, assetPath: String, alt: String?
+        role: LocaleCatalogAssetRole,
+        assetPath: String,
+        alt: String?,
+        imageFallback: Bool,
+        degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         guard CatalogImageAsset(role: role, assetPath: assetPath) != nil else {
-            return .failure(.unsupportedEntry)
+            return imageFallbackResult(
+                reason: .unsupportedEntry,
+                fallbackText: alt,
+                imageFallback: imageFallback,
+                degradedReason: &degradedReason
+            )
         }
         let reference = StoryAssetReference(
             role: role, assetPath: assetPath, alt: alt, source: assetSource
         )
         guard reference.hasMeaningfulAccessibleDescription else {
-            return .failure(.unsupportedEntry)
+            return imageFallbackResult(
+                reason: .unsupportedEntry,
+                fallbackText: alt,
+                imageFallback: imageFallback,
+                degradedReason: &degradedReason
+            )
         }
-        guard reference.assetKey != nil else { return .failure(assetUnavailability) }
+        guard reference.assetKey != nil else {
+            return imageFallbackResult(
+                reason: assetUnavailability,
+                fallbackText: reference.accessibleDescription,
+                imageFallback: imageFallback,
+                degradedReason: &degradedReason
+            )
+        }
         return .success([.image(reference)])
+    }
+
+    private func imageFallbackResult(
+        reason: StoryUnavailableReason,
+        fallbackText: String?,
+        imageFallback: Bool,
+        degradedReason: inout StoryUnavailableReason?
+    ) -> Result<[StoryNode], StoryUnavailableReason> {
+        guard imageFallback else { return .failure(reason) }
+        if degradedReason == nil {
+            degradedReason = reason
+        }
+        guard let fallbackText,
+              !fallbackText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return .success([]) }
+        return .success([.text(fallbackText)])
     }
 
     // swiftlint:disable:next function_parameter_count
@@ -214,6 +302,8 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         _ variables: JSONValue,
         _ visiting: Set<LocaleCatalogResolutionKey>,
         _ budget: inout Int,
+        _ imageFallback: Bool,
+        _ degradedReason: inout StoryUnavailableReason?,
         _ transform: ([StoryNode]) -> StoryNode
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         render(
@@ -221,7 +311,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             locale: locale,
             variables: variables,
             visiting: visiting,
-            budget: &budget
+            budget: &budget,
+            imageFallback: imageFallback,
+            degradedReason: &degradedReason
         ).map { [transform($0)] }
     }
 
@@ -232,7 +324,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         locale: String,
         variables: JSONValue,
         visiting: Set<LocaleCatalogResolutionKey>,
-        budget: inout Int
+        budget: inout Int,
+        imageFallback: Bool,
+        degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         var rendered: [[StoryNode]] = []
         rendered.reserveCapacity(items.count)
@@ -242,7 +336,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
                 locale: locale,
                 variables: variables,
                 visiting: visiting,
-                budget: &budget
+                budget: &budget,
+                imageFallback: imageFallback,
+                degradedReason: &degradedReason
             ) {
             case let .success(children):
                 rendered.append(children)
@@ -260,13 +356,15 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         locale: String,
         variables: JSONValue,
         visiting: Set<LocaleCatalogResolutionKey>,
-        budget: inout Int
+        budget: inout Int,
+        imageFallback: Bool,
+        degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
-        switch renderRows(head, locale, variables, visiting, &budget) {
+        switch renderRows(head, locale, variables, visiting, &budget, imageFallback, &degradedReason) {
         case let .failure(reason):
             .failure(reason)
         case let .success(renderedHead):
-            switch renderRows(body, locale, variables, visiting, &budget) {
+            switch renderRows(body, locale, variables, visiting, &budget, imageFallback, &degradedReason) {
             case let .failure(reason):
                 .failure(reason)
             case let .success(renderedBody):
@@ -280,7 +378,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         _ locale: String,
         _ variables: JSONValue,
         _ visiting: Set<LocaleCatalogResolutionKey>,
-        _ budget: inout Int
+        _ budget: inout Int,
+        _ imageFallback: Bool,
+        _ degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryTableRow], StoryUnavailableReason> {
         var rendered: [StoryTableRow] = []
         rendered.reserveCapacity(rows.count)
@@ -293,7 +393,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
                     locale: locale,
                     variables: variables,
                     visiting: visiting,
-                    budget: &budget
+                    budget: &budget,
+                    imageFallback: imageFallback,
+                    degradedReason: &degradedReason
                 ) {
                 case let .success(children):
                     cells.append(StoryTableCell(isHeader: cell.isHeader, children: children))
@@ -330,7 +432,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         locale: String,
         variables: JSONValue,
         visiting: Set<LocaleCatalogResolutionKey>,
-        budget: inout Int
+        budget: inout Int,
+        imageFallback: Bool,
+        degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         let key: String
         switch target {
@@ -350,7 +454,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             startingLocale: locale,
             variables: variables,
             visiting: visiting,
-            budget: &budget
+            budget: &budget,
+            imageFallback: imageFallback,
+            degradedReason: &degradedReason
         )
         guard let modifier else { return rendered }
         return rendered.map { Self.applyModifier(modifier, to: $0) }

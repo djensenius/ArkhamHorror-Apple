@@ -4,6 +4,17 @@ import Foundation
 struct ResolvedStory: Sendable, Equatable {
     let title: String?
     let body: [ResolvedStoryEntry]
+    let degradedReason: StoryUnavailableReason?
+
+    init(
+        title: String?,
+        body: [ResolvedStoryEntry],
+        degradedReason: StoryUnavailableReason? = nil
+    ) {
+        self.title = title
+        self.body = body
+        self.degradedReason = degradedReason
+    }
 }
 
 /// A safe story entry. Catalog-backed entries retain their structured native render tree;
@@ -40,8 +51,12 @@ enum StoryResolution: Sendable, Equatable {
     }
 
     var unavailableReason: StoryUnavailableReason? {
-        guard case let .unavailable(reason) = self else { return nil }
-        return reason
+        switch self {
+        case let .unavailable(reason):
+            reason
+        case let .resolved(story):
+            story.degradedReason
+        }
     }
 
     var isResolved: Bool {

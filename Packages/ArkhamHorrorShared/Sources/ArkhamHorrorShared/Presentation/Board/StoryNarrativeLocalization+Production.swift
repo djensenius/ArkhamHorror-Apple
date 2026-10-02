@@ -1,5 +1,25 @@
 import Foundation
 
+struct ProductionTitleResolution {
+    let title: String?
+    let degradedReason: StoryUnavailableReason?
+}
+
+struct ProductionEntryResolution {
+    let entry: ResolvedStoryEntry
+    let degradedReason: StoryUnavailableReason?
+}
+
+struct ProductionEntriesResolution {
+    let entries: [ResolvedStoryEntry]
+    let degradedReason: StoryUnavailableReason?
+}
+
+struct ProductionListItemResolution {
+    let item: ResolvedStoryListItem
+    let degradedReason: StoryUnavailableReason?
+}
+
 // MARK: - Production catalog resolution
 
 extension StoryNarrativeLocalization {
@@ -8,15 +28,16 @@ extension StoryNarrativeLocalization {
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
     ) -> Result<ResolvedStory, StoryUnavailableReason> {
-        switch resolveProductionTitle(
+        switch resolveProductionStoryTitle(
             flavorText.title,
             resolver: resolver,
             catalogUnavailability: catalogUnavailability
         ) {
         case let .failure(reason):
             return .failure(reason)
-        case let .success(title):
+        case let .success(titleResolution):
             var body: [ResolvedStoryEntry] = []
+            var degradedReason = titleResolution.degradedReason
             body.reserveCapacity(flavorText.body.count)
             for entry in flavorText.body {
                 switch resolveProductionEntry(
@@ -25,12 +46,17 @@ extension StoryNarrativeLocalization {
                     catalogUnavailability: catalogUnavailability
                 ) {
                 case let .success(resolved):
-                    body.append(resolved)
+                    body.append(resolved.entry)
+                    degradedReason = degradedReason.combined(with: resolved.degradedReason)
                 case let .failure(reason):
                     return .failure(reason)
                 }
             }
-            return .success(ResolvedStory(title: title, body: body))
+            return .success(ResolvedStory(
+                title: titleResolution.title,
+                body: body,
+                degradedReason: degradedReason
+            ))
         }
     }
 
@@ -40,8 +66,26 @@ extension StoryNarrativeLocalization {
         catalogUnavailability: StoryUnavailableReason,
         fallsBackToServerKey: Bool = true
     ) -> Result<String?, StoryUnavailableReason> {
-        guard let rawTitle else { return .success(nil) }
-        guard rawTitle.hasPrefix("$") else { return .success(rawTitle) }
+        resolveProductionStoryTitle(
+            rawTitle,
+            resolver: resolver,
+            catalogUnavailability: catalogUnavailability,
+            fallsBackToServerKey: fallsBackToServerKey
+        ).map(\.title)
+    }
+
+    static func resolveProductionStoryTitle(
+        _ rawTitle: String?,
+        resolver: LocaleCatalogResolver?,
+        catalogUnavailability: StoryUnavailableReason,
+        fallsBackToServerKey: Bool = true
+    ) -> Result<ProductionTitleResolution, StoryUnavailableReason> {
+        guard let rawTitle else {
+            return .success(ProductionTitleResolution(title: nil, degradedReason: nil))
+        }
+        guard rawTitle.hasPrefix("$") else {
+            return .success(ProductionTitleResolution(title: rawTitle, degradedReason: nil))
+        }
         let key = String(rawTitle.dropFirst())
         switch resolveKey(
             key,
@@ -51,16 +95,24 @@ extension StoryNarrativeLocalization {
         ) {
         case let .failure(reason):
             guard fallsBackToServerKey,
-                  let fallback = readableFallback(for: reason, key: key, variables: .object([:]))
+                  let fallback = readableFallback(
+                      for: reason, key: key, variables: .object([:]), resolver: resolver
+                  )
             else {
                 return .failure(reason)
             }
-            return .success(fallback)
-        case let .success(nodes):
-            guard !nodes.contains(where: \.losesInstructionWhenFlattened) else {
+            return .success(ProductionTitleResolution(
+                title: fallback,
+                degradedReason: degradedReason(for: reason, resolver: resolver)
+            ))
+        case let .success(rendered):
+            guard !rendered.nodes.contains(where: \.losesInstructionWhenFlattened) else {
                 return .failure(.unsupportedEntry)
             }
-            return .success(nodes.map(\.plainText).joined())
+            return .success(ProductionTitleResolution(
+                title: rendered.nodes.map(\.plainText).joined(),
+                degradedReason: rendered.degradedReason
+            ))
         }
     }
 
@@ -91,74 +143,95 @@ extension StoryNarrativeLocalization {
         _ entry: FlavorTextEntry,
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
-    ) -> Result<ResolvedStoryEntry, StoryUnavailableReason> {
+    ) -> Result<ProductionEntryResolution, StoryUnavailableReason> {
         switch entry {
         case let .basic(text):
-            return resolveProductionBasicEntry(
+            resolveProductionBasicEntry(
                 text,
                 resolver: resolver,
                 catalogUnavailability: catalogUnavailability
             )
         case let .header(level, key):
-            if let resolver {
-                return resolver.render(key: key, variables: .object([:]))
-                    .map { .heading(level: level, nodes: $0) }
-                    .fallbackEntry(key: key, variables: .object([:])) { fallback in
-                        .heading(level: level, nodes: [.text(fallback)])
-                    }
-            }
-            return resolveKey(
+            resolveProductionCatalogEntry(
                 key,
                 variables: .object([:]),
-                resolver: nil,
+                resolver: resolver,
                 catalogUnavailability: catalogUnavailability
-            ).map { .heading(level: level, nodes: $0) }
-                .fallbackEntry(key: key, variables: .object([:])) { fallback in
-                    .heading(level: level, nodes: [.text(fallback)])
-                }
+            ) { fallback in
+                .heading(level: level, nodes: [.text(fallback)])
+            } makeResolved: { rendered in
+                .heading(level: level, nodes: rendered.nodes)
+            }
         case let .i18n(key, variables):
-            return resolveProductionI18nEntry(
+            resolveProductionI18nEntry(
                 key,
                 variables: variables,
                 resolver: resolver,
                 catalogUnavailability: catalogUnavailability
             )
         case let .modify(modifiers, entry):
-            return resolveProductionEntry(
+            resolveProductionEntry(
                 entry,
                 resolver: resolver,
                 catalogUnavailability: catalogUnavailability
-            ).map { .modified(modifiers: modifiers, entry: $0) }
+            ).map {
+                ProductionEntryResolution(
+                    entry: .modified(modifiers: modifiers, entry: $0.entry),
+                    degradedReason: $0.degradedReason
+                )
+            }
         case let .composite(entries):
-            return resolveProductionEntries(
+            resolveProductionEntries(
                 entries,
                 resolver: resolver,
                 catalogUnavailability: catalogUnavailability
-            ).map { .composite(entries: $0) }
+            ).map {
+                ProductionEntryResolution(
+                    entry: .composite(entries: $0.entries),
+                    degradedReason: $0.degradedReason
+                )
+            }
         case let .column(entries):
-            return resolveProductionEntries(
+            resolveProductionEntries(
                 entries,
                 resolver: resolver,
                 catalogUnavailability: catalogUnavailability
-            ).map { .columns(entries: $0) }
+            ).map {
+                ProductionEntryResolution(
+                    entry: .columns(entries: $0.entries),
+                    degradedReason: $0.degradedReason
+                )
+            }
         case let .list(items):
-            return resolveProductionListEntry(
+            resolveProductionListEntry(
                 items,
                 resolver: resolver,
                 catalogUnavailability: catalogUnavailability
             )
         case let .card(cardCode, imageModifiers):
-            return .success(.cardReference(cardCode: cardCode, imageModifiers: imageModifiers))
+            .success(ProductionEntryResolution(
+                entry: .cardReference(cardCode: cardCode, imageModifiers: imageModifiers),
+                degradedReason: nil
+            ))
         case let .tarot(arcana):
-            return .success(.tarotReference(arcana: arcana))
+            .success(ProductionEntryResolution(
+                entry: .tarotReference(arcana: arcana), degradedReason: nil
+            ))
         case let .chaosToken(face):
-            return .success(.chaosTokenReference(face: face))
+            .success(ProductionEntryResolution(
+                entry: .chaosTokenReference(face: face), degradedReason: nil
+            ))
         case let .chaosTokenMorph(from, target):
-            return .success(.chaosTokenMorph(from: from, target: target))
+            .success(ProductionEntryResolution(
+                entry: .chaosTokenMorph(from: from, target: target), degradedReason: nil
+            ))
         case .split:
-            return .success(.divider)
+            .success(ProductionEntryResolution(entry: .divider, degradedReason: nil))
         case let .unknown(tag, text):
-            return .success(.text(readableUnknownEntry(tag: tag, text: text)))
+            .success(ProductionEntryResolution(
+                entry: .text(readableUnknownEntry(tag: tag, text: text)),
+                degradedReason: nil
+            ))
         }
     }
 
@@ -166,19 +239,22 @@ extension StoryNarrativeLocalization {
         _ text: String,
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
-    ) -> Result<ResolvedStoryEntry, StoryUnavailableReason> {
-        guard text.hasPrefix("$") else { return .success(.text(text)) }
+    ) -> Result<ProductionEntryResolution, StoryUnavailableReason> {
+        guard text.hasPrefix("$") else {
+            return .success(ProductionEntryResolution(entry: .text(text), degradedReason: nil))
+        }
         let key = String(text.dropFirst())
         if let chrome = chromeVocabulary[key] {
-            return .success(.text(chrome))
+            return .success(ProductionEntryResolution(entry: .text(chrome), degradedReason: nil))
         }
-        return resolveKey(
+        return resolveProductionCatalogEntry(
             key,
             variables: .object([:]),
             resolver: resolver,
-            catalogUnavailability: catalogUnavailability
-        ).map(ResolvedStoryEntry.nodes)
-            .fallbackEntry(key: key, variables: .object([:])) { .text($0) }
+            catalogUnavailability: catalogUnavailability,
+            makeFallback: { .text($0) },
+            makeResolved: { .nodes($0.nodes) }
+        )
     }
 
     static func resolveProductionI18nEntry(
@@ -186,28 +262,62 @@ extension StoryNarrativeLocalization {
         variables: JSONValue,
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
-    ) -> Result<ResolvedStoryEntry, StoryUnavailableReason> {
+    ) -> Result<ProductionEntryResolution, StoryUnavailableReason> {
         if let chrome = chromeVocabulary[key] {
             guard let text = substituteVariables(chrome, variables: variables) else {
                 return .failure(.missingVariable)
             }
-            return .success(.text(text))
+            return .success(ProductionEntryResolution(entry: .text(text), degradedReason: nil))
         }
-        return resolveKey(
+        return resolveProductionCatalogEntry(
+            key,
+            variables: variables,
+            resolver: resolver,
+            catalogUnavailability: catalogUnavailability,
+            makeFallback: { .text($0) },
+            makeResolved: { .nodes($0.nodes) }
+        )
+    }
+
+    static func resolveProductionCatalogEntry(
+        _ key: String,
+        variables: JSONValue,
+        resolver: LocaleCatalogResolver?,
+        catalogUnavailability: StoryUnavailableReason,
+        makeFallback: (String) -> ResolvedStoryEntry,
+        makeResolved: (LocaleCatalogRenderedNodes) -> ResolvedStoryEntry
+    ) -> Result<ProductionEntryResolution, StoryUnavailableReason> {
+        switch resolveKey(
             key,
             variables: variables,
             resolver: resolver,
             catalogUnavailability: catalogUnavailability
-        ).map(ResolvedStoryEntry.nodes)
-            .fallbackEntry(key: key, variables: variables) { .text($0) }
+        ) {
+        case let .success(rendered):
+            return .success(ProductionEntryResolution(
+                entry: makeResolved(rendered),
+                degradedReason: rendered.degradedReason
+            ))
+        case let .failure(reason):
+            guard let fallback = readableFallback(
+                for: reason, key: key, variables: variables, resolver: resolver
+            ) else {
+                return .failure(reason)
+            }
+            return .success(ProductionEntryResolution(
+                entry: makeFallback(fallback),
+                degradedReason: degradedReason(for: reason, resolver: resolver)
+            ))
+        }
     }
 
     static func resolveProductionEntries(
         _ entries: [FlavorTextEntry],
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
-    ) -> Result<[ResolvedStoryEntry], StoryUnavailableReason> {
+    ) -> Result<ProductionEntriesResolution, StoryUnavailableReason> {
         var resolvedEntries: [ResolvedStoryEntry] = []
+        var degradedReason: StoryUnavailableReason?
         resolvedEntries.reserveCapacity(entries.count)
         for entry in entries {
             switch resolveProductionEntry(
@@ -216,20 +326,25 @@ extension StoryNarrativeLocalization {
                 catalogUnavailability: catalogUnavailability
             ) {
             case let .success(resolved):
-                resolvedEntries.append(resolved)
+                resolvedEntries.append(resolved.entry)
+                degradedReason = degradedReason.combined(with: resolved.degradedReason)
             case let .failure(reason):
                 return .failure(reason)
             }
         }
-        return .success(resolvedEntries)
+        return .success(ProductionEntriesResolution(
+            entries: resolvedEntries,
+            degradedReason: degradedReason
+        ))
     }
 
     static func resolveProductionListEntry(
         _ items: [FlavorTextListItem],
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
-    ) -> Result<ResolvedStoryEntry, StoryUnavailableReason> {
+    ) -> Result<ProductionEntryResolution, StoryUnavailableReason> {
         var resolvedItems: [ResolvedStoryListItem] = []
+        var degradedReason: StoryUnavailableReason?
         resolvedItems.reserveCapacity(items.count)
         for item in items {
             switch resolveProductionListItem(
@@ -238,19 +353,23 @@ extension StoryNarrativeLocalization {
                 catalogUnavailability: catalogUnavailability
             ) {
             case let .success(resolved):
-                resolvedItems.append(resolved)
+                resolvedItems.append(resolved.item)
+                degradedReason = degradedReason.combined(with: resolved.degradedReason)
             case let .failure(reason):
                 return .failure(reason)
             }
         }
-        return .success(.list(items: resolvedItems))
+        return .success(ProductionEntryResolution(
+            entry: .list(items: resolvedItems),
+            degradedReason: degradedReason
+        ))
     }
 
     static func resolveProductionListItem(
         _ item: FlavorTextListItem,
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
-    ) -> Result<ResolvedStoryListItem, StoryUnavailableReason> {
+    ) -> Result<ProductionListItemResolution, StoryUnavailableReason> {
         switch resolveProductionEntry(
             item.entry,
             resolver: resolver,
@@ -260,6 +379,7 @@ extension StoryNarrativeLocalization {
             return .failure(reason)
         case let .success(entry):
             var nested: [ResolvedStoryListItem] = []
+            var degradedReason = entry.degradedReason
             nested.reserveCapacity(item.nested.count)
             for child in item.nested {
                 switch resolveProductionListItem(
@@ -268,12 +388,16 @@ extension StoryNarrativeLocalization {
                     catalogUnavailability: catalogUnavailability
                 ) {
                 case let .success(resolved):
-                    nested.append(resolved)
+                    nested.append(resolved.item)
+                    degradedReason = degradedReason.combined(with: resolved.degradedReason)
                 case let .failure(reason):
                     return .failure(reason)
                 }
             }
-            return .success(ResolvedStoryListItem(entry: entry, nested: nested))
+            return .success(ProductionListItemResolution(
+                item: ResolvedStoryListItem(entry: entry.entry, nested: nested),
+                degradedReason: degradedReason
+            ))
         }
     }
 
@@ -282,41 +406,52 @@ extension StoryNarrativeLocalization {
         variables: JSONValue,
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
-    ) -> Result<[StoryNode], StoryUnavailableReason> {
+    ) -> Result<LocaleCatalogRenderedNodes, StoryUnavailableReason> {
         if let chrome = chromeVocabulary[key] {
-            return .success([.text(chrome)])
+            return .success(LocaleCatalogRenderedNodes(nodes: [.text(chrome)], degradedReason: nil))
         }
         guard let resolver else { return .failure(catalogUnavailability) }
-        return resolver.render(key: key, variables: variables)
+        return resolver.renderAllowingImageFallback(key: key, variables: variables)
     }
 
     static func readableFallback(
-        for reason: StoryUnavailableReason, key: String, variables: JSONValue
+        for reason: StoryUnavailableReason,
+        key: String,
+        variables: JSONValue,
+        resolver: LocaleCatalogResolver?
     ) -> String? {
         switch reason {
-        case .catalog, .loading, .missingKey:
+        case .missingKey:
             readableServerFallback(key: key, variables: variables)
+        case .catalog where resolver == nil:
+            readableServerFallback(key: key, variables: variables)
+        case .loading where resolver == nil:
+            nil
         case .imagePipelineUnavailable, .imageSourceLoading, .unsupportedEntry, .linkCycle,
-             .missingVariable, .unsupportedVariableValue, .tooComplex:
+             .missingVariable, .unsupportedVariableValue, .tooComplex, .catalog, .loading:
+            nil
+        }
+    }
+
+    static func degradedReason(
+        for reason: StoryUnavailableReason,
+        resolver: LocaleCatalogResolver?
+    ) -> StoryUnavailableReason? {
+        switch reason {
+        case .missingKey:
+            nil
+        case .catalog where resolver == nil:
+            reason
+        case .catalog, .loading, .imagePipelineUnavailable, .imageSourceLoading,
+             .unsupportedEntry, .linkCycle, .missingVariable, .unsupportedVariableValue,
+             .tooComplex:
             nil
         }
     }
 }
 
-private extension Result where Success == ResolvedStoryEntry, Failure == StoryUnavailableReason {
-    func fallbackEntry(
-        key: String,
-        variables: JSONValue,
-        makeEntry: (String) -> ResolvedStoryEntry
-    ) -> Self {
-        switch self {
-        case .success:
-            return self
-        case let .failure(reason):
-            guard let fallback = StoryNarrativeLocalization.readableFallback(
-                for: reason, key: key, variables: variables
-            ) else { return self }
-            return .success(makeEntry(fallback))
-        }
+private extension StoryUnavailableReason? {
+    func combined(with other: StoryUnavailableReason?) -> StoryUnavailableReason? {
+        self ?? other
     }
 }
