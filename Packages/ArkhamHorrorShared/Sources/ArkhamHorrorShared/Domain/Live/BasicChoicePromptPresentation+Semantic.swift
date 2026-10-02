@@ -17,11 +17,12 @@ extension QuestionPresentation {
         case exchange
         case deck
         case campaignSettings
+        case continuation
         case deferred
 
         var isRenderableInCurrentClient: Bool {
             switch self {
-            case .singleChoice, .amounts, .payment, .exchange:
+            case .singleChoice, .amounts, .payment, .exchange, .continuation:
                 true
             case .multiSelect, .deck, .campaignSettings, .deferred:
                 false
@@ -44,9 +45,10 @@ extension QuestionPresentation {
             .exchange
         case .deck:
             .deck
+        case .continueCampaign:
+            .continuation
         case .standaloneSettings, .campaignSettings,
-             .pickDestiny, .campaignSpecific, .scenarioSpecific,
-             .continueCampaign:
+             .pickDestiny, .campaignSpecific, .scenarioSpecific:
             .campaignSettings
         }
     }
@@ -63,7 +65,7 @@ extension BoundQuestionPresentation {
             presentation.supportsCurrentGenericChoiceList
                 && !rawChoices.isEmpty
                 && (!requiresSealedActionabilityOverlay || usesSealedActionabilityOverlay)
-        case .amounts, .payment, .exchange:
+        case .amounts, .payment, .exchange, .continuation:
             rawChoices.isEmpty
         case .multiSelect, .deck, .campaignSettings, .deferred:
             false
@@ -199,8 +201,14 @@ extension BasicChoicePromptPresentation {
                 || rawQuestion.wrapsQuestion(tag: "PayCostQuestion", innerTag: "ChoosePaymentAmounts")
         case .exchangeAmounts:
             presentation.questionKind == .chooseExchangeAmounts
+        case .continueCampaign:
+            presentation.questionKind == .continueCampaign
+                && (rawQuestion.hasTag("ContinueCampaign")
+                    || rawQuestion.wrapsQuestion(
+                        tag: "QuestionLabel", innerTag: "ContinueCampaign"
+                    ))
         case .deck, .standaloneSettings, .campaignSettings, .pickDestiny,
-             .campaignSpecific, .scenarioSpecific, .continueCampaign:
+             .campaignSpecific, .scenarioSpecific:
             false
         }
     }

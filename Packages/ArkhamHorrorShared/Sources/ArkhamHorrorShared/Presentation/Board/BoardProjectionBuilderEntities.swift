@@ -204,6 +204,8 @@ extension BoardProjectionBuilder {
             health: investigator.health,
             sanity: investigator.sanity,
             remainingActions: investigator.remainingActions,
+            experiencePoints: investigator.experiencePoints,
+            spentExperience: investigator.spentXp,
             physicalTrauma: investigator.physicalTrauma,
             mentalTrauma: investigator.mentalTrauma,
             unhealedHorrorThisRound: investigator.unhealedHorrorThisRound,

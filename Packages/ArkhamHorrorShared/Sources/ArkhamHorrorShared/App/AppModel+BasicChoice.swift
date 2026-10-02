@@ -153,6 +153,12 @@ extension AppModel {
         await sendBasicChoice(identity, submission: .exchangeAmount(amount), isRetry: false)
     }
 
+    func submitContinueCampaignAnswer(
+        _ identity: BasicChoicePromptIdentity, step: JSONValue
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .continueCampaign(step), isRetry: false)
+    }
+
     func retryBasicChoice(_ identity: BasicChoicePromptIdentity) async -> BasicChoiceSubmitResult {
         guard let record = basicChoiceActions[identity.gameID],
               record.identity == identity,
@@ -312,6 +318,8 @@ extension AppModel {
                 token: token,
                 amount: amount
             ))
+        case let .continueCampaign(step):
+            return try ContractJSON.encode(CampaignStepAnswer(contents: step))
         }
     }
 
@@ -479,6 +487,8 @@ private extension BasicChoicePromptPresentation {
             return supportsPaymentAmountSubmission(amounts)
         case let .exchangeAmount(amount):
             return supportsExchangeSubmission(amount)
+        case let .continueCampaign(step):
+            return supportsContinueCampaignSubmission(step, in: projection)
         }
     }
 
@@ -560,6 +570,21 @@ private extension BasicChoicePromptPresentation {
             return false
         }
         return amount >= lowerBound.partialValue && amount <= fromInitialAmount
+    }
+
+    func supportsContinueCampaignSubmission(
+        _ step: JSONValue,
+        in projection: BoardProjection
+    ) -> Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              case .continueCampaign = presentation.answer,
+              Self.supportsSemanticPrompt(
+                  rawQuestion: identity.rawQuestion,
+                  presentation: presentation
+              ),
+              let continuation = projection.campaignContinuation
+        else { return false }
+        return step == continuation.nextStep || step == continuation.upgradeStep
     }
 
     struct AmountChoiceBounds: Sendable, Equatable {

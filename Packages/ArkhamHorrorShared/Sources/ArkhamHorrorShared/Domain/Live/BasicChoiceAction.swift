@@ -372,6 +372,7 @@ enum BasicChoiceSubmission: Sendable, Equatable {
     case amounts([String: Int])
     case paymentAmounts([String: Int])
     case exchangeAmount(Int)
+    case continueCampaign(JSONValue)
 
     var choiceIndex: Int? {
         guard case let .singleChoice(index) = self else { return nil }

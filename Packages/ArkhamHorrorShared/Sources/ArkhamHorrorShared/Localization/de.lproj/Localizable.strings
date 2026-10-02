@@ -101,3 +101,19 @@
 "semantic.choice.unavailable.investigator" = "Der Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
 "semantic.choice.unavailable.assignment" = "Der Ermittler für diese Zuweisung ist derzeit nicht verfügbar.";
 "semantic.choice.unavailable.generic" = "Diese Auswahl ist derzeit nicht verfügbar.";
+
+"campaign.between.title" = "Zwischen Szenarien";
+"campaign.between.finishedScenario" = "%@ wurde gerade abgeschlossen";
+"campaign.between.noScenario" = "Kein aktives Szenario";
+"campaign.between.futureSlot" = "Auflösung, Kampagnenlogbuch, EP und Trauma erscheinen hier mit dem nächsten Kampagnenlogbuch-Update.";
+"campaign.between.continue" = "Fortsetzen";
+"campaign.between.upgradeDeck" = "Deck verbessern";
+"campaign.between.sendFailed" = "Diese Kampagnenantwort konnte nicht gesendet werden. Neu verbinden und erneut versuchen.";
+"campaign.upgrade.investigator" = "Ermittler";
+"campaign.upgrade.availableXp" = "Verfügbare EP";
+"campaign.upgrade.deckLink" = "Deck-Link";
+"campaign.upgrade.deckPlaceholder" = "ArkhamDB- oder arkham.build-Deck-Link";
+"campaign.upgrade.submit" = "Verbesserung senden";
+"campaign.upgrade.skip" = "Ohne Verbesserung fortsetzen";
+"campaign.upgrade.title" = "Deck verbessern";
+"campaign.upgrade.done" = "Fertig";

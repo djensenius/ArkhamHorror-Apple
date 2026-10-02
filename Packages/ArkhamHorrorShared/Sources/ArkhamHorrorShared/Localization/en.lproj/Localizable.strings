@@ -101,3 +101,19 @@
 "semantic.choice.unavailable.investigator" = "The investigator for this choice is not currently available.";
 "semantic.choice.unavailable.assignment" = "The investigator for this assignment is not currently available.";
 "semantic.choice.unavailable.generic" = "This choice is not currently available.";
+
+"campaign.between.title" = "Between scenarios";
+"campaign.between.finishedScenario" = "%@ just finished";
+"campaign.between.noScenario" = "No active scenario";
+"campaign.between.futureSlot" = "Resolution details, campaign log, XP, and trauma will appear here in the next campaign-log update.";
+"campaign.between.continue" = "Continue";
+"campaign.between.upgradeDeck" = "Upgrade deck";
+"campaign.between.sendFailed" = "That campaign answer could not be sent. Reconnect and try again.";
+"campaign.upgrade.investigator" = "Investigator";
+"campaign.upgrade.availableXp" = "Available XP";
+"campaign.upgrade.deckLink" = "Deck link";
+"campaign.upgrade.deckPlaceholder" = "ArkhamDB or arkham.build deck link";
+"campaign.upgrade.submit" = "Submit upgrade";
+"campaign.upgrade.skip" = "Continue without upgrading";
+"campaign.upgrade.title" = "Upgrade deck";
+"campaign.upgrade.done" = "Done";

@@ -30,7 +30,9 @@ extension BoardTestFixtures {
         tokens: [TokenCount] = [],
         movement: Movement? = nil,
         placement: Placement = BoardTestFixtures.placement(),
-        playerID: PlayerID = BoardTestFixtures.playerID()
+        playerID: PlayerID = BoardTestFixtures.playerID(),
+        spentXp: Int = 0,
+        experiencePoints: Int = 0
     ) -> Investigator {
         Investigator(
             actionsPerformed: [], actionsTaken: [], additionalActions: [], agility: 3,
@@ -51,10 +53,10 @@ extension BoardTestFixtures {
             remainingActions: remainingActions, resigned: resigned, sanity: sanity,
             scarletKeys: scarletKeys, sealedChaosTokens: [], seals: [], search: nil,
             settings: .null, sideDeck: .null, skills: skills, skippedWindow: false, slots: [],
-            spentXp: 0, startsWith: [], startsWithInHand: [], supplies: [], taboo: .null,
+            spentXp: spentXp, startsWith: [], startsWithInHand: [], supplies: [], taboo: .null,
             tokens: tokens, traits: [], treacheries: treacheries,
             unhealedHorrorThisRound: unhealedHorrorThisRound, usedAbilities: [],
-            usedAdditionalActions: [], willpower: 3, experiencePoints: 0
+            usedAdditionalActions: [], willpower: 3, experiencePoints: experiencePoints
         )
     }
 

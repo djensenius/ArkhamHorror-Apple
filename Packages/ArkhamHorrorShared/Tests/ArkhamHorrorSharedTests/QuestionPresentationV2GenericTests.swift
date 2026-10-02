@@ -687,8 +687,10 @@ struct QuestionPresentationV2GenericTests {
             .exchange
         case .deck:
             .deck
+        case .continueCampaign:
+            .continuation
         case .standaloneSettings, .campaignSettings, .pickDestiny,
-             .campaignSpecific, .scenarioSpecific, .continueCampaign:
+             .campaignSpecific, .scenarioSpecific:
             .campaignSettings
         }
     }

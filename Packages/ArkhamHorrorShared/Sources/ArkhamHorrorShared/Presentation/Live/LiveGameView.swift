@@ -159,10 +159,17 @@ struct LiveGameView: View {
         return playerID
     }
 
-    @ViewBuilder
     // swiftlint:disable:next function_body_length
     private func board(_ projection: BoardProjection) -> some View {
         let renderedPrompt = prompt
+        if let renderedPrompt, isBetweenScenarioPrompt(renderedPrompt, in: projection) {
+            return AnyView(BetweenScenariosView(
+                model: model,
+                gameID: gameID,
+                projection: projection,
+                prompt: renderedPrompt
+            ))
+        }
         let board = BoardView(
             projection: projection,
             prompt: renderedPrompt,
@@ -198,7 +205,7 @@ struct LiveGameView: View {
                 LiveChooseDeckQuestion.matches($0.identity.rawQuestion)
             } == true
         if isLiveChooseDeckPrompt, case let .signedIn(profile, _, _) = model.sessionState {
-            VStack(spacing: 12) {
+            return AnyView(VStack(spacing: 12) {
                 switch answerability {
                 case let .canAnswer(promptKey):
                     LiveChooseDeckSelectionView(
@@ -213,10 +220,23 @@ struct LiveGameView: View {
                     }
                 }
                 board
-            }
+            })
         } else {
-            board
+            return AnyView(board)
         }
+    }
+
+    private func isBetweenScenarioPrompt(
+        _ prompt: BasicChoicePromptPresentation,
+        in projection: BoardProjection
+    ) -> Bool {
+        let raw = prompt.identity.rawQuestion
+        if raw == .object(["tag": .string("ChooseUpgradeDeck")]) {
+            return true
+        }
+        guard projection.campaignContinuation != nil else { return false }
+        return raw == .object(["tag": .string("ContinueCampaign")])
+            || prompt.semanticPresentation?.presentation.questionKind == .continueCampaign
     }
 
     /// A retryable failure state: a full ``ContentUnavailableView`` -- deliberately
