@@ -137,6 +137,7 @@
 "campaign.between.noScenario" = "No active scenario";
 "campaign.between.emptySummary" = "The server has not reported campaign-log or XP changes yet.";
 "campaign.between.resolution" = "Latest resolution";
+"campaign.between.resolutions" = "Scenario resolutions";
 "campaign.between.progress" = "Investigator progress";
 "campaign.between.availableXp" = "%d XP available";
 "campaign.between.totalXp" = "%d total / %d spent";

@@ -208,17 +208,22 @@ private struct CampaignBetweenSummaryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if let resolution = summary.latestResolution {
+            if !summary.resolutions.isEmpty {
                 CampaignBetweenSection(
-                    title: campaignLocalized("campaign.between.resolution", "Latest resolution")
+                    title: campaignLocalized("campaign.between.resolutions", "Scenario resolutions")
                 ) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(resolution.title(context: context))
-                            .font(.headline)
-                        if let detail = resolution.detail(context: context) {
-                            Text(detail)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(summary.resolutions.enumerated()), id: \.offset) { _, resolution in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(resolution.title(context: context))
+                                    .font(.headline)
+                                if let detail = resolution.detail(context: context) {
+                                    Text(detail)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .accessibilityElement(children: .combine)
                         }
                     }
                 }
@@ -333,7 +338,7 @@ private struct CampaignBetweenLogView: View {
                             return CampaignLogRowText(
                                 id: entry.id,
                                 title: title,
-                                accessibilityTitle: title,
+                                accessibilityTitle: entry.accessibilityTitle(context: context),
                                 isCrossedOut: entry.isCrossedOut
                             )
                         }

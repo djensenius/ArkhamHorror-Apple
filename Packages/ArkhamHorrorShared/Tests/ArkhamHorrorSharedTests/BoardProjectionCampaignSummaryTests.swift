@@ -30,10 +30,17 @@ struct BoardProjectionCampaignSummaryTests {
             }
         }
 
-        var scenarioTitle: String {
+        var firstScenarioTitle: String {
             switch self {
             case .english: "The Gathering"
             case .german: "Die Zusammenkunft"
+            }
+        }
+
+        var latestScenarioTitle: String {
+            switch self {
+            case .english: "The Devourer Below"
+            case .german: "Der Verschlinger aus der Tiefe"
             }
         }
 
@@ -44,10 +51,24 @@ struct BoardProjectionCampaignSummaryTests {
             }
         }
 
-        var resolutionTitle: String {
+        var firstResolutionTitle: String {
             switch self {
             case .english: "Resolution 2"
             case .german: "Auflösung 2"
+            }
+        }
+
+        var latestResolutionTitle: String {
+            switch self {
+            case .english: "Resolution 1"
+            case .german: "Auflösung 1"
+            }
+        }
+
+        var burnedHouseCrossedOutAccessibilityTitle: String {
+            switch self {
+            case .english: "Your house has burned to the ground, crossed out"
+            case .german: "Dein Haus ist bis auf die Grundmauern niedergebrannt, durchgestrichen"
             }
         }
 
@@ -89,6 +110,9 @@ struct BoardProjectionCampaignSummaryTests {
             #expect(BoardCampaignSummaryLocalization.system.localized(
                 "campaign.summary.boolean.true", "fallback"
             ) == "True")
+            #expect(CampaignPromptLocalization.localized(
+                "campaign.between.resolutions", "fallback"
+            ) == "Scenario resolutions")
         }
         CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
             #expect(BoardCampaignSummaryLocalization.system.localized(
@@ -97,6 +121,9 @@ struct BoardProjectionCampaignSummaryTests {
             #expect(BoardCampaignSummaryLocalization.system.localized(
                 "campaign.summary.boolean.true", "fallback"
             ) == "Wahr")
+            #expect(CampaignPromptLocalization.localized(
+                "campaign.between.resolutions", "fallback"
+            ) == "Szenario-Auflösungen")
         }
     }
 
@@ -118,8 +145,10 @@ struct BoardProjectionCampaignSummaryTests {
     }
 
     private func assertCampaignHandoffFallback(_ summary: BoardCampaignSummary) {
-        #expect(summary.latestResolution?.title() == "Resolution 2")
-        #expect(summary.latestResolution?.detail() == "c01104")
+        #expect(summary.resolutions.map { $0.title() } == ["Resolution 2", "Resolution 1"])
+        #expect(summary.resolutions.map { $0.detail() } == ["c01104", "c01103"])
+        #expect(summary.latestResolution?.title() == "Resolution 1")
+        #expect(summary.latestResolution?.detail() == "c01103")
         #expect(summary.log.entries.map { $0.title() } == [
             "Your house has burned to the ground",
             "Custom homebrew thing",
@@ -139,13 +168,25 @@ struct BoardProjectionCampaignSummaryTests {
         ) {
             let context = try displayContext(locale: locale)
 
-            #expect(summary.latestResolution?.title(context: context) == locale.resolutionTitle)
-            #expect(summary.latestResolution?.detail(context: context) == locale.scenarioTitle)
+            #expect(summary.resolutions.map { $0.title(context: context) } == [
+                locale.firstResolutionTitle,
+                locale.latestResolutionTitle,
+            ])
+            #expect(summary.resolutions.map { $0.detail(context: context) } == [
+                locale.firstScenarioTitle,
+                locale.latestScenarioTitle,
+            ])
+            #expect(summary.latestResolution?.title(context: context) == locale.latestResolutionTitle)
+            #expect(summary.latestResolution?.detail(context: context) == locale.latestScenarioTitle)
             #expect(summary.log.entries.map { $0.title(context: context) } == [
                 locale.burnedHouse,
                 "Custom homebrew thing",
             ])
-            #expect(summary.log.entries.map(\.isCrossedOut) == [false, false])
+            #expect(summary.log.entries.map(\.isCrossedOut) == [true, false])
+            #expect(summary.log.entries.map { $0.accessibilityTitle(context: context) } == [
+                locale.burnedHouseCrossedOutAccessibilityTitle,
+                "Custom homebrew thing",
+            ])
             #expect(summary.log.counts.map { $0.title(context: context) } == [locale.burnedHouse])
             #expect(summary.log.counts.map(\.value) == [2])
             #expect(summary.log.recordedSets.map { $0.title(context: context) } == [
@@ -221,9 +262,12 @@ struct BoardProjectionCampaignSummaryTests {
             "tag": "TheDrownedCityKey",
             "contents": "DiscoveredGlyphs",
         ]
-        campaign["completedSteps"] = [["tag": "ScenarioStep", "contents": "c01104"]]
+        campaign["completedSteps"] = [
+            ["tag": "ScenarioStep", "contents": "c01104"],
+            ["tag": "ScenarioStep", "contents": "c01103"],
+        ]
         campaign["log"] = [
-            "crossedOut": [crossedOutOnlyKey],
+            "crossedOut": [burnedHouseKey, crossedOutOnlyKey],
             "options": [],
             "orderedKeys": [],
             "partners": [:],
@@ -258,6 +302,7 @@ struct BoardProjectionCampaignSummaryTests {
             ],
         ]
         campaign["resolutions"] = [
+            "c01103": ["tag": "Resolution", "contents": 1],
             "c01104": ["tag": "Resolution", "contents": 2],
         ]
         root["This"] = campaign
@@ -301,7 +346,8 @@ struct BoardProjectionCampaignSummaryTests {
 
     private func cardCatalog(locale: SummaryLocale) throws -> CardCatalogSnapshot {
         try CardCatalogSnapshot(namesByCode: [
-            CardCode("c01104"): CardName(title: locale.scenarioTitle, subtitle: nil),
+            CardCode("c01104"): CardName(title: locale.firstScenarioTitle, subtitle: nil),
+            CardCode("c01103"): CardName(title: locale.latestScenarioTitle, subtitle: nil),
             CardCode("c01121b"): CardName(title: locale.maskedHunter, subtitle: nil),
         ])
     }

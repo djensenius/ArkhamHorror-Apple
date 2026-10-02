@@ -3,15 +3,19 @@ import Foundation
 /// Campaign hand-off presentation data copied from the authoritative server snapshot.
 ///
 /// This is display-only: it keeps campaign-log keys/values, investigator progression,
-/// and the server's latest resolution marker raw so renderers can resolve catalog-backed
-/// text against the currently loaded locale and card catalogs.
+/// and the server's resolution markers raw so renderers can resolve catalog-backed text
+/// against the currently loaded locale and card catalogs.
 struct BoardCampaignSummary: Sendable, Equatable {
-    let latestResolution: BoardCampaignResolutionSummary?
+    let resolutions: [BoardCampaignResolutionSummary]
     let log: BoardCampaignLogSummary
     let investigators: [BoardCampaignInvestigatorProgress]
 
+    var latestResolution: BoardCampaignResolutionSummary? {
+        resolutions.last
+    }
+
     var isEmpty: Bool {
-        latestResolution == nil && log.isEmpty && investigators.isEmpty
+        resolutions.isEmpty && log.isEmpty && investigators.isEmpty
     }
 }
 
@@ -59,6 +63,18 @@ struct BoardCampaignLogEntry: Sendable, Equatable, Identifiable {
 
     func title(context: BoardCampaignSummaryDisplayContext = .system) -> String {
         BoardCampaignSummaryFormatting.logKeyTitle(key, context: context)
+    }
+
+    func accessibilityTitle(context: BoardCampaignSummaryDisplayContext = .system) -> String {
+        let title = title(context: context)
+        guard isCrossedOut else { return title }
+        return String(
+            format: context.localization.localized(
+                "campaign.between.log.value.crossedOut.accessibility",
+                "%@, crossed out"
+            ),
+            title
+        )
     }
 }
 
@@ -135,7 +151,7 @@ enum BoardCampaignSummaryBuilder {
             )
         }
         let summary = BoardCampaignSummary(
-            latestResolution: makeLatestResolution(campaign: campaign, scenario: scenario),
+            resolutions: makeResolutions(campaign: campaign, scenario: scenario),
             log: log,
             investigators: progress
         )
@@ -280,44 +296,80 @@ enum BoardCampaignSummaryBuilder {
         }
     }
 
-    private static func makeLatestResolution(
+    private static func makeResolutions(
         campaign: JSONValue?,
         scenario: Scenario?
-    ) -> BoardCampaignResolutionSummary? {
-        if let resolution = campaign.flatMap(latestCampaignResolution) {
-            return resolution
+    ) -> [BoardCampaignResolutionSummary] {
+        let orderedCampaignResolutions = campaign.map(campaignResolutions) ?? []
+        if !orderedCampaignResolutions.isEmpty {
+            return orderedCampaignResolutions
         }
         guard let scenario,
               scenario.inResolution,
               let story = scenario.resolvedStories.last
-        else { return nil }
-        return BoardCampaignResolutionSummary(source: .resolvedStory(story))
+        else { return [] }
+        return [BoardCampaignResolutionSummary(source: .resolvedStory(story))]
     }
 
-    private static func latestCampaignResolution(
+    private static func campaignResolutions(
         _ campaign: JSONValue
-    ) -> BoardCampaignResolutionSummary? {
+    ) -> [BoardCampaignResolutionSummary] {
         guard let object = campaign.objectValue,
               let resolutions = object["resolutions"]?.objectValue,
               !resolutions.isEmpty
-        else { return nil }
-        let latestScenarioID = latestScenarioStepID(in: object["completedSteps"])
-        let entry = latestScenarioID.flatMap { scenarioID in
-            resolutions.first { key, _ in key == scenarioID || key == "c\(scenarioID)" }
-        } ?? resolutions.max { $0.key < $1.key }
-        guard let entry else { return nil }
-        return BoardCampaignResolutionSummary(source: .campaign(
-            scenarioID: entry.key,
-            resolution: entry.value
-        ))
+        else { return [] }
+
+        let orderedScenarioIDs = scenarioStepIDs(in: object["completedSteps"])
+        var orderedEntries: [(key: String, value: JSONValue)] = []
+        var consumedKeys = Set<String>()
+        for scenarioID in orderedScenarioIDs {
+            guard let entry = resolutionEntry(for: scenarioID, in: resolutions),
+                  !consumedKeys.contains(entry.key)
+            else { continue }
+            orderedEntries.append(entry)
+            consumedKeys.insert(entry.key)
+        }
+
+        for key in resolutions.keys.sorted() where !consumedKeys.contains(key) {
+            if let value = resolutions[key] {
+                orderedEntries.append((key: key, value: value))
+            }
+        }
+
+        return orderedEntries.map { entry in
+            BoardCampaignResolutionSummary(source: .campaign(
+                scenarioID: entry.key,
+                resolution: entry.value
+            ))
+        }
     }
 
-    private static func latestScenarioStepID(in completedSteps: JSONValue?) -> String? {
-        guard let steps = completedSteps?.arrayValue else { return nil }
-        return steps.reversed().compactMap { step -> String? in
+    private static func resolutionEntry(
+        for scenarioID: String,
+        in resolutions: [String: JSONValue]
+    ) -> (key: String, value: JSONValue)? {
+        let candidates = scenarioID.hasPrefix("c")
+            ? [scenarioID, String(scenarioID.dropFirst())]
+            : [scenarioID, "c\(scenarioID)"]
+        for candidate in candidates {
+            if let value = resolutions[candidate] {
+                return (key: candidate, value: value)
+            }
+        }
+        return nil
+    }
+
+    private static func scenarioStepIDs(in completedSteps: JSONValue?) -> [String] {
+        guard let steps = completedSteps?.arrayValue else { return [] }
+        return steps.compactMap { step -> String? in
             guard let object = step.objectValue,
                   let tag = object["tag"]?.stringValue,
-                  tag == "ScenarioStep" || tag == "ScenarioStepWithOptions"
+                  [
+                      "ScenarioStep",
+                      "ScenarioStepWithOptions",
+                      "StandaloneScenarioStep",
+                      "StandaloneScenarioStepWithOptions",
+                  ].contains(tag)
             else { return nil }
             if let contents = object["contents"]?.stringValue {
                 return contents
@@ -326,7 +378,7 @@ enum BoardCampaignSummaryBuilder {
                 return contents
             }
             return nil
-        }.first
+        }
     }
 }
 
