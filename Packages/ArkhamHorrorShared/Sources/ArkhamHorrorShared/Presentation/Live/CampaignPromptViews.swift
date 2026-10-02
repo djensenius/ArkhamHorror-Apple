@@ -72,8 +72,23 @@ struct BetweenScenariosView: View {
                     }
 
                     HStack(spacing: 12) {
-                        if prompt.isAuthorized {
-                            if !isUpgradePrompt, let continuation {
+                        if isUpgradePrompt {
+                            if prompt.canUseCampaignDeckPrompt {
+                                Button {
+                                    isUpgradeSheetPresented = true
+                                } label: {
+                                    Text(campaignLocalized(
+                                        "campaign.between.upgradeDeck", "Upgrade deck"
+                                    ))
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(localInvestigator == nil)
+                                .accessibilityIdentifier(
+                                    AccountAccessibilityID.campaignUpgradeDeckButton
+                                )
+                            }
+                        } else if prompt.isAuthorized {
+                            if let continuation {
                                 Button {
                                     sendContinue(step: continuation.nextStep)
                                 } label: {
@@ -93,20 +108,7 @@ struct BetweenScenariosView: View {
                                 )
                             }
 
-                            if isUpgradePrompt {
-                                Button {
-                                    isUpgradeSheetPresented = true
-                                } label: {
-                                    Text(campaignLocalized(
-                                        "campaign.between.upgradeDeck", "Upgrade deck"
-                                    ))
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(localInvestigator == nil || !prompt.canSubmit)
-                                .accessibilityIdentifier(
-                                    AccountAccessibilityID.campaignUpgradeDeckButton
-                                )
-                            } else if continuation?.canUpgrade == true, let continuation {
+                            if continuation?.canUpgrade == true, let continuation {
                                 Button {
                                     sendContinue(step: continuation.upgradeStep)
                                 } label: {
@@ -343,6 +345,16 @@ extension BasicChoicePromptPresentation {
         identity.rawQuestion.hasQuestionTag("ChooseUpgradeDeck")
             || identity.rawQuestion.wrapsQuestionTag("QuestionLabel", innerTag: "ChooseUpgradeDeck")
             || semanticPresentation?.presentation.questionKind == .chooseUpgradeDeck
+    }
+
+    var canUseCampaignDeckPrompt: Bool {
+        guard isChooseUpgradeDeckPrompt else { return false }
+        switch readOnlyReason {
+        case nil, .updateRequired:
+            return true
+        case .spectator, .anotherPlayer, .legacyServer, .disconnected:
+            return false
+        }
     }
 }
 

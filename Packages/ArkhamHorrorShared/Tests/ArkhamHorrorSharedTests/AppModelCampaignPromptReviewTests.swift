@@ -3,6 +3,55 @@ import Foundation
 import Testing
 
 extension AppModelCampaignPromptTests {
+    @Test("ChooseUpgradeDeck owner can open and submit while spectators cannot")
+    func chooseUpgradeDeckPromptAuthorityUsesOwnerIdentity() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true)
+        )
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+
+        let ownerPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(ownerPrompt.readOnlyReason == .updateRequired)
+        #expect(!ownerPrompt.canSubmit)
+        #expect(ownerPrompt.canUseCampaignDeckPrompt)
+
+        try await deckService.enqueueFetch(.success(deckListFixture()))
+        await gameService.enqueueChooseDeckResult(.success(()))
+        #expect(await model.upgradeCampaignDeck(
+            from: "https://arkhamdb.com/decklist/view/4242",
+            investigatorId: "c01001",
+            in: gameID
+        ) == .submitted)
+        await gameService.enqueueChooseDeckResult(.success(()))
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID
+        ) == .submitted)
+
+        model.liveGameParticipantIdentities[gameID] = .spectator
+        let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(spectatorPrompt.readOnlyReason == .spectator)
+        #expect(!spectatorPrompt.canUseCampaignDeckPrompt)
+    }
+
     @Test("Upgrade deck wrapper is fenced off when the server flag is false")
     func upgradeDeckWrapperRequiresServerFlag() async throws {
         let service = ScriptedGameLifecycleService()

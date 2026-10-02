@@ -112,7 +112,6 @@ extension AppModel {
         } else {
             payload.supportedQuestion?.choices.isEmpty == false
         }
-        guard hasRenderableQuestion else { return .updateRequired }
         guard let identity = liveGameParticipantIdentities[gameID] else { return .disconnected }
         switch identity {
         case .spectator:
@@ -126,6 +125,7 @@ extension AppModel {
               case .modern = compatibility
         else { return .legacyServer }
         guard liveGameConnections[gameID] != nil else { return .disconnected }
+        guard hasRenderableQuestion else { return .updateRequired }
         return nil
     }
 

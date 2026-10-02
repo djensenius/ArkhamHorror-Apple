@@ -159,11 +159,10 @@ struct AppModelCampaignPromptTests {
         ).normalizedDeckList
     }
 
-    func continuationProjection(
+    func campaignPromptBaseProjection(
         ownerID: PlayerID,
-        mode: GameMode,
-        rawQuestion: JSONValue = .object(["tag": .string("ContinueCampaign")])
-    ) throws -> BoardProjection {
+        mode: GameMode
+    ) -> BoardProjection {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
         let snapshot = BoardTestFixtures.snapshot(
             mode: mode,
@@ -177,7 +176,15 @@ struct AppModelCampaignPromptTests {
             ],
             playerOrder: [investigatorID]
         )
-        let base = BoardProjectionBuilder.makeProjection(from: snapshot)
+        return BoardProjectionBuilder.makeProjection(from: snapshot)
+    }
+
+    func continuationProjection(
+        ownerID: PlayerID,
+        mode: GameMode,
+        rawQuestion: JSONValue = .object(["tag": .string("ContinueCampaign")])
+    ) throws -> BoardProjection {
+        let base = campaignPromptBaseProjection(ownerID: ownerID, mode: mode)
         let presentation = QuestionPresentation(
             protocolVersion: QuestionPresentation.supportedProtocolVersion,
             questionVersion: base.counters.scenarioSteps,
@@ -190,6 +197,32 @@ struct AppModelCampaignPromptTests {
         questions[ownerID] = try BasicChoiceQuestionPayload(
             rawValue: rawQuestion,
             state: .updateRequired(tag: "ContinueCampaign"),
+            presentation: presentation.bind(
+                to: rawQuestion,
+                expectedQuestionVersion: base.counters.scenarioSteps
+            )
+        )
+        return campaignPromptProjection(base: base, questions: questions)
+    }
+
+    func chooseUpgradeDeckProjection(
+        ownerID: PlayerID,
+        mode: GameMode
+    ) throws -> BoardProjection {
+        let rawQuestion: JSONValue = .object(["tag": .string("ChooseUpgradeDeck")])
+        let base = campaignPromptBaseProjection(ownerID: ownerID, mode: mode)
+        let presentation = QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: base.counters.scenarioSteps,
+            questionKind: .chooseUpgradeDeck,
+            choiceCount: 0,
+            choices: [],
+            answer: .deck(tags: ["DeckAnswer"])
+        )
+        var questions = UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>()
+        questions[ownerID] = try BasicChoiceQuestionPayload(
+            rawValue: rawQuestion,
+            state: .updateRequired(tag: "ChooseUpgradeDeck"),
             presentation: presentation.bind(
                 to: rawQuestion,
                 expectedQuestionVersion: base.counters.scenarioSteps
