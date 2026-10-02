@@ -37,18 +37,25 @@ extension StoryNarrativeLocalization {
     static func resolveProductionTitle(
         _ rawTitle: String?,
         resolver: LocaleCatalogResolver?,
-        catalogUnavailability: StoryUnavailableReason
+        catalogUnavailability: StoryUnavailableReason,
+        fallsBackToServerKey: Bool = true
     ) -> Result<String?, StoryUnavailableReason> {
         guard let rawTitle else { return .success(nil) }
         guard rawTitle.hasPrefix("$") else { return .success(rawTitle) }
+        let key = String(rawTitle.dropFirst())
         switch resolveKey(
-            String(rawTitle.dropFirst()),
+            key,
             variables: .object([:]),
             resolver: resolver,
             catalogUnavailability: catalogUnavailability
         ) {
         case let .failure(reason):
-            return .failure(reason)
+            guard fallsBackToServerKey,
+                  let fallback = readableFallback(for: reason, key: key, variables: .object([:]))
+            else {
+                return .failure(reason)
+            }
+            return .success(fallback)
         case let .success(nodes):
             guard !nodes.contains(where: \.losesInstructionWhenFlattened) else {
                 return .failure(.unsupportedEntry)
@@ -66,7 +73,8 @@ extension StoryNarrativeLocalization {
         switch resolveProductionTitle(
             wireLabel,
             resolver: resolver,
-            catalogUnavailability: catalogUnavailability
+            catalogUnavailability: catalogUnavailability,
+            fallsBackToServerKey: false
         ) {
         case let .failure(reason):
             return .failure(reason)
@@ -78,6 +86,7 @@ extension StoryNarrativeLocalization {
         }
     }
 
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     static func resolveProductionEntry(
         _ entry: FlavorTextEntry,
         resolver: LocaleCatalogResolver?,
@@ -91,9 +100,22 @@ extension StoryNarrativeLocalization {
                 catalogUnavailability: catalogUnavailability
             )
         case let .header(level, key):
-            guard let resolver else { return .failure(catalogUnavailability) }
-            return resolver.render(key: key, variables: .object([:]))
-                .map { .heading(level: level, nodes: $0) }
+            if let resolver {
+                return resolver.render(key: key, variables: .object([:]))
+                    .map { .heading(level: level, nodes: $0) }
+                    .fallbackEntry(key: key, variables: .object([:])) { fallback in
+                        .heading(level: level, nodes: [.text(fallback)])
+                    }
+            }
+            return resolveKey(
+                key,
+                variables: .object([:]),
+                resolver: nil,
+                catalogUnavailability: catalogUnavailability
+            ).map { .heading(level: level, nodes: $0) }
+                .fallbackEntry(key: key, variables: .object([:])) { fallback in
+                    .heading(level: level, nodes: [.text(fallback)])
+                }
         case let .i18n(key, variables):
             return resolveProductionI18nEntry(
                 key,
@@ -101,12 +123,40 @@ extension StoryNarrativeLocalization {
                 resolver: resolver,
                 catalogUnavailability: catalogUnavailability
             )
+        case let .modify(modifiers, entry):
+            return resolveProductionEntry(
+                entry,
+                resolver: resolver,
+                catalogUnavailability: catalogUnavailability
+            ).map { .modified(modifiers: modifiers, entry: $0) }
+        case let .composite(entries):
+            return resolveProductionEntries(
+                entries,
+                resolver: resolver,
+                catalogUnavailability: catalogUnavailability
+            ).map { .composite(entries: $0) }
+        case let .column(entries):
+            return resolveProductionEntries(
+                entries,
+                resolver: resolver,
+                catalogUnavailability: catalogUnavailability
+            ).map { .columns(entries: $0) }
         case let .list(items):
             return resolveProductionListEntry(
                 items,
                 resolver: resolver,
                 catalogUnavailability: catalogUnavailability
             )
+        case let .card(cardCode, imageModifiers):
+            return .success(.cardReference(cardCode: cardCode, imageModifiers: imageModifiers))
+        case let .tarot(arcana):
+            return .success(.tarotReference(arcana: arcana))
+        case let .chaosToken(face):
+            return .success(.chaosTokenReference(face: face))
+        case let .chaosTokenMorph(from, target):
+            return .success(.chaosTokenMorph(from: from, target: target))
+        case .split:
+            return .success(.divider)
         }
     }
 
@@ -126,6 +176,7 @@ extension StoryNarrativeLocalization {
             resolver: resolver,
             catalogUnavailability: catalogUnavailability
         ).map(ResolvedStoryEntry.nodes)
+            .fallbackEntry(key: key, variables: .object([:])) { .text($0) }
     }
 
     static func resolveProductionI18nEntry(
@@ -146,6 +197,29 @@ extension StoryNarrativeLocalization {
             resolver: resolver,
             catalogUnavailability: catalogUnavailability
         ).map(ResolvedStoryEntry.nodes)
+            .fallbackEntry(key: key, variables: variables) { .text($0) }
+    }
+
+    static func resolveProductionEntries(
+        _ entries: [FlavorTextEntry],
+        resolver: LocaleCatalogResolver?,
+        catalogUnavailability: StoryUnavailableReason
+    ) -> Result<[ResolvedStoryEntry], StoryUnavailableReason> {
+        var resolvedEntries: [ResolvedStoryEntry] = []
+        resolvedEntries.reserveCapacity(entries.count)
+        for entry in entries {
+            switch resolveProductionEntry(
+                entry,
+                resolver: resolver,
+                catalogUnavailability: catalogUnavailability
+            ) {
+            case let .success(resolved):
+                resolvedEntries.append(resolved)
+            case let .failure(reason):
+                return .failure(reason)
+            }
+        }
+        return .success(resolvedEntries)
     }
 
     static func resolveProductionListEntry(
@@ -212,5 +286,35 @@ extension StoryNarrativeLocalization {
         }
         guard let resolver else { return .failure(catalogUnavailability) }
         return resolver.render(key: key, variables: variables)
+    }
+
+    static func readableFallback(
+        for reason: StoryUnavailableReason, key: String, variables: JSONValue
+    ) -> String? {
+        switch reason {
+        case .catalog, .loading, .missingKey:
+            readableServerFallback(key: key, variables: variables)
+        case .imagePipelineUnavailable, .imageSourceLoading, .unsupportedEntry, .linkCycle,
+             .missingVariable, .unsupportedVariableValue, .tooComplex:
+            nil
+        }
+    }
+}
+
+private extension Result where Success == ResolvedStoryEntry, Failure == StoryUnavailableReason {
+    func fallbackEntry(
+        key: String,
+        variables: JSONValue,
+        makeEntry: (String) -> ResolvedStoryEntry
+    ) -> Self {
+        switch self {
+        case .success:
+            return self
+        case let .failure(reason):
+            guard let fallback = StoryNarrativeLocalization.readableFallback(
+                for: reason, key: key, variables: variables
+            ) else { return self }
+            return .success(makeEntry(fallback))
+        }
     }
 }

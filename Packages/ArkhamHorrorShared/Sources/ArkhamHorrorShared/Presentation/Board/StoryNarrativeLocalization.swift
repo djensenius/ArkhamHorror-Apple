@@ -6,12 +6,22 @@ struct ResolvedStory: Sendable, Equatable {
     let body: [ResolvedStoryEntry]
 }
 
-/// A safe story entry. Catalog-backed entries retain their structured native render tree.
+/// A safe story entry. Catalog-backed entries retain their structured native render tree;
+/// flavor-only formatting retains enough structure for native rendering while degrading
+/// image-like entries to readable server-provided labels.
 indirect enum ResolvedStoryEntry: Sendable, Equatable {
     case text(String)
     case nodes([StoryNode])
     case heading(level: FlavorTextHeadingLevel, nodes: [StoryNode])
+    case modified(modifiers: [FlavorTextModifier], entry: ResolvedStoryEntry)
+    case composite(entries: [ResolvedStoryEntry])
+    case columns(entries: [ResolvedStoryEntry])
     case list(items: [ResolvedStoryListItem])
+    case cardReference(cardCode: CardCode, imageModifiers: [FlavorTextImageModifier])
+    case tarotReference(arcana: String)
+    case chaosTokenReference(face: ChaosTokenFace)
+    case chaosTokenMorph(from: ChaosTokenFace, target: ChaosTokenFace)
+    case divider
 }
 
 struct ResolvedStoryListItem: Sendable, Equatable {
@@ -108,27 +118,40 @@ extension StoryNarrativeLocalization {
         _ rawValue: String, vocabulary: [String: String]
     ) -> String? {
         guard rawValue.hasPrefix("$") else { return rawValue }
-        return vocabulary[String(rawValue.dropFirst())]
+        let key = String(rawValue.dropFirst())
+        return vocabulary[key] ?? key
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     static func resolvedStaticEntry(
         _ entry: FlavorTextEntry, vocabulary: [String: String]
     ) -> ResolvedStoryEntry? {
         switch entry {
         case let .basic(text):
-            return resolvedStaticLiteralOrKey(
-                text, vocabulary: vocabulary
-            ).map(ResolvedStoryEntry.text)
+            return .text(resolvedStaticLiteralOrKey(text, vocabulary: vocabulary) ?? text)
         case let .header(level, key):
-            guard let resolved = vocabulary[key] else { return nil }
-            return .heading(level: level, nodes: [.text(resolved)])
+            return .heading(level: level, nodes: [.text(vocabulary[key] ?? key)])
         case let .i18n(key, variables):
-            guard let template = vocabulary[key],
-                  let substituted = substituteVariables(template, variables: variables)
-            else {
+            guard let template = vocabulary[key] else {
+                return .text(readableServerFallback(key: key, variables: variables))
+            }
+            guard let substituted = substituteVariables(template, variables: variables) else {
                 return nil
             }
             return .text(substituted)
+        case let .modify(modifiers, entry):
+            guard let resolved = resolvedStaticEntry(entry, vocabulary: vocabulary) else {
+                return nil
+            }
+            return .modified(modifiers: modifiers, entry: resolved)
+        case let .composite(entries):
+            return resolvedStaticEntries(entries, vocabulary: vocabulary).map {
+                .composite(entries: $0)
+            }
+        case let .column(entries):
+            return resolvedStaticEntries(entries, vocabulary: vocabulary).map {
+                .columns(entries: $0)
+            }
         case let .list(items):
             var resolvedItems: [ResolvedStoryListItem] = []
             resolvedItems.reserveCapacity(items.count)
@@ -139,7 +162,31 @@ extension StoryNarrativeLocalization {
                 resolvedItems.append(resolvedItem)
             }
             return .list(items: resolvedItems)
+        case let .card(cardCode, imageModifiers):
+            return .cardReference(cardCode: cardCode, imageModifiers: imageModifiers)
+        case let .tarot(arcana):
+            return .tarotReference(arcana: arcana)
+        case let .chaosToken(face):
+            return .chaosTokenReference(face: face)
+        case let .chaosTokenMorph(from, target):
+            return .chaosTokenMorph(from: from, target: target)
+        case .split:
+            return .divider
         }
+    }
+
+    static func resolvedStaticEntries(
+        _ entries: [FlavorTextEntry], vocabulary: [String: String]
+    ) -> [ResolvedStoryEntry]? {
+        var resolvedEntries: [ResolvedStoryEntry] = []
+        resolvedEntries.reserveCapacity(entries.count)
+        for entry in entries {
+            guard let resolved = resolvedStaticEntry(entry, vocabulary: vocabulary) else {
+                return nil
+            }
+            resolvedEntries.append(resolved)
+        }
+        return resolvedEntries
     }
 
     static func resolvedStaticListItem(
@@ -191,6 +238,33 @@ extension StoryNarrativeLocalization {
             number.description
         case .null, .bool, .array, .object:
             nil
+        }
+    }
+
+    static func readableServerFallback(key: String, variables: JSONValue) -> String {
+        guard case let .object(object) = variables, !object.isEmpty else { return key }
+        let pairs = object.keys.sorted().map { key in
+            "\(key): \(readableJSONValue(object[key] ?? .null))"
+        }
+        return "\(key) (\(pairs.joined(separator: ", ")))"
+    }
+
+    static func readableJSONValue(_ value: JSONValue) -> String {
+        switch value {
+        case .null:
+            "null"
+        case let .bool(flag):
+            flag ? "true" : "false"
+        case let .number(number):
+            number.description
+        case let .string(text):
+            text
+        case let .array(values):
+            "[" + values.map(readableJSONValue).joined(separator: ", ") + "]"
+        case let .object(object):
+            "{" + object.keys.sorted().map { key in
+                "\(key): \(readableJSONValue(object[key] ?? .null))"
+            }.joined(separator: ", ") + "}"
         }
     }
 

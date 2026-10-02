@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import SwiftUI
 
 enum StoryNodeFlowItem: Equatable {
@@ -44,8 +45,8 @@ enum StoryNodePresentation {
 }
 
 /// Renders a single ``ResolvedStoryEntry``: every entry reaching this view already went
-/// through ``StoryNarrativeLocalization/resolvedStory(for:vocabulary:)``, so `.text` is
-/// always finished, human-readable narrative -- never a raw i18n key.
+/// through ``StoryNarrativeLocalization`` so `.text` is either resolved catalog prose,
+/// literal server text, or a readable server-key fallback.
 struct ResolvedStoryEntryView: View {
     let entry: ResolvedStoryEntry
 
@@ -59,12 +60,166 @@ struct ResolvedStoryEntryView: View {
             StoryNodeChildrenView(children: nodes)
                 .font(StoryHeadingPresentation.font(for: level.rawValue))
                 .addingStoryHeadingTrait()
+        case let .modified(modifiers, entry):
+            ModifiedResolvedStoryEntryView(modifiers: modifiers, entry: entry)
+        case let .composite(entries):
+            ResolvedStoryEntryGroupView(entries: entries)
+        case let .columns(entries):
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                    ResolvedStoryEntryView(entry: entry)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         case let .list(items):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     ResolvedStoryListItemView(item: item)
                 }
             }
+        case let .cardReference(cardCode, imageModifiers):
+            StoryReferenceText(
+                title: "Card \(cardCode.rawValue)",
+                detail: imageModifiers.map(\.rawValue).joined(separator: ", ")
+            )
+        case let .tarotReference(arcana):
+            StoryReferenceText(title: "Tarot \(arcana)")
+        case let .chaosTokenReference(face):
+            StoryReferenceText(title: "Chaos token \(face.rawValue)")
+        case let .chaosTokenMorph(from, target):
+            StoryReferenceText(title: "Chaos token \(from.rawValue) → \(target.rawValue)")
+        case .divider:
+            Divider()
+        }
+    }
+}
+
+private struct ResolvedStoryEntryGroupView: View {
+    let entries: [ResolvedStoryEntry]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                ResolvedStoryEntryView(entry: entry)
+            }
+        }
+    }
+}
+
+private struct ModifiedResolvedStoryEntryView: View {
+    let modifiers: [FlavorTextModifier]
+    let entry: ResolvedStoryEntry
+
+    var body: some View {
+        ResolvedStoryEntryView(entry: entry)
+            .modifier(StoryFlavorTextModifier(modifiers: modifiers))
+    }
+}
+
+private struct StoryReferenceText: View {
+    let title: String
+    var detail: String = ""
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "text.book.closed")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .font(.caption)
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct StoryFlavorTextModifier: ViewModifier {
+    let modifiers: [FlavorTextModifier]
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(foregroundStyle)
+            .font(font)
+            .multilineTextAlignment(alignment)
+            .frame(maxWidth: .infinity, alignment: frameAlignment)
+            .padding(padding)
+            .background(background)
+            .overlay(border)
+    }
+
+    private var foregroundStyle: Color {
+        if modifiers.contains(.redEntry) || modifiers.contains(.invalidEntry) {
+            return .red
+        }
+        if modifiers.contains(.greenEntry) || modifiers.contains(.validEntry) {
+            return .green
+        }
+        if modifiers.contains(.blueEntry) {
+            return .blue
+        }
+        if modifiers.contains(.hauntedEntry) {
+            return .purple
+        }
+        return .primary
+    }
+
+    private var font: Font? {
+        if modifiers.contains(.plainText) {
+            return .body
+        }
+        if modifiers.contains(.checkpointEntry) || modifiers.contains(.resolutionEntry) {
+            return .headline
+        }
+        return nil
+    }
+
+    private var alignment: TextAlignment {
+        if modifiers.contains(.rightAligned) {
+            return .trailing
+        }
+        if modifiers.contains(.centeredEntry) {
+            return .center
+        }
+        return .leading
+    }
+
+    private var frameAlignment: Alignment {
+        if modifiers.contains(.rightAligned) {
+            return .trailing
+        }
+        if modifiers.contains(.centeredEntry) {
+            return .center
+        }
+        return .leading
+    }
+
+    private var padding: CGFloat {
+        modifiers.contains(.borderedEntry) || modifiers.contains(.codexEntry)
+            || modifiers.contains(.interludeEntry) ? 8 : 0
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        if modifiers.contains(.codexEntry) || modifiers.contains(.interludeEntry) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(ArkhamTheme.accent.opacity(0.12))
+        } else if modifiers.contains(.tokenRevealEntry) || modifiers.contains(.byDifficultyEntry) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        }
+    }
+
+    @ViewBuilder
+    private var border: some View {
+        if modifiers.contains(.borderedEntry) || modifiers.contains(.codexEntry) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(ArkhamTheme.accent.opacity(0.7), lineWidth: 1)
         }
     }
 }

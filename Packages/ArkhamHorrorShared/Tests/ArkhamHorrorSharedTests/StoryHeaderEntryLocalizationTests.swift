@@ -16,12 +16,14 @@ struct StoryHeaderEntryLocalizationTests {
         ])
     }
 
-    @Test("A missing HeaderEntry key fails the whole story closed")
-    func missingHeaderEntryKeyFailsClosed() {
+    @Test("A missing HeaderEntry key falls back to the server-provided key")
+    func missingHeaderEntryKeyFallsBack() {
         let flavorText = FlavorText(
             title: nil, body: [.header(level: .level1, key: "story.missing")]
         )
-        #expect(StoryNarrativeLocalization.resolvedStory(for: flavorText) == nil)
+        #expect(StoryNarrativeLocalization.resolvedStory(for: flavorText)?.body == [
+            .heading(level: .level1, nodes: [.text("story.missing")]),
+        ])
     }
 
     @Test("A HeaderEntry resolves through one verified catalog snapshot as structured nodes")
@@ -53,8 +55,8 @@ struct StoryHeaderEntryLocalizationTests {
         )))
     }
 
-    @Test("HeaderEntry resolution fails closed for a missing catalog or missing catalog key")
-    func productionHeaderEntryMissingAuthorityFailsClosed() async throws {
+    @Test("HeaderEntry resolution falls back for a missing catalog or missing catalog key")
+    func productionHeaderEntryMissingAuthorityFallsBack() async throws {
         let chromeNamedFlavorText = FlavorText(
             title: nil, body: [.header(level: .level1, key: "setup")]
         )
@@ -62,7 +64,10 @@ struct StoryHeaderEntryLocalizationTests {
             chromeNamedFlavorText,
             resolver: nil,
             catalogUnavailability: .catalog(.notAdvertised)
-        ) == .unavailable(.catalog(.notAdvertised)))
+        ) == .resolved(ResolvedStory(
+            title: nil,
+            body: [.heading(level: .level1, nodes: [.text("Setup")])]
+        )))
 
         let documents = try SyntheticLocaleCatalogDocuments.make()
         let snapshot = try await documents.loadSnapshot()
@@ -74,7 +79,10 @@ struct StoryHeaderEntryLocalizationTests {
             missingFlavorText,
             resolver: resolver,
             catalogUnavailability: nil
-        ) == .unavailable(.missingKey))
+        ) == .resolved(ResolvedStory(
+            title: nil,
+            body: [.heading(level: .level1, nodes: [.text("story.missing")])]
+        )))
     }
 
     @Test("A HeaderEntry uses the verified catalog instead of chrome fallback text")

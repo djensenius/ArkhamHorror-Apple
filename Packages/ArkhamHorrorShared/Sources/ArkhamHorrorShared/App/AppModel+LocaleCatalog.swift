@@ -271,7 +271,7 @@ extension AppModel {
         return FlavorText(title: flavorText.title, body: body)
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     private func presentationFlavorEntry(_ entry: JSONValue) -> FlavorTextEntry? {
         guard case let .object(object) = entry,
               case let .string(tag)? = object["tag"]
@@ -283,16 +283,35 @@ extension AppModel {
         case "HeaderEntry":
             guard case let .number(levelNumber)? = object["level"],
                   let magnitude = levelNumber.wholeNumberMagnitude,
-                  let integerLevel = Int(magnitude),
-                  let level = FlavorTextHeadingLevel(rawValue: integerLevel),
+                  let parsedMagnitude = Int(magnitude),
                   case let .string(key)? = object["key"]
             else { return nil }
-            return .header(level: level, key: key)
+            let integerLevel = levelNumber.sign == .minus ? -parsedMagnitude : parsedMagnitude
+            return .header(level: FlavorTextHeadingLevel(rawValue: integerLevel), key: key)
         case "I18nEntry":
             guard case let .string(key)? = object["key"],
                   case let .object(variables)? = object["variables"]
             else { return nil }
             return .i18n(key: key, variables: .object(variables))
+        case "ModifyEntry":
+            guard case let .array(rawModifiers)? = object["modifiers"],
+                  let rawEntry = object["entry"],
+                  let converted = presentationFlavorEntry(rawEntry)
+            else { return nil }
+            var modifiers: [FlavorTextModifier] = []
+            for rawModifier in rawModifiers {
+                guard case let .string(text) = rawModifier,
+                      let modifier = FlavorTextModifier(rawValue: text)
+                else { return nil }
+                modifiers.append(modifier)
+            }
+            return .modify(modifiers: modifiers, entry: converted)
+        case "CompositeEntry":
+            guard let entries = presentationFlavorEntries(object["entries"]) else { return nil }
+            return .composite(entries: entries)
+        case "ColumnEntry":
+            guard let entries = presentationFlavorEntries(object["entries"]) else { return nil }
+            return .column(entries: entries)
         case "ListEntry":
             guard case let .array(rawItems)? = object["list"] else { return nil }
             var items: [FlavorTextListItem] = []
@@ -301,9 +320,46 @@ extension AppModel {
                 items.append(item)
             }
             return .list(items: items)
+        case "CardEntry":
+            guard case let .string(rawCardCode)? = object["cardCode"],
+                  let cardCode = BasicChoiceParser.strictCardCode(rawCardCode),
+                  case let .array(rawModifiers)? = object["imageModifiers"]
+            else { return nil }
+            var modifiers: [FlavorTextImageModifier] = []
+            for rawModifier in rawModifiers {
+                guard case let .string(text) = rawModifier,
+                      let modifier = FlavorTextImageModifier(rawValue: text)
+                else { return nil }
+                modifiers.append(modifier)
+            }
+            return .card(cardCode: cardCode, imageModifiers: modifiers)
+        case "TarotEntry":
+            guard case let .string(arcana)? = object["tarot"] else { return nil }
+            return .tarot(arcana: arcana)
+        case "ChaosTokenEntry":
+            guard case let .string(face)? = object["chaosTokenFace"] else { return nil }
+            return .chaosToken(face: ChaosTokenFace(face))
+        case "ChaosTokenMorphEntry":
+            guard case let .string(from)? = object["morphFrom"],
+                  case let .string(target)? = object["morphTo"]
+            else { return nil }
+            return .chaosTokenMorph(from: ChaosTokenFace(from), target: ChaosTokenFace(target))
+        case "EntrySplit":
+            return .split
         default:
             return nil
         }
+    }
+
+    private func presentationFlavorEntries(_ value: JSONValue?) -> [FlavorTextEntry]? {
+        guard case let .array(rawEntries)? = value else { return nil }
+        var entries: [FlavorTextEntry] = []
+        entries.reserveCapacity(rawEntries.count)
+        for rawEntry in rawEntries {
+            guard let entry = presentationFlavorEntry(rawEntry) else { return nil }
+            entries.append(entry)
+        }
+        return entries
     }
 
     private func presentationFlavorListItem(_ item: JSONValue) -> FlavorTextListItem? {

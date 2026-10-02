@@ -4,38 +4,69 @@ import Foundation
 /// encoded with the backend's `flavor`-field prefix stripped (`Arkham/Json.hs`'s
 /// `aesonOptions`).
 ///
-/// `title`, every `HeaderEntry.key`, and every `I18nEntry.key` are literal i18n lookup keys,
-/// never rendered narrative text on the wire (the pinned schema's own documentation: "it is
-/// never rendered narrative text on the wire") — this domain type preserves them exactly as
-/// decoded, completely losslessly, but never presents them directly:
-/// ``StoryNarrativeLocalization`` is this client's sole narrow, fail-closed boundary that
-/// resolves a `FlavorText` into human-readable presentation text (or `nil`, when no lawful
-/// resolution is possible), rather than fabricating, translating, or otherwise inventing
-/// Arkham Horror LCG flavor prose.
+/// `title`, every `HeaderEntry.key`, and every `I18nEntry.key` are catalog lookup keys
+/// when a verified catalog is available. They are still server-authored story data, so this
+/// domain type preserves every `Arkham.Text.FlavorTextEntry` constructor the backend can
+/// encode and lets presentation fall back to readable server-provided values instead of
+/// treating story formatting as an app-update boundary.
 struct FlavorText: Sendable, Equatable, Hashable {
     let title: String?
     let body: [FlavorTextEntry]
 }
 
-/// The two heading levels the governed `HeaderEntry` contract permits.
-enum FlavorTextHeadingLevel: Int, Sendable, Equatable, Hashable {
-    case level1 = 1
-    case level3 = 3
+/// `HeaderEntry.level` is an unconstrained Haskell `Int`; web renders level 1 as h1 and
+/// every other level as a smaller heading, so Apple keeps the integer rather than closing
+/// over a historical subset.
+struct FlavorTextHeadingLevel: RawRepresentable, Sendable, Equatable, Hashable {
+    let rawValue: Int
+
+    static let level1 = FlavorTextHeadingLevel(rawValue: 1)
+    static let level3 = FlavorTextHeadingLevel(rawValue: 3)
 }
 
-/// Only the four `FlavorTextEntry` (`Arkham/Text.hs`) constructors the governed contract
-/// slice actually exercises. Every other real constructor (`ModifyEntry`, `CompositeEntry`,
-/// `ColumnEntry`, `CardEntry`, `TarotEntry`, `ChaosTokenEntry`, `ChaosTokenMorphEntry`,
-/// `EntrySplit`) has no case here and fails the containing `Read` question closed (see
-/// `BasicChoiceParser.parseFlavorTextEntry`) — never silently dropped or normalized into
-/// one of these four.
+enum FlavorTextModifier: String, Sendable, Equatable, Hashable, CaseIterable {
+    case blueEntry = "BlueEntry"
+    case greenEntry = "GreenEntry"
+    case borderedEntry = "BorderedEntry"
+    case redEntry = "RedEntry"
+    case rightAligned = "RightAligned"
+    case plainText = "PlainText"
+    case invalidEntry = "InvalidEntry"
+    case validEntry = "ValidEntry"
+    case centeredEntry = "CenteredEntry"
+    case resolutionEntry = "ResolutionEntry"
+    case checkpointEntry = "CheckpointEntry"
+    case interludeEntry = "InterludeEntry"
+    case nestedEntry = "NestedEntry"
+    case noUnderline = "NoUnderline"
+    case codexEntry = "CodexEntry"
+    case hauntedEntry = "HauntedEntry"
+    case tokenRevealEntry = "TokenRevealEntry"
+    case byDifficultyEntry = "ByDifficultyEntry"
+}
+
+enum FlavorTextImageModifier: String, Sendable, Equatable, Hashable, CaseIterable {
+    case removeImage = "RemoveImage"
+    case selectImage = "SelectImage"
+    case smallImage = "SmallImage"
+}
+
+/// Every `FlavorTextEntry` constructor currently emitted by `Arkham.Text`.
 indirect enum FlavorTextEntry: Sendable, Equatable, Hashable {
     case basic(text: String)
     case header(level: FlavorTextHeadingLevel, key: String)
-    /// `variables` is preserved losslessly and opaque (the schema itself only requires it
-    /// be a JSON object) — this client never interprets or substitutes it.
+    /// `variables` is preserved losslessly and opaque unless a verified catalog template
+    /// requests substitution.
     case i18n(key: String, variables: JSONValue)
+    case modify(modifiers: [FlavorTextModifier], entry: FlavorTextEntry)
+    case composite(entries: [FlavorTextEntry])
+    case column(entries: [FlavorTextEntry])
     case list(items: [FlavorTextListItem])
+    case card(cardCode: CardCode, imageModifiers: [FlavorTextImageModifier])
+    case tarot(arcana: String)
+    case chaosToken(face: ChaosTokenFace)
+    case chaosTokenMorph(from: ChaosTokenFace, target: ChaosTokenFace)
+    case split
 }
 
 /// `FlavorTextEntry`'s recursive `ListEntry` item, exactly mirroring the wire's
@@ -127,6 +158,7 @@ extension BasicChoiceParser {
         return FlavorText(title: title, body: body)
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private static func parseFlavorTextEntry(_ value: JSONValue) -> FlavorTextEntry? {
         guard case let .object(object) = value, case let .string(tag)? = object["tag"] else {
             return nil
@@ -138,8 +170,25 @@ extension BasicChoiceParser {
             return parseHeaderFlavorTextEntry(object)
         case "I18nEntry":
             return parseI18nFlavorTextEntry(object)
+        case "ModifyEntry":
+            return parseModifyFlavorTextEntry(object)
+        case "CompositeEntry":
+            return parseCompositeFlavorTextEntry(object)
+        case "ColumnEntry":
+            return parseColumnFlavorTextEntry(object)
         case "ListEntry":
             return parseListFlavorTextEntry(object)
+        case "CardEntry":
+            return parseCardFlavorTextEntry(object)
+        case "TarotEntry":
+            return parseTarotFlavorTextEntry(object)
+        case "ChaosTokenEntry":
+            return parseChaosTokenFlavorTextEntry(object)
+        case "ChaosTokenMorphEntry":
+            return parseChaosTokenMorphFlavorTextEntry(object)
+        case "EntrySplit":
+            guard Set(object.keys) == ["tag"] else { return nil }
+            return .split
         default:
             return nil
         }
@@ -159,8 +208,7 @@ extension BasicChoiceParser {
     ) -> FlavorTextEntry? {
         guard Set(object.keys) == ["tag", "level", "key"],
               let level = parseFlavorTextHeadingLevel(object["level"]),
-              case let .string(key)? = object["key"],
-              LocaleCatalogGrammar.isMessageKey(key)
+              case let .string(key)? = object["key"]
         else { return nil }
         return .header(level: level, key: key)
     }
@@ -170,10 +218,56 @@ extension BasicChoiceParser {
     ) -> FlavorTextEntry? {
         guard Set(object.keys) == ["tag", "key", "variables"],
               case let .string(key)? = object["key"],
-              LocaleCatalogGrammar.isMessageKey(key),
               case let .object(variables)? = object["variables"]
         else { return nil }
         return .i18n(key: key, variables: .object(variables))
+    }
+
+    private static func parseModifyFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        guard Set(object.keys) == ["tag", "modifiers", "entry"],
+              case let .array(rawModifiers)? = object["modifiers"],
+              let entryValue = object["entry"],
+              let entry = parseFlavorTextEntry(entryValue)
+        else { return nil }
+        var modifiers: [FlavorTextModifier] = []
+        modifiers.reserveCapacity(rawModifiers.count)
+        for rawModifier in rawModifiers {
+            guard case let .string(text) = rawModifier,
+                  let modifier = FlavorTextModifier(rawValue: text)
+            else { return nil }
+            modifiers.append(modifier)
+        }
+        return .modify(modifiers: modifiers, entry: entry)
+    }
+
+    private static func parseCompositeFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        parseEntryArray(object, tag: "CompositeEntry").map { .composite(entries: $0) }
+    }
+
+    private static func parseColumnFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        parseEntryArray(object, tag: "ColumnEntry").map { .column(entries: $0) }
+    }
+
+    private static func parseEntryArray(
+        _ object: [String: JSONValue], tag: String
+    ) -> [FlavorTextEntry]? {
+        guard Set(object.keys) == ["tag", "entries"],
+              object["tag"] == .string(tag),
+              case let .array(rawEntries)? = object["entries"]
+        else { return nil }
+        var entries: [FlavorTextEntry] = []
+        entries.reserveCapacity(rawEntries.count)
+        for value in rawEntries {
+            guard let entry = parseFlavorTextEntry(value) else { return nil }
+            entries.append(entry)
+        }
+        return entries
     }
 
     private static func parseListFlavorTextEntry(
@@ -191,18 +285,62 @@ extension BasicChoiceParser {
         return .list(items: items)
     }
 
+    private static func parseCardFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        guard Set(object.keys) == ["tag", "cardCode", "imageModifiers"],
+              case let .string(rawCardCode)? = object["cardCode"],
+              let cardCode = strictCardCode(rawCardCode),
+              case let .array(rawModifiers)? = object["imageModifiers"]
+        else { return nil }
+        var modifiers: [FlavorTextImageModifier] = []
+        modifiers.reserveCapacity(rawModifiers.count)
+        for rawModifier in rawModifiers {
+            guard case let .string(text) = rawModifier,
+                  let modifier = FlavorTextImageModifier(rawValue: text)
+            else { return nil }
+            modifiers.append(modifier)
+        }
+        return .card(cardCode: cardCode, imageModifiers: modifiers)
+    }
+
+    private static func parseTarotFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        guard Set(object.keys) == ["tag", "tarot"],
+              case let .string(arcana)? = object["tarot"]
+        else { return nil }
+        return .tarot(arcana: arcana)
+    }
+
+    private static func parseChaosTokenFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        guard Set(object.keys) == ["tag", "chaosTokenFace"],
+              case let .string(face)? = object["chaosTokenFace"]
+        else { return nil }
+        return .chaosToken(face: ChaosTokenFace(face))
+    }
+
+    private static func parseChaosTokenMorphFlavorTextEntry(
+        _ object: [String: JSONValue]
+    ) -> FlavorTextEntry? {
+        guard Set(object.keys) == ["tag", "morphFrom", "morphTo"],
+              case let .string(from)? = object["morphFrom"],
+              case let .string(target)? = object["morphTo"]
+        else { return nil }
+        return .chaosTokenMorph(from: ChaosTokenFace(from), target: ChaosTokenFace(target))
+    }
+
     private static func parseFlavorTextHeadingLevel(
         _ value: JSONValue?
     ) -> FlavorTextHeadingLevel? {
         guard case let .number(number)? = value,
-              number.sign == .plus,
-              let magnitude = number.wholeNumberMagnitude
+              let magnitude = number.wholeNumberMagnitude,
+              let parsedMagnitude = Int(magnitude)
         else { return nil }
-        switch magnitude {
-        case "1": return .level1
-        case "3": return .level3
-        default: return nil
-        }
+        let level = number.sign == .minus ? -parsedMagnitude : parsedMagnitude
+        return FlavorTextHeadingLevel(rawValue: level)
     }
 
     private static func parseFlavorTextListItem(_ value: JSONValue) -> FlavorTextListItem? {

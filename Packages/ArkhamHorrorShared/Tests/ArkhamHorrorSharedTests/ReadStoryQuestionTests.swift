@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -7,6 +8,7 @@ import Testing
 /// djensenius/ArkhamHorror-Apple#35), first governed at backend commit `52c7ee3b` and
 /// extended with production `HeaderEntry` support at `d3e4c993`, schema `0.1.27`.
 @Suite("Read story and location choice contract")
+// swiftlint:disable:next type_body_length
 struct ReadStoryQuestionTests {
     func fixture(_ name: String) throws -> Data {
         let url = try #require(
@@ -77,9 +79,10 @@ struct ReadStoryQuestionTests {
     }
 
     @Test(
-        "HeaderEntry accepts only governed integer heading levels and preserves its catalog key",
+        "HeaderEntry accepts any server integer heading level and preserves its catalog key",
         arguments: [
             (1, FlavorTextHeadingLevel.level1),
+            (2, FlavorTextHeadingLevel(rawValue: 2)),
             (3, FlavorTextHeadingLevel.level3),
         ]
     )
@@ -96,6 +99,177 @@ struct ReadStoryQuestionTests {
         let story = try #require(payload.supportedQuestion?.story)
         #expect(story.flavorText.body == [.header(level: expected, key: "story.heading")])
     }
+
+    // swiftlint:disable line_length
+    @Test("Every Arkham.Text FlavorTextEntry constructor decodes from server JSON")
+    func allServerFlavorTextEntryConstructorsDecode() throws {
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: Data(Self.allFlavorEntriesReadQuestion.utf8)
+        )
+        let story = try #require(payload.supportedQuestion?.story)
+        #expect(story.flavorText.title == "$story.title")
+        #expect(story.flavorText.body == Self.expectedAllFlavorEntries)
+        #expect(payload.isUpdateRequired == false)
+    }
+
+    @Test("Every FlavorTextEntry constructor resolves without a catalog using server-provided fallback text")
+    func allServerFlavorTextEntryConstructorsResolveWithoutCatalog() throws {
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: Data(Self.allFlavorEntriesReadQuestion.utf8)
+        )
+        let flavorText = try #require(payload.supportedQuestion?.story?.flavorText)
+        #expect(StoryNarrativeLocalization.resolve(
+            flavorText,
+            resolver: nil,
+            catalogUnavailability: .catalog(.notAdvertised)
+        ) == .resolved(ResolvedStory(
+            title: "story.title",
+            body: Self.expectedAllFlavorEntriesWithoutCatalog
+        )))
+    }
+
+    @Test("Every FlavorTextEntry constructor resolves with a catalog where keys are available")
+    func allServerFlavorTextEntryConstructorsResolveWithCatalog() async throws {
+        let documents = try SyntheticLocaleCatalogDocuments.make(
+            entryKeys: ["story.basic", "story.heading", "story.i18n", "story.listItem", "story.title"],
+            chunkEntries: """
+            {"story.title":{"form":"message","nodes":[{"type":"text","value":"Catalog title"}],"variables":[]},\
+            "story.basic":{"form":"message","nodes":[{"type":"text","value":"Catalog basic"}],"variables":[]},\
+            "story.heading":{"form":"message","nodes":[{"type":"text","value":"Catalog heading"}],"variables":[]},\
+            "story.i18n":{"form":"message","nodes":[{"type":"text","value":"Catalog i18n"}],"variables":[]},\
+            "story.listItem":{"form":"message","nodes":[{"type":"text","value":"Catalog list item"}],"variables":[]}}
+            """
+        )
+        let snapshot = try await documents.loadSnapshot()
+        let resolver = LocaleCatalogResolver(snapshot: snapshot)
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: Data(Self.allFlavorEntriesReadQuestion.utf8)
+        )
+        let flavorText = try #require(payload.supportedQuestion?.story?.flavorText)
+        #expect(StoryNarrativeLocalization.resolve(
+            flavorText,
+            resolver: resolver,
+            catalogUnavailability: nil
+        ) == .resolved(ResolvedStory(
+            title: "Catalog title",
+            body: Self.expectedAllFlavorEntriesWithCatalog
+        )))
+    }
+
+    @Test("A missing catalog key falls back to readable server data and leaves Continue answerable")
+    func missingCatalogKeyFallbackStaysAnswerable() async throws {
+        let documents = try SyntheticLocaleCatalogDocuments.make()
+        let snapshot = try await documents.loadSnapshot()
+        let resolver = LocaleCatalogResolver(snapshot: snapshot)
+        let bytes = Data(
+            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"I18nEntry","key":"story.missing","variables":{"name":"Daisy"}}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#.utf8
+        )
+        let payload = try ContractJSON.decode(BasicChoiceQuestionPayload.self, from: bytes)
+        let question = try #require(payload.supportedQuestion)
+        let story = try #require(question.story)
+        let resolution = StoryNarrativeLocalization.resolve(
+            story.flavorText,
+            resolver: resolver,
+            catalogUnavailability: nil
+        )
+        #expect(resolution == .resolved(ResolvedStory(
+            title: nil,
+            body: [.text("story.missing (name: Daisy)")]
+        )))
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        #expect(projection.isChoiceActionable(question.choices[0], storyResolution: resolution))
+    }
+
+    static var allFlavorEntriesReadQuestion: String {
+        #"{"tag":"Read","flavorText":{"title":"$story.title","body":[{"tag":"BasicEntry","text":"$story.basic"},{"tag":"HeaderEntry","level":2,"key":"story.heading"},{"tag":"I18nEntry","key":"story.i18n","variables":{"name":"Daisy"}},{"tag":"ModifyEntry","modifiers":["BlueEntry","GreenEntry","BorderedEntry","RedEntry","RightAligned","PlainText","InvalidEntry","ValidEntry","CenteredEntry","ResolutionEntry","CheckpointEntry","InterludeEntry","NestedEntry","NoUnderline","CodexEntry","HauntedEntry","TokenRevealEntry","ByDifficultyEntry"],"entry":{"tag":"BasicEntry","text":"Modified"}},{"tag":"CompositeEntry","entries":[{"tag":"BasicEntry","text":"Composite A"},{"tag":"BasicEntry","text":"Composite B"}]},{"tag":"ColumnEntry","entries":[{"tag":"BasicEntry","text":"Column A"},{"tag":"BasicEntry","text":"Column B"}]},{"tag":"ListEntry","list":[{"entry":{"tag":"I18nEntry","key":"story.listItem","variables":{}},"nested":[{"entry":{"tag":"BasicEntry","text":"Nested basic"},"nested":[]}]}]},{"tag":"CardEntry","cardCode":"c01159","imageModifiers":["RemoveImage","SelectImage","SmallImage"]},{"tag":"TarotEntry","tarot":"TheFool0"},{"tag":"ChaosTokenEntry","chaosTokenFace":"Skull"},{"tag":"ChaosTokenMorphEntry","morphFrom":"Skull","morphTo":"Cultist"},{"tag":"EntrySplit"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#
+    }
+
+    static var allModifiers: [FlavorTextModifier] {
+        [
+            .blueEntry, .greenEntry, .borderedEntry, .redEntry, .rightAligned, .plainText,
+            .invalidEntry, .validEntry, .centeredEntry, .resolutionEntry, .checkpointEntry,
+            .interludeEntry, .nestedEntry, .noUnderline, .codexEntry, .hauntedEntry,
+            .tokenRevealEntry, .byDifficultyEntry,
+        ]
+    }
+
+    static var expectedAllFlavorEntries: [FlavorTextEntry] {
+        [
+            .basic(text: "$story.basic"),
+            .header(level: FlavorTextHeadingLevel(rawValue: 2), key: "story.heading"),
+            .i18n(key: "story.i18n", variables: .object(["name": .string("Daisy")])),
+            .modify(modifiers: allModifiers, entry: .basic(text: "Modified")),
+            .composite(entries: [.basic(text: "Composite A"), .basic(text: "Composite B")]),
+            .column(entries: [.basic(text: "Column A"), .basic(text: "Column B")]),
+            .list(items: [
+                FlavorTextListItem(
+                    entry: .i18n(key: "story.listItem", variables: .object([:])),
+                    nested: [FlavorTextListItem(entry: .basic(text: "Nested basic"), nested: [])]
+                ),
+            ]),
+            .card(
+                cardCode: BoardTestFixtures.cardCode("c01159"),
+                imageModifiers: [.removeImage, .selectImage, .smallImage]
+            ),
+            .tarot(arcana: "TheFool0"),
+            .chaosToken(face: .skull),
+            .chaosTokenMorph(from: .skull, target: .cultist),
+            .split,
+        ]
+    }
+
+    static var expectedAllFlavorEntriesWithoutCatalog: [ResolvedStoryEntry] {
+        expectedResolvedEntries(
+            basic: .text("story.basic"),
+            heading: "story.heading",
+            i18n: .text("story.i18n (name: Daisy)"),
+            listItem: .text("story.listItem")
+        )
+    }
+
+    static var expectedAllFlavorEntriesWithCatalog: [ResolvedStoryEntry] {
+        expectedResolvedEntries(
+            basic: .nodes([.text("Catalog basic")]),
+            heading: "Catalog heading",
+            i18n: .nodes([.text("Catalog i18n")]),
+            listItem: .nodes([.text("Catalog list item")])
+        )
+    }
+
+    static func expectedResolvedEntries(
+        basic: ResolvedStoryEntry,
+        heading: String,
+        i18n: ResolvedStoryEntry,
+        listItem: ResolvedStoryEntry
+    ) -> [ResolvedStoryEntry] {
+        [
+            basic,
+            .heading(level: FlavorTextHeadingLevel(rawValue: 2), nodes: [.text(heading)]),
+            i18n,
+            .modified(modifiers: allModifiers, entry: .text("Modified")),
+            .composite(entries: [.text("Composite A"), .text("Composite B")]),
+            .columns(entries: [.text("Column A"), .text("Column B")]),
+            .list(items: [
+                ResolvedStoryListItem(
+                    entry: listItem,
+                    nested: [ResolvedStoryListItem(entry: .text("Nested basic"), nested: [])]
+                ),
+            ]),
+            .cardReference(
+                cardCode: BoardTestFixtures.cardCode("c01159"),
+                imageModifiers: [.removeImage, .selectImage, .smallImage]
+            ),
+            .tarotReference(arcana: "TheFool0"),
+            .chaosTokenReference(face: .skull),
+            .chaosTokenMorph(from: .skull, target: .cultist),
+            .divider,
+        ]
+    }
+
+    // swiftlint:enable line_length
 
     // MARK: - question-choose-one-location.json / -multiple.json
 
@@ -153,7 +327,6 @@ struct ReadStoryQuestionTests {
 
     // MARK: - Malformed Read questions remain explicit unsupported, never a silent Continue
 
-    // Governed malformed JSON remains legible as exact one-line token streams.
     // swiftlint:disable line_length
     @Test(
         "Malformed Read questions become update-required, never a normalized continue",
@@ -180,18 +353,10 @@ struct ReadStoryQuestionTests {
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","text":"x"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // HeaderEntry level must be a JSON integer.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":"1","key":"story.heading"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
-            // HeaderEntry level 2 is not emitted or governed.
-            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":2,"key":"story.heading"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
-            // HeaderEntry keys follow the catalog message-key grammar.
-            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":1,"key":"story/bad"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // HeaderEntry is closed against additional fields.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":1,"key":"story.heading","extra":true}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // I18nEntry missing required "variables" key.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"I18nEntry","key":"x"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
-            // I18nEntry key must be non-empty.
-            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"I18nEntry","key":"","variables":{}}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
-            // I18nEntry keys use the same canonical catalog message-key grammar as headings.
-            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"I18nEntry","key":"story..bad","variables":{}}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // Nested ListEntry item with a malformed inner entry fails the whole question.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"ListEntry","list":[{"entry":{"tag":"BogusEntry"},"nested":[]}]}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // Unexpected additional top-level key.
@@ -291,6 +456,8 @@ struct ReadStoryQuestionTests {
         #expect(!title.contains("d5a66e84"))
     }
 
+    // swiftlint:enable line_length
+
     @Test("choiceDisplayTitle uses the static per-kind title for every non-location choice")
     func choiceDisplayTitleUsesStaticTitleForOtherKinds() throws {
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
@@ -298,7 +465,8 @@ struct ReadStoryQuestionTests {
             BasicChoiceQuestionPayload.self, from: fixture("question-read")
         )
         let choice = try #require(payload.supportedQuestion?.choices.first)
-        #expect(BoardDisplayFormatting.choiceDisplayTitle(for: choice, in: projection) == "Continue")
+        #expect(
+            BoardDisplayFormatting.choiceDisplayTitle(for: choice, in: projection) == "Continue"
+        )
     }
-    // swiftlint:enable line_length
 }
