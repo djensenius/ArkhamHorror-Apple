@@ -11,23 +11,43 @@ private struct NightOfTheZealotPreferredLanguages: PreferredLanguagesProviding {
     let preferredLanguages = ["en"]
 }
 
+private func nightOfTheZealotCoverageDirectoryURL() -> URL? {
+    guard let rawDirectory = ProcessInfo.processInfo.environment[
+        NightOfTheZealotCoverageEnvironmentKey.recordingsDirectory
+    ], !rawDirectory.isEmpty else {
+        return nil
+    }
+    return URL(fileURLWithPath: rawDirectory, isDirectory: true)
+}
+
 @MainActor
 @Suite("Night of the Zealot coverage replay")
 struct NightOfTheZealotCoverageReplayTests {
-    @Test("Replay coverage JSONL prompts through AppModel")
+    @Test(
+        "Replay coverage JSONL prompts through AppModel",
+        .enabled(if: nightOfTheZealotCoverageDirectoryURL() != nil)
+    )
     func replayCoverageJSONLPrompts() async throws {
-        let environment = ProcessInfo.processInfo.environment
-        guard let rawDirectory = environment[
-            NightOfTheZealotCoverageEnvironmentKey.recordingsDirectory
-        ], !rawDirectory.isEmpty else {
-            return
-        }
+        let directory = try #require(nightOfTheZealotCoverageDirectoryURL())
+        try await run(recordings: CoverageRecordingLoader.load(directory: directory))
+    }
 
-        let recordings = try CoverageRecordingLoader.load(
-            directory: URL(fileURLWithPath: rawDirectory, isDirectory: true)
+    @Test("Replay smoke JSONL fixture through the coverage harness")
+    func replaySmokeJSONLFixture() async throws {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: "smoke",
+                withExtension: "jsonl",
+                subdirectory: "Fixtures/NightOfTheZealotCoverageReplay"
+            )
         )
+        try await run(recordings: CoverageRecordingLoader.load(file: url))
+    }
+
+    private func run(recordings: CoverageRecordings) async throws {
         let catalogDocuments = try makeSyntheticCatalog(for: recordings.records)
         let baseEnvelopeData = try fixtureData(named: "get-game")
+        let deck = try sampleDeck()
         var failures: [CoverageReplayPromptFailure] = []
 
         for group in recordings.groupsByFile() {
@@ -35,7 +55,8 @@ struct NightOfTheZealotCoverageReplayTests {
             let replay = try await CoverageReplaySession.start(
                 first: first,
                 baseEnvelopeData: baseEnvelopeData,
-                catalogDocuments: catalogDocuments
+                catalogDocuments: catalogDocuments,
+                deck: deck
             )
             for (index, record) in group.records.enumerated() {
                 do {
@@ -70,6 +91,17 @@ struct NightOfTheZealotCoverageReplayTests {
         return try Data(contentsOf: url)
     }
 
+    private func sampleDeck() throws -> Deck {
+        struct DeckFixture: Decodable {
+            let deck: Deck
+        }
+        return try ContractJSON.decode(DeckFixture.self, from: fixtureData(named: "decks")).deck
+    }
+
+    /// This synthetic catalog keeps replay focused on prompt decoding, routing, rendering,
+    /// and answer submission. It intentionally creates placeholder text for every key the
+    /// recordings mention, so a green replay does not prove locale-catalog key coverage or
+    /// variable-shape compatibility.
     private func makeSyntheticCatalog(
         for records: [CoverageRecording]
     ) throws -> SyntheticLocaleCatalogDocuments {
@@ -138,13 +170,16 @@ struct NightOfTheZealotCoverageReplayTests {
 private struct CoverageReplaySession {
     let model: AppModel
     let connection: FakeGameSocketConnection
+    let service: ScriptedGameLifecycleService
     let gameID: GameID
     let baseEnvelopeData: Data
+    let deck: Deck
 
     static func start(
         first: CoverageRecording,
         baseEnvelopeData: Data,
-        catalogDocuments: SyntheticLocaleCatalogDocuments
+        catalogDocuments: SyntheticLocaleCatalogDocuments,
+        deck: Deck
     ) async throws -> CoverageReplaySession {
         let (model, fakes) = makeModel(catalogDocuments: catalogDocuments)
         await model.flowTask?.value
@@ -161,8 +196,10 @@ private struct CoverageReplaySession {
         return CoverageReplaySession(
             model: model,
             connection: connection,
+            service: fakes.service,
             gameID: envelope.game.id,
-            baseEnvelopeData: baseEnvelopeData
+            baseEnvelopeData: baseEnvelopeData,
+            deck: deck
         )
     }
 
@@ -180,6 +217,14 @@ private struct CoverageReplaySession {
     func verify(_ recording: CoverageRecording) async throws {
         let record = recording.record
         let prompt = try requirePrompt(for: recording)
+        if LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion) {
+            try await verifyLiveChooseDeck(recording, prompt: prompt)
+            return
+        }
+        if prompt.isChooseUpgradeDeckPrompt {
+            try await verifyChooseUpgradeDeck(recording, prompt: prompt)
+            return
+        }
         guard prompt.isRenderableQuestion else {
             throw CoverageReplayPromptFailure(
                 record: recording,
@@ -219,6 +264,99 @@ private struct CoverageReplaySession {
                 reason: "sent answer bytes differ; expected \(expectedText) got \(actualText)"
             )
         }
+    }
+
+    private func verifyLiveChooseDeck(
+        _ recording: CoverageRecording,
+        prompt: BasicChoicePromptPresentation
+    ) async throws {
+        guard recording.record.answerTag == "DeckListAnswer" else {
+            let tag = recording.record.answerTag ?? "nil"
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "ChooseDeck recording used unexpected answer \(tag)"
+            )
+        }
+        guard case let .canAnswer(promptKey) = model.canAnswerLiveChooseDeck(for: gameID),
+              promptKey == prompt.identity.promptKey
+        else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "live ChooseDeck prompt was not actionable"
+            )
+        }
+
+        let sentBefore = await connection.sentData.count
+        await connection.enqueueSendResult(.success(()))
+        guard await model.chooseDeckForLivePrompt(deck, in: gameID) else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "live ChooseDeck submission returned false"
+            )
+        }
+        let sent = await connection.sentData
+        guard sent.count == sentBefore + 1, let actual = sent.last else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "ChooseDeck submission did not send exactly one answer frame"
+            )
+        }
+        let decoded = try ContractJSON.decode(DeckAnswer.self, from: actual)
+        let playerID = try recording.record.recordedPlayerID()
+        guard decoded == DeckAnswer(deckId: deck.id, playerId: playerID) else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "ChooseDeck sent \(decoded) instead of deck \(deck.id) for \(playerID)"
+            )
+        }
+        // The server corpus records DeckListAnswer because the bot submits an inline starter
+        // deck. The Apple app's UI path sends DeckAnswer for a saved deck ID, so this route
+        // is actionable but intentionally not byte-comparable with the recorded answer.
+    }
+
+    private func verifyChooseUpgradeDeck(
+        _ recording: CoverageRecording,
+        prompt: BasicChoicePromptPresentation
+    ) async throws {
+        guard recording.record.answerTag == "DeckListAnswer" else {
+            let tag = recording.record.answerTag ?? "nil"
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "ChooseUpgradeDeck recording used unexpected answer \(tag)"
+            )
+        }
+        let sentBefore = await connection.sentData.count
+        await service.enqueueChooseDeckResult(.success(()))
+        let result = await model.continueCampaignWithoutUpgrading(
+            investigatorId: recording.record.investigator,
+            in: gameID,
+            promptIdentity: prompt.identity
+        )
+        guard result == .submitted else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "ChooseUpgradeDeck REST submission was not actionable: \(result)"
+            )
+        }
+        let sent = await connection.sentData
+        guard sent.count == sentBefore else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "ChooseUpgradeDeck used WebSocket instead of the REST deck route"
+            )
+        }
+        let request = await service.lastChooseDeckRequest
+        guard request?.investigatorId.rawValue == recording.record.investigator,
+              request?.deckUrl == nil,
+              request?.deckList == nil
+        else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "ChooseUpgradeDeck did not submit a nil deck source for the investigator"
+            )
+        }
+        // The server records a DeckListAnswer for this prompt family, while the Apple app's
+        // between-scenario UI routes continuation without upgrades through the REST deck PUT.
     }
 
     private func requirePrompt(
@@ -307,6 +445,18 @@ private struct CoverageRecord: Decodable {
     let questionPresentation: JSONValue
     let chosenAnswer: JSONValue
 
+    var answerTag: String? {
+        guard case let .object(object) = chosenAnswer,
+              case let .string(tag)? = object["tag"]
+        else { return nil }
+        return tag
+    }
+
+    func recordedPlayerID() throws -> PlayerID {
+        guard let uuid = UUID(uuidString: playerID) else { throw TestFailure() }
+        return PlayerID(uuid)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case scenario
         case scenarioKey
@@ -360,11 +510,23 @@ private enum CoverageRecordingLoader {
         guard !urls.isEmpty else {
             throw CoverageReplayFailure(message: "No .jsonl files found in \(directory.path)")
         }
+        return try load(files: urls)
+    }
 
+    static func load(file: URL) throws -> CoverageRecordings {
+        try load(files: [file])
+    }
+
+    private static func load(files urls: [URL]) throws -> CoverageRecordings {
         var records: [CoverageRecording] = []
         for url in urls {
             let text = try String(contentsOf: url, encoding: .utf8)
-            for (offset, line) in text.split(separator: "\n").enumerated() {
+            for (offset, rawLine) in text.split(
+                separator: "\n",
+                omittingEmptySubsequences: false
+            ).enumerated() {
+                let line = rawLine.last == "\r" ? rawLine.dropLast() : rawLine[...]
+                guard !line.isEmpty else { continue }
                 let data = Data(line.utf8)
                 try records.append(CoverageRecording(
                     fileName: url.lastPathComponent,
@@ -374,7 +536,7 @@ private enum CoverageRecordingLoader {
             }
         }
         guard !records.isEmpty else {
-            throw CoverageReplayFailure(message: "Coverage JSONL directory contained no records")
+            throw CoverageReplayFailure(message: "Coverage JSONL input contained no records")
         }
         return CoverageRecordings(records: records)
     }
@@ -400,6 +562,9 @@ private enum CoverageEnvelopeBuilder {
         if case let .continueCampaign(step) = try? RecordedCoverageSubmission(
             answer: record.chosenAnswer
         ) {
+            // The coverage record stores the answer step but not the campaign snapshot that
+            // advertised it. Patch the synthetic snapshot so AppModel verifies the submitted
+            // step against server-published state instead of a client-synthesized value.
             patchCampaignStep(step, in: &game)
         }
         rootObject["game"] = .object(game)

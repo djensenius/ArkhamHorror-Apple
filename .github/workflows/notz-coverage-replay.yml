@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
       - name: Install tools
         uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db
         with:
@@ -25,13 +27,16 @@ jobs:
       - name: Download latest successful fork coverage artifact
         env:
           GH_PROMPT_DISABLED: "1"
-          GH_TOKEN: ${{ github.token }}
+          # Cross-repo artifact downloads may need a token with actions:read on
+          # djensenius/ArkhamHorror; NOTZ_COVERAGE_TOKEN overrides github.token.
+          GH_TOKEN: ${{ secrets.NOTZ_COVERAGE_TOKEN || github.token }}
         run: |
           set -euo pipefail
           run_id="$(
             gh run list \
               --repo djensenius/ArkhamHorror \
               --workflow notz-coverage.yml \
+              --branch main \
               --status success \
               --limit 1 \
               --json databaseId \
