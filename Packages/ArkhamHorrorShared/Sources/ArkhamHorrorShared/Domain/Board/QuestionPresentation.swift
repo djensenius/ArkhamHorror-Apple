@@ -525,7 +525,6 @@ enum QuestionPresentationBindingError: Error, Sendable, Equatable {
     case questionVersion(expected: Int, actual: Int)
     case questionKind(expected: QuestionPresentation.Kind, actual: QuestionPresentation.Kind)
     case choiceCount(expected: Int, actual: Int)
-    case rawChoiceMismatch(sourceIndex: Int)
 }
 
 extension QuestionPresentation {
