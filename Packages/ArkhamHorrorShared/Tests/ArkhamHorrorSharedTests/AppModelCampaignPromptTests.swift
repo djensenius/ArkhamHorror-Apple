@@ -55,7 +55,7 @@ private struct CampaignPromptDeckFixture: Decodable {
     let normalizedDeckList: DeckList
 }
 
-private func campaignPromptProjection(
+func campaignPromptProjection(
     base: BoardProjection,
     questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>
 ) -> BoardProjection {
