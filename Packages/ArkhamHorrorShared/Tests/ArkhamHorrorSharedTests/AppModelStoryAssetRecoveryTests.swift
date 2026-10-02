@@ -73,9 +73,9 @@ extension AppModelStoryAssetTests {
             let resolver = try #require(model.localeCatalogResolver)
             let prompt = try StoryCatalogImageTests.prompt(resolver: resolver)
             let reason = StoryUnavailableReason.imagePipelineUnavailable
-            #expect(prompt.storyResolution == .unavailable(reason))
-            #expect(prompt.statusMessage == reason.announcement)
-            #expect(prompt.statusMessage?.contains("local image cache") == true)
+            #expect(prompt.storyResolution?.unavailableReason == reason)
+            #expect(prompt.storyResolution?.story?.body.isEmpty == false)
+            #expect(prompt.canSubmit)
             #expect(model.assetCacheService == nil)
             try expectTextActionable(model)
             #expect(await source.requests.isEmpty)
@@ -92,12 +92,12 @@ extension AppModelStoryAssetTests {
             let controller = BoardCommandController(
                 projection: BoardProjectionBuilder
                     .makeProjection(from: BoardTestFixtures.snapshot()),
-                prompt: retryPrompt, onCatalogRetry: { _ in model.retryLocaleCatalog() }
+                prompt: retryPrompt
             )
-            #expect(!controller.activatePromptChoice(0))
+            #expect(controller.activatePromptChoice(0))
             #expect(controller.handle(.command(.jumpToActivePrompt)))
-            #expect(controller.coordinator.currentFocus == BoardFocusID.promptCatalogRetry)
-            #expect(controller.handle(.command(.primaryAction)))
+            #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
+            model.retryLocaleCatalog()
             #expect(factory.attempts == 2)
             #expect(model.localeCatalog == snapshot)
             #expect(model.localeCatalogRetryReason == reason)

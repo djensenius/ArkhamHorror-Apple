@@ -129,30 +129,31 @@ struct StoryCatalogImageTests {
         #expect(submitted == [0])
 
         try controller.applyPrompt(Self.prompt(resolver: LocaleCatalogResolver(snapshot: snapshot)))
-        #expect(!controller.handle(.command(.jumpToActivePrompt)))
-        #expect(!controller.activatePromptChoice(0))
-        #expect(submitted == [0])
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.activatePromptChoice(0))
+        #expect(submitted == [0, 0])
     }
 
     @Test(
-        "One unsafe or unsupported reference rejects the complete story and Continue",
+        "One unsafe or unsupported reference falls back to text and keeps Continue answerable",
         arguments: [
             "encounter-sets/chilling-cold.svg", "encounter-sets//chilling-cold.png",
             "private/chilling-cold.png",
         ]
     )
-    func unrepresentableReferenceDisablesStory(_ path: String) async throws {
+    func unrepresentableReferenceFallsBack(_ path: String) async throws {
         let snapshot = try await Self.documents(lastPath: path).loadSnapshot()
         let resolver = LocaleCatalogResolver(snapshot: snapshot, assetSource: .hosted)
         #expect(resolver
             .render(key: Self.gatheringKey, variables: .object([:])) == .failure(.unsupportedEntry))
         let prompt = try Self.prompt(resolver: resolver)
-        #expect(!prompt.canSubmit)
+        #expect(prompt.canSubmit)
+        #expect(prompt.storyResolution?.unavailableReason == .unsupportedEntry)
         let controller = BoardCommandController(
             projection: BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot()),
             prompt: prompt
         )
-        #expect(!controller.activatePromptChoice(0))
+        #expect(controller.activatePromptChoice(0))
     }
 
     @Test("Instructional image families require authored alternatives")
@@ -166,6 +167,10 @@ struct StoryCatalogImageTests {
         #expect(inaccessibleResolver.render(
             key: Self.gatheringKey, variables: .object([:])
         ) == .failure(.unsupportedEntry))
+        let fallback = try inaccessibleResolver.renderAllowingImageFallback(
+            key: Self.gatheringKey, variables: .object([:])
+        ).get()
+        #expect(fallback.degradedReason == .unsupportedEntry)
 
         let accessible = try await Self.documents(
             lastPath: "extra/patrol-layout.png", lastRole: "extra",
