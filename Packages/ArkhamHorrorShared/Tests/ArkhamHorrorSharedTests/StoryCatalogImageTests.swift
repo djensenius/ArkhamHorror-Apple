@@ -13,19 +13,29 @@ struct StoryCatalogImageTests {
     static let gatheringKey = "nightOfTheZealot.theGathering.setup.gatherSets"
 
     static func documents(
+        firstPath: String = "encounter-sets/the-gathering.png",
+        firstRole: String = "encounterSet",
+        firstAlt: String? = nil,
         lastPath: String = "encounter-sets/chilling-cold.png",
         lastRole: String = "encounterSet",
         lastAlt: String? = nil
     ) throws -> SyntheticLocaleCatalogDocuments {
-        let paths = gatheringSets.dropLast().map { "encounter-sets/\($0).png" } + [lastPath]
+        var paths = gatheringSets.map { "encounter-sets/\($0).png" }
+        paths[paths.startIndex] = firstPath
+        paths[paths.index(before: paths.endIndex)] = lastPath
         let imageNodes = paths.enumerated().map { index, path -> [String: Any] in
+            let isFirst = index == paths.startIndex
+            let isLast = index == paths.index(before: paths.endIndex)
             var node: [String: Any] = [
                 "type": "image",
-                "role": index == paths.count - 1 ? lastRole : "encounterSet",
+                "role": isFirst ? firstRole : (isLast ? lastRole : "encounterSet"),
                 "assetPath": path,
                 "styles": [],
             ]
-            if index == paths.count - 1, let lastAlt {
+            if isFirst, let firstAlt {
+                node["alt"] = firstAlt
+            }
+            if isLast, let lastAlt {
                 node["alt"] = lastAlt
             }
             return node

@@ -289,13 +289,11 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         guard imageFallback else { return .failure(reason) }
-        if degradedReason == nil {
-            degradedReason = reason
-        }
-        guard let fallbackText,
-              !fallbackText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return .success([]) }
-        return .success([.text(fallbackText)])
+        degradedReason = degradedReason.combinedWithImageFallbackReason(reason)
+        guard let fallbackText else { return .success([]) }
+        let trimmed = fallbackText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .success([]) }
+        return .success([.text(" \(trimmed) ")])
     }
 
     // swiftlint:disable:next function_parameter_count
@@ -537,6 +535,32 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             number.description
         case .null, .bool, .array, .object:
             nil
+        }
+    }
+}
+
+private extension StoryUnavailableReason? {
+    func combinedWithImageFallbackReason(
+        _ other: StoryUnavailableReason
+    ) -> StoryUnavailableReason {
+        guard let current = self else { return other }
+        guard !current.isImageFallbackRetryable, other.isImageFallbackRetryable else {
+            return current
+        }
+        return other
+    }
+}
+
+private extension StoryUnavailableReason {
+    var isImageFallbackRetryable: Bool {
+        switch self {
+        case let .catalog(failure):
+            failure.isRetryable
+        case .imagePipelineUnavailable:
+            true
+        case .loading, .imageSourceLoading, .missingKey, .unsupportedEntry, .linkCycle,
+             .missingVariable, .unsupportedVariableValue, .tooComplex:
+            false
         }
     }
 }

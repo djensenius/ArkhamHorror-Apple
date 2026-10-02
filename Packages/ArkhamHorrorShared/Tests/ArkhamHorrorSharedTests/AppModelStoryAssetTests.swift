@@ -10,6 +10,7 @@ struct AppModelStoryAssetTests {
         settingsStatus: Int = 200,
         catalogStatus: Int = 200,
         cacheConstructionFailures: Int = 0,
+        documents suppliedDocuments: SyntheticLocaleCatalogDocuments? = nil,
         _ body: (
             AppModel,
             SyntheticLocaleCatalogDocuments,
@@ -18,7 +19,7 @@ struct AppModelStoryAssetTests {
             ScriptedStoryAssetCacheFactory
         ) async throws -> Void
     ) async throws {
-        let documents = try StoryCatalogImageTests.documents()
+        let documents = try suppliedDocuments ?? StoryCatalogImageTests.documents()
         let settingsURL = documents.profile.endpointURL(path: "/site-settings")
         let transport = FixtureLocaleCatalogTransport(responses: [
             settingsURL: documents.response(
@@ -134,14 +135,27 @@ extension AppModelStoryAssetTests {
     func expectedGatheringImageFallbackNodes() -> [StoryNode] {
         [
             .text("Collect these encounter sets: "),
-            .text("The Gathering encounter set symbol"),
-            .text("Rats encounter set symbol"),
-            .text("Ghouls encounter set symbol"),
-            .text("Striking Fear encounter set symbol"),
-            .text("Ancient Evils encounter set symbol"),
-            .text("Chilling Cold encounter set symbol"),
+            .text(" The Gathering encounter set symbol "),
+            .text(" Rats encounter set symbol "),
+            .text(" Ghouls encounter set symbol "),
+            .text(" Striking Fear encounter set symbol "),
+            .text(" Ancient Evils encounter set symbol "),
+            .text(" Chilling Cold encounter set symbol "),
             .text(" Then continue."),
         ]
+    }
+
+    func expectedGatheringImageFallbackText() -> String {
+        [
+            "Collect these encounter sets:",
+            "The Gathering encounter set symbol",
+            "Rats encounter set symbol",
+            "Ghouls encounter set symbol",
+            "Striking Fear encounter set symbol",
+            "Ancient Evils encounter set symbol",
+            "Chilling Cold encounter set symbol",
+            "Then continue.",
+        ].joined(separator: "  ")
     }
 
     @Test("Source and catalog publish atomically, with an injectable shared SwiftUI cache")
@@ -183,9 +197,13 @@ extension AppModelStoryAssetTests {
             let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
             var prompt = try #require(model.basicChoicePresentation(for: gameID))
             #expect(prompt.canSubmit)
-            #expect(firstGatheringListEntry(in: prompt) == .nodes(
-                expectedGatheringImageFallbackNodes()
-            ))
+            let gatheringFallback = try #require(firstGatheringListEntry(in: prompt))
+            #expect(gatheringFallback == .nodes(expectedGatheringImageFallbackNodes()))
+            guard case let .nodes(fallbackNodes) = gatheringFallback else { throw TestFailure() }
+            let fallbackText = expectedGatheringImageFallbackText()
+            #expect(fallbackNodes.map(\.plainText).joined() == fallbackText)
+            #expect(StoryNodePresentation.accessibilityLabel(for: fallbackNodes) == fallbackText)
+            #expect(!fallbackText.contains("symbolRats"))
             let retry = try #require(prompt.catalogRetry)
             #expect(retry.profileID == documents.profile.id)
             #expect(retry.catalogGeneration == model.localeCatalogGeneration)
@@ -226,6 +244,32 @@ extension AppModelStoryAssetTests {
                 AssetSourceNamespace(rawAssetBase: "https://replacement-cdn.test"))
             #expect(try StoryCatalogImageTests
                 .prompt(resolver: #require(model.localeCatalogResolver)).canSubmit)
+        }
+    }
+
+    @Test("Mixed image fallback keeps AppModel retry for source failures in either order")
+    func mixedImageFallbackOrderPreservesSourceRetry() async throws {
+        let unsupportedFirst = try StoryCatalogImageTests.documents(
+            firstPath: "encounter-sets//the-gathering.png"
+        )
+        let unsupportedLast = try StoryCatalogImageTests.documents(
+            lastPath: "encounter-sets//chilling-cold.png"
+        )
+        for documents in [unsupportedFirst, unsupportedLast] {
+            try await withModel(settingsStatus: 503, documents: documents) {
+                model, documents, _, _, _ in
+                let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
+                let prompt = try #require(model.basicChoicePresentation(for: gameID))
+                #expect(prompt.canSubmit)
+                #expect(
+                    prompt.storyResolution?.unavailableReason == .catalog(.unexpectedStatus(503))
+                )
+                let retry = try #require(prompt.catalogRetry)
+                #expect(retry.profileID == documents.profile.id)
+                #expect(retry.catalogGeneration == model.localeCatalogGeneration)
+                #expect(retry.scope == .images)
+                #expect(retry.title == "Retry story images")
+            }
         }
     }
 
