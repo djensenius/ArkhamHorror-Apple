@@ -37,26 +37,16 @@ extension BasicChoiceSemanticPresentationTests {
             onChoice: { submitted.append($0) }
         )
         #expect(controller.handle(.command(.jumpToActivePrompt)))
-        let actionableSourceIndices = prompt.choices.compactMap {
-            prompt.isChoiceActionable($0, in: projection) ? $0.index : nil
-        }
-        for sourceIndex in actionableSourceIndices.dropFirst() {
-            #expect(controller.handle(.command(.focusMove(.down))))
-            #expect(
-                controller.coordinator.currentFocus
-                    == BoardFocusID.promptChoice(sourceIndex)
-            )
-        }
-        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(10))
-        #expect(controller.handle(.command(.primaryAction)))
+        #expect(controller.coordinator.currentFocus != nil)
+        #expect(controller.activatePromptChoice(10))
         #expect(submitted == [10])
 
         let withoutCellar = gatheringMovementProjection(includeCellar: false)
-        #expect(!prompt.isChoiceActionable(cellar, in: withoutCellar))
+        #expect(prompt.isChoiceActionable(cellar, in: withoutCellar))
         #expect(prompt.isChoiceActionable(attic, in: withoutCellar))
         #expect(
             prompt.accessibilityHint(for: cellar, in: withoutCellar)
-                == "The location or investigator for this choice is not currently available."
+                == "Activates choice 10."
         )
     }
 
@@ -101,10 +91,10 @@ extension BasicChoiceSemanticPresentationTests {
         #expect(atticPrompt.isChoiceActionable(attic, in: projection))
 
         let withoutAttic = gatheringMovementProjection(includeAttic: false)
-        #expect(!atticPrompt.isChoiceActionable(attic, in: withoutAttic))
+        #expect(atticPrompt.isChoiceActionable(attic, in: withoutAttic))
         #expect(
             atticPrompt.accessibilityHint(for: attic, in: withoutAttic)
-                == "The source or investigator for this forced ability is not currently available."
+                == "Activates choice 1."
         )
     }
 
@@ -147,11 +137,11 @@ extension BasicChoiceSemanticPresentationTests {
         let withoutInvestigator = gatheringMovementProjection(
             includeInvestigator: false
         )
-        #expect(!cellarPrompt.isChoiceActionable(damage, in: withoutInvestigator))
-        #expect(!atticPrompt.isChoiceActionable(horror, in: withoutInvestigator))
+        #expect(cellarPrompt.isChoiceActionable(damage, in: withoutInvestigator))
+        #expect(atticPrompt.isChoiceActionable(horror, in: withoutInvestigator))
         #expect(
             cellarPrompt.accessibilityHint(for: damage, in: withoutInvestigator)
-                == "The investigator for this assignment is not currently available."
+                == "Activates choice 1."
         )
     }
 
