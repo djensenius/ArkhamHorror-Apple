@@ -765,14 +765,14 @@ extension AppModelCampaignPromptTests {
                 "Auswahl gesendet. Es wird auf die Aktualisierung des Spiels gewartet…")
             #expect(prompt(actionPhase: .uncertain).statusMessage ==
                 "Beim Senden ging die Verbindung verloren. "
-                    + "Stelle die Verbindung wieder her, um das Ergebnis zu prüfen.")
+                + "Stelle die Verbindung wieder her, um das Ergebnis zu prüfen.")
             #expect(prompt(actionPhase: .retryable(.transportFailure)).statusMessage ==
                 "Die Auswahl konnte nicht gesendet werden. Versuche es erneut.")
             #expect(prompt(actionPhase: .retryable(.serverRejected)).statusMessage ==
                 "Der Server hat diese Auswahl abgelehnt. Versuche es erneut.")
             #expect(prompt(actionPhase: .retryable(.outcomeUncertain)).statusMessage ==
                 "Das Ergebnis ist ungewiss. "
-                    + "Prüfe die Aufforderung und versuche es dann manuell erneut.")
+                + "Prüfe die Aufforderung und versuche es dann manuell erneut.")
             #expect(prompt(readOnlyReason: .spectator).statusMessage ==
                 "Zuschauer können diese Aufforderung ansehen, aber nicht beantworten.")
             #expect(prompt(readOnlyReason: .anotherPlayer).statusMessage ==
