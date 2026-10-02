@@ -115,6 +115,23 @@
 "semantic.choice.unavailable.assignment" = "The investigator for this assignment is not currently available.";
 "semantic.choice.unavailable.generic" = "This choice is not currently available.";
 
+"basicChoice.choiceText.loading" = "The text for this choice is still loading.";
+"basicChoice.choiceText.catalog" = "The text for this choice is unavailable from this server.";
+"basicChoice.choiceText.missing" = "This server publishes no usable text for this choice.";
+"basicChoice.choiceText.unsafe" = "The text for this choice could not be safely displayed.";
+"basicChoice.choiceText.variable" = "The text for this choice needs a value this app cannot display.";
+"basicChoice.status.sending" = "Sending choice…";
+"basicChoice.status.awaitingSnapshot" = "Choice sent. Waiting for the game to update…";
+"basicChoice.status.uncertain" = "Connection lost while sending. Reconnect to check the outcome.";
+"basicChoice.status.retry.transportFailure" = "The choice could not be sent. Try again.";
+"basicChoice.status.retry.serverRejected" = "The server rejected this choice. Try again.";
+"basicChoice.status.retry.outcomeUncertain" = "The outcome is uncertain. Review the prompt, then retry manually.";
+"basicChoice.status.readOnly.spectator" = "Spectators can view this prompt but cannot answer it.";
+"basicChoice.status.readOnly.anotherPlayer" = "Waiting for another player to answer.";
+"basicChoice.status.readOnly.legacyServer" = "Update the server before answering this prompt.";
+"basicChoice.status.readOnly.updateRequired" = "This prompt requires a newer app version.";
+"basicChoice.status.readOnly.disconnected" = "Reconnect before answering this prompt.";
+
 "campaign.between.title" = "Between scenarios";
 "campaign.between.finishedScenario" = "%@ just finished";
 "campaign.between.noScenario" = "No active scenario";

@@ -112,17 +112,32 @@ enum BasicChoiceLabelResolution: Sendable, Equatable {
         guard case let .unavailable(reason) = self else { return "" }
         switch reason {
         case .loading:
-            return "The text for this choice is still loading."
+            return basicChoiceLocalized(
+                "basicChoice.choiceText.loading",
+                "The text for this choice is still loading."
+            )
         case .catalog:
-            return "The text for this choice is unavailable from this server."
+            return basicChoiceLocalized(
+                "basicChoice.choiceText.catalog",
+                "The text for this choice is unavailable from this server."
+            )
         case .imagePipelineUnavailable, .imageSourceLoading:
             return reason.announcement
         case .missingKey, .unsupportedEntry:
-            return "This server publishes no usable text for this choice."
+            return basicChoiceLocalized(
+                "basicChoice.choiceText.missing",
+                "This server publishes no usable text for this choice."
+            )
         case .linkCycle, .tooComplex:
-            return "The text for this choice could not be safely displayed."
+            return basicChoiceLocalized(
+                "basicChoice.choiceText.unsafe",
+                "The text for this choice could not be safely displayed."
+            )
         case .missingVariable, .unsupportedVariableValue:
-            return "The text for this choice needs a value this app cannot display."
+            return basicChoiceLocalized(
+                "basicChoice.choiceText.variable",
+                "The text for this choice needs a value this app cannot display."
+            )
         }
     }
 }
@@ -271,17 +286,35 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     var statusMessage: String? {
         switch actionPhase {
         case .sending:
-            return "Sending choice…"
+            return basicChoiceLocalized(
+                "basicChoice.status.sending",
+                "Sending choice…"
+            )
         case .awaitingSnapshot:
-            return "Choice sent. Waiting for the game to update…"
+            return basicChoiceLocalized(
+                "basicChoice.status.awaitingSnapshot",
+                "Choice sent. Waiting for the game to update…"
+            )
         case .uncertain:
-            return "Connection lost while sending. Reconnect to check the outcome."
+            return basicChoiceLocalized(
+                "basicChoice.status.uncertain",
+                "Connection lost while sending. Reconnect to check the outcome."
+            )
         case .retryable(.transportFailure):
-            return "The choice could not be sent. Try again."
+            return basicChoiceLocalized(
+                "basicChoice.status.retry.transportFailure",
+                "The choice could not be sent. Try again."
+            )
         case .retryable(.serverRejected):
-            return "The server rejected this choice. Try again."
+            return basicChoiceLocalized(
+                "basicChoice.status.retry.serverRejected",
+                "The server rejected this choice. Try again."
+            )
         case .retryable(.outcomeUncertain):
-            return "The outcome is uncertain. Review the prompt, then retry manually."
+            return basicChoiceLocalized(
+                "basicChoice.status.retry.outcomeUncertain",
+                "The outcome is uncertain. Review the prompt, then retry manually."
+            )
         case nil:
             break
         }
@@ -290,15 +323,30 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         }
         switch readOnlyReason {
         case .spectator:
-            return "Spectators can view this prompt but cannot answer it."
+            return basicChoiceLocalized(
+                "basicChoice.status.readOnly.spectator",
+                "Spectators can view this prompt but cannot answer it."
+            )
         case .anotherPlayer:
-            return "Waiting for another player to answer."
+            return basicChoiceLocalized(
+                "basicChoice.status.readOnly.anotherPlayer",
+                "Waiting for another player to answer."
+            )
         case .legacyServer:
-            return "Update the server before answering this prompt."
+            return basicChoiceLocalized(
+                "basicChoice.status.readOnly.legacyServer",
+                "Update the server before answering this prompt."
+            )
         case .updateRequired:
-            return canUseCampaignDeckPrompt ? nil : "This prompt requires a newer app version."
+            return canUseCampaignDeckPrompt ? nil : basicChoiceLocalized(
+                "basicChoice.status.readOnly.updateRequired",
+                "This prompt requires a newer app version."
+            )
         case .disconnected:
-            return "Reconnect before answering this prompt."
+            return basicChoiceLocalized(
+                "basicChoice.status.readOnly.disconnected",
+                "Reconnect before answering this prompt."
+            )
         case nil:
             return nil
         }
@@ -356,6 +404,10 @@ struct BasicChoiceCatalogRetryPresentation: Sendable, Equatable {
             "Initializes this app's local image cache and reloads the story image source."
         }
     }
+}
+
+private func basicChoiceLocalized(_ key: String, _ fallback: String) -> String {
+    CampaignPromptLocalization.localized(key, fallback)
 }
 
 enum BasicChoiceSubmitResult: Sendable, Equatable {

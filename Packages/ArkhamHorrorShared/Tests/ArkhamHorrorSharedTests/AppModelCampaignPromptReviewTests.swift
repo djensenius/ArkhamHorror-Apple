@@ -730,6 +730,67 @@ extension AppModelCampaignPromptTests {
         }
     }
 
+    @Test("Basic choice prompt status messages localize in German")
+    func basicChoicePromptStatusMessagesLocalizeInGerman() throws {
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let rawQuestion: JSONValue = .object(["tag": .string("ChooseOne")])
+        let identity = BasicChoicePromptIdentity(
+            gameID: GameID(UUID()),
+            ownerID: ownerID,
+            questionVersion: 1,
+            rawQuestion: rawQuestion,
+            sessionAttemptID: nil,
+            connectionID: nil
+        )
+
+        func prompt(
+            readOnlyReason: BasicChoiceReadOnlyReason? = nil,
+            actionPhase: BasicChoiceActionPhase? = nil
+        ) -> BasicChoicePromptPresentation {
+            BasicChoicePromptPresentation(
+                identity: identity,
+                question: .updateRequired(tag: "ChooseOne"),
+                readOnlyReason: readOnlyReason,
+                actionPhase: actionPhase,
+                actionChoiceIndex: nil,
+                serverFeedback: "Server-authored feedback remains verbatim."
+            )
+        }
+
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
+            #expect(prompt(actionPhase: .sending).statusMessage == "Auswahl wird gesendet…")
+            #expect(prompt(actionPhase: .awaitingSnapshot).statusMessage ==
+                "Auswahl gesendet. Es wird auf die Aktualisierung des Spiels gewartet…")
+            #expect(prompt(actionPhase: .uncertain).statusMessage ==
+                "Beim Senden ging die Verbindung verloren. "
+                    + "Stelle die Verbindung wieder her, um das Ergebnis zu prüfen.")
+            #expect(prompt(actionPhase: .retryable(.transportFailure)).statusMessage ==
+                "Die Auswahl konnte nicht gesendet werden. Versuche es erneut.")
+            #expect(prompt(actionPhase: .retryable(.serverRejected)).statusMessage ==
+                "Der Server hat diese Auswahl abgelehnt. Versuche es erneut.")
+            #expect(prompt(actionPhase: .retryable(.outcomeUncertain)).statusMessage ==
+                "Das Ergebnis ist ungewiss. "
+                    + "Prüfe die Aufforderung und versuche es dann manuell erneut.")
+            #expect(prompt(readOnlyReason: .spectator).statusMessage ==
+                "Zuschauer können diese Aufforderung ansehen, aber nicht beantworten.")
+            #expect(prompt(readOnlyReason: .anotherPlayer).statusMessage ==
+                "Es wird darauf gewartet, dass ein anderer Spieler antwortet.")
+            #expect(prompt(readOnlyReason: .legacyServer).statusMessage ==
+                "Aktualisiere den Server, bevor du diese Aufforderung beantwortest.")
+            #expect(prompt(readOnlyReason: .updateRequired).statusMessage ==
+                "Diese Aufforderung erfordert eine neuere App-Version.")
+            #expect(prompt(readOnlyReason: .disconnected).statusMessage ==
+                "Stelle die Verbindung wieder her, bevor du diese Aufforderung beantwortest.")
+            #expect(
+                BasicChoiceLabelResolution.unavailable(.missingKey).announcement
+                    == "Dieser Server veröffentlicht keinen nutzbaren Text für diese Auswahl."
+            )
+            #expect(prompt().serverFeedback == "Server-authored feedback remains verbatim.")
+        }
+    }
+
     @Test("Campaign deck fetch surfaces server-authored operation messages verbatim")
     func campaignDeckFetchSurfacesServerAuthoredOperationMessage() async throws {
         let gameService = ScriptedGameLifecycleService()

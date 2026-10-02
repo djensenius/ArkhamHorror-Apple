@@ -115,6 +115,23 @@
 "semantic.choice.unavailable.assignment" = "Der Ermittler für diese Zuweisung ist derzeit nicht verfügbar.";
 "semantic.choice.unavailable.generic" = "Diese Auswahl ist derzeit nicht verfügbar.";
 
+"basicChoice.choiceText.loading" = "Der Text für diese Auswahl wird noch geladen.";
+"basicChoice.choiceText.catalog" = "Der Text für diese Auswahl ist auf diesem Server nicht verfügbar.";
+"basicChoice.choiceText.missing" = "Dieser Server veröffentlicht keinen nutzbaren Text für diese Auswahl.";
+"basicChoice.choiceText.unsafe" = "Der Text für diese Auswahl konnte nicht sicher angezeigt werden.";
+"basicChoice.choiceText.variable" = "Der Text für diese Auswahl benötigt einen Wert, den diese App nicht anzeigen kann.";
+"basicChoice.status.sending" = "Auswahl wird gesendet…";
+"basicChoice.status.awaitingSnapshot" = "Auswahl gesendet. Es wird auf die Aktualisierung des Spiels gewartet…";
+"basicChoice.status.uncertain" = "Beim Senden ging die Verbindung verloren. Stelle die Verbindung wieder her, um das Ergebnis zu prüfen.";
+"basicChoice.status.retry.transportFailure" = "Die Auswahl konnte nicht gesendet werden. Versuche es erneut.";
+"basicChoice.status.retry.serverRejected" = "Der Server hat diese Auswahl abgelehnt. Versuche es erneut.";
+"basicChoice.status.retry.outcomeUncertain" = "Das Ergebnis ist ungewiss. Prüfe die Aufforderung und versuche es dann manuell erneut.";
+"basicChoice.status.readOnly.spectator" = "Zuschauer können diese Aufforderung ansehen, aber nicht beantworten.";
+"basicChoice.status.readOnly.anotherPlayer" = "Es wird darauf gewartet, dass ein anderer Spieler antwortet.";
+"basicChoice.status.readOnly.legacyServer" = "Aktualisiere den Server, bevor du diese Aufforderung beantwortest.";
+"basicChoice.status.readOnly.updateRequired" = "Diese Aufforderung erfordert eine neuere App-Version.";
+"basicChoice.status.readOnly.disconnected" = "Stelle die Verbindung wieder her, bevor du diese Aufforderung beantwortest.";
+
 "campaign.between.title" = "Zwischen Szenarien";
 "campaign.between.finishedScenario" = "%@ wurde gerade abgeschlossen";
 "campaign.between.noScenario" = "Kein aktives Szenario";
