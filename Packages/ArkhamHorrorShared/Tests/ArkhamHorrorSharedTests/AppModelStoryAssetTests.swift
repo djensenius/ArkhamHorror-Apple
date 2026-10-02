@@ -90,7 +90,7 @@ struct AppModelStoryAssetTests {
             let snapshot = try #require(model.localeCatalog)
             let request = model.localeCatalogRequest
             let prompt = try StoryCatalogImageTests.prompt(resolver: resolver)
-            #expect(!prompt.canSubmit)
+            #expect(prompt.canSubmit)
             let retry = model.catalogRetryPresentation(
                 localizationReasons: [.catalog(.unexpectedStatus(503))],
                 promptKey: prompt.identity.promptKey
