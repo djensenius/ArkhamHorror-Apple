@@ -414,7 +414,9 @@ extension StoryNarrativeLocalization {
     ) -> Result<LocaleCatalogRenderedNodes, StoryUnavailableReason> {
         guard let resolver else {
             if let chrome = chromeVocabulary[key] {
-                return .success(LocaleCatalogRenderedNodes(nodes: [.text(chrome)], degradedReason: nil))
+                return .success(LocaleCatalogRenderedNodes(
+                    nodes: [.text(chrome)], degradedReason: nil
+                ))
             }
             return .failure(catalogUnavailability)
         }

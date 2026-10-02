@@ -86,7 +86,9 @@ extension AppModelStoryAssetTests {
         "Local cache failures have accurate status and controller-retry recovery without relaunch"
     )
     func localCacheRecovery() async throws {
-        try await withModel(cacheConstructionFailures: 2) { model, documents, source, catalog, factory in
+        try await withModel(
+            cacheConstructionFailures: 2
+        ) { model, documents, source, catalog, factory in
             let snapshot = model.localeCatalog
             let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
             var prompt = try #require(model.basicChoicePresentation(for: gameID))

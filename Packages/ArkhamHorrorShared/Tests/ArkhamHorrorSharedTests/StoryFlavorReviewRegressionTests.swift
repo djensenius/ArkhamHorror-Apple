@@ -25,6 +25,28 @@ extension AppModelLiveGameTests {
         ]
     }
 
+    private func promptBehaviorCatalogDocuments() throws -> SyntheticLocaleCatalogDocuments {
+        try SyntheticLocaleCatalogDocuments.make(
+            entryKeys: ["setup", "shuffleRemainder", "nightOfTheZealot.theGathering.setup.gatherSets", "nightOfTheZealot.theGathering.setup.placeLocations", "nightOfTheZealot.theGathering.setup.setOutOfPlay"],
+            chunkEntries: """
+            {"setup":{"form":"message","nodes":[{"type":"text","value":"Setup"}],"variables":[]},\
+            "nightOfTheZealot.theGathering.setup.gatherSets":{"form":"message","nodes":[{"type":"text","value":"Gather sets"}],"variables":[]},\
+            "nightOfTheZealot.theGathering.setup.placeLocations":{"form":"message","nodes":[{"type":"text","value":"Place locations"}],"variables":[]},\
+            "nightOfTheZealot.theGathering.setup.setOutOfPlay":{"form":"message","nodes":[{"type":"text","value":"Set aside"}],"variables":[]},\
+            "shuffleRemainder":{"form":"message","nodes":[{"type":"text","value":"Shuffle"}],"variables":[]}}
+            """
+        )
+    }
+
+    private func firstListEntry(
+        in presentation: BasicChoicePromptPresentation
+    ) -> ResolvedStoryEntry? {
+        guard case let .list(items)? = presentation.storyResolution?.story?.body.first else {
+            return nil
+        }
+        return items.first?.entry
+    }
+
     private static func number(_ text: String) -> JSONNumber {
         // swiftlint:disable:next force_try
         try! JSONNumber(exactDecimalLiteral: text)
@@ -101,16 +123,7 @@ extension AppModelLiveGameTests {
 
     @Test("Catalog loading, loaded, and failed states have the approved prompt behavior")
     func catalogFirstLoadStatesDriveStoryPromptBehavior() async throws {
-        let documents = try SyntheticLocaleCatalogDocuments.make(
-            entryKeys: ["setup", "shuffleRemainder", "nightOfTheZealot.theGathering.setup.gatherSets", "nightOfTheZealot.theGathering.setup.placeLocations", "nightOfTheZealot.theGathering.setup.setOutOfPlay"],
-            chunkEntries: """
-            {"setup":{"form":"message","nodes":[{"type":"text","value":"Setup"}],"variables":[]},\
-            "nightOfTheZealot.theGathering.setup.gatherSets":{"form":"message","nodes":[{"type":"text","value":"Gather sets"}],"variables":[]},\
-            "nightOfTheZealot.theGathering.setup.placeLocations":{"form":"message","nodes":[{"type":"text","value":"Place locations"}],"variables":[]},\
-            "nightOfTheZealot.theGathering.setup.setOutOfPlay":{"form":"message","nodes":[{"type":"text","value":"Set aside"}],"variables":[]},\
-            "shuffleRemainder":{"form":"message","nodes":[{"type":"text","value":"Shuffle"}],"variables":[]}}
-            """
-        )
+        let documents = try promptBehaviorCatalogDocuments()
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -135,26 +148,14 @@ extension AppModelLiveGameTests {
         model.localeCatalog = try await documents.loadSnapshot()
         presentation = try #require(model.basicChoicePresentation(for: gameID))
         #expect(presentation.storyResolution?.story?.title == "Setup")
-        let loadedFirstEntry: ResolvedStoryEntry? = {
-            guard case let .list(items)? = presentation.storyResolution?.story?.body.first else {
-                return nil
-            }
-            return items.first?.entry
-        }()
-        #expect(loadedFirstEntry == .nodes([.text("Gather sets")]))
+        #expect(firstListEntry(in: presentation) == .nodes([.text("Gather sets")]))
         #expect(presentation.canSubmit)
 
         model.localeCatalog = nil
         model.localeCatalogFailure = .transportFailure
         presentation = try #require(model.basicChoicePresentation(for: gameID))
         #expect(presentation.storyResolution?.story?.title == "Setup")
-        let fallbackFirstEntry: ResolvedStoryEntry? = {
-            guard case let .list(items)? = presentation.storyResolution?.story?.body.first else {
-                return nil
-            }
-            return items.first?.entry
-        }()
-        #expect(fallbackFirstEntry == .text(
+        #expect(firstListEntry(in: presentation) == .text(
             "nightOfTheZealot.theGathering.setup.gatherSets"
         ))
         #expect(presentation.canSubmit)
@@ -195,20 +196,7 @@ extension BasicChoiceSemanticPresentationTests {
             cardCatalog: CardCatalogSnapshot(namesByCode: [cardCode: CardName(title: "Lita Chantler", subtitle: nil)]),
             choiceFlavorResolutions: [0: .resolved(ResolvedStory(
                 title: nil,
-                body: [.composite(entries: [
-                    .heading(level: .level1, nodes: [.text("Heading text")]),
-                    .modified(modifiers: [.blueEntry], entry: .text("Modified text")),
-                    .columns(entries: [.text("Column A"), .text("Column B")]),
-                    .list(items: [
-                        ResolvedStoryListItem(entry: .text("List A"), nested: []),
-                    ]),
-                    .chaosTokenReference(face: .skull),
-                    .divider,
-                    .text("Read this"),
-                    .cardReference(cardCode: cardCode, imageModifiers: [.smallImage]),
-                    .tarotReference(arcana: "TheFool0"),
-                    .chaosTokenMorph(from: .skull, target: .cultist),
-                ])]
+                body: [.composite(entries: semanticSummaryEntries(cardCode: cardCode))]
             ))],
             readOnlyReason: nil,
             actionPhase: nil,
@@ -221,6 +209,23 @@ extension BasicChoiceSemanticPresentationTests {
             prompt.displayTitle(for: renderedChoice, in: projection)
                 == "Heading text; Modified text; Column A; Column B; List A; Chaos token Skull; Read this; Lita Chantler; Tarot TheFool0; Chaos token Skull to Cultist"
         )
+    }
+
+    private func semanticSummaryEntries(cardCode: CardCode) -> [ResolvedStoryEntry] {
+        [
+            .heading(level: .level1, nodes: [.text("Heading text")]),
+            .modified(modifiers: [.blueEntry], entry: .text("Modified text")),
+            .columns(entries: [.text("Column A"), .text("Column B")]),
+            .list(items: [
+                ResolvedStoryListItem(entry: .text("List A"), nested: []),
+            ]),
+            .chaosTokenReference(face: .skull),
+            .divider,
+            .text("Read this"),
+            .cardReference(cardCode: cardCode, imageModifiers: [.smallImage]),
+            .tarotReference(arcana: "TheFool0"),
+            .chaosTokenMorph(from: .skull, target: .cultist),
+        ]
     }
 }
 

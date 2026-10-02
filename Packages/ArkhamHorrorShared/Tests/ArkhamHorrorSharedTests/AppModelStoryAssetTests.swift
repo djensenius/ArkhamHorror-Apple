@@ -54,7 +54,9 @@ struct AppModelStoryAssetTests {
         await model.localeCatalogTask?.value
         try await body(model, documents, transport, catalogTransport, factory)
     }
+}
 
+extension AppModelStoryAssetTests {
     func fixtureData(named fileName: String) throws -> Data {
         let url = try #require(
             Bundle.module.url(
