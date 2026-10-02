@@ -122,9 +122,8 @@ enum BoardCampaignSummaryFormatting {
     ) -> String? {
         let candidates = rawCode.hasPrefix("c") ? [rawCode] : ["c\(rawCode)", rawCode]
         for candidate in candidates {
-            if let code = try? CardCode(candidate),
-               let title = context.cardCatalog?.displayName(for: code)
-            {
+            guard let code = try? CardCode(candidate) else { continue }
+            if let title = context.cardCatalog?.displayName(for: code) {
                 return title
             }
         }

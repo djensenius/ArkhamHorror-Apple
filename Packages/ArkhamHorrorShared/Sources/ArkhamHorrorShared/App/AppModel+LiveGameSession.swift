@@ -336,8 +336,7 @@ extension AppModel {
             )
             try Task.checkCancellation()
             let projection = BoardProjectionBuilder.makeProjection(
-                from: envelope.game,
-                localeCatalogResolver: localeCatalogResolver,
+                from: envelope.game, localeCatalogResolver: localeCatalogResolver,
                 cardCatalog: cardCatalog
             )
             guard isCurrentLiveGameSession(attempt) else { return nil }

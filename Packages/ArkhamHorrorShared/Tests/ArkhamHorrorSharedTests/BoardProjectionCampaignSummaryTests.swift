@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 @Suite("BoardProjection — campaign summary")
+// swiftlint:disable:next type_body_length
 struct BoardProjectionCampaignSummaryTests {
     private enum SummaryLocale: Sendable {
         case english
@@ -147,6 +148,7 @@ struct BoardProjectionCampaignSummaryTests {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     private func fixtureBackedCampaignMode() throws -> GameMode {
         var root = try #require(
             JSONSerialization.jsonObject(with: contractFixtureData(named: "mode-campaign-only"))
@@ -246,7 +248,9 @@ struct BoardProjectionCampaignSummaryTests {
         return try Data(contentsOf: url)
     }
 
-    private func displayContext(locale: SummaryLocale) throws -> BoardCampaignSummaryDisplayContext {
+    private func displayContext(
+        locale: SummaryLocale
+    ) throws -> BoardCampaignSummaryDisplayContext {
         try BoardCampaignSummaryDisplayContext(
             localeCatalogResolver: LocaleCatalogResolver(snapshot: localeCatalog(locale: locale)),
             cardCatalog: cardCatalog(locale: locale),
@@ -261,6 +265,7 @@ struct BoardProjectionCampaignSummaryTests {
         ])
     }
 
+    // swiftlint:disable:next function_body_length
     private func localeCatalog(locale: SummaryLocale) -> LocaleCatalogSnapshot {
         let digest = String(repeating: "a", count: 64)
         let descriptor = LocaleCatalogChunkDescriptor(

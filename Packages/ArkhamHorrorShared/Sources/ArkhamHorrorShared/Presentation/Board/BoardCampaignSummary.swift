@@ -1,5 +1,7 @@
 import Foundation
 
+// swiftlint:disable file_length
+
 /// Campaign hand-off presentation data copied from the authoritative server snapshot.
 ///
 /// This is display-only: it formats campaign-log keys/values, investigator progression,
@@ -67,6 +69,7 @@ struct BoardCampaignInvestigatorProgress: Sendable, Equatable, Identifiable {
     let drivenInsane: Bool
 }
 
+// swiftlint:disable:next type_body_length
 enum BoardCampaignSummaryBuilder {
     private struct RecordedValueDisplay {
         let title: String
@@ -172,9 +175,8 @@ enum BoardCampaignSummaryBuilder {
 
     private static func shouldShowRecordedKey(_ value: JSONValue) -> Bool {
         guard let object = value.objectValue else { return true }
-        if let tag = object["tag"]?.stringValue,
-           ["Teachings1", "Teachings2", "Teachings3"].contains(tag)
-        {
+        let hiddenTags = ["Teachings1", "Teachings2", "Teachings3"]
+        if let tag = object["tag"]?.stringValue, hiddenTags.contains(tag) {
             return false
         }
         return !isSectionKey(value)
@@ -281,22 +283,26 @@ enum BoardCampaignSummaryBuilder {
         recordType: String?,
         context: BoardCampaignSummaryDisplayContext
     ) -> String {
-        if recordType == "RecordableCardCode",
-           let code = value.stringValue,
-           let title = BoardCampaignSummaryFormatting.cardDisplayName(for: code, context: context)
-        {
-            return title
+        if recordType == "RecordableCardCode" {
+            if let title = cardDisplayName(value, context: context) {
+                return title
+            }
         }
         if let recordType, recordType != "RecordableCardCode", let text = value.stringValue {
             return BoardCampaignSummaryFormatting.splitCamelCase(text)
         }
-        if recordType == nil,
-           let code = value.stringValue,
-           let title = BoardCampaignSummaryFormatting.cardDisplayName(for: code, context: context)
-        {
+        if recordType == nil, let title = cardDisplayName(value, context: context) {
             return title
         }
         return BoardCampaignSummaryFormatting.jsonDisplayValue(value, context: context)
+    }
+
+    private static func cardDisplayName(
+        _ value: JSONValue,
+        context: BoardCampaignSummaryDisplayContext
+    ) -> String? {
+        guard let code = value.stringValue else { return nil }
+        return BoardCampaignSummaryFormatting.cardDisplayName(for: code, context: context)
     }
 
     private static func makeLatestResolution(
@@ -359,7 +365,9 @@ enum BoardCampaignSummaryBuilder {
         _ value: JSONValue,
         context: BoardCampaignSummaryDisplayContext
     ) -> String {
-        if value.stringValue == "NoResolution" || value.objectValue?["tag"]?.stringValue == "NoResolution" {
+        let isNoResolution = value.stringValue == "NoResolution"
+            || value.objectValue?["tag"]?.stringValue == "NoResolution"
+        if isNoResolution {
             return context.localization.localized("campaign.summary.noResolution", "No resolution")
         }
         if let object = value.objectValue {

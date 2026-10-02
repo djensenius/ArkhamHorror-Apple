@@ -9,6 +9,7 @@ import Foundation
 /// locale-sensitive comparison. Two snapshots with equal field values always build to an
 /// equal ``BoardProjection`` regardless of map insertion order.
 enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
+    // swiftlint:disable:next function_body_length
     static func makeProjection(
         from snapshot: PublicGameSnapshot,
         localeCatalogResolver: LocaleCatalogResolver? = nil,
