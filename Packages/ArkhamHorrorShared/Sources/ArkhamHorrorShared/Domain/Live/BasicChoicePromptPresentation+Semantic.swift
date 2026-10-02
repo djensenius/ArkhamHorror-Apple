@@ -45,8 +45,8 @@ extension QuestionPresentation {
             .exchange
         case .deck:
             .deck
-        case .continueCampaign:
-            .continuation
+        case let .continueCampaign(tags):
+            tags.contains("CampaignStepAnswer") ? .continuation : .deferred
         case .standaloneSettings, .campaignSettings,
              .pickDestiny, .campaignSpecific, .scenarioSpecific:
             .campaignSettings
