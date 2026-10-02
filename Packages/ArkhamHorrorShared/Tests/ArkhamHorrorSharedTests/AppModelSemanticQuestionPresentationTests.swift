@@ -512,8 +512,8 @@ extension AppModelLiveGameTests {
         makeModern(model)
         try await installMultiSelectCatalog(on: model)
         let envelope = try semanticEnvelope(
-            rawQuestion: doneOnlyRawQuestion(tag: "ChooseSome"),
-            presentation: doneOnlyPresentation(questionKind: "chooseSome", includeSelection: false),
+            rawQuestion: doneOnlyRawQuestion(tag: "ChooseOne"),
+            presentation: doneOnlyPresentation(questionKind: "chooseOne", includeSelection: false),
             questionVersion: 508
         )
         let connection = FakeGameSocketConnection()
