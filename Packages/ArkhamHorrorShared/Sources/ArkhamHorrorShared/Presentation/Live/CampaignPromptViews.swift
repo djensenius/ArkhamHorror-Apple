@@ -337,10 +337,7 @@ struct CampaignUpgradeDeckSheet: View {
     }
 
     private func submitUpgrade() {
-        guard !isAwaitingSnapshot else {
-            failure = campaignDeckSubmissionAwaitingSnapshotMessage()
-            return
-        }
+        guard !isAwaitingSnapshot else { return }
         submissionTask?.cancel()
         submissionTask = Task { @MainActor in
             isSubmitting = true
@@ -357,10 +354,7 @@ struct CampaignUpgradeDeckSheet: View {
     }
 
     private func continueWithoutUpgrading() {
-        guard !isAwaitingSnapshot else {
-            failure = campaignDeckSubmissionAwaitingSnapshotMessage()
-            return
-        }
+        guard !isAwaitingSnapshot else { return }
         submissionTask?.cancel()
         submissionTask = Task { @MainActor in
             isSubmitting = true

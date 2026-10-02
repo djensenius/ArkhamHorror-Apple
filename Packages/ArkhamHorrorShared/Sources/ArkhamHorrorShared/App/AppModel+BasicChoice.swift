@@ -33,12 +33,11 @@ extension AppModel {
                 record?.identity.sessionAttemptID == sessionAttemptID
                     ? record?.identity.connectionID : nil
             )
-        let promptIdentity = BasicChoicePromptIdentity(
-            gameID: gameID,
-            ownerID: ownerID,
-            questionVersion: projection.counters.scenarioSteps,
-            rawQuestion: payload.rawValue,
-            questionPresentation: payload.presentation?.presentation,
+        let promptKey = basicChoicePromptKey(
+            gameID: gameID, ownerID: ownerID, payload: payload, projection: projection
+        )
+        let promptIdentity = basicChoicePromptIdentity(
+            promptKey,
             sessionAttemptID: sessionAttemptID,
             connectionID: connectionID
         )
@@ -89,6 +88,37 @@ extension AppModel {
                 localizationReasons: localizationReasons,
                 promptKey: promptIdentity.promptKey
             )
+        )
+    }
+
+    func basicChoicePromptKey(
+        gameID: GameID,
+        ownerID: PlayerID,
+        payload: BasicChoiceQuestionPayload,
+        projection: BoardProjection
+    ) -> BasicChoicePromptKey {
+        BasicChoicePromptKey(
+            gameID: gameID,
+            ownerID: ownerID,
+            questionVersion: projection.counters.scenarioSteps,
+            rawQuestion: payload.rawValue,
+            questionPresentation: payload.presentation?.presentation
+        )
+    }
+
+    private func basicChoicePromptIdentity(
+        _ key: BasicChoicePromptKey,
+        sessionAttemptID: UUID?,
+        connectionID: UUID?
+    ) -> BasicChoicePromptIdentity {
+        BasicChoicePromptIdentity(
+            gameID: key.gameID,
+            ownerID: key.ownerID,
+            questionVersion: key.questionVersion,
+            rawQuestion: key.rawQuestion,
+            questionPresentation: key.questionPresentation,
+            sessionAttemptID: sessionAttemptID,
+            connectionID: connectionID
         )
     }
 

@@ -12,6 +12,7 @@ import Testing
 /// continuations resumable in any order) so refresh overlap/reordering can be
 /// exercised deterministically -- mirroring ``GatedCapabilityProbe``'s pattern.
 actor ScriptedGameLifecycleService: GameLifecycleServicing {
+    // swiftlint:disable:previous type_body_length
     private(set) var callOrder: [String] = []
     private(set) var lastToken: String?
     private(set) var lastProfileID: UUID?
@@ -39,6 +40,12 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private var isDeleteGameGated = false
     private var deleteGameContinuations: [GameLifecycleVoidContinuation] = []
     private var deleteGamePendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
+    private var isChooseDeckGated = false
+    private var chooseDeckContinuations: [GameLifecycleVoidContinuation] = []
+    private var chooseDeckPendingWaiters: [
         (threshold: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
 
@@ -96,6 +103,10 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         isDeleteGameGated = gated
     }
 
+    func setChooseDeckGated(_ gated: Bool) {
+        isChooseDeckGated = gated
+    }
+
     func setGetGameGated(_ gated: Bool) {
         isGetGameGated = gated
     }
@@ -132,6 +143,24 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     func resumeOldestDeleteGame(with result: Result<Void, any Error>) {
         guard !deleteGameContinuations.isEmpty else { return }
         let continuation = deleteGameContinuations.removeFirst()
+        switch result {
+        case .success: continuation.resume(returning: ())
+        case let .failure(error): continuation.resume(throwing: error)
+        }
+    }
+
+    /// Suspends until at least `count` `chooseDeck` calls are simultaneously pending.
+    func waitUntilChooseDeckPending(_ count: Int) async {
+        if chooseDeckContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { chooseDeckPendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `chooseDeck` call.
+    func resumeOldestChooseDeck(with result: Result<Void, any Error>) {
+        guard !chooseDeckContinuations.isEmpty else { return }
+        let continuation = chooseDeckContinuations.removeFirst()
         switch result {
         case .success: continuation.resume(returning: ())
         case let .failure(error): continuation.resume(throwing: error)
@@ -192,6 +221,14 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         }
     }
 
+    private func notifyChooseDeckWaiters() {
+        chooseDeckPendingWaiters.removeAll { entry in
+            guard chooseDeckContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
     private func notifyGetGameWaiters() {
         getGamePendingWaiters.removeAll { entry in
             guard getGameContinuations.count >= entry.threshold else { return false }
@@ -209,6 +246,13 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         try await withCheckedThrowingContinuation { (continuation: GameLifecycleVoidContinuation) in
             deleteGameContinuations.append(continuation)
             notifyDeleteGameWaiters()
+        }
+    }
+
+    private func awaitChooseDeckGate() async throws {
+        try await withCheckedThrowingContinuation { (continuation: GameLifecycleVoidContinuation) in
+            chooseDeckContinuations.append(continuation)
+            notifyChooseDeckWaiters()
         }
     }
 
@@ -314,6 +358,10 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         lastToken = token
         lastProfileID = profile.id
         lastChooseDeckRequest = request
+        if isChooseDeckGated {
+            try await awaitChooseDeckGate()
+            return
+        }
         try consume(&chooseDeckQueue)
     }
 }

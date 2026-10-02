@@ -713,6 +713,94 @@ extension AppModelCampaignPromptTests {
         #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 1)
     }
 
+    @Test("ChooseUpgradeDeck unchanged snapshot keeps successful PUT fence")
+    func chooseUpgradeDeckUnchangedSnapshotKeepsSuccessfulPutFence() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true)
+        )
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        await gameService.enqueueChooseDeckResult(.success(()))
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .submitted)
+
+        model.reconcileBasicChoice(gameID: gameID, projection: projection, isRESTSnapshot: false)
+        #expect(model.campaignDeckSubmissions[gameID]?.phase == .awaitingSnapshot)
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .failed("Deck update sent. Waiting for the game to update…"))
+        #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 1)
+    }
+
+    @Test("ChooseUpgradeDeck prompt change while PUT is in flight does not cancel it")
+    func chooseUpgradeDeckInFlightPutSurvivesPromptChangeSnapshot() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true)
+        )
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        await gameService.setChooseDeckGated(true)
+        let submission = Task { @MainActor in
+            await model.continueCampaignWithoutUpgrading(
+                investigatorId: "c01001",
+                in: gameID,
+                promptIdentity: prompt.identity
+            )
+        }
+        await gameService.waitUntilChooseDeckPending(1)
+        #expect(model.campaignDeckSubmissions[gameID]?.phase == .submitting)
+
+        let nextProjection = try chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true),
+            questionVersion: prompt.questionVersion + 1
+        )
+        model.liveGameStates[gameID] = .live(nextProjection)
+        model.reconcileBasicChoice(
+            gameID: gameID, projection: nextProjection, isRESTSnapshot: false
+        )
+        #expect(model.campaignDeckSubmissions[gameID]?.phase == .submitting)
+
+        await gameService.enqueueListGamesResult(.success([]))
+        await gameService.resumeOldestChooseDeck(with: .success(()))
+        #expect(await submission.value == .submitted)
+        await model.gameListTask?.value
+        #expect(model.campaignDeckSubmissions[gameID] == nil)
+        #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 1)
+        #expect(await gameService.callOrder.contains("listGames"))
+    }
+
     @Test("ChooseUpgradeDeck prompt change releases successful PUT fence")
     func chooseUpgradeDeckPromptChangeReleasesSuccessfulPutFence() async throws {
         let gameService = ScriptedGameLifecycleService()
@@ -739,6 +827,7 @@ extension AppModelCampaignPromptTests {
             in: gameID,
             promptIdentity: prompt.identity
         ) == .submitted)
+        #expect(model.campaignDeckSubmissions[gameID]?.phase == .awaitingSnapshot)
 
         let nextProjection = try chooseUpgradeDeckProjection(
             ownerID: ownerID,

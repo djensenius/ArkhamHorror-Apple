@@ -309,8 +309,9 @@ final class AppModel {
     /// is fenced to, and a task handle so lifecycle resets can cancel any still-running
     /// work where the underlying client cooperates with Swift task cancellation. A
     /// successful PUT stays here as an awaiting-snapshot claim until that prompt changes or
-    /// the live-game lifecycle resets; failures release immediately for retry.
-    @ObservationIgnored var campaignDeckSubmissions: [GameID: CampaignDeckSubmissionAttempt] = [:]
+    /// the live-game lifecycle resets; failures release immediately for retry. Intentionally
+    /// observable so waiting indicators and sheet controls refresh as soon as a claim changes.
+    var campaignDeckSubmissions: [GameID: CampaignDeckSubmissionAttempt] = [:]
     /// Sanitized room-wide feedback, never treated as correlated answer rejection.
     var basicChoiceServerFeedback: [GameID: String] = [:]
 

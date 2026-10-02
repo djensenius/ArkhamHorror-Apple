@@ -416,15 +416,19 @@ extension AppModel {
 
     func reconcileCampaignDeckSubmission(gameID: GameID, projection: BoardProjection) {
         guard let submission = campaignDeckSubmissions[gameID] else { return }
-        guard campaignDeckPromptKey(
-            in: projection,
-            gameID: gameID,
-            ownerID: submission.promptIdentity.ownerID
-        ) == submission.promptIdentity.promptKey
-        else {
-            submission.task?.cancel()
-            campaignDeckSubmissions[gameID] = nil
+        switch submission.phase {
+        case .submitting:
             return
+        case .awaitingSnapshot:
+            guard campaignDeckPromptKey(
+                in: projection,
+                gameID: gameID,
+                ownerID: submission.promptIdentity.ownerID
+            ) == submission.promptIdentity.promptKey
+            else {
+                campaignDeckSubmissions[gameID] = nil
+                return
+            }
         }
     }
 
@@ -442,12 +446,8 @@ extension AppModel {
         ownerID: PlayerID
     ) -> BasicChoicePromptKey? {
         guard let payload = projection.questions[ownerID] else { return nil }
-        return BasicChoicePromptKey(
-            gameID: gameID,
-            ownerID: ownerID,
-            questionVersion: projection.counters.scenarioSteps,
-            rawQuestion: payload.rawValue,
-            questionPresentation: payload.presentation?.presentation
+        return basicChoicePromptKey(
+            gameID: gameID, ownerID: ownerID, payload: payload, projection: projection
         )
     }
 }
