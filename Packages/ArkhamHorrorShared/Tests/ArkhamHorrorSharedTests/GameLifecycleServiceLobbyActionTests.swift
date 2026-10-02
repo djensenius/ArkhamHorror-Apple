@@ -71,7 +71,7 @@ struct GameLifecycleServiceLobbyActionTests {
         #expect(request?.httpMethod == "PUT")
         #expect(request?.url?.absoluteString.hasSuffix("/decks") == true)
         let body = try #require(await transport.capturedBody)
-        #expect(body == (try ContractJSON.encode(choice)))
+        #expect(try body == (ContractJSON.encode(choice)))
         let decoded = try ContractJSON.decode(ChooseDeckRequest.self, from: body)
         #expect(decoded == choice)
     }

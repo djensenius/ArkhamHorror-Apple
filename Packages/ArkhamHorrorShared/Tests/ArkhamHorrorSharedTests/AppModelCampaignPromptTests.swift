@@ -545,7 +545,7 @@ struct AppModelCampaignPromptTests {
         )
         let gameID = GameID(UUID())
         let message = "Could not upgrade deck: server details"
-        await deckService.enqueueFetch(.success(try deckListFixture()))
+        try await deckService.enqueueFetch(.success(deckListFixture()))
         await gameService.enqueueChooseDeckResult(.failure(
             GameLifecycleError.operationFailed(DeckOperationError(errorMsg: message))
         ))

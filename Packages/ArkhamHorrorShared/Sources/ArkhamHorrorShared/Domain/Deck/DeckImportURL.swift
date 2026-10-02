@@ -88,7 +88,8 @@ enum DeckImportURL: Equatable, Sendable {
             )
         }
         if parts.count == 2, ["share", "deck"].contains(parts[0]),
-           isArkhamBuildIdentifier(parts[1]) {
+           isArkhamBuildIdentifier(parts[1])
+        {
             return .fetchURL("https://api.arkham.build/v1/public/share/\(parts[1])")
         }
         let isShareView = parts.count == 3
