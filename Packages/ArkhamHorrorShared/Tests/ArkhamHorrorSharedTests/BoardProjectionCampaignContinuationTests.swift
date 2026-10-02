@@ -63,33 +63,15 @@ struct BoardProjectionCampaignContinuationTests {
         )
 
         // Campaign.vue lines 123-130 return null for continueCampaign when the
-        // scenario owns a ContinueCampaignStep; lines 174-181 then render
-        // continueScenario with the scenario's nextStep.
+        // scenario owns a ContinueCampaignStep; lines 173-182 compute continueScenario,
+        // and lines 234-242 render it with the scenario's nextStep and no campaign prop.
         #expect(projection.campaignContinuation?.source == .scenario)
         #expect(projection.campaignContinuation?.nextStep == scenarioNext)
+        #expect(projection.campaignContinuation?.canUpgrade == false)
     }
 
-    @Test("ScenarioStep override keeps campaign upgrade eligibility")
-    func scenarioStepOverrideKeepsCampaignUpgradeEligibility() {
-        let campaignNext: JSONValue = .object(["tag": .string("InterludeStep")])
-        let scenarioStep: JSONValue = .object(["tag": .string("ScenarioStep")])
-        let projection = continuationProjection(
-            campaignStep: continueCampaignStep(
-                nextStep: campaignNext,
-                canUpgradeDecks: true
-            ),
-            scenarioStep: scenarioStep,
-            completedSteps: [.object(["tag": .string("ScenarioStep")])]
-        )
-
-        #expect(projection.campaignContinuation?.source == .campaign)
-        #expect(projection.campaignContinuation?.nextStep == scenarioStep)
-        #expect(projection.campaignContinuation?.canUpgradeDecks == true)
-        #expect(projection.campaignContinuation?.canUpgrade == true)
-    }
-
-    @Test("Scenario fallback continuation keeps campaign upgrade eligibility")
-    func scenarioFallbackContinuationKeepsCampaignUpgradeEligibility() {
+    @Test("Scenario fallback continuation keeps web upgrade hidden")
+    func scenarioFallbackContinuationKeepsWebUpgradeHidden() {
         let scenarioNext: JSONValue = .object(["tag": .string("ScenarioStep")])
         let standalone: JSONValue = .object([
             "tag": .string("StandaloneScenarioStep"),
@@ -104,10 +86,14 @@ struct BoardProjectionCampaignContinuationTests {
             completedSteps: [.object(["tag": .string("ScenarioStep")])]
         )
 
+        // The campaign branch passes :campaign at Campaign.vue:214, but the scenario
+        // branch at Campaign.vue:234-242 does not. ContinueCampaign.vue's canUpgrade
+        // begins with `if (!props.campaign) return false`, so scenario-sourced
+        // continuations must not inherit campaign upgrade eligibility.
         #expect(projection.campaignContinuation?.source == .scenario)
         #expect(projection.campaignContinuation?.nextStep == scenarioNext)
         #expect(projection.campaignContinuation?.canUpgradeDecks == true)
-        #expect(projection.campaignContinuation?.canUpgrade == true)
+        #expect(projection.campaignContinuation?.canUpgrade == false)
     }
 
     @Test("ScenarioStep overrides the campaign ContinueCampaign next step")
