@@ -475,7 +475,88 @@ struct AppModelCampaignPromptTests {
         let request = try #require(await gameService.lastChooseDeckRequest)
         #expect(request.investigatorId.rawValue == "c01001")
         #expect(request.deckUrl == "https://arkhamdb.com/api/public/decklist/4242")
-        #expect(request.deckList == DeckListInput(deckList))
+        #expect(request.deckList == DeckListInput(
+            deckList,
+            urlOverride: "https://arkhamdb.com/api/public/decklist/4242"
+        ))
+    }
+
+    @Test("arkham.build share URL fetches from the API share endpoint and preserves deckList.url")
+    func arkhamBuildShareURLSubmitsAPIShareURL() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let gameID = GameID(UUID())
+        let deckList = try deckListFixture()
+        await deckService.enqueueFetch(.success(deckList))
+        await gameService.enqueueChooseDeckResult(.success(()))
+
+        let result = await model.upgradeCampaignDeck(
+            from: "https://arkham.build/share/abc123",
+            investigatorId: "c01001",
+            in: gameID
+        )
+
+        #expect(result == .submitted)
+        let fetchURL = "https://api.arkham.build/v1/public/share/abc123"
+        #expect(await deckService.lastFetchRequest == FetchDeckRequest(url: fetchURL))
+        let request = try #require(await gameService.lastChooseDeckRequest)
+        #expect(request.deckUrl == fetchURL)
+        #expect(request.deckList == DeckListInput(deckList, urlOverride: fetchURL))
+    }
+
+    @Test("arkham.build decklist URL fetches from the API share decklist endpoint")
+    func arkhamBuildDecklistURLSubmitsAPIShareDecklistURL() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let gameID = GameID(UUID())
+        let deckList = try deckListFixture()
+        await deckService.enqueueFetch(.success(deckList))
+        await gameService.enqueueChooseDeckResult(.success(()))
+
+        let result = await model.upgradeCampaignDeck(
+            from: "https://arkham.build/decklist/view/abc123",
+            investigatorId: "c01001",
+            in: gameID
+        )
+
+        #expect(result == .submitted)
+        let fetchURL = "https://api.arkham.build/v1/public/share/abc123?type=decklist"
+        #expect(await deckService.lastFetchRequest == FetchDeckRequest(url: fetchURL))
+        let request = try #require(await gameService.lastChooseDeckRequest)
+        #expect(request.deckUrl == fetchURL)
+        #expect(request.deckList == DeckListInput(deckList, urlOverride: fetchURL))
+    }
+
+    @Test("Campaign deck upgrade surfaces server deck endpoint messages")
+    func campaignDeckUpgradeSurfacesServerDeckEndpointMessage() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let gameID = GameID(UUID())
+        let message = "Could not upgrade deck: server details"
+        await deckService.enqueueFetch(.success(deckListFixture()))
+        await gameService.enqueueChooseDeckResult(.failure(
+            GameLifecycleError.operationFailed(DeckOperationError(errorMsg: message))
+        ))
+
+        let result = await model.upgradeCampaignDeck(
+            from: "https://arkhamdb.com/decklist/view/4242",
+            investigatorId: "c01001",
+            in: gameID
+        )
+
+        #expect(result == .failed(message))
     }
 
     @Test("Continue without upgrading PUTs a nil deck source to the game deck endpoint")

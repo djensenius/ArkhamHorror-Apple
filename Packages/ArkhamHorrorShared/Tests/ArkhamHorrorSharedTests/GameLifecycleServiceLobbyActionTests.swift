@@ -71,6 +71,7 @@ struct GameLifecycleServiceLobbyActionTests {
         #expect(request?.httpMethod == "PUT")
         #expect(request?.url?.absoluteString.hasSuffix("/decks") == true)
         let body = try #require(await transport.capturedBody)
+        #expect(body == (try ContractJSON.encode(choice)))
         let decoded = try ContractJSON.decode(ChooseDeckRequest.self, from: body)
         #expect(decoded == choice)
     }
@@ -81,6 +82,23 @@ struct GameLifecycleServiceLobbyActionTests {
         let error = DeckOperationError(errorMsg: "server says the deck is invalid")
         let transport = try GameLifecycleRecordingTransport(
             data: ContractJSON.encode(error), response: httpResponse(400, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+        let choice = try ChooseDeckRequest(
+            investigatorId: InvestigatorCode("01001"), deckUrl: nil, deckList: nil
+        )
+        await #expect(throws: GameLifecycleError.operationFailed(error)) {
+            try await service.chooseDeck(choice, in: gameID, on: profile, token: token)
+        }
+        #expect(GameLifecycleError.operationFailed(error).message == error.errorMsg)
+    }
+
+    @Test("chooseDeck surfaces backend deck-update errors verbatim for status 500")
+    func chooseDeckSurfacesBackendOperationErrorOnServerError() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/decks")
+        let error = DeckOperationError(errorMsg: "Could not upgrade deck: server details")
+        let transport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(error), response: httpResponse(500, url: url)
         )
         let service = GameLifecycleService(transport: transport)
         let choice = try ChooseDeckRequest(

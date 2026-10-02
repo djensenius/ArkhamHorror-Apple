@@ -73,11 +73,31 @@ struct DeckServiceTests {
             ),
             (
                 "https://arkham.build/decklist/view/abc123",
-                "https://arkham.build/decklist/abc123"
+                "https://api.arkham.build/v1/public/share/abc123?type=decklist"
             ),
             (
                 "HTTPS://User@Arkham.Build:8443/decklist/ABC_123?x=1#fragment",
-                "https://arkham.build/decklist/ABC_123"
+                "https://api.arkham.build/v1/public/share/ABC_123?type=decklist"
+            ),
+            (
+                "https://arkham.build/share/abc123",
+                "https://api.arkham.build/v1/public/share/abc123"
+            ),
+            (
+                "https://arkham.build/share/view/abc123",
+                "https://api.arkham.build/v1/public/share/abc123"
+            ),
+            (
+                "https://arkham.build/deck/view/abc123",
+                "https://api.arkham.build/v1/public/share/abc123"
+            ),
+            (
+                "https://api.arkham.build/v1/public/share/abc123?ignored=true",
+                "https://api.arkham.build/v1/public/share/abc123"
+            ),
+            (
+                "https://api.arkham.build/v1/public/share/abc123?type=decklist",
+                "https://api.arkham.build/v1/public/share/abc123?type=decklist"
             ),
         ]
     )
@@ -99,8 +119,6 @@ struct DeckServiceTests {
             "https://аrkham.build/decklist/abc123",
             "https://arkham.build/decklist/éabc",
             "https://arkham.build/decklist/../secret",
-            "https://arkham.build/share/abc123",
-            "https://arkham.build/deck/view/abc123",
         ]
     )
     func importURLRecognitionRejects(rawURL: String) {

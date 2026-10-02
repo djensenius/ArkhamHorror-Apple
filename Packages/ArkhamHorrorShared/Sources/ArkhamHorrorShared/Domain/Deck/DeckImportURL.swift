@@ -28,8 +28,8 @@ enum DeckImportURL: Equatable, Sendable {
         if isArkhamDBHost(host) {
             return try arkhamDBURL(from: components)
         }
-        if host == "arkham.build" {
-            return try arkhamBuildURL(from: components)
+        if host == "arkham.build" || host == "api.arkham.build" {
+            return try arkhamBuildURL(from: components, host: host)
         }
         throw ParseError.invalid
     }
@@ -56,25 +56,51 @@ enum DeckImportURL: Equatable, Sendable {
         return .fetchURL("https://arkhamdb.com/api/public/\(parts[0])/\(identifier)")
     }
 
-    private static func arkhamBuildURL(from components: URLComponents) throws -> DeckImportURL {
+    private static func arkhamBuildURL(
+        from components: URLComponents,
+        host: String
+    ) throws -> DeckImportURL {
         let parts = pathParts(components)
+        if host == "api.arkham.build" {
+            guard parts.count == 4,
+                  parts[0] == "v1",
+                  parts[1] == "public",
+                  parts[2] == "share",
+                  isArkhamBuildIdentifier(parts[3])
+            else { throw ParseError.invalid }
+            let suffix = components.queryItems?.contains {
+                $0.name == "type" && $0.value == "decklist"
+            } == true ? "?type=decklist" : ""
+            return .fetchURL("https://api.arkham.build/v1/public/share/\(parts[3])\(suffix)")
+        }
         if parts.count == 2, parts[0] == "decklist", isArkhamBuildIdentifier(parts[1]) {
-            return .fetchURL("https://arkham.build/decklist/\(parts[1])")
+            return .fetchURL(
+                "https://api.arkham.build/v1/public/share/\(parts[1])?type=decklist"
+            )
         }
         let isDecklistView = parts.count == 3
             && parts[0] == "decklist"
             && parts[1] == "view"
             && isArkhamBuildIdentifier(parts[2])
         if isDecklistView {
-            return .fetchURL("https://arkham.build/decklist/\(parts[2])")
+            return .fetchURL(
+                "https://api.arkham.build/v1/public/share/\(parts[2])?type=decklist"
+            )
         }
-        if parts.count == 2, ["share", "deck"].contains(parts[0]) {
-            throw ParseError.unsupportedArkhamBuildShare
+        if parts.count == 2, ["share", "deck"].contains(parts[0]),
+           isArkhamBuildIdentifier(parts[1]) {
+            return .fetchURL("https://api.arkham.build/v1/public/share/\(parts[1])")
         }
-        let isShareView = parts.count == 3 && parts[0] == "share" && parts[1] == "view"
-        let isDeckView = parts.count == 3 && parts[0] == "deck" && parts[1] == "view"
+        let isShareView = parts.count == 3
+            && parts[0] == "share"
+            && parts[1] == "view"
+            && isArkhamBuildIdentifier(parts[2])
+        let isDeckView = parts.count == 3
+            && parts[0] == "deck"
+            && parts[1] == "view"
+            && isArkhamBuildIdentifier(parts[2])
         if isShareView || isDeckView {
-            throw ParseError.unsupportedArkhamBuildShare
+            return .fetchURL("https://api.arkham.build/v1/public/share/\(parts[2])")
         }
         throw ParseError.invalid
     }
@@ -102,9 +128,9 @@ extension DeckImportURL.ParseError {
     var message: String {
         switch self {
         case .invalid:
-            "Enter an https ArkhamDB deck/decklist URL or arkham.build decklist URL."
+            "Enter an https ArkhamDB deck/decklist URL or arkham.build deck/share URL."
         case .unsupportedArkhamBuildShare:
-            "arkham.build share links are not supported yet. Paste an arkham.build decklist link."
+            "Enter an https ArkhamDB deck/decklist URL or arkham.build deck/share URL."
         }
     }
 }

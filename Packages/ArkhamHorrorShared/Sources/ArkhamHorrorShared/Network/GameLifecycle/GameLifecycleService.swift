@@ -272,26 +272,27 @@ struct GameLifecycleService: Sendable {
         case 200 ... 299:
             return data
         case 400:
-            throw decodeBadRequest(data, as: badRequest)
+            throw decodeFailure(data, statusCode: 400, as: badRequest)
         case 401:
             throw GameLifecycleError.sessionExpired
         default:
-            throw GameLifecycleError.unexpectedStatus(http.statusCode)
+            throw decodeFailure(data, statusCode: http.statusCode, as: badRequest)
         }
     }
 
-    private func decodeBadRequest(
+    private func decodeFailure(
         _ data: Data,
+        statusCode: Int,
         as decoder: BadRequestDecoder
     ) -> GameLifecycleError {
         switch decoder {
         case .generic:
-            return .unexpectedStatus(400)
+            return .unexpectedStatus(statusCode)
         case .operation:
             if let error = try? ContractJSON.decode(DeckOperationError.self, from: data) {
                 return .operationFailed(error)
             }
-            return .malformedPayload
+            return statusCode == 400 ? .malformedPayload : .unexpectedStatus(statusCode)
         }
     }
 
