@@ -3,6 +3,45 @@ import Foundation
 import Testing
 
 extension AppModelCampaignPromptTests {
+    func chooseUpgradeDeckProjection(
+        ownerID: PlayerID,
+        mode: GameMode
+    ) throws -> BoardProjection {
+        let rawQuestion: JSONValue = .object(["tag": .string("ChooseUpgradeDeck")])
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        let snapshot = BoardTestFixtures.snapshot(
+            mode: mode,
+            investigators: [
+                investigatorID: BoardTestFixtures.investigator(
+                    id: investigatorID,
+                    playerID: ownerID,
+                    spentXp: 2,
+                    experiencePoints: 5
+                ),
+            ],
+            playerOrder: [investigatorID]
+        )
+        let base = BoardProjectionBuilder.makeProjection(from: snapshot)
+        let presentation = QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: base.counters.scenarioSteps,
+            questionKind: .chooseUpgradeDeck,
+            choiceCount: 0,
+            choices: [],
+            answer: .deck(tags: ["DeckAnswer"])
+        )
+        var questions = UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>()
+        questions[ownerID] = try BasicChoiceQuestionPayload(
+            rawValue: rawQuestion,
+            state: .updateRequired(tag: "ChooseUpgradeDeck"),
+            presentation: presentation.bind(
+                to: rawQuestion,
+                expectedQuestionVersion: base.counters.scenarioSteps
+            )
+        )
+        return campaignPromptProjection(base: base, questions: questions)
+    }
+
     @Test("ChooseUpgradeDeck owner can open and submit while spectators cannot")
     func chooseUpgradeDeckPromptAuthorityUsesOwnerIdentity() async throws {
         let gameService = ScriptedGameLifecycleService()

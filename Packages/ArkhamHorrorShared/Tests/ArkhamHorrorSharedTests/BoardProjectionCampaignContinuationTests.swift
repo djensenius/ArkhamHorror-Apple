@@ -108,7 +108,7 @@ struct BoardProjectionCampaignContinuationTests {
         #expect(projection.campaignContinuation?.nextStep == campaignNext)
     }
 
-    @Test("Campaign-and-scenario mode falls back to the scenario step when campaign has no continuation")
+    @Test("Campaign-and-scenario mode falls back to scenario step without campaign continuation")
     func campaignAndScenarioFallsBackToScenarioStepWithoutCampaignContinuation() {
         let scenarioStep: JSONValue = .object(["tag": .string("InterludeStep")])
         let projection = continuationProjection(
