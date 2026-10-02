@@ -1,4 +1,3 @@
-// swiftlint:disable type_body_length function_body_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -111,75 +110,6 @@ struct QuestionPresentationMovementEntryTests {
         )
     }
 
-    @Test("Q36-Q38 reject well-shaped static semantic drift")
-    func gatheringSemanticIdentityDriftFailsClosed() throws {
-        for choiceIndex in [9, 10] {
-            let wrongMove = try mutatedChoiceFixture(
-                "question-presentation-gathering-movement",
-                choiceIndex: choiceIndex
-            ) { choice in
-                guard case var .object(ability)? = choice["ability"] else {
-                    throw FixtureMutationError.unexpectedShape
-                }
-                ability["index"] = .number(.integer(105))
-                choice["ability"] = .object(ability)
-            }
-            try assertPresentationOverlayFails(
-                wrongMove,
-                rawFixture: "question-gathering-movement",
-                expectedQuestionVersion: 36
-            )
-        }
-
-        for fixture in [
-            "question-presentation-gathering-cellar-entry-forced",
-            "question-presentation-gathering-attic-entry-forced",
-        ] {
-            let wrongForcedAbility = try mutatedChoiceFixture(
-                fixture,
-                choiceIndex: 0
-            ) { choice in
-                guard case var .object(ability)? = choice["ability"] else {
-                    throw FixtureMutationError.unexpectedShape
-                }
-                ability["index"] = .number(.integer(2))
-                choice["ability"] = .object(ability)
-            }
-            try assertPresentationOverlayFails(
-                wrongForcedAbility,
-                rawFixture: fixture.replacingOccurrences(
-                    of: "question-presentation-",
-                    with: "question-"
-                ),
-                expectedQuestionVersion: 37
-            )
-        }
-
-        for fixture in [
-            "question-presentation-gathering-cellar-damage-assignment",
-            "question-presentation-gathering-attic-horror-assignment",
-        ] {
-            let wrongAssignment = try mutatedChoiceFixture(
-                fixture,
-                choiceIndex: 0
-            ) { choice in
-                guard case var .object(entity)? = choice["entity"] else {
-                    throw FixtureMutationError.unexpectedShape
-                }
-                entity["id"] = .string("c01002")
-                choice["entity"] = .object(entity)
-            }
-            try assertPresentationOverlayFails(
-                wrongAssignment,
-                rawFixture: fixture.replacingOccurrences(
-                    of: "question-presentation-",
-                    with: "question-"
-                ),
-                expectedQuestionVersion: 38
-            )
-        }
-    }
-
     private func assertMovementChoice(
         _ choice: QuestionPresentation.Choice,
         sourceIndex: Int,
@@ -231,52 +161,12 @@ struct QuestionPresentationMovementEntryTests {
         #expect(choice.cost == nil)
     }
 
-    private func assertPresentationOverlayFails(
-        _ data: Data,
-        rawFixture: String,
-        expectedQuestionVersion: Int
-    ) throws {
-        do {
-            let presentation = try ContractJSON.decode(QuestionPresentation.self, from: data)
-            let binding = try presentation.bind(
-                to: self.rawFixture(rawFixture),
-                expectedQuestionVersion: expectedQuestionVersion
-            )
-            #expect(!binding.usesSealedActionabilityOverlay)
-            #expect(binding.governedSource == nil)
-        } catch is DecodingError {
-            // Structural v2 violations may still fail during decode; otherwise semantic
-            // drift decodes only as a generic prompt with no sealed overlay source.
-        } catch is QuestionPresentationBindingError {
-            // Some drift still claims a sealed overlay shape and is rejected at binding.
-        }
-    }
-
     private func presentationFixture(_ name: String) throws -> QuestionPresentation {
         try ContractJSON.decode(QuestionPresentation.self, from: fixture(name))
     }
 
     private func rawFixture(_ name: String) throws -> JSONValue {
         try ContractJSON.decode(JSONValue.self, from: fixture(name))
-    }
-
-    private func mutatedChoiceFixture(
-        _ name: String,
-        choiceIndex: Int,
-        mutate: (inout [String: JSONValue]) throws -> Void
-    ) throws -> Data {
-        let value = try ContractJSON.decode(JSONValue.self, from: fixture(name))
-        guard case var .object(root) = value,
-              case var .array(choices)? = root["choices"],
-              choices.indices.contains(choiceIndex),
-              case var .object(choice) = choices[choiceIndex]
-        else {
-            throw FixtureMutationError.unexpectedShape
-        }
-        try mutate(&choice)
-        choices[choiceIndex] = .object(choice)
-        root["choices"] = .array(choices)
-        return try ContractJSON.encode(JSONValue.object(root))
     }
 
     private func fixture(_ name: String) throws -> Data {
@@ -289,10 +179,4 @@ struct QuestionPresentationMovementEntryTests {
         )
         return try Data(contentsOf: url)
     }
-
-    private enum FixtureMutationError: Error {
-        case unexpectedShape
-    }
 }
-
-// swiftlint:enable type_body_length function_body_length

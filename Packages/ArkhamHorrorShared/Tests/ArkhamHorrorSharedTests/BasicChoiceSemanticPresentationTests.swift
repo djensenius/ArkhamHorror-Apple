@@ -96,21 +96,21 @@ struct BasicChoiceSemanticPresentationTests {
         #expect(submitted == [0])
     }
 
-    @Test("advanceAct re-resolves act and optional actor against the newest projection")
-    func advanceActFailsClosedWhenIdentityDisappears() throws {
+    @Test("advanceAct actionability is not gated by client-side board re-resolution")
+    func advanceActRemainsActionableWhenDisplayedEntityDisappears() throws {
         let q34 = try prompt(
             rawFixture: "question-gathering-act-objective",
             presentationFixture: "question-presentation-gathering-act-objective"
         )
         let choice = try #require(q34.choices.first { $0.index == 12 })
         #expect(
-            !q34.isChoiceActionable(
+            q34.isChoiceActionable(
                 choice,
                 in: gatheringProjection(includeAct: false, includeInvestigator: true)
             )
         )
         #expect(
-            !q34.isChoiceActionable(
+            q34.isChoiceActionable(
                 choice,
                 in: gatheringProjection(includeAct: true, includeInvestigator: false)
             )
@@ -122,7 +122,7 @@ struct BasicChoiceSemanticPresentationTests {
         )
         let confirmation = try #require(q35.choices.first)
         #expect(
-            !q35.isChoiceActionable(
+            q35.isChoiceActionable(
                 confirmation,
                 in: gatheringProjection(includeAct: false, includeInvestigator: false)
             )

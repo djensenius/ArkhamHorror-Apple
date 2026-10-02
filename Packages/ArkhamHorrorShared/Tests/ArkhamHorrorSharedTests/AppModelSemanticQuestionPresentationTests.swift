@@ -106,8 +106,8 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData == [Data(#"{"contents":{"choice":0,"playerId":"00000000-0000-0000-0000-000000000001","questionVersion":41},"tag":"Answer"}"#.utf8)])
     }
 
-    @Test("The newest projection rejects an encounter draw after its actor disappears")
-    func semanticEncounterDrawRevalidatesBeforeSend() async throws {
+    @Test("Semantic encounter draw trusts the server descriptor after actor projection drift")
+    func semanticEncounterDrawTrustsServerDescriptorBeforeSend() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -117,6 +117,7 @@ extension AppModelLiveGameTests {
             questionVersion: 41
         )
         let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -139,27 +140,27 @@ extension AppModelLiveGameTests {
 
         #expect(
             await model.submitBasicChoice(identity, choiceIndex: 0)
-                == .unsupportedChoice
+                == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData.isEmpty)
+        // swiftlint:disable:next line_length
+        #expect(await connection.sentData == [Data(#"{"contents":{"choice":0,"playerId":"00000000-0000-0000-0000-000000000001","questionVersion":41},"tag":"Answer"}"#.utf8)])
     }
 
-    @Test("Q41 drops overlay on actor drift and accepts non-overlay generic downgrade")
-    func semanticEncounterDrawBindingDriftFailsClosed() throws {
+    @Test("Q41 binds actor drift and generic descriptor downgrade")
+    func semanticEncounterDrawBindingDriftBindsGenerically() throws {
         let actorDrift = try encounterDrawBinding { choice in
             choice["actorId"] = .string("c01002")
         }
-        #expect(!actorDrift.usesSealedActionabilityOverlay)
+        #expect(actorDrift.descriptor(forSourceIndex: 0)?.actorID == "c01002")
 
         let downgraded = try encounterDrawBinding { choice in
             choice["kind"] = .string("drawCard")
         }
-        #expect(!downgraded.usesSealedActionabilityOverlay)
         #expect(downgraded.descriptor(forSourceIndex: 0)?.kind == .drawCard)
     }
 
-    @Test("The newest projection rejects advanceAct after its act disappears")
-    func semanticAdvanceActRevalidatesBeforeSend() async throws {
+    @Test("Semantic advanceAct trusts the server descriptor after act projection drift")
+    func semanticAdvanceActTrustsServerDescriptorBeforeSend() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -169,6 +170,7 @@ extension AppModelLiveGameTests {
             questionVersion: 34
         )
         let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -189,9 +191,10 @@ extension AppModelLiveGameTests {
 
         #expect(
             await model.submitBasicChoice(identity, choiceIndex: 12)
-                == .unsupportedChoice
+                == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData.isEmpty)
+        // swiftlint:disable:next line_length
+        #expect(await connection.sentData == [Data(#"{"contents":{"choice":12,"playerId":"00000000-0000-0000-0000-000000000001","questionVersion":34},"tag":"Answer"}"#.utf8)])
     }
 
     @Test("Same raw question/version with changed descriptors rejects the stale identity")
@@ -580,8 +583,8 @@ extension AppModelLiveGameTests {
         #expect(prompt.choices.allSatisfy { !prompt.isChoiceActionable($0, in: projection) })
     }
 
-    @Test("Gathering seal drift outside 34-42 falls back to generic rendering")
-    func gatheringSealDriftOutsideRecordedSequenceFallsBack() throws {
+    @Test("Gathering raw drift outside 34-42 binds through generic rendering")
+    func gatheringRawDriftOutsideRecordedSequenceBindsGenerically() throws {
         var presentationJSON = try fixtureJSON("question-presentation-gathering-act-objective")
         guard case var .object(presentationObject) = presentationJSON else {
             throw SemanticFixtureError.unexpectedShape
@@ -603,8 +606,8 @@ extension AppModelLiveGameTests {
             to: driftedRaw,
             expectedQuestionVersion: 68
         )
-        #expect(!binding.usesSealedActionabilityOverlay)
-        #expect(binding.governedSource == nil)
+        #expect(binding.isRenderableInCurrentClient)
+        #expect(binding.descriptor(forSourceIndex: 12)?.kind == .advanceAct)
     }
 
     @Test("Semantic localized labels are collected by authoritative source index")
@@ -1105,11 +1108,8 @@ extension AppModelLiveGameTests {
         let legacyActionability = legacy.choices.map {
             legacy.isChoiceActionable($0, in: projection)
         }
-        #expect(
-            Array(semanticActionability.prefix(12))
-                == Array(legacyActionability.prefix(12))
-        )
-        #expect(semanticActionability[12])
+        let allSemanticChoicesActionable = semanticActionability.allSatisfy(\.self)
+        #expect(allSemanticChoicesActionable)
         #expect(!legacyActionability[12])
     }
 

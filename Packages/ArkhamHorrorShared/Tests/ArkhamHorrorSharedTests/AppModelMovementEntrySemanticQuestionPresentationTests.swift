@@ -70,8 +70,8 @@ extension AppModelLiveGameTests {
         )
     }
 
-    @Test("The newest projection rejects movement after its destination disappears")
-    func semanticMovementRevalidatesBeforeSend() async throws {
+    @Test("Semantic movement trusts the server descriptor after projection drift")
+    func semanticMovementTrustsServerDescriptorBeforeSend() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -82,6 +82,7 @@ extension AppModelLiveGameTests {
             mutateGame: { try addGatheringLocations(to: &$0) }
         )
         let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -109,13 +110,16 @@ extension AppModelLiveGameTests {
 
         #expect(
             await model.submitBasicChoice(identity, choiceIndex: 9)
-                == .unsupportedChoice
+                == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData.isEmpty)
+        #expect(
+            await connection.sentData
+                == [expectedAnswer(choiceIndex: 9, questionVersion: 36)]
+        )
     }
 
-    @Test("Q36 rejects a destination UUID whose projected card is wrong")
-    func semanticMovementRejectsWrongLocationCard() async throws {
+    @Test("Q36 trusts movement descriptors when projected card is wrong")
+    func semanticMovementTrustsWrongLocationCardProjection() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -131,6 +135,7 @@ extension AppModelLiveGameTests {
             }
         )
         let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -141,13 +146,16 @@ extension AppModelLiveGameTests {
 
         #expect(
             await model.submitBasicChoice(prompt.identity, choiceIndex: 9)
-                == .unsupportedChoice
+                == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData.isEmpty)
+        #expect(
+            await connection.sentData
+                == [expectedAnswer(choiceIndex: 9, questionVersion: 36)]
+        )
     }
 
-    @Test("Q37 rejects a forced source UUID whose projected card is wrong")
-    func semanticForcedAbilityRejectsWrongLocationCard() async throws {
+    @Test("Q37 trusts forced-ability descriptors when projected card is wrong")
+    func semanticForcedAbilityTrustsWrongLocationCardProjection() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -164,6 +172,7 @@ extension AppModelLiveGameTests {
             }
         )
         let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -174,13 +183,16 @@ extension AppModelLiveGameTests {
 
         #expect(
             await model.submitBasicChoice(prompt.identity, choiceIndex: 0)
-                == .unsupportedChoice
+                == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData.isEmpty)
+        #expect(
+            await connection.sentData
+                == [expectedAnswer(choiceIndex: 0, questionVersion: 37)]
+        )
     }
 
-    @Test("Q38 rejects a governed source UUID whose projected card is wrong")
-    func semanticAssignmentRejectsWrongLocationCard() async throws {
+    @Test("Q38 trusts assignment descriptors when projected card is wrong")
+    func semanticAssignmentTrustsWrongLocationCardProjection() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -197,6 +209,7 @@ extension AppModelLiveGameTests {
             }
         )
         let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -207,39 +220,12 @@ extension AppModelLiveGameTests {
 
         #expect(
             await model.submitBasicChoice(prompt.identity, choiceIndex: 0)
-                == .unsupportedChoice
+                == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData.isEmpty)
-    }
-
-    @Test("Q39 rejects an investigation whose projected location card is wrong")
-    func semanticInvestigationRejectsWrongLocationCard() throws {
-        let envelope = try semanticEnvelope(
-            rawFixture: "question-gathering-movement",
-            presentationFixture: "question-presentation-gathering-movement",
-            questionVersion: 36,
-            mutateGame: {
-                try addGatheringLocations(
-                    to: &$0,
-                    includeAttic: false,
-                    cellarCardCode: "c01113"
-                )
-            }
+        #expect(
+            await connection.sentData
+                == [expectedAnswer(choiceIndex: 0, questionVersion: 38)]
         )
-        let projection = BoardProjectionBuilder.makeProjection(
-            from: envelope.game
-        )
-        let ownerID = try #require(envelope.playerID)
-        let investigation = QuestionPresentation.Choice.gatheringInvestigation(
-            cardCode: "c01114",
-            locationID: "a3497b9f-796b-406d-aeb4-9b96fa9f4905"
-        )
-
-        #expect(!projection.isSemanticChoiceActionable(
-            investigation,
-            ownerID: ownerID,
-            labelResolution: nil
-        ))
     }
 
     private func assertMovementAnswer(choiceIndex: Int) async throws {

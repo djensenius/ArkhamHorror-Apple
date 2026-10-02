@@ -139,8 +139,6 @@ private extension GatheringActionWindowBindingTests {
             to: rawQuestion,
             expectedQuestionVersion: 42
         )
-        #expect(binding.usesSealedActionabilityOverlay)
-        #expect(binding.governedSource == nil)
         #expect(
             binding.presentation.choices.count ==
                 handCardCount + 6
