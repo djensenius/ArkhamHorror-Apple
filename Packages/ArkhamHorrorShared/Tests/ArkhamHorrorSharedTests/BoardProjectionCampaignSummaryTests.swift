@@ -93,8 +93,8 @@ struct BoardProjectionCampaignSummaryTests {
 
     private func assertCampaignHandoffSummary(locale: SummaryLocale) throws {
         let context = try displayContext(locale: locale)
-        let projection = BoardProjectionBuilder.makeProjection(
-            from: try fixtureBackedCampaignSnapshot(),
+        let projection = try BoardProjectionBuilder.makeProjection(
+            from: fixtureBackedCampaignSnapshot(),
             localeCatalogResolver: context.localeCatalogResolver,
             cardCatalog: context.cardCatalog,
             campaignSummaryLocalization: context.localization
@@ -130,8 +130,8 @@ struct BoardProjectionCampaignSummaryTests {
     }
 
     private func fixtureBackedCampaignSnapshot() throws -> PublicGameSnapshot {
-        BoardTestFixtures.snapshot(
-            mode: try fixtureBackedCampaignMode(),
+        try BoardTestFixtures.snapshot(
+            mode: fixtureBackedCampaignMode(),
             investigators: [
                 investigatorID: BoardTestFixtures.investigator(
                     id: investigatorID,

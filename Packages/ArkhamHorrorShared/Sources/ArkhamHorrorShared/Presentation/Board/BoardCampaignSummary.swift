@@ -173,7 +173,8 @@ enum BoardCampaignSummaryBuilder {
     private static func shouldShowRecordedKey(_ value: JSONValue) -> Bool {
         guard let object = value.objectValue else { return true }
         if let tag = object["tag"]?.stringValue,
-           ["Teachings1", "Teachings2", "Teachings3"].contains(tag) {
+           ["Teachings1", "Teachings2", "Teachings3"].contains(tag)
+        {
             return false
         }
         return !isSectionKey(value)
@@ -282,7 +283,8 @@ enum BoardCampaignSummaryBuilder {
     ) -> String {
         if recordType == "RecordableCardCode",
            let code = value.stringValue,
-           let title = BoardCampaignSummaryFormatting.cardDisplayName(for: code, context: context) {
+           let title = BoardCampaignSummaryFormatting.cardDisplayName(for: code, context: context)
+        {
             return title
         }
         if let recordType, recordType != "RecordableCardCode", let text = value.stringValue {
@@ -290,7 +292,8 @@ enum BoardCampaignSummaryBuilder {
         }
         if recordType == nil,
            let code = value.stringValue,
-           let title = BoardCampaignSummaryFormatting.cardDisplayName(for: code, context: context) {
+           let title = BoardCampaignSummaryFormatting.cardDisplayName(for: code, context: context)
+        {
             return title
         }
         return BoardCampaignSummaryFormatting.jsonDisplayValue(value, context: context)

@@ -348,7 +348,6 @@ private struct CampaignBetweenLogView: View {
                 }
             }
         }
-
     }
 }
 
