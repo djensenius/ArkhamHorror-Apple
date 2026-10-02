@@ -17,6 +17,7 @@ private struct CampaignDeckSubmissionContext: Sendable {
 }
 
 extension AppModel {
+    // swiftlint:disable function_body_length
     /// Fetches an ArkhamDB/arkham.build deck list with the same guarded import path used
     /// by the Decks screen, then submits it to the backend campaign deck endpoint. The
     /// server remains the deck-validation authority; this path only normalizes the source
@@ -100,6 +101,8 @@ extension AppModel {
             )
         )
     }
+
+    // swiftlint:enable function_body_length
 
     func continueCampaignWithoutUpgrading(
         investigatorId rawInvestigatorId: String,
@@ -259,18 +262,23 @@ enum CampaignPromptLocalization {
 
     @MainActor
     static func localized(_ key: String, _ fallback: String) -> String {
-        let bundle: Bundle = if let localizationIdentifierOverride,
-                                let path = Bundle.module.path(
-                                    forResource: localizationIdentifierOverride,
-                                    ofType: "lproj"
-                                ),
-                                let localizedBundle = Bundle(path: path)
-        {
-            localizedBundle
-        } else {
-            .module
-        }
-        return NSLocalizedString(key, bundle: bundle, value: fallback, comment: "")
+        NSLocalizedString(
+            key,
+            bundle: bundle(for: localizationIdentifierOverride),
+            value: fallback,
+            comment: ""
+        )
+    }
+
+    private static func bundle(for localizationIdentifier: String?) -> Bundle {
+        guard let localizationIdentifier,
+              let path = Bundle.module.path(
+                  forResource: localizationIdentifier,
+                  ofType: "lproj"
+              ),
+              let localizedBundle = Bundle(path: path)
+        else { return .module }
+        return localizedBundle
     }
 }
 

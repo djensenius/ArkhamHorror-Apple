@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -128,6 +129,7 @@ func campaignPromptProjection(
 
 @MainActor
 @Suite("AppModel — campaign prompts")
+// swiftlint:disable:next type_body_length
 struct AppModelCampaignPromptTests {
     func makeSignedInModel(
         gameService: ScriptedGameLifecycleService,
@@ -427,3 +429,5 @@ struct AppModelCampaignPromptTests {
         #expect(request.deckList == nil)
     }
 }
+
+// swiftlint:enable file_length

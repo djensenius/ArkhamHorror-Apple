@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -466,15 +467,15 @@ extension AppModelCampaignPromptTests {
         )
         let prompt = try #require(model.basicChoicePresentation(for: gameID))
 
+        let invalidLinkMessage = "Gib eine https-ArkhamDB-Deck-/Decklisten-URL "
+            + "oder arkham.build-Deck-/Share-URL ein."
         await CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
             #expect(await model.upgradeCampaignDeck(
                 from: "not a deck URL",
                 investigatorId: "c01001",
                 in: gameID,
                 promptIdentity: prompt.identity
-            ) == .failed(
-                "Gib eine https-ArkhamDB-Deck-/Decklisten-URL oder arkham.build-Deck-/Share-URL ein."
-            ))
+            ) == .failed(invalidLinkMessage))
 
             await deckService.enqueueFetch(.failure(DeckServiceError.transportFailure("offline")))
             #expect(await model.upgradeCampaignDeck(
@@ -536,3 +537,5 @@ extension AppModelCampaignPromptTests {
         #expect(result == .failed(message))
     }
 }
+
+// swiftlint:enable file_length
