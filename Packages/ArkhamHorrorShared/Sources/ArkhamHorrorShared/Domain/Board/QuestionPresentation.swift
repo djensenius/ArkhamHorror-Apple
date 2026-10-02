@@ -1,4 +1,4 @@
-// swiftlint:disable file_length function_body_length identifier_name nesting
+// swiftlint:disable file_length identifier_name nesting
 import Foundation
 
 /// Render-only semantic metadata bound to one authoritative raw question.
@@ -298,11 +298,6 @@ extension QuestionPresentation {
         let id: String
     }
 
-    struct GovernedSource: Sendable, Equatable, Hashable {
-        let entity: Entity
-        let cardCode: String
-    }
-
     enum Answer: Sendable, Equatable, Hashable {
         case singleChoice(alternateTags: [String]?)
         case amounts
@@ -514,12 +509,6 @@ extension QuestionPresentation {
 struct BoundQuestionPresentation: Sendable, Equatable, Hashable {
     let presentation: QuestionPresentation
     let rawChoices: [JSONValue]
-    let governedSource: QuestionPresentation.GovernedSource?
-    let usesSealedActionabilityOverlay: Bool
-
-    var requiresSealedActionabilityOverlay: Bool {
-        presentation.sealValidationKind == .treacheryForcedAbility
-    }
 
     func descriptor(forSourceIndex sourceIndex: Int) -> QuestionPresentation.Choice? {
         presentation.choices.first { $0.sourceIndex == sourceIndex }
@@ -536,8 +525,6 @@ enum QuestionPresentationBindingError: Error, Sendable, Equatable {
     case questionVersion(expected: Int, actual: Int)
     case questionKind(expected: QuestionPresentation.Kind, actual: QuestionPresentation.Kind)
     case choiceCount(expected: Int, actual: Int)
-    case rawChoiceMismatch(sourceIndex: Int)
-    case governedChoicesMismatch
 }
 
 extension QuestionPresentation {
@@ -564,41 +551,11 @@ extension QuestionPresentation {
                 actual: choiceCount
             )
         }
-        let governedSource: QuestionPresentation.GovernedSource?
-        let usesSealedActionabilityOverlay: Bool
-        if sealValidationKind != nil {
-            do {
-                governedSource = try rawShape.validateGovernedChoices(for: self)
-                usesSealedActionabilityOverlay = hasSupportedSealedActionabilityOverlay
-            } catch QuestionPresentationBindingError.governedChoicesMismatch {
-                guard allowsGenericFallbackOnSealFailure else {
-                    throw QuestionPresentationBindingError
-                        .governedChoicesMismatch
-                }
-                governedSource = nil
-                usesSealedActionabilityOverlay = false
-            } catch let QuestionPresentationBindingError.rawChoiceMismatch(
-                sourceIndex
-            ) {
-                guard allowsGenericFallbackOnSealFailure else {
-                    throw QuestionPresentationBindingError.rawChoiceMismatch(
-                        sourceIndex: sourceIndex
-                    )
-                }
-                governedSource = nil
-                usesSealedActionabilityOverlay = false
-            }
-        } else {
-            governedSource = nil
-            usesSealedActionabilityOverlay = false
-        }
         return BoundQuestionPresentation(
             presentation: self,
-            rawChoices: rawShape.choices,
-            governedSource: governedSource,
-            usesSealedActionabilityOverlay: usesSealedActionabilityOverlay
+            rawChoices: rawShape.choices
         )
     }
 }
 
-// swiftlint:enable file_length function_body_length identifier_name nesting
+// swiftlint:enable file_length identifier_name nesting

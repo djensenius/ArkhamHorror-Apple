@@ -63,7 +63,7 @@ struct MovementEntryRuntimeIdentityTests {
         )
     }
 
-    @Test("Q38 preserves a remapped governed source location")
+    @Test("Q38 binds assignment choices without client-side source validation")
     func gatheringAssignmentRemappingBinds() throws {
         let presentation = try presentationFixture(
             "question-presentation-gathering-cellar-damage-assignment"
@@ -76,31 +76,21 @@ struct MovementEntryRuntimeIdentityTests {
             expectedQuestionVersion: 38
         )
 
-        #expect(
-            binding.governedSource ==
-                .init(
-                    entity: .init(
-                        kind: .location,
-                        id: remappedCellarID
-                    ),
-                    cardCode: "c01114"
-                )
-        )
+        #expect(binding.descriptor(forSourceIndex: 0)?.kind == .assignDamage)
     }
 
-    @Test("Q39 accepts a runtime Hallway identity and drops overlay on semantic drift")
+    @Test("Q39 accepts runtime Hallway identity and semantic drift generically")
     func gatheringPostEntryMovementBinds() throws {
         let hallwayID = "33333333-3333-4333-8333-333333333333"
         let rawQuestion = try postEntryRawQuestion(hallwayID: hallwayID)
         let presentation = try postEntryPresentation(hallwayID: hallwayID)
         #expect(presentation.choiceCount == 11)
         #expect(presentation.choices.last?.entity?.id == hallwayID)
-        #expect(
-            try presentation.bind(
-                to: rawQuestion,
-                expectedQuestionVersion: 39
-            ).usesSealedActionabilityOverlay
+        let binding = try presentation.bind(
+            to: rawQuestion,
+            expectedQuestionVersion: 39
         )
+        #expect(binding.descriptor(forSourceIndex: 10)?.entity?.id == hallwayID)
 
         let drifted = try ContractJSON.decode(
             QuestionPresentation.self,
@@ -114,8 +104,7 @@ struct MovementEntryRuntimeIdentityTests {
             to: rawQuestion,
             expectedQuestionVersion: 39
         )
-        #expect(!driftedBinding.usesSealedActionabilityOverlay)
-        #expect(driftedBinding.governedSource == nil)
+        #expect(driftedBinding.descriptor(forSourceIndex: 10)?.ability?.cardCode == "c01113")
     }
 
     private func postEntryPresentation(

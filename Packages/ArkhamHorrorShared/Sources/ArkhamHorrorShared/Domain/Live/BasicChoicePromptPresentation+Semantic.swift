@@ -62,7 +62,6 @@ extension BoundQuestionPresentation {
         case .singleChoice:
             presentation.supportsCurrentGenericChoiceList
                 && !rawChoices.isEmpty
-                && (!requiresSealedActionabilityOverlay || usesSealedActionabilityOverlay)
         case .amounts, .payment, .exchange:
             rawChoices.isEmpty
         case .multiSelect, .deck, .campaignSettings, .deferred:
@@ -74,8 +73,6 @@ extension BoundQuestionPresentation {
 extension BoundQuestionPresentation {
     func canActivateSemanticChoice(
         _ descriptor: QuestionPresentation.Choice,
-        ownerID: PlayerID,
-        projection: BoardProjection,
         labelResolution: BasicChoiceLabelResolution?
     ) -> Bool {
         guard case .singleChoice = presentation.answer,
@@ -83,16 +80,7 @@ extension BoundQuestionPresentation {
               descriptor.selectable,
               labelResolution?.unavailableReason == nil
         else { return false }
-        guard !requiresSealedActionabilityOverlay || usesSealedActionabilityOverlay else {
-            return false
-        }
-        guard usesSealedActionabilityOverlay else { return true }
-        return projection.isSemanticChoiceActionable(
-            descriptor,
-            ownerID: ownerID,
-            labelResolution: labelResolution,
-            governedSource: governedSource
-        )
+        return true
     }
 }
 
@@ -401,13 +389,11 @@ extension BasicChoicePromptPresentation {
 
     func isSemanticChoiceActionable(
         _ descriptor: QuestionPresentation.Choice,
-        in projection: BoardProjection
+        in _: BoardProjection
     ) -> Bool {
         guard let semanticPresentation else { return false }
         return semanticPresentation.canActivateSemanticChoice(
             descriptor,
-            ownerID: ownerID,
-            projection: projection,
             labelResolution: choiceLabelResolutions[descriptor.sourceIndex]
         )
     }

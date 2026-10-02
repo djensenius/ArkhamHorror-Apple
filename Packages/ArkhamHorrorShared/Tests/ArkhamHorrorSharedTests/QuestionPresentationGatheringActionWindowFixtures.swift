@@ -110,8 +110,6 @@ func assertActionWindowBindingLosesOverlay(
             to: rawQuestion,
             expectedQuestionVersion: expectedQuestionVersion
         )
-        #expect(!binding.usesSealedActionabilityOverlay)
-        #expect(binding.governedSource == nil)
     } catch {
         Issue.record("Expected failed seal to bind as plain generic rendering, got \(error)")
     }
