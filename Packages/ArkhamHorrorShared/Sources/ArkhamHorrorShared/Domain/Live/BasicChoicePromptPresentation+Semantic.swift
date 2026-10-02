@@ -8,6 +8,11 @@ struct BasicChoiceResolvedChoiceLabel: Sendable, Equatable {
     let accessibilityLabel: String
 }
 
+struct BasicChoiceSelectionProgress: Sendable, Equatable {
+    let text: String
+    let accessibilityLabel: String
+}
+
 extension QuestionPresentation {
     enum GenericSupport: Sendable, Equatable {
         case singleChoice
@@ -169,7 +174,12 @@ extension BasicChoicePromptPresentation {
 
     func questionHint() -> String? {
         guard let presentation = semanticPresentation?.presentation else { return nil }
-        return selectionHint(for: presentation)
+        return selectionProgress(for: presentation)?.text ?? selectionHint(for: presentation)
+    }
+
+    func questionHintAccessibilityLabel() -> String? {
+        guard let presentation = semanticPresentation?.presentation else { return nil }
+        return selectionProgress(for: presentation)?.accessibilityLabel ?? selectionHint(for: presentation)
     }
 
     static func supportsSemanticPrompt(
@@ -194,23 +204,143 @@ extension BasicChoicePromptPresentation {
     }
 
     private func selectionHint(for presentation: QuestionPresentation) -> String? {
-        guard let selection = presentation.selection else { return nil }
+        guard presentation.selection != nil else { return nil }
         switch presentation.questionKind {
-        case .chooseN:
-            return "Choose \(selection.max)"
-        case .chooseUpToN:
-            return "Choose up to \(selection.max)"
-        case .chooseSome1:
-            return "Choose at least \(selection.min)"
-        case .chooseSome:
-            return "Choose any number"
         case .chooseOneAtATime, .chooseOneAtATimeWithAuto:
             return "Choose one at a time"
-        case .chooseOneFromEach:
-            return "Choose one from each group"
         default:
             return nil
         }
+    }
+
+    func isCompletingSelection(_ choice: BasicChoice) -> Bool {
+        descriptor(for: choice)?.completesSelection == true
+    }
+
+    func shouldDisplayChoice(_: BasicChoice) -> Bool {
+        true
+    }
+
+    func displayOrderedChoices() -> [BasicChoice] {
+        let displayed = choices.filter { shouldDisplayChoice($0) }
+        return displayed.filter { !isCompletingSelection($0) }
+            + displayed.filter { isCompletingSelection($0) }
+    }
+
+    private var selectionAllowsCompletion: Bool {
+        guard let selection = semanticPresentation?.presentation.selection else { return true }
+        return selection.min <= 0
+    }
+
+    private func selectionProgress(
+        for presentation: QuestionPresentation
+    ) -> BasicChoiceSelectionProgress? {
+        guard let selection = presentation.selection else { return nil }
+        let text: String?
+        switch presentation.questionKind {
+        case .chooseN:
+            text = requiredSelectionProgress(selection.min)
+        case .chooseSome1:
+            text = selection.min > 0
+                ? atLeastSelectionProgress(selection.min)
+                : upToSelectionProgress(selection.max)
+        case .chooseSome, .chooseUpToN:
+            text = upToSelectionProgress(selection.max)
+        case .chooseOneFromEach:
+            let groupsLeft = presentation.groups?.count ?? selection.max
+            text = groupedSelectionProgress(groupsLeft)
+        default:
+            text = nil
+        }
+        return text.map { BasicChoiceSelectionProgress(text: $0, accessibilityLabel: $0) }
+    }
+
+    private func requiredSelectionProgress(_ count: Int) -> String? {
+        guard count > 0 else { return doneSelectionProgress() }
+        if count == 1 {
+            return semanticLocalized(
+                "semantic.selection.progress.required.one",
+                value: "Choose 1 more"
+            )
+        }
+        return semanticLocalized(
+            "semantic.selection.progress.required.many",
+            value: "Choose \(count) more",
+            arguments: [Int64(count)]
+        )
+    }
+
+    private func upToSelectionProgress(_ count: Int) -> String? {
+        guard count > 0 else { return doneSelectionProgress() }
+        if count == 1 {
+            return semanticLocalized(
+                "semantic.selection.progress.upTo.one",
+                value: "Choose up to 1 more"
+            )
+        }
+        return semanticLocalized(
+            "semantic.selection.progress.upTo.many",
+            value: "Choose up to \(count) more",
+            arguments: [Int64(count)]
+        )
+    }
+
+    private func atLeastSelectionProgress(_ count: Int) -> String? {
+        guard count > 0 else { return doneSelectionProgress() }
+        if count == 1 {
+            return semanticLocalized(
+                "semantic.selection.progress.atLeast.one",
+                value: "Choose at least 1 more"
+            )
+        }
+        return semanticLocalized(
+            "semantic.selection.progress.atLeast.many",
+            value: "Choose at least \(count) more",
+            arguments: [Int64(count)]
+        )
+    }
+
+    private func groupedSelectionProgress(_ count: Int) -> String? {
+        guard count > 0 else { return doneSelectionProgress() }
+        if count == 1 {
+            return semanticLocalized(
+                "semantic.selection.progress.oneFromEach.one",
+                value: "Choose one from each group (1 group left)"
+            )
+        }
+        return semanticLocalized(
+            "semantic.selection.progress.oneFromEach.many",
+            value: "Choose one from each group (\(count) groups left)",
+            arguments: [Int64(count)]
+        )
+    }
+
+    private func doneSelectionProgress() -> String? {
+        semanticLocalized(
+            "semantic.selection.progress.done",
+            value: "Done is available"
+        )
+    }
+
+    private func selectionCompletionUnavailableReason() -> String? {
+        guard let remaining = semanticPresentation?.presentation.selection?.min,
+              remaining > 0
+        else { return nil }
+        if remaining == 1 {
+            return semanticLocalized(
+                "semantic.choice.unavailable.completeSelection.one",
+                value: "Choose 1 more first"
+            )
+        }
+        return semanticLocalized(
+            "semantic.choice.unavailable.completeSelection.many",
+            value: "Choose \(remaining) more first",
+            arguments: [Int64(remaining)]
+        )
+    }
+
+    private func descriptor(for choice: BasicChoice) -> QuestionPresentation.Choice? {
+        semanticPresentation?.descriptor(forSourceIndex: choice.index)
     }
 
     static func makeChoices(
@@ -310,7 +440,10 @@ extension BasicChoicePromptPresentation {
 
     // swiftlint:disable:next cyclomatic_complexity
     private func semanticSystemImage(for descriptor: QuestionPresentation.Choice) -> String {
-        switch descriptor.kind {
+        if descriptor.completesSelection == true {
+            return "checkmark.circle.fill"
+        }
+        return switch descriptor.kind {
         case .advanceAct, .advanceAgenda: "arrow.up.circle.fill"
         case .applySkillTestResults: "checkmark.seal.fill"
         case .assignDamage: "heart.slash.fill"
@@ -369,6 +502,12 @@ extension BasicChoicePromptPresentation {
         }
         let isActionable = isSemanticChoiceActionable(descriptor, in: projection)
         guard isActionable else {
+            let completionUnavailableReason = descriptor.completesSelection == true
+                ? selectionCompletionUnavailableReason()
+                : nil
+            if let completionUnavailableReason {
+                return completionUnavailableReason
+            }
             return semanticUnavailableAnnouncement(
                 for: descriptor,
                 labelResolution: choiceLabelResolutions[choice.index]
@@ -378,6 +517,12 @@ extension BasicChoicePromptPresentation {
             return statusMessage ?? semanticLocalized(
                 "semantic.choice.accessibility.readOnly",
                 value: "This choice is currently read-only."
+            )
+        }
+        if descriptor.completesSelection == true {
+            return semanticLocalized(
+                "semantic.choice.accessibility.completesSelection",
+                value: "Finishes this selection."
             )
         }
         return semanticLocalized(
@@ -392,6 +537,9 @@ extension BasicChoicePromptPresentation {
         in _: BoardProjection
     ) -> Bool {
         guard let semanticPresentation else { return false }
+        if descriptor.completesSelection == true, !selectionAllowsCompletion {
+            return false
+        }
         return semanticPresentation.canActivateSemanticChoice(
             descriptor,
             labelResolution: choiceLabelResolutions[descriptor.sourceIndex]

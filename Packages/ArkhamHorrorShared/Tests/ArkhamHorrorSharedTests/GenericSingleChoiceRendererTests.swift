@@ -125,7 +125,7 @@ struct GenericSingleChoiceRendererTests {
         )
 
         #expect(prompt.headerTitle(in: rendererProjection()) == "Make selections")
-        #expect(prompt.questionHint() == "Choose 2")
+        #expect(prompt.questionHint() == "Choose 2 more")
     }
 
     @Test("Tarot arcana titles use display names without appended ordinals")

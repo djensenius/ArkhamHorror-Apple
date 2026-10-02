@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -176,6 +177,39 @@ struct BasicChoiceSemanticPresentationTests {
         #expect(submitted.isEmpty)
     }
 
+    @Test("Multi-select progress text localizes in German")
+    func multiSelectProgressLocalizesInGerman() throws {
+        let chooseN = try prompt(
+            rawFixture: "question-generic-choose-n",
+            presentationFixture: "question-presentation-generic-choose-n",
+            semanticLocaleIdentifier: "de"
+        )
+        let chooseUpToN = try prompt(
+            rawFixture: "question-generic-choose-up-to-n",
+            presentationFixture: "question-presentation-generic-choose-up-to-n",
+            semanticLocaleIdentifier: "de"
+        )
+        let chooseSome1 = try prompt(
+            rawQuestion: chooseSome1RawQuestion(),
+            presentation: chooseSome1Presentation(),
+            semanticLocaleIdentifier: "de"
+        )
+        let oneFromEach = try prompt(
+            rawFixture: "question-generic-one-from-each",
+            presentationFixture: "question-presentation-generic-one-from-each",
+            semanticLocaleIdentifier: "de"
+        )
+
+        #expect(chooseN.questionHint() == "1 weitere wählen")
+        #expect(chooseUpToN.questionHint() == "Bis zu 1 weitere wählen")
+        #expect(chooseSome1.questionHint() == "Mindestens 1 weitere wählen")
+        #expect(oneFromEach.questionHint() == "Aus jeder Gruppe eine wählen (2 Gruppen übrig)")
+        #expect(
+            oneFromEach.questionHintAccessibilityLabel()
+                == "Aus jeder Gruppe eine wählen (2 Gruppen übrig)"
+        )
+    }
+
     @Test("Changed semantic metadata changes prompt identity with raw bytes/version unchanged")
     func semanticMetadataParticipatesInIdentity() throws {
         let payload = try rawPayload("question-gathering-act-advance")
@@ -212,6 +246,34 @@ extension BasicChoiceSemanticPresentationTests {
     ) throws -> BasicChoicePromptPresentation {
         let payload = try rawPayload(rawFixture)
         let presentation = try presentation(presentationFixture)
+        return try prompt(
+            payload: payload,
+            presentation: presentation,
+            semanticLocaleIdentifier: semanticLocaleIdentifier
+        )
+    }
+
+    func prompt(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation,
+        semanticLocaleIdentifier: String? = "en"
+    ) throws -> BasicChoicePromptPresentation {
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: ContractJSON.encode(rawQuestion)
+        )
+        return try prompt(
+            payload: payload,
+            presentation: presentation,
+            semanticLocaleIdentifier: semanticLocaleIdentifier
+        )
+    }
+
+    func prompt(
+        payload: BasicChoiceQuestionPayload,
+        presentation: QuestionPresentation,
+        semanticLocaleIdentifier: String? = "en"
+    ) throws -> BasicChoicePromptPresentation {
         let bound = try presentation.bind(
             to: payload.rawValue,
             expectedQuestionVersion: presentation.questionVersion
@@ -259,6 +321,48 @@ extension BasicChoiceSemanticPresentationTests {
             questionPresentation: presentation,
             sessionAttemptID: nil,
             connectionID: nil
+        )
+    }
+
+    private func chooseSome1RawQuestion() -> JSONValue {
+        .object([
+            "tag": .string("ChooseSome1"),
+            "label": .string("$choose"),
+            "choices": .array([
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string("$a"),
+                    "messages": .array([]),
+                ]),
+                .object([
+                    "tag": .string("Done"),
+                    "label": .string("$done"),
+                ]),
+            ]),
+        ])
+    }
+
+    private func chooseSome1Presentation() -> QuestionPresentation {
+        QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: 306,
+            questionKind: .chooseSome1,
+            choiceCount: 2,
+            choices: [
+                .init(
+                    sourceIndex: 0,
+                    kind: .localizedLabel,
+                    label: .init(kind: .embeddedI18n, text: "$a")
+                ),
+                .init(
+                    sourceIndex: 1,
+                    kind: .localizedLabel,
+                    selectable: true,
+                    completesSelection: true,
+                    label: .init(kind: .embeddedI18n, text: "$done")
+                ),
+            ],
+            selection: .init(min: 1, max: 1)
         )
     }
 

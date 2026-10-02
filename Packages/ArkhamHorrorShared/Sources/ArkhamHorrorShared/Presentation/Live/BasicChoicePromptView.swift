@@ -53,6 +53,7 @@ struct BasicChoicePromptView: View {
                     Text(hint)
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel(presentation.questionHintAccessibilityLabel() ?? hint)
                         .accessibilityIdentifier("liveGame.prompt.selectionHint")
                 }
                 choices
@@ -205,53 +206,89 @@ struct BasicChoicePromptView: View {
 
     private var choices: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(presentation.choices) { choice in
-                let focusID = BoardFocusID.promptChoice(choice.index)
-                let resolved = presentation.resolvedChoiceLabel(
-                    for: choice,
-                    in: controller.projection
-                )
-                let title = resolved.title
-                let isActionable = presentation.isChoiceActionable(
-                    choice, in: controller.projection
-                )
-                SemanticActionControl(
-                    accessibilityLabel: Text(resolved.accessibilityLabel),
-                    semanticFocusID: focusID,
-                    onOutcome: { controller.handle(focusID: $0, $1) },
-                    label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: resolved.systemImage)
-                                .frame(width: 22)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(title)
-                                if let subtitle = resolved.subtitle {
-                                    Text(subtitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            let isSendingChoice = presentation.actionChoiceIndex == choice.index
-                                && presentation.actionPhase == .sending
-                            if isSendingChoice {
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                )
-                .buttonStyle(.bordered)
-                .tint(choiceTint(for: choice))
-                .focused(focusBinding, equals: focusID)
-                .disabled(!isActionable || !presentation.canSubmit)
-                // `SemanticActionControl` already applies `accessibilityLabel: Text(title)`
-                // internally; an outer override here would risk silently diverging from it.
-                .accessibilityHint(accessibilityHint(for: choice))
-                .accessibilityIdentifier("liveGame.prompt.choice.\(choice.index)")
+            ForEach(regularChoices) { choice in
+                choiceButton(for: choice, isFinishingAction: false)
+            }
+            if !finishingChoices.isEmpty {
+                Divider()
+                ForEach(finishingChoices) { choice in
+                    choiceButton(for: choice, isFinishingAction: true)
+                }
             }
         }
+    }
+
+    private var regularChoices: [BasicChoice] {
+        presentation.displayOrderedChoices().filter {
+            !presentation.isCompletingSelection($0)
+        }
+    }
+
+    private var finishingChoices: [BasicChoice] {
+        presentation.displayOrderedChoices().filter {
+            presentation.isCompletingSelection($0)
+        }
+    }
+
+    @ViewBuilder
+    private func choiceButton(
+        for choice: BasicChoice,
+        isFinishingAction: Bool
+    ) -> some View {
+        if isFinishingAction {
+            choiceControl(for: choice)
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+        } else {
+            choiceControl(for: choice)
+                .buttonStyle(.bordered)
+                .tint(choiceTint(for: choice))
+        }
+    }
+
+    private func choiceControl(for choice: BasicChoice) -> some View {
+        let focusID = BoardFocusID.promptChoice(choice.index)
+        let resolved = presentation.resolvedChoiceLabel(
+            for: choice,
+            in: controller.projection
+        )
+        let title = resolved.title
+        let isActionable = presentation.isChoiceActionable(
+            choice, in: controller.projection
+        )
+        return SemanticActionControl(
+            accessibilityLabel: Text(resolved.accessibilityLabel),
+            semanticFocusID: focusID,
+            onOutcome: { controller.handle(focusID: $0, $1) },
+            label: {
+                HStack(spacing: 10) {
+                    Image(systemName: resolved.systemImage)
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                        if let subtitle = resolved.subtitle {
+                            Text(subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    let isSendingChoice = presentation.actionChoiceIndex == choice.index
+                        && presentation.actionPhase == .sending
+                    if isSendingChoice {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+        )
+        .focused(focusBinding, equals: focusID)
+        .disabled(!isActionable || !presentation.canSubmit)
+        // `SemanticActionControl` already applies `accessibilityLabel: Text(title)`
+        // internally; an outer override here would risk silently diverging from it.
+        .accessibilityHint(accessibilityHint(for: choice))
+        .accessibilityIdentifier("liveGame.prompt.choice.\(choice.index)")
     }
 
     @ViewBuilder
