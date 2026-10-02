@@ -398,6 +398,22 @@ struct AppModelCampaignPromptTests {
         ))
     }
 
+    func contractFixtureData(named fileName: String) throws -> Data {
+        let url = try #require(Bundle.module.url(
+            forResource: fileName,
+            withExtension: "json",
+            subdirectory: "Fixtures/Contract"
+        ))
+        return try Data(contentsOf: url)
+    }
+
+    func replacingFirst(_ needle: String, with replacement: String, in haystack: String) throws -> String {
+        let range = try #require(haystack.range(of: needle))
+        var result = haystack
+        result.replaceSubrange(range, with: replacement)
+        return result
+    }
+
     @Test("Continue without upgrading PUTs a nil deck source to the game deck endpoint")
     func continueWithoutUpgradingSubmitsNilDeckSource() async throws {
         let gameService = ScriptedGameLifecycleService()
@@ -430,6 +446,80 @@ struct AppModelCampaignPromptTests {
         #expect(request.investigatorId.rawValue == "c01001")
         #expect(request.deckUrl == nil)
         #expect(request.deckList == nil)
+    }
+
+    @Test("After an upgrade, the next real snapshot supplies the deck and XP authority")
+    func upgradedDeckNextScenarioComesFromServerSnapshotBytes() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        try installPrompt(
+            chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        await deckService.enqueueFetch(.success(try deckListFixture()))
+        await gameService.enqueueChooseDeckResult(.success(()))
+
+        #expect(await model.upgradeCampaignDeck(
+            from: "https://arkhamdb.com/decklist/view/4242",
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .submitted)
+
+        var snapshotText = try #require(
+            String(data: contractFixtureData(named: "get-game"), encoding: .utf8)
+        )
+        snapshotText = try replacingFirst(
+            "\"deckUrl\": null",
+            with: "\"deckUrl\": \"https://server.example/upgraded-deck\"",
+            in: snapshotText
+        )
+        snapshotText = try replacingFirst("\"xp\": 0", with: "\"xp\": 8", in: snapshotText)
+        snapshotText = try replacingFirst(
+            "\"spentXp\": 0", with: "\"spentXp\": 3", in: snapshotText
+        )
+        snapshotText = try replacingFirst(
+            "\"physicalTrauma\": 0", with: "\"physicalTrauma\": 1", in: snapshotText
+        )
+        snapshotText = try replacingFirst(
+            "\"mentalTrauma\": 0", with: "\"mentalTrauma\": 2", in: snapshotText
+        )
+
+        let serverEnvelope = try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: Data(snapshotText.utf8)
+        )
+        let investigatorID = try InvestigatorID(CardCode("c01001"))
+        let serverInvestigator = try #require(serverEnvelope.game.investigators[investigatorID])
+        #expect(serverInvestigator.deckURL == "https://server.example/upgraded-deck")
+
+        let projection = BoardProjectionBuilder.makeProjection(from: serverEnvelope.game)
+        model.liveGameStates[gameID] = .live(projection)
+        let projectedInvestigator = try #require(
+            model.liveGameState(for: gameID).lastKnownProjection?.investigators.first
+        )
+        #expect(projectedInvestigator.availableExperience == 5)
+        #expect(projectedInvestigator.physicalTrauma == 1)
+        #expect(projectedInvestigator.mentalTrauma == 2)
+        #expect(projectedInvestigator.experiencePoints == serverInvestigator.experiencePoints)
+        #expect(projectedInvestigator.spentExperience == serverInvestigator.spentXp)
+        #expect(await gameService.lastChooseDeckRequest?.deckUrl
+            == "https://arkhamdb.com/api/public/decklist/4242")
     }
 }
 
