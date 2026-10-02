@@ -92,7 +92,8 @@ extension StoryNarrativeLocalization {
             key,
             variables: .object([:]),
             resolver: resolver,
-            catalogUnavailability: catalogUnavailability
+            catalogUnavailability: catalogUnavailability,
+            imageFallback: fallsBackToServerKey
         ) {
         case let .failure(reason):
             guard fallsBackToServerKey,
@@ -293,7 +294,8 @@ extension StoryNarrativeLocalization {
             key,
             variables: variables,
             resolver: resolver,
-            catalogUnavailability: catalogUnavailability
+            catalogUnavailability: catalogUnavailability,
+            imageFallback: true
         ) {
         case let .success(rendered):
             return .success(ProductionEntryResolution(
@@ -407,13 +409,24 @@ extension StoryNarrativeLocalization {
         _ key: String,
         variables: JSONValue,
         resolver: LocaleCatalogResolver?,
-        catalogUnavailability: StoryUnavailableReason
+        catalogUnavailability: StoryUnavailableReason,
+        imageFallback: Bool = true
     ) -> Result<LocaleCatalogRenderedNodes, StoryUnavailableReason> {
-        if let chrome = chromeVocabulary[key] {
+        guard let resolver else {
+            if let chrome = chromeVocabulary[key] {
+                return .success(LocaleCatalogRenderedNodes(nodes: [.text(chrome)], degradedReason: nil))
+            }
+            return .failure(catalogUnavailability)
+        }
+        let rendered = imageFallback
+            ? resolver.renderAllowingImageFallback(key: key, variables: variables)
+            : resolver.render(key: key, variables: variables).map {
+                LocaleCatalogRenderedNodes(nodes: $0, degradedReason: nil)
+            }
+        if case .failure(.missingKey) = rendered, let chrome = chromeVocabulary[key] {
             return .success(LocaleCatalogRenderedNodes(nodes: [.text(chrome)], degradedReason: nil))
         }
-        guard let resolver else { return .failure(catalogUnavailability) }
-        return resolver.renderAllowingImageFallback(key: key, variables: variables)
+        return rendered
     }
 
     static func readableFallback(

@@ -110,8 +110,8 @@ struct StoryHeaderEntryLocalizationTests {
         )))
     }
 
-    @Test("An unsupported HeaderEntry catalog node fails the whole story closed")
-    func productionHeaderEntryUnsupportedNodeFailsClosed() async throws {
+    @Test("An unsupported HeaderEntry image node degrades without blocking the story")
+    func productionHeaderEntryUnsupportedImageNodeDegrades() async throws {
         let documents = try SyntheticLocaleCatalogDocuments.make(
             entryKeys: ["story.heading"],
             chunkEntries: """
@@ -128,6 +128,10 @@ struct StoryHeaderEntryLocalizationTests {
             flavorText,
             resolver: resolver,
             catalogUnavailability: nil
-        ) == .unavailable(.unsupportedEntry))
+        ) == .resolved(ResolvedStory(
+            title: nil,
+            body: [.heading(level: .level3, nodes: [])],
+            degradedReason: .unsupportedEntry
+        )))
     }
 }
