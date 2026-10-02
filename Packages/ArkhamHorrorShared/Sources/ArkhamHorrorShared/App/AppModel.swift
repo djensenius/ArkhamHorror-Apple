@@ -303,7 +303,12 @@ final class AppModel {
     /// Process-global answer authority: at most one claimed answer per game.
     var basicChoiceActions: [GameID: BasicChoiceActionRecord] = [:]
     /// REST deck-upgrade submissions claimed for the live game currently being answered.
-    @ObservationIgnored var campaignDeckSubmissionGameIDs: Set<GameID> = []
+    ///
+    /// Each claim carries an attempt identity so a stale task's cleanup cannot clear a
+    /// newer same-game submission after a lifecycle reset/re-entry, and a task handle so
+    /// lifecycle resets can cancel any still-running work where the underlying client
+    /// cooperates with Swift task cancellation.
+    @ObservationIgnored var campaignDeckSubmissions: [GameID: CampaignDeckSubmissionAttempt] = [:]
     /// Sanitized room-wide feedback, never treated as correlated answer rejection.
     var basicChoiceServerFeedback: [GameID: String] = [:]
 

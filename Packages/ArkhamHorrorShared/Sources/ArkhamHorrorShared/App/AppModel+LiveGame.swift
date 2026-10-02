@@ -138,6 +138,10 @@ extension AppModel {
         liveGameStates = [:]
         liveGameParticipantIdentities = [:]
         basicChoiceActions = [:]
+        for submission in campaignDeckSubmissions.values {
+            submission.task?.cancel()
+        }
+        campaignDeckSubmissions = [:]
         basicChoiceServerFeedback = [:]
     }
 }

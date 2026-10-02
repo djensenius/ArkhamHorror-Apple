@@ -10,6 +10,16 @@ enum CampaignDeckUpgradeSubmissionResult: Sendable, Equatable {
     }
 }
 
+struct CampaignDeckSubmissionAttempt: Sendable {
+    let attemptID: UUID
+    let task: Task<CampaignDeckUpgradeSubmissionResult, Never>?
+}
+
+private enum CampaignDeckSubmissionStart: Sendable {
+    case started(UUID)
+    case failed(CampaignDeckUpgradeSubmissionResult)
+}
+
 private struct CampaignDeckSubmissionContext: Sendable {
     let profile: ServerProfile
     let deckContext: DeckRequestContext
@@ -43,63 +53,38 @@ extension AppModel {
                 "This investigator could not be sent safely."
             ))
         }
-        if let failure = beginCampaignDeckSubmission(
+        let attemptID: UUID
+        switch beginCampaignDeckSubmission(
             promptIdentity: promptIdentity,
             investigatorId: investigatorId,
             in: gameID
         ) {
+        case let .started(value):
+            attemptID = value
+        case let .failed(failure):
             return failure
         }
-        defer { finishCampaignDeckSubmission(promptIdentity: promptIdentity) }
 
-        let fetchURL: String
-        do {
-            fetchURL = try DeckImportURL.parse(rawURL).fetchURL
-        } catch {
-            return .failed(campaignPromptLocalized(
-                "campaign.error.invalidDeckLink",
-                "Enter an https ArkhamDB deck/decklist URL or arkham.build deck/share URL."
-            ))
-        }
-
-        let context: DeckRequestContext
-        do {
-            context = try await currentDeckRequestContext(for: profile)
-        } catch {
-            return .failed(campaignPromptLocalized(
-                "campaign.error.sessionExpiredDecks",
-                "Your session expired. Sign in again to manage decks."
-            ))
-        }
-
-        let deckList: DeckList
-        do {
-            deckList = try await deckService.fetchDeckList(
-                FetchDeckRequest(url: fetchURL), on: profile, token: context.token
-            )
-        } catch let error as DeckServiceError {
-            if case .sessionExpired = error {
-                await handleDeckSessionExpired(profile: profile, context: context)
-            }
-            return .failed(campaignDeckFetchFailureMessage(error))
-        } catch {
-            return .failed(campaignPromptLocalized(
-                "campaign.error.fetchDeckFailed",
-                "The server could not fetch that deck. Try again."
-            ))
-        }
-
-        return await submitCampaignDeck(
-            deckURL: fetchURL,
-            deckList: DeckListInput(deckList, urlOverride: fetchURL),
-            investigatorId: investigatorId,
-            gameID: gameID,
-            context: CampaignDeckSubmissionContext(
+        let task = Task<CampaignDeckUpgradeSubmissionResult, Never> { @MainActor in
+            await self.performCampaignDeckUpgrade(
+                rawURL: rawURL,
+                investigatorId: investigatorId,
+                gameID: gameID,
                 profile: profile,
-                deckContext: context,
                 promptIdentity: promptIdentity
             )
+        }
+        campaignDeckSubmissions[gameID] = CampaignDeckSubmissionAttempt(
+            attemptID: attemptID,
+            task: task
         )
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        finishCampaignDeckSubmission(gameID: gameID, attemptID: attemptID)
+        return result
     }
 
     // swiftlint:enable function_body_length
@@ -124,24 +109,122 @@ extension AppModel {
                 "This investigator could not be sent safely."
             ))
         }
-        if let failure = beginCampaignDeckSubmission(
+        let attemptID: UUID
+        switch beginCampaignDeckSubmission(
             promptIdentity: promptIdentity,
             investigatorId: investigatorId,
             in: gameID
         ) {
+        case let .started(value):
+            attemptID = value
+        case let .failed(failure):
             return failure
         }
-        defer { finishCampaignDeckSubmission(promptIdentity: promptIdentity) }
+
+        let task = Task<CampaignDeckUpgradeSubmissionResult, Never> { @MainActor in
+            await self.performCampaignDeckSkip(
+                investigatorId: investigatorId,
+                gameID: gameID,
+                profile: profile,
+                promptIdentity: promptIdentity
+            )
+        }
+        campaignDeckSubmissions[gameID] = CampaignDeckSubmissionAttempt(
+            attemptID: attemptID,
+            task: task
+        )
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        finishCampaignDeckSubmission(gameID: gameID, attemptID: attemptID)
+        return result
+    }
+
+    private func performCampaignDeckUpgrade(
+        rawURL: String,
+        investigatorId: InvestigatorCode,
+        gameID: GameID,
+        profile: ServerProfile,
+        promptIdentity: BasicChoicePromptIdentity
+    ) async -> CampaignDeckUpgradeSubmissionResult {
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
+        let fetchURL: String
+        do {
+            fetchURL = try DeckImportURL.parse(rawURL).fetchURL
+        } catch {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.invalidDeckLink",
+                "Enter an https ArkhamDB deck/decklist URL or arkham.build deck/share URL."
+            ))
+        }
 
         let context: DeckRequestContext
         do {
             context = try await currentDeckRequestContext(for: profile)
+        } catch is CancellationError {
+            return campaignDeckSubmissionCancelledFailure()
         } catch {
             return .failed(campaignPromptLocalized(
                 "campaign.error.sessionExpiredDecks",
                 "Your session expired. Sign in again to manage decks."
             ))
         }
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
+
+        let deckList: DeckList
+        do {
+            deckList = try await deckService.fetchDeckList(
+                FetchDeckRequest(url: fetchURL), on: profile, token: context.token
+            )
+        } catch is CancellationError {
+            return campaignDeckSubmissionCancelledFailure()
+        } catch let error as DeckServiceError {
+            if case .sessionExpired = error {
+                await handleDeckSessionExpired(profile: profile, context: context)
+            }
+            return .failed(campaignDeckFetchFailureMessage(error))
+        } catch {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.fetchDeckFailed",
+                "The server could not fetch that deck. Try again."
+            ))
+        }
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
+
+        return await submitCampaignDeck(
+            deckURL: fetchURL,
+            deckList: DeckListInput(deckList, urlOverride: fetchURL),
+            investigatorId: investigatorId,
+            gameID: gameID,
+            context: CampaignDeckSubmissionContext(
+                profile: profile,
+                deckContext: context,
+                promptIdentity: promptIdentity
+            )
+        )
+    }
+
+    private func performCampaignDeckSkip(
+        investigatorId: InvestigatorCode,
+        gameID: GameID,
+        profile: ServerProfile,
+        promptIdentity: BasicChoicePromptIdentity
+    ) async -> CampaignDeckUpgradeSubmissionResult {
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
+        let context: DeckRequestContext
+        do {
+            context = try await currentDeckRequestContext(for: profile)
+        } catch is CancellationError {
+            return campaignDeckSubmissionCancelledFailure()
+        } catch {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.sessionExpiredDecks",
+                "Your session expired. Sign in again to manage decks."
+            ))
+        }
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
 
         return await submitCampaignDeck(
             deckURL: nil,
@@ -160,26 +243,31 @@ extension AppModel {
         promptIdentity: BasicChoicePromptIdentity,
         investigatorId: InvestigatorCode,
         in gameID: GameID
-    ) -> CampaignDeckUpgradeSubmissionResult? {
+    ) -> CampaignDeckSubmissionStart {
         if let failure = validateCampaignDeckPrompt(
             promptIdentity: promptIdentity,
             investigatorId: investigatorId,
             in: gameID
         ) {
-            return failure
+            return .failed(failure)
         }
-        guard !campaignDeckSubmissionGameIDs.contains(gameID) else {
-            return .failed(campaignPromptLocalized(
+        guard campaignDeckSubmissions[gameID] == nil else {
+            return .failed(.failed(campaignPromptLocalized(
                 "campaign.error.deckSubmissionInFlight",
                 "A deck update is already being submitted."
-            ))
+            )))
         }
-        campaignDeckSubmissionGameIDs.insert(gameID)
-        return nil
+        let attemptID = UUID()
+        campaignDeckSubmissions[gameID] = CampaignDeckSubmissionAttempt(
+            attemptID: attemptID,
+            task: nil
+        )
+        return .started(attemptID)
     }
 
-    private func finishCampaignDeckSubmission(promptIdentity: BasicChoicePromptIdentity) {
-        campaignDeckSubmissionGameIDs.remove(promptIdentity.gameID)
+    private func finishCampaignDeckSubmission(gameID: GameID, attemptID: UUID) {
+        guard campaignDeckSubmissions[gameID]?.attemptID == attemptID else { return }
+        campaignDeckSubmissions[gameID] = nil
     }
 
     private func validateCampaignDeckPrompt(
@@ -220,6 +308,7 @@ extension AppModel {
         gameID: GameID,
         context: CampaignDeckSubmissionContext
     ) async -> CampaignDeckUpgradeSubmissionResult {
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
         if let failure = validateCampaignDeckPrompt(
             promptIdentity: context.promptIdentity,
             investigatorId: investigatorId,
@@ -227,6 +316,7 @@ extension AppModel {
         ) {
             return failure
         }
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
         do {
             try await gameLifecycleService.chooseDeck(
                 ChooseDeckRequest(
@@ -238,8 +328,11 @@ extension AppModel {
                 on: context.profile,
                 token: context.deckContext.token
             )
+            guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
             refreshGames()
             return .submitted
+        } catch is CancellationError {
+            return campaignDeckSubmissionCancelledFailure()
         } catch let error as GameLifecycleError {
             if case .sessionExpired = error {
                 await handleDeckSessionExpired(
@@ -260,7 +353,6 @@ extension AppModel {
 enum CampaignPromptLocalization {
     @TaskLocal static var localizationIdentifierOverride: String?
 
-    @MainActor
     static func localized(_ key: String, _ fallback: String) -> String {
         NSLocalizedString(
             key,
@@ -285,6 +377,14 @@ enum CampaignPromptLocalization {
 @MainActor
 private func campaignPromptLocalized(_ key: String, _ fallback: String) -> String {
     CampaignPromptLocalization.localized(key, fallback)
+}
+
+@MainActor
+private func campaignDeckSubmissionCancelledFailure() -> CampaignDeckUpgradeSubmissionResult {
+    .failed(campaignPromptLocalized(
+        "campaign.error.deckPromptChanged",
+        "This deck prompt changed. Review the game and try again."
+    ))
 }
 
 @MainActor

@@ -597,6 +597,84 @@ extension AppModelCampaignPromptTests {
         #expect(request.investigatorId.rawValue == "c01001")
     }
 
+    @Test("ChooseUpgradeDeck lifecycle reset clears claim without stale cleanup")
+    func chooseUpgradeDeckResetClearsClaimAndFencesStaleCleanup() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(
+            gameService: gameService,
+            deckService: deckService
+        )
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true)
+        )
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let firstPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        await deckService.setFetchGated(true)
+        let deckList = try deckListFixture()
+
+        let firstSubmission = Task { @MainActor in
+            await model.upgradeCampaignDeck(
+                from: "https://arkhamdb.com/decklist/view/4242",
+                investigatorId: "c01001",
+                in: gameID,
+                promptIdentity: firstPrompt.identity
+            )
+        }
+        await deckService.waitUntilFetchPending(1)
+        #expect(model.campaignDeckSubmissions[gameID] != nil)
+
+        model.resetLiveGameState()
+        #expect(model.campaignDeckSubmissions[gameID] == nil)
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let secondPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        let secondSubmission = Task { @MainActor in
+            await model.upgradeCampaignDeck(
+                from: "https://arkhamdb.com/decklist/view/4242",
+                investigatorId: "c01001",
+                in: gameID,
+                promptIdentity: secondPrompt.identity
+            )
+        }
+        await deckService.waitUntilFetchPending(2)
+
+        await deckService.resumeOldestFetch(with: .success(deckList))
+        #expect(await firstSubmission.value == .failed(
+            "This deck prompt changed. Review the game and try again."
+        ))
+        #expect(model.campaignDeckSubmissions[gameID] != nil)
+
+        let duplicate = await model.upgradeCampaignDeck(
+            from: "https://arkhamdb.com/decklist/view/4242",
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: secondPrompt.identity
+        )
+        #expect(duplicate == .failed("A deck update is already being submitted."))
+
+        await gameService.enqueueChooseDeckResult(.success(()))
+        await deckService.resumeOldestFetch(with: .success(deckList))
+        #expect(await secondSubmission.value == .submitted)
+        #expect(model.campaignDeckSubmissions[gameID] == nil)
+    }
+
     @Test("Campaign prompt client errors localize in German")
     func campaignPromptClientErrorsLocalizeInGerman() async throws {
         let gameService = ScriptedGameLifecycleService()
