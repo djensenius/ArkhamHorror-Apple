@@ -210,9 +210,9 @@ extension AppModel {
         }
         // Revalidated immediately before send using the current authoritative prompt
         // identity and actionability rules -- never the projection captured whenever
-        // this choice was last rendered. Governed legacy choices still re-check their
-        // board identities; generic semantic choices trust the server-owned descriptor
-        // except for client display prerequisites such as resolvable label text.
+        // this choice was last rendered. Generic semantic choices trust the
+        // server-owned descriptor except for client display prerequisites such as
+        // resolvable label text.
         guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
               presentation.isSubmissionSupported(submission, in: projection)
         else { return .reject(.unsupportedChoice) }
@@ -433,8 +433,6 @@ extension AppModel {
             }
             isActionable = semanticPresentation.canActivateSemanticChoice(
                 descriptor,
-                ownerID: ownerID,
-                projection: projection,
                 labelResolution: labelResolutions[choiceIndex]
             )
         } else {
