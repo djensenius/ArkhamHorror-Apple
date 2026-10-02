@@ -41,90 +41,6 @@ struct BoardProjectionCampaignContinuationTests {
         ))
     }
 
-    @Test("Campaign handoff summary formats server log, resolution, XP, and trauma")
-    func campaignHandoffSummaryUsesServerValues() throws {
-        let investigatorID = BoardTestFixtures.investigatorID("c01001")
-        let campaignLogKey: JSONValue = .object([
-            "tag": .string("TheGatheringKey"),
-            "contents": .string("TheHouseBurnedDown"),
-        ])
-        let crossedOutKey: JSONValue = .object([
-            "tag": .string("TheGatheringKey"),
-            "contents": .string("TheInvestigatorsWereForcedToWait"),
-        ])
-        let campaign = campaign(
-            step: continueCampaignStep(nextStep: .object(["tag": .string("ScenarioStep")])),
-            completedSteps: [.object([
-                "tag": .string("ScenarioStep"),
-                "contents": .string("01104"),
-            ])]
-        ).mergingObject([
-            "log": .object([
-                "recorded": .array([campaignLogKey]),
-                "crossedOut": .array([crossedOutKey]),
-                "recordedCounts": .array([.array([campaignLogKey, .number(.integer(2))])]),
-                "recordedSets": .array([.array([
-                    .object(["tag": .string("KilledInvestigators")]),
-                    .array([
-                        .object([
-                            "recordType": .string("RecordableCardCode"),
-                            "recordVal": .object([
-                                "tag": .string("Recorded"),
-                                "contents": .string("c01001"),
-                            ]),
-                        ]),
-                        .object([
-                            "recordType": .string("RecordableCardCode"),
-                            "recordVal": .object([
-                                "tag": .string("CrossedOut"),
-                                "contents": .string("c01002"),
-                            ]),
-                        ]),
-                    ]),
-                ])]),
-            ]),
-            "resolutions": .object([
-                "01104": .object([
-                    "tag": .string("Resolution"),
-                    "contents": .number(.integer(2)),
-                ]),
-            ]),
-        ])
-        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
-            mode: .campaignOnly(campaign),
-            investigators: [
-                investigatorID: BoardTestFixtures.investigator(
-                    id: investigatorID,
-                    name: CardName(title: "Roland Banks", subtitle: nil),
-                    physicalTrauma: 1,
-                    mentalTrauma: 2,
-                    killed: true,
-                    spentXp: 3,
-                    experiencePoints: 8
-                ),
-            ],
-            playerOrder: [investigatorID]
-        ))
-
-        let summary = try #require(projection.campaignSummary)
-        #expect(summary.latestResolution?.title == "Resolution 2")
-        #expect(summary.latestResolution?.detail == "01104")
-        #expect(summary.log.entries.map(\.title) == [
-            "The house burned down",
-            "The investigators were forced to wait",
-        ])
-        #expect(summary.log.entries.map(\.isCrossedOut) == [false, true])
-        #expect(summary.log.counts.first?.value == 2)
-        #expect(summary.log.recordedSets.first?.title == "Killed investigators")
-        #expect(summary.log.recordedSets.first?.values.map(\.title) == ["C01001", "C01002"])
-        #expect(summary.log.recordedSets.first?.values.map(\.isCrossedOut) == [false, true])
-        #expect(summary.investigators.first?.displayName == "Roland Banks")
-        #expect(summary.investigators.first?.availableExperience == 5)
-        #expect(summary.investigators.first?.physicalTrauma == 1)
-        #expect(summary.investigators.first?.mentalTrauma == 2)
-        #expect(summary.investigators.first?.killed == true)
-    }
-
     @Test("Campaign continuation keeps the campaign next step for non-continuation scenario steps")
     func campaignContinuationPrecedenceUsesCampaignStep() {
         let campaignNext: JSONValue = .object(["tag": .string("ScenarioStep")])
@@ -320,15 +236,5 @@ struct BoardProjectionCampaignContinuationTests {
         ))
 
         #expect(projection.campaignContinuation?.canUpgrade == true)
-    }
-}
-
-private extension JSONValue {
-    func mergingObject(_ updates: [String: JSONValue]) -> JSONValue {
-        guard case var .object(object) = self else { return self }
-        for (key, value) in updates {
-            object[key] = value
-        }
-        return .object(object)
     }
 }

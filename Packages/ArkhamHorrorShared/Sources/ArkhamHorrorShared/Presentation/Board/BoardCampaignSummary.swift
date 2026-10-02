@@ -68,6 +68,12 @@ struct BoardCampaignInvestigatorProgress: Sendable, Equatable, Identifiable {
 }
 
 enum BoardCampaignSummaryBuilder {
+    private struct RecordedValueDisplay {
+        let title: String
+        let isCrossedOut: Bool
+        let isCircled: Bool
+    }
+
     static func makeSummary(
         campaign: JSONValue?,
         scenario: Scenario?,
@@ -135,21 +141,25 @@ enum BoardCampaignSummaryBuilder {
         recordedCounts: [JSONValue],
         recordedSets: [JSONValue]
     ) -> BoardCampaignLogSummary {
-        let crossedOutIDs = Set(crossedOut.map(logKeyIdentity))
+        let crossedOutIDs = Set(crossedOut.map(BoardCampaignSummaryFormatting.logKeyIdentity))
         var seenEntryIDs = Set<String>()
         var entries: [BoardCampaignLogEntry] = recorded.map { key in
-            let id = logKeyIdentity(key)
+            let id = BoardCampaignSummaryFormatting.logKeyIdentity(key)
             seenEntryIDs.insert(id)
             return BoardCampaignLogEntry(
                 id: id,
-                title: logKeyTitle(key),
+                title: BoardCampaignSummaryFormatting.logKeyTitle(key),
                 isCrossedOut: crossedOutIDs.contains(id)
             )
         }
         entries.append(contentsOf: crossedOut.compactMap { key in
-            let id = logKeyIdentity(key)
+            let id = BoardCampaignSummaryFormatting.logKeyIdentity(key)
             guard !seenEntryIDs.contains(id) else { return nil }
-            return BoardCampaignLogEntry(id: id, title: logKeyTitle(key), isCrossedOut: true)
+            return BoardCampaignLogEntry(
+                id: id,
+                title: BoardCampaignSummaryFormatting.logKeyTitle(key),
+                isCrossedOut: true
+            )
         })
 
         let counts = recordedCounts.compactMap(parseCount)
@@ -163,8 +173,8 @@ enum BoardCampaignSummaryBuilder {
               let count = pair[1].integerValue
         else { return nil }
         return BoardCampaignLogCount(
-            id: logKeyIdentity(pair[0]),
-            title: logKeyTitle(pair[0]),
+            id: BoardCampaignSummaryFormatting.logKeyIdentity(pair[0]),
+            title: BoardCampaignSummaryFormatting.logKeyTitle(pair[0]),
             value: count
         )
     }
@@ -174,13 +184,13 @@ enum BoardCampaignSummaryBuilder {
               pair.count == 2,
               case let .array(records) = pair[1]
         else { return nil }
-        let keyID = logKeyIdentity(pair[0])
+        let keyID = BoardCampaignSummaryFormatting.logKeyIdentity(pair[0])
         let values = records.enumerated().map { index, record in
             parseRecordedValue(record, idPrefix: keyID, index: index)
         }
         return BoardCampaignLogRecordedSet(
             id: keyID,
-            title: logKeyTitle(pair[0]),
+            title: BoardCampaignSummaryFormatting.logKeyTitle(pair[0]),
             values: values
         )
     }
@@ -200,23 +210,37 @@ enum BoardCampaignSummaryBuilder {
         )
     }
 
-    private static func unwrapRecordedValue(
-        _ value: JSONValue
-    ) -> (title: String, isCrossedOut: Bool, isCircled: Bool) {
+    private static func unwrapRecordedValue(_ value: JSONValue) -> RecordedValueDisplay {
         guard let object = value.objectValue,
               let tag = object["tag"]?.stringValue,
               let contents = object["contents"]
         else {
-            return (jsonDisplayValue(value), false, false)
+            return RecordedValueDisplay(
+                title: BoardCampaignSummaryFormatting.jsonDisplayValue(value),
+                isCrossedOut: false,
+                isCircled: false
+            )
         }
-        let inner = jsonDisplayValue(contents)
+        let inner = BoardCampaignSummaryFormatting.jsonDisplayValue(contents)
         switch tag {
         case "Recorded":
-            return (inner, false, object["circled"]?.boolValue ?? false)
+            return RecordedValueDisplay(
+                title: inner,
+                isCrossedOut: false,
+                isCircled: object["circled"]?.boolValue ?? false
+            )
         case "CrossedOut":
-            return (inner, true, object["circled"]?.boolValue ?? false)
+            return RecordedValueDisplay(
+                title: inner,
+                isCrossedOut: true,
+                isCircled: object["circled"]?.boolValue ?? false
+            )
         default:
-            return (jsonDisplayValue(value), false, object["circled"]?.boolValue ?? false)
+            return RecordedValueDisplay(
+                title: BoardCampaignSummaryFormatting.jsonDisplayValue(value),
+                isCrossedOut: false,
+                isCircled: object["circled"]?.boolValue ?? false
+            )
         }
     }
 
@@ -224,9 +248,7 @@ enum BoardCampaignSummaryBuilder {
         campaign: JSONValue?,
         scenario: Scenario?
     ) -> BoardCampaignResolutionSummary? {
-        if let campaign,
-           let resolution = latestCampaignResolution(campaign)
-        {
+        if let resolution = campaign.flatMap(latestCampaignResolution) {
             return resolution
         }
         guard let scenario,
@@ -234,12 +256,14 @@ enum BoardCampaignSummaryBuilder {
               let story = scenario.resolvedStories.last
         else { return nil }
         return BoardCampaignResolutionSummary(
-            title: titleizedWords("resolvedStory"),
-            detail: jsonDisplayValue(story)
+            title: BoardCampaignSummaryFormatting.titleizedWords("resolvedStory"),
+            detail: BoardCampaignSummaryFormatting.jsonDisplayValue(story)
         )
     }
 
-    private static func latestCampaignResolution(_ campaign: JSONValue) -> BoardCampaignResolutionSummary? {
+    private static func latestCampaignResolution(
+        _ campaign: JSONValue
+    ) -> BoardCampaignResolutionSummary? {
         guard let object = campaign.objectValue,
               let resolutions = object["resolutions"]?.objectValue,
               !resolutions.isEmpty
@@ -247,11 +271,11 @@ enum BoardCampaignSummaryBuilder {
         let latestScenarioID = latestScenarioStepID(in: object["completedSteps"])
         let entry = latestScenarioID.flatMap { scenarioID in
             resolutions.first { key, _ in key == scenarioID || key == "c\(scenarioID)" }
-        } ?? resolutions.sorted { $0.key < $1.key }.last
+        } ?? resolutions.max { $0.key < $1.key }
         guard let entry else { return nil }
         return BoardCampaignResolutionSummary(
             title: resolutionTitle(entry.value),
-            detail: titleizedWords(entry.key)
+            detail: BoardCampaignSummaryFormatting.titleizedWords(entry.key)
         )
     }
 
@@ -274,107 +298,18 @@ enum BoardCampaignSummaryBuilder {
 
     private static func resolutionTitle(_ value: JSONValue) -> String {
         if value.stringValue == "NoResolution" {
-            return titleizedWords("noResolution")
+            return BoardCampaignSummaryFormatting.titleizedWords("noResolution")
         }
-        if let object = value.objectValue,
-           object["tag"]?.stringValue == "Resolution",
-           let number = object["contents"]?.integerValue
-        {
-            return "Resolution \(number)"
+        if let object = value.objectValue {
+            let isResolution = object["tag"]?.stringValue == "Resolution"
+            if isResolution, let number = object["contents"]?.integerValue {
+                return "Resolution \(number)"
+            }
         }
         if let number = value.integerValue {
             return "Resolution \(number)"
         }
-        return jsonDisplayValue(value)
-    }
-
-    private static func logKeyIdentity(_ value: JSONValue) -> String {
-        formatLogKey(value) ?? jsonDisplayValue(value)
-    }
-
-    private static func logKeyTitle(_ value: JSONValue) -> String {
-        titleizedWords(formatLogKey(value) ?? jsonDisplayValue(value))
-    }
-
-    private static func formatLogKey(_ value: JSONValue) -> String? {
-        guard let object = value.objectValue,
-              let tag = object["tag"]?.stringValue
-        else { return nil }
-        let prefix = lowerFirst(tag.replacingOccurrences(of: "Key", with: ""))
-        guard let contents = object["contents"] else {
-            return "base.key.\(lowerFirst(tag))"
-        }
-        if let nested = contents.objectValue,
-           let nestedTag = nested["tag"]?.stringValue
-        {
-            let section = lowerFirst(nestedTag)
-            if let nestedContents = nested["contents"]?.stringValue {
-                return "\(prefix).key['[\(section)]'].\(lowerFirst(nestedContents))"
-            }
-            return "\(prefix).key.\(section)"
-        }
-        if let text = contents.stringValue {
-            return "\(prefix).key.\(lowerFirst(text))"
-        }
-        return "\(prefix).key.unknown"
-    }
-
-    private static func jsonDisplayValue(_ value: JSONValue) -> String {
-        switch value {
-        case .null:
-            return "—"
-        case let .bool(value):
-            return value ? "true" : "false"
-        case let .number(number):
-            return number.description
-        case let .string(value):
-            return titleizedWords(value)
-        case let .array(values):
-            return values.map(jsonDisplayValue).joined(separator: ", ")
-        case let .object(object):
-            if let title = object["title"]?.stringValue {
-                return title
-            }
-            if let name = object["name"]?.stringValue {
-                return name
-            }
-            if let tag = object["tag"]?.stringValue,
-               let contents = object["contents"]
-            {
-                return "\(titleizedWords(tag)): \(jsonDisplayValue(contents))"
-            }
-            if let tag = object["tag"]?.stringValue {
-                return titleizedWords(tag)
-            }
-            return titleizedWords(object.keys.sorted().joined(separator: ", "))
-        }
-    }
-
-    private static func lowerFirst(_ value: String) -> String {
-        guard let first = value.first else { return value }
-        return first.lowercased() + value.dropFirst()
-    }
-
-    private static func titleizedWords(_ value: String) -> String {
-        let leaf = value
-            .replacingOccurrences(of: "'", with: "")
-            .split(separator: ".")
-            .last
-            .map(String.init) ?? value
-        let cleaned = leaf
-            .replacingOccurrences(of: "[", with: " ")
-            .replacingOccurrences(of: "]", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-        let pattern = #"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])"#
-        let regex = try? NSRegularExpression(pattern: pattern)
-        let range = NSRange(cleaned.startIndex ..< cleaned.endIndex, in: cleaned)
-        let words = regex?.matches(in: cleaned, range: range).compactMap { match -> String? in
-            guard let range = Range(match.range, in: cleaned) else { return nil }
-            return String(cleaned[range]).lowercased()
-        } ?? cleaned.split(separator: " ").map { $0.lowercased() }
-        guard let first = words.first else { return value }
-        return ([first.capitalized] + words.dropFirst()).joined(separator: " ")
+        return BoardCampaignSummaryFormatting.jsonDisplayValue(value)
     }
 }
 

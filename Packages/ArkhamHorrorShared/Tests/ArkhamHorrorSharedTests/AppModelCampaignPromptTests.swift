@@ -407,11 +407,32 @@ struct AppModelCampaignPromptTests {
         return try Data(contentsOf: url)
     }
 
-    func replacingFirst(_ needle: String, with replacement: String, in haystack: String) throws -> String {
+    func replacingFirst(
+        _ needle: String,
+        with replacement: String,
+        in haystack: String
+    ) throws -> String {
         let range = try #require(haystack.range(of: needle))
         var result = haystack
         result.replaceSubrange(range, with: replacement)
         return result
+    }
+
+    func upgradedDeckServerEnvelope() throws -> GetGameEnvelope {
+        var snapshotText = try #require(
+            String(data: contractFixtureData(named: "get-game"), encoding: .utf8)
+        )
+        let replacements = [
+            ("\"deckUrl\": null", "\"deckUrl\": \"https://server.example/upgraded-deck\""),
+            ("\"xp\": 0", "\"xp\": 8"),
+            ("\"spentXp\": 0", "\"spentXp\": 3"),
+            ("\"physicalTrauma\": 0", "\"physicalTrauma\": 1"),
+            ("\"mentalTrauma\": 0", "\"mentalTrauma\": 2"),
+        ]
+        for (needle, replacement) in replacements {
+            snapshotText = try replacingFirst(needle, with: replacement, in: snapshotText)
+        }
+        return try ContractJSON.decode(GetGameEnvelope.self, from: Data(snapshotText.utf8))
     }
 
     @Test("Continue without upgrading PUTs a nil deck source to the game deck endpoint")
@@ -481,29 +502,7 @@ struct AppModelCampaignPromptTests {
             promptIdentity: prompt.identity
         ) == .submitted)
 
-        var snapshotText = try #require(
-            String(data: contractFixtureData(named: "get-game"), encoding: .utf8)
-        )
-        snapshotText = try replacingFirst(
-            "\"deckUrl\": null",
-            with: "\"deckUrl\": \"https://server.example/upgraded-deck\"",
-            in: snapshotText
-        )
-        snapshotText = try replacingFirst("\"xp\": 0", with: "\"xp\": 8", in: snapshotText)
-        snapshotText = try replacingFirst(
-            "\"spentXp\": 0", with: "\"spentXp\": 3", in: snapshotText
-        )
-        snapshotText = try replacingFirst(
-            "\"physicalTrauma\": 0", with: "\"physicalTrauma\": 1", in: snapshotText
-        )
-        snapshotText = try replacingFirst(
-            "\"mentalTrauma\": 0", with: "\"mentalTrauma\": 2", in: snapshotText
-        )
-
-        let serverEnvelope = try ContractJSON.decode(
-            GetGameEnvelope.self,
-            from: Data(snapshotText.utf8)
-        )
+        let serverEnvelope = try upgradedDeckServerEnvelope()
         let investigatorID = try InvestigatorID(CardCode("c01001"))
         let serverInvestigator = try #require(serverEnvelope.game.investigators[investigatorID])
         #expect(serverInvestigator.deckURL == "https://server.example/upgraded-deck")

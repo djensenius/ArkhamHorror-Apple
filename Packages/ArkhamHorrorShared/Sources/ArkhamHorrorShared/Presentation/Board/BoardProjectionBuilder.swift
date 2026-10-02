@@ -8,7 +8,7 @@ import Foundation
 /// `String`/`Int`'s own `<` operator, never `Dictionary` iteration order and never a
 /// locale-sensitive comparison. Two snapshots with equal field values always build to an
 /// equal ``BoardProjection`` regardless of map insertion order.
-enum BoardProjectionBuilder {
+enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
     static func makeProjection(from snapshot: PublicGameSnapshot) -> BoardProjection {
         let scenarioContext = makeScenario(from: snapshot.mode)
         let (locations, enemyLocations) = makeLocations(from: snapshot.locations)

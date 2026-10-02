@@ -279,18 +279,24 @@ private struct CampaignInvestigatorProgressRow: View {
             }
             HStack(spacing: 8) {
                 CampaignPill(text: String(
-                    format: campaignLocalized("campaign.between.physicalTrauma", "%d physical trauma"),
+                    format: campaignLocalized(
+                        "campaign.between.physicalTrauma", "%d physical trauma"
+                    ),
                     investigator.physicalTrauma
                 ))
                 CampaignPill(text: String(
-                    format: campaignLocalized("campaign.between.mentalTrauma", "%d mental trauma"),
+                    format: campaignLocalized(
+                        "campaign.between.mentalTrauma", "%d mental trauma"
+                    ),
                     investigator.mentalTrauma
                 ))
                 if investigator.killed {
                     CampaignPill(text: campaignLocalized("campaign.between.killed", "Killed"))
                 }
                 if investigator.drivenInsane {
-                    CampaignPill(text: campaignLocalized("campaign.between.drivenInsane", "Driven insane"))
+                    CampaignPill(text: campaignLocalized(
+                        "campaign.between.drivenInsane", "Driven insane"
+                    ))
                 }
             }
         }
@@ -338,7 +344,10 @@ private struct CampaignBetweenLogView: View {
                     CampaignLogList(
                         title: campaignLocalized("campaign.between.log.counts", "Counts"),
                         rows: log.counts.map { count in
-                            CampaignLogRowText(title: "\(count.title): \(count.value)", isCrossedOut: false)
+                            CampaignLogRowText(
+                                title: "\(count.title): \(count.value)",
+                                isCrossedOut: false
+                            )
                         }
                     )
                 }
