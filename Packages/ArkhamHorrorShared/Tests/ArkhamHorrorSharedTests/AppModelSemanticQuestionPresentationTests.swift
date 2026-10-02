@@ -306,6 +306,250 @@ extension AppModelLiveGameTests {
         #expect(await connection.sentData == [expected])
     }
 
+    @Test("Multi-select prompts expose current progress and completion through AppModel")
+    // swiftlint:disable:next function_body_length
+    func multiSelectPromptsExposeCurrentProgressAndDone() async throws {
+        let cases: [MultiSelectPromptCase] = try [
+            .init(
+                name: "chooseN",
+                rawQuestion: fixtureJSON("question-generic-choose-n"),
+                presentation: fixtureJSON("question-presentation-generic-choose-n"),
+                questionVersion: 204,
+                expectedHint: "Choose 1 more",
+                expectedDisplayedIndices: [0, 1],
+                completionIndex: nil,
+                completionIsActionable: false,
+                submitIndex: 0
+            ),
+            .init(
+                name: "chooseUpToN",
+                rawQuestion: fixtureJSON("question-generic-choose-up-to-n"),
+                presentation: fixtureJSON("question-presentation-generic-choose-up-to-n"),
+                questionVersion: 205,
+                expectedHint: "Choose up to 1 more",
+                expectedDisplayedIndices: [0, 1],
+                completionIndex: 1,
+                completionIsActionable: true,
+                submitIndex: 1
+            ),
+            .init(
+                name: "chooseSome",
+                rawQuestion: fixtureJSON("question-generic-choose-some"),
+                presentation: fixtureJSON("question-presentation-generic-choose-some"),
+                questionVersion: 206,
+                expectedHint: "Choose up to 1 more",
+                expectedDisplayedIndices: [0, 1],
+                completionIndex: 1,
+                completionIsActionable: true,
+                submitIndex: 1
+            ),
+            .init(
+                name: "chooseSome1",
+                rawQuestion: chooseSome1RawQuestion(),
+                presentation: representativePresentationJSON(named: "chooseSome1"),
+                questionVersion: 306,
+                expectedHint: "Choose at least 1 more",
+                expectedDisplayedIndices: [0, 1],
+                completionIndex: 1,
+                completionIsActionable: false,
+                submitIndex: 0
+            ),
+            .init(
+                name: "chooseSomeDoneOnly",
+                rawQuestion: doneOnlyRawQuestion(tag: "ChooseSome"),
+                presentation: doneOnlyPresentation(questionKind: "chooseSome"),
+                questionVersion: 406,
+                expectedHint: "Done is available",
+                expectedDisplayedIndices: [0],
+                completionIndex: 0,
+                completionIsActionable: true,
+                submitIndex: 0
+            ),
+            .init(
+                name: "chooseSome1DoneOnly",
+                rawQuestion: doneOnlyRawQuestion(tag: "ChooseSome1", label: "$choose"),
+                presentation: doneOnlyPresentation(questionKind: "chooseSome1"),
+                questionVersion: 407,
+                expectedHint: "Done is available",
+                expectedDisplayedIndices: [0],
+                completionIndex: 0,
+                completionIsActionable: true,
+                submitIndex: 0
+            ),
+            .init(
+                name: "chooseOneFromEach",
+                rawQuestion: fixtureJSON("question-generic-one-from-each"),
+                presentation: fixtureJSON("question-presentation-generic-one-from-each"),
+                questionVersion: 210,
+                expectedHint: "Choose one from each group (2 groups left)",
+                expectedDisplayedIndices: [0, 1],
+                completionIndex: nil,
+                completionIsActionable: false,
+                submitIndex: 0
+            ),
+        ]
+
+        for testCase in cases {
+            let (model, fakes) = makeSignedInModel()
+            await model.flowTask?.value
+            makeModern(model)
+            try await installMultiSelectCatalog(on: model)
+            let envelope = try semanticEnvelope(
+                rawQuestion: testCase.rawQuestion,
+                presentation: testCase.presentation,
+                questionVersion: testCase.questionVersion
+            )
+            let connection = FakeGameSocketConnection()
+            await connection.enqueueSendResult(.success(()))
+            let gameID = await startChoiceSession(
+                model: model,
+                fakes: fakes,
+                envelope: envelope,
+                connection: connection
+            )
+
+            let prompt = try #require(model.basicChoicePresentation(for: gameID))
+            let projection = try #require(model.liveGameState(for: gameID).lastKnownProjection)
+            #expect(prompt.questionHint() == testCase.expectedHint, "\(testCase.name) hint")
+            #expect(
+                prompt.questionHintAccessibilityLabel() == testCase.expectedHint,
+                "\(testCase.name) accessibility hint"
+            )
+            #expect(
+                prompt.displayOrderedChoices().map(\.index) == testCase.expectedDisplayedIndices,
+                "\(testCase.name) displayed choices"
+            )
+
+            if let completionIndex = testCase.completionIndex {
+                let completion = try #require(
+                    prompt.choices.first { $0.index == completionIndex }
+                )
+                #expect(prompt.isCompletingSelection(completion), "\(testCase.name) completion")
+                #expect(
+                    prompt.isChoiceActionable(completion, in: projection)
+                        == testCase.completionIsActionable,
+                    "\(testCase.name) completion actionability"
+                )
+                #expect(prompt.systemImage(for: completion) == "checkmark.circle.fill")
+                if testCase.completionIsActionable {
+                    #expect(prompt.displayTitle(for: completion, in: projection) == "Done")
+                    #expect(
+                        prompt.accessibilityHint(for: completion, in: projection)
+                            == "Finishes this selection."
+                    )
+                } else {
+                    #expect(prompt.displayTitle(for: completion, in: projection) == "Done")
+                    #expect(
+                        prompt.accessibilityHint(for: completion, in: projection)
+                            == "Choose 1 more first"
+                    )
+                    #expect(
+                        await model.submitBasicChoice(
+                            prompt.identity,
+                            choiceIndex: completionIndex
+                        ) == .unsupportedChoice,
+                        "\(testCase.name) premature completion is rejected"
+                    )
+                    #expect(await connection.sentData.isEmpty)
+                }
+            }
+
+            #expect(
+                await model.submitBasicChoice(
+                    prompt.identity,
+                    choiceIndex: testCase.submitIndex
+                ) == .sentAwaitingSnapshot,
+                "\(testCase.name) submit"
+            )
+            let expected = try ContractJSON.encode(BasicChoiceAnswer(
+                choice: testCase.submitIndex,
+                playerID: prompt.ownerID,
+                questionVersion: testCase.questionVersion
+            ))
+            #expect(await connection.sentData == [expected], "\(testCase.name) bytes")
+        }
+    }
+
+    @Test("Multi-select progress follows the current re-asked server snapshot")
+    func multiSelectProgressFollowsCurrentServerSnapshot() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        try await installMultiSelectCatalog(on: model)
+        let firstEnvelope = try semanticEnvelope(
+            rawQuestion: chooseNRawQuestion(amount: 2),
+            presentation: chooseNPresentation(remaining: 2),
+            questionVersion: 502
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: firstEnvelope,
+            connection: connection
+        )
+
+        let firstPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(firstPrompt.questionHint() == "Choose 2 more")
+        #expect(
+            await model.submitBasicChoice(firstPrompt.identity, choiceIndex: 0)
+                == .sentAwaitingSnapshot
+        )
+
+        let nextEnvelope = try semanticEnvelope(
+            rawQuestion: chooseNRawQuestion(amount: 1),
+            presentation: chooseNPresentation(remaining: 1),
+            questionVersion: 503
+        )
+        model.liveGameStates[gameID] = .live(
+            BoardProjectionBuilder.makeProjection(from: nextEnvelope.game)
+        )
+        let nextPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(nextPrompt.questionVersion == 503)
+        #expect(nextPrompt.questionHint() == "Choose 1 more")
+        #expect(nextPrompt.displayOrderedChoices().map(\.index) == [0, 1])
+    }
+
+    @Test("Completing selection remains visible without a selection object")
+    func completingSelectionWithoutSelectionIsDisplayedAndActionable() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        try await installMultiSelectCatalog(on: model)
+        let envelope = try semanticEnvelope(
+            rawQuestion: doneOnlyRawQuestion(tag: "ChooseOne"),
+            presentation: doneOnlyPresentation(questionKind: "chooseOne", includeSelection: false),
+            questionVersion: 508
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameState(for: gameID).lastKnownProjection)
+        let completion = try #require(prompt.displayOrderedChoices().first)
+        #expect(prompt.questionHint() == nil)
+        #expect(completion.index == 0)
+        #expect(prompt.isCompletingSelection(completion))
+        #expect(prompt.isChoiceActionable(completion, in: projection))
+        #expect(
+            await model.submitBasicChoice(prompt.identity, choiceIndex: completion.index)
+                == .sentAwaitingSnapshot
+        )
+        let expected = try ContractJSON.encode(BasicChoiceAnswer(
+            choice: completion.index,
+            playerID: prompt.ownerID,
+            questionVersion: 508
+        ))
+        #expect(await connection.sentData == [expected])
+    }
+
     @Test(
         "Unsupported generic answer families require an app update through AppModel",
         arguments: [
@@ -509,6 +753,219 @@ extension AppModelLiveGameTests {
         #expect(!prompt.isRenderableQuestion)
         #expect(prompt.choices.isEmpty)
         #expect(!prompt.canSubmit)
+    }
+
+    private struct MultiSelectPromptCase {
+        let name: String
+        let rawQuestion: JSONValue
+        let presentation: JSONValue
+        let questionVersion: Int
+        let expectedHint: String
+        let expectedDisplayedIndices: [Int]
+        let completionIndex: Int?
+        let completionIsActionable: Bool
+        let submitIndex: Int
+    }
+
+    private func installMultiSelectCatalog(on model: AppModel) async throws {
+        let documents = try SyntheticLocaleCatalogDocuments.make(
+            entryKeys: ["fixture.first", "fixture.second", "group.one", "group.two", "a", "done"],
+            chunkEntries: #"""
+            {
+              "fixture.first": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "First"}],
+                "variables": []
+              },
+              "fixture.second": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "Second"}],
+                "variables": []
+              },
+              "group.one": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "Group one"}],
+                "variables": []
+              },
+              "group.two": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "Group two"}],
+                "variables": []
+              },
+              "a": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "A"}],
+                "variables": []
+              },
+              "done": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "Done"}],
+                "variables": []
+              }
+            }
+            """#
+        )
+        model.localeCatalog = try await documents.loadSnapshot()
+        model.localeCatalogRequest = LocaleCatalogRequest(
+            profileID: model.selectedProfile.id,
+            advertisement: documents.advertisement
+        )
+    }
+
+    private func chooseSome1RawQuestion() -> JSONValue {
+        .object([
+            "tag": .string("ChooseSome1"),
+            "label": .string("$choose"),
+            "choices": .array([
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string("$a"),
+                    "messages": .array([]),
+                ]),
+                .object([
+                    "tag": .string("Done"),
+                    "label": .string("$done"),
+                ]),
+            ]),
+        ])
+    }
+
+    private func chooseNRawQuestion(amount: Int) -> JSONValue {
+        .object([
+            "tag": .string("ChooseN"),
+            "amount": .number(.integer(Int64(amount))),
+            "choices": .array([
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string("$fixture.first"),
+                    "messages": .array([]),
+                ]),
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string("$fixture.second"),
+                    "messages": .array([]),
+                ]),
+            ]),
+        ])
+    }
+
+    private func chooseNPresentation(remaining: Int) -> JSONValue {
+        let count = Int64(remaining)
+        return .object([
+            "answer": .object(["kind": .string("singleChoice"), "tag": .string("Answer")]),
+            "choiceCount": .number(.integer(2)),
+            "choices": .array([
+                localizedChoice(sourceIndex: 0, text: "$fixture.first"),
+                localizedChoice(sourceIndex: 1, text: "$fixture.second"),
+            ]),
+            "protocolVersion": .number(.integer(2)),
+            "questionKind": .string("chooseN"),
+            "selection": .object([
+                "max": .number(.integer(count)),
+                "min": .number(.integer(count)),
+            ]),
+        ])
+    }
+
+    private func doneOnlyRawQuestion(tag: String, label: String? = nil) -> JSONValue {
+        var object: [String: JSONValue] = [
+            "tag": .string(tag),
+            "choices": .array([
+                .object([
+                    "tag": .string("Done"),
+                    "label": .string("$done"),
+                ]),
+            ]),
+        ]
+        if let label {
+            object["label"] = .string(label)
+        }
+        return .object(object)
+    }
+
+    private func doneOnlyPresentation(
+        questionKind: String,
+        includeSelection: Bool = true
+    ) -> JSONValue {
+        var object: [String: JSONValue] = [
+            "answer": .object(["kind": .string("singleChoice"), "tag": .string("Answer")]),
+            "choiceCount": .number(.integer(1)),
+            "choices": .array([
+                localizedChoice(sourceIndex: 0, text: "$done", completesSelection: true),
+            ]),
+            "protocolVersion": .number(.integer(2)),
+            "questionKind": .string(questionKind),
+        ]
+        if includeSelection {
+            object["selection"] = .object([
+                "max": .number(.integer(0)),
+                "min": .number(.integer(0)),
+            ])
+        }
+        return .object(object)
+    }
+
+    private func localizedChoice(
+        sourceIndex: Int,
+        text: String,
+        completesSelection: Bool = false
+    ) -> JSONValue {
+        var object: [String: JSONValue] = [
+            "kind": .string("localizedLabel"),
+            "label": .object([
+                "kind": .string("embeddedI18n"),
+                "text": .string(text),
+            ]),
+            "selectable": .bool(true),
+            "sourceIndex": .number(.integer(Int64(sourceIndex))),
+        ]
+        if completesSelection {
+            object["completesSelection"] = .bool(true)
+        }
+        return .object(object)
+    }
+
+    private func representativePresentationJSON(named name: String) throws -> JSONValue {
+        let representatives = try fixtureJSON("question-presentation-representatives")
+        guard case let .object(root) = representatives,
+              case let .array(entries)? = root["presentations"]
+        else { throw SemanticFixtureError.unexpectedShape }
+        for entry in entries {
+            guard case let .object(object) = entry,
+                  object["name"] == .string(name),
+                  let presentation = object["presentation"]
+            else { continue }
+            return presentation
+        }
+        throw SemanticFixtureError.unexpectedShape
+    }
+
+    private func semanticEnvelope(
+        rawQuestion: JSONValue,
+        presentation: JSONValue,
+        questionVersion: Int
+    ) throws -> GetGameEnvelope {
+        var envelope = try ContractJSON.decode(
+            JSONValue.self,
+            from: fixtureData(named: "get-game")
+        )
+        guard case var .object(root) = envelope,
+              case var .object(game)? = root["game"],
+              case let .string(playerID)? = root["playerId"],
+              case var .object(presentationObject) = presentation
+        else {
+            throw SemanticFixtureError.unexpectedShape
+        }
+        presentationObject["questionVersion"] = .number(.integer(Int64(questionVersion)))
+        game["question"] = .object([playerID: rawQuestion])
+        game["questionPresentation"] = .object([playerID: .object(presentationObject)])
+        game["scenarioSteps"] = .number(.integer(Int64(questionVersion)))
+        root["game"] = .object(game)
+        envelope = .object(root)
+        return try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: ContractJSON.encode(envelope)
+        )
     }
 
     enum SemanticFixtureError: Error {
