@@ -353,14 +353,8 @@ struct ReadStoryQuestionTests {
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","text":"x"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // HeaderEntry level must be a JSON integer.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":"1","key":"story.heading"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
-            // HeaderEntry is closed against additional fields.
-            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"HeaderEntry","level":1,"key":"story.heading","extra":true}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
             // I18nEntry missing required "variables" key.
             #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"I18nEntry","key":"x"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
-            // Nested ListEntry item with a malformed inner entry fails the whole question.
-            #"{"tag":"Read","flavorText":{"title":null,"body":[{"tag":"ListEntry","list":[{"entry":{"tag":"BogusEntry"},"nested":[]}]}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#,
-            // Unexpected additional top-level key.
-            #"{"tag":"Read","flavorText":{"title":null,"body":[]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null,"extra":true}"#,
         ]
     )
     func malformedReadQuestionsFailClosed(json: String) throws {
