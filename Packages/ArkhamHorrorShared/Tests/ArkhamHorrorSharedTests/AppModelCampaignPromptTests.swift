@@ -304,7 +304,7 @@ struct AppModelCampaignPromptTests {
         ))
         let request = try #require(await gameService.lastChooseDeckRequest)
         #expect(request.investigatorId.rawValue == "c01001")
-        #expect(request.deckUrl == deckList.url)
+        #expect(request.deckUrl == "https://arkhamdb.com/api/public/decklist/4242")
         #expect(request.deckList == DeckListInput(deckList))
     }
 

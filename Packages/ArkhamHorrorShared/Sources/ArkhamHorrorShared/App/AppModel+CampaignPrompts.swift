@@ -62,7 +62,7 @@ extension AppModel {
         }
 
         return await submitCampaignDeck(
-            deckURL: deckList.url ?? fetchURL,
+            deckURL: fetchURL,
             deckList: DeckListInput(deckList),
             investigatorId: rawInvestigatorId,
             gameID: gameID,
