@@ -62,8 +62,52 @@ struct BoardProjectionCampaignContinuationTests {
             scenarioStep: continueCampaignStep(nextStep: scenarioNext)
         )
 
+        // Campaign.vue lines 123-130 return null for continueCampaign when the
+        // scenario owns a ContinueCampaignStep; lines 174-181 then render
+        // continueScenario with the scenario's nextStep.
         #expect(projection.campaignContinuation?.source == .scenario)
         #expect(projection.campaignContinuation?.nextStep == scenarioNext)
+    }
+
+    @Test("ScenarioStep override keeps campaign upgrade eligibility")
+    func scenarioStepOverrideKeepsCampaignUpgradeEligibility() {
+        let campaignNext: JSONValue = .object(["tag": .string("InterludeStep")])
+        let scenarioStep: JSONValue = .object(["tag": .string("ScenarioStep")])
+        let projection = continuationProjection(
+            campaignStep: continueCampaignStep(
+                nextStep: campaignNext,
+                canUpgradeDecks: true
+            ),
+            scenarioStep: scenarioStep,
+            completedSteps: [.object(["tag": .string("ScenarioStep")])]
+        )
+
+        #expect(projection.campaignContinuation?.source == .campaign)
+        #expect(projection.campaignContinuation?.nextStep == scenarioStep)
+        #expect(projection.campaignContinuation?.canUpgradeDecks == true)
+        #expect(projection.campaignContinuation?.canUpgrade == true)
+    }
+
+    @Test("Scenario fallback continuation keeps campaign upgrade eligibility")
+    func scenarioFallbackContinuationKeepsCampaignUpgradeEligibility() {
+        let scenarioNext: JSONValue = .object(["tag": .string("ScenarioStep")])
+        let standalone: JSONValue = .object([
+            "tag": .string("StandaloneScenarioStep"),
+            "contents": .array([
+                .string("c81001"),
+                continueCampaignStep(nextStep: scenarioNext, canUpgradeDecks: true),
+            ]),
+        ])
+        let projection = continuationProjection(
+            campaignStep: .object(["tag": .string("CampaignSpecificStep")]),
+            scenarioStep: standalone,
+            completedSteps: [.object(["tag": .string("ScenarioStep")])]
+        )
+
+        #expect(projection.campaignContinuation?.source == .scenario)
+        #expect(projection.campaignContinuation?.nextStep == scenarioNext)
+        #expect(projection.campaignContinuation?.canUpgradeDecks == true)
+        #expect(projection.campaignContinuation?.canUpgrade == true)
     }
 
     @Test("ScenarioStep overrides the campaign ContinueCampaign next step")

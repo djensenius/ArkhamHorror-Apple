@@ -96,7 +96,7 @@ enum BoardProjectionBuilder {
                 makeCampaignContinuation(
                     fromCampaign: campaign,
                     scenarioContinuationStep: scenarioStep.scenarioContinuationStep
-                ) ?? makeCampaignContinuation(fromScenarioStep: scenarioStep)
+                ) ?? makeCampaignContinuation(fromScenarioStep: scenarioStep, campaign: campaign)
             }
             return ScenarioBuildContext(
                 hasCampaignContext: true,
@@ -122,9 +122,10 @@ enum BoardProjectionBuilder {
     }
 
     private static func makeCampaignContinuation(
-        fromScenarioStep step: JSONValue
+        fromScenarioStep step: JSONValue,
+        campaign: JSONValue? = nil
     ) -> CampaignContinuationContext? {
-        makeCampaignContinuation(fromCampaignStep: step, source: .scenario)
+        makeCampaignContinuation(fromCampaignStep: step, source: .scenario, campaign: campaign)
     }
 
     private static func makeCampaignContinuation(
