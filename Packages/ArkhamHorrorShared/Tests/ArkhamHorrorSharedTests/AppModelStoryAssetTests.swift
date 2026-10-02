@@ -251,7 +251,30 @@ extension AppModelStoryAssetTests {
         }
     }
 
-    @Test("Mixed image fallback keeps AppModel retry for source failures in either order")
+    func expectMixedImageRetry(
+        documents: SyntheticLocaleCatalogDocuments,
+        settingsStatus: Int = 200,
+        cacheConstructionFailures: Int = 0,
+        reason: StoryUnavailableReason,
+        scope: BasicChoiceCatalogRetryPresentation.Scope
+    ) async throws {
+        try await withModel(
+            settingsStatus: settingsStatus,
+            cacheConstructionFailures: cacheConstructionFailures,
+            documents: documents
+        ) { model, documents, _, _, _ in
+            let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
+            let prompt = try #require(model.basicChoicePresentation(for: gameID))
+            #expect(prompt.canSubmit)
+            #expect(prompt.storyResolution?.unavailableReason == reason)
+            let retry = try #require(prompt.catalogRetry)
+            #expect(retry.profileID == documents.profile.id)
+            #expect(retry.catalogGeneration == model.localeCatalogGeneration)
+            #expect(retry.scope == scope)
+        }
+    }
+
+    @Test("Mixed image fallback keeps AppModel retry for source and cache failures in either order")
     func mixedImageFallbackOrderPreservesSourceRetry() async throws {
         let unsupportedFirst = try StoryCatalogImageTests.documents(
             firstPath: "encounter-sets//the-gathering.png"
@@ -260,21 +283,18 @@ extension AppModelStoryAssetTests {
             lastPath: "encounter-sets//chilling-cold.png"
         )
         for documents in [unsupportedFirst, unsupportedLast] {
-            try await withModel(
-                settingsStatus: 503, documents: documents
-            ) { model, documents, _, _, _ in
-                let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
-                let prompt = try #require(model.basicChoicePresentation(for: gameID))
-                #expect(prompt.canSubmit)
-                #expect(
-                    prompt.storyResolution?.unavailableReason == .catalog(.unexpectedStatus(503))
-                )
-                let retry = try #require(prompt.catalogRetry)
-                #expect(retry.profileID == documents.profile.id)
-                #expect(retry.catalogGeneration == model.localeCatalogGeneration)
-                #expect(retry.scope == .images)
-                #expect(retry.title == "Retry story images")
-            }
+            try await expectMixedImageRetry(
+                documents: documents,
+                settingsStatus: 503,
+                reason: .catalog(.unexpectedStatus(503)),
+                scope: .images
+            )
+            try await expectMixedImageRetry(
+                documents: documents,
+                cacheConstructionFailures: 1,
+                reason: .imagePipelineUnavailable,
+                scope: .localImagePipeline
+            )
         }
     }
 
