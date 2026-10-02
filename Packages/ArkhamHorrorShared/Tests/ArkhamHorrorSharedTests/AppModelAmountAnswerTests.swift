@@ -480,8 +480,7 @@ extension AppModelLiveGameTests {
                 choiceID: "00000000-0000-0000-0000-00000000004d",
                 min: 0,
                 max: 3,
-                target: .null,
-                title: "$resource"
+                target: .null
             ),
             presentation: representativePresentation(named: "choosePaymentAmounts-null-target"),
             questionVersion: 620
