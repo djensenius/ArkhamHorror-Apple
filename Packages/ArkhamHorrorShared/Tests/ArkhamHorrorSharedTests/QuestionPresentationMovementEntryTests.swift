@@ -242,9 +242,7 @@ struct QuestionPresentationMovementEntryTests {
                 to: self.rawFixture(rawFixture),
                 expectedQuestionVersion: expectedQuestionVersion
             )
-            #expect(!binding.usesSealedActionabilityOverlay)
-            #expect(binding.governedSource == nil)
-        } catch is DecodingError {
+                } catch is DecodingError {
             // Structural v2 violations may still fail during decode; otherwise semantic
             // drift decodes only as a generic prompt with no sealed overlay source.
         } catch is QuestionPresentationBindingError {

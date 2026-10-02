@@ -119,9 +119,7 @@ struct GatheringRawChoiceBindingMutationTests {
                 to: raw,
                 expectedQuestionVersion: 34
             )
-            #expect(!binding.usesSealedActionabilityOverlay)
-            #expect(binding.governedSource == nil)
-        }
+                }
     }
 
     @Test("Coordinated regenerated Q34 identities retain exact full-array binding")
@@ -184,9 +182,7 @@ struct GatheringRawChoiceBindingMutationTests {
                 to: mutated,
                 expectedQuestionVersion: mutation.questionVersion
             )
-            #expect(!binding.usesSealedActionabilityOverlay)
-            #expect(binding.governedSource == nil)
-        }
+                }
     }
 
     private func fixtureValue(named name: String) throws -> JSONValue {

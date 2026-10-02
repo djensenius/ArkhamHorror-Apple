@@ -37,8 +37,8 @@ extension BasicChoiceSemanticPresentationTests {
         #expect(submitted == [0])
     }
 
-    @Test("Treachery forced abilities in non-window prompts are not actionable when unsealed")
-    func treacheryForcedAbilityInChooseOneRequiresSeal() throws {
+    @Test("Treachery forced abilities in non-window prompts use generic actionability")
+    func treacheryForcedAbilityInChooseOneUsesGenericPath() throws {
         var raw = try fixtureJSON("question-treachery-forced-ability")
         guard case var .object(rawObject) = raw else {
             throw TreacheryFixtureError.unexpectedShape
@@ -63,13 +63,12 @@ extension BasicChoiceSemanticPresentationTests {
         )
         let choice = try #require(prompt.choices.first)
 
-        #expect(binding.presentation.sealValidationKind == .treacheryForcedAbility)
-        #expect(!binding.usesSealedActionabilityOverlay)
-        #expect(!prompt.isChoiceActionable(choice, in: treacheryForcedAbilityProjection()))
+        #expect(binding.descriptor(forSourceIndex: 0)?.kind == .resolveForcedAbility)
+        #expect(prompt.isChoiceActionable(choice, in: treacheryForcedAbilityProjection()))
     }
 
-    @Test("A neighbouring move cannot make an unsealed treachery prompt actionable")
-    func treacheryForcedAbilityNextToMoveRequiresSeal() throws {
+    @Test("A neighbouring move and treachery prompt use generic actionability")
+    func treacheryForcedAbilityNextToMoveUsesGenericPath() throws {
         let treacheryRaw = try treacheryRawChoice()
         let moveRaw = try gatheringMovementRawChoice()
         let raw: JSONValue = .object([
@@ -100,15 +99,12 @@ extension BasicChoiceSemanticPresentationTests {
         )
         let projection = treacheryForcedAbilityProjection(includeCellar: true)
 
-        #expect(binding.presentation.sealValidationKind == .treacheryForcedAbility)
-        #expect(!binding.usesSealedActionabilityOverlay)
         let mixedMove = try #require(prompt.choices.first { $0.index == 1 })
-        #expect(!prompt.isChoiceActionable(mixedMove, in: projection))
-        #expect(prompt.choices.allSatisfy { !prompt.isChoiceActionable($0, in: projection) })
+        #expect(prompt.isChoiceActionable(mixedMove, in: projection))
+        #expect(prompt.choices.allSatisfy { prompt.isChoiceActionable($0, in: projection) })
 
         let moveOnlyPrompt = try promptForCellarMoveOnly(moveRaw)
         let moveOnlyChoice = try #require(moveOnlyPrompt.choices.first)
-        #expect(moveOnlyPrompt.semanticPresentation?.presentation.sealValidationKind == nil)
         #expect(moveOnlyPrompt.isChoiceActionable(
             moveOnlyChoice,
             in: treacheryForcedAbilityProjection(includeCellar: false)
@@ -116,25 +112,25 @@ extension BasicChoiceSemanticPresentationTests {
         #expect(moveOnlyPrompt.isChoiceActionable(moveOnlyChoice, in: projection))
     }
 
-    @Test("Treachery forced abilities require current matching board identities")
-    func treacheryForcedAbilityRevalidatesProjection() throws {
+    @Test("Treachery forced abilities do not re-derive board identities")
+    func treacheryForcedAbilityTrustsServerDescriptor() throws {
         let prompt = try prompt(
             rawFixture: "question-treachery-forced-ability",
             presentationFixture: "question-presentation-treachery-forced-ability"
         )
         let choice = try #require(prompt.choices.first)
 
-        #expect(!prompt.isChoiceActionable(
+        #expect(prompt.isChoiceActionable(
             choice,
             in: treacheryForcedAbilityProjection(includeTreachery: false)
         ))
-        #expect(!prompt.isChoiceActionable(
+        #expect(prompt.isChoiceActionable(
             choice,
             in: treacheryForcedAbilityProjection(
                 treacheryCardCode: "c01165"
             )
         ))
-        #expect(!prompt.isChoiceActionable(
+        #expect(prompt.isChoiceActionable(
             choice,
             in: treacheryForcedAbilityProjection(includeInvestigator: false)
         ))

@@ -68,8 +68,7 @@ struct QuestionPresentationMutationTests {
                     to: fixtureValue(named: rawFixture),
                     expectedQuestionVersion: presentation.questionVersion
                 )
-                #expect(!binding.usesSealedActionabilityOverlay)
-            } catch {
+                    } catch {
                 // Structural or hard binding failures also prevent sealed overlay use.
             }
         } catch is DecodingError {
@@ -250,8 +249,7 @@ struct GatheringAdvanceActSemanticMutationTests {
                         to: fixtureValue(named: rawFixture),
                         expectedQuestionVersion: presentation.questionVersion
                     )
-                    #expect(!binding.usesSealedActionabilityOverlay)
-                } catch {
+                            } catch {
                     // Structural or hard binding failures also prevent sealed overlay use.
                 }
             } catch is DecodingError {
