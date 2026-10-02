@@ -69,6 +69,7 @@ extension AppModelCampaignPromptTests {
 
         let ownerPrompt = try #require(model.basicChoicePresentation(for: gameID))
         #expect(ownerPrompt.readOnlyReason == .updateRequired)
+        #expect(ownerPrompt.statusMessage == nil)
         #expect(!ownerPrompt.canSubmit)
         #expect(ownerPrompt.canUseCampaignDeckPrompt)
 
@@ -88,6 +89,7 @@ extension AppModelCampaignPromptTests {
         model.liveGameParticipantIdentities[gameID] = .spectator
         let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
         #expect(spectatorPrompt.readOnlyReason == .spectator)
+        #expect(spectatorPrompt.statusMessage == "Spectators can view this prompt but cannot answer it.")
         #expect(!spectatorPrompt.canUseCampaignDeckPrompt)
     }
 
