@@ -1,5 +1,7 @@
 import Foundation
 
+// swiftlint:disable file_length
+
 /// The Apple preferred-language input the catalog's locale selection reads.
 ///
 /// Injectable so tests are deterministic: locale selection must be exercised against a fixed
@@ -335,16 +337,34 @@ extension AppModel {
         for presentation: QuestionPresentation?
     ) -> [String: BasicChoiceLabelResolution] {
         guard let presentation else { return [:] }
-        let labels: [(key: String, label: QuestionPresentation.Label?)] = [
+        let promptLabels: [(key: String, label: QuestionPresentation.Label?)] = [
             ("label", presentation.label),
             ("questionLabel", presentation.questionLabel),
             ("completionLabel", presentation.completionLabel),
             ("confirmLabel", presentation.confirmLabel),
             ("backLabel", presentation.backLabel),
         ]
-        return labelResolutions(labels.compactMap { key, label in
-            label.map { (key: key, wireLabel: $0.text) }
-        })
+        let amountLabels: [(key: String, wireLabel: String)] =
+            (presentation.amountChoices ?? []).map { choice in
+                (
+                    key: "amountChoice.\(choice.choiceID)",
+                    wireLabel: choice.label
+                )
+            }
+        let paymentLabels: [(key: String, label: QuestionPresentation.Label)] =
+            (presentation.paymentChoices ?? []).map { choice in
+                (
+                    key: "paymentChoice.\(choice.choiceID)",
+                    label: choice.title
+                )
+            }
+        return labelResolutions(
+            promptLabels.compactMap { key, label in
+                label.map { (key: key, wireLabel: $0.text) }
+            } + amountLabels + paymentLabels.map { key, label in
+                (key: key, wireLabel: label.text)
+            }
+        )
     }
 
     /// Resolves every deployment-owned choice label against one current catalog snapshot,

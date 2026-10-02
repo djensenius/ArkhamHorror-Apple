@@ -86,11 +86,14 @@ echo "Verifying vendored contract fixtures against backend commit $backend_commi
 # local fixture basename : path at that commit in djensenius/ArkhamHorror
 fixture_paths="
 act-no-advance-cost.json:contracts/fixtures/act-no-advance-cost.json
+answer-amounts.json:contracts/fixtures/answer-amounts.json
 answer-enemy-attack-assign-damage.json:contracts/fixtures/answer-enemy-attack-assign-damage.json
 answer-enemy-attack-assign-horror.json:contracts/fixtures/answer-enemy-attack-assign-horror.json
 answer-enemy-attack-assign-remaining-damage.json:contracts/fixtures/answer-enemy-attack-assign-remaining-damage.json
 answer-enemy-attack-assign-remaining-horror.json:contracts/fixtures/answer-enemy-attack-assign-remaining-horror.json
 answer-enemy-attack.json:contracts/fixtures/answer-enemy-attack.json
+answer-exchange-amounts.json:contracts/fixtures/answer-exchange-amounts.json
+answer-payment-amounts.json:contracts/fixtures/answer-payment-amounts.json
 answer-question.json:contracts/fixtures/answer-question.json
 basic-choice-question.schema.json:contracts/schemas/basic-choice-question.schema.json
 capabilities-locale-catalog.json:contracts/fixtures/capabilities-locale-catalog.json

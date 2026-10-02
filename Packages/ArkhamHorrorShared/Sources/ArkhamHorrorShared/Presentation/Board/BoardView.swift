@@ -19,6 +19,9 @@ struct BoardView: View {
     let localPlayerID: PlayerID?
     let cardCatalog: CardCatalogSnapshot?
     let onChoice: (Int) -> Void
+    let onAmounts: ([String: Int]) -> Void
+    let onPaymentAmounts: ([String: Int]) -> Void
+    let onExchangeAmount: (Int) -> Void
     let onRetryChoice: () -> Void
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
@@ -35,6 +38,9 @@ struct BoardView: View {
         localPlayerID: PlayerID? = nil,
         cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
+        onAmounts: @escaping ([String: Int]) -> Void = { _ in },
+        onPaymentAmounts: @escaping ([String: Int]) -> Void = { _ in },
+        onExchangeAmount: @escaping (Int) -> Void = { _ in },
         onRetryChoice: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
@@ -43,6 +49,9 @@ struct BoardView: View {
         self.localPlayerID = localPlayerID
         self.cardCatalog = cardCatalog
         self.onChoice = onChoice
+        self.onAmounts = onAmounts
+        self.onPaymentAmounts = onPaymentAmounts
+        self.onExchangeAmount = onExchangeAmount
         self.onRetryChoice = onRetryChoice
         self.onCatalogRetry = onCatalogRetry
     }
@@ -59,6 +68,9 @@ struct BoardView: View {
             let activeController: BoardCommandController
             if let controller {
                 controller.updateChoiceHandler(onChoice)
+                controller.updateAmountsHandler(onAmounts)
+                controller.updatePaymentAmountsHandler(onPaymentAmounts)
+                controller.updateExchangeAmountHandler(onExchangeAmount)
                 controller.updateRetryHandler(onRetryChoice)
                 controller.updateCatalogRetryHandler(onCatalogRetry)
                 controller.updateLocalPlayerID(localPlayerID)
@@ -74,6 +86,9 @@ struct BoardView: View {
                     prompt: prompt,
                     localPlayerID: localPlayerID,
                     onChoice: onChoice,
+                    onAmounts: onAmounts,
+                    onPaymentAmounts: onPaymentAmounts,
+                    onExchangeAmount: onExchangeAmount,
                     onRetry: onRetryChoice,
                     onCatalogRetry: onCatalogRetry
                 )
@@ -90,6 +105,9 @@ struct BoardView: View {
         }
         .onChange(of: projection) { _, newValue in
             controller?.updateChoiceHandler(onChoice)
+            controller?.updateAmountsHandler(onAmounts)
+            controller?.updatePaymentAmountsHandler(onPaymentAmounts)
+            controller?.updateExchangeAmountHandler(onExchangeAmount)
             controller?.updateRetryHandler(onRetryChoice)
             controller?.updateCatalogRetryHandler(onCatalogRetry)
             controller?.updateLocalPlayerID(localPlayerID)
@@ -97,6 +115,9 @@ struct BoardView: View {
         }
         .onChange(of: prompt) { _, newValue in
             controller?.updateChoiceHandler(onChoice)
+            controller?.updateAmountsHandler(onAmounts)
+            controller?.updatePaymentAmountsHandler(onPaymentAmounts)
+            controller?.updateExchangeAmountHandler(onExchangeAmount)
             controller?.updateRetryHandler(onRetryChoice)
             controller?.updateCatalogRetryHandler(onCatalogRetry)
             controller?.updateLocalPlayerID(localPlayerID)
@@ -306,17 +327,15 @@ struct BoardRegularLayoutView: View {
     }
 }
 
-/// A small on-screen zoom control cluster for touch/pointer platforms, dispatching the
-/// exact same ``SemanticCommand/zoomIn``/``SemanticCommand/zoomOut``/
-/// ``SemanticCommand/resetCamera`` commands the keyboard/controller/Siri Remote adapters
-/// already do — never a bespoke pinch/drag gesture or virtual cursor.
+/// A small on-screen zoom control cluster for touch/pointer platforms. These buttons mutate
+/// camera zoom directly so they never inherit prompt-specific keyboard +/- amount behavior.
 struct BoardZoomControlsView: View {
     let controller: BoardCommandController
 
     var body: some View {
         HStack(spacing: 12) {
             Button {
-                controller.handle(.command(.zoomOut))
+                controller.zoomOut()
             } label: {
                 Image(systemName: "minus.magnifyingglass")
             }
@@ -328,7 +347,7 @@ struct BoardZoomControlsView: View {
             }
             .accessibilityLabel(Text("Reset view"))
             Button {
-                controller.handle(.command(.zoomIn))
+                controller.zoomIn()
             } label: {
                 Image(systemName: "plus.magnifyingglass")
             }

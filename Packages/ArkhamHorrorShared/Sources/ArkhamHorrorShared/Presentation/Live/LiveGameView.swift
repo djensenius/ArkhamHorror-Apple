@@ -160,6 +160,7 @@ struct LiveGameView: View {
     }
 
     @ViewBuilder
+    // swiftlint:disable:next function_body_length
     private func board(_ projection: BoardProjection) -> some View {
         let renderedPrompt = prompt
         let board = BoardView(
@@ -170,6 +171,18 @@ struct LiveGameView: View {
             onChoice: { index in
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.submitBasicChoice(identity, choiceIndex: index) }
+            },
+            onAmounts: { amounts in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitAmountsAnswer(identity, amounts: amounts) }
+            },
+            onPaymentAmounts: { amounts in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitPaymentAmountsAnswer(identity, amounts: amounts) }
+            },
+            onExchangeAmount: { amount in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitExchangeAmountsAnswer(identity, amount: amount) }
             },
             onRetryChoice: {
                 guard let identity = renderedPrompt?.identity else { return }

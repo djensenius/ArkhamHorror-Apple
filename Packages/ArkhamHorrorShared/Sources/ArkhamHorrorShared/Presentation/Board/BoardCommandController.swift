@@ -1,6 +1,8 @@
 import CoreGraphics
 import Observation
 
+// swiftlint:disable file_length
+
 /// The `@MainActor` owner of one board's live focus graph, local zoom presentation state,
 /// and inspector selection — one instance per ``BoardView`` instance, so multiple
 /// simultaneous board windows/instances (for example two visionOS windows, or a gallery
@@ -13,6 +15,7 @@ import Observation
 /// adds no new command vocabulary.
 @MainActor
 @Observable
+// swiftlint:disable:next type_body_length
 final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
@@ -37,8 +40,14 @@ final class BoardCommandController {
     /// The most recently dispatched command, for on-screen/test verification.
     private(set) var lastCommand: SemanticCommand?
     private var onChoice: (Int) -> Void
+    private var onAmounts: ([String: Int]) -> Void
+    private var onPaymentAmounts: ([String: Int]) -> Void
+    private var onExchangeAmount: (Int) -> Void
     private var onRetry: () -> Void
     private var onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
+    private(set) var amountDraft: [String: Int] = [:]
+    private(set) var exchangeAmount: Int = 0
+    private var promptInputKey: BasicChoicePromptKey?
 
     static let zoomRange: ClosedRange<CGFloat> = 0.5 ... 3
     private static let zoomStep: CGFloat = 0.25
@@ -48,6 +57,9 @@ final class BoardCommandController {
         prompt: BasicChoicePromptPresentation? = nil,
         localPlayerID: PlayerID? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
+        onAmounts: @escaping ([String: Int]) -> Void = { _ in },
+        onPaymentAmounts: @escaping ([String: Int]) -> Void = { _ in },
+        onExchangeAmount: @escaping (Int) -> Void = { _ in },
         onRetry: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
@@ -55,6 +67,9 @@ final class BoardCommandController {
         self.prompt = prompt
         self.localPlayerID = localPlayerID
         self.onChoice = onChoice
+        self.onAmounts = onAmounts
+        self.onPaymentAmounts = onPaymentAmounts
+        self.onExchangeAmount = onExchangeAmount
         self.onRetry = onRetry
         self.onCatalogRetry = onCatalogRetry
         let layout = BoardLayoutBuilder.makeLayout(
@@ -62,8 +77,16 @@ final class BoardCommandController {
             preferredRootID: Self.activeLocationID(in: projection)
         )
         self.layout = layout
+        let initialAmountDraft = prompt?.amountPrompt(in: projection)?.initialAmounts ?? [:]
+        amountDraft = initialAmountDraft
+        exchangeAmount = 0
+        promptInputKey = prompt?.identity.promptKey
         let graph = BoardFocusGraphBuilder.makeGraph(
-            projection: projection, layout: layout, prompt: prompt
+            projection: projection,
+            layout: layout,
+            prompt: prompt,
+            amountDraft: initialAmountDraft,
+            exchangeAmount: 0
         )
         coordinator = FocusCoordinator(graph: graph, initialFocus: graph.order.first)
     }
@@ -86,12 +109,17 @@ final class BoardCommandController {
         }
         projection = newProjection
         prompt = newPrompt
+        resetPromptInputStateIfNeeded(prompt: newPrompt)
         layout = BoardLayoutBuilder.makeLayout(
             locations: newProjection.locations,
             preferredRootID: Self.activeLocationID(in: newProjection)
         )
         let newGraph = BoardFocusGraphBuilder.makeGraph(
-            projection: newProjection, layout: layout, prompt: newPrompt
+            projection: newProjection,
+            layout: layout,
+            prompt: newPrompt,
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount
         )
         coordinator.applySnapshot(newGraph)
     }
@@ -99,8 +127,13 @@ final class BoardCommandController {
     func applyPrompt(_ newPrompt: BasicChoicePromptPresentation?) {
         guard prompt != newPrompt else { return }
         prompt = newPrompt
+        resetPromptInputStateIfNeeded(prompt: newPrompt)
         let graph = BoardFocusGraphBuilder.makeGraph(
-            projection: projection, layout: layout, prompt: newPrompt
+            projection: projection,
+            layout: layout,
+            prompt: newPrompt,
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount
         )
         coordinator.applySnapshot(graph)
     }
@@ -148,9 +181,13 @@ final class BoardCommandController {
         return true
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private func apply(_ command: SemanticCommand) -> Bool {
         switch command {
         case let .focusMove(direction):
+            if adjustFocusedAmountControl(direction: direction) {
+                return true
+            }
             coordinator.move(direction)
             return true
         case .inspect:
@@ -163,10 +200,16 @@ final class BoardCommandController {
         case let .cycleZone(direction):
             return cycleZone(direction)
         case .zoomIn:
-            setZoom(zoomScale + Self.zoomStep)
+            zoomIn()
             return true
         case .zoomOut:
-            setZoom(zoomScale - Self.zoomStep)
+            zoomOut()
+            return true
+        case let .adjustFocusedAmount(delta):
+            if consumeFocusedAmountAdjustment(delta: delta) {
+                return true
+            }
+            setZoom(zoomScale + (CGFloat(delta) * Self.zoomStep))
             return true
         case .resetCamera:
             zoomScale = 1
@@ -181,6 +224,9 @@ final class BoardCommandController {
     private func applyPromptCommand(_ command: SemanticCommand) -> Bool {
         switch command {
         case .primaryAction:
+            if activateFocusedAmountControl(primary: true) {
+                return true
+            }
             if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
                 return activatePromptCatalogRetry()
             }
@@ -192,6 +238,9 @@ final class BoardCommandController {
             }
             return coordinator.isModalPresented ? closeInspector() : openInspector()
         case .secondaryAction:
+            if activateFocusedAmountControl(primary: false) {
+                return true
+            }
             return coordinator.isModalPresented ? closeInspector() : leavePrompt()
         case .jumpToActivePrompt:
             return jumpToActivePrompt()
@@ -259,7 +308,10 @@ final class BoardCommandController {
     private func cycleZone(_ direction: CycleDirection) -> Bool {
         guard !coordinator.isModalPresented else { return false }
         let zones = BoardFocusGraphBuilder.nonEmptyZonesInCycleOrder(
-            projection: projection, prompt: prompt
+            projection: projection,
+            prompt: prompt,
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount
         )
         guard !zones.isEmpty else { return false }
         let current = focusedZone ?? zones[0]
@@ -281,6 +333,11 @@ final class BoardCommandController {
         }
         if prompt?.canRetry == true {
             coordinator.syncExternalFocus(BoardFocusID.promptRetry)
+            return true
+        }
+        let promptEntry = coordinator.graph.zoneEntryPoints[BoardFocusZone.prompt]
+        if prompt?.requiresDedicatedAmountUI == true, let entry = promptEntry {
+            coordinator.syncExternalFocus(entry)
             return true
         }
         guard prompt?.canSubmit == true,
@@ -306,6 +363,74 @@ final class BoardCommandController {
         return true
     }
 
+    func amountDraft(for _: BasicChoicePromptPresentation) -> [String: Int] {
+        amountDraft
+    }
+
+    func adjustmentAvailable(rowID: String, delta: Int) -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              let amountPrompt = prompt.amountPrompt(in: projection)
+        else { return false }
+        return amountPrompt.canAdjust(amountDraft, rowID: rowID, delta: delta)
+    }
+
+    @discardableResult
+    func adjustAmount(rowID: String, delta: Int) -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              let amountPrompt = prompt.amountPrompt(in: projection),
+              amountPrompt.canAdjust(amountDraft, rowID: rowID, delta: delta)
+        else { return false }
+        amountDraft = amountPrompt.adjustedAmounts(amountDraft, rowID: rowID, delta: delta)
+        refreshFocusGraphForPromptControls()
+        return true
+    }
+
+    func exchangeAmount(for _: BasicChoicePromptPresentation) -> Int {
+        exchangeAmount
+    }
+
+    @discardableResult
+    func adjustExchangeAmount(delta: Int) -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              let exchangePrompt = prompt.exchangePrompt(in: projection),
+              exchangePrompt.canAdjust(amount: exchangeAmount, delta: delta)
+        else { return false }
+        exchangeAmount = exchangePrompt.adjustedAmount(exchangeAmount, delta: delta)
+        refreshFocusGraphForPromptControls()
+        return true
+    }
+
+    @discardableResult
+    func activateAmountSubmit() -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              let amountPrompt = prompt.amountPrompt(in: projection)
+        else { return false }
+        let amounts = amountPrompt.normalizedAmounts(amountDraft)
+        guard amountPrompt.isLegal(amounts) else { return false }
+        switch amountPrompt.kind {
+        case .amounts:
+            onAmounts(amounts)
+        case .payment:
+            onPaymentAmounts(amounts)
+        }
+        return true
+    }
+
+    @discardableResult
+    func activateExchangeSubmit() -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              let exchangePrompt = prompt.exchangePrompt(in: projection),
+              exchangePrompt.isLegal(exchangeAmount)
+        else { return false }
+        onExchangeAmount(exchangeAmount)
+        return true
+    }
+
     @discardableResult
     func activatePromptRetry() -> Bool {
         guard prompt?.canRetry == true else { return false }
@@ -320,6 +445,108 @@ final class BoardCommandController {
         return true
     }
 
+    private func resetPromptInputStateIfNeeded(prompt: BasicChoicePromptPresentation?) {
+        let newKey = prompt?.identity.promptKey
+        guard promptInputKey != newKey else { return }
+        promptInputKey = newKey
+        guard let prompt else {
+            amountDraft = [:]
+            exchangeAmount = 0
+            return
+        }
+        if let amountPrompt = prompt.amountPrompt(in: projection) {
+            amountDraft = amountPrompt.initialAmounts
+        } else {
+            amountDraft = [:]
+        }
+        exchangeAmount = 0
+    }
+
+    private func refreshFocusGraphForPromptControls() {
+        let graph = BoardFocusGraphBuilder.makeGraph(
+            projection: projection,
+            layout: layout,
+            prompt: prompt,
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount
+        )
+        coordinator.applySnapshot(graph)
+    }
+
+    private func activateFocusedAmountControl(primary: Bool) -> Bool {
+        guard let focus = coordinator.currentFocus else { return false }
+        if let control = AmountControlFocus(focus) {
+            switch control {
+            case let .decrease(rowIndex):
+                return adjustAmountControl(rowIndex: rowIndex, delta: primary ? -1 : 1)
+            case let .increase(rowIndex):
+                return adjustAmountControl(rowIndex: rowIndex, delta: primary ? 1 : -1)
+            case .submit:
+                return primary ? activateAmountSubmit() : false
+            }
+        }
+        if focus == BoardFocusID.promptExchangeDecrease {
+            return adjustExchangeAmount(delta: primary ? -1 : 1)
+        }
+        if focus == BoardFocusID.promptExchangeIncrease {
+            return adjustExchangeAmount(delta: primary ? 1 : -1)
+        }
+        if focus == BoardFocusID.promptExchangeSubmit {
+            return primary ? activateExchangeSubmit() : false
+        }
+        return false
+    }
+
+    private func adjustFocusedAmountControl(direction: FocusDirection) -> Bool {
+        switch direction {
+        case .left:
+            consumeFocusedAmountAdjustment(delta: -1)
+        case .right:
+            consumeFocusedAmountAdjustment(delta: 1)
+        case .up, .down:
+            false
+        }
+    }
+
+    private func consumeFocusedAmountAdjustment(delta: Int) -> Bool {
+        guard focusedAmountControlCanHandleAdjustment else { return false }
+        _ = adjustFocusedAmountControl(delta: delta)
+        return true
+    }
+
+    private var focusedAmountControlCanHandleAdjustment: Bool {
+        guard let focus = coordinator.currentFocus else { return false }
+        return AmountControlFocus(focus) != nil
+            || focus == BoardFocusID.promptExchangeDecrease
+            || focus == BoardFocusID.promptExchangeIncrease
+    }
+
+    private func adjustFocusedAmountControl(delta: Int) -> Bool {
+        guard let focus = coordinator.currentFocus else { return false }
+        if let control = AmountControlFocus(focus) {
+            switch control {
+            case let .decrease(rowIndex), let .increase(rowIndex):
+                return adjustAmountControl(rowIndex: rowIndex, delta: delta)
+            case .submit:
+                return false
+            }
+        }
+        let isExchangeControl = focus == BoardFocusID.promptExchangeDecrease
+            || focus == BoardFocusID.promptExchangeIncrease
+        if isExchangeControl {
+            return adjustExchangeAmount(delta: delta)
+        }
+        return false
+    }
+
+    private func adjustAmountControl(rowIndex: Int, delta: Int) -> Bool {
+        guard let prompt,
+              let rows = prompt.amountPrompt(in: projection)?.visibleRows,
+              rows.indices.contains(rowIndex)
+        else { return false }
+        return adjustAmount(rowID: rows[rowIndex].id, delta: delta)
+    }
+
     private var focusedPromptChoiceIndex: Int? {
         prompt?.choices.first {
             BoardFocusID.promptChoice($0.index) == coordinator.currentFocus
@@ -330,6 +557,14 @@ final class BoardCommandController {
         guard focusedZone == BoardFocusZone.prompt else { return false }
         coordinator.syncExternalFocus(BoardFocusID.scenarioHeader)
         return true
+    }
+
+    func zoomIn() {
+        setZoom(zoomScale + Self.zoomStep)
+    }
+
+    func zoomOut() {
+        setZoom(zoomScale - Self.zoomStep)
     }
 
     private func setZoom(_ value: CGFloat) {
@@ -359,9 +594,48 @@ final class BoardCommandController {
     }
 }
 
+private enum AmountControlFocus: Equatable {
+    case decrease(Int)
+    case increase(Int)
+    case submit
+
+    init?(_ focusID: SemanticFocusID) {
+        if focusID == BoardFocusID.promptAmountSubmit {
+            self = .submit
+            return
+        }
+        let raw = focusID.rawValue
+        let prefix = "board.prompt.amount."
+        guard raw.hasPrefix(prefix) else { return nil }
+        let suffix = String(raw.dropFirst(prefix.count))
+        let parts = suffix.split(separator: ".")
+        guard parts.count == 2, let index = Int(parts[0]) else { return nil }
+        switch parts[1] {
+        case "decrease":
+            self = .decrease(index)
+        case "increase":
+            self = .increase(index)
+        default:
+            return nil
+        }
+    }
+}
+
 extension BoardCommandController {
     func updateChoiceHandler(_ handler: @escaping (Int) -> Void) {
         onChoice = handler
+    }
+
+    func updateAmountsHandler(_ handler: @escaping ([String: Int]) -> Void) {
+        onAmounts = handler
+    }
+
+    func updatePaymentAmountsHandler(_ handler: @escaping ([String: Int]) -> Void) {
+        onPaymentAmounts = handler
+    }
+
+    func updateExchangeAmountHandler(_ handler: @escaping (Int) -> Void) {
+        onExchangeAmount = handler
     }
 
     func updateRetryHandler(_ handler: @escaping () -> Void) {

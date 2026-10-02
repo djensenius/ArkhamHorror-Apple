@@ -72,6 +72,10 @@ public enum SemanticCommand: Hashable, Sendable {
     case zoomIn
     /// Decreases camera zoom.
     case zoomOut
+    /// Adjusts the currently focused amount/exchange prompt control, falling back to zoom
+    /// when no amount control is focused. Used by keyboard +/- so on-screen zoom buttons
+    /// can remain camera-only.
+    case adjustFocusedAmount(Int)
     /// Rotates the camera around the board.
     case rotateCamera(RotationDirection)
     /// Resets the camera to its default position, zoom, and rotation.
@@ -100,7 +104,10 @@ public enum SemanticCommand: Hashable, Sendable {
             ]
             + CycleDirection.allCases.map(SemanticCommand.cyclePlayer)
             + CycleDirection.allCases.map(SemanticCommand.cycleZone)
-            + [.jumpToActivePrompt, .zoomIn, .zoomOut]
+            + [
+                .jumpToActivePrompt, .zoomIn, .zoomOut,
+                .adjustFocusedAmount(1), .adjustFocusedAmount(-1),
+            ]
             + RotationDirection.allCases.map(SemanticCommand.rotateCamera)
             + [
                 .resetCamera, .confirmMultiselect, .cancelMultiselect, .undo,
@@ -116,7 +123,8 @@ public enum SemanticCommand: Hashable, Sendable {
     /// more than once.
     public var isRepeatable: Bool {
         switch self {
-        case .focusMove, .zoomIn, .zoomOut, .rotateCamera, .cyclePlayer, .cycleZone:
+        case .focusMove, .zoomIn, .zoomOut, .adjustFocusedAmount,
+             .rotateCamera, .cyclePlayer, .cycleZone:
             true
         default:
             false

@@ -41,6 +41,10 @@ struct BasicChoicePromptView: View {
             if !presentation.isRenderableQuestion {
                 Label("Update required", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
+            } else if let amountPrompt = presentation.amountPrompt(in: controller.projection) {
+                amountAllocationPrompt(amountPrompt)
+            } else if let exchangePrompt = presentation.exchangePrompt(in: controller.projection) {
+                exchangeAmountPrompt(exchangePrompt)
             } else {
                 if isStoryPrompt {
                     story

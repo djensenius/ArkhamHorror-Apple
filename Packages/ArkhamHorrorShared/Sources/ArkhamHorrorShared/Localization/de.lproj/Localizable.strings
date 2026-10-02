@@ -4,6 +4,43 @@
 "semantic.choice.accessibility.readOnly" = "Diese Auswahl ist derzeit schreibgeschützt.";
 "semantic.choice.accessibility.activatesIndex" = "Aktiviert Auswahl %lld.";
 
+"semantic.question.title.selections" = "Auswahlen treffen";
+
+"amountPrompt.legend.amounts" = "Mengen wählen";
+"amountPrompt.legend.payment" = "Zahlungsmengen wählen";
+"amountPrompt.row.fallback" = "Auswahl %lld";
+"amountPrompt.target.any" = "Beliebige Menge wählen";
+"amountPrompt.target.min" = "Mindestens %lld wählen";
+"amountPrompt.target.max" = "Höchstens %lld wählen";
+"amountPrompt.target.total" = "Genau %lld wählen";
+"amountPrompt.target.oneOf" = "Einen Wert aus %@ wählen";
+"amountPrompt.disabled.incomplete" = "Jede Mengenzeile benötigt einen Wert.";
+"amountPrompt.disabled.bounds" = "Jede Menge muss im erlaubten Bereich bleiben.";
+"amountPrompt.disabled.labels" = "Der Text für %@ ist derzeit nicht verfügbar.";
+"amountPrompt.total" = "Gesamt: %lld";
+"amountPrompt.total.overflow" = "Gesamt: zu groß";
+"amountPrompt.submit" = "Absenden";
+"amountPrompt.submit.hint" = "Sendet diese Verteilung mit Versionsprüfung.";
+"amountPrompt.row.bounds" = "Erlaubt %1$lld–%2$lld";
+"amountPrompt.row.value" = "%1$lld, erlaubt %2$lld bis %3$lld";
+"amountPrompt.row.hint" = "Zum Anpassen nach oben oder unten streichen. Die Links- und Rechts-Steuerungen ändern diesen Wert ebenfalls.";
+"amountPrompt.decrease.accessibility" = "%@ verringern";
+"amountPrompt.increase.accessibility" = "%@ erhöhen";
+"amountPrompt.exchange.legend" = "%@ tauschen";
+"amountPrompt.exchange.submit" = "Tauschen";
+"amountPrompt.exchange.decrease.accessibility" = "1 × %1$@ zurück zu %2$@ bewegen";
+"amountPrompt.exchange.increase.accessibility" = "1 × %1$@ zu %2$@ bewegen";
+"amountPrompt.exchange.accessibility" = "%1$@ hat %2$lld. %3$@ hat %4$lld.";
+"amountPrompt.exchange.accessibility.overflow" = "%1$@ oder %2$@ hat zu viele Marker zur Anzeige.";
+"amountPrompt.exchange.hint" = "Zum Verschieben von Markern zwischen Ermittlern nach oben oder unten streichen.";
+"amountPrompt.exchange.none" = "Keine Marker bewegt";
+"amountPrompt.exchange.forward" = "%1$lld zu %2$@";
+"amountPrompt.exchange.backward" = "%1$lld zu %2$@";
+"amountPrompt.token.resource" = "Ressource";
+"amountPrompt.token.clue" = "Hinweis";
+"amountPrompt.token.damage" = "Schaden";
+"amountPrompt.token.horror" = "Horror";
+
 "semantic.choice.title.advanceAct" = "Akt weiterentwickeln";
 "semantic.choice.title.advanceAgenda" = "Agenda weiterentwickeln";
 "semantic.choice.title.applyResults" = "Ergebnisse anwenden";

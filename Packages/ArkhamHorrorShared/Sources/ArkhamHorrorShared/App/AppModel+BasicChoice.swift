@@ -6,6 +6,10 @@ private enum BasicChoiceSendPreparation {
     case reject(BasicChoiceSubmitResult)
 }
 
+private enum BasicChoiceSubmissionEncodingError: Error {
+    case invalidPresentation
+}
+
 extension AppModel {
     // swiftlint:disable:next function_body_length
     func basicChoicePresentation(for gameID: GameID) -> BasicChoicePromptPresentation? {
@@ -101,6 +105,10 @@ extension AppModel {
     ) -> BasicChoiceReadOnlyReason? {
         let hasRenderableQuestion = if let semanticPresentation = payload.presentation {
             semanticPresentation.isRenderableInCurrentClient
+                && BasicChoicePromptPresentation.supportsSemanticPrompt(
+                    rawQuestion: payload.rawValue,
+                    presentation: semanticPresentation.presentation
+                )
         } else {
             payload.supportedQuestion?.choices.isEmpty == false
         }
@@ -124,7 +132,25 @@ extension AppModel {
     func submitBasicChoice(
         _ identity: BasicChoicePromptIdentity, choiceIndex: Int
     ) async -> BasicChoiceSubmitResult {
-        await sendBasicChoice(identity, choiceIndex: choiceIndex, isRetry: false)
+        await sendBasicChoice(identity, submission: .singleChoice(choiceIndex), isRetry: false)
+    }
+
+    func submitAmountsAnswer(
+        _ identity: BasicChoicePromptIdentity, amounts: [String: Int]
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .amounts(amounts), isRetry: false)
+    }
+
+    func submitPaymentAmountsAnswer(
+        _ identity: BasicChoicePromptIdentity, amounts: [String: Int]
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .paymentAmounts(amounts), isRetry: false)
+    }
+
+    func submitExchangeAmountsAnswer(
+        _ identity: BasicChoicePromptIdentity, amount: Int
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .exchangeAmount(amount), isRetry: false)
     }
 
     func retryBasicChoice(_ identity: BasicChoicePromptIdentity) async -> BasicChoiceSubmitResult {
@@ -132,14 +158,14 @@ extension AppModel {
               record.identity == identity,
               case .retryable = record.phase
         else { return .staleQuestion }
-        return await sendBasicChoice(identity, choiceIndex: record.choiceIndex, isRetry: true)
+        return await sendBasicChoice(identity, submission: record.submission, isRetry: true)
     }
 
     private func sendBasicChoice(
-        _ identity: BasicChoicePromptIdentity, choiceIndex: Int, isRetry: Bool
+        _ identity: BasicChoicePromptIdentity, submission: BasicChoiceSubmission, isRetry: Bool
     ) async -> BasicChoiceSubmitResult {
         let preparation = prepareBasicChoiceSend(
-            identity, choiceIndex: choiceIndex, isRetry: isRetry
+            identity, submission: submission, isRetry: isRetry
         )
         guard case let .send(connection, actionAttemptID) = preparation else {
             guard case let .reject(result) = preparation else { return .retryableFailure }
@@ -147,14 +173,14 @@ extension AppModel {
         }
         return await performBasicChoiceSend(
             identity,
-            choiceIndex: choiceIndex,
+            submission: submission,
             connection: connection,
             actionAttemptID: actionAttemptID
         )
     }
 
     private func prepareBasicChoiceSend(
-        _ identity: BasicChoicePromptIdentity, choiceIndex: Int, isRetry: Bool
+        _ identity: BasicChoicePromptIdentity, submission: BasicChoiceSubmission, isRetry: Bool
     ) -> BasicChoiceSendPreparation {
         guard let presentation = basicChoicePresentation(for: identity.gameID),
               presentation.identity == identity
@@ -182,9 +208,7 @@ extension AppModel {
         // board identities; generic semantic choices trust the server-owned descriptor
         // except for client display prerequisites such as resolvable label text.
         guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
-              let choice = presentation.choices.first(where: { $0.index == choiceIndex }),
-              presentation.isChoiceActionable(choice, in: projection),
-              presentation.canSubmitSingleChoiceAnswer
+              presentation.isSubmissionSupported(submission, in: projection)
         else { return .reject(.unsupportedChoice) }
         guard isRetry || presentation.canSubmit else {
             return .reject(.readOnly)
@@ -196,7 +220,7 @@ extension AppModel {
         let actionAttemptID = UUID()
         basicChoiceActions[identity.gameID] = BasicChoiceActionRecord(
             identity: identity,
-            choiceIndex: choiceIndex,
+            submission: submission,
             attemptID: actionAttemptID,
             connectionID: connection.connectionID,
             phase: .sending
@@ -206,17 +230,13 @@ extension AppModel {
 
     private func performBasicChoiceSend(
         _ identity: BasicChoicePromptIdentity,
-        choiceIndex: Int,
+        submission: BasicChoiceSubmission,
         connection: LiveGameConnectionHandle,
         actionAttemptID: UUID
     ) async -> BasicChoiceSubmitResult {
         let bytes: Data
         do {
-            bytes = try ContractJSON.encode(BasicChoiceAnswer(
-                choice: choiceIndex,
-                playerID: identity.ownerID,
-                questionVersion: identity.questionVersion
-            ))
+            bytes = try encodeSubmission(submission, identity: identity)
         } catch {
             updateBasicChoiceAction(
                 gameID: identity.gameID,
@@ -254,6 +274,45 @@ extension AppModel {
         }
         basicChoiceActions[identity.gameID]?.phase = .awaitingSnapshot
         return .sentAwaitingSnapshot
+    }
+
+    private func encodeSubmission(
+        _ submission: BasicChoiceSubmission,
+        identity: BasicChoicePromptIdentity
+    ) throws -> Data {
+        switch submission {
+        case let .singleChoice(choiceIndex):
+            return try ContractJSON.encode(BasicChoiceAnswer(
+                choice: choiceIndex,
+                playerID: identity.ownerID,
+                questionVersion: identity.questionVersion
+            ))
+        case let .amounts(amounts):
+            return try ContractJSON.encode(AmountsAnswer(
+                amounts: amounts,
+                playerID: identity.ownerID,
+                questionVersion: identity.questionVersion
+            ))
+        case let .paymentAmounts(amounts):
+            return try ContractJSON.encode(PaymentAmountsAnswer(
+                amounts: amounts,
+                playerID: identity.ownerID,
+                questionVersion: identity.questionVersion
+            ))
+        case let .exchangeAmount(amount):
+            guard let source = identity.questionPresentation?.source?.raw,
+                  let fromInvestigator = identity.questionPresentation?.fromInvestigator,
+                  let toInvestigator = identity.questionPresentation?.toInvestigator,
+                  let token = identity.questionPresentation?.token
+            else { throw BasicChoiceSubmissionEncodingError.invalidPresentation }
+            return try ContractJSON.encode(ExchangeAmountsAnswer(
+                source: source,
+                fromInvestigator: fromInvestigator,
+                toInvestigator: toInvestigator,
+                token: token,
+                amount: amount
+            ))
+        }
     }
 
     private func updateBasicChoiceAction(
@@ -399,6 +458,169 @@ extension AppModel {
             basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
         case .uncertain, .retryable:
             break
+        }
+    }
+}
+
+private extension BasicChoicePromptPresentation {
+    func isSubmissionSupported(
+        _ submission: BasicChoiceSubmission,
+        in projection: BoardProjection
+    ) -> Bool {
+        switch submission {
+        case let .singleChoice(choiceIndex):
+            guard let choice = choices.first(where: { $0.index == choiceIndex }) else {
+                return false
+            }
+            return canSubmitSingleChoiceAnswer && isChoiceActionable(choice, in: projection)
+        case let .amounts(amounts):
+            return supportsAmountSubmission(amounts)
+        case let .paymentAmounts(amounts):
+            return supportsPaymentAmountSubmission(amounts)
+        case let .exchangeAmount(amount):
+            return supportsExchangeSubmission(amount)
+        }
+    }
+
+    func supportsAmountSubmission(_ amounts: [String: Int]) -> Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              case .amounts = presentation.answer,
+              Self.supportsSemanticPrompt(
+                  rawQuestion: identity.rawQuestion,
+                  presentation: presentation
+              ),
+              let choices = presentation.amountChoices,
+              amountRowLabelsResolved(
+                  choices.map {
+                      AmountRowLabel(
+                          key: amountChoicePromptLabelKey($0.choiceID),
+                          text: $0.label,
+                          upperBound: $0.maxBound
+                      )
+                  }
+              )
+        else { return false }
+        return amountAllocationValid(
+            amounts: amounts,
+            choices: choices.map {
+                AmountChoiceBounds(
+                    id: $0.choiceID,
+                    lowerBound: $0.minBound,
+                    upperBound: $0.maxBound
+                )
+            },
+            target: presentation.target
+        )
+    }
+
+    func supportsPaymentAmountSubmission(_ amounts: [String: Int]) -> Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              case .paymentAmounts = presentation.answer,
+              Self.supportsSemanticPrompt(
+                  rawQuestion: identity.rawQuestion,
+                  presentation: presentation
+              ),
+              let choices = presentation.paymentChoices,
+              amountRowLabelsResolved(
+                  choices.map {
+                      AmountRowLabel(
+                          key: paymentChoicePromptLabelKey($0.choiceID),
+                          text: $0.title.text,
+                          upperBound: $0.max
+                      )
+                  }
+              )
+        else { return false }
+        return amountAllocationValid(
+            amounts: amounts,
+            choices: choices.map {
+                AmountChoiceBounds(id: $0.choiceID, lowerBound: $0.min, upperBound: $0.max)
+            },
+            target: presentation.target
+        )
+    }
+
+    func supportsExchangeSubmission(_ amount: Int) -> Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              case .exchangeAmounts = presentation.answer,
+              Self.supportsSemanticPrompt(
+                  rawQuestion: identity.rawQuestion,
+                  presentation: presentation
+              ),
+              let fromInitialAmount = presentation.fromInitialAmount,
+              let toInitialAmount = presentation.toInitialAmount,
+              presentation.source != nil,
+              presentation.fromInvestigator != nil,
+              presentation.toInvestigator != nil,
+              presentation.token != nil
+        else { return false }
+        guard fromInitialAmount >= 0, toInitialAmount >= 0 else { return false }
+        let lowerBound = 0.subtractingReportingOverflow(toInitialAmount)
+        guard !lowerBound.overflow, lowerBound.partialValue <= fromInitialAmount else {
+            return false
+        }
+        return amount >= lowerBound.partialValue && amount <= fromInitialAmount
+    }
+
+    struct AmountChoiceBounds: Sendable, Equatable {
+        let id: String
+        let lowerBound: Int
+        let upperBound: Int
+    }
+
+    struct AmountRowLabel: Sendable, Equatable {
+        let key: String
+        let text: String
+        let upperBound: Int
+    }
+
+    func amountRowLabelsResolved(_ labels: [AmountRowLabel]) -> Bool {
+        labels.allSatisfy { label in
+            amountRowLabelUnavailableReason(
+                key: label.key,
+                labelText: label.text,
+                upperBound: label.upperBound
+            ) == nil
+        }
+    }
+
+    func amountAllocationValid(
+        amounts: [String: Int],
+        choices: [AmountChoiceBounds],
+        target: QuestionPresentation.AmountTarget?
+    ) -> Bool {
+        let choiceIDs = Set(choices.map(\.id))
+        guard choiceIDs.count == choices.count,
+              Set(amounts.keys) == choiceIDs
+        else { return false }
+        var total = 0
+        for choice in choices {
+            guard choice.lowerBound <= choice.upperBound,
+                  let amount = amounts[choice.id],
+                  amount >= choice.lowerBound,
+                  amount <= choice.upperBound
+            else { return false }
+            let result = total.addingReportingOverflow(amount)
+            guard !result.overflow else { return false }
+            total = result.partialValue
+        }
+        return amountTargetSatisfied(target, total: total)
+    }
+
+    func amountTargetSatisfied(
+        _ target: QuestionPresentation.AmountTarget?, total: Int
+    ) -> Bool {
+        switch target {
+        case nil:
+            true
+        case let .min(minimum):
+            total >= minimum
+        case let .max(maximum):
+            total <= maximum
+        case let .total(required):
+            total == required
+        case let .oneOf(allowed):
+            allowed.contains(total)
         }
     }
 }
