@@ -471,7 +471,7 @@ struct AppModelCampaignPromptTests {
             connection: FakeGameSocketConnection()
         )
         let prompt = try #require(model.basicChoicePresentation(for: gameID))
-        await deckService.enqueueFetch(.success(try deckListFixture()))
+        try await deckService.enqueueFetch(.success(deckListFixture()))
         await gameService.enqueueChooseDeckResult(.success(()))
 
         #expect(await model.upgradeCampaignDeck(

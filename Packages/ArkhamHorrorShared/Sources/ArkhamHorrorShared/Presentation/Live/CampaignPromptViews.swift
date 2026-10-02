@@ -123,7 +123,6 @@ struct BetweenScenariosView: View {
         }
     }
 
-    @ViewBuilder
     private var actionButtons: some View {
         HStack(spacing: 12) {
             if isUpgradePrompt {

@@ -225,7 +225,8 @@ enum BoardCampaignSummaryBuilder {
         scenario: Scenario?
     ) -> BoardCampaignResolutionSummary? {
         if let campaign,
-           let resolution = latestCampaignResolution(campaign) {
+           let resolution = latestCampaignResolution(campaign)
+        {
             return resolution
         }
         guard let scenario,
@@ -261,8 +262,12 @@ enum BoardCampaignSummaryBuilder {
                   let tag = object["tag"]?.stringValue,
                   tag == "ScenarioStep" || tag == "ScenarioStepWithOptions"
             else { return nil }
-            if let contents = object["contents"]?.stringValue { return contents }
-            if let contents = object["contents"]?.arrayValue?.first?.stringValue { return contents }
+            if let contents = object["contents"]?.stringValue {
+                return contents
+            }
+            if let contents = object["contents"]?.arrayValue?.first?.stringValue {
+                return contents
+            }
             return nil
         }.first
     }
@@ -273,7 +278,8 @@ enum BoardCampaignSummaryBuilder {
         }
         if let object = value.objectValue,
            object["tag"]?.stringValue == "Resolution",
-           let number = object["contents"]?.integerValue {
+           let number = object["contents"]?.integerValue
+        {
             return "Resolution \(number)"
         }
         if let number = value.integerValue {
@@ -299,7 +305,8 @@ enum BoardCampaignSummaryBuilder {
             return "base.key.\(lowerFirst(tag))"
         }
         if let nested = contents.objectValue,
-           let nestedTag = nested["tag"]?.stringValue {
+           let nestedTag = nested["tag"]?.stringValue
+        {
             let section = lowerFirst(nestedTag)
             if let nestedContents = nested["contents"]?.stringValue {
                 return "\(prefix).key['[\(section)]'].\(lowerFirst(nestedContents))"
@@ -325,13 +332,20 @@ enum BoardCampaignSummaryBuilder {
         case let .array(values):
             return values.map(jsonDisplayValue).joined(separator: ", ")
         case let .object(object):
-            if let title = object["title"]?.stringValue { return title }
-            if let name = object["name"]?.stringValue { return name }
+            if let title = object["title"]?.stringValue {
+                return title
+            }
+            if let name = object["name"]?.stringValue {
+                return name
+            }
             if let tag = object["tag"]?.stringValue,
-               let contents = object["contents"] {
+               let contents = object["contents"]
+            {
                 return "\(titleizedWords(tag)): \(jsonDisplayValue(contents))"
             }
-            if let tag = object["tag"]?.stringValue { return titleizedWords(tag) }
+            if let tag = object["tag"]?.stringValue {
+                return titleizedWords(tag)
+            }
             return titleizedWords(object.keys.sorted().joined(separator: ", "))
         }
     }
