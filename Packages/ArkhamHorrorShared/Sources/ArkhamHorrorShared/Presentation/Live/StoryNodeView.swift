@@ -81,7 +81,9 @@ struct ResolvedStoryEntryView: View {
                 }
             }
         case let .cardReference(cardCode, _):
-            StoryReferenceText(title: cardCatalog?.displayName(for: cardCode) ?? "Card \(cardCode.rawValue)")
+            StoryReferenceText(
+                title: cardCatalog?.displayName(for: cardCode) ?? "Card \(cardCode.rawValue)"
+            )
         case let .tarotReference(arcana):
             StoryReferenceText(title: "Tarot \(arcana)")
         case let .chaosTokenReference(face):
