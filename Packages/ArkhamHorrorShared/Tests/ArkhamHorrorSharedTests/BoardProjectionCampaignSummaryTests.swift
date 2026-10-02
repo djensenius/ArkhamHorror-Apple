@@ -31,17 +31,24 @@ struct BoardProjectionCampaignSummaryTests {
             }
         }
 
-        var firstScenarioTitle: String {
+        var oldestScenarioTitle: String {
             switch self {
             case .english: "The Gathering"
             case .german: "Die Zusammenkunft"
             }
         }
 
-        var latestScenarioTitle: String {
+        var newestCompletedScenarioTitle: String {
             switch self {
             case .english: "The Devourer Below"
             case .german: "Der Verschlinger aus der Tiefe"
+            }
+        }
+
+        var currentScenarioTitle: String {
+            switch self {
+            case .english: "The Midnight Masks"
+            case .german: "Die Mitternachtsmasken"
             }
         }
 
@@ -52,17 +59,24 @@ struct BoardProjectionCampaignSummaryTests {
             }
         }
 
-        var firstResolutionTitle: String {
+        var oldestResolutionTitle: String {
             switch self {
             case .english: "Resolution 2"
             case .german: "Auflösung 2"
             }
         }
 
-        var latestResolutionTitle: String {
+        var newestCompletedResolutionTitle: String {
             switch self {
             case .english: "Resolution 1"
             case .german: "Auflösung 1"
+            }
+        }
+
+        var currentResolutionTitle: String {
+            switch self {
+            case .english: "Resolution 3"
+            case .german: "Auflösung 3"
             }
         }
 
@@ -146,10 +160,12 @@ struct BoardProjectionCampaignSummaryTests {
     }
 
     private func assertCampaignHandoffFallback(_ summary: BoardCampaignSummary) {
-        #expect(summary.resolutions.map { $0.title() } == ["Resolution 2", "Resolution 1"])
-        #expect(summary.resolutions.map { $0.detail() } == ["c01104", "c01103"])
-        #expect(summary.latestResolution?.title() == "Resolution 1")
-        #expect(summary.latestResolution?.detail() == "c01103")
+        #expect(summary.resolutions.map { $0.title() } == [
+            "Resolution 2",
+            "Resolution 1",
+            "Resolution 3",
+        ])
+        #expect(summary.resolutions.map { $0.detail() } == ["c01104", "c01103", "c01105"])
         #expect(summary.log.entries.map { $0.title() } == [
             "Your house has burned to the ground",
             "Custom homebrew thing",
@@ -170,19 +186,15 @@ struct BoardProjectionCampaignSummaryTests {
             let context = try displayContext(locale: locale)
 
             #expect(summary.resolutions.map { $0.title(context: context) } == [
-                locale.firstResolutionTitle,
-                locale.latestResolutionTitle,
+                locale.oldestResolutionTitle,
+                locale.newestCompletedResolutionTitle,
+                locale.currentResolutionTitle,
             ])
             #expect(summary.resolutions.map { $0.detail(context: context) } == [
-                locale.firstScenarioTitle,
-                locale.latestScenarioTitle,
+                locale.oldestScenarioTitle,
+                locale.newestCompletedScenarioTitle,
+                locale.currentScenarioTitle,
             ])
-            #expect(
-                summary.latestResolution?.title(context: context) == locale.latestResolutionTitle
-            )
-            #expect(
-                summary.latestResolution?.detail(context: context) == locale.latestScenarioTitle
-            )
             #expect(summary.log.entries.map { $0.title(context: context) } == [
                 locale.burnedHouse,
                 "Custom homebrew thing",
@@ -267,9 +279,10 @@ struct BoardProjectionCampaignSummaryTests {
             "tag": "TheDrownedCityKey",
             "contents": "DiscoveredGlyphs",
         ]
+        // Server order is newest first because completed scenarios are prepended.
         campaign["completedSteps"] = [
-            ["tag": "ScenarioStep", "contents": "c01104"],
             ["tag": "ScenarioStep", "contents": "c01103"],
+            ["tag": "ScenarioStep", "contents": "c01104"],
         ]
         campaign["log"] = [
             "crossedOut": [burnedHouseKey, crossedOutOnlyKey],
@@ -309,6 +322,8 @@ struct BoardProjectionCampaignSummaryTests {
         campaign["resolutions"] = [
             "c01103": ["tag": "Resolution", "contents": 1],
             "c01104": ["tag": "Resolution", "contents": 2],
+            // Current scenario resolution: recorded before the step enters completedSteps.
+            "c01105": ["tag": "Resolution", "contents": 3],
         ]
         root["This"] = campaign
         let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
@@ -351,8 +366,9 @@ struct BoardProjectionCampaignSummaryTests {
 
     private func cardCatalog(locale: SummaryLocale) throws -> CardCatalogSnapshot {
         try CardCatalogSnapshot(namesByCode: [
-            CardCode("c01104"): CardName(title: locale.firstScenarioTitle, subtitle: nil),
-            CardCode("c01103"): CardName(title: locale.latestScenarioTitle, subtitle: nil),
+            CardCode("c01104"): CardName(title: locale.oldestScenarioTitle, subtitle: nil),
+            CardCode("c01103"): CardName(title: locale.newestCompletedScenarioTitle, subtitle: nil),
+            CardCode("c01105"): CardName(title: locale.currentScenarioTitle, subtitle: nil),
             CardCode("c01121b"): CardName(title: locale.maskedHunter, subtitle: nil),
         ])
     }

@@ -136,7 +136,6 @@
 "campaign.between.finishedScenario" = "%@ wurde gerade abgeschlossen";
 "campaign.between.noScenario" = "Kein aktives Szenario";
 "campaign.between.emptySummary" = "Der Server hat noch keine Änderungen am Kampagnenlogbuch oder an EP gemeldet.";
-"campaign.between.resolution" = "Letzte Auflösung";
 "campaign.between.resolutions" = "Szenario-Auflösungen";
 "campaign.between.progress" = "Ermittler-Fortschritt";
 "campaign.between.availableXp" = "%d EP verfügbar";

@@ -10,10 +10,6 @@ struct BoardCampaignSummary: Sendable, Equatable {
     let log: BoardCampaignLogSummary
     let investigators: [BoardCampaignInvestigatorProgress]
 
-    var latestResolution: BoardCampaignResolutionSummary? {
-        resolutions.last
-    }
-
     var isEmpty: Bool {
         resolutions.isEmpty && log.isEmpty && investigators.isEmpty
     }
@@ -361,7 +357,10 @@ enum BoardCampaignSummaryBuilder {
 
     private static func scenarioStepIDs(in completedSteps: JSONValue?) -> [String] {
         guard let steps = completedSteps?.arrayValue else { return [] }
-        return steps.compactMap { step -> String? in
+        // The server prepends finished scenarios (`completeStep step' steps = step' : steps`),
+        // so reverse the wire order to render resolutions oldest -> newest. Resolution keys
+        // not yet present in completedSteps, such as the current scenario, are appended later.
+        return steps.reversed().compactMap { step -> String? in
             guard let object = step.objectValue,
                   let tag = object["tag"]?.stringValue,
                   [
