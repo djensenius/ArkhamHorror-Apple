@@ -127,10 +127,10 @@ extension AppModelLiveGameTests {
 
     // swiftlint:disable line_length
     @Test(
-        "The real production question-read.json Continue choice cannot be submitted -- it fails closed rather than silently broadening to actionable"
+        "The real production question-read.json Continue choice can be submitted with story-key fallback text"
     )
     // swiftlint:enable line_length
-    func realUnresolvableReadStoryCannotBeSubmitted() async throws {
+    func realFallbackReadStoryCanBeSubmitted() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -141,10 +141,9 @@ extension AppModelLiveGameTests {
         )
 
         // The real, currently-vendored `question-read.json`: none of its 4 real dotted
-        // i18n keys are in `StoryNarrativeLocalization.chromeVocabulary` (see
-        // `StoryNarrativeLocalizationTests.realReadFixtureFailsClosed`), so this client
-        // cannot lawfully resolve its narrative -- the honest, fail-closed outcome per
-        // this project's own localization licensing constraints.
+        // i18n keys are available without a locale catalog, so this client now shows the
+        // server-provided keys as fallback story text and keeps Continue answerable.
+        await connection.enqueueSendResult(.success(()))
         let readQuestion = try loadContractFixtureValue("question-read")
         let readUpdate = try snapshotUpdate(
             from: envelope,
@@ -155,18 +154,15 @@ extension AppModelLiveGameTests {
         await connection.waitUntilAwaitingNextEvent()
         let presentation = try #require(model.basicChoicePresentation(for: gameID))
 
-        // The prompt itself remains visible and generally submittable (not
-        // `.updateRequired` -- the question decoded successfully) -- only this specific
-        // choice's story-content resolution gates it, exactly mirroring an unavailable
-        // `.chooseLocation` target rather than a parse failure.
         #expect(presentation.readOnlyReason == nil)
         #expect(presentation.question.supportedQuestion?.kind == .read)
+        #expect(presentation.storyResolution?.isResolved == true)
+        #expect(presentation.canSubmit)
 
         #expect(
             await model.submitBasicChoice(presentation.identity, choiceIndex: 0)
-                == .unsupportedChoice
+                == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData.isEmpty)
-        #expect(model.basicChoiceActions[gameID] == nil)
+        #expect(await connection.sentData.count == 1)
     }
 }

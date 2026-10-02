@@ -75,15 +75,52 @@ extension AppModelLiveGameTests {
         #expect(presentation.displayTitle(for: choice, in: projection) == "Continue")
     }
 
-    @Test("Unconvertible presentation flavor text reports unsupported entry")
-    func unconvertiblePresentationFlavorTextIsUnsupportedEntry() {
+    @Test("Additive semantic Read fields stay renderable and answerable")
+    func additiveSemanticReadFieldsDecodeAndAnswer() async throws {
+        let documents = try genericReadCatalogDocuments()
+        let (model, fakes) = makeCatalogSignedInModel(documents: documents)
+        await model.flowTask?.value
+        await model.localeCatalogTask?.value
+        let envelope = try genericReadEnvelope(additiveFields: true)
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let presentation = try #require(model.basicChoicePresentation(for: gameID))
+        let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
+        let choice = try #require(presentation.choices.first)
+
+        #expect(presentation.canSubmit)
+        #expect(presentation.storyResolution == .resolved(ResolvedStory(
+            title: nil,
+            body: [
+                .heading(level: .level1, nodes: [.text("Localized heading")]),
+                .nodes([.text("Localized body")]),
+            ]
+        )))
+        #expect(presentation.displayTitle(for: choice, in: projection) == "Continue")
+        #expect(
+            await model.submitBasicChoice(presentation.identity, choiceIndex: 0)
+                == .sentAwaitingSnapshot
+        )
+        #expect(await connection.sentData == [
+            expectedContinueAnswer(questionVersion: presentation.questionVersion),
+        ])
+    }
+
+    @Test("Unknown presentation flavor text renders a readable placeholder")
+    func unknownPresentationFlavorTextRendersPlaceholder() {
         let (model, _) = makeSignedInModel()
         let flavorText = QuestionPresentation.FlavorText(
             title: nil,
             body: [.object(["tag": .string("UnknownEntry")])]
         )
 
-        #expect(model.storyResolution(for: flavorText) == .unavailable(.unsupportedEntry))
+        #expect(model.storyResolution(for: flavorText) == .resolved(ResolvedStory(
+            title: nil,
+            body: [.text("Unsupported story entry: UnknownEntry")]
+        )))
     }
 
     private func startVerifiedHeaderEntrySession() async throws -> HeaderEntrySession {
@@ -115,21 +152,24 @@ extension AppModelLiveGameTests {
         )
     }
 
-    private func genericReadEnvelope() throws -> GetGameEnvelope {
+    private func genericReadEnvelope(additiveFields: Bool = false) throws -> GetGameEnvelope {
         let data = try fixtureData(named: "get-game")
         var root = try #require(
             JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
         var game = try #require(root["game"] as? [String: Any])
         let playerID = try #require(root["playerId"] as? String)
-        let flavor: [String: Any] = [
+        var flavor: [String: Any] = [
             "title": NSNull(),
             "body": [
                 ["tag": "HeaderEntry", "level": 1, "key": "story.heading"],
                 ["tag": "I18nEntry", "key": "story.body", "variables": [:]],
             ],
         ]
-        let rawQuestion: [String: Any] = [
+        if additiveFields {
+            flavor["extraFlavor"] = ["serverHint": "ignored by Apple"]
+        }
+        var rawQuestion: [String: Any] = [
             "tag": "Read",
             "flavorText": flavor,
             "readChoices": [
@@ -138,6 +178,9 @@ extension AppModelLiveGameTests {
             ],
             "readCards": NSNull(),
         ]
+        if additiveFields {
+            rawQuestion["extraTopLevel"] = ["serverHint": "ignored by Apple"]
+        }
         game["question"] = [playerID: rawQuestion]
         game["questionPresentation"] = [
             playerID: [

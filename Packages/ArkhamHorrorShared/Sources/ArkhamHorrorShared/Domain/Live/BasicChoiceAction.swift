@@ -320,7 +320,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         case nil:
             break
         }
-        if let reason = storyResolution?.unavailableReason {
+        if case let .unavailable(reason) = storyResolution {
             return reason.announcement
         }
         switch readOnlyReason {

@@ -832,11 +832,7 @@ extension QuestionPresentation.FlavorText {
     private enum CodingKeys: String, CodingKey, CaseIterable { case title, body }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
-            decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
-        )
+        let container = try decoder.container(keyedBy: CodingKeys.self)
         guard container.contains(.title) else {
             throw DecodingError.keyNotFound(
                 CodingKeys.title,

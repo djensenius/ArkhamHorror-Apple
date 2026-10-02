@@ -5,13 +5,13 @@ import Testing
 /// Production-fixture-driven and synthetic-vocabulary coverage for
 /// ``StoryNarrativeLocalization``, this client's entire lawful, fail-closed narrative
 /// localization boundary (issue djensenius/ArkhamHorror-Apple#35, independent-review
-/// blocker 2). Proves the real, currently-vendored `question-read.json` fails closed
-/// (none of its 4 real keys are in ``StoryNarrativeLocalization/chromeVocabulary``), that
-/// the substitution/`$`-prefix (for both `title` and `BasicEntry.text`)/recursive-
-/// `ListEntry` mechanisms are each independently correct against an injected synthetic
-/// vocabulary (never real, copyrighted narrative content), and that every
-/// malformed/missing/unsupported-type input fails closed rather than partially
-/// substituting or guessing. `BasicEntry.text`'s own `$`-prefix coverage lives in the
+/// blocker 2). Proves the real, currently-vendored `question-read.json` can fall back to
+/// server-provided keys when catalog text is unavailable, that the substitution/`$`-prefix
+/// (for both `title` and `BasicEntry.text`)/recursive-`ListEntry` mechanisms are each
+/// independently correct against an injected synthetic vocabulary (never real,
+/// copyrighted narrative content), and that malformed variable substitution still fails
+/// closed rather than partially substituting or guessing. `BasicEntry.text`'s own
+/// `$`-prefix coverage lives in the
 /// sibling `StoryNarrativeLocalizationBasicEntryTests.swift` extension.
 @Suite("Story narrative localization boundary")
 struct StoryNarrativeLocalizationTests {
@@ -35,12 +35,23 @@ struct StoryNarrativeLocalizationTests {
     // MARK: - Real production fixtures
 
     @Test(
-        "question-read.json fails closed: dotted i18n keys are not in the safe vocabulary"
+        "question-read.json falls back to server keys when dotted i18n keys are missing"
     )
-    func realReadFixtureFailsClosed() throws {
+    func realReadFixtureFallsBackToServerKeys() throws {
         let flavorText = try readStory(from: "question-read")
         #expect(flavorText.title == "$setup")
-        #expect(StoryNarrativeLocalization.resolvedStory(for: flavorText) == nil)
+        let resolved = try #require(StoryNarrativeLocalization.resolvedStory(for: flavorText))
+        #expect(resolved.title == "Setup")
+        guard case let .list(items)? = resolved.body.first else {
+            Issue.record("Expected the setup story to remain a list")
+            return
+        }
+        #expect(items.map(\.entry) == [
+            .text("nightOfTheZealot.theGathering.setup.gatherSets"),
+            .text("nightOfTheZealot.theGathering.setup.placeLocations"),
+            .text("nightOfTheZealot.theGathering.setup.setOutOfPlay"),
+            .text("shuffleRemainder"),
+        ])
     }
 
     @Test("The real question-read-with-cards.json BasicEntry-only story resolves lawfully")
@@ -70,10 +81,13 @@ struct StoryNarrativeLocalizationTests {
         #expect(resolved?.title == "Not an i18n key")
     }
 
-    @Test("An unresolvable $-prefixed title fails the whole story closed")
-    func unresolvableDollarPrefixedTitleFailsClosed() {
+    @Test("An unresolvable $-prefixed title falls back to the key")
+    func unresolvableDollarPrefixedTitleFallsBack() {
         let flavorText = FlavorText(title: "$unknownVocabularyKey", body: [])
-        #expect(StoryNarrativeLocalization.resolvedStory(for: flavorText) == nil)
+        #expect(
+            StoryNarrativeLocalization.resolvedStory(for: flavorText)?.title
+                == "unknownVocabularyKey"
+        )
     }
 
     // MARK: - BasicEntry `$`-prefix semantics
@@ -95,12 +109,14 @@ struct StoryNarrativeLocalizationTests {
         #expect(resolved?.body == [.text("Hello there")])
     }
 
-    @Test("An I18nEntry key missing from the vocabulary fails the whole story closed")
-    func i18nEntryMissingFromVocabularyFailsClosed() {
+    @Test("An I18nEntry key missing from the vocabulary falls back to the key")
+    func i18nEntryMissingFromVocabularyFallsBack() {
         let flavorText = FlavorText(
             title: nil, body: [.i18n(key: "notInVocabulary", variables: .object([:]))]
         )
-        #expect(StoryNarrativeLocalization.resolvedStory(for: flavorText) == nil)
+        #expect(StoryNarrativeLocalization.resolvedStory(for: flavorText)?.body == [
+            .text("notInVocabulary"),
+        ])
     }
 
     @Test("A named {variable} placeholder substitutes from a string variable value")
@@ -224,9 +240,9 @@ struct StoryNarrativeLocalizationTests {
     }
 
     @Test(
-        "A single unresolvable entry nested deep inside a ListEntry fails the whole story closed"
+        "A single unresolvable entry nested deep inside a ListEntry falls back in place"
     )
-    func recursiveListEntryPartialFailureFailsWholeStoryClosed() {
+    func recursiveListEntryPartialFailureFallsBackInPlace() {
         let vocabulary = ["continue": "Continue"]
         let flavorText = FlavorText(
             title: nil,
@@ -246,8 +262,19 @@ struct StoryNarrativeLocalizationTests {
             ]
         )
         #expect(
-            StoryNarrativeLocalization.resolvedStory(for: flavorText, vocabulary: vocabulary)
-                == nil
+            StoryNarrativeLocalization.resolvedStory(for: flavorText, vocabulary: vocabulary)?.body
+                == [
+                    .list(items: [
+                        ResolvedStoryListItem(
+                            entry: .text("Continue"),
+                            nested: [
+                                ResolvedStoryListItem(
+                                    entry: .text("unresolvable.key"), nested: []
+                                ),
+                            ]
+                        ),
+                    ]),
+                ]
         )
     }
 }

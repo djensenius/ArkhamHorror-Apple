@@ -8,6 +8,7 @@ final class ScriptedStoryAssetCacheFactory {
     let directory: URL
     let failures: Int
     private(set) var attempts = 0
+    private(set) var transport: FakeAssetTransport?
 
     init(directory: URL, failures: Int) {
         self.directory = directory
@@ -18,10 +19,12 @@ final class ScriptedStoryAssetCacheFactory {
         attempts += 1
         guard attempts > failures else { return nil }
         do {
+            let transport = FakeAssetTransport()
+            self.transport = transport
             return try AssetCacheService(
                 memoryCache: AssetMemoryCache(limits: .production),
                 diskCache: AssetDiskCache(directory: directory, limits: .production),
-                transport: FakeAssetTransport()
+                transport: transport
             )
         } catch {
             Issue.record("Unexpected test cache initialization failure: \(error)")
@@ -47,6 +50,24 @@ func offlineAfterLoadCatalogTransport(
     )
 }
 
+func failingCatalogTransport(
+    _ documents: SyntheticLocaleCatalogDocuments,
+    status: Int
+) -> FixtureLocaleCatalogTransport {
+    FixtureLocaleCatalogTransport(responses: [
+        documents.manifestURL: documents.response(
+            data: Data(),
+            status: status,
+            url: documents.manifestURL
+        ),
+        documents.chunkURL: documents.response(
+            data: Data(),
+            status: status,
+            url: documents.chunkURL
+        ),
+    ])
+}
+
 extension AppModelStoryAssetTests {
     func expectTextActionable(_ model: AppModel) throws {
         #expect(!model.isLocaleCatalogLoading)
@@ -68,49 +89,47 @@ extension AppModelStoryAssetTests {
         "Local cache failures have accurate status and controller-retry recovery without relaunch"
     )
     func localCacheRecovery() async throws {
-        try await withModel(cacheConstructionFailures: 2) { model, _, source, catalog, factory in
+        try await withModel(
+            cacheConstructionFailures: 2
+        ) { model, documents, source, catalog, factory in
             let snapshot = model.localeCatalog
-            let resolver = try #require(model.localeCatalogResolver)
-            let prompt = try StoryCatalogImageTests.prompt(resolver: resolver)
+            let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
+            var prompt = try #require(model.basicChoicePresentation(for: gameID))
             let reason = StoryUnavailableReason.imagePipelineUnavailable
-            #expect(prompt.storyResolution == .unavailable(reason))
-            #expect(prompt.statusMessage == reason.announcement)
-            #expect(prompt.statusMessage?.contains("local image cache") == true)
+            #expect(prompt.storyResolution?.unavailableReason == reason)
+            #expect(prompt.storyResolution?.story?.body.isEmpty == false)
+            #expect(prompt.canSubmit)
             #expect(model.assetCacheService == nil)
             try expectTextActionable(model)
             #expect(await source.requests.isEmpty)
             #expect(factory.attempts == 1)
-            let retry = try #require(model.catalogRetryPresentation(
-                localizationReasons: [reason], promptKey: prompt.identity.promptKey
-            ))
+            let retry = try #require(prompt.catalogRetry)
             #expect(retry.scope == .localImagePipeline)
             #expect(retry.title == "Retry image support")
             #expect(retry.accessibilityHint.contains("this app's local image cache"))
-            let retryPrompt = try StoryCatalogImageTests.prompt(
-                resolver: resolver, catalogRetry: retry
-            )
+            let projection = try #require(model.liveGameStates[gameID]?.lastKnownProjection)
             let controller = BoardCommandController(
-                projection: BoardProjectionBuilder
-                    .makeProjection(from: BoardTestFixtures.snapshot()),
-                prompt: retryPrompt, onCatalogRetry: { _ in model.retryLocaleCatalog() }
+                projection: projection,
+                prompt: prompt,
+                onCatalogRetry: { model.retryLocaleCatalog(for: gameID, retry: $0) }
             )
-            #expect(!controller.activatePromptChoice(0))
+            #expect(controller.activatePromptChoice(0))
             #expect(controller.handle(.command(.jumpToActivePrompt)))
-            #expect(controller.coordinator.currentFocus == BoardFocusID.promptCatalogRetry)
-            #expect(controller.handle(.command(.primaryAction)))
+            #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
+            #expect(controller.activatePromptCatalogRetry())
             #expect(factory.attempts == 2)
             #expect(model.localeCatalog == snapshot)
             #expect(model.localeCatalogRetryReason == reason)
-            model.retryLocaleCatalog()
+            prompt = try #require(model.basicChoicePresentation(for: gameID))
+            controller.applyPrompt(prompt)
+            #expect(controller.activatePromptCatalogRetry())
             #expect(model.assetCacheService != nil)
             #expect(model.localeCatalog == snapshot)
             await model.localeCatalogTask?.value
             #expect(factory.attempts == 3)
             #expect(await source.requests.count == 1)
             #expect(await catalog.requests.count == 2)
-            let recovered = try StoryCatalogImageTests.prompt(
-                resolver: #require(model.localeCatalogResolver)
-            )
+            let recovered = try #require(model.basicChoicePresentation(for: gameID))
             #expect(recovered.canSubmit)
             #expect(model.localeCatalogRetryReason == nil)
             controller.applyPrompt(recovered)

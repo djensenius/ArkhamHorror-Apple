@@ -129,7 +129,7 @@ enum StoryUnavailableReason: Error, Sendable, Equatable, Hashable {
         case let .catalog(failure):
             failure.announcement
         case .loading:
-            "The story text is still loading from this server."
+            "Loading story…"
         case .imagePipelineUnavailable:
             "This app could not initialize its local image cache. Retry image support to continue."
         case .imageSourceLoading:
