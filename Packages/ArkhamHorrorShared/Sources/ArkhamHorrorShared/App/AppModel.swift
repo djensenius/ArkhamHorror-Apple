@@ -305,9 +305,11 @@ final class AppModel {
     /// REST deck-upgrade submissions claimed for the live game currently being answered.
     ///
     /// Each claim carries an attempt identity so a stale task's cleanup cannot clear a
-    /// newer same-game submission after a lifecycle reset/re-entry, and a task handle so
-    /// lifecycle resets can cancel any still-running work where the underlying client
-    /// cooperates with Swift task cancellation.
+    /// newer same-game submission after a lifecycle reset/re-entry, the prompt identity it
+    /// is fenced to, and a task handle so lifecycle resets can cancel any still-running
+    /// work where the underlying client cooperates with Swift task cancellation. A
+    /// successful PUT stays here as an awaiting-snapshot claim until that prompt changes or
+    /// the live-game lifecycle resets; failures release immediately for retry.
     @ObservationIgnored var campaignDeckSubmissions: [GameID: CampaignDeckSubmissionAttempt] = [:]
     /// Sanitized room-wide feedback, never treated as correlated answer rejection.
     var basicChoiceServerFeedback: [GameID: String] = [:]

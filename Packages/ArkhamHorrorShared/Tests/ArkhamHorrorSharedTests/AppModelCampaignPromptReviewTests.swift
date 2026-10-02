@@ -115,7 +115,8 @@ extension AppModelCampaignPromptTests {
             investigatorId: "c01001",
             in: gameID,
             promptIdentity: ownerPrompt.identity
-        ) == .submitted)
+        ) == .failed("Deck update sent. Waiting for the game to update…"))
+        #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 1)
 
         model.liveGameParticipantIdentities[gameID] = .spectator
         let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
@@ -673,7 +674,173 @@ extension AppModelCampaignPromptTests {
         await gameService.enqueueChooseDeckResult(.success(()))
         await deckService.resumeOldestFetch(with: .success(deckList))
         #expect(await secondSubmission.value == .submitted)
+        #expect(model.campaignDeckSubmissions[gameID]?.phase == .awaitingSnapshot)
+    }
+
+    @Test("ChooseUpgradeDeck successful PUT blocks a second same-prompt PUT")
+    func chooseUpgradeDeckSuccessBlocksSecondSamePromptPut() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        try installPrompt(
+            chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        await gameService.enqueueChooseDeckResult(.success(()))
+
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .submitted)
+        #expect(model.campaignDeckSubmissions[gameID]?.phase == .awaitingSnapshot)
+
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .failed("Deck update sent. Waiting for the game to update…"))
+        #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 1)
+    }
+
+    @Test("ChooseUpgradeDeck prompt change releases successful PUT fence")
+    func chooseUpgradeDeckPromptChangeReleasesSuccessfulPutFence() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true)
+        )
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        await gameService.enqueueChooseDeckResult(.success(()))
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .submitted)
+
+        let nextProjection = try chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true),
+            questionVersion: prompt.questionVersion + 1
+        )
+        model.liveGameStates[gameID] = .live(nextProjection)
+        model.reconcileBasicChoice(gameID: gameID, projection: nextProjection, isRESTSnapshot: false)
         #expect(model.campaignDeckSubmissions[gameID] == nil)
+        let nextPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        await gameService.enqueueChooseDeckResult(.success(()))
+
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: nextPrompt.identity
+        ) == .submitted)
+        #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 2)
+    }
+
+    @Test("ChooseUpgradeDeck reset releases successful PUT fence")
+    func chooseUpgradeDeckResetReleasesSuccessfulPutFence() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try chooseUpgradeDeckProjection(
+            ownerID: ownerID,
+            mode: campaignMode(canUpgradeDecks: true)
+        )
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let firstPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        await gameService.enqueueChooseDeckResult(.success(()))
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: firstPrompt.identity
+        ) == .submitted)
+        #expect(model.campaignDeckSubmissions[gameID]?.phase == .awaitingSnapshot)
+
+        model.resetLiveGameState()
+        #expect(model.campaignDeckSubmissions[gameID] == nil)
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let secondPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        await gameService.enqueueChooseDeckResult(.success(()))
+
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: secondPrompt.identity
+        ) == .submitted)
+        #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 2)
+    }
+
+    @Test("ChooseUpgradeDeck failed PUT releases for retry")
+    func chooseUpgradeDeckFailedPutReleasesForRetry() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        try installPrompt(
+            chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        await gameService.enqueueChooseDeckResult(.failure(GameLifecycleError.malformedPayload))
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .failed("The server could not update that deck. Try again."))
+        #expect(model.campaignDeckSubmissions[gameID] == nil)
+
+        await gameService.enqueueChooseDeckResult(.success(()))
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        ) == .submitted)
+        #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 2)
     }
 
     @Test("Campaign prompt client errors localize in German")

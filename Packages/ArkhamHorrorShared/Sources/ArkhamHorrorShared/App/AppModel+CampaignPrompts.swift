@@ -12,8 +12,15 @@ enum CampaignDeckUpgradeSubmissionResult: Sendable, Equatable {
     }
 }
 
+enum CampaignDeckSubmissionPhase: Sendable, Equatable {
+    case submitting
+    case awaitingSnapshot
+}
+
 struct CampaignDeckSubmissionAttempt: Sendable {
     let attemptID: UUID
+    let promptIdentity: BasicChoicePromptIdentity
+    let phase: CampaignDeckSubmissionPhase
     let task: Task<CampaignDeckUpgradeSubmissionResult, Never>?
 }
 
@@ -77,6 +84,8 @@ extension AppModel {
         }
         campaignDeckSubmissions[gameID] = CampaignDeckSubmissionAttempt(
             attemptID: attemptID,
+            promptIdentity: promptIdentity,
+            phase: .submitting,
             task: task
         )
         let result = await withTaskCancellationHandler {
@@ -84,7 +93,12 @@ extension AppModel {
         } onCancel: {
             task.cancel()
         }
-        finishCampaignDeckSubmission(gameID: gameID, attemptID: attemptID)
+        finishCampaignDeckSubmission(
+            gameID: gameID,
+            attemptID: attemptID,
+            promptIdentity: promptIdentity,
+            result: result
+        )
         return result
     }
 
@@ -130,6 +144,8 @@ extension AppModel {
         }
         campaignDeckSubmissions[gameID] = CampaignDeckSubmissionAttempt(
             attemptID: attemptID,
+            promptIdentity: promptIdentity,
+            phase: .submitting,
             task: task
         )
         let result = await withTaskCancellationHandler {
@@ -137,7 +153,12 @@ extension AppModel {
         } onCancel: {
             task.cancel()
         }
-        finishCampaignDeckSubmission(gameID: gameID, attemptID: attemptID)
+        finishCampaignDeckSubmission(
+            gameID: gameID,
+            attemptID: attemptID,
+            promptIdentity: promptIdentity,
+            result: result
+        )
         return result
     }
 
@@ -251,23 +272,54 @@ extension AppModel {
         ) {
             return .failed(failure)
         }
-        guard campaignDeckSubmissions[gameID] == nil else {
-            return .failed(.failed(campaignPromptLocalized(
-                "campaign.error.deckSubmissionInFlight",
-                "A deck update is already being submitted."
-            )))
+        if let existing = campaignDeckSubmissions[gameID] {
+            guard existing.promptIdentity.promptKey == promptIdentity.promptKey else {
+                existing.task?.cancel()
+                campaignDeckSubmissions[gameID] = nil
+                return beginCampaignDeckSubmission(
+                    promptIdentity: promptIdentity,
+                    investigatorId: investigatorId,
+                    in: gameID
+                )
+            }
+            switch existing.phase {
+            case .submitting:
+                return .failed(.failed(campaignPromptLocalized(
+                    "campaign.error.deckSubmissionInFlight",
+                    "A deck update is already being submitted."
+                )))
+            case .awaitingSnapshot:
+                return .failed(.failed(campaignDeckSubmissionAwaitingSnapshotMessage()))
+            }
         }
         let attemptID = UUID()
         campaignDeckSubmissions[gameID] = CampaignDeckSubmissionAttempt(
             attemptID: attemptID,
+            promptIdentity: promptIdentity,
+            phase: .submitting,
             task: nil
         )
         return .started(attemptID)
     }
 
-    private func finishCampaignDeckSubmission(gameID: GameID, attemptID: UUID) {
+    private func finishCampaignDeckSubmission(
+        gameID: GameID,
+        attemptID: UUID,
+        promptIdentity: BasicChoicePromptIdentity,
+        result: CampaignDeckUpgradeSubmissionResult
+    ) {
         guard campaignDeckSubmissions[gameID]?.attemptID == attemptID else { return }
-        campaignDeckSubmissions[gameID] = nil
+        switch result {
+        case .submitted where isCampaignDeckPromptCurrent(promptIdentity):
+            campaignDeckSubmissions[gameID] = CampaignDeckSubmissionAttempt(
+                attemptID: attemptID,
+                promptIdentity: promptIdentity,
+                phase: .awaitingSnapshot,
+                task: nil
+            )
+        case .submitted, .failed:
+            campaignDeckSubmissions[gameID] = nil
+        }
     }
 
     private func validateCampaignDeckPrompt(
@@ -348,6 +400,54 @@ extension AppModel {
             ))
         }
     }
+
+    func isCampaignDeckSubmissionAwaitingSnapshot(
+        for promptIdentity: BasicChoicePromptIdentity
+    ) -> Bool {
+        guard let submission = campaignDeckSubmissions[promptIdentity.gameID],
+              submission.phase == .awaitingSnapshot,
+              submission.promptIdentity.promptKey == promptIdentity.promptKey,
+              isCampaignDeckPromptCurrent(promptIdentity)
+        else { return false }
+        return true
+    }
+
+    func reconcileCampaignDeckSubmission(gameID: GameID, projection: BoardProjection) {
+        guard let submission = campaignDeckSubmissions[gameID] else { return }
+        guard campaignDeckPromptKey(
+            in: projection,
+            gameID: gameID,
+            ownerID: submission.promptIdentity.ownerID
+        ) == submission.promptIdentity.promptKey
+        else {
+            submission.task?.cancel()
+            campaignDeckSubmissions[gameID] = nil
+            return
+        }
+    }
+
+    private func isCampaignDeckPromptCurrent(
+        _ promptIdentity: BasicChoicePromptIdentity
+    ) -> Bool {
+        guard let prompt = basicChoicePresentation(for: promptIdentity.gameID) else { return false }
+        return prompt.identity.promptKey == promptIdentity.promptKey
+            && prompt.isChooseUpgradeDeckPrompt
+    }
+
+    private func campaignDeckPromptKey(
+        in projection: BoardProjection,
+        gameID: GameID,
+        ownerID: PlayerID
+    ) -> BasicChoicePromptKey? {
+        guard let payload = projection.questions[ownerID] else { return nil }
+        return BasicChoicePromptKey(
+            gameID: gameID,
+            ownerID: ownerID,
+            questionVersion: projection.counters.scenarioSteps,
+            rawQuestion: payload.rawValue,
+            questionPresentation: payload.presentation?.presentation
+        )
+    }
 }
 
 enum CampaignPromptLocalization {
@@ -385,6 +485,14 @@ private func campaignDeckSubmissionCancelledFailure() -> CampaignDeckUpgradeSubm
         "campaign.error.deckPromptChanged",
         "This deck prompt changed. Review the game and try again."
     ))
+}
+
+@MainActor
+func campaignDeckSubmissionAwaitingSnapshotMessage() -> String {
+    campaignPromptLocalized(
+        "campaign.status.deckSubmissionAwaitingSnapshot",
+        "Deck update sent. Waiting for the game to update…"
+    )
 }
 
 @MainActor

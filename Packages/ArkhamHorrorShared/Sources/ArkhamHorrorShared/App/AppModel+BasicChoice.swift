@@ -350,6 +350,7 @@ extension AppModel {
     func reconcileBasicChoice(
         gameID: GameID, projection: BoardProjection, isRESTSnapshot: Bool
     ) {
+        reconcileCampaignDeckSubmission(gameID: gameID, projection: projection)
         guard let action = basicChoiceActions[gameID] else { return }
         guard case let .participant(playerID) = liveGameParticipantIdentities[gameID],
               playerID == action.identity.ownerID

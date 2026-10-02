@@ -139,6 +139,7 @@
 "campaign.between.continue" = "Fortsetzen";
 "campaign.between.upgradeDeck" = "Deck verbessern";
 "campaign.between.retry" = "Erneut versuchen";
+"campaign.status.deckSubmissionAwaitingSnapshot" = "Deck-Aktualisierung gesendet. Es wird auf die Aktualisierung des Spiels gewartet…";
 "campaign.error.deckPromptChanged" = "Diese Deck-Aufforderung hat sich geändert. Prüfe das Spiel und versuche es erneut.";
 "campaign.error.deckSubmissionInFlight" = "Eine Deck-Aktualisierung wird bereits gesendet.";
 "campaign.error.fetchDeckFailed" = "Der Server konnte dieses Deck nicht abrufen. Versuche es erneut.";

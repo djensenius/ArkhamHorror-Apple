@@ -139,6 +139,7 @@
 "campaign.between.continue" = "Continue";
 "campaign.between.upgradeDeck" = "Upgrade deck";
 "campaign.between.retry" = "Retry";
+"campaign.status.deckSubmissionAwaitingSnapshot" = "Deck update sent. Waiting for the game to update…";
 "campaign.error.deckPromptChanged" = "This deck prompt changed. Review the game and try again.";
 "campaign.error.deckSubmissionInFlight" = "A deck update is already being submitted.";
 "campaign.error.fetchDeckFailed" = "The server could not fetch that deck. Try again.";

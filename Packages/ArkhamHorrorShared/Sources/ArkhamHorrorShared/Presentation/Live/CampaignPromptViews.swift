@@ -20,6 +20,13 @@ struct BetweenScenariosView: View {
         prompt.actionPhase == .sending
     }
 
+    private var campaignDeckStatusMessage: String? {
+        if model.isCampaignDeckSubmissionAwaitingSnapshot(for: prompt.identity) {
+            return campaignDeckSubmissionAwaitingSnapshotMessage()
+        }
+        return prompt.statusMessage
+    }
+
     private var localInvestigator: BoardInvestigatorNode? {
         projection.investigators.first { $0.playerID == prompt.ownerID }
     }
@@ -55,7 +62,7 @@ struct BetweenScenariosView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                    if let message = prompt.statusMessage {
+                    if let message = campaignDeckStatusMessage {
                         Text(message)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -187,6 +194,10 @@ struct CampaignUpgradeDeckSheet: View {
     @State private var isSkipConfirmationPresented = false
     @State private var submissionTask: Task<Void, Never>?
 
+    private var isAwaitingSnapshot: Bool {
+        model.isCampaignDeckSubmissionAwaitingSnapshot(for: promptIdentity)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -231,7 +242,7 @@ struct CampaignUpgradeDeckSheet: View {
                         }
                     }
                     .disabled(
-                        isSubmitting || deckURL.trimmingCharacters(
+                        isSubmitting || isAwaitingSnapshot || deckURL.trimmingCharacters(
                             in: .whitespacesAndNewlines
                         ).isEmpty
                     )
@@ -254,10 +265,21 @@ struct CampaignUpgradeDeckSheet: View {
                             }
                         }
                     }
-                    .disabled(isSubmitting)
+                    .disabled(isSubmitting || isAwaitingSnapshot)
                     .accessibilityIdentifier(
                         AccountAccessibilityID.campaignUpgradeDeckSkipButton
                     )
+                }
+
+                if isAwaitingSnapshot {
+                    Section {
+                        Text(campaignDeckSubmissionAwaitingSnapshotMessage())
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier(
+                                AccountAccessibilityID.campaignPromptFailureText
+                            )
+                    }
                 }
 
                 if let failure {
@@ -314,6 +336,10 @@ struct CampaignUpgradeDeckSheet: View {
     }
 
     private func submitUpgrade() {
+        guard !isAwaitingSnapshot else {
+            failure = campaignDeckSubmissionAwaitingSnapshotMessage()
+            return
+        }
         submissionTask?.cancel()
         submissionTask = Task { @MainActor in
             isSubmitting = true
@@ -330,6 +356,10 @@ struct CampaignUpgradeDeckSheet: View {
     }
 
     private func continueWithoutUpgrading() {
+        guard !isAwaitingSnapshot else {
+            failure = campaignDeckSubmissionAwaitingSnapshotMessage()
+            return
+        }
         submissionTask?.cancel()
         submissionTask = Task { @MainActor in
             isSubmitting = true
