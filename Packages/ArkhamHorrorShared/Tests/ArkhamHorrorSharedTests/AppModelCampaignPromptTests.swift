@@ -124,6 +124,29 @@ struct AppModelCampaignPromptTests {
         return try ContractJSON.decode(GameMode.self, from: Data(contentsOf: url))
     }
 
+    private func campaignMode(
+        canUpgradeDecks: Bool,
+        nextStep: JSONValue = .object(["tag": .string("PrologueStep")]),
+        completedSteps: [JSONValue] = []
+    ) -> GameMode {
+        .campaignOnly(.object([
+            "completedSteps": .array(completedSteps),
+            "step": .object([
+                "tag": .string("ContinueCampaignStep"),
+                "contents": .object([
+                    "canChooseSideStory": .bool(false),
+                    "canUpgradeDecks": .bool(canUpgradeDecks),
+                    "chooseSideStory": .bool(false),
+                    "nextStep": nextStep,
+                ]),
+            ]),
+        ]))
+    }
+
+    private func campaignAnswerBytes(step: JSONValue) throws -> Data {
+        try ContractJSON.encode(CampaignStepAnswer(contents: step))
+    }
+
     private func deckListFixture() throws -> DeckList {
         let url = try #require(Bundle.module.url(
             forResource: "decks",
@@ -210,6 +233,7 @@ struct AppModelCampaignPromptTests {
             mode: campaignOnlyMode()
         )
         let continuation = try #require(projection.campaignContinuation)
+        #expect(projection.investigators.first?.availableExperience == 3)
         await connection.enqueueSendResult(.success(()))
         installPrompt(
             projection,
@@ -244,9 +268,13 @@ struct AppModelCampaignPromptTests {
         ))
         let projection = try continuationProjection(
             ownerID: ownerID,
-            mode: campaignOnlyMode()
+            mode: campaignMode(
+                canUpgradeDecks: true,
+                completedSteps: [.object(["tag": .string("ScenarioStep")])]
+            )
         )
         let continuation = try #require(projection.campaignContinuation)
+        #expect(continuation.canUpgrade)
         await connection.enqueueSendResult(.success(()))
         installPrompt(
             projection,
@@ -277,6 +305,148 @@ struct AppModelCampaignPromptTests {
                 ]),
             ]),
         ]))
+    }
+
+    @Test("Upgrade deck wrapper is fenced off when the server flag is false")
+    func upgradeDeckWrapperRequiresServerFlag() async throws {
+        let service = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: service)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try continuationProjection(
+            ownerID: ownerID,
+            mode: campaignOnlyMode()
+        )
+        let continuation = try #require(projection.campaignContinuation)
+        #expect(!continuation.canUpgradeDecks)
+        #expect(!continuation.canUpgrade)
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        #expect(await model.submitContinueCampaignAnswer(
+            prompt.identity,
+            step: continuation.upgradeStep
+        ) == .unsupportedChoice)
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("ContinueCampaign rejects an unsupported made-up step")
+    func continueCampaignRejectsUnsupportedStep() async throws {
+        let service = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: service)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try continuationProjection(
+            ownerID: ownerID,
+            mode: campaignOnlyMode()
+        )
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        #expect(await model.submitContinueCampaignAnswer(
+            prompt.identity,
+            step: .object(["tag": .string("MadeUpStep")])
+        ) == .unsupportedChoice)
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("ContinueCampaign transport failure retries the exact campaign answer")
+    func continueCampaignRetryResendsExactCampaignAnswer() async throws {
+        let service = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: service)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try continuationProjection(
+            ownerID: ownerID,
+            mode: campaignOnlyMode()
+        )
+        let continuation = try #require(projection.campaignContinuation)
+        let expected = try campaignAnswerBytes(step: continuation.nextStep)
+        await connection.enqueueSendResult(.failure(GameSocketTransportError()))
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+
+        #expect(await model.submitContinueCampaignAnswer(
+            prompt.identity,
+            step: continuation.nextStep
+        ) == .retryableFailure)
+        #expect(await connection.sentData == [expected])
+        let retryPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(retryPrompt.canRetry)
+        #expect(await model.submitContinueCampaignAnswer(
+            retryPrompt.identity,
+            step: continuation.nextStep
+        ) == .alreadyPending)
+        #expect(await connection.sentData == [expected])
+
+        await connection.enqueueSendResult(.success(()))
+        #expect(await model.retryBasicChoice(retryPrompt.identity) == .sentAwaitingSnapshot)
+        #expect(await connection.sentData == [expected, expected])
+    }
+
+    @Test("ContinueCampaign presentation exposes server rejection feedback")
+    func continueCampaignPresentationSurfacesServerFeedback() async throws {
+        let service = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: service)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try continuationProjection(
+            ownerID: ownerID,
+            mode: campaignOnlyMode()
+        )
+        let continuation = try #require(projection.campaignContinuation)
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let connectionID = try #require(model.liveGameConnections[gameID]?.connectionID)
+        model.basicChoiceActions[gameID] = BasicChoiceActionRecord(
+            identity: prompt.identity,
+            submission: .continueCampaign(continuation.nextStep),
+            attemptID: UUID(),
+            connectionID: connectionID,
+            phase: .retryable(.serverRejected)
+        )
+        model.basicChoiceServerFeedback[gameID] = "The server rejected that campaign step."
+
+        let rejected = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(rejected.canRetry)
+        #expect(rejected.statusMessage == "The server rejected this choice. Try again.")
+        #expect(rejected.serverFeedback == "The server rejected that campaign step.")
     }
 
     @Test("Upgrade deck URL fetches then PUTs the game deck body")

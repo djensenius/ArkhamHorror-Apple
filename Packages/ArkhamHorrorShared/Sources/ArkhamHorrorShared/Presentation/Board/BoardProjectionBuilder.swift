@@ -89,12 +89,15 @@ enum BoardProjectionBuilder {
                 )
             )
         case let .campaignAndScenario(campaign, scenario):
-            let scenarioContinuation = makeCampaignContinuation(
-                fromScenarioStep: scenario.campaignStep
-            )
-            let campaignContinuation = scenarioContinuation ?? makeCampaignContinuation(
-                fromCampaign: campaign
-            )
+            let scenarioStep = scenario.campaignStep
+            let campaignContinuation = if scenarioStep.tag == "ContinueCampaignStep" {
+                makeCampaignContinuation(fromScenarioStep: scenarioStep)
+            } else {
+                makeCampaignContinuation(
+                    fromCampaign: campaign,
+                    scenarioContinuationStep: scenarioStep.scenarioContinuationStep
+                )
+            }
             return ScenarioBuildContext(
                 hasCampaignContext: true,
                 scenario: makeScenarioSummary(scenario),
@@ -104,12 +107,18 @@ enum BoardProjectionBuilder {
     }
 
     private static func makeCampaignContinuation(
-        fromCampaign campaign: JSONValue
+        fromCampaign campaign: JSONValue,
+        scenarioContinuationStep: JSONValue? = nil
     ) -> CampaignContinuationContext? {
         guard case let .object(object) = campaign,
               let step = object["step"]
         else { return nil }
-        return makeCampaignContinuation(fromCampaignStep: step, source: .campaign)
+        return makeCampaignContinuation(
+            fromCampaignStep: step,
+            source: .campaign,
+            nextStepOverride: scenarioContinuationStep,
+            campaign: campaign
+        )
     }
 
     private static func makeCampaignContinuation(
@@ -120,15 +129,25 @@ enum BoardProjectionBuilder {
 
     private static func makeCampaignContinuation(
         fromCampaignStep step: JSONValue,
-        source: CampaignContinuationContext.Source
+        source: CampaignContinuationContext.Source,
+        nextStepOverride: JSONValue? = nil,
+        campaign: JSONValue? = nil
     ) -> CampaignContinuationContext? {
         if let continuation = continuationContents(in: step) {
+            let nextStep = nextStepOverride ?? continuation.nextStep
             return CampaignContinuationContext(
                 source: source,
-                nextStep: continuation.nextStep,
+                nextStep: nextStep,
                 canUpgradeDecks: continuation.canUpgradeDecks,
                 chooseSideStory: continuation.chooseSideStory,
-                canChooseSideStory: continuation.canChooseSideStory
+                canChooseSideStory: continuation.canChooseSideStory,
+                canUpgrade: campaign.map {
+                    canUpgrade(
+                        campaign: $0,
+                        nextStep: nextStep,
+                        canUpgradeDecks: continuation.canUpgradeDecks
+                    )
+                } ?? false
             )
         }
         if source == .scenario, step != .null {
@@ -137,7 +156,8 @@ enum BoardProjectionBuilder {
                 nextStep: step,
                 canUpgradeDecks: false,
                 chooseSideStory: false,
-                canChooseSideStory: false
+                canChooseSideStory: false,
+                canUpgrade: false
             )
         }
         return nil
@@ -166,6 +186,19 @@ enum BoardProjectionBuilder {
               contents.count > 1
         else { return nil }
         return continuationContents(in: contents[1])
+    }
+
+    private static func canUpgrade(
+        campaign: JSONValue,
+        nextStep: JSONValue,
+        canUpgradeDecks: Bool
+    ) -> Bool {
+        guard canUpgradeDecks,
+              nextStep.isScenarioContinuation,
+              case let .object(object) = campaign,
+              case let .array(completedSteps)? = object["completedSteps"]
+        else { return false }
+        return completedSteps.contains { $0.isScenarioContinuation }
     }
 
     private static func makeScenarioSummary(_ scenario: Scenario) -> BoardScenarioSummary {
@@ -236,5 +269,30 @@ private extension JSONValue {
     var boolValue: Bool? {
         guard case let .bool(value) = self else { return nil }
         return value
+    }
+
+    var tag: String? {
+        guard case let .object(object) = self,
+              case let .string(tag)? = object["tag"]
+        else { return nil }
+        return tag
+    }
+
+    var scenarioContinuationStep: JSONValue? {
+        switch tag {
+        case "ScenarioStep", "ScenarioStepWithOptions":
+            self
+        default:
+            nil
+        }
+    }
+
+    var isScenarioContinuation: Bool {
+        switch tag {
+        case "ScenarioStep", "ScenarioStepWithOptions", "StandaloneScenarioStep":
+            true
+        default:
+            false
+        }
     }
 }

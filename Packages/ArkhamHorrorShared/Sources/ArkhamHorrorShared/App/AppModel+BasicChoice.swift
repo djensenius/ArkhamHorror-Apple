@@ -584,7 +584,8 @@ private extension BasicChoicePromptPresentation {
               ),
               let continuation = projection.campaignContinuation
         else { return false }
-        return step == continuation.nextStep || step == continuation.upgradeStep
+        return step == continuation.nextStep
+            || (continuation.canUpgradeDecks && step == continuation.upgradeStep)
     }
 
     struct AmountChoiceBounds: Sendable, Equatable {

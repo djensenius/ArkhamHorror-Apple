@@ -106,7 +106,7 @@ struct BetweenScenariosView: View {
                                 .accessibilityIdentifier(
                                     AccountAccessibilityID.campaignUpgradeDeckButton
                                 )
-                            } else if continuation?.canUpgradeDecks == true, let continuation {
+                            } else if continuation?.canUpgrade == true, let continuation {
                                 Button {
                                     sendContinue(step: continuation.upgradeStep)
                                 } label: {
