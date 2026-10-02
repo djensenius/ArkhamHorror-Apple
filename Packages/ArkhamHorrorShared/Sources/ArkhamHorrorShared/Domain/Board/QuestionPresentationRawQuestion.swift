@@ -339,10 +339,12 @@ enum QuestionPresentationRawQuestionDeriver {
     private static func readChoices(
         _ object: [String: JSONValue]
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == ["tag", "flavorText", "readChoices", "readCards"],
-              case let .object(readChoices)? = object["readChoices"],
-              Set(readChoices.keys) == ["tag", "contents"],
-              case let .string(tag)? = readChoices["tag"]
+        guard Set(["tag", "flavorText", "readChoices", "readCards"])
+            .isSubset(of: Set(object.keys)),
+            object["tag"] == .string("Read"),
+            case let .object(readChoices)? = object["readChoices"],
+            Set(readChoices.keys) == ["tag", "contents"],
+            case let .string(tag)? = readChoices["tag"]
         else {
             throw invalid("Malformed Read question")
         }

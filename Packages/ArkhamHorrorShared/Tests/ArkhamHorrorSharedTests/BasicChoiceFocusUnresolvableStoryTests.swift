@@ -2,22 +2,26 @@
 import Foundation
 import Testing
 
-/// Proves the real, unresolvable `question-read.json` story-continue choice (issue
-/// djensenius/ArkhamHorror-Apple#35, independent-review blocker 2) is never
-/// focus-actionable or directly activatable through ``BoardCommandController`` -- it
-/// remains visible/disabled rather than silently behaving as though it were an actionable
-/// Continue. Split out of `BasicChoiceFocusTests.swift` to keep that file under the
-/// repository's `type_body_length` lint limit; shares that file's `fixture` helper via
+/// Proves the real `question-read.json` story-continue choice remains focus-actionable and
+/// directly activatable after story text falls back to server-provided keys. Split out of
+/// `BasicChoiceFocusTests.swift` to keep that file under the repository's
+/// `type_body_length` lint limit; shares that file's `fixture` helper via
 /// `BasicChoiceFocusTests`.
 extension BasicChoiceFocusTests {
     @Test(
-        "The real, unresolvable question-read.json story is never focus-actionable or activatable"
+        "The real question-read.json story-key fallback is focus-actionable and activatable"
     )
-    func unresolvableStoryPromptNeverFocusesOrActivates() throws {
+    func fallbackStoryPromptFocusesAndActivates() throws {
         let payload = try ContractJSON.decode(
             BasicChoiceQuestionPayload.self, from: fixture("question-read")
         )
-        let unresolvablePrompt = BasicChoicePromptPresentation(
+        let story = try #require(payload.supportedQuestion?.story)
+        let resolution = StoryNarrativeLocalization.resolve(
+            story.flavorText,
+            resolver: nil,
+            catalogUnavailability: .catalog(.notAdvertised)
+        )
+        let fallbackPrompt = BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
                 gameID: BoardTestFixtures.gameID(),
                 ownerID: BoardTestFixtures.playerID(),
@@ -27,6 +31,7 @@ extension BasicChoiceFocusTests {
                 connectionID: nil
             ),
             question: payload.state,
+            storyResolution: resolution,
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
@@ -34,18 +39,15 @@ extension BasicChoiceFocusTests {
         )
         var submitted: [Int] = []
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
-        let controller = try BoardCommandController(
+        let controller = BoardCommandController(
             projection: projection,
-            prompt: unresolvablePrompt,
+            prompt: fallbackPrompt,
             onChoice: { submitted.append($0) }
         )
 
-        // No candidate is actionable, so jumping to the prompt finds nothing to focus.
-        #expect(!controller.handle(.command(.jumpToActivePrompt)))
-        #expect(controller.coordinator.currentFocus != BoardFocusID.promptChoice(0))
-        // Direct activation of the disabled choice is likewise rejected -- it remains
-        // visible/disabled, never silently treated as an actionable Continue.
-        #expect(!controller.activatePromptChoice(0))
-        #expect(submitted.isEmpty)
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
+        #expect(controller.activatePromptChoice(0))
+        #expect(submitted == [0])
     }
 }

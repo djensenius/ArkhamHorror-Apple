@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import SwiftUI
 
 enum StoryNodeFlowItem: Equatable {
@@ -44,10 +45,11 @@ enum StoryNodePresentation {
 }
 
 /// Renders a single ``ResolvedStoryEntry``: every entry reaching this view already went
-/// through ``StoryNarrativeLocalization/resolvedStory(for:vocabulary:)``, so `.text` is
-/// always finished, human-readable narrative -- never a raw i18n key.
+/// through ``StoryNarrativeLocalization`` so `.text` is either resolved catalog prose,
+/// literal server text, or a readable server-key fallback.
 struct ResolvedStoryEntryView: View {
     let entry: ResolvedStoryEntry
+    var cardCatalog: CardCatalogSnapshot?
 
     var body: some View {
         switch entry {
@@ -59,29 +61,187 @@ struct ResolvedStoryEntryView: View {
             StoryNodeChildrenView(children: nodes)
                 .font(StoryHeadingPresentation.font(for: level.rawValue))
                 .addingStoryHeadingTrait()
+        case let .modified(modifiers, entry):
+            ModifiedResolvedStoryEntryView(
+                modifiers: modifiers, entry: entry, cardCatalog: cardCatalog
+            )
+        case let .composite(entries):
+            ResolvedStoryEntryGroupView(entries: entries, cardCatalog: cardCatalog)
+        case let .columns(entries):
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                    ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         case let .list(items):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    ResolvedStoryListItemView(item: item)
+                    ResolvedStoryListItemView(item: item, cardCatalog: cardCatalog)
                 }
             }
+        case let .cardReference(cardCode, _):
+            StoryReferenceText(
+                title: cardCatalog?.displayName(for: cardCode) ?? "Card \(cardCode.rawValue)"
+            )
+        case let .tarotReference(arcana):
+            StoryReferenceText(title: "Tarot \(arcana)")
+        case let .chaosTokenReference(face):
+            StoryReferenceText(title: "Chaos token \(face.rawValue)")
+        case let .chaosTokenMorph(from, target):
+            StoryReferenceText(title: "Chaos token \(from.rawValue) → \(target.rawValue)")
+        case .divider:
+            Divider()
+        }
+    }
+}
+
+private struct ResolvedStoryEntryGroupView: View {
+    let entries: [ResolvedStoryEntry]
+    var cardCatalog: CardCatalogSnapshot?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
+            }
+        }
+    }
+}
+
+private struct ModifiedResolvedStoryEntryView: View {
+    let modifiers: [FlavorTextModifier]
+    let entry: ResolvedStoryEntry
+    var cardCatalog: CardCatalogSnapshot?
+
+    var body: some View {
+        ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
+            .modifier(StoryFlavorTextModifier(modifiers: modifiers))
+    }
+}
+
+private struct StoryReferenceText: View {
+    let title: String
+    var detail: String = ""
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "text.book.closed")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .font(.caption)
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct StoryFlavorTextModifier: ViewModifier {
+    let modifiers: [FlavorTextModifier]
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(foregroundStyle)
+            .font(font)
+            .multilineTextAlignment(alignment)
+            .frame(maxWidth: .infinity, alignment: frameAlignment)
+            .padding(padding)
+            .background(background)
+            .overlay(border)
+    }
+
+    private var foregroundStyle: Color {
+        if modifiers.contains(.redEntry) || modifiers.contains(.invalidEntry) {
+            return .red
+        }
+        if modifiers.contains(.greenEntry) || modifiers.contains(.validEntry) {
+            return .green
+        }
+        if modifiers.contains(.blueEntry) {
+            return .blue
+        }
+        if modifiers.contains(.hauntedEntry) {
+            return .purple
+        }
+        return .primary
+    }
+
+    private var font: Font? {
+        if modifiers.contains(.plainText) {
+            return .body
+        }
+        if modifiers.contains(.checkpointEntry) || modifiers.contains(.resolutionEntry) {
+            return .headline
+        }
+        return nil
+    }
+
+    private var alignment: TextAlignment {
+        if modifiers.contains(.rightAligned) {
+            return .trailing
+        }
+        if modifiers.contains(.centeredEntry) {
+            return .center
+        }
+        return .leading
+    }
+
+    private var frameAlignment: Alignment {
+        if modifiers.contains(.rightAligned) {
+            return .trailing
+        }
+        if modifiers.contains(.centeredEntry) {
+            return .center
+        }
+        return .leading
+    }
+
+    private var padding: CGFloat {
+        modifiers.contains(.borderedEntry) || modifiers.contains(.codexEntry)
+            || modifiers.contains(.interludeEntry) ? 8 : 0
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        if modifiers.contains(.codexEntry) || modifiers.contains(.interludeEntry) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(ArkhamTheme.accent.opacity(0.12))
+        } else if modifiers.contains(.tokenRevealEntry) || modifiers.contains(.byDifficultyEntry) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        }
+    }
+
+    @ViewBuilder
+    private var border: some View {
+        if modifiers.contains(.borderedEntry) || modifiers.contains(.codexEntry) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(ArkhamTheme.accent.opacity(0.7), lineWidth: 1)
         }
     }
 }
 
 private struct ResolvedStoryListItemView: View {
     let item: ResolvedStoryListItem
+    var cardCatalog: CardCatalogSnapshot?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 6) {
                 Text("•")
-                ResolvedStoryEntryView(entry: item.entry)
+                ResolvedStoryEntryView(entry: item.entry, cardCatalog: cardCatalog)
             }
             if !item.nested.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(item.nested.enumerated()), id: \.offset) { _, nested in
-                        ResolvedStoryListItemView(item: nested)
+                        ResolvedStoryListItemView(item: nested, cardCatalog: cardCatalog)
                     }
                 }
                 .padding(.leading, 16)

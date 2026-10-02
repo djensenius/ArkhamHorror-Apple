@@ -1116,8 +1116,22 @@ extension BasicChoicePromptPresentation {
             value
         case let .nodes(nodes), let .heading(_, nodes):
             nodes.map(\.plainText).joined()
+        case let .modified(_, entry):
+            semanticStoryEntrySummary(entry) ?? ""
+        case let .composite(entries), let .columns(entries):
+            entries.compactMap(semanticStoryEntrySummary).joined(separator: "; ")
         case let .list(items):
             items.compactMap { semanticStoryEntrySummary($0.entry) }.joined(separator: "; ")
+        case let .cardReference(cardCode, _):
+            cardCatalog?.displayName(for: cardCode) ?? "Card \(cardCode.rawValue)"
+        case let .tarotReference(arcana):
+            "Tarot \(arcana)"
+        case let .chaosTokenReference(face):
+            "Chaos token \(face.rawValue)"
+        case let .chaosTokenMorph(from, target):
+            "Chaos token \(from.rawValue) to \(target.rawValue)"
+        case .divider:
+            ""
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
