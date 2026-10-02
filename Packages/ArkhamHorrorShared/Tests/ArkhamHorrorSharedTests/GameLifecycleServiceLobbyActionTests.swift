@@ -75,6 +75,23 @@ struct GameLifecycleServiceLobbyActionTests {
         #expect(decoded == choice)
     }
 
+    @Test("chooseDeck surfaces backend deck-update errors verbatim")
+    func chooseDeckSurfacesBackendOperationError() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/decks")
+        let error = DeckOperationError(errorMsg: "server says the deck is invalid")
+        let transport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(error), response: httpResponse(400, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+        let choice = try ChooseDeckRequest(
+            investigatorId: InvestigatorCode("01001"), deckUrl: nil, deckList: nil
+        )
+        await #expect(throws: GameLifecycleError.operationFailed(error)) {
+            try await service.chooseDeck(choice, in: gameID, on: profile, token: token)
+        }
+        #expect(GameLifecycleError.operationFailed(error).message == error.errorMsg)
+    }
+
     @Test("chooseDeck rejects an unexpected non-empty 2xx body as drift")
     func chooseDeckRejectsNonEmptyBody() async throws {
         let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/decks")

@@ -1,9 +1,11 @@
 /// Errors produced by ``GameLifecycleService`` for all observable failures.
 ///
-/// Mirrors ``AuthenticationError``'s shape and non-disclosure guarantees: no case
-/// embeds a response body, request header, or token value, and where a diagnostic
+/// Mirrors ``AuthenticationError``'s shape and non-disclosure guarantees for generic
+/// failures: no case embeds a request header or token value, and where a diagnostic
 /// string is carried it is derived only from a transport-level error (never the
-/// response body) and is for logging only -- ``Equatable`` ignores it.
+/// response body) and is for logging only -- ``Equatable`` ignores it. Endpoint-specific
+/// deck update rejections deliberately preserve the backend's user-facing `errorMsg` so
+/// campaign deck-upgrade validation remains server-owned and visible.
 enum GameLifecycleError: Error, Sendable {
     /// The response was not an HTTP response (unexpected protocol or test substitution).
     case nonHTTPResponse
@@ -27,6 +29,8 @@ enum GameLifecycleError: Error, Sendable {
     case unexpectedStatus(Int)
     /// A 2xx response body could not be decoded into the expected typed payload.
     case malformedPayload
+    /// The deck update endpoint returned a user-facing backend rejection.
+    case operationFailed(DeckOperationError)
     /// The request body could not be JSON-encoded through ``ContractJSON``.
     case requestEncodingFailed
     /// The current session token could not be securely accessed (a ``TokenStore``
@@ -57,6 +61,8 @@ extension GameLifecycleError: Equatable {
             true
         case let (.unexpectedStatus(lCode), .unexpectedStatus(rCode)):
             lCode == rCode
+        case let (.operationFailed(lError), .operationFailed(rError)):
+            lError == rError
         case (.transportFailure, .transportFailure):
             // Diagnostic strings are informational only; equality ignores them.
             true

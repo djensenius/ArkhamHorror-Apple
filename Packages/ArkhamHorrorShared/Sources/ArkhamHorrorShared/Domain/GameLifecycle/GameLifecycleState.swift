@@ -90,6 +90,8 @@ extension GameLifecycleError {
             "This game is no longer available."
         case .unexpectedStatus, .malformedPayload:
             "This server responded unexpectedly. Try again."
+        case let .operationFailed(error):
+            error.errorMsg
         case .requestEncodingFailed, .invalidPathSegment:
             "This request couldn't be made. Try again."
         case .tokenUnavailable:

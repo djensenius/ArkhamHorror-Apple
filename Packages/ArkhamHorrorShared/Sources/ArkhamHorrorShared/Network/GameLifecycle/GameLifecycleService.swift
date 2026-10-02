@@ -147,7 +147,7 @@ struct GameLifecycleService: Sendable {
         let url = try gameURL(id, suffix: "/decks", on: profile)
         var urlRequest = makeRequest(url: url, method: "PUT", token: token)
         try attachJSONBody(request, to: &urlRequest)
-        try await performNoContent(urlRequest)
+        try await performNoContent(urlRequest, badRequest: .operation)
     }
 
     // MARK: - URL construction
@@ -233,13 +233,21 @@ struct GameLifecycleService: Sendable {
 
     // MARK: - Request execution
 
+    private enum BadRequestDecoder: Equatable {
+        case generic
+        case operation
+    }
+
     /// Executes `request`, mapping every failure mode to a typed ``GameLifecycleError``
     /// while preserving cancellation, and returns the raw 2xx response body
     /// undecoded. Shared by ``perform(_:decoding:)`` (which decodes the returned bytes
     /// through ``ContractJSON``) and ``performNoContent(_:)`` (which asserts the bytes
     /// are empty and never invokes any JSON decoder on them at all) so both share
     /// identical transport/cancellation/status-mapping behavior.
-    private func performRaw(_ request: URLRequest) async throws -> Data {
+    private func performRaw(
+        _ request: URLRequest,
+        badRequest: BadRequestDecoder = .generic
+    ) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -263,10 +271,27 @@ struct GameLifecycleService: Sendable {
         switch http.statusCode {
         case 200 ... 299:
             return data
+        case 400:
+            throw decodeBadRequest(data, as: badRequest)
         case 401:
             throw GameLifecycleError.sessionExpired
         default:
             throw GameLifecycleError.unexpectedStatus(http.statusCode)
+        }
+    }
+
+    private func decodeBadRequest(
+        _ data: Data,
+        as decoder: BadRequestDecoder
+    ) -> GameLifecycleError {
+        switch decoder {
+        case .generic:
+            return .unexpectedStatus(400)
+        case .operation:
+            if let error = try? ContractJSON.decode(DeckOperationError.self, from: data) {
+                return .operationFailed(error)
+            }
+            return .malformedPayload
         }
     }
 
@@ -295,8 +320,11 @@ struct GameLifecycleService: Sendable {
     /// ``GameLifecycleError/malformedPayload`` so contract drift (the server
     /// unexpectedly starting to send a body) remains visible instead of being
     /// silently ignored.
-    private func performNoContent(_ request: URLRequest) async throws {
-        let data = try await performRaw(request)
+    private func performNoContent(
+        _ request: URLRequest,
+        badRequest: BadRequestDecoder = .generic
+    ) async throws {
+        let data = try await performRaw(request, badRequest: badRequest)
         guard data.isEmpty else {
             try Task.checkCancellation()
             throw GameLifecycleError.malformedPayload
