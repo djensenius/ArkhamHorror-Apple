@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -211,9 +212,11 @@ private struct CoverageReplaySession {
         }
         let expected = try ContractJSON.encode(record.chosenAnswer)
         guard actual == expected else {
+            let expectedText = String(data: expected, encoding: .utf8) ?? "<non-UTF8>"
+            let actualText = String(data: actual, encoding: .utf8) ?? "<non-UTF8>"
             throw CoverageReplayPromptFailure(
                 record: recording,
-                reason: "sent answer bytes differ; expected \(String(decoding: expected, as: UTF8.self)) got \(String(decoding: actual, as: UTF8.self))"
+                reason: "sent answer bytes differ; expected \(expectedText) got \(actualText)"
             )
         }
     }
