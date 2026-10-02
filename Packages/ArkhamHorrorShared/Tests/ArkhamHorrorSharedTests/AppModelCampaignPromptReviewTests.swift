@@ -746,7 +746,9 @@ extension AppModelCampaignPromptTests {
             questionVersion: prompt.questionVersion + 1
         )
         model.liveGameStates[gameID] = .live(nextProjection)
-        model.reconcileBasicChoice(gameID: gameID, projection: nextProjection, isRESTSnapshot: false)
+        model.reconcileBasicChoice(
+            gameID: gameID, projection: nextProjection, isRESTSnapshot: false
+        )
         #expect(model.campaignDeckSubmissions[gameID] == nil)
         let nextPrompt = try #require(model.basicChoicePresentation(for: gameID))
         await gameService.enqueueChooseDeckResult(.success(()))

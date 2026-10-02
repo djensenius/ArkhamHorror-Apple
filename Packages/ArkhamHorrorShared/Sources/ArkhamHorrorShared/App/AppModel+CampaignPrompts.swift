@@ -36,10 +36,11 @@ private struct CampaignDeckSubmissionContext: Sendable {
 }
 
 extension AppModel {
-    /// Fetches an ArkhamDB/arkham.build deck list with the same guarded import path used
-    /// by the Decks screen, then submits it to the backend campaign deck endpoint. The
-    /// server remains the deck-validation authority; this path only normalizes the source
-    /// URL enough to ask the backend to fetch it.
+    // Fetches an ArkhamDB/arkham.build deck list with the same guarded import path used
+    // by the Decks screen, then submits it to the backend campaign deck endpoint. The
+    // server remains the deck-validation authority; this path only normalizes the source
+    // URL enough to ask the backend to fetch it.
+    // swiftlint:disable:next function_body_length
     func upgradeCampaignDeck(
         from rawURL: String,
         investigatorId rawInvestigatorId: String,
@@ -102,6 +103,7 @@ extension AppModel {
         return result
     }
 
+    // swiftlint:disable:next function_body_length
     func continueCampaignWithoutUpgrading(
         investigatorId rawInvestigatorId: String,
         in gameID: GameID,
