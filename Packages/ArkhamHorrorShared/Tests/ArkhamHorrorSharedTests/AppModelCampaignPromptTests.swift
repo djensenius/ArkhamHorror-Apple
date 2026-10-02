@@ -2,7 +2,7 @@
 import Foundation
 import Testing
 
-private actor CampaignPromptDeckService: DeckServicing {
+actor CampaignPromptDeckService: DeckServicing {
     private(set) var lastFetchRequest: FetchDeckRequest?
     private(set) var callOrder: [String] = []
     private var fetchQueue: [Result<DeckList, any Error>] = []
