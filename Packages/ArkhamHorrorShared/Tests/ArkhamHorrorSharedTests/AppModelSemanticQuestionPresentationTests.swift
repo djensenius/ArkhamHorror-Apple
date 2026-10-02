@@ -343,8 +343,8 @@ extension AppModelLiveGameTests {
         #expect(prompt.choices.allSatisfy { !prompt.isChoiceActionable($0, in: projection) })
     }
 
-    @Test("Gathering seal drift outside 34-42 falls back to generic rendering")
-    func gatheringSealDriftOutsideRecordedSequenceFallsBack() throws {
+    @Test("Gathering raw drift outside 34-42 binds through generic rendering")
+    func gatheringRawDriftOutsideRecordedSequenceBindsGenerically() throws {
         var presentationJSON = try fixtureJSON("question-presentation-gathering-act-objective")
         guard case var .object(presentationObject) = presentationJSON else {
             throw SemanticFixtureError.unexpectedShape
@@ -366,6 +366,8 @@ extension AppModelLiveGameTests {
             to: driftedRaw,
             expectedQuestionVersion: 68
         )
+        #expect(binding.isRenderableInCurrentClient)
+        #expect(binding.descriptor(forSourceIndex: 12)?.kind == .advanceAct)
     }
 
     @Test("Semantic localized labels are collected by authoritative source index")
@@ -653,7 +655,8 @@ extension AppModelLiveGameTests {
         let legacyActionability = legacy.choices.map {
             legacy.isChoiceActionable($0, in: projection)
         }
-        #expect(semanticActionability.allSatisfy(\.self))
+        let allSemanticChoicesActionable = semanticActionability.allSatisfy(\.self)
+        #expect(allSemanticChoicesActionable)
         #expect(!legacyActionability[12])
     }
 

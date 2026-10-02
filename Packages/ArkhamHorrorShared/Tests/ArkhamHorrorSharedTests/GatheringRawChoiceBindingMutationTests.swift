@@ -93,8 +93,8 @@ struct GatheringRawChoiceBindingMutationTests {
         ),
     ]
 
-    @Test("Every governed Q34 semantic choice loses overlay when full-array seal fails")
-    func governedSemanticChoiceMutationsLoseOverlay() throws {
+    @Test("Every governed Q34 semantic choice mutation still binds generically")
+    func governedSemanticChoiceMutationsBindGenerically() throws {
         let mutations: [(pointer: String, replacement: JSONValue)] = [
             ("/choices/0/actorId", .string("c01002")),
             (
@@ -119,6 +119,8 @@ struct GatheringRawChoiceBindingMutationTests {
                 to: raw,
                 expectedQuestionVersion: 34
             )
+            #expect(binding.isRenderableInCurrentClient)
+            #expect(binding.rawChoices.count == presentation.choiceCount)
         }
     }
 
@@ -164,8 +166,8 @@ struct GatheringRawChoiceBindingMutationTests {
         )
     }
 
-    @Test("Every governed raw choice mutation loses overlay during binding")
-    func governedRawChoiceMutationsLoseOverlay() throws {
+    @Test("Every governed raw choice mutation still binds generically")
+    func governedRawChoiceMutationsBindGenerically() throws {
         for mutation in Self.mutations {
             let raw = try fixtureValue(named: mutation.rawFixture)
             let mutated = try EnemyAttackFixtures.applying(
@@ -182,6 +184,8 @@ struct GatheringRawChoiceBindingMutationTests {
                 to: mutated,
                 expectedQuestionVersion: mutation.questionVersion
             )
+            #expect(binding.isRenderableInCurrentClient)
+            #expect(binding.rawChoices.count == presentation.choiceCount)
         }
     }
 
