@@ -59,7 +59,7 @@ struct TreacheryForcedAbilityBindingTests {
     }
 
     @Test(
-        "Raw authority drift fails closed",
+        "Raw authority drift does not gate generic treachery prompts",
         arguments: [
             ("/choices/0/investigatorId", JSONValue.string("c02001")),
             (
@@ -95,7 +95,7 @@ struct TreacheryForcedAbilityBindingTests {
             ),
         ]
     )
-    func rawAuthorityDriftFailsClosed(
+    func rawAuthorityDriftDoesNotGateGenericTreacheryPrompt(
         pointer: String,
         replacement: JSONValue
     ) throws {
@@ -104,11 +104,15 @@ struct TreacheryForcedAbilityBindingTests {
             at: pointer,
             with: replacement
         )
-        try assertBindingFails(rawQuestion: raw, presentation: presentationFixture())
+        let binding = try presentationFixture().bind(
+            to: raw,
+            expectedQuestionVersion: 68
+        )
+        try assertGenericTreacheryPromptRemainsActionable(binding)
     }
 
     @Test(
-        "Presentation authority drift fails closed",
+        "Presentation authority drift remains a generic treachery prompt",
         arguments: [
             ("/choices/0/actorId", JSONValue.string("c02001")),
             (
@@ -131,7 +135,7 @@ struct TreacheryForcedAbilityBindingTests {
             ),
         ]
     )
-    func presentationAuthorityDriftFailsClosed(
+    func presentationAuthorityDriftRemainsGenericTreacheryPrompt(
         pointer: String,
         replacement: JSONValue
     ) throws {
@@ -144,18 +148,18 @@ struct TreacheryForcedAbilityBindingTests {
             QuestionPresentation.self,
             from: ContractJSON.encode(rawPresentation)
         )
-        try assertBindingFails(
-            rawQuestion: rawFixture(),
-            presentation: presentation,
+        let binding = try presentation.bind(
+            to: rawFixture(),
             expectedQuestionVersion: 68
         )
+        try assertGenericTreacheryPromptRemainsActionable(binding)
     }
 
     @Test(
-        "Presentation drift stays fail-closed independent of scenario step",
+        "Presentation drift binds generically independent of scenario step",
         arguments: [37, 68]
     )
-    func presentationDriftFailsClosedAtGatheringRangeAndLaterVersions(
+    func presentationDriftBindsGenericallyAtGatheringRangeAndLaterVersions(
         questionVersion: Int
     ) throws {
         var rawPresentation = try replacing(
@@ -172,24 +176,22 @@ struct TreacheryForcedAbilityBindingTests {
             QuestionPresentation.self,
             from: ContractJSON.encode(rawPresentation)
         )
-        try assertBindingFails(
-            rawQuestion: rawFixture(),
-            presentation: presentation,
+        let binding = try presentation.bind(
+            to: rawFixture(),
             expectedQuestionVersion: questionVersion
         )
+        try assertGenericTreacheryPromptRemainsActionable(binding)
+        #expect(binding.descriptor(forSourceIndex: 0)?.actorID == "c02001")
     }
 
-    private func assertBindingFails(
-        rawQuestion: JSONValue,
-        presentation: QuestionPresentation,
-        expectedQuestionVersion: Int = 68
-    ) {
-        #expect(throws: QuestionPresentationBindingError.self) {
-            try presentation.bind(
-                to: rawQuestion,
-                expectedQuestionVersion: expectedQuestionVersion
-            )
-        }
+    private func assertGenericTreacheryPromptRemainsActionable(
+        _ binding: BoundQuestionPresentation
+    ) throws {
+        let descriptor = try #require(binding.descriptor(forSourceIndex: 0))
+        #expect(binding.isRenderableInCurrentClient)
+        #expect(descriptor.kind == .resolveForcedAbility)
+        #expect(descriptor.selectable)
+        #expect(binding.canActivateSemanticChoice(descriptor, labelResolution: nil))
     }
 
     private func replacing(

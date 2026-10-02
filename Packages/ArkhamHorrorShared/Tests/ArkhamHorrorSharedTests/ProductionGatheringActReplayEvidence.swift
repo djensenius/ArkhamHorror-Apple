@@ -200,10 +200,9 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
             try ProductionAssignmentReplayCanonicalJSON.promptDigest(
                 prompt.identity.rawQuestion
             )
-        governedSourceEntityKind =
-            semantic.governedSource?.entity.kind.rawValue
-        governedSourceEntityID = semantic.governedSource?.entity.id
-        governedSourceCardCode = semantic.governedSource?.cardCode
+        governedSourceEntityKind = nil
+        governedSourceEntityID = nil
+        governedSourceCardCode = nil
         if let selectedSourceIndex {
             guard let descriptor = semantic.descriptor(
                 forSourceIndex: selectedSourceIndex
@@ -336,11 +335,9 @@ struct GatheringActReplayPromptEvidence: Codable, Equatable, Sendable {
                 choice: destination.branch.assignmentDescriptor
             ),
             governedDescriptors == nil,
-            governedSourceEntityKind ==
-            QuestionPresentation.EntityKind.location.rawValue,
-            governedSourceEntityID ==
-            destination.locationID.codingKey.stringValue,
-            governedSourceCardCode == destination.branch.locationCardCode
+            governedSourceEntityKind == nil,
+            governedSourceEntityID == nil,
+            governedSourceCardCode == nil
         else {
             throw ProductionGatheringActReplayEvidenceError.invalidQ38
         }

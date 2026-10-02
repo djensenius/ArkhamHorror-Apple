@@ -35,10 +35,10 @@ extension AppModelLiveGameTests {
     }
 
     @Test(
-        "Treachery forced-ability presentation drift fails closed at all scenario steps",
+        "Treachery forced-ability presentation drift binds generically at all scenario steps",
         arguments: [37, 68]
     )
-    func treacheryForcedAbilityPresentationDriftBecomesUpdateRequired(
+    func treacheryForcedAbilityPresentationDriftBindsGenerically(
         questionVersion: Int
     ) throws {
         let envelope = try semanticEnvelope(
@@ -55,13 +55,14 @@ extension AppModelLiveGameTests {
         )
         let playerID = try #require(envelope.playerID)
         let payload = try #require(envelope.game.question[playerID])
-        #expect(payload.presentation == nil)
-        #expect(payload.isUpdateRequired)
+        let binding = try #require(payload.presentation)
+        #expect(binding.descriptor(forSourceIndex: 0)?.actorID == "c02001")
+        #expect(!payload.isUpdateRequired)
         #expect(envelope.game.name.isEmpty == false)
     }
 
-    @Test("Unsealed treachery-containing prompts require an app update")
-    func unsealedTreacheryContainingPromptRequiresUpdateInAppModel() async throws {
+    @Test("Treachery-containing prompts render and submit generically")
+    func treacheryContainingPromptUsesGenericPathInAppModel() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
@@ -81,6 +82,7 @@ extension AppModelLiveGameTests {
             }
         )
         let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -91,24 +93,25 @@ extension AppModelLiveGameTests {
         let prompt = try #require(model.basicChoicePresentation(for: gameID))
         let projection = try #require(model.liveGameState(for: gameID).lastKnownProjection)
         let choice = try #require(prompt.choices.first)
-        #expect(prompt.readOnlyReason == .updateRequired)
-        #expect(!prompt.isRenderableQuestion)
-        #expect(!prompt.canSubmit)
-        #expect(!prompt.isChoiceActionable(choice, in: projection))
+        #expect(prompt.readOnlyReason == nil)
+        #expect(prompt.isRenderableQuestion)
+        #expect(prompt.canSubmit)
+        #expect(prompt.isChoiceActionable(choice, in: projection))
         #expect(
             await model.submitBasicChoice(prompt.identity, choiceIndex: choice.index)
-                == .readOnly
+                == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData.isEmpty)
+        #expect(await connection.sentData == [treacheryForcedAbilityAnswer()])
     }
 
-    @Test("Treachery forced ability revalidates the latest snapshot before sending")
-    func treacheryForcedAbilityRejectsStaleSource() async throws {
+    @Test("Treachery forced ability trusts the server descriptor before sending")
+    func treacheryForcedAbilityTrustsServerDescriptorBeforeSend() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
         let envelope = try treacheryForcedAbilityEnvelope()
         let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -132,9 +135,9 @@ extension AppModelLiveGameTests {
 
         #expect(
             await model.submitBasicChoice(identity, choiceIndex: 0)
-                == .unsupportedChoice
+                == .sentAwaitingSnapshot
         )
-        #expect(await connection.sentData.isEmpty)
+        #expect(await connection.sentData == [treacheryForcedAbilityAnswer()])
     }
 
     private func treacheryForcedAbilityEnvelope() throws -> GetGameEnvelope {

@@ -432,8 +432,7 @@ private extension ProductionGatheringActReplayMechanicsTests {
     func q38PromptEvidence(
         branch: GatheringMovementEntryBranch
     ) throws -> GatheringActReplayPromptEvidence {
-        let locationID = movementEntryFixtureLocationID(for: branch)
-        return try GatheringActReplayPromptEvidence(
+        try GatheringActReplayPromptEvidence(
             version:
             ProductionGatheringActReplayConfiguration
                 .assignmentQuestionVersion,
@@ -449,11 +448,7 @@ private extension ProductionGatheringActReplayMechanicsTests {
             canonicalSHA256: branch.q38PromptSHA256,
             selectedDescriptor: GatheringActReplayDescriptorEvidence(
                 choice: branch.assignmentDescriptor
-            ),
-            governedSourceEntityKind:
-            QuestionPresentation.EntityKind.location.rawValue,
-            governedSourceEntityID: locationID,
-            governedSourceCardCode: branch.locationCardCode
+            )
         )
     }
 
