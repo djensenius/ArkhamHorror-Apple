@@ -289,7 +289,10 @@ struct CampaignUpgradeDeckSheet: View {
                 ) {
                     continueWithoutUpgrading()
                 }
-                Button(campaignLocalized("campaign.upgrade.skipConfirmationCancel", "Cancel"), role: .cancel) {}
+                Button(
+                    campaignLocalized("campaign.upgrade.skipConfirmationCancel", "Cancel"),
+                    role: .cancel
+                ) {}
             } message: {
                 Text(campaignLocalized(
                     "campaign.upgrade.skipConfirmationMessage",
