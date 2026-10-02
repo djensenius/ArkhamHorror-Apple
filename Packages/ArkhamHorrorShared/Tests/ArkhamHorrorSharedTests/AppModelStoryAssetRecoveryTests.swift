@@ -8,6 +8,7 @@ final class ScriptedStoryAssetCacheFactory {
     let directory: URL
     let failures: Int
     private(set) var attempts = 0
+    private(set) var transport: FakeAssetTransport?
 
     init(directory: URL, failures: Int) {
         self.directory = directory
@@ -18,10 +19,12 @@ final class ScriptedStoryAssetCacheFactory {
         attempts += 1
         guard attempts > failures else { return nil }
         do {
+            let transport = FakeAssetTransport()
+            self.transport = transport
             return try AssetCacheService(
                 memoryCache: AssetMemoryCache(limits: .production),
                 diskCache: AssetDiskCache(directory: directory, limits: .production),
-                transport: FakeAssetTransport()
+                transport: transport
             )
         } catch {
             Issue.record("Unexpected test cache initialization failure: \(error)")
