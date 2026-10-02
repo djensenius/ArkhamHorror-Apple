@@ -274,7 +274,7 @@ struct AppModelCampaignPromptTests {
             )
         )
         let continuation = try #require(projection.campaignContinuation)
-        #expect(continuation.canUpgrade)
+        #expect(continuation.canUpgradeDecks)
         await connection.enqueueSendResult(.success(()))
         installPrompt(
             projection,
