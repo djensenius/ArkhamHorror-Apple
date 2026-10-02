@@ -300,10 +300,10 @@ extension AppModel {
             else { return nil }
             var modifiers: [FlavorTextModifier] = []
             for rawModifier in rawModifiers {
-                guard case let .string(text) = rawModifier,
-                      let modifier = FlavorTextModifier(rawValue: text)
-                else { return nil }
-                modifiers.append(modifier)
+                guard case let .string(text) = rawModifier else { continue }
+                if let modifier = FlavorTextModifier(rawValue: text) {
+                    modifiers.append(modifier)
+                }
             }
             return .modify(modifiers: modifiers, entry: converted)
         case "CompositeEntry":
@@ -327,10 +327,10 @@ extension AppModel {
             else { return nil }
             var modifiers: [FlavorTextImageModifier] = []
             for rawModifier in rawModifiers {
-                guard case let .string(text) = rawModifier,
-                      let modifier = FlavorTextImageModifier(rawValue: text)
-                else { return nil }
-                modifiers.append(modifier)
+                guard case let .string(text) = rawModifier else { continue }
+                if let modifier = FlavorTextImageModifier(rawValue: text) {
+                    modifiers.append(modifier)
+                }
             }
             return .card(cardCode: cardCode, imageModifiers: modifiers)
         case "TarotEntry":
@@ -347,8 +347,18 @@ extension AppModel {
         case "EntrySplit":
             return .split
         default:
-            return nil
+            return .unknown(tag: tag, text: presentationUnknownEntryText(object))
         }
+    }
+
+    private func presentationUnknownEntryText(_ object: [String: JSONValue]) -> String? {
+        let values = object.keys.sorted().compactMap { key -> String? in
+            guard key != "tag", case let .string(text)? = object[key] else { return nil }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        guard !values.isEmpty else { return nil }
+        return values.joined(separator: " ")
     }
 
     private func presentationFlavorEntries(_ value: JSONValue?) -> [FlavorTextEntry]? {

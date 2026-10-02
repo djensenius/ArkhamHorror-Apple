@@ -172,6 +172,8 @@ extension StoryNarrativeLocalization {
             return .chaosTokenMorph(from: from, target: target)
         case .split:
             return .divider
+        case let .unknown(tag, text):
+            return .text(readableUnknownEntry(tag: tag, text: text))
         }
     }
 
@@ -239,6 +241,13 @@ extension StoryNarrativeLocalization {
         case .null, .bool, .array, .object:
             nil
         }
+    }
+
+    static func readableUnknownEntry(tag: String, text: String?) -> String {
+        if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return text
+        }
+        return "Unsupported story entry: \(tag)"
     }
 
     static func readableServerFallback(key: String, variables: JSONValue) -> String {

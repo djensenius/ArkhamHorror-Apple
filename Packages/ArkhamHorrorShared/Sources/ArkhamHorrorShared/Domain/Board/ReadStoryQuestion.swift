@@ -67,6 +67,7 @@ indirect enum FlavorTextEntry: Sendable, Equatable, Hashable {
     case chaosToken(face: ChaosTokenFace)
     case chaosTokenMorph(from: ChaosTokenFace, target: ChaosTokenFace)
     case split
+    case unknown(tag: String, text: String?)
 }
 
 /// `FlavorTextEntry`'s recursive `ListEntry` item, exactly mirroring the wire's
@@ -96,8 +97,7 @@ extension BasicChoiceParser {
         _ object: [String: JSONValue],
         rawValue: JSONValue
     ) -> BasicChoiceQuestionState {
-        guard Set(object.keys) == ["tag", "flavorText", "readChoices", "readCards"],
-              case let .object(flavorTextObject)? = object["flavorText"],
+        guard case let .object(flavorTextObject)? = object["flavorText"],
               let flavorText = parseFlavorText(flavorTextObject),
               let readChoicesValue = object["readChoices"],
               case let .object(readChoicesObject) = readChoicesValue,
@@ -138,7 +138,6 @@ extension BasicChoiceParser {
     }
 
     private static func parseFlavorText(_ object: [String: JSONValue]) -> FlavorText? {
-        guard Set(object.keys) == ["title", "body"] else { return nil }
         let title: String?
         switch object["title"] {
         case let .string(text)?:
@@ -187,27 +186,23 @@ extension BasicChoiceParser {
         case "ChaosTokenMorphEntry":
             return parseChaosTokenMorphFlavorTextEntry(object)
         case "EntrySplit":
-            guard Set(object.keys) == ["tag"] else { return nil }
             return .split
         default:
-            return nil
+            return parseUnknownFlavorTextEntry(object, tag: tag)
         }
     }
 
     private static func parseBasicFlavorTextEntry(
         _ object: [String: JSONValue]
     ) -> FlavorTextEntry? {
-        guard Set(object.keys) == ["tag", "text"],
-              case let .string(text)? = object["text"]
-        else { return nil }
+        guard case let .string(text)? = object["text"] else { return nil }
         return .basic(text: text)
     }
 
     private static func parseHeaderFlavorTextEntry(
         _ object: [String: JSONValue]
     ) -> FlavorTextEntry? {
-        guard Set(object.keys) == ["tag", "level", "key"],
-              let level = parseFlavorTextHeadingLevel(object["level"]),
+        guard let level = parseFlavorTextHeadingLevel(object["level"]),
               case let .string(key)? = object["key"]
         else { return nil }
         return .header(level: level, key: key)
@@ -216,8 +211,7 @@ extension BasicChoiceParser {
     private static func parseI18nFlavorTextEntry(
         _ object: [String: JSONValue]
     ) -> FlavorTextEntry? {
-        guard Set(object.keys) == ["tag", "key", "variables"],
-              case let .string(key)? = object["key"],
+        guard case let .string(key)? = object["key"],
               case let .object(variables)? = object["variables"]
         else { return nil }
         return .i18n(key: key, variables: .object(variables))
@@ -226,18 +220,17 @@ extension BasicChoiceParser {
     private static func parseModifyFlavorTextEntry(
         _ object: [String: JSONValue]
     ) -> FlavorTextEntry? {
-        guard Set(object.keys) == ["tag", "modifiers", "entry"],
-              case let .array(rawModifiers)? = object["modifiers"],
+        guard case let .array(rawModifiers)? = object["modifiers"],
               let entryValue = object["entry"],
               let entry = parseFlavorTextEntry(entryValue)
         else { return nil }
         var modifiers: [FlavorTextModifier] = []
         modifiers.reserveCapacity(rawModifiers.count)
         for rawModifier in rawModifiers {
-            guard case let .string(text) = rawModifier,
-                  let modifier = FlavorTextModifier(rawValue: text)
-            else { return nil }
-            modifiers.append(modifier)
+            guard case let .string(text) = rawModifier else { continue }
+            if let modifier = FlavorTextModifier(rawValue: text) {
+                modifiers.append(modifier)
+            }
         }
         return .modify(modifiers: modifiers, entry: entry)
     }
@@ -257,8 +250,7 @@ extension BasicChoiceParser {
     private static func parseEntryArray(
         _ object: [String: JSONValue], tag: String
     ) -> [FlavorTextEntry]? {
-        guard Set(object.keys) == ["tag", "entries"],
-              object["tag"] == .string(tag),
+        guard object["tag"] == .string(tag),
               case let .array(rawEntries)? = object["entries"]
         else { return nil }
         var entries: [FlavorTextEntry] = []
@@ -273,9 +265,7 @@ extension BasicChoiceParser {
     private static func parseListFlavorTextEntry(
         _ object: [String: JSONValue]
     ) -> FlavorTextEntry? {
-        guard Set(object.keys) == ["tag", "list"],
-              case let .array(rawList)? = object["list"]
-        else { return nil }
+        guard case let .array(rawList)? = object["list"] else { return nil }
         var items: [FlavorTextListItem] = []
         items.reserveCapacity(rawList.count)
         for value in rawList {
@@ -288,18 +278,17 @@ extension BasicChoiceParser {
     private static func parseCardFlavorTextEntry(
         _ object: [String: JSONValue]
     ) -> FlavorTextEntry? {
-        guard Set(object.keys) == ["tag", "cardCode", "imageModifiers"],
-              case let .string(rawCardCode)? = object["cardCode"],
+        guard case let .string(rawCardCode)? = object["cardCode"],
               let cardCode = strictCardCode(rawCardCode),
               case let .array(rawModifiers)? = object["imageModifiers"]
         else { return nil }
         var modifiers: [FlavorTextImageModifier] = []
         modifiers.reserveCapacity(rawModifiers.count)
         for rawModifier in rawModifiers {
-            guard case let .string(text) = rawModifier,
-                  let modifier = FlavorTextImageModifier(rawValue: text)
-            else { return nil }
-            modifiers.append(modifier)
+            guard case let .string(text) = rawModifier else { continue }
+            if let modifier = FlavorTextImageModifier(rawValue: text) {
+                modifiers.append(modifier)
+            }
         }
         return .card(cardCode: cardCode, imageModifiers: modifiers)
     }
@@ -307,29 +296,40 @@ extension BasicChoiceParser {
     private static func parseTarotFlavorTextEntry(
         _ object: [String: JSONValue]
     ) -> FlavorTextEntry? {
-        guard Set(object.keys) == ["tag", "tarot"],
-              case let .string(arcana)? = object["tarot"]
-        else { return nil }
+        guard case let .string(arcana)? = object["tarot"] else { return nil }
         return .tarot(arcana: arcana)
     }
 
     private static func parseChaosTokenFlavorTextEntry(
         _ object: [String: JSONValue]
     ) -> FlavorTextEntry? {
-        guard Set(object.keys) == ["tag", "chaosTokenFace"],
-              case let .string(face)? = object["chaosTokenFace"]
-        else { return nil }
+        guard case let .string(face)? = object["chaosTokenFace"] else { return nil }
         return .chaosToken(face: ChaosTokenFace(face))
     }
 
     private static func parseChaosTokenMorphFlavorTextEntry(
         _ object: [String: JSONValue]
     ) -> FlavorTextEntry? {
-        guard Set(object.keys) == ["tag", "morphFrom", "morphTo"],
-              case let .string(from)? = object["morphFrom"],
+        guard case let .string(from)? = object["morphFrom"],
               case let .string(target)? = object["morphTo"]
         else { return nil }
         return .chaosTokenMorph(from: ChaosTokenFace(from), target: ChaosTokenFace(target))
+    }
+
+    private static func parseUnknownFlavorTextEntry(
+        _ object: [String: JSONValue], tag: String
+    ) -> FlavorTextEntry {
+        .unknown(tag: tag, text: readableUnknownFlavorText(in: object))
+    }
+
+    private static func readableUnknownFlavorText(in object: [String: JSONValue]) -> String? {
+        let values = object.keys.sorted().compactMap { key -> String? in
+            guard key != "tag", case let .string(text)? = object[key] else { return nil }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        guard !values.isEmpty else { return nil }
+        return values.joined(separator: " ")
     }
 
     private static func parseFlavorTextHeadingLevel(
@@ -345,7 +345,6 @@ extension BasicChoiceParser {
 
     private static func parseFlavorTextListItem(_ value: JSONValue) -> FlavorTextListItem? {
         guard case let .object(object) = value,
-              Set(object.keys) == ["entry", "nested"],
               let entryValue = object["entry"],
               let entry = parseFlavorTextEntry(entryValue),
               case let .array(rawNested)? = object["nested"]

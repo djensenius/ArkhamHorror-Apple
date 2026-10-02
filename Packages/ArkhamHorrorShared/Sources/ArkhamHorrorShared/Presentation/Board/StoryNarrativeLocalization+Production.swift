@@ -157,6 +157,8 @@ extension StoryNarrativeLocalization {
             return .success(.chaosTokenMorph(from: from, target: target))
         case .split:
             return .success(.divider)
+        case let .unknown(tag, text):
+            return .success(.text(readableUnknownEntry(tag: tag, text: text)))
         }
     }
 
