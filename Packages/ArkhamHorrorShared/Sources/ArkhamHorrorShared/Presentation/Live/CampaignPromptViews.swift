@@ -7,17 +7,17 @@ struct BetweenScenariosView: View {
     let prompt: BasicChoicePromptPresentation
 
     @State private var isUpgradeSheetPresented = false
-    @State private var actionFailure: String?
-    @State private var isSendingContinue = false
-    @State private var isSendingUpgradeStep = false
 
     private var continuation: CampaignContinuationContext? {
         projection.campaignContinuation
     }
 
     private var isUpgradePrompt: Bool {
-        prompt.identity.rawQuestion == .object(["tag": .string("ChooseUpgradeDeck")])
-            || prompt.semanticPresentation?.presentation.questionKind == .chooseUpgradeDeck
+        prompt.isChooseUpgradeDeckPrompt
+    }
+
+    private var isSending: Bool {
+        prompt.actionPhase == .sending
     }
 
     private var localInvestigator: BoardInvestigatorNode? {
@@ -32,6 +32,7 @@ struct BetweenScenariosView: View {
                     Text(campaignLocalized("campaign.between.title", "Between scenarios"))
                         .font(.largeTitle.weight(.bold))
                         .foregroundStyle(ArkhamTheme.bone)
+                        .accessibilityAddTraits(.isHeader)
                     if let scenarioName = projection.scenario?.displayName {
                         Text(String(
                             format: campaignLocalized(
@@ -54,68 +55,86 @@ struct BetweenScenariosView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                    if let actionFailure {
-                        ArkhamFailureText(message: actionFailure)
+                    if let message = prompt.statusMessage {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                             .accessibilityIdentifier(
                                 AccountAccessibilityID.campaignPromptFailureText
                             )
                     }
 
+                    if let feedback = prompt.serverFeedback {
+                        Label(feedback, systemImage: "exclamationmark.bubble")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("liveGame.prompt.serverFeedback")
+                    }
+
                     HStack(spacing: 12) {
-                        if !isUpgradePrompt, let continuation {
-                            Button {
-                                sendContinue(step: continuation.nextStep)
-                            } label: {
-                                HStack {
-                                    Text(campaignLocalized(
-                                        "campaign.between.continue", "Continue"
-                                    ))
-                                    if isSendingContinue {
-                                        ProgressView().controlSize(.small)
+                        if prompt.isAuthorized {
+                            if !isUpgradePrompt, let continuation {
+                                Button {
+                                    sendContinue(step: continuation.nextStep)
+                                } label: {
+                                    HStack {
+                                        Text(campaignLocalized(
+                                            "campaign.between.continue", "Continue"
+                                        ))
+                                        if isSending {
+                                            ProgressView().controlSize(.small)
+                                        }
                                     }
                                 }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(isSendingContinue || isSendingUpgradeStep)
-                            .accessibilityIdentifier(
-                                AccountAccessibilityID.campaignContinueButton
-                            )
-                        }
-
-                        if isUpgradePrompt {
-                            Button {
-                                isUpgradeSheetPresented = true
-                            } label: {
-                                Text(campaignLocalized(
-                                    "campaign.between.upgradeDeck", "Upgrade deck"
-                                ))
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(localInvestigator == nil)
-                            .accessibilityIdentifier(
-                                AccountAccessibilityID.campaignUpgradeDeckButton
-                            )
-                        } else if continuation?.canUpgradeDecks == true, let continuation {
-                            Button {
-                                sendContinue(
-                                    step: continuation.upgradeStep,
-                                    isUpgradeStep: true
+                                .buttonStyle(.borderedProminent)
+                                .disabled(!prompt.canSubmit)
+                                .accessibilityIdentifier(
+                                    AccountAccessibilityID.campaignContinueButton
                                 )
-                            } label: {
-                                HStack {
+                            }
+
+                            if isUpgradePrompt {
+                                Button {
+                                    isUpgradeSheetPresented = true
+                                } label: {
                                     Text(campaignLocalized(
                                         "campaign.between.upgradeDeck", "Upgrade deck"
                                     ))
-                                    if isSendingUpgradeStep {
-                                        ProgressView().controlSize(.small)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(localInvestigator == nil || !prompt.canSubmit)
+                                .accessibilityIdentifier(
+                                    AccountAccessibilityID.campaignUpgradeDeckButton
+                                )
+                            } else if continuation?.canUpgradeDecks == true, let continuation {
+                                Button {
+                                    sendContinue(step: continuation.upgradeStep)
+                                } label: {
+                                    HStack {
+                                        Text(campaignLocalized(
+                                            "campaign.between.upgradeDeck", "Upgrade deck"
+                                        ))
+                                        if isSending {
+                                            ProgressView().controlSize(.small)
+                                        }
                                     }
                                 }
+                                .buttonStyle(.bordered)
+                                .disabled(!prompt.canSubmit)
+                                .accessibilityIdentifier(
+                                    AccountAccessibilityID.campaignUpgradeDeckButton
+                                )
                             }
-                            .buttonStyle(.bordered)
-                            .disabled(isSendingContinue || isSendingUpgradeStep)
-                            .accessibilityIdentifier(
-                                AccountAccessibilityID.campaignUpgradeDeckButton
-                            )
+                        }
+
+                        if prompt.canRetry {
+                            Button {
+                                retryPrompt()
+                            } label: {
+                                Text(campaignLocalized("campaign.between.retry", "Retry"))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("liveGame.prompt.retry")
                         }
                     }
                 }
@@ -126,6 +145,7 @@ struct BetweenScenariosView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ArkhamTheme.backgroundGradient.ignoresSafeArea())
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccountAccessibilityID.campaignBetweenScenariosView)
         .sheet(isPresented: $isUpgradeSheetPresented) {
             if let investigator = localInvestigator {
@@ -138,26 +158,15 @@ struct BetweenScenariosView: View {
         }
     }
 
-    private func sendContinue(step: JSONValue, isUpgradeStep: Bool = false) {
+    private func sendContinue(step: JSONValue) {
         Task {
-            actionFailure = nil
-            if isUpgradeStep {
-                isSendingUpgradeStep = true
-            } else {
-                isSendingContinue = true
-            }
-            let result = await model.submitContinueCampaignAnswer(
-                prompt.identity,
-                step: step
-            )
-            if result != .sentAwaitingSnapshot {
-                actionFailure = campaignLocalized(
-                    "campaign.between.sendFailed",
-                    "That campaign answer could not be sent. Reconnect and try again."
-                )
-            }
-            isSendingContinue = false
-            isSendingUpgradeStep = false
+            await model.submitContinueCampaignAnswer(prompt.identity, step: step)
+        }
+    }
+
+    private func retryPrompt() {
+        Task {
+            await model.retryBasicChoice(prompt.identity)
         }
     }
 }
@@ -171,6 +180,7 @@ struct CampaignUpgradeDeckSheet: View {
     @State private var deckURL = ""
     @State private var isSubmitting = false
     @State private var failure: String?
+    @State private var isSkipConfirmationPresented = false
 
     var body: some View {
         NavigationStack {
@@ -227,7 +237,7 @@ struct CampaignUpgradeDeckSheet: View {
 
                 Section {
                     Button(role: .cancel) {
-                        continueWithoutUpgrading()
+                        isSkipConfirmationPresented = true
                     } label: {
                         HStack {
                             Text(campaignLocalized(
@@ -262,6 +272,31 @@ struct CampaignUpgradeDeckSheet: View {
                     }
                 }
             }
+            .confirmationDialog(
+                campaignLocalized(
+                    "campaign.upgrade.skipConfirmationTitle",
+                    "Continue without upgrading?"
+                ),
+                isPresented: $isSkipConfirmationPresented,
+                titleVisibility: .visible
+            ) {
+                Button(
+                    campaignLocalized(
+                        "campaign.upgrade.skipConfirmationConfirm",
+                        "Continue without upgrading"
+                    ),
+                    role: .destructive
+                ) {
+                    continueWithoutUpgrading()
+                }
+                Button(campaignLocalized("campaign.upgrade.skipConfirmationCancel", "Cancel"), role: .cancel) {}
+            } message: {
+                Text(campaignLocalized(
+                    "campaign.upgrade.skipConfirmationMessage",
+                    "You cannot undo this campaign step after it is sent."
+                ))
+            }
+        }
         }
     }
 
@@ -298,6 +333,31 @@ struct CampaignUpgradeDeckSheet: View {
         case let .failed(message):
             failure = message
         }
+    }
+}
+
+extension BasicChoicePromptPresentation {
+    var isChooseUpgradeDeckPrompt: Bool {
+        identity.rawQuestion.hasQuestionTag("ChooseUpgradeDeck")
+            || identity.rawQuestion.wrapsQuestionTag("QuestionLabel", innerTag: "ChooseUpgradeDeck")
+            || semanticPresentation?.presentation.questionKind == .chooseUpgradeDeck
+    }
+}
+
+private extension JSONValue {
+    func hasQuestionTag(_ expected: String) -> Bool {
+        guard case let .object(object) = self,
+              object["tag"] == .string(expected)
+        else { return false }
+        return true
+    }
+
+    func wrapsQuestionTag(_ expected: String, innerTag: String) -> Bool {
+        guard case let .object(object) = self,
+              object["tag"] == .string(expected),
+              let inner = object["question"]
+        else { return false }
+        return inner.hasQuestionTag(innerTag)
     }
 }
 

@@ -27,7 +27,10 @@ extension AppModel {
     ) async -> CampaignDeckUpgradeSubmissionResult {
         let profile: ServerProfile
         guard case let .signedIn(signedInProfile, _, _) = sessionState else {
-            return .failed("Sign in again to upgrade this deck.")
+            return .failed(campaignPromptLocalized(
+                "campaign.error.signInUpgrade",
+                "Sign in again to upgrade this deck."
+            ))
         }
         profile = signedInProfile
 
@@ -44,7 +47,10 @@ extension AppModel {
         do {
             context = try await currentDeckRequestContext(for: profile)
         } catch {
-            return .failed("Your session expired. Sign in again to manage decks.")
+            return .failed(campaignPromptLocalized(
+                "campaign.error.sessionExpiredDecks",
+                "Your session expired. Sign in again to manage decks."
+            ))
         }
 
         let deckList: DeckList
@@ -58,7 +64,10 @@ extension AppModel {
             }
             return .failed(error.message)
         } catch {
-            return .failed("The server could not fetch that deck. Try again.")
+            return .failed(campaignPromptLocalized(
+                "campaign.error.fetchDeckFailed",
+                "The server could not fetch that deck. Try again."
+            ))
         }
 
         return await submitCampaignDeck(
@@ -76,7 +85,10 @@ extension AppModel {
     ) async -> CampaignDeckUpgradeSubmissionResult {
         let profile: ServerProfile
         guard case let .signedIn(signedInProfile, _, _) = sessionState else {
-            return .failed("Sign in again to continue this campaign.")
+            return .failed(campaignPromptLocalized(
+                "campaign.error.signInContinue",
+                "Sign in again to continue this campaign."
+            ))
         }
         profile = signedInProfile
 
@@ -84,7 +96,10 @@ extension AppModel {
         do {
             context = try await currentDeckRequestContext(for: profile)
         } catch {
-            return .failed("Your session expired. Sign in again to manage decks.")
+            return .failed(campaignPromptLocalized(
+                "campaign.error.sessionExpiredDecks",
+                "Your session expired. Sign in again to manage decks."
+            ))
         }
 
         return await submitCampaignDeck(
@@ -104,7 +119,10 @@ extension AppModel {
         context: CampaignDeckSubmissionContext
     ) async -> CampaignDeckUpgradeSubmissionResult {
         guard let investigatorId = try? InvestigatorCode(rawInvestigatorId) else {
-            return .failed("This investigator could not be sent safely.")
+            return .failed(campaignPromptLocalized(
+                "campaign.error.invalidInvestigator",
+                "This investigator could not be sent safely."
+            ))
         }
         do {
             try await gameLifecycleService.chooseDeck(
@@ -128,7 +146,14 @@ extension AppModel {
             }
             return .failed(error.message)
         } catch {
-            return .failed("The server could not update that deck. Try again.")
+            return .failed(campaignPromptLocalized(
+                "campaign.error.updateDeckFailed",
+                "The server could not update that deck. Try again."
+            ))
         }
     }
+}
+
+private func campaignPromptLocalized(_ key: String, _ fallback: String) -> String {
+    NSLocalizedString(key, bundle: .module, value: fallback, comment: "")
 }

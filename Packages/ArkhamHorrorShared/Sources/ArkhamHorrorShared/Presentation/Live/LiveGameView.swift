@@ -230,10 +230,10 @@ struct LiveGameView: View {
         _ prompt: BasicChoicePromptPresentation,
         in projection: BoardProjection
     ) -> Bool {
-        let raw = prompt.identity.rawQuestion
-        if raw == .object(["tag": .string("ChooseUpgradeDeck")]) {
+        if prompt.isChooseUpgradeDeckPrompt {
             return true
         }
+        let raw = prompt.identity.rawQuestion
         guard projection.campaignContinuation != nil else { return false }
         return raw == .object(["tag": .string("ContinueCampaign")])
             || prompt.semanticPresentation?.presentation.questionKind == .continueCampaign
