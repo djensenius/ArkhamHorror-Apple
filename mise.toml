@@ -68,6 +68,14 @@ run = "Scripts/test-verify-locale-digest-provenance.sh"
 description = "Offline self-test of the fixed launcher and scenario-dispatched replay coordinator"
 run = "Scripts/test-run-production-assignment-replay.sh"
 
+[tasks.notz-coverage-replay]
+description = "Replay downloaded Night of the Zealot coverage JSONL prompts through AppModel"
+run = '''
+set -euo pipefail
+: "${ARKHAM_NOTZ_COVERAGE_DIR:?Set ARKHAM_NOTZ_COVERAGE_DIR to the directory containing Night of the Zealot coverage JSONL files}"
+swift test --package-path Packages/ArkhamHorrorShared --filter NightOfTheZealotCoverageReplayTests --no-parallel
+'''
+
 [tasks.build]
 description = "Build every application target"
 run = """
