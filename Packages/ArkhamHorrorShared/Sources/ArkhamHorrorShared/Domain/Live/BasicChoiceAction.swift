@@ -296,10 +296,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         case .legacyServer:
             return "Update the server before answering this prompt."
         case .updateRequired:
-            if canUseCampaignDeckPrompt {
-                return nil
-            }
-            return "This prompt requires a newer app version."
+            return canUseCampaignDeckPrompt ? nil : "This prompt requires a newer app version."
         case .disconnected:
             return "Reconnect before answering this prompt."
         case nil:

@@ -89,7 +89,10 @@ extension AppModelCampaignPromptTests {
         model.liveGameParticipantIdentities[gameID] = .spectator
         let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
         #expect(spectatorPrompt.readOnlyReason == .spectator)
-        #expect(spectatorPrompt.statusMessage == "Spectators can view this prompt but cannot answer it.")
+        #expect(
+            spectatorPrompt.statusMessage
+                == "Spectators can view this prompt but cannot answer it."
+        )
         #expect(!spectatorPrompt.canUseCampaignDeckPrompt)
     }
 
