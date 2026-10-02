@@ -2,6 +2,7 @@
 import Foundation
 import Testing
 
+// swiftlint:disable file_length
 @Suite("BoardProjection — campaign summary")
 // swiftlint:disable:next type_body_length
 struct BoardProjectionCampaignSummaryTests {
@@ -176,8 +177,12 @@ struct BoardProjectionCampaignSummaryTests {
                 locale.firstScenarioTitle,
                 locale.latestScenarioTitle,
             ])
-            #expect(summary.latestResolution?.title(context: context) == locale.latestResolutionTitle)
-            #expect(summary.latestResolution?.detail(context: context) == locale.latestScenarioTitle)
+            #expect(
+                summary.latestResolution?.title(context: context) == locale.latestResolutionTitle
+            )
+            #expect(
+                summary.latestResolution?.detail(context: context) == locale.latestScenarioTitle
+            )
             #expect(summary.log.entries.map { $0.title(context: context) } == [
                 locale.burnedHouse,
                 "Custom homebrew thing",

@@ -213,7 +213,9 @@ private struct CampaignBetweenSummaryView: View {
                     title: campaignLocalized("campaign.between.resolutions", "Scenario resolutions")
                 ) {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(Array(summary.resolutions.enumerated()), id: \.offset) { _, resolution in
+                        ForEach(
+                            Array(summary.resolutions.enumerated()), id: \.offset
+                        ) { _, resolution in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(resolution.title(context: context))
                                     .font(.headline)
