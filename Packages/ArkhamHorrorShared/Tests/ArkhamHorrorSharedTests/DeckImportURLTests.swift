@@ -69,6 +69,7 @@ struct DeckImportURLTests {
             "https://arkhamdb.com/decklist/view/٣٣",
             "https://аrkham.build/decklist/abc123",
             "https://arkham.build/decklist/éabc",
+            "https://arkham.build/deck/abc123",
             "https://arkham.build/decklist/../secret",
         ]
     )

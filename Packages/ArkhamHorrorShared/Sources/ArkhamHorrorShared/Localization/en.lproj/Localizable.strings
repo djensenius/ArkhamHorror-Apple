@@ -109,7 +109,6 @@
 "campaign.between.continue" = "Continue";
 "campaign.between.upgradeDeck" = "Upgrade deck";
 "campaign.between.retry" = "Retry";
-"campaign.between.sendFailed" = "That campaign answer could not be sent. Reconnect and try again.";
 "campaign.error.fetchDeckFailed" = "The server could not fetch that deck. Try again.";
 "campaign.error.invalidInvestigator" = "This investigator could not be sent safely.";
 "campaign.error.sessionExpiredDecks" = "Your session expired. Sign in again to manage decks.";

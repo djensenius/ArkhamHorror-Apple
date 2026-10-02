@@ -109,7 +109,6 @@
 "campaign.between.continue" = "Fortsetzen";
 "campaign.between.upgradeDeck" = "Deck verbessern";
 "campaign.between.retry" = "Erneut versuchen";
-"campaign.between.sendFailed" = "Diese Kampagnenantwort konnte nicht gesendet werden. Neu verbinden und erneut versuchen.";
 "campaign.error.fetchDeckFailed" = "Der Server konnte dieses Deck nicht abrufen. Versuche es erneut.";
 "campaign.error.invalidInvestigator" = "Dieser Ermittler konnte nicht sicher gesendet werden.";
 "campaign.error.sessionExpiredDecks" = "Deine Sitzung ist abgelaufen. Melde dich erneut an, um Decks zu verwalten.";

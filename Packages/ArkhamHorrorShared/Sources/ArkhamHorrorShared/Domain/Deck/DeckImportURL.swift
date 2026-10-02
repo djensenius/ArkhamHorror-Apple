@@ -7,7 +7,6 @@ enum DeckImportURL: Equatable, Sendable {
 
     enum ParseError: Error, Equatable, Sendable {
         case invalid
-        case unsupportedArkhamBuildShare
     }
 
     var fetchURL: String {
@@ -87,7 +86,7 @@ enum DeckImportURL: Equatable, Sendable {
                 "https://api.arkham.build/v1/public/share/\(parts[2])?type=decklist"
             )
         }
-        if parts.count == 2, ["share", "deck"].contains(parts[0]) {
+        if parts.count == 2, parts[0] == "share" {
             guard isArkhamBuildIdentifier(parts[1]) else { throw ParseError.invalid }
             return .fetchURL("https://api.arkham.build/v1/public/share/\(parts[1])")
         }
@@ -128,8 +127,6 @@ extension DeckImportURL.ParseError {
     var message: String {
         switch self {
         case .invalid:
-            "Enter an https ArkhamDB deck/decklist URL or arkham.build deck/share URL."
-        case .unsupportedArkhamBuildShare:
             "Enter an https ArkhamDB deck/decklist URL or arkham.build deck/share URL."
         }
     }
