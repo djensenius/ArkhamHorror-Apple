@@ -440,8 +440,8 @@ extension StoryNarrativeLocalization {
         switch reason {
         case .missingKey:
             nil
-        case .catalog where resolver == nil:
-            reason
+        case let .catalog(failure) where resolver == nil:
+            failure.isRetryable ? reason : nil
         case .catalog, .loading, .imagePipelineUnavailable, .imageSourceLoading,
              .unsupportedEntry, .linkCycle, .missingVariable, .unsupportedVariableValue,
              .tooComplex:
