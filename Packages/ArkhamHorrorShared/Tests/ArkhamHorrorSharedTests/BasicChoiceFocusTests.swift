@@ -4,6 +4,7 @@ import Testing
 
 @MainActor
 @Suite("Basic choice focus")
+// swiftlint:disable:next type_body_length
 struct BasicChoiceFocusTests {
     private func actionablePrompt() throws -> BasicChoicePromptPresentation {
         let payload = try ContractJSON.decode(
@@ -78,6 +79,43 @@ struct BasicChoiceFocusTests {
                 connectionID: nil
             ),
             question: payload.state,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private func oneAtATimeAutoPrompt() throws -> BasicChoicePromptPresentation {
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: fixture("question-generic-one-at-a-time-auto")
+        )
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: fixture("question-presentation-generic-one-at-a-time-auto")
+        )
+        let bound = try presentation.bind(
+            to: payload.rawValue,
+            expectedQuestionVersion: presentation.questionVersion
+        )
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: presentation.questionVersion,
+                rawQuestion: payload.rawValue,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: payload.state,
+            semanticPresentation: bound,
+            choiceLabelResolutions: [
+                0: .resolved("Auto"),
+                1: .resolved("First"),
+                2: .resolved("Second"),
+            ],
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
@@ -172,6 +210,36 @@ struct BasicChoiceFocusTests {
         controller.updateChoiceHandler { submitted.append($0 + 10) }
         #expect(controller.handle(.command(.primaryAction)))
         #expect(submitted == [0, 10])
+    }
+
+    @Test("Completing choices focus after regular choices when the server lists Done first")
+    func completingChoiceFocusMatchesVisibleOrder() throws {
+        var submitted: [Int] = []
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let prompt = try oneAtATimeAutoPrompt()
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            onChoice: { submitted.append($0) }
+        )
+
+        #expect(prompt.choices.map(\.index) == [0, 1, 2])
+        #expect(prompt.displayOrderedChoices().map(\.index) == [1, 2, 0])
+        #expect(
+            controller.coordinator.graph.zoneEntryPoints[BoardFocusZone.prompt]
+                == BoardFocusID.promptChoice(1)
+        )
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(1))
+        #expect(controller.handle(.command(.primaryAction)))
+        #expect(submitted == [1])
+
+        #expect(controller.handle(.command(.focusMove(.down))))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(2))
+        #expect(controller.handle(.command(.focusMove(.down))))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
+        #expect(controller.handle(.command(.primaryAction)))
+        #expect(submitted == [1, 0])
     }
 
     @Test("Prompt back and removal restore deterministic board focus")

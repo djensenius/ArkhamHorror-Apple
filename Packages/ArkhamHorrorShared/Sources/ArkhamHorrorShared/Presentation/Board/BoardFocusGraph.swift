@@ -187,7 +187,7 @@ enum BoardFocusGraphBuilder {
         if let exchangePrompt = prompt.exchangePrompt(in: projection) {
             return exchangePromptFocusIDs(exchangePrompt, exchangeAmount: exchangeAmount)
         }
-        return prompt.choices
+        return prompt.displayOrderedChoices()
             .filter { prompt.isChoiceActionable($0, in: projection) }
             .map { BoardFocusID.promptChoice($0.index) }
     }
@@ -241,7 +241,7 @@ enum BoardFocusGraphBuilder {
         exchangeAmount: Int = 0
     ) -> [SemanticFocusZone] {
         var populated: Set<SemanticFocusZone> = [BoardFocusZone.scenario, BoardFocusZone.chaosBag]
-        let hasActionableChoice = prompt?.choices.contains {
+        let hasActionableChoice = prompt?.displayOrderedChoices().contains {
             prompt?.isChoiceActionable($0, in: projection) == true
         } == true
         let hasAmountControls = prompt.map {
