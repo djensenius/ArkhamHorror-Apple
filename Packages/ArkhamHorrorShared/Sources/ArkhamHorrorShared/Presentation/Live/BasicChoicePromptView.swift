@@ -215,14 +215,14 @@ struct BasicChoicePromptView: View {
     }
 
     private var regularChoices: [BasicChoice] {
-        presentation.choices.filter {
-            presentation.shouldDisplayChoice($0) && !presentation.isCompletingSelection($0)
+        presentation.displayOrderedChoices().filter {
+            !presentation.isCompletingSelection($0)
         }
     }
 
     private var finishingChoices: [BasicChoice] {
-        presentation.choices.filter {
-            presentation.shouldDisplayChoice($0) && presentation.isCompletingSelection($0)
+        presentation.displayOrderedChoices().filter {
+            presentation.isCompletingSelection($0)
         }
     }
 

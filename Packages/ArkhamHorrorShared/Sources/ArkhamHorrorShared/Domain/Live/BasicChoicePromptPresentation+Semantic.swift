@@ -233,8 +233,14 @@ extension BasicChoicePromptPresentation {
         !isCompletingSelection(choice) || selectionAllowsCompletion
     }
 
+    func displayOrderedChoices() -> [BasicChoice] {
+        let displayed = choices.filter { shouldDisplayChoice($0) }
+        return displayed.filter { !isCompletingSelection($0) }
+            + displayed.filter { isCompletingSelection($0) }
+    }
+
     private var selectionAllowsCompletion: Bool {
-        guard let selection = semanticPresentation?.presentation.selection else { return false }
+        guard let selection = semanticPresentation?.presentation.selection else { return true }
         return selection.min <= 0
     }
 
