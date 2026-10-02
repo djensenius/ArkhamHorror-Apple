@@ -158,6 +158,16 @@ extension AppModelStoryAssetTests {
         ].joined(separator: "  ")
     }
 
+    func expectGatheringFallbackPresentation(_ entry: ResolvedStoryEntry?) throws {
+        let gatheringFallback = try #require(entry)
+        #expect(gatheringFallback == .nodes(expectedGatheringImageFallbackNodes()))
+        guard case let .nodes(fallbackNodes) = gatheringFallback else { throw TestFailure() }
+        let fallbackText = expectedGatheringImageFallbackText()
+        #expect(fallbackNodes.map(\.plainText).joined() == fallbackText)
+        #expect(StoryNodePresentation.accessibilityLabel(for: fallbackNodes) == fallbackText)
+        #expect(!fallbackText.contains("symbolRats"))
+    }
+
     @Test("Source and catalog publish atomically, with an injectable shared SwiftUI cache")
     func composesAndFencesSource() async throws {
         try await withModel { model, _, _, _, _ in
@@ -197,13 +207,7 @@ extension AppModelStoryAssetTests {
             let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
             var prompt = try #require(model.basicChoicePresentation(for: gameID))
             #expect(prompt.canSubmit)
-            let gatheringFallback = try #require(firstGatheringListEntry(in: prompt))
-            #expect(gatheringFallback == .nodes(expectedGatheringImageFallbackNodes()))
-            guard case let .nodes(fallbackNodes) = gatheringFallback else { throw TestFailure() }
-            let fallbackText = expectedGatheringImageFallbackText()
-            #expect(fallbackNodes.map(\.plainText).joined() == fallbackText)
-            #expect(StoryNodePresentation.accessibilityLabel(for: fallbackNodes) == fallbackText)
-            #expect(!fallbackText.contains("symbolRats"))
+            try expectGatheringFallbackPresentation(firstGatheringListEntry(in: prompt))
             let retry = try #require(prompt.catalogRetry)
             #expect(retry.profileID == documents.profile.id)
             #expect(retry.catalogGeneration == model.localeCatalogGeneration)
@@ -256,8 +260,9 @@ extension AppModelStoryAssetTests {
             lastPath: "encounter-sets//chilling-cold.png"
         )
         for documents in [unsupportedFirst, unsupportedLast] {
-            try await withModel(settingsStatus: 503, documents: documents) {
-                model, documents, _, _, _ in
+            try await withModel(
+                settingsStatus: 503, documents: documents
+            ) { model, documents, _, _, _ in
                 let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
                 let prompt = try #require(model.basicChoicePresentation(for: gameID))
                 #expect(prompt.canSubmit)

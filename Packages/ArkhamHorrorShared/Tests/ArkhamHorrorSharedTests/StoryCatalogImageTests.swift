@@ -26,19 +26,9 @@ struct StoryCatalogImageTests {
         let imageNodes = paths.enumerated().map { index, path -> [String: Any] in
             let isFirst = index == paths.startIndex
             let isLast = index == paths.index(before: paths.endIndex)
-            var node: [String: Any] = [
-                "type": "image",
-                "role": isFirst ? firstRole : (isLast ? lastRole : "encounterSet"),
-                "assetPath": path,
-                "styles": [],
-            ]
-            if isFirst, let firstAlt {
-                node["alt"] = firstAlt
-            }
-            if isLast, let lastAlt {
-                node["alt"] = lastAlt
-            }
-            return node
+            let role = isFirst ? firstRole : (isLast ? lastRole : "encounterSet")
+            let alt = isFirst ? firstAlt : (isLast ? lastAlt : nil)
+            return imageNode(path: path, role: role, alt: alt)
         }
         let nodes: [[String: Any]] = [
             ["type": "text", "value": "Collect these encounter sets: "],
@@ -74,6 +64,19 @@ struct StoryCatalogImageTests {
         return try SyntheticLocaleCatalogDocuments.make(
             entryKeys: entries.keys.sorted(), chunkEntries: text
         )
+    }
+
+    private static func imageNode(path: String, role: String, alt: String?) -> [String: Any] {
+        var node: [String: Any] = [
+            "type": "image",
+            "role": role,
+            "assetPath": path,
+            "styles": [],
+        ]
+        if let alt {
+            node["alt"] = alt
+        }
+        return node
     }
 
     static func prompt(
