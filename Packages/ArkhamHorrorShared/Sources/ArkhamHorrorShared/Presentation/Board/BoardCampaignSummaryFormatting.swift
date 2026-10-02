@@ -3,6 +3,10 @@ import Foundation
 struct BoardCampaignSummaryLocalization: Sendable {
     let string: @Sendable (_ key: String, _ fallback: String) -> String
 
+    init(_ string: @escaping @Sendable (_ key: String, _ fallback: String) -> String) {
+        self.string = string
+    }
+
     func localized(_ key: String, _ fallback: String) -> String {
         string(key, fallback)
     }
