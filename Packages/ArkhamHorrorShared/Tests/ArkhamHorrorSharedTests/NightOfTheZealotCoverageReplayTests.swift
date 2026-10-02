@@ -598,7 +598,7 @@ private enum CoverageEnvelopeBuilder {
         in game: inout [String: JSONValue]
     ) throws {
         guard case let .object(investigators)? = game["investigators"],
-              let templateInvestigator = investigators.keys.sorted().first,
+              let templateInvestigator = investigators.keys.min(),
               case let .string(templatePlayer)? = game["activePlayerId"]
         else { throw TestFailure() }
 
@@ -614,7 +614,12 @@ private enum CoverageEnvelopeBuilder {
             "investigators", "otherInvestigators", "killedInvestigators",
             "retiredInvestigators",
         ] {
-            renameObjectKey(field, from: templateInvestigator, to: record.investigator, in: &rewrittenGame)
+            renameObjectKey(
+                field,
+                from: templateInvestigator,
+                to: record.investigator,
+                in: &rewrittenGame
+            )
         }
         game = rewrittenGame
     }
