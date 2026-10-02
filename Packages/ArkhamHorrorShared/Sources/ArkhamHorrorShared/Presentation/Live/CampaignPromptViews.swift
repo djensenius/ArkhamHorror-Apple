@@ -32,124 +32,25 @@ struct BetweenScenariosView: View {
         projection.investigators.first { $0.playerID == prompt.ownerID }
     }
 
+    private var campaignSummary: BoardCampaignSummary? {
+        projection.campaignSummary
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             Spacer(minLength: 0)
             ArkhamCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(campaignLocalized("campaign.between.title", "Between scenarios"))
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(ArkhamTheme.bone)
-                        .accessibilityAddTraits(.isHeader)
-                    if let scenarioName = projection.scenario?.displayName {
-                        Text(String(
-                            format: campaignLocalized(
-                                "campaign.between.finishedScenario", "%@ just finished"
-                            ),
-                            scenarioName
-                        ))
-                        .font(.headline)
-                    } else {
-                        Text(campaignLocalized(
-                            "campaign.between.noScenario", "No active scenario"
-                        ))
-                        .font(.headline)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        campaignSummarySection
+                        statusSection
+                        actionButtons
                     }
-                    Text(campaignLocalized(
-                        "campaign.between.futureSlot",
-                        "Resolution details, campaign log, XP, and trauma will appear here "
-                            + "in the next campaign-log update."
-                    ))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                    if let message = campaignDeckStatusMessage {
-                        Text(message)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier(
-                                AccountAccessibilityID.campaignPromptFailureText
-                            )
-                    }
-
-                    if let feedback = prompt.serverFeedback {
-                        Label(feedback, systemImage: "exclamationmark.bubble")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                            .accessibilityIdentifier("liveGame.prompt.serverFeedback")
-                    }
-
-                    HStack(spacing: 12) {
-                        if isUpgradePrompt {
-                            if prompt.canUseCampaignDeckPrompt {
-                                Button {
-                                    isUpgradeSheetPresented = true
-                                } label: {
-                                    Text(campaignLocalized(
-                                        "campaign.between.upgradeDeck", "Upgrade deck"
-                                    ))
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(localInvestigator == nil)
-                                .accessibilityIdentifier(
-                                    AccountAccessibilityID.campaignUpgradeDeckButton
-                                )
-                            }
-                        } else if prompt.isAuthorized {
-                            if let continuation {
-                                Button {
-                                    sendContinue(step: continuation.nextStep)
-                                } label: {
-                                    HStack {
-                                        Text(campaignLocalized(
-                                            "campaign.between.continue", "Continue"
-                                        ))
-                                        if isSending {
-                                            ProgressView().controlSize(.small)
-                                        }
-                                    }
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(!prompt.canSubmit)
-                                .accessibilityIdentifier(
-                                    AccountAccessibilityID.campaignContinueButton
-                                )
-                            }
-
-                            if continuation?.canUpgrade == true, let continuation {
-                                Button {
-                                    sendContinue(step: continuation.upgradeStep)
-                                } label: {
-                                    HStack {
-                                        Text(campaignLocalized(
-                                            "campaign.between.upgradeDeck", "Upgrade deck"
-                                        ))
-                                        if isSending {
-                                            ProgressView().controlSize(.small)
-                                        }
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(!prompt.canSubmit)
-                                .accessibilityIdentifier(
-                                    AccountAccessibilityID.campaignUpgradeDeckButton
-                                )
-                            }
-                        }
-
-                        if prompt.canRetry {
-                            Button {
-                                retryPrompt()
-                            } label: {
-                                Text(campaignLocalized("campaign.between.retry", "Retry"))
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .accessibilityIdentifier("liveGame.prompt.retry")
-                        }
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(maxWidth: 640)
+            .frame(maxWidth: 720, maxHeight: 720)
             Spacer(minLength: 0)
         }
         .padding()
@@ -169,6 +70,119 @@ struct BetweenScenariosView: View {
         }
     }
 
+    @ViewBuilder
+    private var header: some View {
+        Text(campaignLocalized("campaign.between.title", "Between scenarios"))
+            .font(.largeTitle.weight(.bold))
+            .foregroundStyle(ArkhamTheme.bone)
+            .accessibilityAddTraits(.isHeader)
+        if let scenarioName = projection.scenario?.displayName {
+            Text(String(
+                format: campaignLocalized(
+                    "campaign.between.finishedScenario", "%@ just finished"
+                ),
+                scenarioName
+            ))
+            .font(.headline)
+        } else {
+            Text(campaignLocalized(
+                "campaign.between.noScenario", "No active scenario"
+            ))
+            .font(.headline)
+        }
+    }
+
+    @ViewBuilder
+    private var campaignSummarySection: some View {
+        if let campaignSummary, !campaignSummary.isEmpty {
+            CampaignBetweenSummaryView(summary: campaignSummary)
+        } else {
+            Text(campaignLocalized(
+                "campaign.between.emptySummary",
+                "The server has not reported campaign-log or XP changes yet."
+            ))
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var statusSection: some View {
+        if let message = campaignDeckStatusMessage {
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier(AccountAccessibilityID.campaignPromptFailureText)
+        }
+
+        if let feedback = prompt.serverFeedback {
+            Label(feedback, systemImage: "exclamationmark.bubble")
+                .font(.footnote)
+                .foregroundStyle(.orange)
+                .accessibilityIdentifier("liveGame.prompt.serverFeedback")
+        }
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        HStack(spacing: 12) {
+            if isUpgradePrompt {
+                if prompt.canUseCampaignDeckPrompt {
+                    Button {
+                        isUpgradeSheetPresented = true
+                    } label: {
+                        Text(campaignLocalized("campaign.between.upgradeDeck", "Upgrade deck"))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(localInvestigator == nil)
+                    .accessibilityIdentifier(AccountAccessibilityID.campaignUpgradeDeckButton)
+                }
+            } else if prompt.isAuthorized {
+                if let continuation {
+                    Button {
+                        sendContinue(step: continuation.nextStep)
+                    } label: {
+                        HStack {
+                            Text(campaignLocalized("campaign.between.continue", "Continue"))
+                            if isSending {
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!prompt.canSubmit)
+                    .accessibilityIdentifier(AccountAccessibilityID.campaignContinueButton)
+                }
+
+                if continuation?.canUpgrade == true, let continuation {
+                    Button {
+                        sendContinue(step: continuation.upgradeStep)
+                    } label: {
+                        HStack {
+                            Text(campaignLocalized("campaign.between.upgradeDeck", "Upgrade deck"))
+                            if isSending {
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!prompt.canSubmit)
+                    .accessibilityIdentifier(AccountAccessibilityID.campaignUpgradeDeckButton)
+                }
+            }
+
+            if prompt.canRetry {
+                Button {
+                    retryPrompt()
+                } label: {
+                    Text(campaignLocalized("campaign.between.retry", "Retry"))
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("liveGame.prompt.retry")
+            }
+        }
+    }
+
     private func sendContinue(step: JSONValue) {
         Task {
             await model.submitContinueCampaignAnswer(prompt.identity, step: step)
@@ -178,6 +192,200 @@ struct BetweenScenariosView: View {
     private func retryPrompt() {
         Task {
             await model.retryBasicChoice(prompt.identity)
+        }
+    }
+}
+
+private struct CampaignBetweenSummaryView: View {
+    let summary: BoardCampaignSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let resolution = summary.latestResolution {
+                CampaignBetweenSection(
+                    title: campaignLocalized("campaign.between.resolution", "Latest resolution")
+                ) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(resolution.title)
+                            .font(.headline)
+                        if let detail = resolution.detail {
+                            Text(detail)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .accessibilityLabel(campaignLocalized(
+                    "campaign.between.resolution.accessibility", "Latest resolution"
+                ))
+            }
+
+            if !summary.investigators.isEmpty {
+                CampaignBetweenSection(
+                    title: campaignLocalized("campaign.between.progress", "Investigator progress")
+                ) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(summary.investigators) { investigator in
+                            CampaignInvestigatorProgressRow(investigator: investigator)
+                        }
+                    }
+                }
+                .accessibilityLabel(campaignLocalized(
+                    "campaign.between.progress.accessibility", "Investigator XP and trauma"
+                ))
+            }
+
+            if !summary.log.isEmpty {
+                CampaignBetweenLogView(log: summary.log)
+            }
+        }
+    }
+}
+
+private struct CampaignBetweenSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(ArkhamTheme.bone)
+                .accessibilityAddTraits(.isHeader)
+            content
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct CampaignInvestigatorProgressRow: View {
+    let investigator: BoardCampaignInvestigatorProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(investigator.displayName)
+                .font(.subheadline.weight(.semibold))
+            HStack(spacing: 8) {
+                CampaignPill(text: String(
+                    format: campaignLocalized("campaign.between.availableXp", "%d XP available"),
+                    investigator.availableExperience
+                ))
+                CampaignPill(text: String(
+                    format: campaignLocalized("campaign.between.totalXp", "%d total / %d spent"),
+                    investigator.experiencePoints,
+                    investigator.spentExperience
+                ))
+            }
+            HStack(spacing: 8) {
+                CampaignPill(text: String(
+                    format: campaignLocalized("campaign.between.physicalTrauma", "%d physical trauma"),
+                    investigator.physicalTrauma
+                ))
+                CampaignPill(text: String(
+                    format: campaignLocalized("campaign.between.mentalTrauma", "%d mental trauma"),
+                    investigator.mentalTrauma
+                ))
+                if investigator.killed {
+                    CampaignPill(text: campaignLocalized("campaign.between.killed", "Killed"))
+                }
+                if investigator.drivenInsane {
+                    CampaignPill(text: campaignLocalized("campaign.between.drivenInsane", "Driven insane"))
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(String(
+            format: campaignLocalized(
+                "campaign.between.investigator.accessibility",
+                "%@, %d available XP, %d physical trauma, %d mental trauma"
+            ),
+            investigator.displayName,
+            investigator.availableExperience,
+            investigator.physicalTrauma,
+            investigator.mentalTrauma
+        ))
+    }
+}
+
+private struct CampaignPill: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(ArkhamTheme.bone.opacity(0.14), in: Capsule())
+    }
+}
+
+private struct CampaignBetweenLogView: View {
+    let log: BoardCampaignLogSummary
+
+    var body: some View {
+        CampaignBetweenSection(title: campaignLocalized("campaign.between.log", "Campaign log")) {
+            VStack(alignment: .leading, spacing: 10) {
+                if !log.entries.isEmpty {
+                    CampaignLogList(
+                        title: campaignLocalized("campaign.between.log.entries", "Entries"),
+                        rows: log.entries.map { entry in
+                            CampaignLogRowText(title: entry.title, isCrossedOut: entry.isCrossedOut)
+                        }
+                    )
+                }
+                if !log.counts.isEmpty {
+                    CampaignLogList(
+                        title: campaignLocalized("campaign.between.log.counts", "Counts"),
+                        rows: log.counts.map { count in
+                            CampaignLogRowText(title: "\(count.title): \(count.value)", isCrossedOut: false)
+                        }
+                    )
+                }
+                ForEach(log.recordedSets) { set in
+                    CampaignLogList(
+                        title: set.title,
+                        rows: set.values.map { value in
+                            CampaignLogRowText(
+                                title: value.isCircled ? "◯ \(value.title)" : value.title,
+                                isCrossedOut: value.isCrossedOut
+                            )
+                        }
+                    )
+                }
+            }
+        }
+        .accessibilityLabel(campaignLocalized(
+            "campaign.between.log.accessibility", "Campaign log"
+        ))
+    }
+}
+
+private struct CampaignLogRowText: Identifiable {
+    let id = UUID()
+    let title: String
+    let isCrossedOut: Bool
+}
+
+private struct CampaignLogList: View {
+    let title: String
+    let rows: [CampaignLogRowText]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            ForEach(rows) { row in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("–")
+                        .foregroundStyle(.secondary)
+                    Text(row.title)
+                        .strikethrough(row.isCrossedOut)
+                        .foregroundStyle(row.isCrossedOut ? .secondary : .primary)
+                }
+                .font(.footnote)
+            }
         }
     }
 }
@@ -210,6 +418,20 @@ struct CampaignUpgradeDeckSheet: View {
                     LabeledContent(
                         campaignLocalized("campaign.upgrade.availableXp", "Available XP"),
                         value: "\(investigator.availableExperience)"
+                    )
+                    LabeledContent(
+                        campaignLocalized("campaign.upgrade.totalXp", "Total / spent XP"),
+                        value: "\(investigator.experiencePoints) / \(investigator.spentExperience)"
+                    )
+                    LabeledContent(
+                        campaignLocalized("campaign.upgrade.trauma", "Trauma"),
+                        value: String(
+                            format: campaignLocalized(
+                                "campaign.upgrade.traumaValue", "%d physical / %d mental"
+                            ),
+                            investigator.physicalTrauma,
+                            investigator.mentalTrauma
+                        )
                     )
                 }
                 Section(campaignLocalized("campaign.upgrade.deckLink", "Deck link")) {

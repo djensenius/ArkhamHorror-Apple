@@ -105,6 +105,7 @@ func campaignPromptProjection(
         hasCampaignContext: base.hasCampaignContext,
         scenario: base.scenario,
         campaignContinuation: base.campaignContinuation,
+        campaignSummary: base.campaignSummary,
         acts: base.acts,
         agendas: base.agendas,
         locations: base.locations,

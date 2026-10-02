@@ -214,6 +214,7 @@ extension BoardProjectionBuilder {
             defeated: investigator.defeated,
             resigned: investigator.resigned,
             eliminated: investigator.eliminated,
+            killed: investigator.killed,
             drivenInsane: investigator.drivenInsane,
             currentLocationID: currentLocation,
             isActiveInvestigator: investigator.id == activeInvestigatorID,
