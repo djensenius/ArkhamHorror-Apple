@@ -49,6 +49,7 @@ enum StoryNodePresentation {
 /// literal server text, or a readable server-key fallback.
 struct ResolvedStoryEntryView: View {
     let entry: ResolvedStoryEntry
+    var cardCatalog: CardCatalogSnapshot?
 
     var body: some View {
         switch entry {
@@ -61,27 +62,26 @@ struct ResolvedStoryEntryView: View {
                 .font(StoryHeadingPresentation.font(for: level.rawValue))
                 .addingStoryHeadingTrait()
         case let .modified(modifiers, entry):
-            ModifiedResolvedStoryEntryView(modifiers: modifiers, entry: entry)
+            ModifiedResolvedStoryEntryView(
+                modifiers: modifiers, entry: entry, cardCatalog: cardCatalog
+            )
         case let .composite(entries):
-            ResolvedStoryEntryGroupView(entries: entries)
+            ResolvedStoryEntryGroupView(entries: entries, cardCatalog: cardCatalog)
         case let .columns(entries):
             HStack(alignment: .top, spacing: 12) {
                 ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
-                    ResolvedStoryEntryView(entry: entry)
+                    ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         case let .list(items):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    ResolvedStoryListItemView(item: item)
+                    ResolvedStoryListItemView(item: item, cardCatalog: cardCatalog)
                 }
             }
-        case let .cardReference(cardCode, imageModifiers):
-            StoryReferenceText(
-                title: "Card \(cardCode.rawValue)",
-                detail: imageModifiers.map(\.rawValue).joined(separator: ", ")
-            )
+        case let .cardReference(cardCode, _):
+            StoryReferenceText(title: cardCatalog?.displayName(for: cardCode) ?? "Card \(cardCode.rawValue)")
         case let .tarotReference(arcana):
             StoryReferenceText(title: "Tarot \(arcana)")
         case let .chaosTokenReference(face):
@@ -96,11 +96,12 @@ struct ResolvedStoryEntryView: View {
 
 private struct ResolvedStoryEntryGroupView: View {
     let entries: [ResolvedStoryEntry]
+    var cardCatalog: CardCatalogSnapshot?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
-                ResolvedStoryEntryView(entry: entry)
+                ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
             }
         }
     }
@@ -109,9 +110,10 @@ private struct ResolvedStoryEntryGroupView: View {
 private struct ModifiedResolvedStoryEntryView: View {
     let modifiers: [FlavorTextModifier]
     let entry: ResolvedStoryEntry
+    var cardCatalog: CardCatalogSnapshot?
 
     var body: some View {
-        ResolvedStoryEntryView(entry: entry)
+        ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
             .modifier(StoryFlavorTextModifier(modifiers: modifiers))
     }
 }
@@ -226,17 +228,18 @@ private struct StoryFlavorTextModifier: ViewModifier {
 
 private struct ResolvedStoryListItemView: View {
     let item: ResolvedStoryListItem
+    var cardCatalog: CardCatalogSnapshot?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 6) {
                 Text("•")
-                ResolvedStoryEntryView(entry: item.entry)
+                ResolvedStoryEntryView(entry: item.entry, cardCatalog: cardCatalog)
             }
             if !item.nested.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(item.nested.enumerated()), id: \.offset) { _, nested in
-                        ResolvedStoryListItemView(item: nested)
+                        ResolvedStoryListItemView(item: nested, cardCatalog: cardCatalog)
                     }
                 }
                 .padding(.leading, 16)

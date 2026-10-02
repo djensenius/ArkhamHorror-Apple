@@ -122,7 +122,9 @@ struct BasicChoicePromptView: View {
                             ForEach(
                                 Array(resolved.body.enumerated()), id: \.offset
                             ) { _, entry in
-                                ResolvedStoryEntryView(entry: entry)
+                                ResolvedStoryEntryView(
+                                    entry: entry, cardCatalog: presentation.cardCatalog
+                                )
                             }
                         }
                     }
@@ -155,7 +157,9 @@ struct BasicChoicePromptView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 6) {
                             ForEach(Array(resolved.body.enumerated()), id: \.offset) { _, entry in
-                                ResolvedStoryEntryView(entry: entry)
+                                ResolvedStoryEntryView(
+                                    entry: entry, cardCatalog: presentation.cardCatalog
+                                )
                             }
                         }
                     }

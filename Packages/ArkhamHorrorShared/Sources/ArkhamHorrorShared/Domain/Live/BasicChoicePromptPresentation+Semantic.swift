@@ -989,7 +989,7 @@ extension BasicChoicePromptPresentation {
         case let .list(items):
             items.compactMap { semanticStoryEntrySummary($0.entry) }.joined(separator: "; ")
         case let .cardReference(cardCode, _):
-            "Card \(cardCode.rawValue)"
+            cardCatalog?.displayName(for: cardCode) ?? "Card \(cardCode.rawValue)"
         case let .tarotReference(arcana):
             "Tarot \(arcana)"
         case let .chaosTokenReference(face):
