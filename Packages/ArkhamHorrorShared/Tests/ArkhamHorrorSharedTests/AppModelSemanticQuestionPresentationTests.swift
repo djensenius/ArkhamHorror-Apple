@@ -464,7 +464,6 @@ extension AppModelLiveGameTests {
     }
 
     @Test("Multi-select progress follows the current re-asked server snapshot")
-    // swiftlint:disable:next function_body_length
     func multiSelectProgressFollowsCurrentServerSnapshot() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
