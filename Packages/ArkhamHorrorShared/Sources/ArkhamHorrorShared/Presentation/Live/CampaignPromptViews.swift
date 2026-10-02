@@ -36,6 +36,13 @@ struct BetweenScenariosView: View {
         projection.campaignSummary
     }
 
+    private var campaignSummaryContext: BoardCampaignSummaryDisplayContext {
+        BoardCampaignSummaryDisplayContext(
+            localeCatalogResolver: model.localeCatalogResolver,
+            cardCatalog: model.cardCatalog
+        )
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             Spacer(minLength: 0)
@@ -95,7 +102,7 @@ struct BetweenScenariosView: View {
     @ViewBuilder
     private var campaignSummarySection: some View {
         if let campaignSummary, !campaignSummary.isEmpty {
-            CampaignBetweenSummaryView(summary: campaignSummary)
+            CampaignBetweenSummaryView(summary: campaignSummary, context: campaignSummaryContext)
         } else {
             Text(campaignLocalized(
                 "campaign.between.emptySummary",
@@ -197,6 +204,7 @@ struct BetweenScenariosView: View {
 
 private struct CampaignBetweenSummaryView: View {
     let summary: BoardCampaignSummary
+    let context: BoardCampaignSummaryDisplayContext
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -205,9 +213,9 @@ private struct CampaignBetweenSummaryView: View {
                     title: campaignLocalized("campaign.between.resolution", "Latest resolution")
                 ) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(resolution.title)
+                        Text(resolution.title(context: context))
                             .font(.headline)
-                        if let detail = resolution.detail {
+                        if let detail = resolution.detail(context: context) {
                             Text(detail)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
@@ -229,7 +237,7 @@ private struct CampaignBetweenSummaryView: View {
             }
 
             if !summary.log.isEmpty {
-                CampaignBetweenLogView(log: summary.log)
+                CampaignBetweenLogView(log: summary.log, context: context)
             }
         }
     }
@@ -312,6 +320,7 @@ private struct CampaignPill: View {
 
 private struct CampaignBetweenLogView: View {
     let log: BoardCampaignLogSummary
+    let context: BoardCampaignSummaryDisplayContext
 
     var body: some View {
         CampaignBetweenSection(title: campaignLocalized("campaign.between.log", "Campaign log")) {
@@ -320,7 +329,13 @@ private struct CampaignBetweenLogView: View {
                     CampaignLogList(
                         title: campaignLocalized("campaign.between.log.entries", "Entries"),
                         rows: log.entries.map { entry in
-                            CampaignLogRowText(title: entry.title, isCrossedOut: entry.isCrossedOut)
+                            let title = entry.title(context: context)
+                            return CampaignLogRowText(
+                                id: entry.id,
+                                title: title,
+                                accessibilityTitle: title,
+                                isCrossedOut: entry.isCrossedOut
+                            )
                         }
                     )
                 }
@@ -328,8 +343,11 @@ private struct CampaignBetweenLogView: View {
                     CampaignLogList(
                         title: campaignLocalized("campaign.between.log.counts", "Counts"),
                         rows: log.counts.map { count in
-                            CampaignLogRowText(
-                                title: "\(count.title): \(count.value)",
+                            let title = "\(count.title(context: context)): \(count.value)"
+                            return CampaignLogRowText(
+                                id: count.id,
+                                title: title,
+                                accessibilityTitle: title,
                                 isCrossedOut: false
                             )
                         }
@@ -337,10 +355,15 @@ private struct CampaignBetweenLogView: View {
                 }
                 ForEach(log.recordedSets) { set in
                     CampaignLogList(
-                        title: set.title,
+                        title: set.title(context: context),
                         rows: set.values.map { value in
-                            CampaignLogRowText(
-                                title: value.isCircled ? "◯ \(value.title)" : value.title,
+                            let title = value.title(context: context)
+                            return CampaignLogRowText(
+                                id: value.id,
+                                title: value.isCircled ? "◯ \(title)" : title,
+                                accessibilityTitle: recordedValueAccessibilityLabel(
+                                    title, value: value
+                                ),
                                 isCrossedOut: value.isCrossedOut
                             )
                         }
@@ -349,15 +372,38 @@ private struct CampaignBetweenLogView: View {
             }
         }
     }
+
+    private func recordedValueAccessibilityLabel(
+        _ title: String,
+        value: BoardCampaignLogRecordedValue
+    ) -> String {
+        switch (value.isCrossedOut, value.isCircled) {
+        case (true, true):
+            String(format: campaignLocalized(
+                "campaign.between.log.value.crossedOutCircled.accessibility",
+                "%@, crossed out, circled"
+            ), title)
+        case (true, false):
+            String(format: campaignLocalized(
+                "campaign.between.log.value.crossedOut.accessibility",
+                "%@, crossed out"
+            ), title)
+        case (false, true):
+            String(format: campaignLocalized(
+                "campaign.between.log.value.circled.accessibility",
+                "%@, circled"
+            ), title)
+        case (false, false):
+            title
+        }
+    }
 }
 
 private struct CampaignLogRowText: Identifiable {
+    let id: String
     let title: String
+    let accessibilityTitle: String
     let isCrossedOut: Bool
-
-    var id: String {
-        "\(isCrossedOut):\(title)"
-    }
 }
 
 private struct CampaignLogList: View {
@@ -377,6 +423,7 @@ private struct CampaignLogList: View {
                         .foregroundStyle(row.isCrossedOut ? .secondary : .primary)
                 }
                 .font(.footnote)
+                .accessibilityLabel(row.accessibilityTitle)
             }
         }
     }

@@ -235,11 +235,7 @@ extension AppModel {
         }
         switch update {
         case let .snapshot(snapshot):
-            projection = BoardProjectionBuilder.makeProjection(
-                from: snapshot,
-                localeCatalogResolver: localeCatalogResolver,
-                cardCatalog: cardCatalog
-            )
+            projection = BoardProjectionBuilder.makeProjection(from: snapshot)
             basicChoiceServerFeedback[attempt.gameID] = nil
             reconcileBasicChoice(
                 gameID: attempt.gameID, projection: projection, isRESTSnapshot: false

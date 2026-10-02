@@ -1,12 +1,10 @@
 import Foundation
 
-// swiftlint:disable file_length
-
 /// Campaign hand-off presentation data copied from the authoritative server snapshot.
 ///
-/// This is display-only: it formats campaign-log keys/values, investigator progression,
-/// and the server's latest resolution marker without evaluating campaign rules or deck
-/// legality on the client.
+/// This is display-only: it keeps campaign-log keys/values, investigator progression,
+/// and the server's latest resolution marker raw so renderers can resolve catalog-backed
+/// text against the currently loaded locale and card catalogs.
 struct BoardCampaignSummary: Sendable, Equatable {
     let latestResolution: BoardCampaignResolutionSummary?
     let log: BoardCampaignLogSummary
@@ -18,8 +16,30 @@ struct BoardCampaignSummary: Sendable, Equatable {
 }
 
 struct BoardCampaignResolutionSummary: Sendable, Equatable {
-    let title: String
-    let detail: String?
+    enum Source: Sendable, Equatable {
+        case campaign(scenarioID: String, resolution: JSONValue)
+        case resolvedStory(JSONValue)
+    }
+
+    let source: Source
+
+    func title(context: BoardCampaignSummaryDisplayContext = .system) -> String {
+        switch source {
+        case let .campaign(_, resolution):
+            BoardCampaignSummaryFormatting.resolutionTitle(resolution, context: context)
+        case .resolvedStory:
+            context.localization.localized("campaign.summary.resolvedStory", "Resolved story")
+        }
+    }
+
+    func detail(context: BoardCampaignSummaryDisplayContext = .system) -> String? {
+        switch source {
+        case let .campaign(scenarioID, _):
+            BoardCampaignSummaryFormatting.scenarioTitle(scenarioID, context: context)
+        case let .resolvedStory(story):
+            BoardCampaignSummaryFormatting.jsonDisplayValue(story, context: context)
+        }
+    }
 }
 
 struct BoardCampaignLogSummary: Sendable, Equatable {
@@ -34,27 +54,46 @@ struct BoardCampaignLogSummary: Sendable, Equatable {
 
 struct BoardCampaignLogEntry: Sendable, Equatable, Identifiable {
     let id: String
-    let title: String
+    let key: JSONValue
     let isCrossedOut: Bool
+
+    func title(context: BoardCampaignSummaryDisplayContext = .system) -> String {
+        BoardCampaignSummaryFormatting.logKeyTitle(key, context: context)
+    }
 }
 
 struct BoardCampaignLogCount: Sendable, Equatable, Identifiable {
     let id: String
-    let title: String
+    let key: JSONValue
     let value: Int
+
+    func title(context: BoardCampaignSummaryDisplayContext = .system) -> String {
+        BoardCampaignSummaryFormatting.logKeyTitle(key, context: context)
+    }
 }
 
 struct BoardCampaignLogRecordedSet: Sendable, Equatable, Identifiable {
     let id: String
-    let title: String
+    let key: JSONValue
     let values: [BoardCampaignLogRecordedValue]
+
+    func title(context: BoardCampaignSummaryDisplayContext = .system) -> String {
+        BoardCampaignSummaryFormatting.logKeyTitle(key, context: context)
+    }
 }
 
 struct BoardCampaignLogRecordedValue: Sendable, Equatable, Identifiable {
     let id: String
-    let title: String
+    let recordType: String?
+    let value: JSONValue
     let isCrossedOut: Bool
     let isCircled: Bool
+
+    func title(context: BoardCampaignSummaryDisplayContext = .system) -> String {
+        BoardCampaignSummaryFormatting.recordedValueTitle(
+            value, recordType: recordType, context: context
+        )
+    }
 }
 
 struct BoardCampaignInvestigatorProgress: Sendable, Equatable, Identifiable {
@@ -69,10 +108,9 @@ struct BoardCampaignInvestigatorProgress: Sendable, Equatable, Identifiable {
     let drivenInsane: Bool
 }
 
-// swiftlint:disable:next type_body_length
 enum BoardCampaignSummaryBuilder {
-    private struct RecordedValueDisplay {
-        let title: String
+    private struct RecordedValueRaw {
+        let value: JSONValue
         let isCrossedOut: Bool
         let isCircled: Bool
     }
@@ -80,10 +118,9 @@ enum BoardCampaignSummaryBuilder {
     static func makeSummary(
         campaign: JSONValue?,
         scenario: Scenario?,
-        investigators: [BoardInvestigatorNode],
-        context: BoardCampaignSummaryDisplayContext = .system
+        investigators: [BoardInvestigatorNode]
     ) -> BoardCampaignSummary? {
-        let log = makeLogSummary(campaign: campaign, scenario: scenario, context: context)
+        let log = makeLogSummary(campaign: campaign, scenario: scenario)
         let progress = investigators.map { investigator in
             BoardCampaignInvestigatorProgress(
                 id: investigator.id,
@@ -98,9 +135,7 @@ enum BoardCampaignSummaryBuilder {
             )
         }
         let summary = BoardCampaignSummary(
-            latestResolution: makeLatestResolution(
-                campaign: campaign, scenario: scenario, context: context
-            ),
+            latestResolution: makeLatestResolution(campaign: campaign, scenario: scenario),
             log: log,
             investigators: progress
         )
@@ -109,35 +144,27 @@ enum BoardCampaignSummaryBuilder {
 
     static func makeLogSummary(
         campaign: JSONValue?,
-        scenario: Scenario?,
-        context: BoardCampaignSummaryDisplayContext = .system
+        scenario: Scenario?
     ) -> BoardCampaignLogSummary {
         if let log = campaign?.objectValue?["log"] {
-            return makeLogSummary(from: log, context: context)
+            return makeLogSummary(from: log)
         }
         if let scenario {
-            return makeLogSummary(from: scenario.standaloneCampaignLog, context: context)
+            return makeLogSummary(from: scenario.standaloneCampaignLog)
         }
         return BoardCampaignLogSummary(entries: [], counts: [], recordedSets: [])
     }
 
-    static func makeLogSummary(
-        from log: ScenarioCampaignLog,
-        context: BoardCampaignSummaryDisplayContext = .system
-    ) -> BoardCampaignLogSummary {
+    static func makeLogSummary(from log: ScenarioCampaignLog) -> BoardCampaignLogSummary {
         makeLogSummary(
             recorded: log.recorded,
             crossedOut: log.crossedOut,
             recordedCounts: log.recordedCounts,
-            recordedSets: log.recordedSets,
-            context: context
+            recordedSets: log.recordedSets
         )
     }
 
-    static func makeLogSummary(
-        from log: JSONValue,
-        context: BoardCampaignSummaryDisplayContext = .system
-    ) -> BoardCampaignLogSummary {
+    static func makeLogSummary(from log: JSONValue) -> BoardCampaignLogSummary {
         guard let object = log.objectValue else {
             return BoardCampaignLogSummary(entries: [], counts: [], recordedSets: [])
         }
@@ -145,8 +172,7 @@ enum BoardCampaignSummaryBuilder {
             recorded: object["recorded"]?.arrayValue ?? [],
             crossedOut: object["crossedOut"]?.arrayValue ?? [],
             recordedCounts: object["recordedCounts"]?.arrayValue ?? [],
-            recordedSets: object["recordedSets"]?.arrayValue ?? [],
-            context: context
+            recordedSets: object["recordedSets"]?.arrayValue ?? []
         )
     }
 
@@ -154,22 +180,17 @@ enum BoardCampaignSummaryBuilder {
         recorded: [JSONValue],
         crossedOut: [JSONValue],
         recordedCounts: [JSONValue],
-        recordedSets: [JSONValue],
-        context: BoardCampaignSummaryDisplayContext
+        recordedSets: [JSONValue]
     ) -> BoardCampaignLogSummary {
         let crossedOutIDs = Set(crossedOut.map(BoardCampaignSummaryFormatting.logKeyIdentity))
         let entries: [BoardCampaignLogEntry] = recorded.compactMap { key in
             guard shouldShowRecordedKey(key) else { return nil }
             let id = BoardCampaignSummaryFormatting.logKeyIdentity(key)
-            return BoardCampaignLogEntry(
-                id: id,
-                title: BoardCampaignSummaryFormatting.logKeyTitle(key, context: context),
-                isCrossedOut: crossedOutIDs.contains(id)
-            )
+            return BoardCampaignLogEntry(id: id, key: key, isCrossedOut: crossedOutIDs.contains(id))
         }
 
-        let counts = recordedCounts.compactMap { parseCount($0, context: context) }
-        let sets = recordedSets.compactMap { parseRecordedSet($0, context: context) }
+        let counts = recordedCounts.compactMap(parseCount)
+        let sets = recordedSets.compactMap(parseRecordedSet)
         return BoardCampaignLogSummary(entries: entries, counts: counts, recordedSets: sets)
     }
 
@@ -187,10 +208,7 @@ enum BoardCampaignSummaryBuilder {
         return contents["tag"]?.stringValue != nil && contents["contents"]?.stringValue != nil
     }
 
-    private static func parseCount(
-        _ value: JSONValue,
-        context: BoardCampaignSummaryDisplayContext
-    ) -> BoardCampaignLogCount? {
+    private static func parseCount(_ value: JSONValue) -> BoardCampaignLogCount? {
         guard case let .array(pair) = value,
               pair.count == 2,
               !isSectionKey(pair[0]),
@@ -198,15 +216,12 @@ enum BoardCampaignSummaryBuilder {
         else { return nil }
         return BoardCampaignLogCount(
             id: BoardCampaignSummaryFormatting.logKeyIdentity(pair[0]),
-            title: BoardCampaignSummaryFormatting.logKeyTitle(pair[0], context: context),
+            key: pair[0],
             value: count
         )
     }
 
-    private static func parseRecordedSet(
-        _ value: JSONValue,
-        context: BoardCampaignSummaryDisplayContext
-    ) -> BoardCampaignLogRecordedSet? {
+    private static func parseRecordedSet(_ value: JSONValue) -> BoardCampaignLogRecordedSet? {
         guard case let .array(pair) = value,
               pair.count == 2,
               case let .array(records) = pair[1]
@@ -214,120 +229,73 @@ enum BoardCampaignSummaryBuilder {
         let keyID = BoardCampaignSummaryFormatting.logKeyIdentity(pair[0])
         guard !keyID.lowercased().contains("discoveredglyph") else { return nil }
         let values = records.enumerated().map { index, record in
-            parseRecordedValue(record, idPrefix: keyID, index: index, context: context)
+            parseRecordedValue(record, idPrefix: keyID, index: index)
         }
-        return BoardCampaignLogRecordedSet(
-            id: keyID,
-            title: BoardCampaignSummaryFormatting.logKeyTitle(pair[0], context: context),
-            values: values
-        )
+        return BoardCampaignLogRecordedSet(id: keyID, key: pair[0], values: values)
     }
 
     private static func parseRecordedValue(
         _ value: JSONValue,
         idPrefix: String,
-        index: Int,
-        context: BoardCampaignSummaryDisplayContext
+        index: Int
     ) -> BoardCampaignLogRecordedValue {
         let recordType = value.objectValue?["recordType"]?.stringValue
         let recordValue = value.objectValue?["recordVal"] ?? value
-        let unwrapped = unwrapRecordedValue(recordValue, recordType: recordType, context: context)
+        let unwrapped = unwrapRecordedValue(recordValue)
         return BoardCampaignLogRecordedValue(
-            id: "\(idPrefix):\(index):\(unwrapped.title)",
-            title: unwrapped.title,
+            id: "\(idPrefix):\(index)",
+            recordType: recordType,
+            value: unwrapped.value,
             isCrossedOut: unwrapped.isCrossedOut,
             isCircled: unwrapped.isCircled
         )
     }
 
-    private static func unwrapRecordedValue(
-        _ value: JSONValue,
-        recordType: String?,
-        context: BoardCampaignSummaryDisplayContext
-    ) -> RecordedValueDisplay {
+    private static func unwrapRecordedValue(_ value: JSONValue) -> RecordedValueRaw {
         guard let object = value.objectValue,
               let tag = object["tag"]?.stringValue,
               let contents = object["contents"]
         else {
-            return RecordedValueDisplay(
-                title: recordedContentsTitle(value, recordType: recordType, context: context),
-                isCrossedOut: false,
-                isCircled: false
-            )
+            return RecordedValueRaw(value: value, isCrossedOut: false, isCircled: false)
         }
-        let inner = recordedContentsTitle(contents, recordType: recordType, context: context)
         switch tag {
         case "Recorded":
-            return RecordedValueDisplay(
-                title: inner,
+            return RecordedValueRaw(
+                value: contents,
                 isCrossedOut: false,
-                isCircled: object["circled"]?.boolValue ?? false
+                isCircled: object["circled"]?.booleanValue ?? false
             )
         case "CrossedOut":
-            return RecordedValueDisplay(
-                title: inner,
+            return RecordedValueRaw(
+                value: contents,
                 isCrossedOut: true,
-                isCircled: object["circled"]?.boolValue ?? false
+                isCircled: object["circled"]?.booleanValue ?? false
             )
         default:
-            return RecordedValueDisplay(
-                title: BoardCampaignSummaryFormatting.jsonDisplayValue(value, context: context),
+            return RecordedValueRaw(
+                value: value,
                 isCrossedOut: false,
-                isCircled: object["circled"]?.boolValue ?? false
+                isCircled: object["circled"]?.booleanValue ?? false
             )
         }
-    }
-
-    private static func recordedContentsTitle(
-        _ value: JSONValue,
-        recordType: String?,
-        context: BoardCampaignSummaryDisplayContext
-    ) -> String {
-        if recordType == "RecordableCardCode" {
-            if let title = cardDisplayName(value, context: context) {
-                return title
-            }
-        }
-        if let recordType, recordType != "RecordableCardCode", let text = value.stringValue {
-            return BoardCampaignSummaryFormatting.splitCamelCase(text)
-        }
-        if recordType == nil, let title = cardDisplayName(value, context: context) {
-            return title
-        }
-        return BoardCampaignSummaryFormatting.jsonDisplayValue(value, context: context)
-    }
-
-    private static func cardDisplayName(
-        _ value: JSONValue,
-        context: BoardCampaignSummaryDisplayContext
-    ) -> String? {
-        guard let code = value.stringValue else { return nil }
-        return BoardCampaignSummaryFormatting.cardDisplayName(for: code, context: context)
     }
 
     private static func makeLatestResolution(
         campaign: JSONValue?,
-        scenario: Scenario?,
-        context: BoardCampaignSummaryDisplayContext
+        scenario: Scenario?
     ) -> BoardCampaignResolutionSummary? {
-        if let resolution = campaign.flatMap({ latestCampaignResolution($0, context: context) }) {
+        if let resolution = campaign.flatMap(latestCampaignResolution) {
             return resolution
         }
         guard let scenario,
               scenario.inResolution,
               let story = scenario.resolvedStories.last
         else { return nil }
-        return BoardCampaignResolutionSummary(
-            title: context.localization.localized(
-                "campaign.summary.resolvedStory", "Resolved story"
-            ),
-            detail: BoardCampaignSummaryFormatting.jsonDisplayValue(story, context: context)
-        )
+        return BoardCampaignResolutionSummary(source: .resolvedStory(story))
     }
 
     private static func latestCampaignResolution(
-        _ campaign: JSONValue,
-        context: BoardCampaignSummaryDisplayContext
+        _ campaign: JSONValue
     ) -> BoardCampaignResolutionSummary? {
         guard let object = campaign.objectValue,
               let resolutions = object["resolutions"]?.objectValue,
@@ -338,10 +306,10 @@ enum BoardCampaignSummaryBuilder {
             resolutions.first { key, _ in key == scenarioID || key == "c\(scenarioID)" }
         } ?? resolutions.max { $0.key < $1.key }
         guard let entry else { return nil }
-        return BoardCampaignResolutionSummary(
-            title: resolutionTitle(entry.value, context: context),
-            detail: scenarioTitle(entry.key, context: context)
-        )
+        return BoardCampaignResolutionSummary(source: .campaign(
+            scenarioID: entry.key,
+            resolution: entry.value
+        ))
     }
 
     private static func latestScenarioStepID(in completedSteps: JSONValue?) -> String? {
@@ -360,52 +328,9 @@ enum BoardCampaignSummaryBuilder {
             return nil
         }.first
     }
-
-    private static func resolutionTitle(
-        _ value: JSONValue,
-        context: BoardCampaignSummaryDisplayContext
-    ) -> String {
-        let isNoResolution = value.stringValue == "NoResolution"
-            || value.objectValue?["tag"]?.stringValue == "NoResolution"
-        if isNoResolution {
-            return context.localization.localized("campaign.summary.noResolution", "No resolution")
-        }
-        if let object = value.objectValue {
-            let isResolution = object["tag"]?.stringValue == "Resolution"
-            if isResolution, let number = object["contents"]?.integerValue {
-                return localizedResolutionNumber(number, context: context)
-            }
-        }
-        if let number = value.integerValue {
-            return localizedResolutionNumber(number, context: context)
-        }
-        return BoardCampaignSummaryFormatting.jsonDisplayValue(value, context: context)
-    }
-
-    private static func localizedResolutionNumber(
-        _ number: Int,
-        context: BoardCampaignSummaryDisplayContext
-    ) -> String {
-        String(
-            format: context.localization.localized(
-                "campaign.summary.resolutionNumber", "Resolution %d"
-            ),
-            number
-        )
-    }
-
-    private static func scenarioTitle(
-        _ key: String,
-        context: BoardCampaignSummaryDisplayContext
-    ) -> String {
-        if let title = BoardCampaignSummaryFormatting.cardDisplayName(for: key, context: context) {
-            return title
-        }
-        return BoardCampaignSummaryFormatting.titleizedWords(key)
-    }
 }
 
-private extension JSONValue {
+extension JSONValue {
     var objectValue: [String: JSONValue]? {
         guard case let .object(value) = self else { return nil }
         return value
@@ -421,7 +346,7 @@ private extension JSONValue {
         return value
     }
 
-    var boolValue: Bool? {
+    var booleanValue: Bool? {
         guard case let .bool(value) = self else { return nil }
         return value
     }

@@ -335,10 +335,7 @@ extension AppModel {
                 attempt.gameID, on: attempt.profile, token: token
             )
             try Task.checkCancellation()
-            let projection = BoardProjectionBuilder.makeProjection(
-                from: envelope.game, localeCatalogResolver: localeCatalogResolver,
-                cardCatalog: cardCatalog
-            )
+            let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
             guard isCurrentLiveGameSession(attempt) else { return nil }
             liveGameParticipantIdentities[attempt.gameID] = envelope.playerID
                 .map(LiveGameParticipantIdentity.participant) ?? .spectator

@@ -64,70 +64,112 @@ struct BoardProjectionCampaignSummaryTests {
             case .german: "Falsch"
             }
         }
-
-        var localization: BoardCampaignSummaryLocalization {
-            BoardCampaignSummaryLocalization { key, fallback in
-                switch (self, key) {
-                case (.english, "campaign.summary.boolean.false"): "False"
-                case (.english, "campaign.summary.boolean.true"): "True"
-                case (.english, "campaign.summary.noResolution"): "No resolution"
-                case (.english, "campaign.summary.resolutionNumber"): "Resolution %d"
-                case (.english, "campaign.summary.resolvedStory"): "Resolved story"
-                case (.german, "campaign.summary.boolean.false"): "Falsch"
-                case (.german, "campaign.summary.boolean.true"): "Wahr"
-                case (.german, "campaign.summary.noResolution"): "Keine Auflösung"
-                case (.german, "campaign.summary.resolutionNumber"): "Auflösung %d"
-                case (.german, "campaign.summary.resolvedStory"): "Abgehandelte Geschichte"
-                default: fallback
-                }
-            }
-        }
     }
 
     private let investigatorID = BoardTestFixtures.investigatorID("c01001")
 
-    @Test("Campaign handoff summary uses catalog text, card titles, and server snapshot bytes")
-    func campaignHandoffSummaryUsesCatalogsAndServerValues() throws {
-        try assertCampaignHandoffSummary(locale: .english)
-        try assertCampaignHandoffSummary(locale: .german)
-    }
-
-    private func assertCampaignHandoffSummary(locale: SummaryLocale) throws {
-        let context = try displayContext(locale: locale)
+    @Test("Campaign handoff summary keeps raw server values and resolves catalogs at display time")
+    func campaignHandoffSummaryResolvesCatalogsAfterProjectionBuild() throws {
         let projection = try BoardProjectionBuilder.makeProjection(
-            from: fixtureBackedCampaignSnapshot(),
-            localeCatalogResolver: context.localeCatalogResolver,
-            cardCatalog: context.cardCatalog,
-            campaignSummaryLocalization: context.localization
+            from: fixtureBackedCampaignSnapshot()
         )
         let summary = try #require(projection.campaignSummary)
 
-        #expect(summary.latestResolution?.title == locale.resolutionTitle)
-        #expect(summary.latestResolution?.detail == locale.scenarioTitle)
-        #expect(summary.log.entries.map(\.title) == [
-            locale.burnedHouse,
+        assertCampaignHandoffFallback(summary)
+        try assertCampaignHandoffSummary(summary, locale: .english)
+        try assertCampaignHandoffSummary(summary, locale: .german)
+    }
+
+    @Test("Campaign summary chrome reads real en and de Localizable bundles")
+    func campaignSummaryChromeUsesRealBundles() {
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("en") {
+            #expect(BoardCampaignSummaryLocalization.system.localized(
+                "campaign.summary.resolutionNumber", "fallback %d"
+            ) == "Resolution %d")
+            #expect(BoardCampaignSummaryLocalization.system.localized(
+                "campaign.summary.boolean.true", "fallback"
+            ) == "True")
+        }
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
+            #expect(BoardCampaignSummaryLocalization.system.localized(
+                "campaign.summary.resolutionNumber", "fallback %d"
+            ) == "Auflösung %d")
+            #expect(BoardCampaignSummaryLocalization.system.localized(
+                "campaign.summary.boolean.true", "fallback"
+            ) == "Wahr")
+        }
+    }
+
+    @Test("Campaign log key paths strip only a trailing Key suffix")
+    func scarletKeysLogKeyUsesCatalogPath() {
+        let resolver = LocaleCatalogResolver(snapshot: localeCatalog(
+            locale: .english,
+            entries: ["theScarletKeys.key.time": "Translated time"]
+        ))
+        let context = BoardCampaignSummaryDisplayContext(localeCatalogResolver: resolver)
+        let scarletKeysTime: JSONValue = .object([
+            "tag": .string("TheScarletKeysKey"),
+            "contents": .string("Time"),
+        ])
+
+        #expect(BoardCampaignSummaryFormatting.logKeyTitle(
+            scarletKeysTime, context: context
+        ) == "Translated time")
+    }
+
+    private func assertCampaignHandoffFallback(_ summary: BoardCampaignSummary) {
+        #expect(summary.latestResolution?.title() == "Resolution 2")
+        #expect(summary.latestResolution?.detail() == "c01104")
+        #expect(summary.log.entries.map { $0.title() } == [
+            "Your house has burned to the ground",
             "Custom homebrew thing",
         ])
-        #expect(summary.log.entries.map(\.isCrossedOut) == [false, false])
-        #expect(summary.log.counts.map(\.title) == [locale.burnedHouse])
-        #expect(summary.log.counts.map(\.value) == [2])
-        #expect(summary.log.recordedSets.map(\.title) == [locale.cultistsWhoGotAway])
-        let values = try #require(summary.log.recordedSets.first?.values)
-        #expect(values.map(\.title) == [locale.maskedHunter, "Elder Thing"])
-        #expect(values.map(\.isCrossedOut) == [false, true])
-        #expect(values.map(\.isCircled) == [false, true])
-        #expect(summary.investigators.first?.displayName == "Roland Banks")
-        #expect(summary.investigators.first?.availableExperience == 5)
-        #expect(summary.investigators.first?.physicalTrauma == 1)
-        #expect(summary.investigators.first?.mentalTrauma == 2)
-        #expect(summary.investigators.first?.killed == true)
+        #expect(summary.log.counts.map { $0.title() } == ["Your house has burned to the ground"])
+        #expect(summary.log.recordedSets.map { $0.title() } == ["Cultists who got away"])
+        let values = summary.log.recordedSets.first?.values ?? []
+        #expect(values.map { $0.title() } == ["c01121b", "Elder Thing"])
+    }
 
-        #expect(BoardCampaignSummaryFormatting.jsonDisplayValue(
-            .bool(true), context: context
-        ) == locale.trueTitle)
-        #expect(BoardCampaignSummaryFormatting.jsonDisplayValue(
-            .bool(false), context: context
-        ) == locale.falseTitle)
+    private func assertCampaignHandoffSummary(
+        _ summary: BoardCampaignSummary,
+        locale: SummaryLocale
+    ) throws {
+        try CampaignPromptLocalization.$localizationIdentifierOverride.withValue(
+            locale.identifier
+        ) {
+            let context = try displayContext(locale: locale)
+
+            #expect(summary.latestResolution?.title(context: context) == locale.resolutionTitle)
+            #expect(summary.latestResolution?.detail(context: context) == locale.scenarioTitle)
+            #expect(summary.log.entries.map { $0.title(context: context) } == [
+                locale.burnedHouse,
+                "Custom homebrew thing",
+            ])
+            #expect(summary.log.entries.map(\.isCrossedOut) == [false, false])
+            #expect(summary.log.counts.map { $0.title(context: context) } == [locale.burnedHouse])
+            #expect(summary.log.counts.map(\.value) == [2])
+            #expect(summary.log.recordedSets.map { $0.title(context: context) } == [
+                locale.cultistsWhoGotAway,
+            ])
+            let values = try #require(summary.log.recordedSets.first?.values)
+            #expect(values.map { $0.title(context: context) } == [
+                locale.maskedHunter, "Elder Thing",
+            ])
+            #expect(values.map(\.isCrossedOut) == [false, true])
+            #expect(values.map(\.isCircled) == [false, true])
+            #expect(summary.investigators.first?.displayName == "Roland Banks")
+            #expect(summary.investigators.first?.availableExperience == 5)
+            #expect(summary.investigators.first?.physicalTrauma == 1)
+            #expect(summary.investigators.first?.mentalTrauma == 2)
+            #expect(summary.investigators.first?.killed == true)
+
+            #expect(BoardCampaignSummaryFormatting.jsonDisplayValue(
+                .bool(true), context: context
+            ) == locale.trueTitle)
+            #expect(BoardCampaignSummaryFormatting.jsonDisplayValue(
+                .bool(false), context: context
+            ) == locale.falseTitle)
+        }
     }
 
     private func fixtureBackedCampaignSnapshot() throws -> PublicGameSnapshot {
@@ -179,7 +221,7 @@ struct BoardProjectionCampaignSummaryTests {
             "tag": "TheDrownedCityKey",
             "contents": "DiscoveredGlyphs",
         ]
-        campaign["completedSteps"] = [["tag": "ScenarioStep", "contents": "01104"]]
+        campaign["completedSteps"] = [["tag": "ScenarioStep", "contents": "c01104"]]
         campaign["log"] = [
             "crossedOut": [crossedOutOnlyKey],
             "options": [],
@@ -216,7 +258,7 @@ struct BoardProjectionCampaignSummaryTests {
             ],
         ]
         campaign["resolutions"] = [
-            "01104": ["tag": "Resolution", "contents": 2],
+            "c01104": ["tag": "Resolution", "contents": 2],
         ]
         root["This"] = campaign
         let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
@@ -253,8 +295,7 @@ struct BoardProjectionCampaignSummaryTests {
     ) throws -> BoardCampaignSummaryDisplayContext {
         try BoardCampaignSummaryDisplayContext(
             localeCatalogResolver: LocaleCatalogResolver(snapshot: localeCatalog(locale: locale)),
-            cardCatalog: cardCatalog(locale: locale),
-            localization: locale.localization
+            cardCatalog: cardCatalog(locale: locale)
         )
     }
 
@@ -265,15 +306,24 @@ struct BoardProjectionCampaignSummaryTests {
         ])
     }
 
-    // swiftlint:disable:next function_body_length
     private func localeCatalog(locale: SummaryLocale) -> LocaleCatalogSnapshot {
+        localeCatalog(locale: locale, entries: [
+            "nightOfTheZealot.key.yourHouseHasBurnedToTheGround": locale.burnedHouse,
+            "nightOfTheZealot.key.cultistsWhoGotAway": locale.cultistsWhoGotAway,
+        ])
+    }
+
+    private func localeCatalog(
+        locale: SummaryLocale,
+        entries rawEntries: [String: String]
+    ) -> LocaleCatalogSnapshot {
         let digest = String(repeating: "a", count: 64)
         let descriptor = LocaleCatalogChunkDescriptor(
             pack: "story",
             path: LocaleCatalogGrammar.chunkPath(forDigest: digest),
             bytes: 1,
             sha256: digest,
-            keys: 2,
+            keys: rawEntries.count,
             unsupportedKeys: 0
         )
         let manifest = LocaleCatalogManifest(
@@ -284,7 +334,7 @@ struct BoardProjectionCampaignSummaryTests {
                     locale: locale.identifier,
                     fallback: locale == .english ? nil : "en",
                     chunks: [descriptor],
-                    keys: 2,
+                    keys: rawEntries.count,
                     bytes: 1
                 ),
             ],
@@ -293,14 +343,11 @@ struct BoardProjectionCampaignSummaryTests {
                 locales: 1,
                 chunks: 1,
                 bytes: 1,
-                keys: 2,
+                keys: rawEntries.count,
                 unsupportedKeys: 0
             )
         )
-        let entries = [
-            "nightOfTheZealot.key.yourHouseHasBurnedToTheGround": message(locale.burnedHouse),
-            "nightOfTheZealot.key.cultistsWhoGotAway": message(locale.cultistsWhoGotAway),
-        ]
+        let entries = rawEntries.mapValues(message)
         return LocaleCatalogSnapshot(
             identity: LocaleCatalogIdentity(
                 endpoint: URL(string: "https://catalog.example.test/locale-catalog/manifest.json")!,

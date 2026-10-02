@@ -12,7 +12,7 @@ struct BoardCampaignSummaryLocalization: Sendable {
     }
 
     static let system = BoardCampaignSummaryLocalization { key, fallback in
-        NSLocalizedString(key, bundle: .module, value: fallback, comment: "")
+        CampaignPromptLocalization.localized(key, fallback)
     }
 }
 
@@ -89,6 +89,51 @@ enum BoardCampaignSummaryFormatting {
         }
     }
 
+    static func recordedValueTitle(
+        _ value: JSONValue,
+        recordType: String?,
+        context: BoardCampaignSummaryDisplayContext = .system
+    ) -> String {
+        if recordType == "RecordableCardCode" {
+            return cardDisplayName(for: value, context: context) ?? rawStringValue(value)
+        }
+        if let recordType, recordType != "RecordableCardCode", let text = value.stringValue {
+            return splitCamelCase(text)
+        }
+        if recordType == nil, let title = cardDisplayName(for: value, context: context) {
+            return title
+        }
+        return jsonDisplayValue(value, context: context)
+    }
+
+    static func resolutionTitle(
+        _ value: JSONValue,
+        context: BoardCampaignSummaryDisplayContext = .system
+    ) -> String {
+        let isNoResolution = value.stringValue == "NoResolution"
+            || value.objectValue?["tag"]?.stringValue == "NoResolution"
+        if isNoResolution {
+            return context.localization.localized("campaign.summary.noResolution", "No resolution")
+        }
+        if let object = value.objectValue {
+            let isResolution = object["tag"]?.stringValue == "Resolution"
+            if isResolution, let number = object["contents"]?.integerValue {
+                return localizedResolutionNumber(number, context: context)
+            }
+        }
+        if let number = value.integerValue {
+            return localizedResolutionNumber(number, context: context)
+        }
+        return jsonDisplayValue(value, context: context)
+    }
+
+    static func scenarioTitle(
+        _ key: String,
+        context: BoardCampaignSummaryDisplayContext = .system
+    ) -> String {
+        cardDisplayName(for: key, context: context) ?? key
+    }
+
     static func titleizedWords(_ value: String) -> String {
         let leaf = value
             .split(separator: ".")
@@ -130,6 +175,30 @@ enum BoardCampaignSummaryFormatting {
         return nil
     }
 
+    private static func cardDisplayName(
+        for value: JSONValue,
+        context: BoardCampaignSummaryDisplayContext
+    ) -> String? {
+        guard let code = value.stringValue else { return nil }
+        return cardDisplayName(for: code, context: context)
+    }
+
+    private static func rawStringValue(_ value: JSONValue) -> String {
+        value.stringValue ?? jsonDisplayValue(value)
+    }
+
+    private static func localizedResolutionNumber(
+        _ number: Int,
+        context: BoardCampaignSummaryDisplayContext
+    ) -> String {
+        String(
+            format: context.localization.localized(
+                "campaign.summary.resolutionNumber", "Resolution %d"
+            ),
+            number
+        )
+    }
+
     private static func jsonObjectDisplayValue(
         _ object: [String: JSONValue],
         context: BoardCampaignSummaryDisplayContext
@@ -153,7 +222,9 @@ enum BoardCampaignSummaryFormatting {
         guard case let .object(object) = value,
               let tag = stringValue(object["tag"])
         else { return nil }
-        let prefix = lowerFirst(tag.replacingOccurrences(of: "Key", with: ""))
+        let prefix = lowerFirst(tag.replacingOccurrences(
+            of: "Key$", with: "", options: .regularExpression
+        ))
         guard let contents = object["contents"] else {
             return "base.key.\(lowerFirst(tag))"
         }
