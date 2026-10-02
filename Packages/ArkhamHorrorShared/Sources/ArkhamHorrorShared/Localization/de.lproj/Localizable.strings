@@ -151,6 +151,11 @@
 "campaign.between.log.entries" = "Einträge";
 "campaign.between.log.counts" = "Zählwerte";
 "campaign.between.log.accessibility" = "Kampagnenlogbuch";
+"campaign.summary.boolean.false" = "Falsch";
+"campaign.summary.boolean.true" = "Wahr";
+"campaign.summary.noResolution" = "Keine Auflösung";
+"campaign.summary.resolutionNumber" = "Auflösung %d";
+"campaign.summary.resolvedStory" = "Abgehandelte Geschichte";
 "campaign.between.continue" = "Fortsetzen";
 "campaign.between.upgradeDeck" = "Deck verbessern";
 "campaign.between.retry" = "Erneut versuchen";

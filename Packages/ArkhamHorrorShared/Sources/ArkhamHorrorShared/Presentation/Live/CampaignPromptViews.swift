@@ -214,9 +214,6 @@ private struct CampaignBetweenSummaryView: View {
                         }
                     }
                 }
-                .accessibilityLabel(campaignLocalized(
-                    "campaign.between.resolution.accessibility", "Latest resolution"
-                ))
             }
 
             if !summary.investigators.isEmpty {
@@ -229,9 +226,6 @@ private struct CampaignBetweenSummaryView: View {
                         }
                     }
                 }
-                .accessibilityLabel(campaignLocalized(
-                    "campaign.between.progress.accessibility", "Investigator XP and trauma"
-                ))
             }
 
             if !summary.log.isEmpty {
@@ -301,16 +295,6 @@ private struct CampaignInvestigatorProgressRow: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(String(
-            format: campaignLocalized(
-                "campaign.between.investigator.accessibility",
-                "%@, %d available XP, %d physical trauma, %d mental trauma"
-            ),
-            investigator.displayName,
-            investigator.availableExperience,
-            investigator.physicalTrauma,
-            investigator.mentalTrauma
-        ))
     }
 }
 
@@ -364,16 +348,17 @@ private struct CampaignBetweenLogView: View {
                 }
             }
         }
-        .accessibilityLabel(campaignLocalized(
-            "campaign.between.log.accessibility", "Campaign log"
-        ))
+
     }
 }
 
 private struct CampaignLogRowText: Identifiable {
-    let id = UUID()
     let title: String
     let isCrossedOut: Bool
+
+    var id: String {
+        "\(isCrossedOut):\(title)"
+    }
 }
 
 private struct CampaignLogList: View {

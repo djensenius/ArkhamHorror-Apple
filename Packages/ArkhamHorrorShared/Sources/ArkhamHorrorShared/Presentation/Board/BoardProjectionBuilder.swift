@@ -9,8 +9,18 @@ import Foundation
 /// locale-sensitive comparison. Two snapshots with equal field values always build to an
 /// equal ``BoardProjection`` regardless of map insertion order.
 enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
-    static func makeProjection(from snapshot: PublicGameSnapshot) -> BoardProjection {
+    static func makeProjection(
+        from snapshot: PublicGameSnapshot,
+        localeCatalogResolver: LocaleCatalogResolver? = nil,
+        cardCatalog: CardCatalogSnapshot? = nil,
+        campaignSummaryLocalization: BoardCampaignSummaryLocalization = .system
+    ) -> BoardProjection {
         let scenarioContext = makeScenario(from: snapshot.mode)
+        let campaignSummaryContext = BoardCampaignSummaryDisplayContext(
+            localeCatalogResolver: localeCatalogResolver,
+            cardCatalog: cardCatalog,
+            localization: campaignSummaryLocalization
+        )
         let (locations, enemyLocations) = makeLocations(from: snapshot.locations)
         let investigatorLocations = makeInvestigatorLocationLookup(
             locations: locations, enemyLocations: enemyLocations
@@ -31,7 +41,8 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             campaignSummary: BoardCampaignSummaryBuilder.makeSummary(
                 campaign: scenarioContext.campaign,
                 scenario: scenarioContext.scenarioSource,
-                investigators: investigators
+                investigators: investigators,
+                context: campaignSummaryContext
             ),
             acts: makeActs(from: snapshot.acts),
             agendas: makeAgendas(from: snapshot.agendas),
