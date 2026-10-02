@@ -34,14 +34,33 @@ struct NightOfTheZealotCoverageReplayTests {
 
     @Test("Replay smoke JSONL fixture through the coverage harness")
     func replaySmokeJSONLFixture() async throws {
-        let url = try #require(
+        try await run(recordings: CoverageRecordingLoader.load(file: smokeFixtureURL()))
+    }
+
+    @Test("JSONL loader keeps physical line numbers across blanks and CRLF")
+    func jsonlLoaderKeepsPhysicalLineNumbers() throws {
+        let firstLine = try String(contentsOf: smokeFixtureURL(), encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .first
+        let line = try #require(firstLine)
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "notz-smoke-line-numbers-\(UUID().uuidString).jsonl"
+        )
+        try "\r\n\(line)\r\n".write(to: scratch, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let record = try #require(CoverageRecordingLoader.load(file: scratch).records.first)
+        #expect(record.lineNumber == 2)
+    }
+
+    private func smokeFixtureURL() throws -> URL {
+        try #require(
             Bundle.module.url(
                 forResource: "smoke",
                 withExtension: "jsonl",
                 subdirectory: "Fixtures/NightOfTheZealotCoverageReplay"
             )
         )
-        try await run(recordings: CoverageRecordingLoader.load(file: url))
     }
 
     private func run(recordings: CoverageRecordings) async throws {
@@ -521,11 +540,12 @@ private enum CoverageRecordingLoader {
         var records: [CoverageRecording] = []
         for url in urls {
             let text = try String(contentsOf: url, encoding: .utf8)
-            for (offset, rawLine) in text.split(
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+            for (offset, line) in text.split(
                 separator: "\n",
                 omittingEmptySubsequences: false
             ).enumerated() {
-                let line = rawLine.last == "\r" ? rawLine.dropLast() : rawLine[...]
                 guard !line.isEmpty else { continue }
                 let data = Data(line.utf8)
                 try records.append(CoverageRecording(
@@ -552,6 +572,7 @@ private enum CoverageEnvelopeBuilder {
               case var .object(game) = rootObject["game"]
         else { throw TestFailure() }
 
+        try rewriteOwnership(for: record, in: &game)
         rootObject["playerId"] = .string(record.playerID)
         game["activePlayerId"] = .string(record.playerID)
         game["scenarioSteps"] = .number(.integer(Int64(record.questionVersion)))
@@ -570,6 +591,60 @@ private enum CoverageEnvelopeBuilder {
         rootObject["game"] = .object(game)
         root = .object(rootObject)
         return try ContractJSON.decode(GetGameEnvelope.self, from: ContractJSON.encode(root))
+    }
+
+    private static func rewriteOwnership(
+        for record: CoverageRecord,
+        in game: inout [String: JSONValue]
+    ) throws {
+        guard case let .object(investigators)? = game["investigators"],
+              let templateInvestigator = investigators.keys.sorted().first,
+              case let .string(templatePlayer)? = game["activePlayerId"]
+        else { throw TestFailure() }
+
+        let value = replaceStringValues(
+            .object(game),
+            replacements: [
+                templateInvestigator: record.investigator,
+                templatePlayer: record.playerID,
+            ]
+        )
+        guard case var .object(rewrittenGame) = value else { throw TestFailure() }
+        for field in [
+            "investigators", "otherInvestigators", "killedInvestigators",
+            "retiredInvestigators",
+        ] {
+            renameObjectKey(field, from: templateInvestigator, to: record.investigator, in: &rewrittenGame)
+        }
+        game = rewrittenGame
+    }
+
+    private static func renameObjectKey(
+        _ field: String,
+        from oldKey: String,
+        to newKey: String,
+        in object: inout [String: JSONValue]
+    ) {
+        guard case var .object(map)? = object[field], let value = map.removeValue(forKey: oldKey)
+        else { return }
+        map[newKey] = value
+        object[field] = .object(map)
+    }
+
+    private static func replaceStringValues(
+        _ value: JSONValue,
+        replacements: [String: String]
+    ) -> JSONValue {
+        switch value {
+        case let .string(text):
+            replacements[text].map(JSONValue.string) ?? value
+        case let .array(values):
+            .array(values.map { replaceStringValues($0, replacements: replacements) })
+        case let .object(object):
+            .object(object.mapValues { replaceStringValues($0, replacements: replacements) })
+        case .null, .bool, .number:
+            value
+        }
     }
 
     private static func patchCampaignStep(
