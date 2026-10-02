@@ -1,5 +1,7 @@
 import Foundation
 
+// swiftlint:disable file_length
+
 enum CampaignDeckUpgradeSubmissionResult: Sendable, Equatable {
     case submitted
     case failed(String)
@@ -27,7 +29,6 @@ private struct CampaignDeckSubmissionContext: Sendable {
 }
 
 extension AppModel {
-    // swiftlint:disable function_body_length
     /// Fetches an ArkhamDB/arkham.build deck list with the same guarded import path used
     /// by the Decks screen, then submits it to the backend campaign deck endpoint. The
     /// server remains the deck-validation authority; this path only normalizes the source
@@ -87,8 +88,6 @@ extension AppModel {
         return result
     }
 
-    // swiftlint:enable function_body_length
-
     func continueCampaignWithoutUpgrading(
         investigatorId rawInvestigatorId: String,
         in gameID: GameID,
@@ -142,6 +141,7 @@ extension AppModel {
         return result
     }
 
+    // swiftlint:disable:next function_body_length
     private func performCampaignDeckUpgrade(
         rawURL: String,
         investigatorId: InvestigatorCode,

@@ -598,6 +598,7 @@ extension AppModelCampaignPromptTests {
     }
 
     @Test("ChooseUpgradeDeck lifecycle reset clears claim without stale cleanup")
+    // swiftlint:disable:next function_body_length
     func chooseUpgradeDeckResetClearsClaimAndFencesStaleCleanup() async throws {
         let gameService = ScriptedGameLifecycleService()
         let deckService = CampaignPromptDeckService()
@@ -731,6 +732,7 @@ extension AppModelCampaignPromptTests {
     }
 
     @Test("Basic choice prompt status messages localize in German")
+    // swiftlint:disable:next function_body_length
     func basicChoicePromptStatusMessagesLocalizeInGerman() throws {
         let ownerID = try PlayerID(#require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
