@@ -88,9 +88,9 @@ struct ReadStoryContent: Sendable, Equatable, Hashable {
 
 extension BasicChoiceParser {
     /// Parses a governed `Read` question (`readQuestion` in
-    /// `basic-choice-question.schema.json`): strict flavor text, the single governed
-    /// `BasicReadChoices` semantic continue label (synthesized here as the question's sole
-    /// index-0 `.continueReading` choice so it flows through the exact same
+    /// `basic-choice-question.schema.json`): flavor text preserved for readable rendering,
+    /// the single governed `BasicReadChoices` semantic continue label (synthesized here as
+    /// the question's sole index-0 `.continueReading` choice so it flows through the exact same
     /// choice-index-based submission/focus/authority path every other `BasicChoiceQuestion`
     /// already uses), and the required nullable `readCards`.
     static func parseReadQuestion(

@@ -465,8 +465,26 @@ extension StoryNarrativeLocalization {
     }
 }
 
+private extension StoryUnavailableReason {
+    var isStoryRetryable: Bool {
+        switch self {
+        case let .catalog(failure):
+            failure.isRetryable
+        case .imagePipelineUnavailable:
+            true
+        case .loading, .imageSourceLoading, .missingKey, .unsupportedEntry, .linkCycle,
+             .missingVariable, .unsupportedVariableValue, .tooComplex:
+            false
+        }
+    }
+}
+
 private extension StoryUnavailableReason? {
     func combined(with other: StoryUnavailableReason?) -> StoryUnavailableReason? {
-        self ?? other
+        guard let current = self else { return other }
+        guard !current.isStoryRetryable, let other, other.isStoryRetryable else {
+            return current
+        }
+        return other
     }
 }

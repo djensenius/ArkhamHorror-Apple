@@ -8,6 +8,7 @@ import Testing
 struct AppModelStoryAssetTests {
     func withModel(
         settingsStatus: Int = 200,
+        catalogStatus: Int = 200,
         cacheConstructionFailures: Int = 0,
         _ body: (
             AppModel,
@@ -31,7 +32,9 @@ struct AppModelStoryAssetTests {
         let factory = ScriptedStoryAssetCacheFactory(
             directory: directory, failures: cacheConstructionFailures
         )
-        let catalogTransport = offlineAfterLoadCatalogTransport(documents)
+        let catalogTransport = catalogStatus == 200
+            ? offlineAfterLoadCatalogTransport(documents)
+            : failingCatalogTransport(documents, status: catalogStatus)
         let model = AppModel(
             profileStore: FakeServerProfileStore(
                 profiles: [.hosted, documents.profile], selectedID: documents.profile.id
@@ -50,6 +53,93 @@ struct AppModelStoryAssetTests {
         await model.flowTask?.value
         await model.localeCatalogTask?.value
         try await body(model, documents, transport, catalogTransport, factory)
+    }
+
+    func fixtureData(named fileName: String) throws -> Data {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: fileName,
+                withExtension: "json",
+                subdirectory: "Fixtures/Contract"
+            )
+        )
+        return try Data(contentsOf: url)
+    }
+
+    func installGatheringReadPrompt(
+        on model: AppModel,
+        profile: ServerProfile,
+        participant: LiveGameParticipantIdentity? = nil
+    ) throws -> GameID {
+        let envelope = try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: fixtureData(named: "get-game")
+        )
+        let rawQuestion = try ContractJSON.decode(
+            JSONValue.self,
+            from: ReadStoryQuestionTests().fixture("question-read")
+        )
+        var value = try ContractJSON.decode(
+            JSONValue.self,
+            from: ContractJSON.encode(envelope.game)
+        )
+        guard case var .object(object) = value,
+              case var .object(questions)? = object["question"],
+              let ownerID = envelope.playerID
+        else {
+            throw TestFailure()
+        }
+        object.removeValue(forKey: "questionPresentation")
+        questions[ownerID.rawValue.uuidString.lowercased()] = rawQuestion
+        object["question"] = .object(questions)
+        value = .object(object)
+        let snapshot = try ContractJSON.decode(
+            PublicGameSnapshot.self,
+            from: ContractJSON.encode(value)
+        )
+        let gameID = snapshot.id
+        model.sessionState = .signedIn(
+            profile: profile,
+            compatibility: .modern(capabilities: [LocaleCatalogLimits.capabilityIdentifier]),
+            user: .sample
+        )
+        model.liveGameStates[gameID] = .live(
+            BoardProjectionBuilder.makeProjection(from: snapshot)
+        )
+        model.liveGameParticipantIdentities[gameID] = participant ?? .participant(ownerID)
+        let attemptID = UUID()
+        model.liveGameSessions[gameID] = LiveGameSessionHandle(
+            attemptID: attemptID,
+            task: Task {}
+        )
+        model.liveGameConnections[gameID] = LiveGameConnectionHandle(
+            attemptID: attemptID,
+            connectionID: UUID(),
+            connection: FakeGameSocketConnection()
+        )
+        return gameID
+    }
+
+    func firstGatheringListEntry(
+        in presentation: BasicChoicePromptPresentation
+    ) -> ResolvedStoryEntry? {
+        guard case let .list(items)? = presentation.storyResolution?.story?.body.first else {
+            return nil
+        }
+        return items.first?.entry
+    }
+
+    func expectedGatheringImageFallbackNodes() -> [StoryNode] {
+        [
+            .text("Collect these encounter sets: "),
+            .text("The Gathering encounter set symbol"),
+            .text("Rats encounter set symbol"),
+            .text("Ghouls encounter set symbol"),
+            .text("Striking Fear encounter set symbol"),
+            .text("Ancient Evils encounter set symbol"),
+            .text("Chilling Cold encounter set symbol"),
+            .text(" Then continue."),
+        ]
     }
 
     @Test("Source and catalog publish atomically, with an injectable shared SwiftUI cache")
@@ -86,19 +176,19 @@ struct AppModelStoryAssetTests {
     @Test("Source-only retry preserves the verified catalog while its transport is offline")
     func failedSourceCanRetryWithoutChangingSession() async throws {
         try await withModel(settingsStatus: 503) { model, documents, transport, catalog, factory in
-            let resolver = try #require(model.localeCatalogResolver)
             let snapshot = try #require(model.localeCatalog)
             let request = model.localeCatalogRequest
-            let prompt = try StoryCatalogImageTests.prompt(resolver: resolver)
+            let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
+            var prompt = try #require(model.basicChoicePresentation(for: gameID))
             #expect(prompt.canSubmit)
-            let retry = model.catalogRetryPresentation(
-                localizationReasons: [.catalog(.unexpectedStatus(503))],
-                promptKey: prompt.identity.promptKey
-            )
-            #expect(retry?.profileID == documents.profile.id)
-            #expect(retry?.catalogGeneration == model.localeCatalogGeneration)
-            #expect(retry?.scope == .images)
-            #expect(retry?.title == "Retry story images")
+            #expect(firstGatheringListEntry(in: prompt) == .nodes(
+                expectedGatheringImageFallbackNodes()
+            ))
+            let retry = try #require(prompt.catalogRetry)
+            #expect(retry.profileID == documents.profile.id)
+            #expect(retry.catalogGeneration == model.localeCatalogGeneration)
+            #expect(retry.scope == .images)
+            #expect(retry.title == "Retry story images")
             try expectTextActionable(model)
             #expect(model.storyAssetSource == nil)
             #expect(model.storyAssetSourceFailure == .unexpectedStatus(503))
@@ -116,6 +206,8 @@ struct AppModelStoryAssetTests {
                 key: StoryCatalogImageTests.gatheringKey, variables: .object([:])
             ) == .failure(.imageSourceLoading))
             try expectTextActionable(model)
+            prompt = try #require(model.basicChoicePresentation(for: gameID))
+            #expect(prompt.canSubmit)
             model.retryLocaleCatalog()
             await model.localeCatalogTask?.value
             #expect(model.generation == generation)
@@ -125,15 +217,72 @@ struct AppModelStoryAssetTests {
             #expect(await transport.requests.count == 2)
             #expect(factory.attempts == 1)
             #expect(model.storyAssetSourceFailure == nil)
-            #expect(model.catalogRetryPresentation(
-                localizationReasons: [.catalog(.unexpectedStatus(503))],
-                promptKey: prompt.identity.promptKey
-            ) == nil)
+            prompt = try #require(model.basicChoicePresentation(for: gameID))
+            #expect(prompt.catalogRetry == nil)
             #expect(try model
                 .storyAssetSource ==
                 AssetSourceNamespace(rawAssetBase: "https://replacement-cdn.test"))
             #expect(try StoryCatalogImageTests
                 .prompt(resolver: #require(model.localeCatalogResolver)).canSubmit)
+        }
+    }
+
+    @Test("Catalog fetch failure keeps Read fallback answerable and offers AppModel retry")
+    func catalogFetchFailurePresentationHasRetry() async throws {
+        try await withModel(catalogStatus: 503) { model, documents, _, _, _ in
+            #expect(model.localeCatalog == nil)
+            #expect(model.localeCatalogFailure == .unexpectedStatus(503))
+            let gameID = try installGatheringReadPrompt(on: model, profile: documents.profile)
+            let prompt = try #require(model.basicChoicePresentation(for: gameID))
+            #expect(prompt.canSubmit)
+            #expect(firstGatheringListEntry(in: prompt) == .text(
+                StoryCatalogImageTests.gatheringKey
+            ))
+            let retry = try #require(prompt.catalogRetry)
+            #expect(retry.profileID == documents.profile.id)
+            #expect(retry.catalogGeneration == model.localeCatalogGeneration)
+            #expect(retry.scope == .catalog)
+            #expect(retry.title == "Retry prompt text")
+        }
+    }
+
+    @Test("Degraded image story does not override read-only prompt status")
+    func degradedImageKeepsReadOnlyStatus() async throws {
+        try await withModel(settingsStatus: 503) { model, documents, _, _, _ in
+            let gameID = try installGatheringReadPrompt(
+                on: model,
+                profile: documents.profile,
+                participant: .spectator
+            )
+            let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
+            #expect(
+                spectatorPrompt.storyResolution?.unavailableReason
+                    == .catalog(.unexpectedStatus(503))
+            )
+            #expect(spectatorPrompt.catalogRetry != nil)
+            #expect(
+                spectatorPrompt.statusMessage
+                    == "Spectators can view this prompt but cannot answer it."
+            )
+
+            let waitingPrompt = BasicChoicePromptPresentation(
+                identity: spectatorPrompt.identity,
+                question: spectatorPrompt.question,
+                semanticPresentation: spectatorPrompt.semanticPresentation,
+                semanticLocaleIdentifier: spectatorPrompt.semanticLocaleIdentifier,
+                cardCatalog: spectatorPrompt.cardCatalog,
+                storyResolution: spectatorPrompt.storyResolution,
+                choiceLabelResolutions: spectatorPrompt.choiceLabelResolutions,
+                choiceFlavorResolutions: spectatorPrompt.choiceFlavorResolutions,
+                promptLabelResolutions: spectatorPrompt.promptLabelResolutions,
+                readOnlyReason: .anotherPlayer,
+                actionPhase: nil,
+                actionChoiceIndex: nil,
+                serverFeedback: nil,
+                catalogRetry: spectatorPrompt.catalogRetry
+            )
+            #expect(waitingPrompt.statusMessage == "Waiting for another player to answer.")
+            #expect(waitingPrompt.catalogRetry != nil)
         }
     }
 }

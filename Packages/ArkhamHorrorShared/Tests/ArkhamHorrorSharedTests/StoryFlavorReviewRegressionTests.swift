@@ -53,6 +53,19 @@ extension AppModelLiveGameTests {
         #expect(resolution.body[1] == .heading(level: FlavorTextHeadingLevel(rawValue: 2), nodes: [.text("Catalog heading")]))
         #expect(resolution.body[2] == .nodes([.text("Catalog i18n")]))
         #expect(resolution.body[3] == .modified(modifiers: [.blueEntry], entry: .text("Modified")))
+        #expect(resolution.body[4] == .composite(entries: [.text("Composite A")]))
+        #expect(resolution.body[5] == .columns(entries: [.text("Column A")]))
+        #expect(resolution.body[6] == .list(items: [
+            ResolvedStoryListItem(entry: .nodes([.text("Catalog list item")]), nested: []),
+        ]))
+        #expect(resolution.body[7] == .cardReference(
+            cardCode: BoardTestFixtures.cardCode("c01159"),
+            imageModifiers: [.smallImage]
+        ))
+        #expect(resolution.body[8] == .tarotReference(arcana: "TheFool0"))
+        #expect(resolution.body[9] == .chaosTokenReference(face: .skull))
+        #expect(resolution.body[10] == .chaosTokenMorph(from: .skull, target: .cultist))
+        #expect(resolution.body[11] == .divider)
         #expect(resolution.body[12] == .text("Future readable text"))
     }
 
@@ -64,8 +77,25 @@ extension AppModelLiveGameTests {
         let resolution = try #require(model.storyResolution(for: flavorText)?.story)
         #expect(resolution.title == "story.title")
         #expect(resolution.body[0] == .text("story.basic"))
+        #expect(resolution.body[1] == .heading(
+            level: FlavorTextHeadingLevel(rawValue: 2),
+            nodes: [.text("story.heading")]
+        ))
         #expect(resolution.body[2] == .text("story.i18n (name: Daisy)"))
-        #expect(resolution.body[7] == .cardReference(cardCode: BoardTestFixtures.cardCode("c01159"), imageModifiers: [.smallImage]))
+        #expect(resolution.body[3] == .modified(modifiers: [.blueEntry], entry: .text("Modified")))
+        #expect(resolution.body[4] == .composite(entries: [.text("Composite A")]))
+        #expect(resolution.body[5] == .columns(entries: [.text("Column A")]))
+        #expect(resolution.body[6] == .list(items: [
+            ResolvedStoryListItem(entry: .text("story.listItem"), nested: []),
+        ]))
+        #expect(resolution.body[7] == .cardReference(
+            cardCode: BoardTestFixtures.cardCode("c01159"),
+            imageModifiers: [.smallImage]
+        ))
+        #expect(resolution.body[8] == .tarotReference(arcana: "TheFool0"))
+        #expect(resolution.body[9] == .chaosTokenReference(face: .skull))
+        #expect(resolution.body[10] == .chaosTokenMorph(from: .skull, target: .cultist))
+        #expect(resolution.body[11] == .divider)
         #expect(resolution.body[12] == .text("Future readable text"))
     }
 
@@ -105,12 +135,28 @@ extension AppModelLiveGameTests {
         model.localeCatalog = try await documents.loadSnapshot()
         presentation = try #require(model.basicChoicePresentation(for: gameID))
         #expect(presentation.storyResolution?.story?.title == "Setup")
+        let loadedFirstEntry: ResolvedStoryEntry? = {
+            guard case let .list(items)? = presentation.storyResolution?.story?.body.first else {
+                return nil
+            }
+            return items.first?.entry
+        }()
+        #expect(loadedFirstEntry == .nodes([.text("Gather sets")]))
         #expect(presentation.canSubmit)
 
         model.localeCatalog = nil
         model.localeCatalogFailure = .transportFailure
         presentation = try #require(model.basicChoicePresentation(for: gameID))
         #expect(presentation.storyResolution?.story?.title == "Setup")
+        let fallbackFirstEntry: ResolvedStoryEntry? = {
+            guard case let .list(items)? = presentation.storyResolution?.story?.body.first else {
+                return nil
+            }
+            return items.first?.entry
+        }()
+        #expect(fallbackFirstEntry == .text(
+            "nightOfTheZealot.theGathering.setup.gatherSets"
+        ))
         #expect(presentation.canSubmit)
         #expect(presentation.catalogRetry != nil)
     }
@@ -150,6 +196,14 @@ extension BasicChoiceSemanticPresentationTests {
             choiceFlavorResolutions: [0: .resolved(ResolvedStory(
                 title: nil,
                 body: [.composite(entries: [
+                    .heading(level: .level1, nodes: [.text("Heading text")]),
+                    .modified(modifiers: [.blueEntry], entry: .text("Modified text")),
+                    .columns(entries: [.text("Column A"), .text("Column B")]),
+                    .list(items: [
+                        ResolvedStoryListItem(entry: .text("List A"), nested: []),
+                    ]),
+                    .chaosTokenReference(face: .skull),
+                    .divider,
                     .text("Read this"),
                     .cardReference(cardCode: cardCode, imageModifiers: [.smallImage]),
                     .tarotReference(arcana: "TheFool0"),
@@ -165,7 +219,7 @@ extension BasicChoiceSemanticPresentationTests {
         let renderedChoice = try #require(prompt.choices.first)
         #expect(
             prompt.displayTitle(for: renderedChoice, in: projection)
-                == "Read this; Lita Chantler; Tarot TheFool0; Chaos token Skull to Cultist"
+                == "Heading text; Modified text; Column A; Column B; List A; Chaos token Skull; Read this; Lita Chantler; Tarot TheFool0; Chaos token Skull to Cultist"
         )
     }
 }

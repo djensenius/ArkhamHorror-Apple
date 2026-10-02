@@ -113,6 +113,37 @@ struct ReadStoryQuestionTests {
         #expect(payload.isUpdateRequired == false)
     }
 
+    @Test("Future Read flavor data stays supported and renders readably")
+    func futureFlavorDataDecodesAndResolves() throws {
+        let bytes = Data(
+            #"{"tag":"Read","extraTopLevel":true,"flavorText":{"title":null,"extraFlavor":"ignored","body":[{"tag":"ModifyEntry","modifiers":["FutureModifier","BlueEntry"],"entry":{"tag":"BasicEntry","text":"Modified","extraEntry":1},"extraModify":true},{"tag":"FutureEntry","extraUnknown":2},{"tag":"ListEntry","list":[{"entry":{"tag":"BasicEntry","text":"List item","extraEntry":3},"nested":[],"extraItem":4}],"extraList":5}]} ,"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#.utf8
+        )
+        let payload = try ContractJSON.decode(BasicChoiceQuestionPayload.self, from: bytes)
+        let story = try #require(payload.supportedQuestion?.story)
+        #expect(payload.isUpdateRequired == false)
+        #expect(story.flavorText.body == [
+            .modify(modifiers: [.blueEntry], entry: .basic(text: "Modified")),
+            .unknown(tag: "FutureEntry", text: nil),
+            .list(items: [
+                FlavorTextListItem(entry: .basic(text: "List item"), nested: []),
+            ]),
+        ])
+        #expect(StoryNarrativeLocalization.resolve(
+            story.flavorText,
+            resolver: nil,
+            catalogUnavailability: .catalog(.notAdvertised)
+        ) == .resolved(ResolvedStory(
+            title: nil,
+            body: [
+                .modified(modifiers: [.blueEntry], entry: .text("Modified")),
+                .text("Unsupported story entry: FutureEntry"),
+                .list(items: [
+                    ResolvedStoryListItem(entry: .text("List item"), nested: []),
+                ]),
+            ]
+        )))
+    }
+
     @Test("Every FlavorTextEntry constructor resolves without a catalog using server-provided fallback text")
     func allServerFlavorTextEntryConstructorsResolveWithoutCatalog() throws {
         let payload = try ContractJSON.decode(
