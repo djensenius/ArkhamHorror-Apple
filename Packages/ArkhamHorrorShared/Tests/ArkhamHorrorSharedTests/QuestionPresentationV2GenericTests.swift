@@ -117,7 +117,7 @@ struct QuestionPresentationV2GenericTests {
             expectedQuestionVersion: 1
         ).isRenderableInCurrentClient)
         #expect(unsupported.genericSupport == .deferred)
-        #expect(!((try unsupported.bind(
+        #expect(try !((unsupported.bind(
             to: rawQuestion,
             expectedQuestionVersion: 1
         )).isRenderableInCurrentClient))

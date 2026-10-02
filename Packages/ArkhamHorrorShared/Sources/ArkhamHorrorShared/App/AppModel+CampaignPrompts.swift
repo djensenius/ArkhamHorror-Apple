@@ -259,16 +259,16 @@ enum CampaignPromptLocalization {
 
     @MainActor
     static func localized(_ key: String, _ fallback: String) -> String {
-        let bundle: Bundle
-        if let localizationIdentifierOverride,
-           let path = Bundle.module.path(
-               forResource: localizationIdentifierOverride,
-               ofType: "lproj"
-           ),
-           let localizedBundle = Bundle(path: path) {
-            bundle = localizedBundle
+        let bundle: Bundle = if let localizationIdentifierOverride,
+                                let path = Bundle.module.path(
+                                    forResource: localizationIdentifierOverride,
+                                    ofType: "lproj"
+                                ),
+                                let localizedBundle = Bundle(path: path)
+        {
+            localizedBundle
         } else {
-            bundle = .module
+            .module
         }
         return NSLocalizedString(key, bundle: bundle, value: fallback, comment: "")
     }
@@ -282,7 +282,7 @@ private func campaignPromptLocalized(_ key: String, _ fallback: String) -> Strin
 @MainActor
 private func campaignDeckFetchFailureMessage(_ error: DeckServiceError) -> String {
     switch error {
-    case .operationFailed(let operationError):
+    case let .operationFailed(operationError):
         operationError.errorMsg
     case .sessionExpired:
         campaignPromptLocalized(
@@ -300,7 +300,7 @@ private func campaignDeckFetchFailureMessage(_ error: DeckServiceError) -> Strin
 @MainActor
 private func campaignDeckUpdateFailureMessage(_ error: GameLifecycleError) -> String {
     switch error {
-    case .operationFailed(let operationError):
+    case let .operationFailed(operationError):
         operationError.errorMsg
     case .sessionExpired:
         campaignPromptLocalized(

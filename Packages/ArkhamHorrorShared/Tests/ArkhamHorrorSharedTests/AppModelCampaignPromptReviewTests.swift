@@ -252,8 +252,8 @@ extension AppModelCampaignPromptTests {
         let ownerID = try PlayerID(#require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
         ))
-        installPrompt(
-            try chooseUpgradeDeckProjection(
+        try installPrompt(
+            chooseUpgradeDeckProjection(
                 ownerID: ownerID,
                 mode: campaignMode(canUpgradeDecks: true)
             ),
@@ -294,8 +294,8 @@ extension AppModelCampaignPromptTests {
         let ownerID = try PlayerID(#require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
         ))
-        installPrompt(
-            try chooseUpgradeDeckProjection(
+        try installPrompt(
+            chooseUpgradeDeckProjection(
                 ownerID: ownerID,
                 mode: campaignMode(canUpgradeDecks: true)
             ),
@@ -332,8 +332,8 @@ extension AppModelCampaignPromptTests {
         let ownerID = try PlayerID(#require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
         ))
-        installPrompt(
-            try chooseUpgradeDeckProjection(
+        try installPrompt(
+            chooseUpgradeDeckProjection(
                 ownerID: ownerID,
                 mode: campaignMode(canUpgradeDecks: true)
             ),
@@ -367,8 +367,8 @@ extension AppModelCampaignPromptTests {
         let ownerID = try PlayerID(#require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
         ))
-        installPrompt(
-            try chooseUpgradeDeckProjection(
+        try installPrompt(
+            chooseUpgradeDeckProjection(
                 ownerID: ownerID,
                 mode: campaignMode(canUpgradeDecks: true)
             ),
@@ -403,8 +403,8 @@ extension AppModelCampaignPromptTests {
         let ownerID = try PlayerID(#require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
         ))
-        installPrompt(
-            try chooseUpgradeDeckProjection(
+        try installPrompt(
+            chooseUpgradeDeckProjection(
                 ownerID: ownerID,
                 mode: campaignMode(canUpgradeDecks: true)
             ),
@@ -454,8 +454,8 @@ extension AppModelCampaignPromptTests {
         let ownerID = try PlayerID(#require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
         ))
-        installPrompt(
-            try chooseUpgradeDeckProjection(
+        try installPrompt(
+            chooseUpgradeDeckProjection(
                 ownerID: ownerID,
                 mode: campaignMode(canUpgradeDecks: true)
             ),
@@ -509,8 +509,8 @@ extension AppModelCampaignPromptTests {
         let ownerID = try PlayerID(#require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
         ))
-        installPrompt(
-            try chooseUpgradeDeckProjection(
+        try installPrompt(
+            chooseUpgradeDeckProjection(
                 ownerID: ownerID,
                 mode: campaignMode(canUpgradeDecks: true)
             ),
