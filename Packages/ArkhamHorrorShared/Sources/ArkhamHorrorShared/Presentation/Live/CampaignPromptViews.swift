@@ -297,7 +297,6 @@ struct CampaignUpgradeDeckSheet: View {
                 ))
             }
         }
-        }
     }
 
     private func submitUpgrade() {
