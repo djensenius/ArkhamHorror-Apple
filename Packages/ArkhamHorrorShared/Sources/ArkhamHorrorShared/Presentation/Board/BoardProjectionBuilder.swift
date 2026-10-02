@@ -96,7 +96,7 @@ enum BoardProjectionBuilder {
                 makeCampaignContinuation(
                     fromCampaign: campaign,
                     scenarioContinuationStep: scenarioStep.scenarioContinuationStep
-                )
+                ) ?? makeCampaignContinuation(fromScenarioStep: scenarioStep)
             }
             return ScenarioBuildContext(
                 hasCampaignContext: true,

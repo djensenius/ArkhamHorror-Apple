@@ -108,6 +108,19 @@ struct BoardProjectionCampaignContinuationTests {
         #expect(projection.campaignContinuation?.nextStep == campaignNext)
     }
 
+    @Test("Campaign-and-scenario mode falls back to the scenario step when campaign has no continuation")
+    func campaignAndScenarioFallsBackToScenarioStepWithoutCampaignContinuation() {
+        let scenarioStep: JSONValue = .object(["tag": .string("InterludeStep")])
+        let projection = continuationProjection(
+            campaignStep: .object(["tag": .string("CampaignSpecificStep")]),
+            scenarioStep: scenarioStep
+        )
+
+        #expect(projection.campaignContinuation?.source == .scenario)
+        #expect(projection.campaignContinuation?.nextStep == scenarioStep)
+        #expect(projection.campaignContinuation?.canUpgradeDecks == false)
+    }
+
     @Test("Upgrade deck remains hidden after the prologue with no completed scenario")
     func upgradeDeckHiddenAfterPrologue() {
         let nextScenario: JSONValue = .object(["tag": .string("ScenarioStep")])
