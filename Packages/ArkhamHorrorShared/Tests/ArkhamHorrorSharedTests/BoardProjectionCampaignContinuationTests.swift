@@ -121,6 +121,63 @@ struct BoardProjectionCampaignContinuationTests {
         #expect(projection.campaignContinuation?.canUpgradeDecks == false)
     }
 
+    @Test("Upgrade deck remains hidden without campaign context")
+    func upgradeDeckHiddenWithoutCampaignContext() {
+        let nextScenario: JSONValue = .object(["tag": .string("ScenarioStep")])
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            mode: .scenarioOnly(BoardTestFixtures.scenario(
+                campaignStep: continueCampaignStep(nextStep: nextScenario, canUpgradeDecks: true)
+            ))
+        ))
+
+        #expect(projection.campaignContinuation?.canUpgradeDecks == true)
+        #expect(projection.campaignContinuation?.canUpgrade == false)
+    }
+
+    @Test("Upgrade deck remains hidden when the server flag is false")
+    func upgradeDeckHiddenWhenServerFlagIsFalse() {
+        let nextScenario: JSONValue = .object(["tag": .string("ScenarioStep")])
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            mode: .campaignOnly(campaign(
+                step: continueCampaignStep(nextStep: nextScenario, canUpgradeDecks: false),
+                completedSteps: [.object(["tag": .string("ScenarioStep")])]
+            ))
+        ))
+
+        #expect(projection.campaignContinuation?.canUpgradeDecks == false)
+        #expect(projection.campaignContinuation?.canUpgrade == false)
+    }
+
+    @Test("Upgrade deck is visible for CampaignSpecificStep when the server allows it")
+    func upgradeDeckVisibleForCampaignSpecificStep() {
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            mode: .campaignOnly(campaign(
+                step: continueCampaignStep(
+                    nextStep: .object(["tag": .string("CampaignSpecificStep")]),
+                    canUpgradeDecks: true
+                ),
+                completedSteps: []
+            ))
+        ))
+
+        #expect(projection.campaignContinuation?.canUpgrade == true)
+    }
+
+    @Test("Upgrade deck remains hidden for non-scenario steps")
+    func upgradeDeckHiddenForNonScenarioStep() {
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            mode: .campaignOnly(campaign(
+                step: continueCampaignStep(
+                    nextStep: .object(["tag": .string("InterludeStep")]),
+                    canUpgradeDecks: true
+                ),
+                completedSteps: [.object(["tag": .string("ScenarioStep")])]
+            ))
+        ))
+
+        #expect(projection.campaignContinuation?.canUpgrade == false)
+    }
+
     @Test("Upgrade deck remains hidden after the prologue with no completed scenario")
     func upgradeDeckHiddenAfterPrologue() {
         let nextScenario: JSONValue = .object(["tag": .string("ScenarioStep")])
@@ -135,13 +192,16 @@ struct BoardProjectionCampaignContinuationTests {
         #expect(projection.campaignContinuation?.canUpgrade == false)
     }
 
-    @Test("Upgrade deck becomes visible only after a completed scenario step")
-    func upgradeDeckVisibleAfterCompletedScenario() {
+    @Test(
+        "Upgrade deck becomes visible after each web scenario step variant",
+        arguments: ["ScenarioStep", "ScenarioStepWithOptions", "StandaloneScenarioStep"]
+    )
+    func upgradeDeckVisibleAfterCompletedScenario(completedStepTag: String) {
         let nextScenario: JSONValue = .object(["tag": .string("ScenarioStep")])
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             mode: .campaignOnly(campaign(
                 step: continueCampaignStep(nextStep: nextScenario, canUpgradeDecks: true),
-                completedSteps: [.object(["tag": .string("StandaloneScenarioStep")])]
+                completedSteps: [.object(["tag": .string(completedStepTag)])]
             ))
         ))
 

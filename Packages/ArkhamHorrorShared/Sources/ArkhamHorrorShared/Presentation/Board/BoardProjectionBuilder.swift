@@ -193,8 +193,11 @@ enum BoardProjectionBuilder {
         nextStep: JSONValue,
         canUpgradeDecks: Bool
     ) -> Bool {
-        guard canUpgradeDecks,
-              nextStep.isScenarioContinuation,
+        guard canUpgradeDecks else { return false }
+        if nextStep.tag == "CampaignSpecificStep" {
+            return true
+        }
+        guard nextStep.isScenarioContinuation,
               case let .object(object) = campaign,
               case let .array(completedSteps)? = object["completedSteps"]
         else { return false }
