@@ -653,7 +653,7 @@ extension AppModelLiveGameTests {
         let legacyActionability = legacy.choices.map {
             legacy.isChoiceActionable($0, in: projection)
         }
-        #expect(semanticActionability.allSatisfy { $0 })
+        #expect(semanticActionability.allSatisfy(\.self))
         #expect(!legacyActionability[12])
     }
 

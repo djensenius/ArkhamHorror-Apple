@@ -432,7 +432,7 @@ private extension ProductionGatheringActReplayMechanicsTests {
     func q38PromptEvidence(
         branch: GatheringMovementEntryBranch
     ) throws -> GatheringActReplayPromptEvidence {
-        return try GatheringActReplayPromptEvidence(
+        try GatheringActReplayPromptEvidence(
             version:
             ProductionGatheringActReplayConfiguration
                 .assignmentQuestionVersion,
