@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 
 struct ProductionTitleResolution {
@@ -279,6 +280,7 @@ extension StoryNarrativeLocalization {
         )
     }
 
+    // swiftlint:disable:next function_parameter_count
     static func resolveProductionCatalogEntry(
         _ key: String,
         variables: JSONValue,

@@ -83,15 +83,18 @@ enum StoryNarrativeLocalization {
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason?
     ) -> StoryResolution {
+        if resolver == nil, catalogUnavailability == .loading {
+            return .unavailable(.loading)
+        }
         switch resolveProductionStory(
             flavorText,
             resolver: resolver,
             catalogUnavailability: catalogUnavailability ?? .catalog(.notAdvertised)
         ) {
         case let .success(story):
-            .resolved(story)
+            return .resolved(story)
         case let .failure(reason):
-            .unavailable(reason)
+            return .unavailable(reason)
         }
     }
 

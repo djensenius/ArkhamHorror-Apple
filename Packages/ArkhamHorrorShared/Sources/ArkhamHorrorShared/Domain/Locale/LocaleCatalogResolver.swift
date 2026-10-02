@@ -1,5 +1,6 @@
 import Foundation
 
+// swiftlint:disable file_length
 private struct LocaleCatalogLocatedEntry {
     let locale: String
     let entry: LocaleCatalogEntry
@@ -63,6 +64,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         ).map { LocaleCatalogRenderedNodes(nodes: $0, degradedReason: degradedReason) }
     }
 
+    // swiftlint:disable:next function_parameter_count
     private func render(
         key: String,
         startingLocale: String,
@@ -126,6 +128,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         return nil
     }
 
+    // swiftlint:disable:next function_parameter_count
     private func render(
         nodes: [LocaleCatalogNode],
         locale: String,
@@ -158,7 +161,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         return .success(rendered)
     }
 
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    // swiftlint:disable:next cyclomatic_complexity function_body_length function_parameter_count
     private func renderNode(
         _ node: LocaleCatalogNode,
         locale: String,
@@ -360,11 +363,15 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         imageFallback: Bool,
         degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
-        switch renderRows(head, locale, variables, visiting, &budget, imageFallback, &degradedReason) {
+        switch renderRows(
+            head, locale, variables, visiting, &budget, imageFallback, &degradedReason
+        ) {
         case let .failure(reason):
             .failure(reason)
         case let .success(renderedHead):
-            switch renderRows(body, locale, variables, visiting, &budget, imageFallback, &degradedReason) {
+            switch renderRows(
+                body, locale, variables, visiting, &budget, imageFallback, &degradedReason
+            ) {
             case let .failure(reason):
                 .failure(reason)
             case let .success(renderedBody):
@@ -373,6 +380,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         }
     }
 
+    // swiftlint:disable:next function_parameter_count
     private func renderRows(
         _ rows: [LocaleCatalogTableRow],
         _ locale: String,
@@ -531,4 +539,4 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             nil
         }
     }
-} // swiftlint:disable:this file_length
+}
