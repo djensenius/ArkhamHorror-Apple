@@ -71,8 +71,82 @@ struct GameLifecycleServiceLobbyActionTests {
         #expect(request?.httpMethod == "PUT")
         #expect(request?.url?.absoluteString.hasSuffix("/decks") == true)
         let body = try #require(await transport.capturedBody)
+        #expect(body == Data(#"{"investigatorId":"01001"}"#.utf8))
         let decoded = try ContractJSON.decode(ChooseDeckRequest.self, from: body)
         #expect(decoded == choice)
+    }
+
+    @Test("chooseDeck sends deckUrl and deckList.url for arkham.build upgrades")
+    func chooseDeckUpgradeRequestIncludesDeckListURL() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/decks")
+        let transport = GameLifecycleRecordingTransport(
+            data: emptyBody(), response: httpResponse(200, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+        let deckURL = "https://api.arkham.build/v1/public/share/abc123"
+        let deckList = try DeckListInput(
+            slots: CardQuantityMapInput(["01002": 1]),
+            sideSlots: .absent,
+            investigatorCode: InvestigatorCode("01001"),
+            investigatorName: nil,
+            meta: nil,
+            tabooId: nil,
+            url: deckURL,
+            id: nil,
+            name: nil
+        )
+        let choice = try ChooseDeckRequest(
+            investigatorId: InvestigatorCode("01001"), deckUrl: deckURL, deckList: deckList
+        )
+        try await service.chooseDeck(choice, in: gameID, on: profile, token: token)
+        let body = try #require(await transport.capturedBody)
+        let expectedBody = Data(
+            """
+            {"deckList":{\
+            "investigator_code":"01001",\
+            "slots":{"01002":1},\
+            "url":"https://api.arkham.build/v1/public/share/abc123"\
+            },"deckUrl":"https://api.arkham.build/v1/public/share/abc123",\
+            "investigatorId":"01001"}
+            """.utf8
+        )
+        #expect(body == expectedBody)
+        let decoded = try ContractJSON.decode(ChooseDeckRequest.self, from: body)
+        #expect(decoded == choice)
+    }
+
+    @Test("chooseDeck surfaces backend deck-update errors verbatim")
+    func chooseDeckSurfacesBackendOperationError() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/decks")
+        let error = DeckOperationError(errorMsg: "server says the deck is invalid")
+        let transport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(error), response: httpResponse(400, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+        let choice = try ChooseDeckRequest(
+            investigatorId: InvestigatorCode("01001"), deckUrl: nil, deckList: nil
+        )
+        await #expect(throws: GameLifecycleError.operationFailed(error)) {
+            try await service.chooseDeck(choice, in: gameID, on: profile, token: token)
+        }
+        #expect(GameLifecycleError.operationFailed(error).message == error.errorMsg)
+    }
+
+    @Test("chooseDeck surfaces backend deck-update errors verbatim for status 500")
+    func chooseDeckSurfacesBackendOperationErrorOnServerError() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/decks")
+        let error = DeckOperationError(errorMsg: "Could not upgrade deck: server details")
+        let transport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(error), response: httpResponse(500, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+        let choice = try ChooseDeckRequest(
+            investigatorId: InvestigatorCode("01001"), deckUrl: nil, deckList: nil
+        )
+        await #expect(throws: GameLifecycleError.operationFailed(error)) {
+            try await service.chooseDeck(choice, in: gameID, on: profile, token: token)
+        }
+        #expect(GameLifecycleError.operationFailed(error).message == error.errorMsg)
     }
 
     @Test("chooseDeck rejects an unexpected non-empty 2xx body as drift")

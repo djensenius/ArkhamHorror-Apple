@@ -72,7 +72,7 @@ extension DeckListInput {
     /// Converts a backend-normalized saved deck list back into the permissive input
     /// shape used by create/validate/choose-deck requests. Normalized `CardCode` keys
     /// are preserved as their raw wire strings; nullable metadata remains nullable.
-    init(_ normalized: DeckList) {
+    init(_ normalized: DeckList, urlOverride: String? = nil) {
         slots = CardQuantityMapInput(
             Dictionary(
                 uniqueKeysWithValues: normalized.slots.quantities.map { code, quantity in
@@ -98,7 +98,7 @@ extension DeckListInput {
         investigatorName = normalized.investigatorName
         meta = normalized.meta
         tabooId = normalized.tabooId
-        url = normalized.url
+        url = urlOverride ?? normalized.url
         id = normalized.id.map(ExternalID.string)
         name = normalized.name
     }

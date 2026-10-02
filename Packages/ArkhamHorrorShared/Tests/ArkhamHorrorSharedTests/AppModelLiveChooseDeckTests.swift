@@ -42,6 +42,7 @@ struct AppModelLiveChooseDeckTests {
             gameName: projection.gameName,
             hasCampaignContext: projection.hasCampaignContext,
             scenario: projection.scenario,
+            campaignContinuation: projection.campaignContinuation,
             acts: projection.acts,
             agendas: projection.agendas,
             locations: projection.locations,

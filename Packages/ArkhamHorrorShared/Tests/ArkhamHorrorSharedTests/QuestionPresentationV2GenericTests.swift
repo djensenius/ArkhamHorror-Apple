@@ -91,6 +91,38 @@ struct QuestionPresentationV2GenericTests {
         }
     }
 
+    @Test("ContinueCampaign only renders when CampaignStepAnswer is advertised")
+    func continueCampaignRequiresCampaignStepAnswerTag() throws {
+        let rawQuestion: JSONValue = .object(["tag": .string("ContinueCampaign")])
+        let supported = QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: 1,
+            questionKind: .continueCampaign,
+            choiceCount: 0,
+            choices: [],
+            answer: .continueCampaign(tags: ["CampaignStepAnswer"])
+        )
+        let unsupported = QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: 1,
+            questionKind: .continueCampaign,
+            choiceCount: 0,
+            choices: [],
+            answer: .continueCampaign(tags: ["RetireInvestigatorAnswer"])
+        )
+
+        #expect(supported.genericSupport == .continuation)
+        #expect(try supported.bind(
+            to: rawQuestion,
+            expectedQuestionVersion: 1
+        ).isRenderableInCurrentClient)
+        #expect(unsupported.genericSupport == .deferred)
+        #expect(try !((unsupported.bind(
+            to: rawQuestion,
+            expectedQuestionVersion: 1
+        )).isRenderableInCurrentClient))
+    }
+
     @Test("Non-single-answer presentations cannot submit as basic single choices")
     func canSubmitSingleChoiceAnswerFollowsGenericSupport() throws {
         let singleChoice = try prompt(fixtureName: "question-presentation-generic-read")
@@ -687,8 +719,10 @@ struct QuestionPresentationV2GenericTests {
             .exchange
         case .deck:
             .deck
+        case let .continueCampaign(tags):
+            tags.contains("CampaignStepAnswer") ? .continuation : .deferred
         case .standaloneSettings, .campaignSettings, .pickDestiny,
-             .campaignSpecific, .scenarioSpecific, .continueCampaign:
+             .campaignSpecific, .scenarioSpecific:
             .campaignSettings
         }
     }

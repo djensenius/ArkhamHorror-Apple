@@ -389,7 +389,8 @@ extension AppModel {
             .offline(lastKnown: lastKnown)
         case .malformedPayload:
             .incompatiblePayload(lastKnown: lastKnown)
-        case .unexpectedStatus, .requestEncodingFailed, .invalidPathSegment, .tokenUnavailable:
+        case .unexpectedStatus, .operationFailed, .requestEncodingFailed, .invalidPathSegment,
+             .tokenUnavailable:
             .terminalFailure(error, lastKnown: lastKnown)
         }
     }

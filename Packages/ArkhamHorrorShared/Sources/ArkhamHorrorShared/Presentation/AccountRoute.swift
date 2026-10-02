@@ -200,6 +200,13 @@ enum AccountAccessibilityID {
     static let liveGameIncompatiblePayloadText = "account.games.live.incompatiblePayload"
     static let liveGameAuthenticationExpiredText = "account.games.live.authenticationExpired"
     static let liveGameTerminalFailureText = "account.games.live.terminalFailure"
+    static let campaignBetweenScenariosView = "account.games.live.campaign.betweenScenarios"
+    static let campaignContinueButton = "account.games.live.campaign.continue"
+    static let campaignUpgradeDeckButton = "account.games.live.campaign.upgradeDeck"
+    static let campaignUpgradeDeckURLField = "account.games.live.campaign.upgradeDeck.url"
+    static let campaignUpgradeDeckSubmitButton = "account.games.live.campaign.upgradeDeck.submit"
+    static let campaignUpgradeDeckSkipButton = "account.games.live.campaign.upgradeDeck.skip"
+    static let campaignPromptFailureText = "account.games.live.campaign.failure"
 
     /// A per-game "enter the live board" navigation identifier, distinct for every
     /// active game row/lobby.

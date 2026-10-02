@@ -302,6 +302,16 @@ final class AppModel {
     @ObservationIgnored var liveGameConnections: [GameID: LiveGameConnectionHandle] = [:]
     /// Process-global answer authority: at most one claimed answer per game.
     var basicChoiceActions: [GameID: BasicChoiceActionRecord] = [:]
+    /// REST deck-upgrade submissions claimed for the live game currently being answered.
+    ///
+    /// Each claim carries an attempt identity so a stale task's cleanup cannot clear a
+    /// newer same-game submission after a lifecycle reset/re-entry, the prompt identity it
+    /// is fenced to, and a task handle so lifecycle resets can cancel any still-running
+    /// work where the underlying client cooperates with Swift task cancellation. A
+    /// successful PUT stays here as an awaiting-snapshot claim until that prompt changes or
+    /// the live-game lifecycle resets; failures release immediately for retry. Intentionally
+    /// observable so waiting indicators and sheet controls refresh as soon as a claim changes.
+    var campaignDeckSubmissions: [GameID: CampaignDeckSubmissionAttempt] = [:]
     /// Sanitized room-wide feedback, never treated as correlated answer rejection.
     var basicChoiceServerFeedback: [GameID: String] = [:]
 

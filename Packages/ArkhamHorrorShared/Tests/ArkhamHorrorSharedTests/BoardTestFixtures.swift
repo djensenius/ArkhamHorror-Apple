@@ -113,11 +113,12 @@ enum BoardTestFixtures {
         isPrelude: Bool = false,
         isSideStory: Bool = false,
         inResolution: Bool = false,
-        started: Bool = true
+        started: Bool = true,
+        campaignStep: JSONValue = .null
     ) -> Scenario {
         Scenario(
             actStack: .null, activeEncounterDeck: "", additionalReferences: [], agendaStack: .null,
-            campaignStep: .null, cardsNextToActDeck: [], cardsNextToAgendaDeck: [],
+            campaignStep: campaignStep, cardsNextToActDeck: [], cardsNextToAgendaDeck: [],
             cardsUnderActDeck: [], cardsUnderAgendaDeck: [], cardsUnderScenarioReference: [],
             chaosBag: chaosBag, completedActStack: [], completedAgendaStack: [], counts: [],
             customChaosBags: .object([:]), deckDiscards: [], decks: [], decksLayout: [],

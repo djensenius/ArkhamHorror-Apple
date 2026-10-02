@@ -33,12 +33,11 @@ extension AppModel {
                 record?.identity.sessionAttemptID == sessionAttemptID
                     ? record?.identity.connectionID : nil
             )
-        let promptIdentity = BasicChoicePromptIdentity(
-            gameID: gameID,
-            ownerID: ownerID,
-            questionVersion: projection.counters.scenarioSteps,
-            rawQuestion: payload.rawValue,
-            questionPresentation: payload.presentation?.presentation,
+        let promptKey = basicChoicePromptKey(
+            gameID: gameID, ownerID: ownerID, payload: payload, projection: projection
+        )
+        let promptIdentity = basicChoicePromptIdentity(
+            promptKey,
             sessionAttemptID: sessionAttemptID,
             connectionID: connectionID
         )
@@ -92,6 +91,37 @@ extension AppModel {
         )
     }
 
+    func basicChoicePromptKey(
+        gameID: GameID,
+        ownerID: PlayerID,
+        payload: BasicChoiceQuestionPayload,
+        projection: BoardProjection
+    ) -> BasicChoicePromptKey {
+        BasicChoicePromptKey(
+            gameID: gameID,
+            ownerID: ownerID,
+            questionVersion: projection.counters.scenarioSteps,
+            rawQuestion: payload.rawValue,
+            questionPresentation: payload.presentation?.presentation
+        )
+    }
+
+    private func basicChoicePromptIdentity(
+        _ key: BasicChoicePromptKey,
+        sessionAttemptID: UUID?,
+        connectionID: UUID?
+    ) -> BasicChoicePromptIdentity {
+        BasicChoicePromptIdentity(
+            gameID: key.gameID,
+            ownerID: key.ownerID,
+            questionVersion: key.questionVersion,
+            rawQuestion: key.rawQuestion,
+            questionPresentation: key.questionPresentation,
+            sessionAttemptID: sessionAttemptID,
+            connectionID: connectionID
+        )
+    }
+
     private func firstQuestion(
         in projection: BoardProjection
     ) -> (PlayerID, BasicChoiceQuestionPayload)? {
@@ -112,7 +142,6 @@ extension AppModel {
         } else {
             payload.supportedQuestion?.choices.isEmpty == false
         }
-        guard hasRenderableQuestion else { return .updateRequired }
         guard let identity = liveGameParticipantIdentities[gameID] else { return .disconnected }
         switch identity {
         case .spectator:
@@ -126,6 +155,7 @@ extension AppModel {
               case .modern = compatibility
         else { return .legacyServer }
         guard liveGameConnections[gameID] != nil else { return .disconnected }
+        guard hasRenderableQuestion else { return .updateRequired }
         return nil
     }
 
@@ -151,6 +181,12 @@ extension AppModel {
         _ identity: BasicChoicePromptIdentity, amount: Int
     ) async -> BasicChoiceSubmitResult {
         await sendBasicChoice(identity, submission: .exchangeAmount(amount), isRetry: false)
+    }
+
+    func submitContinueCampaignAnswer(
+        _ identity: BasicChoicePromptIdentity, step: JSONValue
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .continueCampaign(step), isRetry: false)
     }
 
     func retryBasicChoice(_ identity: BasicChoicePromptIdentity) async -> BasicChoiceSubmitResult {
@@ -312,6 +348,8 @@ extension AppModel {
                 token: token,
                 amount: amount
             ))
+        case let .continueCampaign(step):
+            return try ContractJSON.encode(CampaignStepAnswer(contents: step))
         }
     }
 
@@ -342,6 +380,7 @@ extension AppModel {
     func reconcileBasicChoice(
         gameID: GameID, projection: BoardProjection, isRESTSnapshot: Bool
     ) {
+        reconcileCampaignDeckSubmission(gameID: gameID, projection: projection)
         guard let action = basicChoiceActions[gameID] else { return }
         guard case let .participant(playerID) = liveGameParticipantIdentities[gameID],
               playerID == action.identity.ownerID
@@ -477,6 +516,8 @@ private extension BasicChoicePromptPresentation {
             return supportsPaymentAmountSubmission(amounts)
         case let .exchangeAmount(amount):
             return supportsExchangeSubmission(amount)
+        case let .continueCampaign(step):
+            return supportsContinueCampaignSubmission(step, in: projection)
         }
     }
 
@@ -558,6 +599,22 @@ private extension BasicChoicePromptPresentation {
             return false
         }
         return amount >= lowerBound.partialValue && amount <= fromInitialAmount
+    }
+
+    func supportsContinueCampaignSubmission(
+        _ step: JSONValue,
+        in projection: BoardProjection
+    ) -> Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              case .continueCampaign = presentation.answer,
+              Self.supportsSemanticPrompt(
+                  rawQuestion: identity.rawQuestion,
+                  presentation: presentation
+              ),
+              let continuation = projection.campaignContinuation
+        else { return false }
+        return step == continuation.nextStep
+            || (continuation.canUpgradeDecks && step == continuation.upgradeStep)
     }
 
     struct AmountChoiceBounds: Sendable, Equatable {

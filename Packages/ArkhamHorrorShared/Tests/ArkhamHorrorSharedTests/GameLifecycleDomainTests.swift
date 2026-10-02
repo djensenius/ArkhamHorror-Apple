@@ -74,7 +74,8 @@ struct GameLifecycleDomainTests {
         let cases: [GameLifecycleError] = [
             .nonHTTPResponse, .sessionExpired, .unexpectedStatus(403), .unexpectedStatus(404),
             .unexpectedStatus(500), .malformedPayload, .requestEncodingFailed, .tokenUnavailable,
-            .invalidPathSegment, .transportFailure(secret),
+            .invalidPathSegment, .operationFailed(DeckOperationError(errorMsg: "Deck rejected")),
+            .transportFailure(secret),
         ]
         for error in cases {
             #expect(!error.message.isEmpty)

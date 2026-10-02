@@ -10,7 +10,7 @@ import Foundation
 /// equal ``BoardProjection`` regardless of map insertion order.
 enum BoardProjectionBuilder {
     static func makeProjection(from snapshot: PublicGameSnapshot) -> BoardProjection {
-        let (hasCampaignContext, scenario) = makeScenario(from: snapshot.mode)
+        let scenarioContext = makeScenario(from: snapshot.mode)
         let (locations, enemyLocations) = makeLocations(from: snapshot.locations)
         let investigatorLocations = makeInvestigatorLocationLookup(
             locations: locations, enemyLocations: enemyLocations
@@ -25,8 +25,9 @@ enum BoardProjectionBuilder {
             gameName: BoardDisplayFormatting.safeLabel(
                 snapshot.name, fallback: snapshot.id.description
             ),
-            hasCampaignContext: hasCampaignContext,
-            scenario: scenario,
+            hasCampaignContext: scenarioContext.hasCampaignContext,
+            scenario: scenarioContext.scenario,
+            campaignContinuation: scenarioContext.campaignContinuation,
             acts: makeActs(from: snapshot.acts),
             agendas: makeAgendas(from: snapshot.agendas),
             locations: locations,
@@ -58,17 +59,149 @@ enum BoardProjectionBuilder {
 
     // MARK: - Scenario / campaign
 
-    private static func makeScenario(
-        from mode: GameMode
-    ) -> (hasCampaignContext: Bool, scenario: BoardScenarioSummary?) {
+    private struct ScenarioBuildContext {
+        let hasCampaignContext: Bool
+        let scenario: BoardScenarioSummary?
+        let campaignContinuation: CampaignContinuationContext?
+    }
+
+    private struct ContinuationContents {
+        let nextStep: JSONValue
+        let canUpgradeDecks: Bool
+        let chooseSideStory: Bool
+        let canChooseSideStory: Bool
+    }
+
+    private static func makeScenario(from mode: GameMode) -> ScenarioBuildContext {
         switch mode {
-        case .campaignOnly:
-            (true, nil)
+        case let .campaignOnly(campaign):
+            return ScenarioBuildContext(
+                hasCampaignContext: true,
+                scenario: nil,
+                campaignContinuation: makeCampaignContinuation(fromCampaign: campaign)
+            )
         case let .scenarioOnly(scenario):
-            (false, makeScenarioSummary(scenario))
-        case let .campaignAndScenario(_, scenario):
-            (true, makeScenarioSummary(scenario))
+            return ScenarioBuildContext(
+                hasCampaignContext: false,
+                scenario: makeScenarioSummary(scenario),
+                campaignContinuation: makeCampaignContinuation(
+                    fromScenarioStep: scenario.campaignStep
+                )
+            )
+        case let .campaignAndScenario(campaign, scenario):
+            let scenarioStep = scenario.campaignStep
+            let campaignContinuation = if scenarioStep.tag == "ContinueCampaignStep" {
+                makeCampaignContinuation(fromScenarioStep: scenarioStep)
+            } else {
+                makeCampaignContinuation(
+                    fromCampaign: campaign,
+                    scenarioContinuationStep: scenarioStep.scenarioContinuationStep
+                ) ?? makeCampaignContinuation(fromScenarioStep: scenarioStep)
+            }
+            return ScenarioBuildContext(
+                hasCampaignContext: true,
+                scenario: makeScenarioSummary(scenario),
+                campaignContinuation: campaignContinuation
+            )
         }
+    }
+
+    private static func makeCampaignContinuation(
+        fromCampaign campaign: JSONValue,
+        scenarioContinuationStep: JSONValue? = nil
+    ) -> CampaignContinuationContext? {
+        guard case let .object(object) = campaign,
+              let step = object["step"]
+        else { return nil }
+        return makeCampaignContinuation(
+            fromCampaignStep: step,
+            source: .campaign,
+            nextStepOverride: scenarioContinuationStep,
+            campaign: campaign
+        )
+    }
+
+    private static func makeCampaignContinuation(
+        fromScenarioStep step: JSONValue
+    ) -> CampaignContinuationContext? {
+        makeCampaignContinuation(fromCampaignStep: step, source: .scenario)
+    }
+
+    private static func makeCampaignContinuation(
+        fromCampaignStep step: JSONValue,
+        source: CampaignContinuationContext.Source,
+        nextStepOverride: JSONValue? = nil,
+        campaign: JSONValue? = nil
+    ) -> CampaignContinuationContext? {
+        if let continuation = continuationContents(in: step) {
+            let nextStep = nextStepOverride ?? continuation.nextStep
+            return CampaignContinuationContext(
+                source: source,
+                nextStep: nextStep,
+                canUpgradeDecks: continuation.canUpgradeDecks,
+                chooseSideStory: continuation.chooseSideStory,
+                canChooseSideStory: continuation.canChooseSideStory,
+                canUpgrade: campaign.map {
+                    canUpgrade(
+                        campaign: $0,
+                        nextStep: nextStep,
+                        canUpgradeDecks: continuation.canUpgradeDecks
+                    )
+                } ?? false
+            )
+        }
+        if source == .scenario, step != .null {
+            return CampaignContinuationContext(
+                source: source,
+                nextStep: step,
+                canUpgradeDecks: false,
+                chooseSideStory: false,
+                canChooseSideStory: false,
+                canUpgrade: false
+            )
+        }
+        return nil
+    }
+
+    private static func continuationContents(in step: JSONValue) -> ContinuationContents? {
+        guard case let .object(object) = step,
+              case .string("ContinueCampaignStep")? = object["tag"],
+              case let .object(contents)? = object["contents"],
+              let nextStep = contents["nextStep"]
+        else {
+            return nestedContinuationContents(in: step)
+        }
+        return ContinuationContents(
+            nextStep: nextStep,
+            canUpgradeDecks: contents["canUpgradeDecks"]?.boolValue ?? false,
+            chooseSideStory: contents["chooseSideStory"]?.boolValue ?? false,
+            canChooseSideStory: contents["canChooseSideStory"]?.boolValue ?? false
+        )
+    }
+
+    private static func nestedContinuationContents(in step: JSONValue) -> ContinuationContents? {
+        guard case let .object(object) = step,
+              case .string("StandaloneScenarioStep")? = object["tag"],
+              case let .array(contents)? = object["contents"],
+              contents.count > 1
+        else { return nil }
+        return continuationContents(in: contents[1])
+    }
+
+    private static func canUpgrade(
+        campaign: JSONValue,
+        nextStep: JSONValue,
+        canUpgradeDecks: Bool
+    ) -> Bool {
+        guard canUpgradeDecks else { return false }
+        if nextStep.tag == "CampaignSpecificStep" {
+            return true
+        }
+        guard nextStep.isScenarioContinuation,
+              case let .object(object) = campaign,
+              case let .array(completedSteps)? = object["completedSteps"]
+        else { return false }
+        return completedSteps.contains { $0.isScenarioContinuation }
     }
 
     private static func makeScenarioSummary(_ scenario: Scenario) -> BoardScenarioSummary {
@@ -132,5 +265,37 @@ enum BoardProjectionBuilder {
                 cards: snapshot.cards.count
             )
         )
+    }
+}
+
+private extension JSONValue {
+    var boolValue: Bool? {
+        guard case let .bool(value) = self else { return nil }
+        return value
+    }
+
+    var tag: String? {
+        guard case let .object(object) = self,
+              case let .string(tag)? = object["tag"]
+        else { return nil }
+        return tag
+    }
+
+    var scenarioContinuationStep: JSONValue? {
+        switch tag {
+        case "ScenarioStep", "ScenarioStepWithOptions":
+            self
+        default:
+            nil
+        }
+    }
+
+    var isScenarioContinuation: Bool {
+        switch tag {
+        case "ScenarioStep", "ScenarioStepWithOptions", "StandaloneScenarioStep":
+            true
+        default:
+            false
+        }
     }
 }
