@@ -14,6 +14,7 @@ struct BoardPlayerAreaView: View {
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -31,6 +32,7 @@ struct BoardPlayerAreaView: View {
                     choiceLinks: choiceLinks,
                     focusedID: focusedID,
                     focusBinding: focusBinding,
+                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -40,6 +42,7 @@ struct BoardPlayerAreaView: View {
                     choiceLinks: choiceLinks,
                     focusedID: focusedID,
                     focusBinding: focusBinding,
+                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -60,6 +63,7 @@ struct BoardPlayerAreaView: View {
                         linkedChoices: choiceLinks[.playerCard(card.id)] ?? [],
                         focusedID: focusedID,
                         focusBinding: focusBinding,
+                        onOutcome: onOutcome,
                         onLinkedChoice: onLinkedChoice
                     )
                 }
@@ -73,6 +77,7 @@ struct BoardPlayerCardFaceView: View {
     let linkedChoices: [BoardLinkedChoice]
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -145,6 +150,7 @@ struct BoardPlayerCardFaceView: View {
             isFocused: focusedID == linkedFocusID,
             focusBinding: focusBinding,
             onLinkedChoice: onLinkedChoice,
+            onOutcome: onOutcome,
             content: content
         )
     }
@@ -157,6 +163,7 @@ struct BoardEnemyPanelView: View {
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -171,6 +178,7 @@ struct BoardEnemyPanelView: View {
                     linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
                     focusedID: focusedID,
                     focusBinding: focusBinding,
+                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -184,6 +192,7 @@ struct BoardEnemyCardView: View {
     let linkedChoices: [BoardLinkedChoice]
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -278,6 +287,7 @@ struct BoardEnemyCardView: View {
             isFocused: focusedID == linkedFocusID,
             focusBinding: focusBinding,
             onLinkedChoice: onLinkedChoice,
+            onOutcome: onOutcome,
             content: content
         )
     }
@@ -288,6 +298,7 @@ struct BoardThreatAreaView: View {
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -301,6 +312,7 @@ struct BoardThreatAreaView: View {
                     linkedChoices: choiceLinks[.treachery(treachery.id)] ?? [],
                     focusedID: focusedID,
                     focusBinding: focusBinding,
+                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -313,6 +325,7 @@ struct BoardThreatTreacheryCardView: View {
     let linkedChoices: [BoardLinkedChoice]
     let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -359,6 +372,7 @@ struct BoardThreatTreacheryCardView: View {
             isFocused: focusedID == linkedFocusID,
             focusBinding: focusBinding,
             onLinkedChoice: onLinkedChoice,
+            onOutcome: onOutcome,
             content: content
         )
     }

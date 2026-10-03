@@ -6,6 +6,27 @@ enum BoardLinkedChoicePresentationDecision: Sendable, Equatable {
     case menu([BoardLinkedChoice])
 }
 
+enum BoardLinkedChoiceActivationRoute: Sendable, Equatable {
+    case none
+    case directChoice(BoardLinkedChoice)
+    case nativeMenu([BoardLinkedChoice])
+    case semanticPrimaryAction(SemanticFocusID)
+
+    static func route(
+        decision: BoardLinkedChoicePresentationDecision,
+        focusID: SemanticFocusID?
+    ) -> BoardLinkedChoiceActivationRoute {
+        switch decision {
+        case .highlightOnly:
+            .none
+        case let .submit(choice):
+            focusID.map(Self.semanticPrimaryAction) ?? .directChoice(choice)
+        case let .menu(choices):
+            focusID.map(Self.semanticPrimaryAction) ?? .nativeMenu(choices)
+        }
+    }
+}
+
 enum BoardLinkedChoicePresentationPolicy {
     static func decision(
         for linkedChoices: [BoardLinkedChoice]
@@ -31,28 +52,26 @@ struct BoardLinkedChoiceFace<Content: View>: View {
     let isFocused: Bool
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
-        case .highlightOnly:
+        let decision = BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        switch BoardLinkedChoiceActivationRoute.route(decision: decision, focusID: focusID) {
+        case .none:
             content()
                 .cardFaceStyle(linkedChoices: linkedChoices, isFocused: false)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(accessibilityLabel))
-        case let .submit(choice):
+        case let .directChoice(choice):
             Button { onLinkedChoice(choice.choiceIndex) } label: {
                 content().cardFaceStyle(linkedChoices: linkedChoices, isFocused: isFocused)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(Text(BoardLocalization.format(
-                "board.linkedChoice.activateHint",
-                "Activates %@",
-                choice.title
-            )))
+            .accessibilityHint(activationHint(choice.title))
             .linkedChoiceFocused(focusID, focusBinding: focusBinding)
-        case let .menu(actionableChoices):
+        case let .nativeMenu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
                     Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
@@ -61,15 +80,50 @@ struct BoardLinkedChoiceFace<Content: View>: View {
                 content().cardFaceStyle(linkedChoices: linkedChoices, isFocused: isFocused)
             }
             .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(Text(BoardLocalization.localized(
-                "board.linkedChoice.chooseHint",
-                "Choose which prompt action to take."
-            )))
+            .accessibilityHint(choiceMenuHint)
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .linkedChoiceFocused(focusID, focusBinding: focusBinding)
+        case let .semanticPrimaryAction(focusID):
+            SemanticActionControl(
+                accessibilityLabel: Text(accessibilityLabel),
+                semanticFocusID: focusID,
+                onOutcome: onOutcome,
+                label: {
+                    content().cardFaceStyle(linkedChoices: linkedChoices, isFocused: isFocused)
+                }
+            )
+            .buttonStyle(.plain)
+            .accessibilityHint(semanticHint(for: decision))
+            .focused(focusBinding, equals: focusID)
         }
+    }
+
+    private func semanticHint(for decision: BoardLinkedChoicePresentationDecision) -> Text {
+        switch decision {
+        case let .submit(choice):
+            activationHint(choice.title)
+        case .menu:
+            choiceMenuHint
+        case .highlightOnly:
+            Text("")
+        }
+    }
+
+    private func activationHint(_ title: String) -> Text {
+        Text(BoardLocalization.format(
+            "board.linkedChoice.activateHint",
+            "Activates %@",
+            title
+        ))
+    }
+
+    private var choiceMenuHint: Text {
+        Text(BoardLocalization.localized(
+            "board.linkedChoice.chooseHint",
+            "Choose which prompt action to take."
+        ))
     }
 }
 

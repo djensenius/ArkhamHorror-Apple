@@ -130,6 +130,7 @@ struct BoardInvestigatorRowView: View {
                 choiceLinks: choiceLinks,
                 focusedID: focusedID,
                 focusBinding: focusBinding,
+                onOutcome: onOutcome,
                 onLinkedChoice: onLinkedChoice
             )
         } else {
@@ -165,6 +166,7 @@ struct BoardInvestigatorRowView: View {
                     choiceLinks: choiceLinks,
                     focusedID: focusedID,
                     focusBinding: focusBinding,
+                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -175,6 +177,7 @@ struct BoardInvestigatorRowView: View {
                         choiceLinks: choiceLinks,
                         focusedID: focusedID,
                         focusBinding: focusBinding,
+                        onOutcome: onOutcome,
                         onLinkedChoice: onLinkedChoice
                     )
                 }
