@@ -7,8 +7,12 @@ private actor ClaimSeatOperationGate {
     private var pendingWaiters: [CheckedContinuation<Void, Never>] = []
 
     func waitUntilPending() async {
-        if continuation != nil { return }
-        await withCheckedContinuation { pendingWaiters.append($0) }
+        if continuation != nil {
+            return
+        }
+        await withCheckedContinuation {
+            pendingWaiters.append($0)
+        }
     }
 
     func run() async -> GameID {
