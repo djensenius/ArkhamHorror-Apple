@@ -192,6 +192,65 @@ struct AppModelGameInviteReviewTests {
         #expect(model.gameListState == .failed(.unexpectedStatus(500), previous: nil))
     }
 
+    @Test("joinGameFromInvite rejects a preview for a different game")
+    func joinGameFromInviteRejectsMismatchedPreview() async throws {
+        let service = ScriptedGameLifecycleService()
+        let requestedID = GameID(UUID())
+        await service.enqueuePeekLobbyResult(.success(.game(GameID(UUID()))))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        await #expect(throws: GameLifecycleError.malformedPayload) {
+            try await model.joinGameFromInvite(requestedID)
+        }
+        #expect(await service.callOrder == ["peekLobby"])
+    }
+
+    @Test("join invite reports an error when its refresh is superseded")
+    func joinInviteReportsSupersededRefreshFailure() async {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.enqueuePeekLobbyResult(.success(.game(gameID)))
+        await service.enqueueJoinGameResult(.success(.game(gameID)))
+        await service.setListGamesGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        let viewModel = JoinGameInviteViewModel()
+        viewModel.inviteText = "https://arkhamhorror.app/games/\(gameID.rawValue.uuidString)/join"
+
+        let submitTask = Task { @MainActor in
+            await viewModel.submit(
+                joinInvite: { id in try await model.joinGameFromInvite(id) },
+                loadClaimSeatInvite: { _ in
+                    Issue.record("claim load should not run")
+                    return ClaimSeatInviteDetails(
+                        gameID: gameID,
+                        seats: [],
+                        playerCount: 2,
+                        viewerHasSeat: false,
+                        sessionToken: GameInviteSessionToken(
+                            profileID: ServerProfile.hosted.id,
+                            generation: 0,
+                            credentialEpoch: 0,
+                            globalEpoch: 0
+                        )
+                    )
+                }
+            )
+        }
+        await service.waitUntilListGamesPending(1)
+        model.refreshGames()
+        await service.waitUntilListGamesPending(2)
+        await service.resumeNewestListGames(with: .success([]))
+        await model.gameListTask?.value
+        await service.resumeOldestListGames(with: .success([]))
+
+        let joinedID = await submitTask.value
+
+        #expect(joinedID == nil)
+        #expect(viewModel.failureMessage == "This server responded unexpectedly. Try again.")
+        #expect(viewModel.isSubmitting == false)
+        #expect(await service.callOrder == ["peekLobby", "joinGame", "listGames", "listGames"])
+    }
+
     @Test("joinGameFromInvite rejects a PUT join response for a different game")
     func joinGameFromInviteRejectsMismatchedJoinResponse() async throws {
         let service = ScriptedGameLifecycleService()

@@ -262,14 +262,16 @@ extension AppModel {
         let refreshTask = gameListTask
         await refreshTask?.value
         try ensureCurrentGameInviteSession(session)
-        guard refreshGeneration == gameListGeneration else { throw CancellationError() }
+        guard refreshGeneration == gameListGeneration else {
+            throw GameLifecycleError.malformedPayload
+        }
         switch gameListState {
         case .loaded:
             return
         case let .failed(error, _):
             throw error
         case .idle, .loading:
-            throw CancellationError()
+            throw GameLifecycleError.malformedPayload
         }
     }
 
