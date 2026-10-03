@@ -66,6 +66,7 @@ extension AppModel {
                 throw GameLifecycleError.malformedPayload
             }
             try await refreshGamesForInvite(inviteSession, targetGameID: joinedID)
+            reloadLobbyViewerSeatStatus(for: joinedID)
             return joinedID
         } catch let error as GameLifecycleError {
             await handleGameInviteLifecycleError(error, session: inviteSession)
@@ -132,6 +133,7 @@ extension AppModel {
                 token: token
             )
             try await refreshGamesForInvite(inviteSession, targetGameID: details.gameID)
+            reloadLobbyViewerSeatStatus(for: details.gameID)
             return details.gameID
         } catch let error as GameLifecycleError {
             try ensureCurrentGameInviteSession(inviteSession)
@@ -150,6 +152,14 @@ extension AppModel {
         try ensureCurrentGameInviteSession(inviteSession, matches: details.sessionToken)
         try await refreshGamesForInvite(inviteSession, targetGameID: details.gameID)
         return details.gameID
+    }
+
+    func reloadLobbyViewerSeatStatus(for id: GameID) {
+        gameLobbyViewerHasSeats[id] = nil
+        gameLobbyDetailTasks[id]?.cancel()
+        gameLobbyDetailTasks[id] = nil
+        gameLobbyDetailTaskIDs[id] = nil
+        loadLobbyDetailsIfNeeded(for: id)
     }
 
     func loadLobbyDetailsIfNeeded(for id: GameID) {

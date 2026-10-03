@@ -220,6 +220,7 @@ extension AppModel {
             }
         } onSuccess: {
             self.refreshGames()
+            self.reloadLobbyViewerSeatStatus(for: id)
         }
     }
 
@@ -280,6 +281,7 @@ extension AppModel {
             // pay for an unrequested reload.
             self.gameOpenSeats[id] = nil
             self.refreshGames()
+            self.reloadLobbyViewerSeatStatus(for: id)
         }
     }
 
