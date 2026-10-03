@@ -176,6 +176,7 @@ extension AppModelLiveGameTests {
     }
 
     @Test("Mismatched amount answer types fail before encoding or sending")
+    // swiftlint:disable:next function_body_length
     func mismatchedAmountAnswerTypesFailBeforeSending() async throws {
         let amountID = "00000000-0000-0000-0000-0000000000a5"
         let choices = [
@@ -565,6 +566,7 @@ extension AppModelLiveGameTests {
     }
 
     @Test("Null-version AnswerRejected does not free versioned prompt submissions")
+    // swiftlint:disable:next function_body_length
     func nullVersionAnswerRejectedIgnoresVersionedSubmissions() async throws {
         enum VersionedSubmissionCase {
             case singleChoice
