@@ -114,7 +114,8 @@ enum BoardTestFixtures {
         isSideStory: Bool = false,
         inResolution: Bool = false,
         started: Bool = true,
-        campaignStep: JSONValue = .null
+        campaignStep: JSONValue = .null,
+        resolvedStories: [JSONValue] = []
     ) -> Scenario {
         Scenario(
             actStack: .null, activeEncounterDeck: "", additionalReferences: [], agendaStack: .null,
@@ -129,7 +130,7 @@ enum BoardTestFixtures {
             isPrelude: isPrelude, isSideStory: isSideStory, keys: [], locationLayout: [], log: [],
             meta: .null, name: name, noRemainingInvestigatorsHandler: .null, options: .null,
             playerDecks: .null, reference: "reference", resignedCardCodes: [],
-            resolvedStories: [], scope: "scope", search: .null, setAsideCards: [],
+            resolvedStories: resolvedStories, scope: "scope", search: .null, setAsideCards: [],
             setAsideKeys: [],
             standaloneCampaignLog: ScenarioCampaignLog(
                 crossedOut: [], options: [], orderedKeys: [], partners: .null, recorded: [],

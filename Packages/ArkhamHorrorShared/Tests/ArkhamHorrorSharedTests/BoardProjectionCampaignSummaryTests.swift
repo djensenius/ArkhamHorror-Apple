@@ -1,0 +1,717 @@
+@testable import ArkhamHorrorShared
+import Foundation
+import Testing
+
+// swiftlint:disable file_length
+@Suite("BoardProjection — campaign summary")
+// swiftlint:disable:next type_body_length
+struct BoardProjectionCampaignSummaryTests {
+    private enum SummaryLocale: Sendable {
+        case english
+        case german
+
+        var identifier: String {
+            switch self {
+            case .english: "en"
+            case .german: "de"
+            }
+        }
+
+        var burnedHouse: String {
+            switch self {
+            case .english: "Your house has burned to the ground"
+            case .german: "Dein Haus ist bis auf die Grundmauern niedergebrannt"
+            }
+        }
+
+        var cultistsWhoGotAway: String {
+            switch self {
+            case .english: "Cultists who got away"
+            case .german: "Kultisten, die entkommen sind"
+            }
+        }
+
+        var oldestScenarioTitle: String {
+            switch self {
+            case .english: "The Gathering"
+            case .german: "Die Zusammenkunft"
+            }
+        }
+
+        var newestCompletedScenarioTitle: String {
+            switch self {
+            case .english: "The Devourer Below"
+            case .german: "Der Verschlinger aus der Tiefe"
+            }
+        }
+
+        var currentScenarioTitle: String {
+            switch self {
+            case .english: "The Midnight Masks"
+            case .german: "Die Mitternachtsmasken"
+            }
+        }
+
+        var maskedHunter: String {
+            switch self {
+            case .english: "The Masked Hunter"
+            case .german: "Der maskierte Jäger"
+            }
+        }
+
+        var oldestResolutionTitle: String {
+            switch self {
+            case .english: "Resolution 2"
+            case .german: "Auflösung 2"
+            }
+        }
+
+        var newestCompletedResolutionTitle: String {
+            switch self {
+            case .english: "Resolution 1"
+            case .german: "Auflösung 1"
+            }
+        }
+
+        var currentResolutionTitle: String {
+            switch self {
+            case .english: "Resolution 3"
+            case .german: "Auflösung 3"
+            }
+        }
+
+        var burnedHouseCrossedOutAccessibilityTitle: String {
+            switch self {
+            case .english: "Your house has burned to the ground, crossed out"
+            case .german: "Dein Haus ist bis auf die Grundmauern niedergebrannt, durchgestrichen"
+            }
+        }
+
+        var trueTitle: String {
+            switch self {
+            case .english: "True"
+            case .german: "Wahr"
+            }
+        }
+
+        var falseTitle: String {
+            switch self {
+            case .english: "False"
+            case .german: "Falsch"
+            }
+        }
+    }
+
+    private let investigatorID = BoardTestFixtures.investigatorID("c01001")
+    private let otherInvestigatorID = BoardTestFixtures.investigatorID("c02001")
+    private let killedInvestigatorID = BoardTestFixtures.investigatorID("c03001")
+
+    @Test("Campaign handoff summary keeps raw server values and resolves catalogs at display time")
+    func campaignHandoffSummaryResolvesCatalogsAfterProjectionBuild() throws {
+        let projection = try BoardProjectionBuilder.makeProjection(
+            from: fixtureBackedCampaignSnapshot()
+        )
+        let summary = try #require(projection.campaignSummary)
+
+        assertCampaignHandoffFallback(summary)
+        try assertCampaignHandoffSummary(summary, locale: .english)
+        try assertCampaignHandoffSummary(summary, locale: .german)
+    }
+
+    @Test("Campaign summary chrome reads real en and de Localizable bundles")
+    func campaignSummaryChromeUsesRealBundles() {
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("en") {
+            #expect(BoardCampaignSummaryLocalization.system.localized(
+                "campaign.summary.resolutionNumber", "fallback %d"
+            ) == "Resolution %d")
+            #expect(BoardCampaignSummaryLocalization.system.localized(
+                "campaign.summary.boolean.true", "fallback"
+            ) == "True")
+            #expect(CampaignPromptLocalization.localized(
+                "campaign.between.resolutions", "fallback"
+            ) == "Scenario resolutions")
+        }
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
+            #expect(BoardCampaignSummaryLocalization.system.localized(
+                "campaign.summary.resolutionNumber", "fallback %d"
+            ) == "Auflösung %d")
+            #expect(BoardCampaignSummaryLocalization.system.localized(
+                "campaign.summary.boolean.true", "fallback"
+            ) == "Wahr")
+            #expect(CampaignPromptLocalization.localized(
+                "campaign.between.resolutions", "fallback"
+            ) == "Szenario-Auflösungen")
+        }
+    }
+
+    @Test("Legacy recorded-set card codes stay raw until catalog lookup succeeds")
+    func legacyRecordedSetCardCodesStayRawUntilCatalogLookupSucceeds() throws {
+        let summary = BoardCampaignSummaryBuilder.makeLogSummary(from: .object([
+            "crossedOut": .array([]),
+            "recorded": .array([]),
+            "recordedCounts": .array([]),
+            "recordedSets": .array([
+                .array([
+                    .string("legacy.card.set"),
+                    .array([.string("c01121b"), .string("ElderThing")]),
+                ]),
+            ]),
+        ]))
+        let values = try #require(summary.recordedSets.first?.values)
+        #expect(values.map(\.recordType) == [nil, nil])
+        #expect(values.map { $0.title() } == ["c01121b", "Elder thing"])
+
+        let catalog = try cardCatalog(locale: .english)
+        let context = BoardCampaignSummaryDisplayContext(cardCatalog: catalog)
+        #expect(values.map { $0.title(context: context) } == [
+            SummaryLocale.english.maskedHunter,
+            "Elder thing",
+        ])
+    }
+
+    @Test("Standalone resolution summary uses the newest resolved story from server order")
+    func standaloneResolutionSummaryUsesNewestResolvedStoryFromServerOrder() throws {
+        let newestStory: JSONValue = .string("NewestStory")
+        let oldestStory: JSONValue = .string("OldestStory")
+        let scenario = BoardTestFixtures.scenario(
+            inResolution: true,
+            resolvedStories: [newestStory, oldestStory]
+        )
+
+        let summary = try #require(BoardCampaignSummaryBuilder.makeSummary(
+            campaign: nil,
+            scenario: scenario,
+            investigators: []
+        ))
+
+        #expect(summary.resolutions.map(\.source) == [.resolvedStory(newestStory)])
+        #expect(summary.resolutions.map { $0.detail() } == ["Newest story"])
+    }
+
+    @Test("Campaign log key paths strip only a trailing Key suffix")
+    func scarletKeysLogKeyUsesCatalogPath() {
+        let resolver = LocaleCatalogResolver(snapshot: localeCatalog(
+            locale: .english,
+            entries: ["theScarletKeys.key.time": "Translated time"]
+        ))
+        let context = BoardCampaignSummaryDisplayContext(localeCatalogResolver: resolver)
+        let scarletKeysTime: JSONValue = .object([
+            "tag": .string("TheScarletKeysKey"),
+            "contents": .string("Time"),
+        ])
+
+        #expect(BoardCampaignSummaryFormatting.logKeyTitle(
+            scarletKeysTime, context: context
+        ) == "Translated time")
+    }
+
+    @Test("Campaign log falls back to scenario log for missing, null, or malformed campaign logs")
+    func malformedCampaignLogFallsBackToScenarioStandaloneLog() throws {
+        let invalidLogs: [(name: String, value: Any?)] = [
+            ("log key missing", nil),
+            ("null", NSNull()),
+            ("string", "not an object"),
+            ("array", ["not", "an", "object"]),
+        ]
+
+        for invalidLog in invalidLogs {
+            let inputs = try campaignLogInputs(campaignLog: invalidLog.value)
+            let summary = BoardCampaignSummaryBuilder.makeLogSummary(
+                campaign: inputs.campaign,
+                scenario: inputs.scenario
+            )
+
+            #expect(
+                summary.entries.map { $0.title() } == ["Scenario fallback entry"],
+                "\(invalidLog.name) should use scenario fallback"
+            )
+        }
+    }
+
+    @Test("Campaign log empty object wins over scenario standalone log")
+    func emptyCampaignLogObjectSuppressesScenarioFallback() throws {
+        let inputs = try campaignLogInputs(campaignLog: [:] as [String: Any])
+
+        let summary = BoardCampaignSummaryBuilder.makeLogSummary(
+            campaign: inputs.campaign,
+            scenario: inputs.scenario
+        )
+
+        #expect(summary.entries == [])
+        #expect(summary.counts == [])
+        #expect(summary.recordedSets == [])
+    }
+
+    @Test("Campaign log uses a valid campaign object before the scenario log")
+    func validCampaignLogObjectUsesCampaignLog() throws {
+        let inputs = try campaignLogInputs(campaignLog: campaignLog(recorded: [
+            logKey("CampaignPrimaryEntry"),
+        ]))
+
+        let summary = BoardCampaignSummaryBuilder.makeLogSummary(
+            campaign: inputs.campaign,
+            scenario: inputs.scenario
+        )
+
+        #expect(summary.entries.map { $0.title() } == ["Campaign primary entry"])
+    }
+
+    @Test("Campaign progress includes other and killed investigators from real snapshot bytes")
+    func campaignProgressIncludesInactiveInvestigatorsFromSnapshotBytes() throws {
+        let snapshot = try fixtureBackedInactiveInvestigatorSnapshot()
+        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+
+        #expect(projection.investigators.map(\.id) == [investigatorID])
+        #expect(!projection.investigators.contains { $0.id == otherInvestigatorID })
+        #expect(!projection.investigators.contains { $0.id == killedInvestigatorID })
+        #expect(projection.otherInvestigatorCount == 1)
+        #expect(projection.killedInvestigatorCount == 1)
+
+        let summary = try #require(projection.campaignSummary)
+        #expect(summary.investigators.map(\.id) == [
+            investigatorID,
+            otherInvestigatorID,
+            killedInvestigatorID,
+        ])
+
+        let other = try #require(summary.investigators.first { $0.id == otherInvestigatorID })
+        #expect(other.displayName == "Daisy Walker")
+        #expect(other.experiencePoints == 6)
+        #expect(other.spentExperience == 1)
+        #expect(other.availableExperience == 5)
+        #expect(other.physicalTrauma == 1)
+        #expect(other.mentalTrauma == 3)
+        #expect(!other.killed)
+        #expect(other.drivenInsane)
+
+        let killed = try #require(summary.investigators.first { $0.id == killedInvestigatorID })
+        #expect(killed.displayName == "Skids O'Toole")
+        #expect(killed.experiencePoints == 9)
+        #expect(killed.spentExperience == 2)
+        #expect(killed.availableExperience == 7)
+        #expect(killed.physicalTrauma == 2)
+        #expect(killed.mentalTrauma == 1)
+        #expect(killed.killed)
+        #expect(!killed.drivenInsane)
+    }
+
+    @Test("Campaign progress dedupes ids with web spread precedence")
+    func campaignProgressDedupesIDsWithWebSpreadPrecedence() throws {
+        let active = BoardTestFixtures.investigator(
+            id: investigatorID,
+            name: CardName(title: "Active Roland", subtitle: nil),
+            experiencePoints: 1
+        )
+        let killed = BoardTestFixtures.investigator(
+            id: investigatorID,
+            name: CardName(title: "Killed Roland", subtitle: nil),
+            physicalTrauma: 2,
+            killed: true,
+            spentXp: 3,
+            experiencePoints: 8
+        )
+        let snapshot = BoardTestFixtures.snapshot(
+            investigators: [investigatorID: active],
+            killedInvestigators: [investigatorID: killed],
+            playerOrder: [investigatorID]
+        )
+
+        let progress = BoardProjectionBuilder.makeCampaignInvestigatorProgress(from: snapshot)
+
+        #expect(progress.map(\.id) == [investigatorID])
+        let investigator = try #require(progress.first)
+        #expect(investigator.displayName == "Killed Roland")
+        #expect(investigator.experiencePoints == 8)
+        #expect(investigator.spentExperience == 3)
+        #expect(investigator.availableExperience == 5)
+        #expect(investigator.physicalTrauma == 2)
+        #expect(investigator.killed)
+    }
+
+    private func assertCampaignHandoffFallback(_ summary: BoardCampaignSummary) {
+        #expect(summary.resolutions.map { $0.title() } == [
+            "Resolution 2",
+            "Resolution 1",
+            "Resolution 3",
+        ])
+        #expect(summary.resolutions.map { $0.detail() } == ["c01104", "c01103", "c01105"])
+        #expect(summary.log.entries.map { $0.title() } == [
+            "Your house has burned to the ground",
+            "Custom homebrew thing",
+        ])
+        #expect(summary.log.counts.map { $0.title() } == ["Your house has burned to the ground"])
+        #expect(summary.log.recordedSets.map { $0.title() } == ["Cultists who got away"])
+        let values = summary.log.recordedSets.first?.values ?? []
+        #expect(values.map { $0.title() } == ["c01121b", "Elder Thing"])
+    }
+
+    private func assertCampaignHandoffSummary(
+        _ summary: BoardCampaignSummary,
+        locale: SummaryLocale
+    ) throws {
+        try CampaignPromptLocalization.$localizationIdentifierOverride.withValue(
+            locale.identifier
+        ) {
+            let context = try displayContext(locale: locale)
+
+            #expect(summary.resolutions.map { $0.title(context: context) } == [
+                locale.oldestResolutionTitle,
+                locale.newestCompletedResolutionTitle,
+                locale.currentResolutionTitle,
+            ])
+            #expect(summary.resolutions.map { $0.detail(context: context) } == [
+                locale.oldestScenarioTitle,
+                locale.newestCompletedScenarioTitle,
+                locale.currentScenarioTitle,
+            ])
+            #expect(summary.log.entries.map { $0.title(context: context) } == [
+                locale.burnedHouse,
+                "Custom homebrew thing",
+            ])
+            #expect(summary.log.entries.map(\.isCrossedOut) == [true, false])
+            #expect(summary.log.entries.map { $0.accessibilityTitle(context: context) } == [
+                locale.burnedHouseCrossedOutAccessibilityTitle,
+                "Custom homebrew thing",
+            ])
+            #expect(summary.log.counts.map { $0.title(context: context) } == [locale.burnedHouse])
+            #expect(summary.log.counts.map(\.value) == [2])
+            #expect(summary.log.recordedSets.map { $0.title(context: context) } == [
+                locale.cultistsWhoGotAway,
+            ])
+            let values = try #require(summary.log.recordedSets.first?.values)
+            #expect(values.map { $0.title(context: context) } == [
+                locale.maskedHunter, "Elder Thing",
+            ])
+            #expect(values.map(\.isCrossedOut) == [false, true])
+            #expect(values.map(\.isCircled) == [false, true])
+            #expect(summary.investigators.first?.displayName == "Roland Banks")
+            #expect(summary.investigators.first?.availableExperience == 5)
+            #expect(summary.investigators.first?.physicalTrauma == 1)
+            #expect(summary.investigators.first?.mentalTrauma == 2)
+            #expect(summary.investigators.first?.killed == true)
+
+            #expect(BoardCampaignSummaryFormatting.jsonDisplayValue(
+                .bool(true), context: context
+            ) == locale.trueTitle)
+            #expect(BoardCampaignSummaryFormatting.jsonDisplayValue(
+                .bool(false), context: context
+            ) == locale.falseTitle)
+        }
+    }
+
+    private func fixtureBackedCampaignSnapshot() throws -> PublicGameSnapshot {
+        try BoardTestFixtures.snapshot(
+            mode: fixtureBackedCampaignMode(),
+            investigators: [
+                investigatorID: BoardTestFixtures.investigator(
+                    id: investigatorID,
+                    name: CardName(title: "Roland Banks", subtitle: nil),
+                    physicalTrauma: 1,
+                    mentalTrauma: 2,
+                    killed: true,
+                    spentXp: 3,
+                    experiencePoints: 8
+                ),
+            ],
+            playerOrder: [investigatorID]
+        )
+    }
+
+    private func fixtureBackedInactiveInvestigatorSnapshot() throws -> PublicGameSnapshot {
+        var root = try #require(
+            JSONSerialization.jsonObject(with: contractFixtureData(named: "get-game"))
+                as? [String: Any]
+        )
+        var game = try #require(root["game"] as? [String: Any])
+        let investigators = try #require(game["investigators"] as? [String: Any])
+        let sourceInvestigator = try #require(investigators["c01001"] as? [String: Any])
+
+        game["otherInvestigators"] = [
+            "c02001": fixtureBackedInvestigator(sourceInvestigator, overrides: [
+                "id": "c02001",
+                "cardCode": "c02001",
+                "art": "c02001",
+                "name": ["title": "Daisy Walker", "subtitle": "The Librarian"],
+                "playerId": "00000000-0000-0000-0000-000000000002",
+                "xp": 6,
+                "spentXp": 1,
+                "physicalTrauma": 1,
+                "mentalTrauma": 3,
+                "killed": false,
+                "drivenInsane": true,
+            ]),
+        ]
+        game["killedInvestigators"] = [
+            "c03001": fixtureBackedInvestigator(sourceInvestigator, overrides: [
+                "id": "c03001",
+                "cardCode": "c03001",
+                "art": "c03001",
+                "name": ["title": "Skids O'Toole", "subtitle": "The Ex-Con"],
+                "playerId": "00000000-0000-0000-0000-000000000003",
+                "xp": 9,
+                "spentXp": 2,
+                "physicalTrauma": 2,
+                "mentalTrauma": 1,
+                "killed": true,
+                "drivenInsane": false,
+            ]),
+        ]
+        game["playerCount"] = 3
+        root["game"] = game
+
+        let data = try JSONSerialization.data(withJSONObject: root)
+        return try ContractJSON.decode(GetGameEnvelope.self, from: data).game
+    }
+
+    private func fixtureBackedInvestigator(
+        _ source: [String: Any],
+        overrides: [String: Any]
+    ) -> [String: Any] {
+        var investigator = source
+        for (key, value) in overrides {
+            investigator[key] = value
+        }
+        return investigator
+    }
+
+    // swiftlint:disable:next function_body_length
+    private func fixtureBackedCampaignMode() throws -> GameMode {
+        var root = try #require(
+            JSONSerialization.jsonObject(with: contractFixtureData(named: "mode-campaign-only"))
+                as? [String: Any]
+        )
+        var campaign = try #require(root["This"] as? [String: Any])
+        let burnedHouseKey: [String: Any] = [
+            "tag": "NightOfTheZealotKey",
+            "contents": "YourHouseHasBurnedToTheGround",
+        ]
+        let fallbackKey: [String: Any] = [
+            "tag": "NightOfTheZealotKey",
+            "contents": "CustomHomebrewThing",
+        ]
+        let crossedOutOnlyKey: [String: Any] = [
+            "tag": "NightOfTheZealotKey",
+            "contents": "TheInvestigatorsWereForcedToWait",
+        ]
+        let sectionKey: [String: Any] = [
+            "tag": "NightOfTheZealotKey",
+            "contents": ["tag": "CampaignNotes", "contents": "HiddenSectionEntry"],
+        ]
+        let cultistsWhoGotAwayKey: [String: Any] = [
+            "tag": "NightOfTheZealotKey",
+            "contents": "CultistsWhoGotAway",
+        ]
+        let discoveredGlyphsKey: [String: Any] = [
+            "tag": "TheDrownedCityKey",
+            "contents": "DiscoveredGlyphs",
+        ]
+        // Server order is newest first because completed scenarios are prepended.
+        campaign["completedSteps"] = [
+            ["tag": "ScenarioStep", "contents": "c01103"],
+            ["tag": "ScenarioStep", "contents": "c01104"],
+        ]
+        campaign["log"] = [
+            "crossedOut": [burnedHouseKey, crossedOutOnlyKey],
+            "options": [],
+            "orderedKeys": [],
+            "partners": [:],
+            "recorded": [
+                burnedHouseKey,
+                fallbackKey,
+                ["tag": "Teachings1"],
+                sectionKey,
+            ],
+            "recordedCounts": [[burnedHouseKey, 2], [sectionKey, 9]],
+            "recordedSets": [
+                [cultistsWhoGotAwayKey, [
+                    someRecorded(
+                        recordType: "RecordableCardCode",
+                        tag: "Recorded",
+                        contents: "c01121b"
+                    ),
+                    someRecorded(
+                        recordType: "RecordableTrait",
+                        tag: "CrossedOut",
+                        contents: "ElderThing",
+                        circled: true
+                    ),
+                ]],
+                [discoveredGlyphsKey, [
+                    someRecorded(
+                        recordType: "RecordableCardCode",
+                        tag: "Recorded",
+                        contents: "c11001"
+                    ),
+                ]],
+            ],
+        ]
+        campaign["resolutions"] = [
+            "c01103": ["tag": "Resolution", "contents": 1],
+            "c01104": ["tag": "Resolution", "contents": 2],
+            // Current scenario resolution: recorded before the step enters completedSteps.
+            "c01105": ["tag": "Resolution", "contents": 3],
+        ]
+        root["This"] = campaign
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        return try ContractJSON.decode(GameMode.self, from: data)
+    }
+
+    private func someRecorded(
+        recordType: String,
+        tag: String,
+        contents: String,
+        circled: Bool = false
+    ) -> [String: Any] {
+        [
+            "recordType": recordType,
+            "recordVal": [
+                "tag": tag,
+                "contents": contents,
+                "circled": circled,
+            ],
+        ]
+    }
+
+    private func campaignLogInputs(
+        campaignLog campaignLogPayload: Any?
+    ) throws -> (campaign: JSONValue, scenario: Scenario) {
+        var root = try #require(
+            JSONSerialization.jsonObject(with: contractFixtureData(named: "mode-campaign-scenario"))
+                as? [String: Any]
+        )
+        var campaign = try #require(root["This"] as? [String: Any])
+        var scenario = try #require(root["That"] as? [String: Any])
+        if let campaignLogPayload {
+            campaign["log"] = campaignLogPayload
+        } else {
+            campaign.removeValue(forKey: "log")
+        }
+        scenario["standaloneCampaignLog"] = campaignLog(recorded: [
+            logKey("ScenarioFallbackEntry"),
+        ])
+        root["This"] = campaign
+        root["That"] = scenario
+
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        let mode = try ContractJSON.decode(GameMode.self, from: data)
+        guard case let .campaignAndScenario(campaign, scenario) = mode else {
+            throw CampaignSummaryTestError.expectedCampaignAndScenarioMode
+        }
+        return (campaign, scenario)
+    }
+
+    private func campaignLog(recorded: [[String: Any]]) -> [String: Any] {
+        [
+            "crossedOut": [],
+            "options": [],
+            "orderedKeys": [],
+            "partners": [:],
+            "recorded": recorded,
+            "recordedCounts": [],
+            "recordedSets": [],
+        ]
+    }
+
+    private func logKey(_ contents: String) -> [String: Any] {
+        [
+            "tag": "HomebrewCampaignLogKey",
+            "contents": "test.\(contents)",
+        ]
+    }
+
+    private func contractFixtureData(named fileName: String) throws -> Data {
+        let url = try #require(Bundle.module.url(
+            forResource: fileName,
+            withExtension: "json",
+            subdirectory: "Fixtures/Contract"
+        ))
+        return try Data(contentsOf: url)
+    }
+
+    private func displayContext(
+        locale: SummaryLocale
+    ) throws -> BoardCampaignSummaryDisplayContext {
+        try BoardCampaignSummaryDisplayContext(
+            localeCatalogResolver: LocaleCatalogResolver(snapshot: localeCatalog(locale: locale)),
+            cardCatalog: cardCatalog(locale: locale)
+        )
+    }
+
+    private func cardCatalog(locale: SummaryLocale) throws -> CardCatalogSnapshot {
+        try CardCatalogSnapshot(namesByCode: [
+            CardCode("c01104"): CardName(title: locale.oldestScenarioTitle, subtitle: nil),
+            CardCode("c01103"): CardName(title: locale.newestCompletedScenarioTitle, subtitle: nil),
+            CardCode("c01105"): CardName(title: locale.currentScenarioTitle, subtitle: nil),
+            CardCode("c01121b"): CardName(title: locale.maskedHunter, subtitle: nil),
+        ])
+    }
+
+    private func localeCatalog(locale: SummaryLocale) -> LocaleCatalogSnapshot {
+        localeCatalog(locale: locale, entries: [
+            "nightOfTheZealot.key.yourHouseHasBurnedToTheGround": locale.burnedHouse,
+            "nightOfTheZealot.key.cultistsWhoGotAway": locale.cultistsWhoGotAway,
+        ])
+    }
+
+    private func localeCatalog(
+        locale: SummaryLocale,
+        entries rawEntries: [String: String]
+    ) -> LocaleCatalogSnapshot {
+        let digest = String(repeating: "a", count: 64)
+        let descriptor = LocaleCatalogChunkDescriptor(
+            pack: "story",
+            path: LocaleCatalogGrammar.chunkPath(forDigest: digest),
+            bytes: 1,
+            sha256: digest,
+            keys: rawEntries.count,
+            unsupportedKeys: 0
+        )
+        let manifest = LocaleCatalogManifest(
+            catalogRevision: "1.test",
+            defaultLocale: "en",
+            locales: [
+                LocaleCatalogLocaleRecord(
+                    locale: locale.identifier,
+                    fallback: locale == .english ? nil : "en",
+                    chunks: [descriptor],
+                    keys: rawEntries.count,
+                    bytes: 1
+                ),
+            ],
+            languageResolution: ["en": "en", "de": "de"],
+            totals: LocaleCatalogTotals(
+                locales: 1,
+                chunks: 1,
+                bytes: 1,
+                keys: rawEntries.count,
+                unsupportedKeys: 0
+            )
+        )
+        let entries = rawEntries.mapValues(message)
+        return LocaleCatalogSnapshot(
+            identity: LocaleCatalogIdentity(
+                endpoint: URL(string: "https://catalog.example.test/locale-catalog/manifest.json")!,
+                catalogRevision: "1.test",
+                locale: locale.identifier,
+                manifestSha256: digest
+            ),
+            manifest: manifest,
+            chunks: [
+                LocaleCatalogChunkKey(locale: locale.identifier, pack: "story"): LocaleCatalogChunk(
+                    locale: locale.identifier,
+                    fallback: locale == .english ? nil : "en",
+                    pack: "story",
+                    entries: entries
+                ),
+            ]
+        )
+    }
+
+    private func message(_ text: String) -> LocaleCatalogEntry {
+        .message(nodes: [.text(text)], variables: [])
+    }
+}
+
+private enum CampaignSummaryTestError: Error {
+    case expectedCampaignAndScenarioMode
+}

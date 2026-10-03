@@ -133,6 +133,7 @@ struct BoardInvestigatorNode: Sendable, Equatable, Identifiable {
     let defeated: Bool
     let resigned: Bool
     let eliminated: Bool
+    let killed: Bool
     let drivenInsane: Bool
     /// Resolved by a single reverse-lookup pass over locations (see
     /// ``BoardProjectionBuilder``), never by re-scanning per investigator. `nil` when no
@@ -336,6 +337,7 @@ struct BoardProjection: Sendable, Equatable {
     let hasCampaignContext: Bool
     let scenario: BoardScenarioSummary?
     let campaignContinuation: CampaignContinuationContext?
+    let campaignSummary: BoardCampaignSummary?
     /// Ordered by `(deckID, sequence.step, sequence.side, id)` for full determinism.
     let acts: [BoardActNode]
     /// Ordered by `(deckID, sequence.step, sequence.side, id)` for full determinism.

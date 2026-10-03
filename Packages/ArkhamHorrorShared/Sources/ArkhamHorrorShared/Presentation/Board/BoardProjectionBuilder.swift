@@ -8,7 +8,7 @@ import Foundation
 /// `String`/`Int`'s own `<` operator, never `Dictionary` iteration order and never a
 /// locale-sensitive comparison. Two snapshots with equal field values always build to an
 /// equal ``BoardProjection`` regardless of map insertion order.
-enum BoardProjectionBuilder {
+enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
     static func makeProjection(from snapshot: PublicGameSnapshot) -> BoardProjection {
         let scenarioContext = makeScenario(from: snapshot.mode)
         let (locations, enemyLocations) = makeLocations(from: snapshot.locations)
@@ -28,6 +28,11 @@ enum BoardProjectionBuilder {
             hasCampaignContext: scenarioContext.hasCampaignContext,
             scenario: scenarioContext.scenario,
             campaignContinuation: scenarioContext.campaignContinuation,
+            campaignSummary: BoardCampaignSummaryBuilder.makeSummary(
+                campaign: scenarioContext.campaign,
+                scenario: scenarioContext.scenarioSource,
+                investigators: makeCampaignInvestigatorProgress(from: snapshot)
+            ),
             acts: makeActs(from: snapshot.acts),
             agendas: makeAgendas(from: snapshot.agendas),
             locations: locations,
@@ -62,6 +67,8 @@ enum BoardProjectionBuilder {
     private struct ScenarioBuildContext {
         let hasCampaignContext: Bool
         let scenario: BoardScenarioSummary?
+        let scenarioSource: Scenario?
+        let campaign: JSONValue?
         let campaignContinuation: CampaignContinuationContext?
     }
 
@@ -78,12 +85,16 @@ enum BoardProjectionBuilder {
             return ScenarioBuildContext(
                 hasCampaignContext: true,
                 scenario: nil,
+                scenarioSource: nil,
+                campaign: campaign,
                 campaignContinuation: makeCampaignContinuation(fromCampaign: campaign)
             )
         case let .scenarioOnly(scenario):
             return ScenarioBuildContext(
                 hasCampaignContext: false,
                 scenario: makeScenarioSummary(scenario),
+                scenarioSource: scenario,
+                campaign: nil,
                 campaignContinuation: makeCampaignContinuation(
                     fromScenarioStep: scenario.campaignStep
                 )
@@ -101,6 +112,8 @@ enum BoardProjectionBuilder {
             return ScenarioBuildContext(
                 hasCampaignContext: true,
                 scenario: makeScenarioSummary(scenario),
+                scenarioSource: scenario,
+                campaign: campaign,
                 campaignContinuation: campaignContinuation
             )
         }
