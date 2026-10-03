@@ -410,7 +410,8 @@ extension AppModelLiveGameTests {
         let paymentEnvelope = try semanticEnvelope(
             rawFixture: "question-generic-payment-amounts",
             presentationFixture: "question-presentation-generic-payment-amounts",
-            questionVersion: 208
+            questionVersion: 208,
+            mutatePresentation: localizeFirstPaymentChoiceTitle
         )
         let paymentConnection = FakeGameSocketConnection()
         await paymentConnection.enqueueSendResult(.success(()))
@@ -686,6 +687,13 @@ extension AppModelLiveGameTests {
                     } else {
                         rawQuestion = questionLabelWrapped(rawQuestion)
                     }
+                },
+                mutatePresentation: { presentation in
+                    if wrapper.rawFixture.contains("choose-amounts") {
+                        try localizeFirstAmountChoiceLabel(in: &presentation)
+                    } else {
+                        try localizeFirstPaymentChoiceTitle(in: &presentation)
+                    }
                 }
             )
             let connection = FakeGameSocketConnection()
@@ -889,8 +897,12 @@ extension AppModelLiveGameTests {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
-        let firstEnvelope = try oneChoiceAmountEnvelope(choiceID: firstID, questionVersion: 641)
-        let secondEnvelope = try oneChoiceAmountEnvelope(choiceID: secondID, questionVersion: 642)
+        let firstEnvelope = try oneChoiceAmountEnvelope(
+            choiceID: firstID, questionVersion: 641, label: "Clues"
+        )
+        let secondEnvelope = try oneChoiceAmountEnvelope(
+            choiceID: secondID, questionVersion: 642, label: "Clues"
+        )
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -918,7 +930,9 @@ extension AppModelLiveGameTests {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
-        let envelope = try oneChoiceAmountEnvelope(choiceID: choiceID, questionVersion: 643)
+        let envelope = try oneChoiceAmountEnvelope(
+            choiceID: choiceID, questionVersion: 643, label: "Clues"
+        )
         let gameID = await startChoiceSession(
             model: model,
             fakes: fakes,
@@ -1072,7 +1086,7 @@ extension AppModelLiveGameTests {
     @MainActor
     func zoomWithoutFocusIDLeavesAmountDraftUnchanged() async throws {
         let visibleID = "00000000-0000-0000-0000-0000000000d1"
-        let choices = [amountChoice(visibleID, min: 0, max: 3)]
+        let choices = [amountChoice(visibleID, min: 0, max: 3, label: "Clues")]
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         makeModern(model)
