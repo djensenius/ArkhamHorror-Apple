@@ -173,6 +173,7 @@ struct BoardView: View {
             if let request = controller.linkedChoiceMenuRequest {
                 BoardLinkedChoiceMenuModalView(
                     request: request,
+                    focusedID: controller.coordinator.currentFocus,
                     focusBinding: $focusedID,
                     onOutcome: { controller.handle(focusID: $0, $1) }
                 )

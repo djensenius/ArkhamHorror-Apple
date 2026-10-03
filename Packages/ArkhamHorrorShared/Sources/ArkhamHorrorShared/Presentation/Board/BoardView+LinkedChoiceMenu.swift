@@ -5,6 +5,7 @@ import SwiftUI
 /// graph avoids opening a native system menu that game controllers cannot navigate.
 struct BoardLinkedChoiceMenuModalView: View {
     let request: BoardLinkedChoiceMenuRequest
+    let focusedID: SemanticFocusID?
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
 
@@ -47,6 +48,13 @@ struct BoardLinkedChoiceMenuModalView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(
+                            focusedID == id ? ArkhamTheme.accent : Color.clear,
+                            lineWidth: 3
+                        )
+                }
             }
         )
         .buttonStyle(.borderedProminent)
