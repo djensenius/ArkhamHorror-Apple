@@ -184,3 +184,19 @@
 "campaign.upgrade.skipConfirmationTitle" = "Ohne Verbesserung fortsetzen?";
 "campaign.upgrade.title" = "Deck verbessern";
 "campaign.upgrade.done" = "Fertig";
+
+"common.cancel" = "Abbrechen";
+"games.joinInvite.title" = "Spiel beitreten";
+"games.joinInvite.section" = "Einladung";
+"games.joinInvite.placeholder" = "https://arkhamhorror.app/games/.../join";
+"games.joinInvite.field.accessibility" = "Spiel-Einladungslink oder ID";
+"games.joinInvite.footer" = "Füge den Web-Einladungslink ein oder nur die Spiel-ID. Der Server entscheidet, ob du beitreten darfst.";
+"games.joinInvite.submit" = "Beitreten";
+"games.joinInvite.error.invalid" = "Gib einen Spiel-Einladungslink oder eine Spiel-ID ein.";
+"games.joinInvite.error.generic" = "Diesem Spiel konnte nicht beigetreten werden. Versuche es erneut.";
+"games.lobby.waiting.pending" = "Es wird auf weitere Spieler gewartet. %lld Spieler sind beigetreten.";
+"games.lobby.waiting.chooseDecks" = "Es wird auf Deck-Auswahlen von %lld Spielern gewartet.";
+"games.lobby.invite.section" = "Andere einladen";
+"games.lobby.invite.copy" = "Einladungslink kopieren";
+"games.lobby.invite.copied" = "Kopiert";
+"games.lobby.invite.footer" = "Freunde können diesen webkompatiblen Link öffnen, um beizutreten oder einen Platz zu beanspruchen.";

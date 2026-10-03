@@ -37,8 +37,25 @@ struct GameLifecycleServiceLobbyActionTests {
         #expect(request?.httpMethod == "POST")
         #expect(request?.url?.absoluteString.hasSuffix("/claim-seat") == true)
         let body = try #require(await transport.capturedBody)
+        #expect(body == Data(#"{"investigatorId":"01001"}"#.utf8))
         let decoded = try ContractJSON.decode(ClaimSeatRequest.self, from: body)
         #expect(decoded == claim)
+    }
+
+    @Test("claimSeat surfaces server-authored full-game and seat-taken errors verbatim")
+    func claimSeatSurfacesServerAuthoredErrors() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/claim-seat")
+        let error = DeckOperationError(errorMsg: "That seat is already taken")
+        let transport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(error), response: httpResponse(403, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+        let claim = try ClaimSeatRequest(investigatorId: InvestigatorCode("01001"))
+
+        await #expect(throws: GameLifecycleError.operationFailed(error)) {
+            try await service.claimSeat(claim, in: gameID, on: profile, token: token)
+        }
+        #expect(GameLifecycleError.operationFailed(error).message == "That seat is already taken")
     }
 
     @Test("claimSeat rejects an unexpected non-empty 2xx body as drift")
@@ -113,6 +130,45 @@ struct GameLifecycleServiceLobbyActionTests {
         #expect(body == expectedBody)
         let decoded = try ContractJSON.decode(ChooseDeckRequest.self, from: body)
         #expect(decoded == choice)
+    }
+
+    @Test("joinGame surfaces server-authored full-game errors verbatim")
+    func joinGameSurfacesServerAuthoredErrors() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/join")
+        let error = DeckOperationError(errorMsg: "This game is full")
+        let transport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(error), response: httpResponse(403, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+
+        await #expect(throws: GameLifecycleError.operationFailed(error)) {
+            _ = try await service.joinGame(gameID, on: profile, token: token)
+        }
+        let request = await transport.capturedRequest
+        #expect(request?.httpMethod == "PUT")
+        #expect(request?.httpBody == nil)
+        #expect(GameLifecycleError.operationFailed(error).message == "This game is full")
+    }
+
+    @Test("openSeats surfaces server-authored wrong-variant errors verbatim")
+    func openSeatsSurfacesServerAuthoredErrors() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/open-seats")
+        let error = DeckOperationError(errorMsg: "This game is not a WithFriends lobby")
+        let transport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(error), response: httpResponse(400, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+
+        await #expect(throws: GameLifecycleError.operationFailed(error)) {
+            _ = try await service.openSeats(for: gameID, on: profile, token: token)
+        }
+        let request = await transport.capturedRequest
+        #expect(request?.httpMethod == "GET")
+        #expect(request?.httpBody == nil)
+        #expect(
+            GameLifecycleError.operationFailed(error).message
+                == "This game is not a WithFriends lobby"
+        )
     }
 
     @Test("chooseDeck surfaces backend deck-update errors verbatim")

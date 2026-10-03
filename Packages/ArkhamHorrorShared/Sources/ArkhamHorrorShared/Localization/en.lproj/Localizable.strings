@@ -184,3 +184,19 @@
 "campaign.upgrade.skipConfirmationTitle" = "Continue without upgrading?";
 "campaign.upgrade.title" = "Upgrade deck";
 "campaign.upgrade.done" = "Done";
+
+"common.cancel" = "Cancel";
+"games.joinInvite.title" = "Join Game";
+"games.joinInvite.section" = "Invite";
+"games.joinInvite.placeholder" = "https://arkhamhorror.app/games/.../join";
+"games.joinInvite.field.accessibility" = "Game invite link or ID";
+"games.joinInvite.footer" = "Paste the web invite link, or just the game ID. The server decides whether you may join.";
+"games.joinInvite.submit" = "Join";
+"games.joinInvite.error.invalid" = "Enter a game invite link or game ID.";
+"games.joinInvite.error.generic" = "Couldn't join that game. Try again.";
+"games.lobby.waiting.pending" = "Waiting for more players to join. %lld player(s) have joined.";
+"games.lobby.waiting.chooseDecks" = "Waiting for deck choices from %lld player(s).";
+"games.lobby.invite.section" = "Invite Others";
+"games.lobby.invite.copy" = "Copy Invite Link";
+"games.lobby.invite.copied" = "Copied";
+"games.lobby.invite.footer" = "Friends can open this web-compatible link to join or claim a seat.";

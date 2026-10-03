@@ -38,6 +38,17 @@ struct GameLobbyPresentationTests {
         _ = view.body
     }
 
+    @Test("GameLobbyView renders a web-compatible invite for a pending with-friends game")
+    func gameLobbyViewPendingWithFriendsInvite() async {
+        let game = sampleGame(gameState: .pending([]), multiplayerVariant: .withFriends)
+        let model = await model(gameListState: .loaded([.game(game)]))
+        let view = GameLobbyView(model: model, gameID: game.id)
+        _ = view.body
+        let inviteURL = GameInvite.webURL(for: game.id, route: .join, on: .hosted)
+        let expectedSuffix = "/games/\(game.id.rawValue.uuidString.lowercased())/join"
+        #expect(inviteURL?.path.hasSuffix(expectedSuffix) == true)
+    }
+
     @Test("GameLobbyView renders when open seats have not yet been loaded")
     func gameLobbyViewOpenSeatsNotYetLoaded() async {
         let game = sampleGame(multiplayerVariant: .withFriends, hasOpenSeats: true)

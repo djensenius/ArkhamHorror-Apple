@@ -113,7 +113,9 @@ struct GameLifecycleService: Sendable {
     ) async throws -> GameLifecycleEnvelope {
         let url = try gameURL(id, suffix: "/join", on: profile)
         let request = makeRequest(url: url, method: "GET", token: token)
-        return try await perform(request, decoding: GameLifecycleEnvelope.self)
+        return try await perform(
+            request, decoding: GameLifecycleEnvelope.self, badRequest: .operation
+        )
     }
 
     func joinGame(
@@ -121,7 +123,9 @@ struct GameLifecycleService: Sendable {
     ) async throws -> GameLifecycleEnvelope {
         let url = try gameURL(id, suffix: "/join", on: profile)
         let request = makeRequest(url: url, method: "PUT", token: token)
-        return try await perform(request, decoding: GameLifecycleEnvelope.self)
+        return try await perform(
+            request, decoding: GameLifecycleEnvelope.self, badRequest: .operation
+        )
     }
 
     func openSeats(
@@ -129,7 +133,7 @@ struct GameLifecycleService: Sendable {
     ) async throws -> OpenSeats {
         let url = try gameURL(id, suffix: "/open-seats", on: profile)
         let request = makeRequest(url: url, method: "GET", token: token)
-        return try await perform(request, decoding: OpenSeats.self)
+        return try await perform(request, decoding: OpenSeats.self, badRequest: .operation)
     }
 
     func claimSeat(
@@ -138,7 +142,7 @@ struct GameLifecycleService: Sendable {
         let url = try gameURL(id, suffix: "/claim-seat", on: profile)
         var urlRequest = makeRequest(url: url, method: "POST", token: token)
         try attachJSONBody(request, to: &urlRequest)
-        try await performNoContent(urlRequest)
+        try await performNoContent(urlRequest, badRequest: .operation)
     }
 
     func chooseDeck(
@@ -300,9 +304,10 @@ struct GameLifecycleService: Sendable {
     /// ``ContractJSON``.
     private func perform<Response: Decodable>(
         _ request: URLRequest,
-        decoding _: Response.Type
+        decoding _: Response.Type,
+        badRequest: BadRequestDecoder = .generic
     ) async throws -> Response {
-        let data = try await performRaw(request)
+        let data = try await performRaw(request, badRequest: badRequest)
         let decoded: Response
         do {
             decoded = try ContractJSON.decode(Response.self, from: data)

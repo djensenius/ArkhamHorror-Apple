@@ -17,6 +17,9 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private(set) var lastToken: String?
     private(set) var lastProfileID: UUID?
     private(set) var lastDeletedGameID: GameID?
+    private(set) var lastPeekLobbyGameID: GameID?
+    private(set) var lastJoinGameID: GameID?
+    private(set) var lastOpenSeatsGameID: GameID?
     private(set) var lastClaimSeatRequest: ClaimSeatRequest?
     private(set) var lastChooseDeckRequest: ChooseDeckRequest?
     private(set) var lastCreateGameRequest: CreateGameRequest?
@@ -315,29 +318,32 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     }
 
     func peekLobby(
-        _: GameID, on profile: ServerProfile, token: String
+        _ id: GameID, on profile: ServerProfile, token: String
     ) async throws -> GameLifecycleEnvelope {
         callOrder.append("peekLobby")
         lastToken = token
         lastProfileID = profile.id
+        lastPeekLobbyGameID = id
         return try consume(&peekLobbyQueue)
     }
 
     func joinGame(
-        _: GameID, on profile: ServerProfile, token: String
+        _ id: GameID, on profile: ServerProfile, token: String
     ) async throws -> GameLifecycleEnvelope {
         callOrder.append("joinGame")
         lastToken = token
         lastProfileID = profile.id
+        lastJoinGameID = id
         return try consume(&joinGameQueue)
     }
 
     func openSeats(
-        for _: GameID, on profile: ServerProfile, token: String
+        for id: GameID, on profile: ServerProfile, token: String
     ) async throws -> OpenSeats {
         callOrder.append("openSeats")
         lastToken = token
         lastProfileID = profile.id
+        lastOpenSeatsGameID = id
         return try consume(&openSeatsQueue)
     }
 

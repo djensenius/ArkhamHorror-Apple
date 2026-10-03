@@ -19,6 +19,7 @@ struct GameLobbyView: View {
     let model: AppModel
     let gameID: GameID
     @Environment(\.dismiss) private var dismiss
+    @State private var copiedInviteURL = false
 
     /// This game's current summary, re-derived from the shared, process-wide games
     /// list every time this view's body is evaluated. `nil` once the game is no
@@ -57,58 +58,17 @@ struct GameLobbyView: View {
 
     private func lobbyContent(for game: GameSummary) -> some View {
         List {
-            Section {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(game.displayName)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(ArkhamTheme.bone)
-                    Text(game.displaySubtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text(game.gameState.statusText)
-                        .font(.subheadline)
-                        .foregroundStyle(ArkhamTheme.accent)
-                }
-            }
-
-            if case .pending = game.gameState {
-                Section {
-                    joinButton
-                }
-            }
-
-            if game.gameState.showsEnterGameLinkInLobby {
-                Section {
-                    NavigationLink(value: gameID) {
-                        Label("Enter Game", systemImage: "arrow.right.circle.fill")
-                    }
-                    .accessibilityIdentifier(
-                        AccountAccessibilityID.liveGameEnterButton(for: gameID.rawValue)
-                    )
-                }
-            }
-
-            if game.hasOpenSeats, game.multiplayerVariant == .withFriends {
-                Section("Open Seats") {
-                    openSeatsContent
-                }
-            }
-
-            if case .chooseDecks = game.gameState, !game.investigators.isEmpty {
-                Section("Choose Deck") {
-                    chooseDeckContent(for: game)
-                }
-            }
-
-            if let failure = model.gameLifecycleActionFailures[gameID] {
-                Section {
-                    ArkhamFailureText(message: failure.error.message)
-                        .accessibilityIdentifier(
-                            AccountAccessibilityID.gameActionFailureText(for: gameID.rawValue)
-                        )
-                }
-            }
+            lobbyHeaderSection(for: game)
+            waitingSection(for: game.gameState)
+            inviteSection(for: game)
+            pendingJoinSection(for: game.gameState)
+            enterGameSection(for: game.gameState)
+            openSeatsSection(for: game)
+            chooseDeckSection(for: game)
+            failureSection
         }
+        .onAppear { loadOpenSeatsIfNeeded(for: game) }
+        .onChange(of: game.hasOpenSeats) { _, _ in loadOpenSeatsIfNeeded(for: game) }
     }
 
     private var action: GameLifecycleAction? {
@@ -221,6 +181,181 @@ struct GameLobbyView: View {
                 action: action
             )
         }
+    }
+}
+
+private extension GameLobbyView {
+    func lobbyHeaderSection(for game: GameSummary) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(game.displayName)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(ArkhamTheme.bone)
+                Text(game.displaySubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(game.gameState.statusText)
+                    .font(.subheadline)
+                    .foregroundStyle(ArkhamTheme.accent)
+            }
+        }
+    }
+
+    @ViewBuilder
+    func waitingSection(for state: GameState) -> some View {
+        if let waitingText = waitingText(for: state) {
+            Section {
+                Text(waitingText)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    func inviteSection(for game: GameSummary) -> some View {
+        if let invite = inviteURL(for: game) {
+            GameLobbyInviteSection(
+                gameID: gameID,
+                inviteURL: invite,
+                copiedInviteURL: $copiedInviteURL
+            )
+        }
+    }
+
+    @ViewBuilder
+    func pendingJoinSection(for state: GameState) -> some View {
+        if case .pending = state {
+            Section { joinButton }
+        }
+    }
+
+    @ViewBuilder
+    func enterGameSection(for state: GameState) -> some View {
+        if state.showsEnterGameLinkInLobby {
+            Section {
+                NavigationLink(value: gameID) {
+                    Label("Enter Game", systemImage: "arrow.right.circle.fill")
+                }
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.liveGameEnterButton(for: gameID.rawValue)
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    func openSeatsSection(for game: GameSummary) -> some View {
+        if game.hasOpenSeats, game.multiplayerVariant == .withFriends {
+            Section("Open Seats") { openSeatsContent }
+        }
+    }
+
+    @ViewBuilder
+    func chooseDeckSection(for game: GameSummary) -> some View {
+        if case .chooseDecks = game.gameState, !game.investigators.isEmpty {
+            Section("Choose Deck") { chooseDeckContent(for: game) }
+        }
+    }
+
+    @ViewBuilder
+    var failureSection: some View {
+        if let failure = model.gameLifecycleActionFailures[gameID] {
+            Section {
+                ArkhamFailureText(message: failure.error.message)
+                    .accessibilityIdentifier(
+                        AccountAccessibilityID.gameActionFailureText(for: gameID.rawValue)
+                    )
+            }
+        }
+    }
+
+    var signedInProfile: ServerProfile? {
+        guard case let .signedIn(profile, _, _) = model.sessionState else { return nil }
+        return profile
+    }
+
+    func waitingText(for state: GameState) -> String? {
+        switch state {
+        case let .pending(players):
+            gameLifecycleLocalizedFormat(
+                "games.lobby.waiting.pending",
+                "Waiting for more players to join. %lld player(s) have joined.",
+                players.count
+            )
+        case let .chooseDecks(players):
+            gameLifecycleLocalizedFormat(
+                "games.lobby.waiting.chooseDecks",
+                "Waiting for deck choices from %lld player(s).",
+                players.count
+            )
+        case .active, .over, .unknown:
+            nil
+        }
+    }
+
+    func inviteURL(for game: GameSummary) -> URL? {
+        guard game.multiplayerVariant == .withFriends, let profile = signedInProfile else {
+            return nil
+        }
+        guard case .pending = game.gameState else { return nil }
+        let investigators = game.investigators + game.otherInvestigators
+        let route: GameInvite.Route = investigators.isEmpty ? .join : .claimSeat
+        return GameInvite.webURL(for: gameID, route: route, on: profile)
+    }
+
+    func loadOpenSeatsIfNeeded(for game: GameSummary) {
+        guard game.hasOpenSeats,
+              game.multiplayerVariant == .withFriends,
+              model.gameOpenSeats[gameID] == nil,
+              action == nil
+        else { return }
+        model.loadOpenSeats(for: gameID)
+    }
+}
+
+private struct GameLobbyInviteSection: View {
+    let gameID: GameID
+    let inviteURL: URL
+    @Binding var copiedInviteURL: Bool
+
+    var body: some View {
+        Section {
+            Text(inviteURL.absoluteString)
+                .font(.footnote.monospaced())
+                .textSelection(.enabled)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.gameInviteURLText(for: gameID.rawValue)
+                )
+            copyButton
+        } header: {
+            Text(gameLifecycleLocalized("games.lobby.invite.section", "Invite Others"))
+        } footer: {
+            Text(gameLifecycleLocalized(
+                "games.lobby.invite.footer",
+                "Friends can open this web-compatible link to join or claim a seat."
+            ))
+        }
+    }
+
+    private var copyButton: some View {
+        Button {
+            InviteClipboard.copy(inviteURL.absoluteString)
+            copiedInviteURL = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                copiedInviteURL = false
+            }
+        } label: {
+            Label(
+                copiedInviteURL
+                    ? gameLifecycleLocalized("games.lobby.invite.copied", "Copied")
+                    : gameLifecycleLocalized("games.lobby.invite.copy", "Copy Invite Link"),
+                systemImage: copiedInviteURL ? "checkmark" : "doc.on.doc"
+            )
+        }
+        .accessibilityIdentifier(
+            AccountAccessibilityID.gameInviteCopyButton(for: gameID.rawValue)
+        )
     }
 }
 
