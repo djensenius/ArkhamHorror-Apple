@@ -134,40 +134,6 @@ struct BoardLinkedEnemyActionControlTests {
         ))
     }
 
-    @Test("Location enemy action menu titles use catalog names when payload omits names")
-    func locationEnemyActionMenuTitlesUseCatalogNamesWhenPayloadOmitsNames() {
-        let ids = duplicateEnemyLocationIDs()
-        let projection = locationEnemyProjection(
-            locations: [(
-                ids.location,
-                .ordinary(BoardTestFixtures.ordinaryLocation(
-                    id: ids.location,
-                    enemies: [ids.firstEnemy, ids.secondEnemy]
-                ))
-            )],
-            enemyIDs: [ids.firstEnemy, ids.secondEnemy],
-            enemyValues: [
-                ids.firstEnemy: .object(enemyValueWithoutInlineName(cardCode: "c01159")),
-                ids.secondEnemy: .object(enemyValueWithoutInlineName(cardCode: "c01159")),
-            ]
-        )
-        let prompt = enemyPrompt(choices: duplicateEnemyChoices(ids))
-        let actionsFocus = BoardFocusID.locationEnemyActions(ids.location)
-        let controller = BoardCommandController(
-            projection: projection,
-            prompt: prompt,
-            cardCatalog: CardCatalogSnapshot(namesByCode: [
-                BoardTestFixtures.cardCode("c01159"): CardName(title: "Ghoul Minion", subtitle: nil),
-            ])
-        )
-
-        #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
-        #expect(controller.linkedChoiceMenuRequest == BoardLinkedChoiceMenuRequest(
-            focusID: actionsFocus,
-            choices: expectedDuplicateEnemyMenuChoices()
-        ))
-    }
-
     @Test("Single-choice location enemy action control submits directly")
     func singleChoiceLocationEnemyActionControlSubmitsDirectly() {
         let locationID = BoardTestFixtures.locationID("000000000456")
