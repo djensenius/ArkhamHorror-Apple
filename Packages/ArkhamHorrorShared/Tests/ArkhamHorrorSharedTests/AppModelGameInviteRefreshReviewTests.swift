@@ -5,7 +5,8 @@ import Testing
 @MainActor
 @Suite("AppModel — game invite refresh review fixes")
 struct AppModelGameInviteRefreshReviewTests {
-    private let refreshFailureMessage = "Joined, but the game list could not be refreshed. Try again."
+    private let refreshFailureMessage = "Joined, but the game list could not be refreshed. "
+        + "Try again."
 
     private func gameSummary(id: GameID) -> GameSummary {
         GameSummary(
@@ -125,7 +126,8 @@ struct AppModelGameInviteRefreshReviewTests {
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
         let details = inviteDetails(gameID: gameID, seat: seat, model: model)
         let viewModel = JoinGameInviteViewModel()
-        viewModel.inviteText = "https://arkhamhorror.app/games/\(gameID.rawValue.uuidString)/claim-seat"
+        viewModel.inviteText = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
         _ = await viewModel.submit(
             joinInvite: { _ in Issue.record("join should not run"); return gameID },
             loadClaimSeatInvite: { _ in details }
