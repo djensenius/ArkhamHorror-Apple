@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -94,12 +95,16 @@ extension AppModelLiveGameTests {
 
         model.liveGameParticipantIdentities[gameID] = .participant(thirdID)
         #expect(model.basicChoicePresentation(for: gameID) == nil)
-        #expect(await model.submitBasicChoice(ownerPrompt.identity, choiceIndex: 0) == .staleQuestion)
+        #expect(
+            await model.submitBasicChoice(ownerPrompt.identity, choiceIndex: 0) == .staleQuestion
+        )
 
         model.liveGameParticipantIdentities[gameID] = .spectator
         let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
         #expect(spectatorPrompt.readOnlyReason == .spectator)
-        #expect(await model.submitBasicChoice(spectatorPrompt.identity, choiceIndex: 0) == .readOnly)
+        #expect(
+            await model.submitBasicChoice(spectatorPrompt.identity, choiceIndex: 0) == .readOnly
+        )
         #expect(await connection.sentData.isEmpty)
     }
 

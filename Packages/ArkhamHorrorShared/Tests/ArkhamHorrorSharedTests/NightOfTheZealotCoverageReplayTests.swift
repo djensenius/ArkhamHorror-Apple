@@ -57,9 +57,10 @@ struct NightOfTheZealotCoverageReplayTests {
 
     @Test("Replay multiplayer smoke JSONL fixture through the coverage harness")
     func replayMultiplayerSmokeJSONLFixture() async throws {
-        try await runMultiplayer(
-            recordings: CoverageRecordingLoader.load(directory: multiplayerSmokeFixtureDirectoryURL())
+        let recordings = try CoverageRecordingLoader.load(
+            directory: multiplayerSmokeFixtureDirectoryURL()
         )
+        try await runMultiplayer(recordings: recordings)
     }
 
     @Test("JSONL loader keeps physical line numbers across blanks and CRLF")
@@ -421,7 +422,7 @@ private struct CoverageReplaySession {
         try await verify(recording)
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     private func verifyCannotAnswer(
         _ recording: CoverageRecording,
         ownerPrompt: BasicChoicePromptPresentation,
