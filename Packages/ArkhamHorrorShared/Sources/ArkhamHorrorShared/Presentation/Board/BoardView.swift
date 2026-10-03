@@ -77,6 +77,7 @@ struct BoardView: View {
                 controller.updateRetryHandler(onRetryChoice)
                 controller.updateCatalogRetryHandler(onCatalogRetry)
                 controller.updateLocalPlayerID(localPlayerID)
+                controller.updateCardCatalog(cardCatalog)
                 activeController = controller
                 // Catches a replacement snapshot that arrived while this view was
                 // off-screen and `.onChange(of: projection)` therefore couldn't fire; see
@@ -88,6 +89,7 @@ struct BoardView: View {
                     projection: projection,
                     prompt: prompt,
                     localPlayerID: localPlayerID,
+                    cardCatalog: cardCatalog,
                     onChoice: onChoice,
                     onAmounts: onAmounts,
                     onPaymentAmounts: onPaymentAmounts,
@@ -118,6 +120,7 @@ struct BoardView: View {
             controller?.updateRetryHandler(onRetryChoice)
             controller?.updateCatalogRetryHandler(onCatalogRetry)
             controller?.updateLocalPlayerID(localPlayerID)
+            controller?.updateCardCatalog(cardCatalog)
             controller?.applySnapshot(newValue, prompt: prompt)
         }
         .onChange(of: prompt) { _, newValue in
@@ -128,10 +131,14 @@ struct BoardView: View {
             controller?.updateRetryHandler(onRetryChoice)
             controller?.updateCatalogRetryHandler(onCatalogRetry)
             controller?.updateLocalPlayerID(localPlayerID)
+            controller?.updateCardCatalog(cardCatalog)
             controller?.applyPrompt(newValue)
         }
         .onChange(of: localPlayerID) { _, newValue in
             controller?.updateLocalPlayerID(newValue)
+        }
+        .onChange(of: cardCatalog) { _, newValue in
+            controller?.updateCardCatalog(newValue)
         }
     }
 

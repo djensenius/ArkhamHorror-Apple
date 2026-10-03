@@ -177,10 +177,11 @@ struct BoardEnemyCompactChipView: View {
 enum BoardEnemyCompactFormatting {
     static func titledLinkedChoicesByEnemy(
         enemies: [BoardEnemyNode],
-        choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+        choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]],
+        cardCatalog: CardCatalogSnapshot? = nil
     ) -> [BoardLinkedChoice] {
         let summaries = enemies.map { enemy in
-            listSummary(enemy, displayName: enemy.displayName)
+            listSummary(enemy, displayName: displayName(for: enemy, cardCatalog: cardCatalog))
         }
         let duplicateCounts = Dictionary(summaries.map { ($0, 1) }, uniquingKeysWith: +)
         var seenCounts: [String: Int] = [:]
@@ -198,6 +199,13 @@ enum BoardEnemyCompactFormatting {
                 )
             }
         }
+    }
+
+    private static func displayName(
+        for enemy: BoardEnemyNode,
+        cardCatalog: CardCatalogSnapshot?
+    ) -> String {
+        enemy.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? enemy.displayName
     }
 
     static func statsSummary(_ enemy: BoardEnemyNode) -> String {

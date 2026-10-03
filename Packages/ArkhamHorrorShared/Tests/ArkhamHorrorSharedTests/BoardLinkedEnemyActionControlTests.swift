@@ -87,12 +87,23 @@ struct BoardLinkedEnemyActionControlTests {
         health: Int = 2,
         evade: Int = 3
     ) -> JSONValue {
-        .object([
-            "name": .object(["title": .string(name)]),
+        var value = enemyValueWithoutInlineName(fight: fight, health: health, evade: evade)
+        value["name"] = .object(["title": .string(name)])
+        return .object(value)
+    }
+
+    private func enemyValueWithoutInlineName(
+        cardCode: String = "c01159",
+        fight: Int = 2,
+        health: Int = 2,
+        evade: Int = 3
+    ) -> [String: JSONValue] {
+        [
+            "cardCode": .string(cardCode),
             "fight": .number(.integer(Int64(fight))),
             "health": .number(.integer(Int64(health))),
             "evade": .number(.integer(Int64(evade))),
-        ])
+        ]
     }
 
     @Test("Location enemy action menu titles identify duplicate enemy names")
@@ -115,6 +126,40 @@ struct BoardLinkedEnemyActionControlTests {
         let prompt = enemyPrompt(choices: duplicateEnemyChoices(ids))
         let actionsFocus = BoardFocusID.locationEnemyActions(ids.location)
         let controller = BoardCommandController(projection: projection, prompt: prompt)
+
+        #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
+        #expect(controller.linkedChoiceMenuRequest == BoardLinkedChoiceMenuRequest(
+            focusID: actionsFocus,
+            choices: expectedDuplicateEnemyMenuChoices()
+        ))
+    }
+
+    @Test("Location enemy action menu titles use catalog names when payload omits names")
+    func locationEnemyActionMenuTitlesUseCatalogNamesWhenPayloadOmitsNames() {
+        let ids = duplicateEnemyLocationIDs()
+        let projection = locationEnemyProjection(
+            locations: [(
+                ids.location,
+                .ordinary(BoardTestFixtures.ordinaryLocation(
+                    id: ids.location,
+                    enemies: [ids.firstEnemy, ids.secondEnemy]
+                ))
+            )],
+            enemyIDs: [ids.firstEnemy, ids.secondEnemy],
+            enemyValues: [
+                ids.firstEnemy: .object(enemyValueWithoutInlineName(cardCode: "c01159")),
+                ids.secondEnemy: .object(enemyValueWithoutInlineName(cardCode: "c01159")),
+            ]
+        )
+        let prompt = enemyPrompt(choices: duplicateEnemyChoices(ids))
+        let actionsFocus = BoardFocusID.locationEnemyActions(ids.location)
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            cardCatalog: CardCatalogSnapshot(namesByCode: [
+                BoardTestFixtures.cardCode("c01159"): CardName(title: "Ghoul Minion", subtitle: nil),
+            ])
+        )
 
         #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
         #expect(controller.linkedChoiceMenuRequest == BoardLinkedChoiceMenuRequest(

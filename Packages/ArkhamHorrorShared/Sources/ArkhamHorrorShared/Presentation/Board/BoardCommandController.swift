@@ -20,6 +20,7 @@ final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
     private(set) var localPlayerID: PlayerID?
+    private var cardCatalog: CardCatalogSnapshot?
     private(set) var layout: BoardLayout
     private(set) var coordinator: FocusCoordinator
     /// Local zoom scale, clamped to ``zoomRange``. Never mutates backend topology; purely
@@ -59,6 +60,7 @@ final class BoardCommandController {
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
         localPlayerID: PlayerID? = nil,
+        cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
         onPaymentAmounts: @escaping ([String: Int]) -> Void = { _ in },
@@ -69,6 +71,7 @@ final class BoardCommandController {
         self.projection = projection
         self.prompt = prompt
         self.localPlayerID = localPlayerID
+        self.cardCatalog = cardCatalog
         self.onChoice = onChoice
         self.onAmounts = onAmounts
         self.onPaymentAmounts = onPaymentAmounts
@@ -699,7 +702,8 @@ final class BoardCommandController {
         }) {
             return BoardEnemyCompactFormatting.titledLinkedChoicesByEnemy(
                 enemies: projection.enemiesByLocationID[location.id] ?? [],
-                choiceLinks: links
+                choiceLinks: links,
+                cardCatalog: cardCatalog
             )
         }
         if let location = projection.enemyLocations.first(where: {
@@ -707,7 +711,8 @@ final class BoardCommandController {
         }) {
             return BoardEnemyCompactFormatting.titledLinkedChoicesByEnemy(
                 enemies: projection.enemiesByLocationID[location.id] ?? [],
-                choiceLinks: links
+                choiceLinks: links,
+                cardCatalog: cardCatalog
             )
         }
         return nil
@@ -800,6 +805,10 @@ extension BoardCommandController {
 
     func updateRetryHandler(_ handler: @escaping () -> Void) {
         onRetry = handler
+    }
+
+    func updateCardCatalog(_ cardCatalog: CardCatalogSnapshot?) {
+        self.cardCatalog = cardCatalog
     }
 
     func updateCatalogRetryHandler(
