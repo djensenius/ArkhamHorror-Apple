@@ -244,6 +244,31 @@ struct BasicChoiceExchangePrompt: Sendable, Equatable {
 }
 
 extension BasicChoicePromptPresentation {
+    var hasUnresolvedAmountRowLabels: Bool {
+        guard let presentation = semanticPresentation?.presentation else { return false }
+        switch presentation.answer {
+        case .amounts:
+            return presentation.amountChoices?.contains { choice in
+                amountRowLabelUnavailableReason(
+                    key: amountChoicePromptLabelKey(choice.choiceID),
+                    labelText: choice.label,
+                    upperBound: choice.maxBound
+                ) != nil
+            } == true
+        case .paymentAmounts:
+            return presentation.paymentChoices?.contains { choice in
+                amountRowLabelUnavailableReason(
+                    key: paymentChoicePromptLabelKey(choice.choiceID),
+                    labelText: choice.title.text,
+                    upperBound: choice.max
+                ) != nil
+            } == true
+        case .singleChoice, .exchangeAmounts, .deck, .standaloneSettings, .campaignSettings,
+             .pickDestiny, .campaignSpecific, .scenarioSpecific, .continueCampaign:
+            return false
+        }
+    }
+
     // swiftlint:disable:next function_body_length
     func amountPrompt(in _: BoardProjection) -> BasicChoiceAmountPrompt? {
         guard let presentation = semanticPresentation?.presentation,

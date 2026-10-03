@@ -526,9 +526,9 @@ extension AppModelLiveGameTests {
         }
     }
 
-    @Test("Unresolved amount labels show guidance but still send for server validation")
+    @Test("Unresolved amount labels show guidance and are not pressable")
     // swiftlint:disable:next function_body_length
-    func unresolvedAmountLabelsShowGuidanceAndStillSend() async throws {
+    func unresolvedAmountLabelsShowGuidanceAndAreNotPressable() async throws {
         let choiceID = "00000000-0000-0000-0000-0000000000f3"
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
@@ -544,11 +544,10 @@ extension AppModelLiveGameTests {
         let amountPrompt = try #require(prompt.amountPrompt(in: projection))
         let amounts = [choiceID: 1]
         #expect(amountPrompt.guidanceMessage(for: amounts, in: prompt) != nil)
+        #expect(!prompt.canSubmit)
         let result = await model.submitAmountsAnswer(prompt.identity, amounts: amounts)
-        #expect(result == .sentAwaitingSnapshot)
-        #expect(try await connection.sentData == [
-            amountAnswerBytes(amounts: amounts, version: 619),
-        ])
+        #expect(result == .unsupportedChoice)
+        #expect(await connection.sentData == [])
 
         let (paymentModel, paymentFakes) = makeSignedInModel()
         await paymentModel.flowTask?.value
@@ -575,14 +574,20 @@ extension AppModelLiveGameTests {
             paymentModel.basicChoicePresentation(for: paymentGameID)
         )
         let paymentAmounts = ["00000000-0000-0000-0000-00000000004d": 0]
+        let paymentProjection = try #require(
+            paymentModel.liveGameStates[paymentGameID]?.lastKnownProjection
+        )
+        let paymentAmountPrompt = try #require(
+            paymentPrompt.amountPrompt(in: paymentProjection)
+        )
+        #expect(paymentAmountPrompt.guidanceMessage(for: paymentAmounts, in: paymentPrompt) != nil)
+        #expect(!paymentPrompt.canSubmit)
         let paymentResult = await paymentModel.submitPaymentAmountsAnswer(
             paymentPrompt.identity,
             amounts: paymentAmounts
         )
-        #expect(paymentResult == .sentAwaitingSnapshot)
-        #expect(try await paymentConnection.sentData == [
-            paymentAmountAnswerBytes(amounts: paymentAmounts, version: 620),
-        ])
+        #expect(paymentResult == .unsupportedChoice)
+        #expect(await paymentConnection.sentData == [])
     }
 
     @Test("A fallback title keeps unavailable amount-label guidance visible")
@@ -610,17 +615,16 @@ extension AppModelLiveGameTests {
             amountPrompt.guidanceMessage(for: amounts, in: prompt)
                 == "The text for Choice 1 is not currently available."
         )
+        #expect(!prompt.canSubmit)
         #expect(
             await model.submitAmountsAnswer(prompt.identity, amounts: amounts)
-                == .sentAwaitingSnapshot
+                == .unsupportedChoice
         )
-        #expect(try await connection.sentData == [
-            amountAnswerBytes(amounts: amounts, version: 622),
-        ])
+        #expect(await connection.sentData == [])
     }
 
-    @Test("Amount retry sends again even if catalog labels disappear")
-    func amountRetrySendsWhenCatalogDisappears() async throws {
+    @Test("Amount retry waits when catalog labels disappear")
+    func amountRetryWaitsWhenCatalogDisappears() async throws {
         let choiceID = "00000000-0000-0000-0000-0000000000f4"
         let documents = try amountLabelCatalogDocuments()
         let (model, fakes) = makeAmountCatalogModel(documents: documents)
@@ -643,11 +647,10 @@ extension AppModelLiveGameTests {
 
         model.invalidateLocaleCatalog()
         let retryPrompt = try #require(model.basicChoicePresentation(for: gameID))
-        #expect(retryPrompt.canRetry)
+        #expect(!retryPrompt.canRetry)
         await connection.enqueueSendResult(.success(()))
-        #expect(await model.retryBasicChoice(retryPrompt.identity) == .sentAwaitingSnapshot)
+        #expect(await model.retryBasicChoice(retryPrompt.identity) == .unsupportedChoice)
         #expect(try await connection.sentData == [
-            amountAnswerBytes(amounts: amounts, version: 621),
             amountAnswerBytes(amounts: amounts, version: 621),
         ])
     }

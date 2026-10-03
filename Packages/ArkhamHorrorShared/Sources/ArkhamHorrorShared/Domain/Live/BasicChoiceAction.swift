@@ -274,7 +274,11 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     }
 
     var canSubmit: Bool {
-        guard isAuthorized, isStoryAvailable, canSubmitPromptAnswer else { return false }
+        guard isAuthorized,
+              isStoryAvailable,
+              canSubmitPromptAnswer,
+              !hasUnresolvedAmountRowLabels
+        else { return false }
         switch actionPhase {
         case .sending, .awaitingSnapshot, .uncertain:
             return false
@@ -355,7 +359,9 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     }
 
     var canRetry: Bool {
-        guard readOnlyReason == nil, isStoryAvailable else { return false }
+        guard readOnlyReason == nil, isStoryAvailable, !hasUnresolvedAmountRowLabels else {
+            return false
+        }
         if case .retryable = actionPhase {
             return true
         }
