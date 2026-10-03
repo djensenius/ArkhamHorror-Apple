@@ -378,83 +378,93 @@ private struct CoverageReplaySession {
         }
 
         model.liveGameParticipantIdentities[gameID] = .participant(ownerID)
-        try await verify(recording)
+        let ownerPrompt = try requirePrompt(for: recording)
 
         for seat in runDefinition.seats where seat.playerID != recording.record.playerID {
-            try await verifyReadOnly(
+            try await verifyCannotAnswer(
                 recording,
+                ownerPrompt: ownerPrompt,
                 identity: .participant(seat.playerIDValue()),
-                expectedReason: .anotherPlayer,
+                expectedReasonIfPresented: .anotherPlayer,
                 roleDescription: "participant \(seat.playerID)"
             )
         }
-        try await verifyReadOnly(
+        try await verifyCannotAnswer(
             recording,
+            ownerPrompt: ownerPrompt,
             identity: .spectator,
-            expectedReason: .spectator,
+            expectedReasonIfPresented: .spectator,
             roleDescription: "spectator"
         )
+
+        model.liveGameParticipantIdentities[gameID] = .participant(ownerID)
+        try await verify(recording)
     }
 
     // swiftlint:disable:next function_body_length
-    private func verifyReadOnly(
+    private func verifyCannotAnswer(
         _ recording: CoverageRecording,
+        ownerPrompt: BasicChoicePromptPresentation,
         identity: LiveGameParticipantIdentity,
-        expectedReason: BasicChoiceReadOnlyReason,
+        expectedReasonIfPresented: BasicChoiceReadOnlyReason,
         roleDescription: String
     ) async throws {
         model.liveGameParticipantIdentities[gameID] = identity
-        let prompt = try requirePrompt(for: recording)
-        let ownerID = try recording.record.recordedPlayerID()
-        guard prompt.ownerID == ownerID else {
-            throw CoverageReplayPromptFailure(
-                record: recording,
-                reason: "\(roleDescription) saw prompt for \(prompt.ownerID) instead of \(ownerID)"
-            )
-        }
-        guard prompt.readOnlyReason == expectedReason else {
-            throw CoverageReplayPromptFailure(
-                record: recording,
-                reason: "\(roleDescription) read-only reason was " +
-                    "\(String(describing: prompt.readOnlyReason)); expected \(expectedReason)"
-            )
+        let presentedPrompt = model.basicChoicePresentation(for: gameID)
+        if let presentedPrompt {
+            let ownerID = try recording.record.recordedPlayerID()
+            guard presentedPrompt.ownerID == ownerID else {
+                throw CoverageReplayPromptFailure(
+                    record: recording,
+                    reason: "\(roleDescription) saw prompt for " +
+                        "\(presentedPrompt.ownerID) instead of \(ownerID)"
+                )
+            }
+            guard presentedPrompt.readOnlyReason == expectedReasonIfPresented else {
+                throw CoverageReplayPromptFailure(
+                    record: recording,
+                    reason: "\(roleDescription) read-only reason was " +
+                        "\(String(describing: presentedPrompt.readOnlyReason)); " +
+                        "expected \(expectedReasonIfPresented)"
+                )
+            }
         }
 
         let sentBefore = await connection.sentData.count
         let serviceCallsBefore = await service.callOrder.count
-        if LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion) {
+        let attemptPrompt = presentedPrompt ?? ownerPrompt
+        if LiveChooseDeckQuestion.matches(attemptPrompt.identity.rawQuestion) {
             guard case .readOnly = model.canAnswerLiveChooseDeck(for: gameID) else {
                 throw CoverageReplayPromptFailure(
                     record: recording,
-                    reason: "\(roleDescription) could answer read-only ChooseDeck prompt"
+                    reason: "\(roleDescription) could answer ChooseDeck prompt"
                 )
             }
             guard await model.chooseDeckForLivePrompt(deck, in: gameID) == false else {
                 throw CoverageReplayPromptFailure(
                     record: recording,
-                    reason: "\(roleDescription) sent read-only ChooseDeck prompt"
+                    reason: "\(roleDescription) sent ChooseDeck prompt"
                 )
             }
-        } else if prompt.isChooseUpgradeDeckPrompt {
+        } else if attemptPrompt.isChooseUpgradeDeckPrompt {
             let result = await model.continueCampaignWithoutUpgrading(
                 investigatorId: recording.record.investigator,
                 in: gameID,
-                promptIdentity: prompt.identity
+                promptIdentity: attemptPrompt.identity
             )
             guard case .failed = result else {
                 throw CoverageReplayPromptFailure(
                     record: recording,
-                    reason: "\(roleDescription) submitted read-only " +
-                        "ChooseUpgradeDeck prompt: \(result)"
+                    reason: "\(roleDescription) submitted ChooseUpgradeDeck prompt: \(result)"
                 )
             }
         } else {
             let submission = try RecordedCoverageSubmission(answer: recording.record.chosenAnswer)
-            let result = await submit(submission, prompt: prompt)
-            guard result == .readOnly else {
+            let result = await submit(submission, prompt: attemptPrompt)
+            guard result.isRejected else {
                 throw CoverageReplayPromptFailure(
                     record: recording,
-                    reason: "\(roleDescription) submitted read-only prompt: \(result)"
+                    reason: "\(roleDescription) submitted prompt: \(result)"
                 )
             }
         }
@@ -463,14 +473,14 @@ private struct CoverageReplaySession {
         guard sentAfter == sentBefore else {
             throw CoverageReplayPromptFailure(
                 record: recording,
-                reason: "\(roleDescription) sent \(sentAfter - sentBefore) read-only frame(s)"
+                reason: "\(roleDescription) sent \(sentAfter - sentBefore) frame(s)"
             )
         }
         let serviceCallsAfter = await service.callOrder.count
         guard serviceCallsAfter == serviceCallsBefore else {
             throw CoverageReplayPromptFailure(
                 record: recording,
-                reason: "\(roleDescription) made a read-only REST call"
+                reason: "\(roleDescription) made a REST call"
             )
         }
     }
@@ -945,6 +955,17 @@ private enum CoverageEnvelopeBuilder {
         scenario["campaignStep"] = step
         mode["That"] = .object(scenario)
         game["mode"] = .object(mode)
+    }
+}
+
+private extension BasicChoiceSubmitResult {
+    var isRejected: Bool {
+        switch self {
+        case .sentAwaitingSnapshot, .alreadyPending, .retryableFailure:
+            false
+        case .staleQuestion, .readOnly, .unsupportedChoice:
+            true
+        }
     }
 }
 

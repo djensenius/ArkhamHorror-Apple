@@ -18,7 +18,6 @@ extension AppModel {
         let selected: (PlayerID, BasicChoiceQuestionPayload)? = switch identity {
         case let .participant(playerID):
             projection.questions[playerID].map { (playerID, $0) }
-                ?? firstQuestion(in: projection)
         case .spectator:
             firstQuestion(in: projection)
         case .none:
@@ -222,9 +221,6 @@ extension AppModel {
         guard let presentation = basicChoicePresentation(for: identity.gameID),
               presentation.identity == identity
         else { return .reject(.staleQuestion) }
-        guard presentation.isAuthorized else {
-            return .reject(.readOnly)
-        }
         if let action = basicChoiceActions[identity.gameID] {
             if action.identity.promptKey != identity.promptKey {
                 basicChoiceActions[identity.gameID] = nil
@@ -238,6 +234,9 @@ extension AppModel {
                     break
                 }
             }
+        }
+        guard presentation.isAuthorized else {
+            return .reject(.readOnly)
         }
         // Revalidated immediately before send using the current authoritative prompt
         // identity and actionability rules -- never the projection captured whenever

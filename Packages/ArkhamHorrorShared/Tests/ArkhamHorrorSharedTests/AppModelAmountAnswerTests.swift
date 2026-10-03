@@ -651,7 +651,7 @@ extension AppModelLiveGameTests {
         model.liveGameParticipantIdentities[gameID] = .participant(
             BoardTestFixtures.playerID("000000000002")
         )
-        #expect(await model.submitAmountsAnswer(identity, amounts: amounts) == .readOnly)
+        #expect(await model.submitAmountsAnswer(identity, amounts: amounts) == .staleQuestion)
         model.liveGameParticipantIdentities[gameID] = try .participant(#require(envelope.playerID))
         model.liveGameConnections[gameID] = nil
         let disconnectedIdentity = try #require(

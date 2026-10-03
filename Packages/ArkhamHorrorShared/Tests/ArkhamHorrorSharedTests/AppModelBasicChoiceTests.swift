@@ -21,7 +21,7 @@ extension AppModelLiveGameTests {
         return gameID
     }
 
-    @Test("Participant identity comes from REST and falls back to read-only server prompts")
+    @Test("Participant identity comes only from REST and gates the exact question-map key")
     func participantIdentityGatesPrompt() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
@@ -39,9 +39,7 @@ extension AppModelLiveGameTests {
         #expect(presentation.choices.count == 4)
 
         model.liveGameParticipantIdentities[gameID] = .participant(BoardTestFixtures.playerID())
-        let otherPlayerPrompt = try #require(model.basicChoicePresentation(for: gameID))
-        #expect(otherPlayerPrompt.ownerID == envelope.playerID)
-        #expect(otherPlayerPrompt.readOnlyReason == .anotherPlayer)
+        #expect(model.basicChoicePresentation(for: gameID) == nil)
         model.liveGameParticipantIdentities[gameID] = nil
         #expect(model.basicChoicePresentation(for: gameID) == nil)
     }
