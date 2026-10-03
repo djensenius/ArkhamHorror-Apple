@@ -29,10 +29,15 @@ struct BoardView: View {
     #if canImport(GameController) && !os(tvOS)
         @State var controllerInputCenter: ControllerInputCenter?
         @State var controllerInputOwner = BoardControllerInputOwner()
+        @State var controllerInputStarted = false
+        @State var controllerInputWindowIsKey = false
     #endif
     @FocusState private var focusedID: SemanticFocusID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    #if os(macOS) && canImport(GameController)
+        @Environment(\.controlActiveState) private var controlActiveState
+    #endif
     #if os(iOS) || os(visionOS)
         @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
@@ -95,7 +100,11 @@ struct BoardView: View {
                 controller = newController
                 activeController = newController
             }
-            startControllerInputIfAvailable(for: activeController)
+            startControllerInputIfAvailable(
+                for: activeController,
+                scenePhase: scenePhase,
+                isKey: controllerInputCurrentWindowIsKey
+            )
             // Re-synced on every appearance, not only when the controller is first
             // created: if this view disappears and reappears with the same
             // already-existing controller (for example a tab/detail switch), SwiftUI may
@@ -128,7 +137,31 @@ struct BoardView: View {
         .onChange(of: scenePhase) { _, newValue in
             controllerInputScenePhaseDidChange(newValue)
         }
+        #if os(macOS) && canImport(GameController)
+            .onChange(of: controlActiveState) { _, newValue in
+                controllerInputWindowFocusDidChange(newValue == .key, scenePhase: scenePhase)
+            }
+        #endif
+        #if (os(iOS) || os(visionOS)) && canImport(GameController)
+            .background {
+                BoardControllerInputWindowKeyObserver { isKey in
+                    controllerInputWindowFocusDidChange(isKey, scenePhase: scenePhase)
+                }
+            }
+        #endif
     }
+
+    #if canImport(GameController) && !os(tvOS)
+        private var controllerInputCurrentWindowIsKey: Bool {
+            #if os(macOS)
+                controlActiveState == .key
+            #else
+                controllerInputWindowIsKey
+            #endif
+        }
+    #else
+        private var controllerInputCurrentWindowIsKey: Bool { false }
+    #endif
 
     @ViewBuilder
     private func boardBody(_ controller: BoardCommandController) -> some View {
