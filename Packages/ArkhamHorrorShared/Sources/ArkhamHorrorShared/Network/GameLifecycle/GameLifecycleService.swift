@@ -307,7 +307,8 @@ struct GameLifecycleService: Sendable {
             }
             let isServerAuthoredStatus = statusCode == 400 || statusCode == 403
             if isServerAuthoredStatus,
-               let message = operationFailureMessage(from: data) {
+               let message = operationFailureMessage(from: data)
+            {
                 return .operationFailed(DeckOperationError(errorMsg: message))
             }
             return statusCode == 400 ? .malformedPayload : .unexpectedStatus(statusCode)
