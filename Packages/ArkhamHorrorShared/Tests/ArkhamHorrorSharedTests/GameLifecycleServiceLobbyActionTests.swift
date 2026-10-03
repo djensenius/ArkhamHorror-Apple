@@ -163,9 +163,11 @@ struct GameLifecycleServiceLobbyActionTests {
     @Test("joinGame surfaces Yesod permissionDenied messages verbatim")
     func joinGameSurfacesServerAuthoredErrors() async throws {
         let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/join")
-        let message = "Permission Denied. You already occupy a seat in another group in this event"
+        let message = "Permission Denied. "
+            + "You already occupy a seat in another group in this event"
         let error = GameLifecycleError.operationFailed(DeckOperationError(errorMsg: message))
-        let body = #"{"message":"Permission Denied. You already occupy a seat in another group in this event"}"#
+        let body = #"{"message":"Permission Denied. "#
+            + #"You already occupy a seat in another group in this event"}"#
         let transport = GameLifecycleRecordingTransport(
             data: Data(body.utf8), response: httpResponse(403, url: url)
         )
@@ -190,7 +192,10 @@ struct GameLifecycleServiceLobbyActionTests {
         await #expect(throws: GameLifecycleError.unexpectedStatus(404)) {
             _ = try await service404.openSeats(for: gameID, on: profile, token: token)
         }
-        #expect(GameLifecycleError.unexpectedStatus(404).message == "This game is no longer available.")
+        #expect(
+            GameLifecycleError.unexpectedStatus(404).message
+                == "This game is no longer available."
+        )
 
         let service500 = GameLifecycleService(transport: GameLifecycleRecordingTransport(
             data: Data(#"{"message":"Internal Server Error"}"#.utf8),
@@ -199,7 +204,10 @@ struct GameLifecycleServiceLobbyActionTests {
         await #expect(throws: GameLifecycleError.unexpectedStatus(500)) {
             _ = try await service500.openSeats(for: gameID, on: profile, token: token)
         }
-        #expect(GameLifecycleError.unexpectedStatus(500).message == "This server responded unexpectedly. Try again.")
+        #expect(
+            GameLifecycleError.unexpectedStatus(500).message
+                == "This server responded unexpectedly. Try again."
+        )
     }
 
     @Test("chooseDeck surfaces backend deck-update errors verbatim")

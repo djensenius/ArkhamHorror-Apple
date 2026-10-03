@@ -44,7 +44,9 @@ struct AppModelGameInviteTests {
         let seat = try CardCode("c01001")
         await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 2)))
         await service.enqueueOpenSeatsResult(.success([seat]))
-        await service.enqueueGetGameResult(.success(getGameEnvelope(gameID: gameID, playerCount: 2)))
+        await service.enqueueGetGameResult(.success(
+            getGameEnvelope(gameID: gameID, playerCount: 2)
+        ))
         await service.enqueueClaimSeatResult(.success(()))
         await service.enqueueListGamesResult(.success([]))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
@@ -56,7 +58,11 @@ struct AppModelGameInviteTests {
         #expect(invite.viewerHasSeat)
         #expect(invite.playerCount == 2)
         #expect(claimedID == gameID)
-        #expect(await service.callOrder == ["peekLobby", "openSeats", "getGame", "claimSeat", "listGames"])
+        #expect(
+            await service.callOrder == [
+                "peekLobby", "openSeats", "getGame", "claimSeat", "listGames",
+            ]
+        )
         #expect(await service.lastPeekLobbyGameID == gameID)
         #expect(await service.lastOpenSeatsGameID == gameID)
         #expect(await service.lastClaimSeatGameID == gameID)

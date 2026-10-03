@@ -95,7 +95,9 @@ struct JoinGameInviteViewModelTests {
     func claimSeatInviteRecordsAlreadySeatedViewer() async throws {
         let viewModel = JoinGameInviteViewModel()
         let seat = try CardCode("c01001")
-        viewModel.inviteText = "https://arkhamhorror.app/games/\(gameID.rawValue.uuidString)/claim-seat"
+        let claimSeatURL = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        viewModel.inviteText = claimSeatURL
         let details = inviteDetails(seats: [seat], viewerHasSeat: true)
 
         _ = await viewModel.submit(

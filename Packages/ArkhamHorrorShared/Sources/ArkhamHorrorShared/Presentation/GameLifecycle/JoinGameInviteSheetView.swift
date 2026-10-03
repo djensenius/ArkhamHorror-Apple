@@ -248,7 +248,9 @@ struct JoinGameInviteSheetView: View {
                 systemImage: "arrow.right.circle.fill"
             )
         }
-        .accessibilityIdentifier(AccountAccessibilityID.liveGameEnterButton(for: invite.gameID.rawValue))
+        .accessibilityIdentifier(
+            AccountAccessibilityID.liveGameEnterButton(for: invite.gameID.rawValue)
+        )
     }
 
     @ViewBuilder

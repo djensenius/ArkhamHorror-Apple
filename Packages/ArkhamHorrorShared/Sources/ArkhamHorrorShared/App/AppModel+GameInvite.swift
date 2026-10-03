@@ -113,9 +113,10 @@ extension AppModel {
     /// games-list refresh before returning, so presenting the lobby cannot flash a
     /// stale "game unavailable" state while the joined game is still loading.
     @discardableResult
-    func claimSeatFromInvite(_ seat: CardCode, using details: ClaimSeatInviteDetails)
-        async throws -> GameID
-    {
+    func claimSeatFromInvite(
+        _ seat: CardCode,
+        using details: ClaimSeatInviteDetails
+    ) async throws -> GameID {
         let inviteSession = try currentGameInviteSession()
         try ensureCurrentGameInviteSession(inviteSession, matches: details.sessionToken)
         let token = try await currentGameInviteToken(for: inviteSession)
@@ -158,7 +159,9 @@ extension AppModel {
         let token: String
         do {
             token = try await currentGameInviteToken(for: session)
-            let envelope = try await gameLifecycleService.getGame(id, on: session.profile, token: token)
+            let envelope = try await gameLifecycleService.getGame(
+                id, on: session.profile, token: token
+            )
             try ensureCurrentGameInviteSession(session)
             gameLobbyPlayerCounts[id] = envelope.game.playerCount
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
@@ -177,7 +180,9 @@ extension AppModel {
         token: String
     ) async throws -> GetGameEnvelope? {
         do {
-            let envelope = try await gameLifecycleService.getGame(id, on: session.profile, token: token)
+            let envelope = try await gameLifecycleService.getGame(
+                id, on: session.profile, token: token
+            )
             gameLobbyPlayerCounts[id] = envelope.game.playerCount
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
             return envelope
