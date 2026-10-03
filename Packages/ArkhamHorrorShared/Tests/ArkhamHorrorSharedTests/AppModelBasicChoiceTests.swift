@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -21,6 +22,32 @@ extension AppModelLiveGameTests {
         return gameID
     }
 
+    private func getGameEnvelopeWithAdditionalQuestion(
+        for playerID: PlayerID
+    ) throws -> GetGameEnvelope {
+        let originalKey = "00000000-0000-0000-0000-000000000001"
+        let otherKey = playerID.rawValue.uuidString.lowercased()
+        guard case var .object(root) = try LosslessJSONParser.parse(
+            fixtureData(named: "get-game")
+        ),
+            case var .object(game) = root["game"],
+            case var .object(questions) = game["question"],
+            case var .object(presentations) = game["questionPresentation"],
+            let question = questions[originalKey],
+            let presentation = presentations[originalKey]
+        else { throw TestFailure() }
+
+        questions[otherKey] = question
+        presentations[otherKey] = presentation
+        game["question"] = .object(questions)
+        game["questionPresentation"] = .object(presentations)
+        root["game"] = .object(game)
+        return try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: LosslessJSONSerializer.serialize(.object(root))
+        )
+    }
+
     @Test("Participant identity comes only from REST and gates the exact question-map key")
     func participantIdentityGatesPrompt() async throws {
         let (model, fakes) = makeSignedInModel()
@@ -42,6 +69,43 @@ extension AppModelLiveGameTests {
         #expect(model.basicChoicePresentation(for: gameID) == nil)
         model.liveGameParticipantIdentities[gameID] = nil
         #expect(model.basicChoicePresentation(for: gameID) == nil)
+    }
+
+    @Test("Participants use only their own entry when several server prompts are pending")
+    func participantsUseOwnPendingQuestionOnly() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let otherID = BoardTestFixtures.playerID("000000000002")
+        let thirdID = BoardTestFixtures.playerID("000000000003")
+        let envelope = try getGameEnvelopeWithAdditionalQuestion(for: otherID)
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+
+        let ownerPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(ownerPrompt.ownerID == envelope.playerID)
+        #expect(ownerPrompt.readOnlyReason == nil)
+
+        model.liveGameParticipantIdentities[gameID] = .participant(otherID)
+        let otherPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(otherPrompt.ownerID == otherID)
+        #expect(otherPrompt.readOnlyReason == nil)
+
+        model.liveGameParticipantIdentities[gameID] = .participant(thirdID)
+        #expect(model.basicChoicePresentation(for: gameID) == nil)
+        #expect(
+            await model.submitBasicChoice(ownerPrompt.identity, choiceIndex: 0) == .staleQuestion
+        )
+
+        model.liveGameParticipantIdentities[gameID] = .spectator
+        let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(spectatorPrompt.readOnlyReason == .spectator)
+        #expect(
+            await model.submitBasicChoice(spectatorPrompt.identity, choiceIndex: 0) == .readOnly
+        )
+        #expect(await connection.sentData.isEmpty)
     }
 
     @Test("Spectator and legacy sessions remain explicitly read-only")
