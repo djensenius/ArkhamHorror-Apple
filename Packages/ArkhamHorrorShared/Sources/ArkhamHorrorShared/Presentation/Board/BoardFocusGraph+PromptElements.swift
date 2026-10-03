@@ -1,5 +1,16 @@
 import Foundation
 
+private extension FocusDirection {
+    var boardOpposite: FocusDirection {
+        switch self {
+        case .up: .down
+        case .down: .up
+        case .left: .right
+        case .right: .left
+        }
+    }
+}
+
 extension BoardFocusGraphBuilder {
     // swiftlint:disable:next function_parameter_count
     static func appendLocations(
@@ -15,7 +26,7 @@ extension BoardFocusGraphBuilder {
             enemiesByLocationID: enemiesByLocationID,
             choiceLinks: choiceLinks
         )
-        let reciprocalUpTargets = originalDownNeighborActionIDs(
+        let reciprocalActionTargets = reciprocalNeighborActionTargets(
             locations: locations,
             layout: layout,
             actionIDs: actionIDs
@@ -29,7 +40,7 @@ extension BoardFocusGraphBuilder {
                 neighbors: locationNeighbors(
                     layoutNeighbors,
                     actionID: actionID,
-                    reciprocalUpTarget: reciprocalUpTargets[location.id]
+                    reciprocalTargets: reciprocalActionTargets[location.id] ?? [:]
                 )
             ))
             if let actionID {
@@ -66,26 +77,30 @@ extension BoardFocusGraphBuilder {
         })
     }
 
-    private static func originalDownNeighborActionIDs(
+    private static func reciprocalNeighborActionTargets(
         locations: [BoardLocationNode],
         layout: BoardLayout,
         actionIDs: [LocationID: SemanticFocusID]
-    ) -> [LocationID: SemanticFocusID] {
-        Dictionary(
-            locations.compactMap { location in
-                guard let actionID = actionIDs[location.id],
-                      let downNeighbor = layout.neighbors[location.id]?[.down]
-                else { return nil }
-                return (downNeighbor, actionID)
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
+    ) -> [LocationID: [FocusDirection: SemanticFocusID]] {
+        var targets: [LocationID: [FocusDirection: SemanticFocusID]] = [:]
+        for location in locations {
+            guard let actionID = actionIDs[location.id] else { continue }
+            let layoutNeighbors = layout.neighbors[location.id] ?? [:]
+            for direction in [FocusDirection.down, .left, .right] {
+                guard let neighborID = layoutNeighbors[direction] else { continue }
+                let reverse = direction.boardOpposite
+                if targets[neighborID]?[reverse] == nil {
+                    targets[neighborID, default: [:]][reverse] = actionID
+                }
+            }
+        }
+        return targets
     }
 
     private static func locationNeighbors(
         _ layoutNeighbors: [FocusDirection: LocationID],
         actionID: SemanticFocusID?,
-        reciprocalUpTarget: SemanticFocusID?
+        reciprocalTargets: [FocusDirection: SemanticFocusID]
     ) -> [FocusDirection: SemanticFocusID] {
         var neighbors = Dictionary(uniqueKeysWithValues: layoutNeighbors.map {
             ($0.key, BoardFocusID.location($0.value))
@@ -93,8 +108,8 @@ extension BoardFocusGraphBuilder {
         if let actionID {
             neighbors[.down] = actionID
         }
-        if let reciprocalUpTarget {
-            neighbors[.up] = reciprocalUpTarget
+        for (direction, reciprocalTarget) in reciprocalTargets {
+            neighbors[direction] = reciprocalTarget
         }
         return neighbors
     }

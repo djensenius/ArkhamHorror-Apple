@@ -162,7 +162,10 @@ struct BoardLinkedFocusGraphTests {
         #expect(graph.neighbor(from: actionsFocus, direction: .left) == BoardFocusID.location(
             rootID
         ))
+        #expect(graph.neighbor(from: BoardFocusID.location(rootID), direction: .right)
+            == actionsFocus)
         #expect(graph.neighbor(from: actionsFocus, direction: .right) == rightLocationFocus)
+        #expect(graph.neighbor(from: rightLocationFocus, direction: .left) == actionsFocus)
         #expect(graph.neighbor(from: downLocationFocus, direction: .up) == actionsFocus)
         #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
         #expect(controller.coordinator.currentFocus == BoardFocusID.linkedChoiceMenuChoice(7))
