@@ -63,9 +63,11 @@ struct GameLifecycleServiceLobbyActionTests {
             ),
         ]
     )
-    func claimSeatSurfacesServerAuthoredErrors(status: Int, body: String, message: String)
-        async throws
-    {
+    func claimSeatSurfacesServerAuthoredErrors(
+        status: Int,
+        body: String,
+        message: String
+    ) async throws {
         let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/claim-seat")
         let expected = GameLifecycleError.operationFailed(DeckOperationError(errorMsg: message))
         let transport = GameLifecycleRecordingTransport(

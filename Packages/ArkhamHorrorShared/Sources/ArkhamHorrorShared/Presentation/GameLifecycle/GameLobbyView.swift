@@ -103,63 +103,64 @@ struct GameLobbyView: View {
     @ViewBuilder
     private func openSeatsContent(for game: GameSummary) -> some View {
         if let openSeats = model.gameOpenSeats[gameID] {
-            if openSeats.isEmpty || game.viewerAlreadyHasSeat {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(openSeatsStatusText(for: game, openSeats: openSeats))
-                        .foregroundStyle(.secondary)
-                    // A stale/racy empty result (or a transient backend issue) must
-                    // never leave this lobby permanently non-retryable while
-                    // `hasOpenSeats` might still legitimately be true -- this reuses
-                    // the exact same action as the initial "View Open Seats" button
-                    // below, so it is never a distinct, second concurrent load.
-                    Button {
-                        model.loadOpenSeats(for: gameID)
-                    } label: {
-                        HStack {
-                            Text(gameLifecycleLocalized("games.lobby.openSeats.refresh", "Refresh"))
-                            if action == .loadingOpenSeats {
-                                Spacer()
-                                ProgressView().controlSize(.small)
-                            }
-                        }
-                    }
-                    .disabled(action != nil)
-                    .accessibilityIdentifier(
-                        AccountAccessibilityID.gameOpenSeatsButton(for: gameID.rawValue)
-                    )
-                }
-            } else {
-                ForEach(openSeats, id: \.rawValue) { seat in
-                    Button {
-                        model.claimSeat(seat, in: gameID)
-                    } label: {
-                        Label(seat.rawValue, systemImage: "person.fill.badge.plus")
-                    }
-                    .disabled(action != nil)
-                    .accessibilityIdentifier(
-                        AccountAccessibilityID.gameClaimSeatButton(
-                            for: gameID.rawValue, seat: seat.rawValue
-                        )
-                    )
-                }
-            }
+            loadedOpenSeatsContent(openSeats, for: game)
         } else {
-            Button {
-                model.loadOpenSeats(for: gameID)
-            } label: {
-                HStack {
-                    Text(gameLifecycleLocalized("games.lobby.openSeats.view", "View Open Seats"))
-                    if action == .loadingOpenSeats {
-                        Spacer()
-                        ProgressView().controlSize(.small)
-                    }
-                }
-            }
-            .disabled(action != nil)
-            .accessibilityIdentifier(
-                AccountAccessibilityID.gameOpenSeatsButton(for: gameID.rawValue)
+            loadOpenSeatsButton(
+                title: gameLifecycleLocalized("games.lobby.openSeats.view", "View Open Seats")
             )
         }
+    }
+
+    @ViewBuilder
+    private func loadedOpenSeatsContent(
+        _ openSeats: OpenSeats,
+        for game: GameSummary
+    ) -> some View {
+        if openSeats.isEmpty || game.viewerAlreadyHasSeat {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(openSeatsStatusText(for: game, openSeats: openSeats))
+                    .foregroundStyle(.secondary)
+                // A stale/racy empty result (or a transient backend issue) must never
+                // leave this lobby permanently non-retryable while `hasOpenSeats` might
+                // still legitimately be true. This reuses the initial load action, so it
+                // is never a distinct, second concurrent load.
+                loadOpenSeatsButton(
+                    title: gameLifecycleLocalized("games.lobby.openSeats.refresh", "Refresh")
+                )
+            }
+        } else {
+            ForEach(openSeats, id: \.rawValue) { seat in
+                Button {
+                    model.claimSeat(seat, in: gameID)
+                } label: {
+                    Label(seat.rawValue, systemImage: "person.fill.badge.plus")
+                }
+                .disabled(action != nil)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.gameClaimSeatButton(
+                        for: gameID.rawValue, seat: seat.rawValue
+                    )
+                )
+            }
+        }
+    }
+
+    private func loadOpenSeatsButton(title: String) -> some View {
+        Button {
+            model.loadOpenSeats(for: gameID)
+        } label: {
+            HStack {
+                Text(title)
+                if action == .loadingOpenSeats {
+                    Spacer()
+                    ProgressView().controlSize(.small)
+                }
+            }
+        }
+        .disabled(action != nil)
+        .accessibilityIdentifier(
+            AccountAccessibilityID.gameOpenSeatsButton(for: gameID.rawValue)
+        )
     }
 
     @ViewBuilder
@@ -359,86 +360,6 @@ extension GameLobbyView {
               action == nil
         else { return }
         model.loadOpenSeats(for: gameID)
-    }
-}
-
-private struct GameLobbyInviteSection: View {
-    let gameID: GameID
-    let inviteURL: URL
-    @Binding var copiedInviteURL: Bool
-
-    var body: some View {
-        Section {
-            inviteURLText
-            copyButton
-        } header: {
-            Text(gameLifecycleLocalized("games.lobby.invite.section", "Invite Others"))
-        } footer: {
-            Text(gameLifecycleLocalized(
-                "games.lobby.invite.footer",
-                "Friends can open this web-compatible link to join or claim a seat."
-            ))
-        }
-    }
-
-    @ViewBuilder
-    private var inviteURLText: some View {
-        let text = Text(inviteURL.absoluteString)
-            .font(.footnote.monospaced())
-            .accessibilityIdentifier(
-                AccountAccessibilityID.gameInviteURLText(for: gameID.rawValue)
-            )
-        #if os(tvOS)
-            text
-        #else
-            text.textSelection(.enabled)
-        #endif
-    }
-
-    private var copyButton: some View {
-        Button {
-            InviteClipboard.copy(inviteURL.absoluteString)
-            copiedInviteURL = true
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2))
-                copiedInviteURL = false
-            }
-        } label: {
-            Label(
-                copiedInviteURL
-                    ? gameLifecycleLocalized("games.lobby.invite.copied", "Copied")
-                    : gameLifecycleLocalized("games.lobby.invite.copy", "Copy Invite Link"),
-                systemImage: copiedInviteURL ? "checkmark" : "doc.on.doc"
-            )
-        }
-        .accessibilityIdentifier(
-            AccountAccessibilityID.gameInviteCopyButton(for: gameID.rawValue)
-        )
-    }
-}
-
-extension GameSummary {
-    var viewerAlreadyHasSeat: Bool {
-        if !investigators.isEmpty {
-            return true
-        }
-        switch gameState {
-        case let .pending(players), let .chooseDecks(players):
-            return !players.isEmpty
-        case .active, .over, .unknown:
-            return false
-        }
-    }
-}
-
-private extension GameState {
-    var showsEnterGameLinkInLobby: Bool {
-        switch self {
-        case .active, .chooseDecks:
-            true
-        case .pending, .over, .unknown:
-            false
-        }
     }
 }
 

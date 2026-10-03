@@ -45,7 +45,9 @@ struct JoinGameInviteViewModelTests {
     func claimSeatInviteLoadsOpenSeats() async throws {
         let viewModel = JoinGameInviteViewModel()
         let seat = try CardCode("c01001")
-        viewModel.inviteText = "https://arkhamhorror.app/games/\(gameID.rawValue.uuidString)/claim-seat"
+        let claimSeatURL = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        viewModel.inviteText = claimSeatURL
         var loadedGameID: GameID?
 
         let result = await viewModel.submit(
@@ -58,7 +60,9 @@ struct JoinGameInviteViewModelTests {
 
         #expect(result == nil)
         #expect(loadedGameID == gameID)
-        #expect(viewModel.claimSeatInvite == ClaimSeatInviteViewState(gameID: gameID, seats: [seat]))
+        #expect(
+            viewModel.claimSeatInvite == ClaimSeatInviteViewState(gameID: gameID, seats: [seat])
+        )
         #expect(viewModel.failureMessage == nil)
     }
 
@@ -66,7 +70,9 @@ struct JoinGameInviteViewModelTests {
     func claimLoadedSeat() async throws {
         let viewModel = JoinGameInviteViewModel()
         let seat = try CardCode("c01001")
-        viewModel.inviteText = "https://arkhamhorror.app/games/\(gameID.rawValue.uuidString)/claim-seat"
+        let claimSeatURL = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        viewModel.inviteText = claimSeatURL
         _ = await viewModel.submit(
             joinInvite: { _ in Issue.record("join should not run"); return gameID },
             loadClaimSeatInvite: { _ in [seat] }
