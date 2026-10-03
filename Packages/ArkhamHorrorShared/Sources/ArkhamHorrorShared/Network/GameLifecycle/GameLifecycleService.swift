@@ -293,11 +293,17 @@ struct GameLifecycleService: Sendable {
         case .generic:
             return .unexpectedStatus(statusCode)
         case .operation:
-            if let error = try? ContractJSON.decode(DeckOperationError.self, from: data) {
-                return .operationFailed(error)
+            if let message = operationFailureMessage(from: data) {
+                return .operationFailed(DeckOperationError(errorMsg: message))
             }
             return statusCode == 400 ? .malformedPayload : .unexpectedStatus(statusCode)
         }
+    }
+
+    private func operationFailureMessage(from data: Data) -> String? {
+        guard let body = try? ContractJSON.decode(LifecycleOperationErrorBody.self, from: data)
+        else { return nil }
+        return body.message
     }
 
     /// Executes `request` and decodes a 2xx body into `Response` through
@@ -336,5 +342,23 @@ struct GameLifecycleService: Sendable {
             throw GameLifecycleError.malformedPayload
         }
         try Task.checkCancellation()
+    }
+}
+
+private struct LifecycleOperationErrorBody: Decodable {
+    let message: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case message
+        case errorMsg
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let yesodMessage = try container.decodeIfPresent(String.self, forKey: .message)
+        let deckMessage = try container.decodeIfPresent(String.self, forKey: .errorMsg)
+        message = [yesodMessage, deckMessage]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
     }
 }

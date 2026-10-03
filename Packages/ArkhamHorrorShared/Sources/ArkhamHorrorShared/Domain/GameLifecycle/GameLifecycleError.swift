@@ -4,8 +4,8 @@
 /// failures: no case embeds a request header or token value, and where a diagnostic
 /// string is carried it is derived only from a transport-level error and is for logging
 /// only -- ``Equatable`` ignores it. Endpoint-specific lifecycle rejections preserve the
-/// backend's user-facing `errorMsg` so lobby/join/deck validation remains server-owned
-/// and visible.
+/// backend's user-facing Yesod `message` (and the deck endpoint's existing `errorMsg`)
+/// so lobby/join/deck validation remains server-owned and visible.
 enum GameLifecycleError: Error, Sendable {
     /// The response was not an HTTP response (unexpected protocol or test substitution).
     case nonHTTPResponse
@@ -21,11 +21,9 @@ enum GameLifecycleError: Error, Sendable {
     /// The server returned an unexpected, non-401 status code.
     ///
     /// The associated value is the numeric status code, which is non-secret. Covers
-    /// every legality/validation rejection this client does not itself special-case
-    /// (404 unknown game, 400 invalid seat/investigator, 403 seat already
-    /// taken/not a multiplayer game, 500 engine failure): this client never
-    /// synthesizes those backend rules itself, so it cannot distinguish them beyond
-    /// their status code without guessing at an undocumented response-body shape.
+    /// failures whose body carries no backend-authored `message`/`errorMsg`, so the UI
+    /// falls back to a generic localized description rather than guessing at server
+    /// rules it does not own.
     case unexpectedStatus(Int)
     /// A 2xx response body could not be decoded into the expected typed payload.
     case malformedPayload
