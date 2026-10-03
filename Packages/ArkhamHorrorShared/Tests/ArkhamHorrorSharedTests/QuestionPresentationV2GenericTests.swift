@@ -342,28 +342,47 @@ struct QuestionPresentationV2GenericTests {
     @Test("Additive-field tolerance still requires fields each raw family uses")
     func additiveRawQuestionToleranceStillRequiresFields() throws {
         let missingFieldCases = [
-            #"{"tag":"ChooseOne"}"#,
-            #"{"tag":"ChooseN","choices":[{}]}"#,
-            #"{"tag":"ChooseSome1","choices":[{}]}"#,
-            #"{"tag":"QuestionLabel","label":"x","card":null}"#,
-            #"{"tag":"ChooseOneFromEach"}"#,
-            #"{"tag":"ChooseOneWizard","flavorText":{},"confirmLabel":"$confirm","backLabel":"$back"}"#,
-            #"{"tag":"PickSupplies","pointsRemaining":2,"chosenSupplies":[],"resupply":false}"#,
-            #"{"tag":"DropDown"}"#,
-            #"{"tag":"Read","flavorText":{},"readCards":null}"#,
+            (
+                rawJSON: #"{"tag":"ChooseOne"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseOne question")
+            ),
+            (
+                rawJSON: #"{"tag":"ChooseN","choices":[{}]}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseN question")
+            ),
+            (
+                rawJSON: #"{"tag":"ChooseSome1","choices":[{}]}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseSome1 question")
+            ),
+            (
+                rawJSON: #"{"tag":"QuestionLabel","label":"x","card":null}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed QuestionLabel wrapper")
+            ),
+            (
+                rawJSON: #"{"tag":"ChooseOneFromEach"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseOneFromEach question")
+            ),
+            (
+                rawJSON: #"{"tag":"ChooseOneWizard","flavorText":{},"confirmLabel":"$confirm","backLabel":"$back"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseOneWizard question")
+            ),
+            (
+                rawJSON: #"{"tag":"PickSupplies","pointsRemaining":2,"chosenSupplies":[],"resupply":false}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed PickSupplies question")
+            ),
+            (
+                rawJSON: #"{"tag":"DropDown"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed DropDown question")
+            ),
+            (
+                rawJSON: #"{"tag":"Read","flavorText":{},"readCards":null}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed Read question")
+            ),
         ]
-        let presentation = QuestionPresentation(
-            protocolVersion: 2,
-            questionVersion: 1,
-            questionKind: .chooseOne,
-            choiceCount: 1,
-            choices: []
-        )
-        for rawJSON in missingFieldCases {
-            #expect(throws: QuestionPresentationBindingError.self, "\(rawJSON)") {
-                try presentation.bind(
-                    to: ContractJSON.decode(JSONValue.self, from: Data(rawJSON.utf8)),
-                    expectedQuestionVersion: 1
+        for testCase in missingFieldCases {
+            #expect(throws: testCase.error, "\(testCase.rawJSON)") {
+                _ = try QuestionPresentationRawQuestionDeriver.derive(
+                    ContractJSON.decode(JSONValue.self, from: Data(testCase.rawJSON.utf8))
                 )
             }
         }
