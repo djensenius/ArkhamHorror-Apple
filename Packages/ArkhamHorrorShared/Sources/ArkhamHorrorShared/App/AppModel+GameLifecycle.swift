@@ -178,6 +178,7 @@ extension AppModel {
         gameOpenSeats = [:]
         gameLobbyPlayerCounts = [:]
         gameLobbyViewerHasSeats = [:]
+        gameLobbyViewerSeatFailures = [:]
         gameLifecycleActionAttempts = [:]
         gameLifecycleActionTasks = [:]
         gameLobbyDetailTasks = [:]

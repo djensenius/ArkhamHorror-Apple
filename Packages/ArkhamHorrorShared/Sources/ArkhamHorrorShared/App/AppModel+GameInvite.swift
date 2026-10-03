@@ -156,6 +156,7 @@ extension AppModel {
 
     func reloadLobbyViewerSeatStatus(for id: GameID) {
         gameLobbyViewerHasSeats[id] = nil
+        gameLobbyViewerSeatFailures[id] = nil
         gameLobbyDetailTasks[id]?.cancel()
         gameLobbyDetailTasks[id] = nil
         gameLobbyDetailTaskIDs[id] = nil
@@ -167,6 +168,7 @@ extension AppModel {
               gameLobbyDetailTasks[id] == nil,
               case let .signedIn(profile, _, _) = sessionState
         else { return }
+        gameLobbyViewerSeatFailures[id] = nil
         let session = GameInviteSession(
             profile: profile,
             generation: generation,
@@ -195,15 +197,22 @@ extension AppModel {
             try ensureCurrentGameInviteSession(session)
             gameLobbyPlayerCounts[id] = envelope.game.playerCount
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
+            gameLobbyViewerSeatFailures[id] = nil
         } catch is CancellationError {
             return
         } catch GameLifecycleError.unexpectedStatus(404) {
             guard (try? ensureCurrentGameInviteSession(session)) != nil else { return }
             gameLobbyViewerHasSeats[id] = false
+            gameLobbyViewerSeatFailures[id] = nil
         } catch let error as GameLifecycleError {
+            guard (try? ensureCurrentGameInviteSession(session)) != nil else { return }
+            gameLobbyViewerHasSeats[id] = nil
+            gameLobbyViewerSeatFailures[id] = error
             await handleGameInviteLifecycleError(error, session: session)
         } catch {
-            return
+            guard (try? ensureCurrentGameInviteSession(session)) != nil else { return }
+            gameLobbyViewerHasSeats[id] = nil
+            gameLobbyViewerSeatFailures[id] = .transportFailure("Lobby membership unavailable")
         }
     }
 
@@ -231,10 +240,12 @@ extension AppModel {
             try ensureCurrentGameInviteSession(session)
             gameLobbyPlayerCounts[id] = envelope.game.playerCount
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
+            gameLobbyViewerSeatFailures[id] = nil
             return envelope
         } catch GameLifecycleError.unexpectedStatus(404) {
             try ensureCurrentGameInviteSession(session)
             gameLobbyViewerHasSeats[id] = false
+            gameLobbyViewerSeatFailures[id] = nil
             return nil
         } catch is CancellationError {
             throw CancellationError()

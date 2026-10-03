@@ -2,6 +2,7 @@ import Foundation
 
 enum GameLobbyViewerSeatStatus: Equatable {
     case unresolved
+    case failed(GameLifecycleError)
     case unseated
     case seated
 }
@@ -23,6 +24,12 @@ extension GameLobbyView {
                 "games.lobby.openSeats.checkingSeat",
                 "Checking whether you already have a seat in this game."
             )
+        case let .failed(error):
+            return gameLifecycleLocalizedFormat(
+                "games.lobby.openSeats.checkingSeat.failed",
+                "Could not check whether you already have a seat: %@",
+                error.message
+            )
         case .unseated:
             if openSeats.isEmpty {
                 return gameLifecycleLocalized(
@@ -35,9 +42,16 @@ extension GameLobbyView {
     }
 
     func viewerSeatStatus(in _: GameSummary) -> GameLobbyViewerSeatStatus {
+        if let failure = model.gameLobbyViewerSeatFailures[gameID] {
+            return .failed(failure)
+        }
         guard let viewerHasSeat = model.gameLobbyViewerHasSeats[gameID] else {
             return .unresolved
         }
         return viewerHasSeat ? .seated : .unseated
+    }
+
+    func retryLobbySeatStatus() {
+        model.loadLobbyDetailsIfNeeded(for: gameID)
     }
 }

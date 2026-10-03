@@ -143,6 +143,12 @@ struct GameLobbyView: View {
                     .foregroundStyle(.secondary)
                 }
             }
+        } else if case .failed = viewerSeatStatus(in: game) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(openSeatsStatusText(for: game, openSeats: openSeats))
+                    .foregroundStyle(.secondary)
+                retrySeatStatusButton
+            }
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Text(openSeatsStatusText(for: game, openSeats: openSeats))
@@ -156,6 +162,24 @@ struct GameLobbyView: View {
                 )
             }
         }
+    }
+
+    private var retrySeatStatusButton: some View {
+        Button {
+            retryLobbySeatStatus()
+        } label: {
+            HStack {
+                Text(gameLifecycleLocalized(
+                    "games.lobby.openSeats.checkingSeat.retry",
+                    "Retry Seat Check"
+                ))
+                if model.gameLobbyDetailTasks[gameID] != nil {
+                    Spacer()
+                    ProgressView().controlSize(.small)
+                }
+            }
+        }
+        .disabled(model.gameLobbyDetailTasks[gameID] != nil)
     }
 
     private func loadOpenSeatsButton(title: String) -> some View {

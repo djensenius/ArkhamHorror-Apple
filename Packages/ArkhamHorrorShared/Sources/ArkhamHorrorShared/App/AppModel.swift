@@ -263,6 +263,8 @@ final class AppModel {
     var gameLobbyPlayerCounts: [GameID: Int] = [:]
     /// Whether the current signed-in viewer has a server-reported seat in a lobby.
     var gameLobbyViewerHasSeats: [GameID: Bool] = [:]
+    /// Most recent failures while loading viewer-specific lobby membership.
+    var gameLobbyViewerSeatFailures: [GameID: GameLifecycleError] = [:]
 
     /// A monotonically increasing counter guarding stale games-list load/refresh
     /// completions against a *newer* load/refresh — independent of ``generation``,
