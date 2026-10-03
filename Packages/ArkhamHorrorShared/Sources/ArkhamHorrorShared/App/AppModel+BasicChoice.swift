@@ -498,10 +498,8 @@ extension AppModel {
         if let connectionID, action.connectionID != connectionID {
             return
         }
-        if let questionVersion = rejection.questionVersion,
-           questionVersion != action.identity.questionVersion
-        {
-            return
+        if let questionVersion = rejection.questionVersion {
+            guard questionVersion == action.identity.questionVersion else { return }
         }
         switch action.phase {
         case .sending, .awaitingSnapshot:

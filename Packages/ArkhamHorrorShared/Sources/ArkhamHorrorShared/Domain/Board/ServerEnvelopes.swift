@@ -146,10 +146,10 @@ extension BoardSnapshotUpdate: Codable {
     private static func decodeAnswerRejected(
         from container: KeyedDecodingContainer<CodingKeys>
     ) throws -> AnswerRejectedMessage {
-        if container.contains(.contents),
-           let wrapped = try? container.decode(AnswerRejectedMessage.self, forKey: .contents)
-        {
-            return wrapped
+        if container.contains(.contents) {
+            if let wrapped = try? container.decode(AnswerRejectedMessage.self, forKey: .contents) {
+                return wrapped
+            }
         }
         let reason = try container.decode(String.self, forKey: .reason)
         let questionVersion = try container.decodeIfPresent(Int.self, forKey: .questionVersion)

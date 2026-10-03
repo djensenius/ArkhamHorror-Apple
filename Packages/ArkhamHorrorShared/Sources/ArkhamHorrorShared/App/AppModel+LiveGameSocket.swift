@@ -270,7 +270,8 @@ extension AppModel {
     private func basicChoicePromptKey(
         gameID: GameID, projection: BoardProjection
     ) -> BasicChoicePromptKey? {
-        let selected: (PlayerID, BasicChoiceQuestionPayload)? = switch liveGameParticipantIdentities[gameID] {
+        let participantIdentity = liveGameParticipantIdentities[gameID]
+        let selected: (PlayerID, BasicChoiceQuestionPayload)? = switch participantIdentity {
         case let .participant(playerID):
             projection.questions[playerID].map { (playerID, $0) }
         case .spectator:
