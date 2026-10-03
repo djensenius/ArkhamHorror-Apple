@@ -175,6 +175,70 @@ extension AppModelLiveGameTests {
         #expect(await zeroConnection.sentData == [expectedZeroExchangeAnswer])
     }
 
+    @Test("Mismatched amount answer types fail before encoding or sending")
+    func mismatchedAmountAnswerTypesFailBeforeSending() async throws {
+        let amountID = "00000000-0000-0000-0000-0000000000a5"
+        let choices = [
+            amountChoice(amountID, min: 0, max: 2, label: "A"),
+        ]
+        let (amountModel, amountFakes) = makeSignedInModel()
+        await amountModel.flowTask?.value
+        makeModern(amountModel)
+        let amountEnvelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .total(1)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .total(1),
+                questionVersion: 410
+            ),
+            questionVersion: 410
+        )
+        let amountConnection = FakeGameSocketConnection()
+        let amountGameID = await startChoiceSession(
+            model: amountModel,
+            fakes: amountFakes,
+            envelope: amountEnvelope,
+            connection: amountConnection
+        )
+        let amountPrompt = try #require(amountModel.basicChoicePresentation(for: amountGameID))
+        #expect(
+            await amountModel.submitPaymentAmountsAnswer(
+                amountPrompt.identity,
+                amounts: [amountID: 1]
+            ) == .unsupportedChoice
+        )
+        #expect(
+            await amountModel.submitExchangeAmountsAnswer(amountPrompt.identity, amount: 1)
+                == .unsupportedChoice
+        )
+        #expect(await amountConnection.sentData.isEmpty)
+
+        let (paymentModel, paymentFakes) = makeSignedInModel()
+        await paymentModel.flowTask?.value
+        makeModern(paymentModel)
+        let paymentEnvelope = try semanticEnvelope(
+            rawFixture: "question-generic-payment-amounts",
+            presentationFixture: "question-presentation-generic-payment-amounts",
+            questionVersion: 410,
+            mutatePresentation: localizeFirstPaymentChoiceTitle
+        )
+        let paymentConnection = FakeGameSocketConnection()
+        let paymentGameID = await startChoiceSession(
+            model: paymentModel,
+            fakes: paymentFakes,
+            envelope: paymentEnvelope,
+            connection: paymentConnection
+        )
+        let paymentPrompt = try #require(paymentModel.basicChoicePresentation(for: paymentGameID))
+        #expect(
+            await paymentModel.submitAmountsAnswer(
+                paymentPrompt.identity,
+                amounts: ["00000000-0000-0000-0000-000000000066": 1]
+            ) == .unsupportedChoice
+        )
+        #expect(await paymentConnection.sentData.isEmpty)
+    }
+
     @Test("Illegal amount allocations are sent for server validation with exact bytes")
     // swiftlint:disable:next function_body_length
     func illegalAmountAllocationsAreSentForServerValidation() async throws {

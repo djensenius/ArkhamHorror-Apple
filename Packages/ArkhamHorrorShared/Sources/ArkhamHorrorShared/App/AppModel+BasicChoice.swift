@@ -559,10 +559,8 @@ extension AppModel {
 private extension BasicChoiceSubmission {
     var needsClientActionabilityCheck: Bool {
         switch self {
-        case .singleChoice, .amounts, .paymentAmounts, .continueCampaign:
+        case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign:
             true
-        case .exchangeAmount:
-            false
         }
     }
 
@@ -587,10 +585,18 @@ private extension BasicChoicePromptPresentation {
                 return false
             }
             return canSubmitSingleChoiceAnswer && isChoiceActionable(choice, in: projection)
-        case .amounts, .paymentAmounts:
+        case .amounts:
+            guard let amountPrompt = amountPrompt(in: projection),
+                  amountPrompt.kind == .amounts
+            else { return false }
+            return !hasUnresolvedAmountRowLabels
+        case .paymentAmounts:
+            guard let amountPrompt = amountPrompt(in: projection),
+                  amountPrompt.kind == .payment
+            else { return false }
             return !hasUnresolvedAmountRowLabels
         case .exchangeAmount:
-            return true
+            return exchangePrompt(in: projection) != nil
         case let .continueCampaign(step):
             return supportsContinueCampaignSubmission(step, in: projection)
         }
