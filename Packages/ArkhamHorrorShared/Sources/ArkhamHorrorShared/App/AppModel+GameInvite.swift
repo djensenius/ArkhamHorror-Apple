@@ -134,7 +134,9 @@ extension AppModel {
             try await refreshGamesForInvite(inviteSession)
             return details.gameID
         } catch let error as GameLifecycleError {
+            try ensureCurrentGameInviteSession(inviteSession)
             await handleGameInviteLifecycleError(error, session: inviteSession)
+            try ensureCurrentGameInviteSession(inviteSession)
             throw error
         }
     }

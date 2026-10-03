@@ -53,6 +53,12 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         (threshold: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
 
+    private var isClaimSeatGated = false
+    private var claimSeatContinuations: [GameLifecycleVoidContinuation] = []
+    private var claimSeatPendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
     private var isGetGameGated = false
     private var getGameContinuations: [CheckedContinuation<GetGameEnvelope, any Error>] = []
     private var getGamePendingWaiters: [
@@ -111,6 +117,10 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         isChooseDeckGated = gated
     }
 
+    func setClaimSeatGated(_ gated: Bool) {
+        isClaimSeatGated = gated
+    }
+
     func setGetGameGated(_ gated: Bool) {
         isGetGameGated = gated
     }
@@ -165,6 +175,24 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     func resumeOldestChooseDeck(with result: Result<Void, any Error>) {
         guard !chooseDeckContinuations.isEmpty else { return }
         let continuation = chooseDeckContinuations.removeFirst()
+        switch result {
+        case .success: continuation.resume(returning: ())
+        case let .failure(error): continuation.resume(throwing: error)
+        }
+    }
+
+    /// Suspends until at least `count` `claimSeat` calls are simultaneously pending.
+    func waitUntilClaimSeatPending(_ count: Int) async {
+        if claimSeatContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { claimSeatPendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `claimSeat` call.
+    func resumeOldestClaimSeat(with result: Result<Void, any Error>) {
+        guard !claimSeatContinuations.isEmpty else { return }
+        let continuation = claimSeatContinuations.removeFirst()
         switch result {
         case .success: continuation.resume(returning: ())
         case let .failure(error): continuation.resume(throwing: error)
@@ -233,6 +261,14 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         }
     }
 
+    private func notifyClaimSeatWaiters() {
+        claimSeatPendingWaiters.removeAll { entry in
+            guard claimSeatContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
     private func notifyGetGameWaiters() {
         getGamePendingWaiters.removeAll { entry in
             guard getGameContinuations.count >= entry.threshold else { return false }
@@ -257,6 +293,13 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         try await withCheckedThrowingContinuation { (continuation: GameLifecycleVoidContinuation) in
             chooseDeckContinuations.append(continuation)
             notifyChooseDeckWaiters()
+        }
+    }
+
+    private func awaitClaimSeatGate() async throws {
+        try await withCheckedThrowingContinuation { (continuation: GameLifecycleVoidContinuation) in
+            claimSeatContinuations.append(continuation)
+            notifyClaimSeatWaiters()
         }
     }
 
@@ -356,6 +399,10 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         lastProfileID = profile.id
         lastClaimSeatGameID = id
         lastClaimSeatRequest = request
+        if isClaimSeatGated {
+            try await awaitClaimSeatGate()
+            return
+        }
         try consume(&claimSeatQueue)
     }
 

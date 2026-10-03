@@ -181,6 +181,64 @@ struct AppModelGameInviteTests {
         #expect(await service.callOrder == [])
     }
 
+    @Test("claim-seat invite revalidates before propagating a claim failure")
+    func claimSeatInviteRejectsSessionChangeBeforeClaimFailure() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let seat = try CardCode("c01001")
+        await service.setClaimSeatGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        let invite = ClaimSeatInviteDetails(
+            gameID: gameID,
+            seats: [seat],
+            playerCount: 2,
+            viewerHasSeat: false,
+            sessionToken: GameInviteSessionToken(
+                profileID: ServerProfile.hosted.id,
+                generation: model.generation,
+                credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                globalEpoch: model.currentGlobalCredentialEpoch()
+            )
+        )
+
+        let claimTask = Task { try await model.claimSeatFromInvite(seat, using: invite) }
+        await service.waitUntilClaimSeatPending(1)
+        model.generation += 1
+        await service.resumeOldestClaimSeat(with: .failure(GameLifecycleError.unexpectedStatus(409)))
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await claimTask.value
+        }
+        #expect(await service.callOrder == ["claimSeat"])
+    }
+
+    @Test("claim-seat invite revalidates after handling a session-expired claim failure")
+    func claimSeatInviteRejectsSessionChangeAfterSessionExpiredHandler() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let seat = try CardCode("c01001")
+        await service.enqueueClaimSeatResult(.failure(GameLifecycleError.sessionExpired))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        let invite = ClaimSeatInviteDetails(
+            gameID: gameID,
+            seats: [seat],
+            playerCount: 2,
+            viewerHasSeat: false,
+            sessionToken: GameInviteSessionToken(
+                profileID: ServerProfile.hosted.id,
+                generation: model.generation,
+                credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                globalEpoch: model.currentGlobalCredentialEpoch()
+            )
+        )
+
+        await #expect(throws: CancellationError.self) {
+            try await model.claimSeatFromInvite(seat, using: invite)
+        }
+        #expect(await service.callOrder == ["claimSeat"])
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+    }
+
     @Test("joinGameFromInvite surfaces server-authored lobby errors verbatim")
     func joinGameFromInviteSurfacesServerMessage() async throws {
         let service = ScriptedGameLifecycleService()
