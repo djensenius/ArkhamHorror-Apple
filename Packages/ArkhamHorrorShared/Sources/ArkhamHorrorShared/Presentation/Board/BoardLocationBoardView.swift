@@ -8,6 +8,7 @@ private struct BoardLocationHeaderHeightPreferenceKey: PreferenceKey {
     }
 }
 
+// swiftlint:disable type_body_length
 /// The ordinary-location board — the board's single "board.locations" zone, laid out from
 /// ``BoardLayout``'s deterministic grid positions. Connections are drawn as a
 /// noninteractive, accessibility-hidden ``Canvas`` decoration behind the location tiles;
@@ -287,6 +288,8 @@ struct BoardLocationBoardView: View {
         .accessibilityHidden(true)
     }
 }
+
+// swiftlint:enable type_body_length
 
 /// The enemy-spawned pseudo-location row — the board's single "board.enemyLocations" zone.
 struct BoardEnemyLocationsRowView: View {

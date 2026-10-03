@@ -3,6 +3,7 @@ import Testing
 
 @MainActor
 @Suite("Board linked element focus and prompt actions")
+// swiftlint:disable:next type_body_length
 struct BoardLinkedElementFocusTests {
     private func enemyProjection(
         investigatorID: InvestigatorID,

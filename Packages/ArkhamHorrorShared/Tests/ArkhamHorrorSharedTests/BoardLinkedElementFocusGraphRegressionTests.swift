@@ -92,7 +92,8 @@ struct BoardLinkedFocusGraphTests {
         )
     }
 
-    @Test("Location enemy actions chain through a rendered container before the original down neighbor")
+    @Test("Location enemy actions precede the original down neighbor")
+    // swiftlint:disable:next function_body_length
     func locationEnemyActionsAreReachableBeforeOriginalDownNeighbor() {
         let rootID = BoardTestFixtures.locationID("000000000441")
         let locationID = BoardTestFixtures.locationID("000000000442")
