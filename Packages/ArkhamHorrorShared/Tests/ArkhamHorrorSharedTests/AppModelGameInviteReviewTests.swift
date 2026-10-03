@@ -33,7 +33,7 @@ struct AppModelGameInviteReviewTests {
     }
 
     @Test("stale lobby detail cleanup cannot clear a replacement load")
-    func staleLobbyDetailCleanupDoesNotClearReplacementTask() async throws {
+    func staleLobbyDetailCleanupDoesNotClearReplacementTask() async {
         let service = ScriptedGameLifecycleService()
         let gameID = GameID(UUID())
         await service.setGetGameGated(true)
@@ -55,6 +55,23 @@ struct AppModelGameInviteReviewTests {
         await replacementTask?.value
         #expect(model.gameLobbyDetailTasks[gameID] == nil)
         #expect(model.gameLobbyDetailTaskIDs[gameID] == nil)
+    }
+
+    @Test("cached player counts do not skip the viewer-specific seat lookup")
+    func cachedPlayerCountDoesNotSkipViewerSeatLookup() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.enqueueGetGameResult(.failure(GameLifecycleError.unexpectedStatus(404)))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        model.gameLobbyPlayerCounts[gameID] = 4
+
+        model.loadLobbyDetailsIfNeeded(for: gameID)
+        let detailTask = try #require(model.gameLobbyDetailTasks[gameID])
+        await detailTask.value
+
+        #expect(await service.callOrder == ["getGame"])
+        #expect(model.gameLobbyPlayerCounts[gameID] == 4)
+        #expect(model.gameLobbyViewerHasSeats[gameID] == false)
     }
 
     @Test("claim-seat Continue refreshes without issuing PUT join")

@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum GameLobbyViewerSeatStatus: Equatable {
+    case unresolved
+    case unseated
+    case seated
+}
+
 /// A game's lobby sheet: join a pending lobby, view and claim open seats (when the
 /// server allows it for this game), and continue without upgrading a claimed seat's
 /// deck while the game is waiting on deck choices.
@@ -129,6 +135,19 @@ struct GameLobbyView: View {
                         for: gameID.rawValue, seat: seat.rawValue
                     )
                 )
+            }
+        } else if viewerSeatStatus(in: game) == .unresolved {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(openSeatsStatusText(for: game, openSeats: openSeats))
+                    .foregroundStyle(.secondary)
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text(gameLifecycleLocalized(
+                        "games.lobby.openSeats.checkingSeat.loading",
+                        "Checking seat status…"
+                    ))
+                    .foregroundStyle(.secondary)
+                }
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
@@ -328,23 +347,30 @@ extension GameLobbyView {
     }
 
     func showsClaimSeatButtons(for game: GameSummary, openSeats: OpenSeats) -> Bool {
-        !openSeats.isEmpty && !viewerAlreadyHasSeat(in: game)
+        !openSeats.isEmpty && viewerSeatStatus(in: game) == .unseated
     }
 
     func openSeatsStatusText(for game: GameSummary, openSeats: OpenSeats) -> String {
-        if viewerAlreadyHasSeat(in: game) {
+        switch viewerSeatStatus(in: game) {
+        case .seated:
             return gameLifecycleLocalized(
                 "games.lobby.openSeats.alreadyClaimed",
                 "You already have a seat in this game."
             )
-        }
-        if openSeats.isEmpty {
+        case .unresolved:
             return gameLifecycleLocalized(
-                "games.lobby.openSeats.empty",
-                "No open seats remain."
+                "games.lobby.openSeats.checkingSeat",
+                "Checking whether you already have a seat in this game."
             )
+        case .unseated:
+            if openSeats.isEmpty {
+                return gameLifecycleLocalized(
+                    "games.lobby.openSeats.empty",
+                    "No open seats remain."
+                )
+            }
+            return ""
         }
-        return ""
     }
 
     func inviteURL(for game: GameSummary) -> URL? {
@@ -357,8 +383,11 @@ extension GameLobbyView {
         return GameInvite.webURL(for: gameID, route: route, on: profile)
     }
 
-    func viewerAlreadyHasSeat(in game: GameSummary) -> Bool {
-        model.gameLobbyViewerHasSeats[gameID] ?? game.viewerAlreadyHasSeat
+    func viewerSeatStatus(in _: GameSummary) -> GameLobbyViewerSeatStatus {
+        guard let viewerHasSeat = model.gameLobbyViewerHasSeats[gameID] else {
+            return .unresolved
+        }
+        return viewerHasSeat ? .seated : .unseated
     }
 
     func loadLobbyDataIfNeeded(for game: GameSummary) {

@@ -117,12 +117,36 @@ struct GameLobbyPresentationTests {
         let view = GameLobbyView(model: model, gameID: game.id)
         let openSeats = try [CardCode("c01002")]
 
-        #expect(game.viewerAlreadyHasSeat)
+        model.gameLobbyViewerHasSeats[game.id] = true
+        #expect(view.viewerSeatStatus(in: game) == .seated)
         #expect(!view.showsClaimSeatButtons(for: game, openSeats: openSeats))
         #expect(
             view.openSeatsStatusText(for: game, openSeats: openSeats)
                 == "You already have a seat in this game."
         )
+    }
+
+    @Test("GameLobbyView keeps viewer seat lookup unresolved until server data arrives")
+    func gameLobbyViewWaitsForViewerSeatData() async throws {
+        let joinedPlayer = PlayerID(UUID())
+        let game = sampleGame(
+            gameState: .pending([joinedPlayer]), multiplayerVariant: .withFriends, hasOpenSeats: true
+        )
+        let model = await model(gameListState: .loaded([.game(game)]))
+        let view = GameLobbyView(model: model, gameID: game.id)
+        let openSeats = try [CardCode("c01002")]
+
+        #expect(view.viewerSeatStatus(in: game) == .unresolved)
+        #expect(!view.showsClaimSeatButtons(for: game, openSeats: openSeats))
+        #expect(
+            view.openSeatsStatusText(for: game, openSeats: openSeats)
+                == "Checking whether you already have a seat in this game."
+        )
+
+        model.gameLobbyViewerHasSeats[game.id] = false
+        #expect(view.viewerSeatStatus(in: game) == .unseated)
+        #expect(view.showsClaimSeatButtons(for: game, openSeats: openSeats))
+        #expect(view.openSeatsStatusText(for: game, openSeats: openSeats) == "")
     }
 
     @Test("GameLobbyView waiting text uses server playerCount with plural handling")

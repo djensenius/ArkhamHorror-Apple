@@ -153,7 +153,7 @@ extension AppModel {
     }
 
     func loadLobbyDetailsIfNeeded(for id: GameID) {
-        guard gameLobbyPlayerCounts[id] == nil,
+        guard gameLobbyPlayerCounts[id] == nil || gameLobbyViewerHasSeats[id] == nil,
               gameLobbyDetailTasks[id] == nil,
               case let .signedIn(profile, _, _) = sessionState
         else { return }
@@ -187,6 +187,9 @@ extension AppModel {
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
         } catch is CancellationError {
             return
+        } catch GameLifecycleError.unexpectedStatus(404) {
+            guard (try? ensureCurrentGameInviteSession(session)) != nil else { return }
+            gameLobbyViewerHasSeats[id] = false
         } catch let error as GameLifecycleError {
             await handleGameInviteLifecycleError(error, session: session)
         } catch {
