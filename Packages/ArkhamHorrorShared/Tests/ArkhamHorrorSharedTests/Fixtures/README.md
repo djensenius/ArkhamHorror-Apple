@@ -3,11 +3,11 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@f3a0acbe2c6952c5fbb3f3374a3ef85f94f250e1`,
-schema revision `0.1.47`. Local validation can use the exact backend worktree as
+`djensenius/ArkhamHorror@f454ccb9fb789739c666a9cbd74d3fdc14a81fb9`,
+schema revision `0.1.48`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These 102 files, and only these 102, live under `Fixtures/Contract/` — a
+These 103 fixture files, and only these 103, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -95,7 +95,7 @@ question version `6`; all 114 backend-published negative mutations remain update
 ## Governed assignment continuations
 
 Both remaining-assignment questions and dedicated Answers originate from the immutable
-`djensenius/ArkhamHorror#76` merge. The current revision `0.1.47` manifest and
+`djensenius/ArkhamHorror#76` merge. The current revision `0.1.48` manifest and
 basic-choice schema continue to govern them. Unlike the former replay-derived draft, these
 questions are generated through the real backend game engine, registered in the manifest,
 schema-validated, and each backed by 16 published single-mutation negatives.
@@ -315,7 +315,7 @@ replay coordinator uses that contract to bind the imported game, player remappin
 checkpoint bytes, backend build identity, and canonical replay envelope before
 submitting any native action. `djensenius/ArkhamHorror#79` repairs the fixture's
 canonical receipt digest and pins these bytes to immutable merge
-`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.47` rebinds that
+`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.48` rebinds that
 same validated fixture to the current contract manifest.
 
 ## token.json / whoami.json
