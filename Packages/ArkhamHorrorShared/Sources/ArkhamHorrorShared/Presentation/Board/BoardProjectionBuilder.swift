@@ -31,7 +31,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             campaignSummary: BoardCampaignSummaryBuilder.makeSummary(
                 campaign: scenarioContext.campaign,
                 scenario: scenarioContext.scenarioSource,
-                investigators: investigators
+                investigators: makeCampaignInvestigatorProgress(from: snapshot)
             ),
             acts: makeActs(from: snapshot.acts),
             agendas: makeAgendas(from: snapshot.agendas),

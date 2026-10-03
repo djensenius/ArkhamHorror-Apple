@@ -103,6 +103,8 @@ struct BoardProjectionCampaignSummaryTests {
     }
 
     private let investigatorID = BoardTestFixtures.investigatorID("c01001")
+    private let otherInvestigatorID = BoardTestFixtures.investigatorID("c02001")
+    private let killedInvestigatorID = BoardTestFixtures.investigatorID("c03001")
 
     @Test("Campaign handoff summary keeps raw server values and resolves catalogs at display time")
     func campaignHandoffSummaryResolvesCatalogsAfterProjectionBuild() throws {
@@ -210,6 +212,78 @@ struct BoardProjectionCampaignSummaryTests {
         #expect(summary.entries.map { $0.title() } == ["Campaign primary entry"])
     }
 
+    @Test("Campaign progress includes other and killed investigators from real snapshot bytes")
+    func campaignProgressIncludesInactiveInvestigatorsFromSnapshotBytes() throws {
+        let snapshot = try fixtureBackedInactiveInvestigatorSnapshot()
+        let projection = BoardProjectionBuilder.makeProjection(from: snapshot)
+
+        #expect(projection.investigators.map(\.id) == [investigatorID])
+        #expect(!projection.investigators.contains { $0.id == otherInvestigatorID })
+        #expect(!projection.investigators.contains { $0.id == killedInvestigatorID })
+        #expect(projection.otherInvestigatorCount == 1)
+        #expect(projection.killedInvestigatorCount == 1)
+
+        let summary = try #require(projection.campaignSummary)
+        #expect(summary.investigators.map(\.id) == [
+            investigatorID,
+            otherInvestigatorID,
+            killedInvestigatorID,
+        ])
+
+        let other = try #require(summary.investigators.first { $0.id == otherInvestigatorID })
+        #expect(other.displayName == "Daisy Walker")
+        #expect(other.experiencePoints == 6)
+        #expect(other.spentExperience == 1)
+        #expect(other.availableExperience == 5)
+        #expect(other.physicalTrauma == 1)
+        #expect(other.mentalTrauma == 3)
+        #expect(!other.killed)
+        #expect(other.drivenInsane)
+
+        let killed = try #require(summary.investigators.first { $0.id == killedInvestigatorID })
+        #expect(killed.displayName == "Skids O'Toole")
+        #expect(killed.experiencePoints == 9)
+        #expect(killed.spentExperience == 2)
+        #expect(killed.availableExperience == 7)
+        #expect(killed.physicalTrauma == 2)
+        #expect(killed.mentalTrauma == 1)
+        #expect(killed.killed)
+        #expect(!killed.drivenInsane)
+    }
+
+    @Test("Campaign progress dedupes ids with web spread precedence")
+    func campaignProgressDedupesIDsWithWebSpreadPrecedence() throws {
+        let active = BoardTestFixtures.investigator(
+            id: investigatorID,
+            name: CardName(title: "Active Roland", subtitle: nil),
+            experiencePoints: 1
+        )
+        let killed = BoardTestFixtures.investigator(
+            id: investigatorID,
+            name: CardName(title: "Killed Roland", subtitle: nil),
+            physicalTrauma: 2,
+            killed: true,
+            spentXp: 3,
+            experiencePoints: 8
+        )
+        let snapshot = BoardTestFixtures.snapshot(
+            investigators: [investigatorID: active],
+            killedInvestigators: [investigatorID: killed],
+            playerOrder: [investigatorID]
+        )
+
+        let progress = BoardProjectionBuilder.makeCampaignInvestigatorProgress(from: snapshot)
+
+        #expect(progress.map(\.id) == [investigatorID])
+        let investigator = try #require(progress.first)
+        #expect(investigator.displayName == "Killed Roland")
+        #expect(investigator.experiencePoints == 8)
+        #expect(investigator.spentExperience == 3)
+        #expect(investigator.availableExperience == 5)
+        #expect(investigator.physicalTrauma == 2)
+        #expect(investigator.killed)
+    }
+
     private func assertCampaignHandoffFallback(_ summary: BoardCampaignSummary) {
         #expect(summary.resolutions.map { $0.title() } == [
             "Resolution 2",
@@ -297,6 +371,63 @@ struct BoardProjectionCampaignSummaryTests {
             ],
             playerOrder: [investigatorID]
         )
+    }
+
+    private func fixtureBackedInactiveInvestigatorSnapshot() throws -> PublicGameSnapshot {
+        var root = try #require(
+            JSONSerialization.jsonObject(with: contractFixtureData(named: "get-game"))
+                as? [String: Any]
+        )
+        var game = try #require(root["game"] as? [String: Any])
+        let investigators = try #require(game["investigators"] as? [String: Any])
+        let sourceInvestigator = try #require(investigators["c01001"] as? [String: Any])
+
+        game["otherInvestigators"] = [
+            "c02001": fixtureBackedInvestigator(sourceInvestigator, overrides: [
+                "id": "c02001",
+                "cardCode": "c02001",
+                "art": "c02001",
+                "name": ["title": "Daisy Walker", "subtitle": "The Librarian"],
+                "playerId": "00000000-0000-0000-0000-000000000002",
+                "xp": 6,
+                "spentXp": 1,
+                "physicalTrauma": 1,
+                "mentalTrauma": 3,
+                "killed": false,
+                "drivenInsane": true,
+            ]),
+        ]
+        game["killedInvestigators"] = [
+            "c03001": fixtureBackedInvestigator(sourceInvestigator, overrides: [
+                "id": "c03001",
+                "cardCode": "c03001",
+                "art": "c03001",
+                "name": ["title": "Skids O'Toole", "subtitle": "The Ex-Con"],
+                "playerId": "00000000-0000-0000-0000-000000000003",
+                "xp": 9,
+                "spentXp": 2,
+                "physicalTrauma": 2,
+                "mentalTrauma": 1,
+                "killed": true,
+                "drivenInsane": false,
+            ]),
+        ]
+        game["playerCount"] = 3
+        root["game"] = game
+
+        let data = try JSONSerialization.data(withJSONObject: root)
+        return try ContractJSON.decode(GetGameEnvelope.self, from: data).game
+    }
+
+    private func fixtureBackedInvestigator(
+        _ source: [String: Any],
+        overrides: [String: Any]
+    ) -> [String: Any] {
+        var investigator = source
+        for (key, value) in overrides {
+            investigator[key] = value
+        }
+        return investigator
     }
 
     // swiftlint:disable:next function_body_length

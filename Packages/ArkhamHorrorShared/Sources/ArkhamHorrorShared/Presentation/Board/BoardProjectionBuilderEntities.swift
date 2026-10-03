@@ -186,6 +186,51 @@ extension BoardProjectionBuilder {
         }
     }
 
+    static func makeCampaignInvestigatorProgress(
+        from snapshot: PublicGameSnapshot
+    ) -> [BoardCampaignInvestigatorProgress] {
+        var orderedIDs: [InvestigatorID] = []
+        var progressByID: [InvestigatorID: BoardCampaignInvestigatorProgress] = [:]
+
+        func merge(_ investigators: [InvestigatorID: Investigator]) {
+            for mapID in investigators.keys.sorted(by: investigatorIDSort) {
+                guard let investigator = investigators[mapID] else { continue }
+                if progressByID[investigator.id] == nil {
+                    orderedIDs.append(investigator.id)
+                }
+                progressByID[investigator.id] = makeCampaignInvestigatorProgress(investigator)
+            }
+        }
+
+        merge(snapshot.investigators)
+        merge(snapshot.otherInvestigators)
+        merge(snapshot.killedInvestigators)
+
+        return orderedIDs.compactMap { progressByID[$0] }
+    }
+
+    private static func investigatorIDSort(_ lhs: InvestigatorID, _ rhs: InvestigatorID) -> Bool {
+        lhs.rawValue.rawValue < rhs.rawValue.rawValue
+    }
+
+    private static func makeCampaignInvestigatorProgress(
+        _ investigator: Investigator
+    ) -> BoardCampaignInvestigatorProgress {
+        BoardCampaignInvestigatorProgress(
+            id: investigator.id,
+            displayName: BoardDisplayFormatting.safeTitle(
+                investigator.name, fallback: investigator.cardCode.rawValue
+            ),
+            experiencePoints: investigator.experiencePoints,
+            spentExperience: investigator.spentXp,
+            availableExperience: investigator.experiencePoints - investigator.spentXp,
+            physicalTrauma: investigator.physicalTrauma,
+            mentalTrauma: investigator.mentalTrauma,
+            killed: investigator.killed,
+            drivenInsane: investigator.drivenInsane
+        )
+    }
+
     static func makeInvestigatorNode(
         _ investigator: Investigator,
         currentLocation: LocationID?,

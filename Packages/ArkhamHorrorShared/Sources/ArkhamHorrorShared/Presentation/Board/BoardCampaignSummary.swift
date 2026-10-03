@@ -130,26 +130,13 @@ enum BoardCampaignSummaryBuilder {
     static func makeSummary(
         campaign: JSONValue?,
         scenario: Scenario?,
-        investigators: [BoardInvestigatorNode]
+        investigators: [BoardCampaignInvestigatorProgress]
     ) -> BoardCampaignSummary? {
         let log = makeLogSummary(campaign: campaign, scenario: scenario)
-        let progress = investigators.map { investigator in
-            BoardCampaignInvestigatorProgress(
-                id: investigator.id,
-                displayName: investigator.displayName,
-                experiencePoints: investigator.experiencePoints,
-                spentExperience: investigator.spentExperience,
-                availableExperience: investigator.availableExperience,
-                physicalTrauma: investigator.physicalTrauma,
-                mentalTrauma: investigator.mentalTrauma,
-                killed: investigator.killed,
-                drivenInsane: investigator.drivenInsane
-            )
-        }
         let summary = BoardCampaignSummary(
             resolutions: makeResolutions(campaign: campaign, scenario: scenario),
             log: log,
-            investigators: progress
+            investigators: investigators
         )
         return summary.isEmpty ? nil : summary
     }
