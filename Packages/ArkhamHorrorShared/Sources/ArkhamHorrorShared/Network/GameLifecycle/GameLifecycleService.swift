@@ -302,7 +302,12 @@ struct GameLifecycleService: Sendable {
             }
             return statusCode == 400 ? .malformedPayload : .unexpectedStatus(statusCode)
         case .deckOperation:
-            if let message = operationFailureMessage(from: data) {
+            if let message = deckOperationFailureMessage(from: data) {
+                return .operationFailed(DeckOperationError(errorMsg: message))
+            }
+            let isServerAuthoredStatus = statusCode == 400 || statusCode == 403
+            if isServerAuthoredStatus,
+               let message = operationFailureMessage(from: data) {
                 return .operationFailed(DeckOperationError(errorMsg: message))
             }
             return statusCode == 400 ? .malformedPayload : .unexpectedStatus(statusCode)
@@ -313,6 +318,13 @@ struct GameLifecycleService: Sendable {
         guard let body = try? ContractJSON.decode(LifecycleOperationErrorBody.self, from: data)
         else { return nil }
         return body.message
+    }
+
+    private func deckOperationFailureMessage(from data: Data) -> String? {
+        guard let body = try? ContractJSON.decode(DeckOperationError.self, from: data)
+        else { return nil }
+        let message = body.errorMsg.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? nil : message
     }
 
     /// Executes `request` and decodes a 2xx body into `Response` through
