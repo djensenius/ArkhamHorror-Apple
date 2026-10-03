@@ -203,6 +203,9 @@ final class BoardCommandController {
     }
 
     private func handleBack() -> Bool {
+        if dismissLinkedChoiceMenu() {
+            return true
+        }
         guard coordinator.isModalPresented else { return leavePrompt() }
         dismissModal()
         return true
@@ -267,6 +270,9 @@ final class BoardCommandController {
     }
 
     private func applyPrimaryAction() -> Bool {
+        if let linkedChoiceIndex = focusedLinkedChoiceMenuChoiceIndex {
+            return activateLinkedChoiceMenuChoice(linkedChoiceIndex)
+        }
         if let linkedElementResult = activateFocusedPromptElementOrDeferMenu() {
             return linkedElementResult
         }
@@ -286,6 +292,9 @@ final class BoardCommandController {
     }
 
     private func applySecondaryAction() -> Bool {
+        if dismissLinkedChoiceMenu() {
+            return true
+        }
         if activateFocusedAmountControl(primary: false) {
             return true
         }
@@ -512,7 +521,8 @@ final class BoardCommandController {
             exchangeAmount: exchangeAmount,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: prompt, localPlayerID: localPlayerID
-            )
+            ),
+            linkedChoiceMenuRequest: linkedChoiceMenuRequest
         )
         coordinator.applySnapshot(graph)
     }
@@ -604,18 +614,57 @@ final class BoardCommandController {
             return activatePromptChoice(choice.choiceIndex)
         case let .menu(choices):
             guard let focusID = coordinator.currentFocus else { return false }
-            linkedChoiceMenuRequest = BoardLinkedChoiceMenuRequest(
-                focusID: focusID,
-                choices: choices
-            )
+            presentLinkedChoiceMenu(from: focusID, choices: choices)
             return true
         case .highlightOnly:
             return nil
         }
     }
 
-    func clearLinkedChoiceMenuRequest() {
+    @discardableResult
+    func clearLinkedChoiceMenuRequest() -> Bool {
+        dismissLinkedChoiceMenu()
+    }
+
+    @discardableResult
+    func activateLinkedChoiceMenuChoice(_ choiceIndex: Int) -> Bool {
+        let isRequestedChoice = linkedChoiceMenuRequest?.choices.contains {
+            $0.choiceIndex == choiceIndex
+        } == true
+        guard isRequestedChoice, activatePromptChoice(choiceIndex) else { return false }
+        _ = dismissLinkedChoiceMenu()
+        return true
+    }
+
+    private var focusedLinkedChoiceMenuChoiceIndex: Int? {
+        guard let request = linkedChoiceMenuRequest,
+              let currentFocus = coordinator.currentFocus
+        else { return nil }
+        return request.choices.first {
+            BoardFocusID.linkedChoiceMenuChoice($0.choiceIndex) == currentFocus
+        }?.choiceIndex
+    }
+
+    private func presentLinkedChoiceMenu(
+        from focusID: SemanticFocusID,
+        choices: [BoardLinkedChoice]
+    ) {
+        linkedChoiceMenuRequest = BoardLinkedChoiceMenuRequest(focusID: focusID, choices: choices)
+        preModalZone = focusedZone
+        refreshFocusGraphForPromptControls()
+        coordinator.presentModal(entry: BoardFocusID.linkedChoiceMenuChoice(choices[0].choiceIndex))
+    }
+
+    private func dismissLinkedChoiceMenu() -> Bool {
+        guard linkedChoiceMenuRequest != nil else { return false }
+        if coordinator.isModalPresented {
+            dismissModal()
+        } else {
+            preModalZone = nil
+        }
         linkedChoiceMenuRequest = nil
+        refreshFocusGraphForPromptControls()
+        return true
     }
 
     private var focusedPromptElementDecision: BoardLinkedChoicePresentationDecision? {

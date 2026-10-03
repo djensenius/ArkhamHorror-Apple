@@ -26,7 +26,7 @@ struct BoardView: View {
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
     @State private var controller: BoardCommandController?
-    #if canImport(GameController)
+    #if canImport(GameController) && !os(tvOS)
         @State private var controllerInputCenter: ControllerInputCenter?
     #endif
     @FocusState private var focusedID: SemanticFocusID?
@@ -135,7 +135,7 @@ struct BoardView: View {
         }
     }
 
-    #if canImport(GameController)
+    #if canImport(GameController) && !os(tvOS)
         private func startControllerInputIfAvailable(for controller: BoardCommandController) {
             if let controllerInputCenter {
                 controllerInputCenter.start()
@@ -170,13 +170,13 @@ struct BoardView: View {
                     onOutcome: { controller.handle(focusID: $0, $1) }
                 )
             }
-        }
-        .confirmationDialog(
-            "Choose prompt action",
-            isPresented: linkedChoiceMenuBinding(controller),
-            titleVisibility: .visible
-        ) {
-            linkedChoiceMenuButtons(controller)
+            if let request = controller.linkedChoiceMenuRequest {
+                BoardLinkedChoiceMenuModalView(
+                    request: request,
+                    focusBinding: $focusedID,
+                    onOutcome: { controller.handle(focusID: $0, $1) }
+                )
+            }
         }
         .environment(\.boardCardCatalog, cardCatalog)
         .semanticKeyboardInput { controller.handle($0) }

@@ -15,6 +15,9 @@ enum BoardFocusZone {
     /// `cycleZone` must never land here, since this zone only ever exists to hold the
     /// inspector's single Close control while a modal is presented.
     static let inspector: SemanticFocusZone = "board.inspector"
+    /// The linked-choice modal's own zone. Deliberately **not** a member of
+    /// ``cycleOrder`` for the same modal-isolation reason as ``inspector``.
+    static let linkedChoiceMenu: SemanticFocusZone = "board.linkedChoiceMenu"
 
     /// The fixed cycling order every ``BoardCommandController/cycleZone(_:)`` call walks,
     /// deliberately declared once here rather than derived from `FocusGraph.order` (whose
@@ -82,6 +85,10 @@ enum BoardFocusID {
     static func promptElement(_ id: BoardPromptElementID) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.promptElement.\(id.rawFocusComponent)")
     }
+
+    static func linkedChoiceMenuChoice(_ index: Int) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.linkedChoiceMenu.choice.\(index)")
+    }
 }
 
 /// Builds a deterministic ``FocusGraph`` from a ``BoardProjection`` and its matching
@@ -96,7 +103,8 @@ enum BoardFocusGraphBuilder {
         prompt: BasicChoicePromptPresentation? = nil,
         amountDraft: [String: Int] = [:],
         exchangeAmount: Int = 0,
-        fullPlayerAreaPlayerID: PlayerID? = nil
+        fullPlayerAreaPlayerID: PlayerID? = nil,
+        linkedChoiceMenuRequest: BoardLinkedChoiceMenuRequest? = nil
     ) -> FocusGraph {
         var nodes: [FocusNode] = []
         var zoneEntryPoints: [SemanticFocusZone: SemanticFocusID] = [:]
@@ -156,6 +164,9 @@ enum BoardFocusGraphBuilder {
         zoneEntryPoints[BoardFocusZone.chaosBag] = BoardFocusID.chaosBagSummary
 
         appendInspectorCloseNode(nodes: &nodes, zoneEntryPoints: &zoneEntryPoints)
+        appendLinkedChoiceMenuNodes(
+            linkedChoiceMenuRequest, nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
+        )
 
         return FocusGraph(
             nodes: nodes, zoneEntryPoints: zoneEntryPoints, wrapPolicy: .wrapWithinZone
@@ -172,6 +183,20 @@ enum BoardFocusGraphBuilder {
         // so normal zone cycling never lands here.
         nodes.append(FocusNode(id: BoardFocusID.inspectorClose, zone: BoardFocusZone.inspector))
         zoneEntryPoints[BoardFocusZone.inspector] = BoardFocusID.inspectorClose
+    }
+
+    private static func appendLinkedChoiceMenuNodes(
+        _ request: BoardLinkedChoiceMenuRequest?,
+        nodes: inout [FocusNode],
+        zoneEntryPoints: inout [SemanticFocusZone: SemanticFocusID]
+    ) {
+        guard let request else { return }
+        appendVerticalChain(
+            request.choices.map { BoardFocusID.linkedChoiceMenuChoice($0.choiceIndex) },
+            zone: BoardFocusZone.linkedChoiceMenu,
+            nodes: &nodes,
+            zoneEntryPoints: &zoneEntryPoints
+        )
     }
 
     private static func promptFocusIDs(
