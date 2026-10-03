@@ -697,16 +697,16 @@ final class BoardCommandController {
         if let location = projection.locations.first(where: {
             BoardFocusID.locationEnemyActions($0.id) == focusID
         }) {
-            return BoardFocusGraphBuilder.linkedEnemyChoices(
-                for: projection.enemiesByLocationID[location.id] ?? [],
+            return BoardEnemyCompactFormatting.titledLinkedChoicesByEnemy(
+                enemies: projection.enemiesByLocationID[location.id] ?? [],
                 choiceLinks: links
             )
         }
         if let location = projection.enemyLocations.first(where: {
             BoardFocusID.enemyLocationEnemyActions($0.id) == focusID
         }) {
-            return BoardFocusGraphBuilder.linkedEnemyChoices(
-                for: projection.enemiesByLocationID[location.id] ?? [],
+            return BoardEnemyCompactFormatting.titledLinkedChoicesByEnemy(
+                enemies: projection.enemiesByLocationID[location.id] ?? [],
                 choiceLinks: links
             )
         }

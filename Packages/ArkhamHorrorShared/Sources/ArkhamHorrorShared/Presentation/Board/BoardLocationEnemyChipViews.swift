@@ -205,6 +205,31 @@ private extension View {
 }
 
 enum BoardEnemyCompactFormatting {
+    static func titledLinkedChoicesByEnemy(
+        enemies: [BoardEnemyNode],
+        choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    ) -> [BoardLinkedChoice] {
+        let summaries = enemies.map { enemy in
+            listSummary(enemy, displayName: enemy.displayName)
+        }
+        let duplicateCounts = Dictionary(summaries.map { ($0, 1) }, uniquingKeysWith: +)
+        var seenCounts: [String: Int] = [:]
+        return zip(enemies, summaries).flatMap { enemy, summary in
+            let seen = (seenCounts[summary] ?? 0) + 1
+            seenCounts[summary] = seen
+            let disambiguatedSummary = duplicateCounts[summary, default: 0] > 1
+                ? "\(summary) (enemy \(seen))"
+                : summary
+            return (choiceLinks[.enemy(enemy.id)] ?? []).map { choice in
+                BoardLinkedChoice(
+                    choiceIndex: choice.choiceIndex,
+                    title: "\(disambiguatedSummary): \(choice.title)",
+                    isActionable: choice.isActionable
+                )
+            }
+        }
+    }
+
     static func statsSummary(_ enemy: BoardEnemyNode) -> String {
         var parts: [String] = []
         if let fight = enemy.fight {
