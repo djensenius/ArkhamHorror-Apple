@@ -97,6 +97,7 @@ enum BoardFocusID {
 /// zone (every other zone); ``FocusWrapPolicy/wrapWithinZone`` guarantees every entity
 /// stays reachable by directional movement even where an explicit edge is absent.
 enum BoardFocusGraphBuilder {
+    // swiftlint:disable:next function_body_length
     static func makeGraph(
         projection: BoardProjection,
         layout: BoardLayout,
