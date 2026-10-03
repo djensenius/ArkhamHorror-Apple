@@ -508,7 +508,7 @@ extension BasicChoicePromptPresentation {
                 "This choice has no semantic description and cannot be activated."
             )
         }
-        let isActionable = isSemanticChoiceActionable(descriptor, in: projection)
+        let isActionable = isSemanticChoiceActionable(descriptor)
         guard isActionable else {
             let completionUnavailableReason = descriptor.completesSelection == true
                 ? selectionCompletionUnavailableReason()
@@ -540,10 +540,7 @@ extension BasicChoicePromptPresentation {
         )
     }
 
-    func isSemanticChoiceActionable(
-        _ descriptor: QuestionPresentation.Choice,
-        in _: BoardProjection
-    ) -> Bool {
+    func isSemanticChoiceActionable(_ descriptor: QuestionPresentation.Choice) -> Bool {
         guard let semanticPresentation else { return false }
         if descriptor.completesSelection == true, !selectionAllowsCompletion {
             return false

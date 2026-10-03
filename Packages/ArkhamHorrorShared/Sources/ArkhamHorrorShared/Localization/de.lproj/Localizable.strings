@@ -105,14 +105,6 @@
 "semantic.cost.unit.clue.plural" = "Hinweise";
 
 "semantic.choice.unavailable.text" = "Der Text für diese Auswahl ist derzeit nicht verfügbar.";
-"semantic.choice.unavailable.advanceAct" = "Der Akt oder Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
-"semantic.choice.unavailable.advanceAgenda" = "Die Agenda oder der Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
-"semantic.choice.unavailable.enemy" = "Der Gegner oder Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
-"semantic.choice.unavailable.location" = "Der Ort oder Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
-"semantic.choice.unavailable.forcedAbility" = "Die Quelle oder der Ermittler für diese erzwungene Fähigkeit ist derzeit nicht verfügbar.";
-"semantic.choice.unavailable.target" = "Das Ziel für diese Auswahl ist derzeit nicht verfügbar.";
-"semantic.choice.unavailable.investigator" = "Der Ermittler für diese Auswahl ist derzeit nicht verfügbar.";
-"semantic.choice.unavailable.assignment" = "Der Ermittler für diese Zuweisung ist derzeit nicht verfügbar.";
 "semantic.choice.unavailable.generic" = "Diese Auswahl ist derzeit nicht verfügbar.";
 
 "basicChoice.choiceText.loading" = "Der Text für diese Auswahl wird noch geladen.";
