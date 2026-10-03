@@ -27,6 +27,36 @@ enum BoardLinkedChoiceActivationRoute: Sendable, Equatable {
     }
 }
 
+enum BoardLinkedChoiceIndicatorTone: Sendable, Equatable {
+    case idle
+    case actionable
+    case unavailable
+}
+
+struct BoardLinkedChoiceFaceIndicatorStyle: Sendable, Equatable {
+    let tone: BoardLinkedChoiceIndicatorTone
+    let innerLineWidth: CGFloat
+    let showsFocusedOuterRing: Bool
+
+    static func style(
+        linkedChoices: [BoardLinkedChoice],
+        isFocused: Bool
+    ) -> BoardLinkedChoiceFaceIndicatorStyle {
+        let tone: BoardLinkedChoiceIndicatorTone = if linkedChoices.isEmpty {
+            .idle
+        } else if linkedChoices.contains(where: \.isActionable) {
+            .actionable
+        } else {
+            .unavailable
+        }
+        return BoardLinkedChoiceFaceIndicatorStyle(
+            tone: tone,
+            innerLineWidth: isFocused || !linkedChoices.isEmpty ? 3 : 1,
+            showsFocusedOuterRing: isFocused
+        )
+    }
+}
+
 enum BoardLinkedChoicePresentationPolicy {
     static func decision(
         for linkedChoices: [BoardLinkedChoice]
@@ -129,15 +159,24 @@ struct BoardLinkedChoiceFace<Content: View>: View {
 
 private extension View {
     func cardFaceStyle(linkedChoices: [BoardLinkedChoice], isFocused: Bool) -> some View {
-        padding(8)
+        let indicator = BoardLinkedChoiceFaceIndicatorStyle.style(
+            linkedChoices: linkedChoices,
+            isFocused: isFocused
+        )
+        return padding(8)
             .frame(width: 116, alignment: .leading)
             .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 9))
             .overlay {
                 RoundedRectangle(cornerRadius: 9)
-                    .strokeBorder(
-                        outlineColor(linkedChoices, isFocused: isFocused),
-                        lineWidth: isFocused || !linkedChoices.isEmpty ? 3 : 1
-                    )
+                    .strokeBorder(indicator.strokeColor, lineWidth: indicator.innerLineWidth)
+            }
+            .overlay {
+                if indicator.showsFocusedOuterRing {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(ArkhamTheme.bone, lineWidth: 2)
+                        .padding(-4)
+                        .shadow(color: .black.opacity(0.8), radius: 1, x: 0, y: 1)
+                }
             }
     }
 
@@ -152,13 +191,17 @@ private extension View {
             self
         }
     }
+}
 
-    private func outlineColor(_ linkedChoices: [BoardLinkedChoice], isFocused: Bool) -> Color {
-        if isFocused {
-            return ArkhamTheme.accent
+private extension BoardLinkedChoiceFaceIndicatorStyle {
+    var strokeColor: Color {
+        switch tone {
+        case .idle:
+            .white.opacity(0.12)
+        case .actionable:
+            ArkhamTheme.accent
+        case .unavailable:
+            .orange.opacity(0.45)
         }
-        guard !linkedChoices.isEmpty else { return .white.opacity(0.12) }
-        let hasActionable = linkedChoices.contains(where: \.isActionable)
-        return hasActionable ? ArkhamTheme.accent : .orange.opacity(0.45)
     }
 }
