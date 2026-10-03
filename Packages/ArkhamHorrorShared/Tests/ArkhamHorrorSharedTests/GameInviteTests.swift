@@ -30,6 +30,25 @@ struct GameInviteTests {
         #expect(claimSeat == GameInvite(gameID: GameID(uuid), route: .claimSeat))
     }
 
+    @Test("Invite parsing uses the last games segment so server prefixes can contain games")
+    func webURLWithGamesPrefixRoundTrips() throws {
+        let profile = try ServerProfile.custom(
+            displayName: "Proxy",
+            rawURL: "https://example.test/games/proxy"
+        )
+        let url = try #require(GameInvite.webURL(for: GameID(uuid), route: .join, on: profile))
+
+        #expect(
+            url.absoluteString
+                == "https://example.test/games/proxy/games/"
+                + "00000000-0000-0000-0000-000000000042/join"
+        )
+        #expect(try GameInvite.parse(url.absoluteString) == GameInvite(
+            gameID: GameID(uuid),
+            route: .join
+        ))
+    }
+
     @Test("Unsupported invite text is rejected instead of guessed at")
     func invalidInviteIsRejected() {
         #expect(throws: GameInvite.ParseError.unsupported) {

@@ -36,7 +36,7 @@ struct GameInvite: Equatable, Sendable {
             throw ParseError.unsupported
         }
         let parts = components.path.split(separator: "/").map(String.init)
-        guard let gamesIndex = parts.firstIndex(of: "games"),
+        guard let gamesIndex = parts.lastIndex(of: "games"),
               parts.indices.contains(gamesIndex + 1),
               let uuid = UUID(uuidString: parts[gamesIndex + 1])
         else { throw ParseError.unsupported }
