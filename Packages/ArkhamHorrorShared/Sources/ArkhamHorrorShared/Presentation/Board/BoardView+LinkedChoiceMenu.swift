@@ -15,6 +15,33 @@ struct BoardLinkedChoiceMenuChoicePresentation: Sendable, Equatable {
     }
 }
 
+enum BoardLinkedChoiceMenuLayout {
+    static let minimumChoiceListHeight: CGFloat = 120
+    private static let maximumChoiceListHeight: CGFloat = 360
+    private static let reservedVerticalChrome: CGFloat = 180
+
+    static func choiceListHeight(containerHeight: CGFloat) -> CGFloat {
+        min(
+            max(containerHeight - reservedVerticalChrome, minimumChoiceListHeight),
+            maximumChoiceListHeight
+        )
+    }
+}
+
+enum BoardLinkedChoiceMenuScrollTarget {
+    static func focusedChoiceID(
+        choices: [BoardLinkedChoice],
+        focusedID: SemanticFocusID?
+    ) -> SemanticFocusID? {
+        guard let focusedID,
+              choices.contains(where: {
+                  BoardFocusID.linkedChoiceMenuChoice($0.choiceIndex) == focusedID
+              })
+        else { return nil }
+        return focusedID
+    }
+}
+
 struct BoardLinkedChoiceMenuModalView: View {
     let request: BoardLinkedChoiceMenuRequest
     let focusedID: SemanticFocusID?
@@ -22,35 +49,70 @@ struct BoardLinkedChoiceMenuModalView: View {
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.45)
-                .contentShape(Rectangle())
-                .onTapGesture {}
-            ArkhamCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(BoardLocalization.localized(
-                        "board.linkedChoiceMenu.title",
-                        "Choose prompt action"
+        GeometryReader { proxy in
+            ZStack {
+                Color.black.opacity(0.45)
+                    .contentShape(Rectangle())
+                    .onTapGesture {}
+                ArkhamCard {
+                    modalContent(choiceListHeight: BoardLinkedChoiceMenuLayout.choiceListHeight(
+                        containerHeight: proxy.size.height
                     ))
-                    .font(.title3.bold())
-                    .foregroundStyle(ArkhamTheme.bone)
+                }
+                .frame(maxWidth: 420)
+                .padding()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+        }
+    }
+
+    private func modalContent(choiceListHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(BoardLocalization.localized(
+                "board.linkedChoiceMenu.title",
+                "Choose prompt action"
+            ))
+            .font(.title3.bold())
+            .foregroundStyle(ArkhamTheme.bone)
+            choiceList(maxHeight: choiceListHeight)
+            Text(BoardLocalization.localized(
+                "board.linkedChoiceMenu.cancelHint",
+                "Press Back or Secondary Action to cancel."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func choiceList(maxHeight: CGFloat) -> some View {
+        ScrollViewReader { scrollProxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(request.choices, id: \.choiceIndex) { choice in
                         choiceButton(choice)
+                            .id(BoardFocusID.linkedChoiceMenuChoice(choice.choiceIndex))
                     }
-                    Text(BoardLocalization.localized(
-                        "board.linkedChoiceMenu.cancelHint",
-                        "Press Back or Secondary Action to cancel."
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 4)
             }
-            .frame(maxWidth: 420)
-            .padding()
+            .frame(maxHeight: maxHeight)
+            .onAppear { scrollFocusedChoice(with: scrollProxy) }
+            .onChange(of: focusedID) { _, _ in
+                scrollFocusedChoice(with: scrollProxy)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isModal)
+    }
+
+    private func scrollFocusedChoice(with proxy: ScrollViewProxy) {
+        guard let target = BoardLinkedChoiceMenuScrollTarget.focusedChoiceID(
+            choices: request.choices,
+            focusedID: focusedID
+        ) else { return }
+        withAnimation {
+            proxy.scrollTo(target, anchor: .center)
+        }
     }
 
     private func choiceButton(_ choice: BoardLinkedChoice) -> some View {
