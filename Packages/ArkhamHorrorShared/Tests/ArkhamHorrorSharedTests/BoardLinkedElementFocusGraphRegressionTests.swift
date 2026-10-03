@@ -175,6 +175,66 @@ struct BoardLinkedFocusGraphTests {
         #expect(submittedChoices == [8])
     }
 
+    @Test("Collision-resolved enemy action edges do not leave one-way shared-neighbor trips")
+    // swiftlint:disable:next function_body_length
+    func collisionResolvedEnemyActionEdgesAvoidOneWaySharedNeighborTrips() {
+        let rootID = BoardTestFixtures.locationID("000000000480")
+        let firstActionLocationID = BoardTestFixtures.locationID("000000000481")
+        let secondActionLocationID = BoardTestFixtures.locationID("000000000482")
+        let sharedNeighborID = BoardTestFixtures.locationID("000000000483")
+        let firstEnemyID = BoardTestFixtures.enemyID("000000000484")
+        let secondEnemyID = BoardTestFixtures.enemyID("000000000485")
+        let projection = locationEnemyProjection(
+            locations: [
+                (rootID, .ordinary(BoardTestFixtures.ordinaryLocation(id: rootID))),
+                (firstActionLocationID, .ordinary(BoardTestFixtures.ordinaryLocation(
+                    id: firstActionLocationID,
+                    enemies: [firstEnemyID]
+                ))),
+                (secondActionLocationID, .ordinary(BoardTestFixtures.ordinaryLocation(
+                    id: secondActionLocationID,
+                    enemies: [secondEnemyID]
+                ))),
+                (sharedNeighborID, .ordinary(BoardTestFixtures.ordinaryLocation(
+                    id: sharedNeighborID
+                ))),
+            ],
+            enemyIDs: [firstEnemyID, secondEnemyID]
+        )
+        let layout = BoardLayout(
+            positions: [
+                rootID: BoardGridPosition(column: 0, row: 0),
+                firstActionLocationID: BoardGridPosition(column: 1, row: 0),
+                secondActionLocationID: BoardGridPosition(column: 1, row: 1),
+                sharedNeighborID: BoardGridPosition(column: 2, row: 0),
+            ],
+            neighbors: [
+                rootID: [.right: firstActionLocationID],
+                firstActionLocationID: [.left: rootID, .right: sharedNeighborID],
+                secondActionLocationID: [.left: rootID, .right: sharedNeighborID],
+                sharedNeighborID: [.left: firstActionLocationID],
+            ],
+            connections: [],
+            columnCount: 3,
+            rowCount: 2
+        )
+        let graph = BoardFocusGraphBuilder.makeGraph(
+            projection: projection,
+            layout: layout,
+            prompt: enemyPrompt(choices: [
+                fightChoice(index: 7, enemyID: firstEnemyID),
+                fightChoice(index: 8, enemyID: secondEnemyID),
+            ])
+        )
+        let firstActionsFocus = BoardFocusID.locationEnemyActions(firstActionLocationID)
+        let secondActionsFocus = BoardFocusID.locationEnemyActions(secondActionLocationID)
+        let sharedNeighborFocus = BoardFocusID.location(sharedNeighborID)
+
+        #expect(graph.neighbor(from: firstActionsFocus, direction: .right) == sharedNeighborFocus)
+        #expect(graph.neighbor(from: sharedNeighborFocus, direction: .left) == firstActionsFocus)
+        #expect(graph.neighbor(from: secondActionsFocus, direction: .right) == secondActionsFocus)
+    }
+
     @Test("Enemy-location action container reaches every linked enemy")
     func enemyLocationActionContainerReachesEveryLinkedEnemy() {
         let enemyLocationID = BoardTestFixtures.locationID("000000000451")

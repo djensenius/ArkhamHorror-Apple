@@ -11,6 +11,11 @@ private extension FocusDirection {
     }
 }
 
+private struct LocationEnemyActionEdgePlan {
+    var forwardTargets: [LocationID: [FocusDirection: SemanticFocusID]] = [:]
+    var reverseTargets: [LocationID: [FocusDirection: SemanticFocusID]] = [:]
+}
+
 extension BoardFocusGraphBuilder {
     // swiftlint:disable:next function_parameter_count
     static func appendLocations(
@@ -26,7 +31,7 @@ extension BoardFocusGraphBuilder {
             enemiesByLocationID: enemiesByLocationID,
             choiceLinks: choiceLinks
         )
-        let reciprocalActionTargets = reciprocalNeighborActionTargets(
+        let actionEdgePlan = locationEnemyActionEdgePlan(
             locations: locations,
             layout: layout,
             actionIDs: actionIDs
@@ -40,7 +45,7 @@ extension BoardFocusGraphBuilder {
                 neighbors: locationNeighbors(
                     layoutNeighbors,
                     actionID: actionID,
-                    reciprocalTargets: reciprocalActionTargets[location.id] ?? [:]
+                    reciprocalTargets: actionEdgePlan.reverseTargets[location.id] ?? [:]
                 )
             ))
             if let actionID {
@@ -49,7 +54,7 @@ extension BoardFocusGraphBuilder {
                     zone: BoardFocusZone.locations,
                     neighbors: locationEnemyActionNeighbors(
                         locationID: location.id,
-                        layoutNeighbors: layoutNeighbors
+                        plannedTargets: actionEdgePlan.forwardTargets[location.id] ?? [:]
                     )
                 ))
             }
@@ -77,24 +82,31 @@ extension BoardFocusGraphBuilder {
         })
     }
 
-    private static func reciprocalNeighborActionTargets(
+    private static func locationEnemyActionEdgePlan(
         locations: [BoardLocationNode],
         layout: BoardLayout,
         actionIDs: [LocationID: SemanticFocusID]
-    ) -> [LocationID: [FocusDirection: SemanticFocusID]] {
-        var targets: [LocationID: [FocusDirection: SemanticFocusID]] = [:]
+    ) -> LocationEnemyActionEdgePlan {
+        var plan = LocationEnemyActionEdgePlan()
         for location in locations {
             guard let actionID = actionIDs[location.id] else { continue }
             let layoutNeighbors = layout.neighbors[location.id] ?? [:]
             for direction in [FocusDirection.down, .left, .right] {
                 guard let neighborID = layoutNeighbors[direction] else { continue }
                 let reverse = direction.boardOpposite
-                if targets[neighborID]?[reverse] == nil {
-                    targets[neighborID, default: [:]][reverse] = actionID
+                guard plan.reverseTargets[neighborID]?[reverse] == nil else {
+                    // This action control lost the shared-neighbor reverse edge; keep its
+                    // forward edge from wrapping into a one-way trip through that neighbor.
+                    plan.forwardTargets[location.id, default: [:]][direction] = actionID
+                    continue
                 }
+                plan.forwardTargets[location.id, default: [:]][direction] = BoardFocusID.location(
+                    neighborID
+                )
+                plan.reverseTargets[neighborID, default: [:]][reverse] = actionID
             }
         }
-        return targets
+        return plan
     }
 
     private static func locationNeighbors(
@@ -116,15 +128,13 @@ extension BoardFocusGraphBuilder {
 
     private static func locationEnemyActionNeighbors(
         locationID: LocationID,
-        layoutNeighbors: [FocusDirection: LocationID]
+        plannedTargets: [FocusDirection: SemanticFocusID]
     ) -> [FocusDirection: SemanticFocusID] {
         var neighbors: [FocusDirection: SemanticFocusID] = [
             .up: BoardFocusID.location(locationID),
         ]
-        for direction in [FocusDirection.down, .left, .right] {
-            if let neighborID = layoutNeighbors[direction] {
-                neighbors[direction] = BoardFocusID.location(neighborID)
-            }
+        for (direction, target) in plannedTargets {
+            neighbors[direction] = target
         }
         return neighbors
     }
