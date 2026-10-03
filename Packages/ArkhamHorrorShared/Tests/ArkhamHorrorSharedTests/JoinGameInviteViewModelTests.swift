@@ -152,6 +152,33 @@ struct JoinGameInviteViewModelTests {
         #expect(viewModel.claimSeatInvite == refreshedDetails)
     }
 
+    @Test("failed claim keeps the previous invite when refreshing open seats fails")
+    func failedClaimKeepsPreviousInviteOnReloadFailure() async throws {
+        let viewModel = JoinGameInviteViewModel()
+        let seat = try CardCode("c01001")
+        let details = inviteDetails(seats: [seat])
+        viewModel.inviteText = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        _ = await viewModel.submit(
+            joinInvite: { _ in Issue.record("join should not run"); return gameID },
+            loadClaimSeatInvite: { _ in details }
+        )
+
+        let failed = await viewModel.claimSeat(
+            seat,
+            claimSeatInvite: { _, _ in
+                throw GameLifecycleError.operationFailed(
+                    DeckOperationError(errorMsg: "Permission Denied. This seat is already taken")
+                )
+            },
+            reloadClaimSeatInvite: { _ in throw GameLifecycleError.transportFailure("network") }
+        )
+
+        #expect(failed == nil)
+        #expect(viewModel.failureMessage == "Permission Denied. This seat is already taken")
+        #expect(viewModel.claimSeatInvite == details)
+    }
+
     @Test("cancellation clears submitting state without showing an error")
     func cancellationClearsSubmittingState() async {
         let viewModel = JoinGameInviteViewModel()
