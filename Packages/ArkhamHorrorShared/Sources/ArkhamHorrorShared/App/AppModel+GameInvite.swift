@@ -141,6 +141,17 @@ extension AppModel {
         }
     }
 
+    /// Refreshes the games list for an already-seated `/claim-seat` invite before
+    /// handing off to the lobby. This never calls `PUT /join`; the loaded invite's
+    /// session token is the authority for whether the Continue action is still fresh.
+    @discardableResult
+    func continueClaimSeatInvite(using details: ClaimSeatInviteDetails) async throws -> GameID {
+        let inviteSession = try currentGameInviteSession()
+        try ensureCurrentGameInviteSession(inviteSession, matches: details.sessionToken)
+        try await refreshGamesForInvite(inviteSession)
+        return details.gameID
+    }
+
     func loadLobbyDetailsIfNeeded(for id: GameID) {
         guard gameLobbyPlayerCounts[id] == nil,
               gameLobbyDetailTasks[id] == nil,

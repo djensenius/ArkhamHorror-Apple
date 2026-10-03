@@ -193,6 +193,49 @@ struct JoinGameInviteViewModelTests {
         #expect(viewModel.claimSeatInvite == refreshedDetails)
     }
 
+    @Test("Continue refreshes a seated invite before returning its game id")
+    func continueRefreshesLoadedInviteBeforeJoining() async {
+        let viewModel = JoinGameInviteViewModel()
+        let details = inviteDetails(seats: [], viewerHasSeat: true)
+        viewModel.inviteText = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        _ = await viewModel.submit(
+            joinInvite: { _ in Issue.record("join should not run"); return gameID },
+            loadClaimSeatInvite: { _ in details }
+        )
+        var refreshedInvite: ClaimSeatInviteViewState?
+
+        let continued = await viewModel.continueFromClaimSeatInvite { invite in
+            refreshedInvite = invite
+            return invite.gameID
+        }
+
+        #expect(continued == gameID)
+        #expect(refreshedInvite == details)
+        #expect(viewModel.claimSeatInvite == details)
+        #expect(viewModel.failureMessage == nil)
+    }
+
+    @Test("Continue keeps the loaded invite when refresh fails")
+    func continueKeepsLoadedInviteOnRefreshFailure() async {
+        let viewModel = JoinGameInviteViewModel()
+        let details = inviteDetails(seats: [], viewerHasSeat: true)
+        viewModel.inviteText = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        _ = await viewModel.submit(
+            joinInvite: { _ in Issue.record("join should not run"); return gameID },
+            loadClaimSeatInvite: { _ in details }
+        )
+
+        let continued = await viewModel.continueFromClaimSeatInvite { _ in
+            throw GameLifecycleError.unexpectedStatus(500)
+        }
+
+        #expect(continued == nil)
+        #expect(viewModel.claimSeatInvite == details)
+        #expect(viewModel.failureMessage == "This server responded unexpectedly. Try again.")
+    }
+
     @Test("submitting is disabled while a seat claim is in flight")
     func submitIsDisabledWhileClaimingSeat() async throws {
         let viewModel = JoinGameInviteViewModel()

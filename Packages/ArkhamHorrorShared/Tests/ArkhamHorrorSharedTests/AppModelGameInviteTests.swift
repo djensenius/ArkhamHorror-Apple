@@ -96,6 +96,49 @@ struct AppModelGameInviteTests {
         )
     }
 
+    @Test("claim-seat Continue refreshes without issuing PUT join")
+    func claimSeatContinueRefreshesWithoutJoining() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 2)))
+        await service.enqueueOpenSeatsResult(.success([]))
+        await service.enqueueGetGameResult(.success(
+            getGameEnvelope(gameID: gameID, playerCount: 2)
+        ))
+        await service.enqueueListGamesResult(.success([]))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        let invite = try await model.loadClaimSeatInvite(gameID)
+        let continuedID = try await model.continueClaimSeatInvite(using: invite)
+
+        #expect(invite.canContinue)
+        #expect(continuedID == gameID)
+        #expect(await service.callOrder == ["peekLobby", "openSeats", "getGame", "listGames"])
+        #expect(await service.lastJoinGameID == nil)
+    }
+
+    @Test("claim-seat Continue keeps the invite open when refresh fails")
+    func claimSeatContinueSurfacesRefreshFailure() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 2)))
+        await service.enqueueOpenSeatsResult(.success([]))
+        await service.enqueueGetGameResult(.success(
+            getGameEnvelope(gameID: gameID, playerCount: 2)
+        ))
+        await service.enqueueListGamesResult(.failure(GameLifecycleError.unexpectedStatus(500)))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        let invite = try await model.loadClaimSeatInvite(gameID)
+        await #expect(throws: GameLifecycleError.unexpectedStatus(500)) {
+            try await model.continueClaimSeatInvite(using: invite)
+        }
+
+        #expect(invite.canContinue)
+        #expect(await service.callOrder == ["peekLobby", "openSeats", "getGame", "listGames"])
+        #expect(await service.lastJoinGameID == nil)
+    }
+
     @Test("claim-seat invite propagates non-404 full-game snapshot failures")
     func claimSeatInvitePropagatesNon404SnapshotFailures() async throws {
         let service = ScriptedGameLifecycleService()

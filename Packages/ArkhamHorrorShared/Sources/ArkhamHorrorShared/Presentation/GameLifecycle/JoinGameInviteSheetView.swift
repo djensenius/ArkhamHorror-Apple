@@ -94,6 +94,31 @@ final class JoinGameInviteViewModel {
             return nil
         }
     }
+
+    @discardableResult
+    func continueFromClaimSeatInvite(
+        refreshInvite: (ClaimSeatInviteViewState) async throws -> GameID
+    ) async -> GameID? {
+        guard !isSubmitting, claimingSeat == nil, let invite = claimSeatInvite else { return nil }
+        isSubmitting = true
+        failureMessage = nil
+        defer { isSubmitting = false }
+
+        do {
+            return try await refreshInvite(invite)
+        } catch is CancellationError {
+            return nil
+        } catch let error as GameLifecycleError {
+            failureMessage = error.message
+            return nil
+        } catch {
+            failureMessage = gameLifecycleLocalized(
+                "games.joinInvite.error.generic",
+                "Couldn't join that game. Try again."
+            )
+            return nil
+        }
+    }
 }
 
 struct JoinGameInviteSheetView: View {
@@ -246,14 +271,14 @@ struct JoinGameInviteSheetView: View {
 
     private func continueButton(for invite: ClaimSeatInviteViewState) -> some View {
         Button {
-            onJoined(invite.gameID)
-            dismiss()
+            Task { await continueFromClaimSeatInvite() }
         } label: {
             Label(
                 gameLifecycleLocalized("games.lobby.continue", "Continue"),
                 systemImage: "arrow.right.circle.fill"
             )
         }
+        .disabled(viewModel.isSubmitting || viewModel.claimingSeat != nil)
         .accessibilityIdentifier(
             AccountAccessibilityID.liveGameEnterButton(for: invite.gameID.rawValue)
         )
@@ -292,6 +317,14 @@ struct JoinGameInviteSheetView: View {
                 try await model.loadClaimSeatInvite(gameID)
             }
         ) else { return }
+        onJoined(id)
+        dismiss()
+    }
+
+    private func continueFromClaimSeatInvite() async {
+        guard let id = await viewModel.continueFromClaimSeatInvite(refreshInvite: { invite in
+            try await model.continueClaimSeatInvite(using: invite)
+        }) else { return }
         onJoined(id)
         dismiss()
     }
