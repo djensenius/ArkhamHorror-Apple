@@ -142,6 +142,45 @@ struct AppModelGameInviteTests {
         #expect(await service.callOrder == ["peekLobby", "openSeats", "getGame"])
     }
 
+    @Test("claim-seat invite revalidates the captured session after reading the token")
+    func claimSeatInviteRejectsSessionChangeAfterTokenRead() async throws {
+        let service = ScriptedGameLifecycleService()
+        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "session-token"])
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            gameLifecycleService: service
+        )
+        await model.flowTask?.value
+        await tokenStore.setTokenReadGated(true)
+        let seat = try CardCode("c01001")
+        let invite = ClaimSeatInviteDetails(
+            gameID: GameID(UUID()),
+            seats: [seat],
+            playerCount: 2,
+            viewerHasSeat: false,
+            sessionToken: GameInviteSessionToken(
+                profileID: ServerProfile.hosted.id,
+                generation: model.generation,
+                credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                globalEpoch: model.currentGlobalCredentialEpoch()
+            )
+        )
+
+        let claimTask = Task { try await model.claimSeatFromInvite(seat, using: invite) }
+        await tokenStore.waitUntilTokenReadPending(1)
+        model.generation += 1
+        await tokenStore.resumeOldestTokenRead(with: .success("session-token"))
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await claimTask.value
+        }
+        #expect(await service.callOrder == [])
+    }
+
     @Test("joinGameFromInvite surfaces server-authored lobby errors verbatim")
     func joinGameFromInviteSurfacesServerMessage() async throws {
         let service = ScriptedGameLifecycleService()

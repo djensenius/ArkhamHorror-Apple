@@ -211,7 +211,9 @@ extension AppModel {
 
     private func currentGameInviteToken(for session: GameInviteSession) async throws -> String {
         do {
-            return try await currentGameLifecycleToken(for: session.profile)
+            let token = try await currentGameLifecycleToken(for: session.profile)
+            try ensureCurrentGameInviteSession(session)
+            return token
         } catch let cancellation as CancellationError {
             throw cancellation
         } catch GameLifecycleTokenAccessError.stale {
