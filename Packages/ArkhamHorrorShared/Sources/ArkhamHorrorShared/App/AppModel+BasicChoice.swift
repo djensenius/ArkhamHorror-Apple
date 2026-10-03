@@ -500,6 +500,8 @@ extension AppModel {
         }
         if let questionVersion = rejection.questionVersion {
             guard questionVersion == action.identity.questionVersion else { return }
+        } else {
+            guard action.submission.acceptsUnversionedRejection else { return }
         }
         switch action.phase {
         case .sending, .awaitingSnapshot:
@@ -538,6 +540,15 @@ private extension BasicChoiceSubmission {
         case .singleChoice, .amounts, .paymentAmounts, .continueCampaign:
             true
         case .exchangeAmount:
+            false
+        }
+    }
+
+    var acceptsUnversionedRejection: Bool {
+        switch self {
+        case .exchangeAmount, .continueCampaign:
+            true
+        case .singleChoice, .amounts, .paymentAmounts:
             false
         }
     }

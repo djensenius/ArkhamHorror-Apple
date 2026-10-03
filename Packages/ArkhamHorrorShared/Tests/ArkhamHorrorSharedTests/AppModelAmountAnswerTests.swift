@@ -451,6 +451,86 @@ extension AppModelLiveGameTests {
         #expect(current.serverFeedback == "exchange rejected")
     }
 
+    @Test("Null-version AnswerRejected does not free versioned prompt submissions")
+    func nullVersionAnswerRejectedIgnoresVersionedSubmissions() async throws {
+        enum VersionedSubmissionCase {
+            case singleChoice
+            case amounts
+            case payment
+        }
+
+        for testCase in [VersionedSubmissionCase.singleChoice, .amounts, .payment] {
+            let (model, fakes) = makeSignedInModel()
+            await model.flowTask?.value
+            makeModern(model)
+            let connection = FakeGameSocketConnection()
+            await connection.enqueueSendResult(.success(()))
+            let envelope: GetGameEnvelope
+            switch testCase {
+            case .singleChoice:
+                envelope = try loadGetGame()
+            case .amounts:
+                let firstID = "00000000-0000-0000-0000-0000000000f1"
+                let secondID = "00000000-0000-0000-0000-0000000000f2"
+                let choices = [
+                    amountChoice(firstID, min: 0, max: 2, label: "A"),
+                    amountChoice(secondID, min: 0, max: 2, label: "B"),
+                ]
+                envelope = try amountEnvelope(
+                    rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .total(2)),
+                    presentation: chooseAmountsPresentation(
+                        choices: choices,
+                        target: .total(2),
+                        questionVersion: 647
+                    ),
+                    questionVersion: 647
+                )
+            case .payment:
+                envelope = try semanticEnvelope(
+                    rawFixture: "question-generic-payment-amounts",
+                    presentationFixture: "question-presentation-generic-payment-amounts",
+                    questionVersion: 648,
+                    mutatePresentation: localizeFirstPaymentChoiceTitle
+                )
+            }
+            let gameID = await startChoiceSession(
+                model: model, fakes: fakes, envelope: envelope, connection: connection
+            )
+            let prompt = try #require(model.basicChoicePresentation(for: gameID))
+            let result: BasicChoiceSubmitResult = switch testCase {
+            case .singleChoice:
+                await model.submitBasicChoice(prompt.identity, choiceIndex: 0)
+            case .amounts:
+                await model.submitAmountsAnswer(
+                    prompt.identity,
+                    amounts: [
+                        "00000000-0000-0000-0000-0000000000f1": 3,
+                        "00000000-0000-0000-0000-0000000000f2": 0,
+                    ]
+                )
+            case .payment:
+                await model.submitPaymentAmountsAnswer(
+                    prompt.identity,
+                    amounts: ["00000000-0000-0000-0000-000000000066": 1]
+                )
+            }
+            #expect(result == .sentAwaitingSnapshot)
+
+            model.handleBasicChoiceAnswerRejected(
+                gameID: gameID,
+                sessionAttemptID: try #require(prompt.identity.sessionAttemptID),
+                connectionID: try #require(prompt.identity.connectionID),
+                rejection: AnswerRejectedMessage(
+                    reason: "unversioned should not match",
+                    questionVersion: nil
+                )
+            )
+
+            #expect(model.basicChoiceActions[gameID]?.phase == .awaitingSnapshot)
+            #expect(model.basicChoiceServerFeedback[gameID] == nil)
+        }
+    }
+
     @Test("AnswerRejected ignores mismatched transport, session, and owner")
     func answerRejectedCorrelationMismatchesAreIgnored() async throws {
         enum Mismatch: Equatable {
