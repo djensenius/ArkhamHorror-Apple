@@ -3,6 +3,18 @@ import SwiftUI
 /// Board-owned linked-choice modal used when keyboard/controller primary action lands on
 /// a board element with several server choices. Keeping the choices in the board focus
 /// graph avoids opening a native system menu that game controllers cannot navigate.
+struct BoardLinkedChoiceMenuChoicePresentation: Sendable, Equatable {
+    let id: SemanticFocusID
+    let title: String
+    let isFocused: Bool
+
+    init(choice: BoardLinkedChoice, focusedID: SemanticFocusID?) {
+        id = BoardFocusID.linkedChoiceMenuChoice(choice.choiceIndex)
+        title = choice.title
+        isFocused = focusedID == id
+    }
+}
+
 struct BoardLinkedChoiceMenuModalView: View {
     let request: BoardLinkedChoiceMenuRequest
     let focusedID: SemanticFocusID?
@@ -36,29 +48,33 @@ struct BoardLinkedChoiceMenuModalView: View {
     }
 
     private func choiceButton(_ choice: BoardLinkedChoice) -> some View {
-        let id = BoardFocusID.linkedChoiceMenuChoice(choice.choiceIndex)
+        let presentation = BoardLinkedChoiceMenuChoicePresentation(
+            choice: choice,
+            focusedID: focusedID
+        )
         return SemanticActionControl(
-            accessibilityLabel: Text(choice.title),
-            semanticFocusID: id,
+            accessibilityLabel: Text(presentation.title),
+            semanticFocusID: presentation.id,
             onOutcome: onOutcome,
             label: {
                 HStack {
-                    Text(choice.title)
+                    Text(presentation.title)
                     Spacer()
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(
-                            focusedID == id ? ArkhamTheme.accent : Color.clear,
-                            lineWidth: 3
-                        )
-                }
             }
         )
         .buttonStyle(.borderedProminent)
         .tint(ArkhamTheme.accent)
-        .focused(focusBinding, equals: id)
+        .overlay {
+            if presentation.isFocused {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(ArkhamTheme.bone, lineWidth: 3)
+                    .padding(-5)
+                    .shadow(color: .black.opacity(0.8), radius: 1, x: 0, y: 1)
+            }
+        }
+        .focused(focusBinding, equals: presentation.id)
     }
 }
