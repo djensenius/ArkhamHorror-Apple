@@ -226,10 +226,17 @@ struct BoardLinkedFocusGraphTests {
                 fightChoice(index: 8, enemyID: secondEnemyID),
             ])
         )
+        let rootFocus = BoardFocusID.location(rootID)
+        let firstActionLocationFocus = BoardFocusID.location(firstActionLocationID)
         let firstActionsFocus = BoardFocusID.locationEnemyActions(firstActionLocationID)
         let secondActionsFocus = BoardFocusID.locationEnemyActions(secondActionLocationID)
         let sharedNeighborFocus = BoardFocusID.location(sharedNeighborID)
 
+        #expect(graph.neighbor(from: firstActionsFocus, direction: .left) == rootFocus)
+        #expect(graph.neighbor(from: rootFocus, direction: .right) == firstActionsFocus)
+        #expect(graph.neighbor(from: secondActionsFocus, direction: .left) == secondActionsFocus)
+        #expect(graph.neighbor(from: firstActionLocationFocus, direction: .right)
+            == sharedNeighborFocus)
         #expect(graph.neighbor(from: firstActionsFocus, direction: .right) == sharedNeighborFocus)
         #expect(graph.neighbor(from: sharedNeighborFocus, direction: .left) == firstActionsFocus)
         #expect(graph.neighbor(from: secondActionsFocus, direction: .right) == secondActionsFocus)
