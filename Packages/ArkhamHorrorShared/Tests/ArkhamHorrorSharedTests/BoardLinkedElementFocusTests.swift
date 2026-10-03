@@ -23,20 +23,9 @@ struct BoardLinkedElementFocusTests {
         ))
     }
 
-    private func locationEnemyProjection(
-        locations: [(LocationID, Location)],
-        enemyIDs: [EnemyID]
-    ) -> BoardProjection {
-        BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
-            locations: locations,
-            enemyValues: Dictionary(uniqueKeysWithValues: enemyIDs.map { ($0, JSONValue.null) })
-        ))
-    }
-
     private func enemyPrompt(
         choices: [BasicChoice],
-        ownerID: PlayerID = BoardTestFixtures.playerID("000000000001"),
-        readOnlyReason: BasicChoiceReadOnlyReason? = nil
+        ownerID: PlayerID = BoardTestFixtures.playerID("000000000001")
     ) -> BasicChoicePromptPresentation {
         let rawQuestion: JSONValue = .object([
             "tag": .string(BasicChoiceQuestionKind.chooseOne.rawValue),
@@ -57,7 +46,7 @@ struct BoardLinkedElementFocusTests {
                 story: nil,
                 rawValue: rawQuestion
             )),
-            readOnlyReason: readOnlyReason,
+            readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
             serverFeedback: nil
@@ -207,10 +196,9 @@ struct BoardLinkedElementFocusTests {
         #expect(submittedChoices.isEmpty)
         #expect(controller.inspectedID == nil)
 
-        #expect(controller.handle(
-            focusID: BoardFocusID.linkedChoiceMenuChoice(8),
-            .command(.primaryAction)
-        ))
+        #expect(controller.handle(.command(.focusMove(.down))))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.linkedChoiceMenuChoice(8))
+        #expect(controller.handle(.command(.primaryAction)))
         #expect(submittedChoices == [8])
         #expect(controller.linkedChoiceMenuRequest == nil)
         #expect(!controller.coordinator.isModalPresented)
@@ -253,5 +241,109 @@ struct BoardLinkedElementFocusTests {
         #expect(controller.linkedChoiceMenuRequest == nil)
         #expect(!controller.coordinator.isModalPresented)
         #expect(controller.coordinator.currentFocus == enemyFocus)
+    }
+
+    @Test("Prompt updates dismiss an open linked choice menu")
+    func applyPromptDismissesOpenLinkedChoiceMenu() {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        let playerID = BoardTestFixtures.playerID("000000000001")
+        let enemyID = BoardTestFixtures.enemyID("000000000433")
+        let projection = enemyProjection(
+            investigatorID: investigatorID,
+            playerID: playerID,
+            enemyIDs: [enemyID]
+        )
+        let prompt = enemyPrompt(
+            choices: [
+                fightChoice(index: 7, enemyID: enemyID),
+                evadeChoice(index: 8, enemyID: enemyID),
+            ],
+            ownerID: playerID
+        )
+        let replacementPrompt = enemyPrompt(
+            choices: [fightChoice(index: 9, enemyID: enemyID)],
+            ownerID: playerID
+        )
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            localPlayerID: playerID
+        )
+        let enemyFocus = BoardFocusID.promptElement(.enemy(enemyID))
+
+        #expect(controller.handle(focusID: enemyFocus, .command(.primaryAction)))
+        controller.applyPrompt(replacementPrompt)
+
+        #expect(controller.linkedChoiceMenuRequest == nil)
+        #expect(!controller.coordinator.isModalPresented)
+        #expect(controller.coordinator.currentFocus == enemyFocus)
+        #expect(!controller.coordinator.graph.contains(BoardFocusID.linkedChoiceMenuChoice(7)))
+        #expect(controller.handle(.command(.primaryAction)))
+    }
+
+    @Test("Snapshot updates dismiss an open linked choice menu")
+    func applySnapshotDismissesOpenLinkedChoiceMenu() {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        let playerID = BoardTestFixtures.playerID("000000000001")
+        let enemyID = BoardTestFixtures.enemyID("000000000434")
+        let projection = enemyProjection(
+            investigatorID: investigatorID,
+            playerID: playerID,
+            enemyIDs: [enemyID]
+        )
+        let prompt = enemyPrompt(
+            choices: [
+                fightChoice(index: 7, enemyID: enemyID),
+                evadeChoice(index: 8, enemyID: enemyID),
+            ],
+            ownerID: playerID
+        )
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            localPlayerID: playerID
+        )
+        let enemyFocus = BoardFocusID.promptElement(.enemy(enemyID))
+
+        #expect(controller.handle(focusID: enemyFocus, .command(.primaryAction)))
+        controller.applySnapshot(projection, prompt: prompt)
+
+        #expect(controller.linkedChoiceMenuRequest == nil)
+        #expect(!controller.coordinator.isModalPresented)
+        #expect(controller.coordinator.currentFocus == enemyFocus)
+        #expect(!controller.coordinator.graph.contains(BoardFocusID.linkedChoiceMenuChoice(7)))
+    }
+
+    @Test("Inspect dismisses an open linked choice menu without leaving stale menu nodes")
+    func inspectDismissesOpenLinkedChoiceMenu() {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        let playerID = BoardTestFixtures.playerID("000000000001")
+        let enemyID = BoardTestFixtures.enemyID("000000000435")
+        let projection = enemyProjection(
+            investigatorID: investigatorID,
+            playerID: playerID,
+            enemyIDs: [enemyID]
+        )
+        let prompt = enemyPrompt(
+            choices: [
+                fightChoice(index: 7, enemyID: enemyID),
+                evadeChoice(index: 8, enemyID: enemyID),
+            ],
+            ownerID: playerID
+        )
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            localPlayerID: playerID
+        )
+        let enemyFocus = BoardFocusID.promptElement(.enemy(enemyID))
+
+        #expect(controller.handle(focusID: enemyFocus, .command(.primaryAction)))
+        #expect(controller.handle(.command(.inspect)))
+
+        #expect(controller.linkedChoiceMenuRequest == nil)
+        #expect(!controller.coordinator.isModalPresented)
+        #expect(controller.coordinator.currentFocus == enemyFocus)
+        #expect(!controller.coordinator.graph.contains(BoardFocusID.linkedChoiceMenuChoice(7)))
     }
 }

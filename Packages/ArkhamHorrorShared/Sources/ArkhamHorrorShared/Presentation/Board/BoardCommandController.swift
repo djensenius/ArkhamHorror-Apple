@@ -149,6 +149,9 @@ final class BoardCommandController {
 
     func applyPrompt(_ newPrompt: BasicChoicePromptPresentation?) {
         guard prompt != newPrompt else { return }
+        if linkedChoiceMenuRequest != nil {
+            _ = dismissLinkedChoiceMenu()
+        }
         linkedChoiceMenuRequest = nil
         prompt = newPrompt
         resetPromptInputStateIfNeeded(prompt: newPrompt)
@@ -221,6 +224,9 @@ final class BoardCommandController {
             coordinator.move(direction)
             return true
         case .inspect:
+            if dismissLinkedChoiceMenu() {
+                return true
+            }
             // While the inspector is already presented, its only interactive content is
             // the Close control itself (see `BoardInspectorView`): treat activating it
             // (a tap, Enter, or controller A-button primaryAction) as closing, exactly
