@@ -529,8 +529,8 @@ extension QuestionPresentation.Answer: Codable {
             self = .exchangeAmounts
         case .deck:
             let tags = try Self.requireAdvertisedTags(
-                ["DeckAnswer", "DeckListAnswer"],
-                supported: ["DeckAnswer", "DeckListAnswer"],
+                ["DeckAnswer"],
+                supported: ["DeckAnswer"],
                 in: container
             )
             self = .deck(tags: tags)

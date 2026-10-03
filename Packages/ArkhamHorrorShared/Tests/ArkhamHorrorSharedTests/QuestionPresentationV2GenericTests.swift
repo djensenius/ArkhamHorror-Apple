@@ -403,7 +403,7 @@ struct QuestionPresentationV2GenericTests {
             try ContractJSON.decode(
                 QuestionPresentation.Answer.self,
                 from: Data(deck.utf8)
-            ) == .deck(tags: ["DeckAnswer", "DeckListAnswer"])
+            ) == .deck(tags: ["DeckAnswer"])
         )
 
         let continuation = #"{"kind":"continueCampaign","tags":["CampaignStepAnswer","FutureAnswer"]}"#
@@ -417,6 +417,7 @@ struct QuestionPresentationV2GenericTests {
         for invalid in [
             #"{"kind":"future","tag":"Answer"}"#,
             #"{"kind":"deck","tags":["FutureDeckAnswer"]}"#,
+            #"{"kind":"deck","tags":["DeckListAnswer"]}"#,
             #"{"kind":"continueCampaign","tags":["FutureAnswer"]}"#,
         ] {
             #expect(throws: DecodingError.self, "\(invalid)") {
