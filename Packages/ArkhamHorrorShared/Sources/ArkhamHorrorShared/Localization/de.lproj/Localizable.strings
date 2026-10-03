@@ -206,6 +206,10 @@
 "games.lobby.openSeats.refresh" = "Aktualisieren";
 "games.lobby.openSeats.empty" = "Es sind keine offenen Plätze mehr übrig.";
 "games.lobby.openSeats.alreadyClaimed" = "Du hast bereits einen Platz in diesem Spiel.";
+"games.lobby.openSeats.checkingSeat" = "Es wird geprüft, ob du bereits einen Platz in diesem Spiel hast.";
+"games.lobby.openSeats.checkingSeat.loading" = "Platzstatus wird geprüft …";
+"games.lobby.openSeats.checkingSeat.failed" = "Es konnte nicht geprüft werden, ob du bereits einen Platz hast: %@";
+"games.lobby.openSeats.checkingSeat.retry" = "Platzprüfung wiederholen";
 "games.lobby.chooseDeck.section" = "Deck wählen";
 "games.lobby.chooseDeck.continueAs" = "Als %@ (%@) fortfahren";
 "games.lobby.waiting.pending.unknownRemaining" = "Es wird auf weitere Spieler gewartet.";

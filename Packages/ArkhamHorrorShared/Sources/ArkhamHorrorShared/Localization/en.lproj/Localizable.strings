@@ -206,6 +206,10 @@
 "games.lobby.openSeats.refresh" = "Refresh";
 "games.lobby.openSeats.empty" = "No open seats remain.";
 "games.lobby.openSeats.alreadyClaimed" = "You already have a seat in this game.";
+"games.lobby.openSeats.checkingSeat" = "Checking whether you already have a seat in this game.";
+"games.lobby.openSeats.checkingSeat.loading" = "Checking seat status…";
+"games.lobby.openSeats.checkingSeat.failed" = "Could not check whether you already have a seat: %@";
+"games.lobby.openSeats.checkingSeat.retry" = "Retry Seat Check";
 "games.lobby.chooseDeck.section" = "Choose Deck";
 "games.lobby.chooseDeck.continueAs" = "Continue as %@ (%@)";
 "games.lobby.waiting.pending.unknownRemaining" = "Waiting for more players to join.";
