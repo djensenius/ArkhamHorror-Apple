@@ -283,6 +283,8 @@ final class AppModel {
     @ObservationIgnored var gameLifecycleActionTasks: [GameID: Task<Void, Never>] = [:]
     /// The in-flight server-detail load for each lobby, if any.
     @ObservationIgnored var gameLobbyDetailTasks: [GameID: Task<Void, Never>] = [:]
+    /// Ownership tokens for in-flight lobby detail loads, so stale tasks cannot clear replacements.
+    @ObservationIgnored var gameLobbyDetailTaskIDs: [GameID: UUID] = [:]
 
     // MARK: - Live-game state (see `AppModel+LiveGame.swift`/`AppModel+LiveGameSession.swift`)
 

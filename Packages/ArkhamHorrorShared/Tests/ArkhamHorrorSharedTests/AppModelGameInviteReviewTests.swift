@@ -32,6 +32,31 @@ struct AppModelGameInviteReviewTests {
         )
     }
 
+    @Test("stale lobby detail cleanup cannot clear a replacement load")
+    func staleLobbyDetailCleanupDoesNotClearReplacementTask() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.setGetGameGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        model.loadLobbyDetailsIfNeeded(for: gameID)
+        await service.waitUntilGetGamePending(1)
+        model.generation += 1
+        model.resetGameLifecycleState()
+        model.loadLobbyDetailsIfNeeded(for: gameID)
+        await service.waitUntilGetGamePending(2)
+
+        await service.resumeOldestGetGame(with: .success(getGameEnvelope(gameID: gameID)))
+        let replacementTask = model.gameLobbyDetailTasks[gameID]
+        #expect(replacementTask != nil)
+        #expect(model.gameLobbyDetailTaskIDs[gameID] != nil)
+
+        await service.resumeNewestGetGame(with: .success(getGameEnvelope(gameID: gameID)))
+        await replacementTask?.value
+        #expect(model.gameLobbyDetailTasks[gameID] == nil)
+        #expect(model.gameLobbyDetailTaskIDs[gameID] == nil)
+    }
+
     @Test("claim-seat Continue refreshes without issuing PUT join")
     func claimSeatContinueRefreshesWithoutJoining() async throws {
         let service = ScriptedGameLifecycleService()

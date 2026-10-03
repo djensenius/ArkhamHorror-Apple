@@ -163,13 +163,19 @@ extension AppModel {
             credentialEpoch: currentCredentialEpoch(for: profile.id),
             globalEpoch: currentGlobalCredentialEpoch()
         )
+        let taskID = UUID()
+        gameLobbyDetailTaskIDs[id] = taskID
         gameLobbyDetailTasks[id] = Task { [weak self] in
-            await self?.performLoadLobbyDetails(for: id, session: session)
+            await self?.performLoadLobbyDetails(for: id, session: session, taskID: taskID)
         }
     }
 
-    private func performLoadLobbyDetails(for id: GameID, session: GameInviteSession) async {
-        defer { gameLobbyDetailTasks[id] = nil }
+    private func performLoadLobbyDetails(
+        for id: GameID,
+        session: GameInviteSession,
+        taskID: UUID
+    ) async {
+        defer { clearLobbyDetailTaskIfCurrent(for: id, session: session, taskID: taskID) }
         let token: String
         do {
             token = try await currentGameInviteToken(for: session)
@@ -186,6 +192,18 @@ extension AppModel {
         } catch {
             return
         }
+    }
+
+    private func clearLobbyDetailTaskIfCurrent(
+        for id: GameID,
+        session: GameInviteSession,
+        taskID: UUID
+    ) {
+        guard gameLobbyDetailTaskIDs[id] == taskID,
+              (try? ensureCurrentGameInviteSession(session)) != nil
+        else { return }
+        gameLobbyDetailTasks[id] = nil
+        gameLobbyDetailTaskIDs[id] = nil
     }
 
     private func getClaimSeatViewerSnapshot(

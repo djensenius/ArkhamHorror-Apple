@@ -181,6 +181,7 @@ extension AppModel {
         gameLifecycleActionAttempts = [:]
         gameLifecycleActionTasks = [:]
         gameLobbyDetailTasks = [:]
+        gameLobbyDetailTaskIDs = [:]
         gameListGeneration += 1
         resetLiveGameState()
     }
