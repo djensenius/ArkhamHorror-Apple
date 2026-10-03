@@ -205,6 +205,33 @@ struct BoardLinkedElementFocusTests {
         #expect(controller.coordinator.currentFocus == BoardFocusID.promptElement(.enemy(enemyID)))
     }
 
+    @Test("Inspect on a linked prompt element does not open an empty inspector")
+    func inspectOnLinkedPromptElementDoesNotOpenEmptyInspector() {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        let playerID = BoardTestFixtures.playerID("000000000436")
+        let enemyID = BoardTestFixtures.enemyID("000000000437")
+        let projection = enemyProjection(
+            investigatorID: investigatorID,
+            playerID: playerID,
+            enemyIDs: [enemyID]
+        )
+        let prompt = enemyPrompt(
+            choices: [fightChoice(index: 7, enemyID: enemyID)],
+            ownerID: playerID
+        )
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            localPlayerID: playerID
+        )
+        let enemyFocus = BoardFocusID.promptElement(.enemy(enemyID))
+
+        #expect(!controller.handle(focusID: enemyFocus, .command(.inspect)))
+        #expect(!controller.coordinator.isModalPresented)
+        #expect(controller.inspectedID == nil)
+        #expect(controller.coordinator.currentFocus == enemyFocus)
+    }
+
     @Test("Back and secondary dismiss a controller-opened linked choice menu")
     func linkedChoiceMenuDismissesWithBackAndSecondary() {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")

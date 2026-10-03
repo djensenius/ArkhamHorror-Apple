@@ -324,7 +324,10 @@ final class BoardCommandController {
     /// innermost one — leaving `isModalPresented == true` with no inspector content
     /// visible, and the board stuck disabled/`accessibilityHidden` behind it.
     private func openInspector() -> Bool {
-        guard !coordinator.isModalPresented, let focused = coordinator.currentFocus else {
+        guard !coordinator.isModalPresented,
+              let focused = coordinator.currentFocus,
+              BoardInspectorContent.resolve(id: focused, in: projection) != nil
+        else {
             return false
         }
         inspectedID = focused
