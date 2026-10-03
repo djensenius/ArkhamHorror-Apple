@@ -100,8 +100,13 @@ enum BoardCampaignSummaryFormatting {
         if let recordType, recordType != "RecordableCardCode", let text = value.stringValue {
             return splitCamelCase(text)
         }
-        if recordType == nil, let title = cardDisplayName(for: value, context: context) {
-            return title
+        if recordType == nil {
+            if let title = cardDisplayName(for: value, context: context) {
+                return title
+            }
+            if let text = value.stringValue, isLegacyCardCode(text) {
+                return text
+            }
         }
         return jsonDisplayValue(value, context: context)
     }
@@ -185,6 +190,14 @@ enum BoardCampaignSummaryFormatting {
 
     private static func rawStringValue(_ value: JSONValue) -> String {
         value.stringValue ?? jsonDisplayValue(value)
+    }
+
+    private static func isLegacyCardCode(_ value: String) -> Bool {
+        if value.hasPrefix("c:") {
+            return true
+        }
+        let unprefixed = value.hasPrefix("c") ? String(value.dropFirst()) : value
+        return unprefixed.range(of: #"^\d+[A-Za-z]*$"#, options: .regularExpression) != nil
     }
 
     private static func localizedResolutionNumber(

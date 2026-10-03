@@ -289,7 +289,10 @@ enum BoardCampaignSummaryBuilder {
         }
         guard let scenario,
               scenario.inResolution,
-              let story = scenario.resolvedStories.last
+              // The server prepends resolved stories in
+              // backend/arkham-api/library/Arkham/Scenario/Runner.hs:930-931
+              // (`resolvedStoriesL %~ (storyId :)`), so the current story is first.
+              let story = scenario.resolvedStories.first
         else { return [] }
         return [BoardCampaignResolutionSummary(source: .resolvedStory(story))]
     }

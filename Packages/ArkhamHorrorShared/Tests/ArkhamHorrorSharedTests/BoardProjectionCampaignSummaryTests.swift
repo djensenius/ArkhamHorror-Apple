@@ -144,6 +144,50 @@ struct BoardProjectionCampaignSummaryTests {
         }
     }
 
+    @Test("Legacy recorded-set card codes stay raw until catalog lookup succeeds")
+    func legacyRecordedSetCardCodesStayRawUntilCatalogLookupSucceeds() throws {
+        let summary = BoardCampaignSummaryBuilder.makeLogSummary(from: .object([
+            "crossedOut": .array([]),
+            "recorded": .array([]),
+            "recordedCounts": .array([]),
+            "recordedSets": .array([
+                .array([
+                    .string("legacy.card.set"),
+                    .array([.string("c01121b"), .string("ElderThing")]),
+                ]),
+            ]),
+        ]))
+        let values = try #require(summary.recordedSets.first?.values)
+        #expect(values.map(\.recordType) == [nil, nil])
+        #expect(values.map { $0.title() } == ["c01121b", "Elder thing"])
+
+        let catalog = try cardCatalog(locale: .english)
+        let context = BoardCampaignSummaryDisplayContext(cardCatalog: catalog)
+        #expect(values.map { $0.title(context: context) } == [
+            SummaryLocale.english.maskedHunter,
+            "Elder thing",
+        ])
+    }
+
+    @Test("Standalone resolution summary uses the newest resolved story from server order")
+    func standaloneResolutionSummaryUsesNewestResolvedStoryFromServerOrder() throws {
+        let newestStory: JSONValue = .string("NewestStory")
+        let oldestStory: JSONValue = .string("OldestStory")
+        let scenario = BoardTestFixtures.scenario(
+            inResolution: true,
+            resolvedStories: [newestStory, oldestStory]
+        )
+
+        let summary = try #require(BoardCampaignSummaryBuilder.makeSummary(
+            campaign: nil,
+            scenario: scenario,
+            investigators: []
+        ))
+
+        #expect(summary.resolutions.map(\.source) == [.resolvedStory(newestStory)])
+        #expect(summary.resolutions.map { $0.detail() } == ["Newest story"])
+    }
+
     @Test("Campaign log key paths strip only a trailing Key suffix")
     func scarletKeysLogKeyUsesCatalogPath() {
         let resolver = LocaleCatalogResolver(snapshot: localeCatalog(
