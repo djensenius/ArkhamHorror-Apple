@@ -159,19 +159,41 @@ struct BoardProjectionCampaignSummaryTests {
         ) == "Translated time")
     }
 
-    @Test("Campaign log falls back to scenario log for null or malformed campaign logs")
+    @Test("Campaign log falls back to scenario log for missing, null, or malformed campaign logs")
     func malformedCampaignLogFallsBackToScenarioStandaloneLog() throws {
-        let invalidLogs: [Any] = [NSNull(), "not an object", ["not", "an", "object"]]
+        let invalidLogs: [(name: String, value: Any?)] = [
+            ("log key missing", nil),
+            ("null", NSNull()),
+            ("string", "not an object"),
+            ("array", ["not", "an", "object"]),
+        ]
 
         for invalidLog in invalidLogs {
-            let inputs = try campaignLogInputs(campaignLog: invalidLog)
+            let inputs = try campaignLogInputs(campaignLog: invalidLog.value)
             let summary = BoardCampaignSummaryBuilder.makeLogSummary(
                 campaign: inputs.campaign,
                 scenario: inputs.scenario
             )
 
-            #expect(summary.entries.map { $0.title() } == ["Scenario fallback entry"])
+            #expect(
+                summary.entries.map { $0.title() } == ["Scenario fallback entry"],
+                "\(invalidLog.name) should use scenario fallback"
+            )
         }
+    }
+
+    @Test("Campaign log empty object wins over scenario standalone log")
+    func emptyCampaignLogObjectSuppressesScenarioFallback() throws {
+        let inputs = try campaignLogInputs(campaignLog: [:] as [String: Any])
+
+        let summary = BoardCampaignSummaryBuilder.makeLogSummary(
+            campaign: inputs.campaign,
+            scenario: inputs.scenario
+        )
+
+        #expect(summary.entries == [])
+        #expect(summary.counts == [])
+        #expect(summary.recordedSets == [])
     }
 
     @Test("Campaign log uses a valid campaign object before the scenario log")
@@ -376,7 +398,7 @@ struct BoardProjectionCampaignSummaryTests {
     }
 
     private func campaignLogInputs(
-        campaignLog campaignLogPayload: Any
+        campaignLog campaignLogPayload: Any?
     ) throws -> (campaign: JSONValue, scenario: Scenario) {
         var root = try #require(
             JSONSerialization.jsonObject(with: contractFixtureData(named: "mode-campaign-scenario"))
@@ -384,7 +406,11 @@ struct BoardProjectionCampaignSummaryTests {
         )
         var campaign = try #require(root["This"] as? [String: Any])
         var scenario = try #require(root["That"] as? [String: Any])
-        campaign["log"] = campaignLogPayload
+        if let campaignLogPayload {
+            campaign["log"] = campaignLogPayload
+        } else {
+            campaign.removeValue(forKey: "log")
+        }
         scenario["standaloneCampaignLog"] = campaignLog(recorded: [
             logKey("ScenarioFallbackEntry"),
         ])
