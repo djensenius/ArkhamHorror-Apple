@@ -316,6 +316,8 @@ final class AppModel {
     var basicChoiceServerFeedback: [GameID: String] = [:]
     /// Tracks whether same-prompt socket snapshots should retain or clear the feedback.
     var basicChoiceServerFeedbackSources: [GameID: BasicChoiceServerFeedbackSource] = [:]
+    /// Send attempts that received an authoritative rejection before their send task resumed.
+    var basicChoiceRejectedAttemptIDs: [GameID: UUID] = [:]
 
     // MARK: - Locale catalog state (see `AppModel+LocaleCatalog.swift`)
 

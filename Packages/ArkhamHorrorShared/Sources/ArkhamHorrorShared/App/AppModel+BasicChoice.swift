@@ -251,6 +251,7 @@ extension AppModel {
         else { return .reject(.readOnly) }
 
         clearBasicChoiceServerFeedback(gameID: identity.gameID)
+        basicChoiceRejectedAttemptIDs[identity.gameID] = nil
         let actionAttemptID = UUID()
         basicChoiceActions[identity.gameID] = BasicChoiceActionRecord(
             identity: identity,
@@ -314,6 +315,10 @@ extension AppModel {
               basicChoiceActions[identity.gameID]?.attemptID == actionAttemptID,
               basicChoiceActions[identity.gameID]?.phase == .sending
         else {
+            if basicChoiceRejectedAttemptIDs[identity.gameID] == actionAttemptID {
+                basicChoiceRejectedAttemptIDs[identity.gameID] = nil
+                return .sentAwaitingSnapshot
+            }
             return .retryableFailure
         }
         basicChoiceActions[identity.gameID]?.phase = .awaitingSnapshot
@@ -511,6 +516,7 @@ extension AppModel {
                 message: rejection.reason,
                 source: .answerRejected
             )
+            basicChoiceRejectedAttemptIDs[gameID] = action.attemptID
             basicChoiceActions[gameID] = nil
         case .uncertain, .retryable:
             break

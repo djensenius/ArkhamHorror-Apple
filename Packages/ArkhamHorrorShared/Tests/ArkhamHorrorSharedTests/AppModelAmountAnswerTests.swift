@@ -402,6 +402,52 @@ extension AppModelLiveGameTests {
         ])
     }
 
+    @Test("AnswerRejected during a gated send does not report transport failure")
+    func answerRejectedDuringSendingDoesNotReportTransportFailure() async throws {
+        let firstID = "00000000-0000-0000-0000-0000000000d3"
+        let secondID = "00000000-0000-0000-0000-0000000000d4"
+        let choices = [
+            amountChoice(firstID, min: 0, max: 2, label: "A"),
+            amountChoice(secondID, min: 0, max: 2, label: "B"),
+        ]
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .total(2)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .total(2),
+                questionVersion: 649
+            ),
+            questionVersion: 649
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.setSendGated(true)
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let rejectedAmounts = [firstID: 3, secondID: 0]
+        let send = Task {
+            await model.submitAmountsAnswer(prompt.identity, amounts: rejectedAmounts)
+        }
+        await connection.waitUntilSendPending(1)
+        #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == .sending)
+
+        await connection.enqueue(.event(.message(Data(
+            #"{"tag":"AnswerRejected","reason":"fast rejection","questionVersion":649}"#.utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        let rejected = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(rejected.actionPhase == nil)
+        #expect(rejected.serverFeedback == "fast rejection")
+
+        await connection.resumeOldestSend(with: .success(()))
+        #expect(await send.value == .sentAwaitingSnapshot)
+        #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == nil)
+    }
+
     @Test("Unchanged GameUpdate before AnswerRejected still frees the amount prompt")
     func unchangedSnapshotThenAnswerRejectedFreesAmountPrompt() async throws {
         let firstID = "00000000-0000-0000-0000-0000000000d1"
