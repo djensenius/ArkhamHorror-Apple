@@ -134,8 +134,8 @@ import Foundation
 
         func peekLobby(
             _: GameID, on _: ServerProfile, token _: String
-        ) async throws -> GameLifecycleEnvelope {
-            .unsupported
+        ) async throws -> GameLifecyclePreview {
+            throw GameLifecycleError.malformedPayload
         }
 
         func joinGame(

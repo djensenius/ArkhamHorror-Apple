@@ -122,6 +122,11 @@ actor FakeTokenStore: TokenStore {
     private var saveError: (any Error)?
     private var deleteError: (any Error)?
     private var deleteAllError: (any Error)?
+    private var isTokenReadGated = false
+    private var tokenReadContinuations: [CheckedContinuation<String?, any Error>] = []
+    private var tokenReadPendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
     private(set) var saveCallCount = 0
     private(set) var deleteCallCount = 0
     private(set) var deleteAllCallCount = 0
@@ -133,6 +138,34 @@ actor FakeTokenStore: TokenStore {
 
     func setReadError(_ error: (any Error)?) {
         readError = error
+    }
+
+    func setTokenReadGated(_ gated: Bool) {
+        isTokenReadGated = gated
+    }
+
+    func waitUntilTokenReadPending(_ count: Int) async {
+        if tokenReadContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { tokenReadPendingWaiters.append((count, $0)) }
+    }
+
+    func resumeOldestTokenRead(with result: Result<String?, any Error>) {
+        guard !tokenReadContinuations.isEmpty else { return }
+        let continuation = tokenReadContinuations.removeFirst()
+        switch result {
+        case let .success(value): continuation.resume(returning: value)
+        case let .failure(error): continuation.resume(throwing: error)
+        }
+    }
+
+    private func notifyTokenReadWaiters() {
+        tokenReadPendingWaiters.removeAll { entry in
+            guard tokenReadContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
     }
 
     func setSaveError(_ error: (any Error)?) {
@@ -154,6 +187,12 @@ actor FakeTokenStore: TokenStore {
     func token(for profileID: UUID) async throws -> String? {
         if let readError {
             throw readError
+        }
+        if isTokenReadGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                tokenReadContinuations.append(continuation)
+                notifyTokenReadWaiters()
+            }
         }
         return tokens[profileID]
     }

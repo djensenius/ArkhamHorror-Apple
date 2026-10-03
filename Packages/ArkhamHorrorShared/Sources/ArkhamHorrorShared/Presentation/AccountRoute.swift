@@ -128,6 +128,11 @@ enum AccountAccessibilityID {
     static let createGameSubmitButton = "account.games.create.submit"
     static let createGameCancelButton = "account.games.create.cancel"
     static let createGameFailureText = "account.games.create.failure"
+    static let joinGameInviteOpenButton = "account.games.joinInvite.open"
+    static let joinGameInviteField = "account.games.joinInvite.field"
+    static let joinGameInviteSubmitButton = "account.games.joinInvite.submit"
+    static let joinGameInviteCancelButton = "account.games.joinInvite.cancel"
+    static let joinGameInviteFailureText = "account.games.joinInvite.failure"
     static let gameDeleteConfirmButton = "account.games.delete.confirm"
     static let gameListFailureText = "account.games.list.failure"
 
@@ -144,6 +149,14 @@ enum AccountAccessibilityID {
     /// A per-game join-lobby-action identifier, distinct for every game row.
     static func gameJoinButton(for gameID: UUID) -> String {
         "account.games.join.\(gameID.uuidString)"
+    }
+
+    static func gameInviteURLText(for gameID: UUID) -> String {
+        "account.games.invite.url.\(gameID.uuidString)"
+    }
+
+    static func gameInviteCopyButton(for gameID: UUID) -> String {
+        "account.games.invite.copy.\(gameID.uuidString)"
     }
 
     /// A per-game open-seats-action identifier, distinct for every game row.
