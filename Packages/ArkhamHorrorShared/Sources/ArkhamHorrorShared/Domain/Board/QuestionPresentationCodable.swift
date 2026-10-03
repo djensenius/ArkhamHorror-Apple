@@ -681,8 +681,10 @@ extension QuestionPresentation.Source: Codable {
 
     init(from decoder: any Decoder) throws {
         let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
-        let raw = try container.decode(JSONValue.self, forKey: .raw)
-        try Self.validateRawSource(raw, codingPath: decoder.codingPath + [CodingKeys.raw])
+        let raw = try Self.normalizedRawSource(
+            container.decode(JSONValue.self, forKey: .raw),
+            codingPath: decoder.codingPath + [CodingKeys.raw]
+        )
         try self.init(raw: raw, entity: container.decodePresentIfContained(QuestionPresentation.Entity.self, forKey: .entity))
     }
 
@@ -693,6 +695,13 @@ extension QuestionPresentation.Source: Codable {
     }
 
     fileprivate static func validateRawSource(_ value: JSONValue, codingPath: [any CodingKey]) throws {
+        _ = try normalizedRawSource(value, codingPath: codingPath)
+    }
+
+    private static func normalizedRawSource(
+        _ value: JSONValue,
+        codingPath: [any CodingKey]
+    ) throws -> JSONValue {
         guard case let .object(object) = value,
               case let .string(tag)? = object["tag"],
               !tag.isEmpty
@@ -705,9 +714,16 @@ extension QuestionPresentation.Source: Codable {
             else {
                 throw DecodingError.dataCorrupted(.init(codingPath: codingPath, debugDescription: "Malformed ProxySource"))
             }
-            try validateRawSource(source, codingPath: codingPath)
-            try validateRawSource(originalSource, codingPath: codingPath)
+            return try .object([
+                "tag": .string(tag),
+                "source": normalizedRawSource(source, codingPath: codingPath),
+                "originalSource": normalizedRawSource(originalSource, codingPath: codingPath),
+            ])
         }
+        if let contents = object["contents"] {
+            return .object(["tag": .string(tag), "contents": contents])
+        }
+        return .object(["tag": .string(tag)])
     }
 }
 
