@@ -107,18 +107,21 @@ extension BoardSnapshotUpdate: Codable {
             return
         }
         if tag == "AnswerRejected" {
-            self = try .answerRejected(Self.decodeAnswerRejected(from: container))
+            if let rejection = Self.decodeAnswerRejected(from: container) {
+                self = .answerRejected(rejection)
+            } else {
+                self = try .unsupportedMessage(
+                    tag: tag,
+                    rawContents: Self.rawContents(from: container)
+                )
+            }
             return
         }
         guard tag == "GameUpdate" else {
-            // Distinguishes an absent `contents` key (`nil`) from an explicit
-            // `"contents": null` (`.some(.null)`): `decodeIfPresent(JSONValue.self, ...)`
-            // would collapse both to `nil`, losing exactly the raw-payload diagnostic
-            // this case exists to preserve.
-            let rawContents = container.contains(.contents)
-                ? try container.decode(JSONValue.self, forKey: .contents)
-                : nil
-            self = .unsupportedMessage(tag: tag, rawContents: rawContents)
+            self = try .unsupportedMessage(
+                tag: tag,
+                rawContents: Self.rawContents(from: container)
+            )
             return
         }
         self = try .snapshot(container.decode(PublicGameSnapshot.self, forKey: .contents))
@@ -143,16 +146,35 @@ extension BoardSnapshotUpdate: Codable {
         }
     }
 
+    private static func rawContents(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> JSONValue? {
+        // Distinguishes an absent `contents` key (`nil`) from an explicit
+        // `"contents": null` (`.some(.null)`): `decodeIfPresent(JSONValue.self, ...)`
+        // would collapse both to `nil`, losing exactly the raw-payload diagnostic
+        // this case exists to preserve.
+        container.contains(.contents)
+            ? try container.decode(JSONValue.self, forKey: .contents)
+            : nil
+    }
+
     private static func decodeAnswerRejected(
         from container: KeyedDecodingContainer<CodingKeys>
-    ) throws -> AnswerRejectedMessage {
+    ) -> AnswerRejectedMessage? {
         if container.contains(.contents) {
             if let wrapped = try? container.decode(AnswerRejectedMessage.self, forKey: .contents) {
                 return wrapped
             }
         }
-        let reason = try container.decode(String.self, forKey: .reason)
-        let questionVersion = try container.decodeIfPresent(Int.self, forKey: .questionVersion)
+        guard let reason = try? container.decode(String.self, forKey: .reason) else {
+            return nil
+        }
+        let questionVersion: Int?
+        do {
+            questionVersion = try container.decodeIfPresent(Int.self, forKey: .questionVersion)
+        } catch {
+            return nil
+        }
         return AnswerRejectedMessage(reason: reason, questionVersion: questionVersion)
     }
 }

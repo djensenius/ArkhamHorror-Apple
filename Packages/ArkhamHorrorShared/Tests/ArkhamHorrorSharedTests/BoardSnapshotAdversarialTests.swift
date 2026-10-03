@@ -129,6 +129,24 @@ struct BoardSnapshotAdversarialTests {
         #expect(rejection.questionVersion == 12)
     }
 
+    @Test("Malformed AnswerRejected decodes as unsupported instead of throwing")
+    func malformedAnswerRejectedIsUnsupported() throws {
+        let missingReason = try ContractJSON.decode(
+            BoardSnapshotUpdate.self,
+            from: Data(#"{"tag":"AnswerRejected","questionVersion":12}"#.utf8)
+        )
+        #expect(missingReason == .unsupportedMessage(tag: "AnswerRejected", rawContents: nil))
+
+        let wrongQuestionVersion = try ContractJSON.decode(
+            BoardSnapshotUpdate.self,
+            from: Data(#"{"tag":"AnswerRejected","reason":"No","questionVersion":"12"}"#.utf8)
+        )
+        #expect(wrongQuestionVersion == .unsupportedMessage(
+            tag: "AnswerRejected",
+            rawContents: nil
+        ))
+    }
+
     @Test("A genuinely unknown ServerMessage tag also decodes as unsupported, not a crash")
     func genuinelyUnknownServerMessageTagIsUnsupported() throws {
         let bytes = Data(#"{"tag": "SomeFutureMessageType"}"#.utf8)
