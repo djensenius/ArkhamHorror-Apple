@@ -4,6 +4,22 @@ import Testing
 
 @Suite("Board location enemy tile layout")
 struct BoardLocationEnemyTileLayoutTests {
+    @Test("Minimum zoom can reserve room for an enemy action control")
+    func minimumZoomCanReserveRoomForEnemyActionControl() {
+        #expect(
+            BoardLocationEnemyTileMetrics.regular.minimumCellSize
+                == CGSize(width: 90, height: 70)
+        )
+        #expect(
+            BoardLocationEnemyTileMetrics.regular.minimumCellSize(hasLinkedEnemyActions: true)
+                == CGSize(width: 90, height: 92)
+        )
+        #expect(
+            BoardLocationEnemyTileMetrics.tvOS.minimumCellSize(hasLinkedEnemyActions: true)
+                == CGSize(width: 180, height: 160)
+        )
+    }
+
     @Test("Zoom 0.5 still leaves room for an actionable compact enemy indicator")
     func zoomHalfShowsCompactIndicator() {
         #expect(

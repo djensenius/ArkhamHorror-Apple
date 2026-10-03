@@ -128,6 +128,9 @@ struct BoardInvestigatorRowView: View {
                 engagedEnemies: engagedEnemiesByInvestigatorID[investigator.id] ?? [],
                 investigatorDisplayNames: investigatorDisplayNamesByID,
                 choiceLinks: choiceLinks,
+                focusedID: focusedID,
+                focusBinding: focusBinding,
+                onOutcome: onOutcome,
                 onLinkedChoice: onLinkedChoice
             )
         } else {
@@ -161,6 +164,9 @@ struct BoardInvestigatorRowView: View {
                     title: "Engaged", enemies: enemies,
                     investigatorDisplayNames: investigatorDisplayNamesByID,
                     choiceLinks: choiceLinks,
+                    focusedID: focusedID,
+                    focusBinding: focusBinding,
+                    onOutcome: onOutcome,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -169,6 +175,9 @@ struct BoardInvestigatorRowView: View {
                     BoardThreatAreaView(
                         treacheries: treacheries,
                         choiceLinks: choiceLinks,
+                        focusedID: focusedID,
+                        focusBinding: focusBinding,
+                        onOutcome: onOutcome,
                         onLinkedChoice: onLinkedChoice
                     )
                 }

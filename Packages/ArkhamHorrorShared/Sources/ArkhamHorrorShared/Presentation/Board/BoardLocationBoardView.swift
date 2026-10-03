@@ -8,6 +8,7 @@ private struct BoardLocationHeaderHeightPreferenceKey: PreferenceKey {
     }
 }
 
+// swiftlint:disable type_body_length
 /// The ordinary-location board — the board's single "board.locations" zone, laid out from
 /// ``BoardLayout``'s deterministic grid positions. Connections are drawn as a
 /// noninteractive, accessibility-hidden ``Canvas`` decoration behind the location tiles;
@@ -31,7 +32,17 @@ struct BoardLocationBoardView: View {
             width: baseCellSize.width * zoomScale,
             height: baseCellSize.height * zoomScale
         )
-        let minimum = BoardLocationEnemyTileMetrics.current.minimumCellSize
+        let metrics = BoardLocationEnemyTileMetrics.current
+        let minimum = metrics.minimumCellSize(
+            hasLinkedEnemyActions: locations.contains { location in
+                let enemies = enemiesByLocationID[location.id] ?? []
+                let linkedEnemyChoices = BoardFocusGraphBuilder.linkedEnemyChoices(
+                    for: enemies,
+                    choiceLinks: choiceLinks
+                )
+                return hasFocusableLinkedEnemyActions(linkedEnemyChoices)
+            }
+        )
         return CGSize(
             width: max(scaled.width, minimum.width),
             height: max(scaled.height, minimum.height)
@@ -79,13 +90,22 @@ struct BoardLocationBoardView: View {
             )
             let enemies = enemiesByLocationID[location.id] ?? []
             let metrics = BoardLocationEnemyTileMetrics.current
+            let linkedEnemyChoices = BoardFocusGraphBuilder.linkedEnemyChoices(
+                for: enemies,
+                choiceLinks: choiceLinks
+            )
+            let hasLinkedEnemyActions = hasFocusableLinkedEnemyActions(linkedEnemyChoices)
+            let linkedEnemyActionsHeight = hasLinkedEnemyActions
+                ? metrics.summaryButtonHeight + metrics.verticalSpacing
+                : 0
             let measuredHeaderHeight = measuredHeaderHeights[location.id] ?? 0
             let headerMaxHeight = enemies.isEmpty ? nil : max(
                 tileSize.height - metrics.compactIndicatorHeight - metrics.verticalSpacing,
                 44
             )
             let enemyPanelHeight = max(
-                tileSize.height - measuredHeaderHeight - metrics.verticalSpacing,
+                tileSize.height - measuredHeaderHeight - metrics.verticalSpacing
+                    - linkedEnemyActionsHeight,
                 0
             )
             VStack(spacing: metrics.verticalSpacing) {
@@ -96,6 +116,12 @@ struct BoardLocationBoardView: View {
                 if !enemies.isEmpty {
                     measuredLocationEnemyPanel(enemies, height: enemyPanelHeight)
                 }
+                if hasLinkedEnemyActions {
+                    linkedEnemyActionsControl(
+                        location: location,
+                        linkedChoices: linkedEnemyChoices
+                    )
+                }
             }
             .frame(
                 width: tileSize.width,
@@ -104,6 +130,34 @@ struct BoardLocationBoardView: View {
             )
             .position(center(for: position))
         }
+    }
+
+    private func hasFocusableLinkedEnemyActions(_ linkedChoices: [BoardLinkedChoice]) -> Bool {
+        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        case .submit, .menu:
+            true
+        case .highlightOnly:
+            false
+        }
+    }
+
+    private func linkedEnemyActionsControl(
+        location: BoardLocationNode,
+        linkedChoices: [BoardLinkedChoice]
+    ) -> some View {
+        BoardLinkedEnemyActionsControl(
+            title: BoardLocalization.localized("board.enemyActions.title", "Enemy actions"),
+            accessibilityLabel: BoardLocalization.format(
+                "board.enemyActions.accessibility",
+                "Enemy prompt actions at %@",
+                location.displayLabel
+            ),
+            focusID: BoardFocusID.locationEnemyActions(location.id),
+            linkedChoices: linkedChoices,
+            focusedID: focusedID,
+            focusBinding: focusBinding,
+            onOutcome: onOutcome
+        )
     }
 
     private func locationHeader(
@@ -247,6 +301,8 @@ struct BoardLocationBoardView: View {
     }
 }
 
+// swiftlint:enable type_body_length
+
 /// The enemy-spawned pseudo-location row — the board's single "board.enemyLocations" zone.
 struct BoardEnemyLocationsRowView: View {
     let enemyLocations: [BoardEnemyLocationNode]
@@ -278,6 +334,11 @@ struct BoardEnemyLocationsRowView: View {
 
     private func tile(_ location: BoardEnemyLocationNode) -> some View {
         let id = BoardFocusID.enemyLocation(location.id)
+        let enemies = enemiesByLocationID[location.id] ?? []
+        let linkedEnemyChoices = BoardFocusGraphBuilder.linkedEnemyChoices(
+            for: enemies,
+            choiceLinks: choiceLinks
+        )
         return VStack(spacing: 6) {
             BoardEntityTile(
                 id: id,
@@ -301,7 +362,7 @@ struct BoardEnemyLocationsRowView: View {
                     }
                 }
             }
-            if let enemies = enemiesByLocationID[location.id], !enemies.isEmpty {
+            if !enemies.isEmpty {
                 BoardEnemyCompactPanelView(
                     title: "Enemies",
                     enemies: enemies,
@@ -310,7 +371,27 @@ struct BoardEnemyLocationsRowView: View {
                     onLinkedChoice: onLinkedChoice
                 )
             }
+            enemyLocationActionsControl(location: location, linkedChoices: linkedEnemyChoices)
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private func enemyLocationActionsControl(
+        location: BoardEnemyLocationNode,
+        linkedChoices: [BoardLinkedChoice]
+    ) -> some View {
+        BoardLinkedEnemyActionsControl(
+            title: BoardLocalization.localized("board.enemyActions.title", "Enemy actions"),
+            accessibilityLabel: BoardLocalization.format(
+                "board.enemyActions.accessibility",
+                "Enemy prompt actions at %@",
+                location.displayLabel
+            ),
+            focusID: BoardFocusID.enemyLocationEnemyActions(location.id),
+            linkedChoices: linkedChoices,
+            focusedID: focusedID,
+            focusBinding: focusBinding,
+            onOutcome: onOutcome
+        )
     }
 }

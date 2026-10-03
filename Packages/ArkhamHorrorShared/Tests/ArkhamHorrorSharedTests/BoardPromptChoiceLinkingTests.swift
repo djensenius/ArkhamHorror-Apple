@@ -37,6 +37,19 @@ struct BoardPromptChoiceLinkingTests {
         #expect(links[.playerCard(.card(cardID))]?.map(\.choiceIndex) == [0])
         #expect(links[.treachery(treacheryID)]?.map(\.choiceIndex) == [1])
         #expect(links[.playerCard(.asset(assetID))]?.map(\.choiceIndex) == [2])
+
+        let graph = BoardFocusGraphBuilder.makeGraph(
+            projection: projection,
+            layout: BoardLayoutBuilder.makeLayout(locations: []),
+            prompt: prompt(choices: choices, semanticPresentation: semantic),
+            fullPlayerAreaPlayerID: playerID
+        )
+        let investigatorFocus = BoardFocusID.investigator(investigatorID)
+        let assetFocus = BoardFocusID.promptElement(.playerCard(.asset(assetID)))
+        let investigatorOrder = graph.order.filter {
+            graph.node(for: $0)?.zone == BoardFocusZone.investigators
+        }
+        #expect(investigatorOrder == [investigatorFocus, assetFocus])
     }
 
     @Test("Linked board choice presentation chooses highlight, submit, or menu")
