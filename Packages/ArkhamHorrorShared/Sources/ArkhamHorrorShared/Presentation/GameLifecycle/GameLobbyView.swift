@@ -332,6 +332,7 @@ private struct GameLobbyInviteSection: View {
         }
     }
 
+    @ViewBuilder
     private var inviteURLText: some View {
         let text = Text(inviteURL.absoluteString)
             .font(.footnote.monospaced())
