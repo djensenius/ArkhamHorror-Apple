@@ -18,6 +18,20 @@ struct AppModelGameInviteReviewTests {
         )
     }
 
+    private func gameSummary(id: GameID) -> GameSummary {
+        GameSummary(
+            id: id,
+            scenario: nil,
+            campaign: nil,
+            gameState: .pending([]),
+            name: "Sample",
+            investigators: [],
+            otherInvestigators: [],
+            multiplayerVariant: .withFriends,
+            hasOpenSeats: false
+        )
+    }
+
     @Test("claim-seat Continue refreshes without issuing PUT join")
     func claimSeatContinueRefreshesWithoutJoining() async throws {
         let service = ScriptedGameLifecycleService()
@@ -27,7 +41,7 @@ struct AppModelGameInviteReviewTests {
         await service.enqueueGetGameResult(.success(
             getGameEnvelope(gameID: gameID, playerCount: 2)
         ))
-        await service.enqueueListGamesResult(.success([]))
+        await service.enqueueListGamesResult(.success([.game(gameSummary(id: gameID))]))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         let invite = try await model.loadClaimSeatInvite(gameID)
@@ -52,7 +66,7 @@ struct AppModelGameInviteReviewTests {
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         let invite = try await model.loadClaimSeatInvite(gameID)
-        await #expect(throws: GameLifecycleError.unexpectedStatus(500)) {
+        await #expect(throws: GameLifecycleError.inviteRefreshFailed) {
             try await model.continueClaimSeatInvite(using: invite)
         }
 
@@ -185,7 +199,7 @@ struct AppModelGameInviteReviewTests {
         await service.enqueueListGamesResult(.failure(GameLifecycleError.unexpectedStatus(500)))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
-        await #expect(throws: GameLifecycleError.unexpectedStatus(500)) {
+        await #expect(throws: GameLifecycleError.inviteRefreshFailed) {
             try await model.joinGameFromInvite(gameID)
         }
         #expect(await service.callOrder == ["peekLobby", "joinGame", "listGames"])
@@ -246,7 +260,10 @@ struct AppModelGameInviteReviewTests {
         let joinedID = await submitTask.value
 
         #expect(joinedID == nil)
-        #expect(viewModel.failureMessage == "This server responded unexpectedly. Try again.")
+        #expect(
+            viewModel.failureMessage
+                == "Joined, but the game list could not be refreshed. Try again."
+        )
         #expect(viewModel.isSubmitting == false)
         #expect(await service.callOrder == ["peekLobby", "joinGame", "listGames", "listGames"])
     }

@@ -218,6 +218,7 @@
 "games.lifecycle.error.forbidden" = "Diese Aktion ist für dieses Spiel derzeit nicht verfügbar.";
 "games.lifecycle.error.notFound" = "Dieses Spiel ist nicht mehr verfügbar.";
 "games.lifecycle.error.unexpected" = "Dieser Server hat unerwartet geantwortet. Versuche es erneut.";
+"games.lifecycle.error.inviteRefreshFailed" = "Beigetreten, aber die Spieleliste konnte nicht aktualisiert werden. Versuche es erneut.";
 "games.lifecycle.error.request" = "Diese Anfrage konnte nicht gesendet werden. Versuche es erneut.";
 "games.lifecycle.error.tokenUnavailable" = "Deine Sitzung konnte nicht sicher gelesen werden. Versuche es erneut.";
 "games.state.pending" = "Ausstehende Lobby (%lld beigetreten)";

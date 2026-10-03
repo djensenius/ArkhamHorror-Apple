@@ -65,7 +65,7 @@ extension AppModel {
             guard case let .game(joinedID) = joined, joinedID == id else {
                 throw GameLifecycleError.malformedPayload
             }
-            try await refreshGamesForInvite(inviteSession)
+            try await refreshGamesForInvite(inviteSession, targetGameID: joinedID)
             return joinedID
         } catch let error as GameLifecycleError {
             await handleGameInviteLifecycleError(error, session: inviteSession)
@@ -131,7 +131,7 @@ extension AppModel {
                 on: inviteSession.profile,
                 token: token
             )
-            try await refreshGamesForInvite(inviteSession)
+            try await refreshGamesForInvite(inviteSession, targetGameID: details.gameID)
             return details.gameID
         } catch let error as GameLifecycleError {
             try ensureCurrentGameInviteSession(inviteSession)
@@ -148,7 +148,7 @@ extension AppModel {
     func continueClaimSeatInvite(using details: ClaimSeatInviteDetails) async throws -> GameID {
         let inviteSession = try currentGameInviteSession()
         try ensureCurrentGameInviteSession(inviteSession, matches: details.sessionToken)
-        try await refreshGamesForInvite(inviteSession)
+        try await refreshGamesForInvite(inviteSession, targetGameID: details.gameID)
         return details.gameID
     }
 
@@ -255,7 +255,10 @@ extension AppModel {
         try ensureCurrentGameInviteSession(session)
     }
 
-    private func refreshGamesForInvite(_ session: GameInviteSession) async throws {
+    private func refreshGamesForInvite(
+        _ session: GameInviteSession,
+        targetGameID: GameID
+    ) async throws {
         try ensureCurrentGameInviteSession(session)
         refreshGames()
         let refreshGeneration = gameListGeneration
@@ -263,15 +266,19 @@ extension AppModel {
         await refreshTask?.value
         try ensureCurrentGameInviteSession(session)
         guard refreshGeneration == gameListGeneration else {
-            throw GameLifecycleError.malformedPayload
+            throw GameLifecycleError.inviteRefreshFailed
         }
-        switch gameListState {
-        case .loaded:
-            return
-        case let .failed(error, _):
-            throw error
-        case .idle, .loading:
-            throw GameLifecycleError.malformedPayload
+        guard case let .loaded(games) = gameListState,
+              games.contains(where: { entry in
+                  switch entry {
+                  case let .game(summary):
+                      summary.id == targetGameID
+                  case .failed:
+                      false
+                  }
+              })
+        else {
+            throw GameLifecycleError.inviteRefreshFailed
         }
     }
 

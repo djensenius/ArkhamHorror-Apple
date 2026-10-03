@@ -18,13 +18,27 @@ struct AppModelGameInviteTests {
         )
     }
 
+    private func gameSummary(id: GameID) -> GameSummary {
+        GameSummary(
+            id: id,
+            scenario: nil,
+            campaign: nil,
+            gameState: .pending([]),
+            name: "Sample",
+            investigators: [],
+            otherInvestigators: [],
+            multiplayerVariant: .withFriends,
+            hasOpenSeats: false
+        )
+    }
+
     @Test("joinGameFromInvite peeks, joins, refreshes, and waits through AppModel")
     func joinGameFromInvitePeeksJoinsAndRefreshes() async throws {
         let service = ScriptedGameLifecycleService()
         let gameID = GameID(UUID())
         await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 3)))
         await service.enqueueJoinGameResult(.success(.game(gameID)))
-        await service.enqueueListGamesResult(.success([]))
+        await service.enqueueListGamesResult(.success([.game(gameSummary(id: gameID))]))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         let joinedID = try await model.joinGameFromInvite(gameID)
@@ -48,7 +62,7 @@ struct AppModelGameInviteTests {
             getGameEnvelope(gameID: gameID, playerCount: 2)
         ))
         await service.enqueueClaimSeatResult(.success(()))
-        await service.enqueueListGamesResult(.success([]))
+        await service.enqueueListGamesResult(.success([.game(gameSummary(id: gameID))]))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         let invite = try await model.loadClaimSeatInvite(gameID)
@@ -79,7 +93,7 @@ struct AppModelGameInviteTests {
         await service.enqueueOpenSeatsResult(.success([seat]))
         await service.enqueueGetGameResult(.failure(GameLifecycleError.unexpectedStatus(404)))
         await service.enqueueClaimSeatResult(.success(()))
-        await service.enqueueListGamesResult(.success([]))
+        await service.enqueueListGamesResult(.success([.game(gameSummary(id: gameID))]))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         let invite = try await model.loadClaimSeatInvite(gameID)

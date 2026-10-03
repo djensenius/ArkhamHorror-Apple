@@ -218,6 +218,7 @@
 "games.lifecycle.error.forbidden" = "That action isn't available for this game right now.";
 "games.lifecycle.error.notFound" = "This game is no longer available.";
 "games.lifecycle.error.unexpected" = "This server responded unexpectedly. Try again.";
+"games.lifecycle.error.inviteRefreshFailed" = "Joined, but the game list could not be refreshed. Try again.";
 "games.lifecycle.error.request" = "This request couldn't be made. Try again.";
 "games.lifecycle.error.tokenUnavailable" = "Could not securely access your session. Try again.";
 "games.state.pending" = "Pending lobby (%lld joined)";

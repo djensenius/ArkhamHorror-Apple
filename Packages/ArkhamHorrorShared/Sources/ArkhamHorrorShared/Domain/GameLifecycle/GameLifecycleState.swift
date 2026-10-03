@@ -105,6 +105,11 @@ extension GameLifecycleError {
                 "games.lifecycle.error.unexpected",
                 "This server responded unexpectedly. Try again."
             )
+        case .inviteRefreshFailed:
+            gameLifecycleLocalized(
+                "games.lifecycle.error.inviteRefreshFailed",
+                "Joined, but the game list could not be refreshed. Try again."
+            )
         case let .operationFailed(error):
             error.errorMsg
         case .requestEncodingFailed, .invalidPathSegment:

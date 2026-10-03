@@ -27,6 +27,9 @@ enum GameLifecycleError: Error, Sendable {
     case unexpectedStatus(Int)
     /// A 2xx response body could not be decoded into the expected typed payload.
     case malformedPayload
+    /// A join/claim invite mutation succeeded, but the required post-mutation game-list
+    /// refresh did not produce a loaded row for that game.
+    case inviteRefreshFailed
     /// A lifecycle endpoint returned a user-facing backend rejection.
     case operationFailed(DeckOperationError)
     /// The request body could not be JSON-encoded through ``ContractJSON``.
@@ -53,6 +56,7 @@ extension GameLifecycleError: Equatable {
         case (.nonHTTPResponse, .nonHTTPResponse),
              (.sessionExpired, .sessionExpired),
              (.malformedPayload, .malformedPayload),
+             (.inviteRefreshFailed, .inviteRefreshFailed),
              (.requestEncodingFailed, .requestEncodingFailed),
              (.tokenUnavailable, .tokenUnavailable),
              (.invalidPathSegment, .invalidPathSegment):
