@@ -10,60 +10,36 @@ extension BoardFocusGraphBuilder {
         nodes: inout [FocusNode], zoneEntryPoints: inout [SemanticFocusZone: SemanticFocusID]
     ) {
         guard !locations.isEmpty else { return }
-        let linkedEnemyActionsIDs = Dictionary(uniqueKeysWithValues: locations.compactMap {
-            location -> (LocationID, SemanticFocusID)? in
-            guard let id = linkedEnemyActionsFocusID(
-                locationID: location.id,
-                enemies: enemiesByLocationID[location.id] ?? [],
-                choiceLinks: choiceLinks,
-                makeFocusID: BoardFocusID.locationEnemyActions
-            ) else { return nil }
-            return (location.id, id)
-        })
-        let actionIDByOriginalDownNeighbor = Dictionary(
-            locations.compactMap { location -> (LocationID, SemanticFocusID)? in
-                guard let actionID = linkedEnemyActionsIDs[location.id],
-                      let downNeighbor = layout.neighbors[location.id]?[.down]
-                else { return nil }
-                return (downNeighbor, actionID)
-            },
-            uniquingKeysWith: { first, _ in first }
+        let actionIDs = locationEnemyActionIDs(
+            locations,
+            enemiesByLocationID: enemiesByLocationID,
+            choiceLinks: choiceLinks
+        )
+        let reciprocalUpTargets = originalDownNeighborActionIDs(
+            locations: locations,
+            layout: layout,
+            actionIDs: actionIDs
         )
         for location in locations {
-            let linkedEnemyActionsID = linkedEnemyActionsIDs[location.id]
             let layoutNeighbors = layout.neighbors[location.id] ?? [:]
-            var neighbors = Dictionary(uniqueKeysWithValues: layoutNeighbors.map {
-                ($0.key, BoardFocusID.location($0.value))
-            })
-            let originalDownNeighbor = neighbors[.down]
-            if let linkedEnemyActionsID {
-                neighbors[.down] = linkedEnemyActionsID
-            }
-            if let actionID = actionIDByOriginalDownNeighbor[location.id] {
-                neighbors[.up] = actionID
-            }
-            nodes.append(
-                FocusNode(
-                    id: BoardFocusID.location(location.id), zone: BoardFocusZone.locations,
-                    neighbors: neighbors
+            let actionID = actionIDs[location.id]
+            nodes.append(FocusNode(
+                id: BoardFocusID.location(location.id),
+                zone: BoardFocusZone.locations,
+                neighbors: locationNeighbors(
+                    layoutNeighbors,
+                    actionID: actionID,
+                    reciprocalUpTarget: reciprocalUpTargets[location.id]
                 )
-            )
-            if let linkedEnemyActionsID {
-                var actionNeighbors: [FocusDirection: SemanticFocusID] = [
-                    .up: BoardFocusID.location(location.id),
-                ]
-                if let originalDownNeighbor {
-                    actionNeighbors[.down] = originalDownNeighbor
-                }
-                for direction in [FocusDirection.left, .right] {
-                    if let neighborID = layoutNeighbors[direction] {
-                        actionNeighbors[direction] = BoardFocusID.location(neighborID)
-                    }
-                }
+            ))
+            if let actionID {
                 nodes.append(FocusNode(
-                    id: linkedEnemyActionsID,
+                    id: actionID,
                     zone: BoardFocusZone.locations,
-                    neighbors: actionNeighbors
+                    neighbors: locationEnemyActionNeighbors(
+                        locationID: location.id,
+                        layoutNeighbors: layoutNeighbors
+                    )
                 ))
             }
         }
@@ -73,6 +49,69 @@ extension BoardFocusGraphBuilder {
         let rootID = layout.positions
             .first { $0.value == BoardGridPosition(column: 0, row: 0) }?.key ?? locations[0].id
         zoneEntryPoints[BoardFocusZone.locations] = BoardFocusID.location(rootID)
+    }
+
+    private static func locationEnemyActionIDs(
+        _ locations: [BoardLocationNode],
+        enemiesByLocationID: [LocationID: [BoardEnemyNode]],
+        choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    ) -> [LocationID: SemanticFocusID] {
+        Dictionary(uniqueKeysWithValues: locations.compactMap { location in
+            linkedEnemyActionsFocusID(
+                locationID: location.id,
+                enemies: enemiesByLocationID[location.id] ?? [],
+                choiceLinks: choiceLinks,
+                makeFocusID: BoardFocusID.locationEnemyActions
+            ).map { (location.id, $0) }
+        })
+    }
+
+    private static func originalDownNeighborActionIDs(
+        locations: [BoardLocationNode],
+        layout: BoardLayout,
+        actionIDs: [LocationID: SemanticFocusID]
+    ) -> [LocationID: SemanticFocusID] {
+        Dictionary(
+            locations.compactMap { location in
+                guard let actionID = actionIDs[location.id],
+                      let downNeighbor = layout.neighbors[location.id]?[.down]
+                else { return nil }
+                return (downNeighbor, actionID)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    private static func locationNeighbors(
+        _ layoutNeighbors: [FocusDirection: LocationID],
+        actionID: SemanticFocusID?,
+        reciprocalUpTarget: SemanticFocusID?
+    ) -> [FocusDirection: SemanticFocusID] {
+        var neighbors = Dictionary(uniqueKeysWithValues: layoutNeighbors.map {
+            ($0.key, BoardFocusID.location($0.value))
+        })
+        if let actionID {
+            neighbors[.down] = actionID
+        }
+        if let reciprocalUpTarget {
+            neighbors[.up] = reciprocalUpTarget
+        }
+        return neighbors
+    }
+
+    private static func locationEnemyActionNeighbors(
+        locationID: LocationID,
+        layoutNeighbors: [FocusDirection: LocationID]
+    ) -> [FocusDirection: SemanticFocusID] {
+        var neighbors: [FocusDirection: SemanticFocusID] = [
+            .up: BoardFocusID.location(locationID),
+        ]
+        for direction in [FocusDirection.down, .left, .right] {
+            if let neighborID = layoutNeighbors[direction] {
+                neighbors[direction] = BoardFocusID.location(neighborID)
+            }
+        }
+        return neighbors
     }
 
     static func enemyLocationFocusIDs(

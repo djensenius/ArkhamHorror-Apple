@@ -6,7 +6,10 @@ import Testing
 struct BoardLocationEnemyTileLayoutTests {
     @Test("Minimum zoom can reserve room for an enemy action control")
     func minimumZoomCanReserveRoomForEnemyActionControl() {
-        #expect(BoardLocationEnemyTileMetrics.regular.minimumCellSize == CGSize(width: 90, height: 70))
+        #expect(
+            BoardLocationEnemyTileMetrics.regular.minimumCellSize
+                == CGSize(width: 90, height: 70)
+        )
         #expect(
             BoardLocationEnemyTileMetrics.regular.minimumCellSize(hasLinkedEnemyActions: true)
                 == CGSize(width: 90, height: 92)

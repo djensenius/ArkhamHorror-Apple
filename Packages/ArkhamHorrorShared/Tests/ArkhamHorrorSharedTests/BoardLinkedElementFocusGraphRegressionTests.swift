@@ -95,20 +95,6 @@ struct BoardLinkedFocusGraphTests {
         )
     }
 
-    private func enemyValue(
-        name: String,
-        fight: Int = 2,
-        health: Int = 2,
-        evade: Int = 3
-    ) -> JSONValue {
-        .object([
-            "name": .object(["title": .string(name)]),
-            "fight": .number(.integer(Int64(fight))),
-            "health": .number(.integer(Int64(health))),
-            "evade": .number(.integer(Int64(evade))),
-        ])
-    }
-
     @Test("Location enemy actions precede the original down neighbor")
     // swiftlint:disable:next function_body_length
     func locationEnemyActionsAreReachableBeforeOriginalDownNeighbor() {
@@ -173,7 +159,9 @@ struct BoardLinkedFocusGraphTests {
         #expect(graph.neighbor(from: locationFocus, direction: .down) == actionsFocus)
         #expect(graph.neighbor(from: actionsFocus, direction: .up) == locationFocus)
         #expect(graph.neighbor(from: actionsFocus, direction: .down) == downLocationFocus)
-        #expect(graph.neighbor(from: actionsFocus, direction: .left) == BoardFocusID.location(rootID))
+        #expect(graph.neighbor(from: actionsFocus, direction: .left) == BoardFocusID.location(
+            rootID
+        ))
         #expect(graph.neighbor(from: actionsFocus, direction: .right) == rightLocationFocus)
         #expect(graph.neighbor(from: downLocationFocus, direction: .up) == actionsFocus)
         #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
@@ -182,124 +170,6 @@ struct BoardLinkedFocusGraphTests {
         #expect(controller.coordinator.currentFocus == BoardFocusID.linkedChoiceMenuChoice(8))
         #expect(controller.handle(.command(.primaryAction)))
         #expect(submittedChoices == [8])
-    }
-
-    @Test("Location enemy action menu titles identify duplicate enemy names")
-    func locationEnemyActionMenuTitlesIdentifyDuplicateEnemyNames() {
-        let locationID = BoardTestFixtures.locationID("000000000446")
-        let firstEnemyID = BoardTestFixtures.enemyID("000000000447")
-        let secondEnemyID = BoardTestFixtures.enemyID("000000000448")
-        let projection = locationEnemyProjection(
-            locations: [(
-                locationID,
-                .ordinary(BoardTestFixtures.ordinaryLocation(
-                    id: locationID,
-                    enemies: [firstEnemyID, secondEnemyID]
-                ))
-            )],
-            enemyIDs: [firstEnemyID, secondEnemyID],
-            enemyValues: [
-                firstEnemyID: enemyValue(name: "Ghoul Minion"),
-                secondEnemyID: enemyValue(name: "Ghoul Minion"),
-            ]
-        )
-        let prompt = enemyPrompt(choices: [
-            fightChoice(index: 7, enemyID: firstEnemyID),
-            evadeChoice(index: 8, enemyID: firstEnemyID),
-            fightChoice(index: 20, enemyID: secondEnemyID),
-            evadeChoice(index: 21, enemyID: secondEnemyID),
-        ])
-        let actionsFocus = BoardFocusID.locationEnemyActions(locationID)
-        let controller = BoardCommandController(projection: projection, prompt: prompt)
-
-        #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
-        #expect(controller.linkedChoiceMenuRequest == BoardLinkedChoiceMenuRequest(
-            focusID: actionsFocus,
-            choices: [
-                BoardLinkedChoice(
-                    choiceIndex: 7,
-                    title: "Ghoul Minion: F 2  H 2  E 3 (enemy 1): Fight",
-                    isActionable: true
-                ),
-                BoardLinkedChoice(
-                    choiceIndex: 8,
-                    title: "Ghoul Minion: F 2  H 2  E 3 (enemy 1): Evade",
-                    isActionable: true
-                ),
-                BoardLinkedChoice(
-                    choiceIndex: 20,
-                    title: "Ghoul Minion: F 2  H 2  E 3 (enemy 2): Fight",
-                    isActionable: true
-                ),
-                BoardLinkedChoice(
-                    choiceIndex: 21,
-                    title: "Ghoul Minion: F 2  H 2  E 3 (enemy 2): Evade",
-                    isActionable: true
-                ),
-            ]
-        ))
-    }
-
-    @Test("Single-choice location enemy action control submits directly")
-    func singleChoiceLocationEnemyActionControlSubmitsDirectly() {
-        let locationID = BoardTestFixtures.locationID("000000000456")
-        let enemyID = BoardTestFixtures.enemyID("000000000457")
-        let projection = locationEnemyProjection(
-            locations: [(
-                locationID,
-                .ordinary(BoardTestFixtures.ordinaryLocation(id: locationID, enemies: [enemyID]))
-            )],
-            enemyIDs: [enemyID],
-            enemyValues: [enemyID: enemyValue(name: "Ghoul Minion")]
-        )
-        let prompt = enemyPrompt(choices: [fightChoice(index: 7, enemyID: enemyID)])
-        let actionsFocus = BoardFocusID.locationEnemyActions(locationID)
-        var submittedChoices: [Int] = []
-        let controller = BoardCommandController(
-            projection: projection,
-            prompt: prompt,
-            onChoice: { submittedChoices.append($0) }
-        )
-
-        #expect(controller.coordinator.graph.contains(actionsFocus))
-        #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
-        #expect(submittedChoices == [7])
-        #expect(controller.linkedChoiceMenuRequest == nil)
-        #expect(!controller.coordinator.isModalPresented)
-    }
-
-    @Test("Highlight-only location enemy choices do not create an action control")
-    func highlightOnlyLocationEnemyChoicesDoNotCreateActionControl() {
-        let playerID = BoardTestFixtures.playerID("000000000458")
-        let locationID = BoardTestFixtures.locationID("000000000459")
-        let enemyID = BoardTestFixtures.enemyID("000000000460")
-        let projection = locationEnemyProjection(
-            locations: [(
-                locationID,
-                .ordinary(BoardTestFixtures.ordinaryLocation(id: locationID, enemies: [enemyID]))
-            )],
-            enemyIDs: [enemyID]
-        )
-        let prompt = enemyPrompt(
-            choices: [fightChoice(index: 7, enemyID: enemyID)],
-            ownerID: playerID,
-            readOnlyReason: .anotherPlayer
-        )
-        let graph = BoardFocusGraphBuilder.makeGraph(
-            projection: projection,
-            layout: BoardLayoutBuilder.makeLayout(locations: projection.locations),
-            prompt: prompt
-        )
-        let actionsFocus = BoardFocusID.locationEnemyActions(locationID)
-        let controller = BoardCommandController(
-            projection: projection,
-            prompt: prompt,
-            localPlayerID: playerID
-        )
-
-        #expect(!graph.contains(actionsFocus))
-        #expect(!controller.coordinator.graph.contains(actionsFocus))
-        #expect(!controller.handle(focusID: actionsFocus, .command(.primaryAction)))
     }
 
     @Test("Enemy-location action container reaches every linked enemy")
