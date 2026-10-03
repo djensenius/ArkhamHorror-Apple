@@ -343,44 +343,161 @@ struct QuestionPresentationV2GenericTests {
     func additiveRawQuestionToleranceStillRequiresFields() throws {
         let missingFieldCases = [
             (
+                name: "ChooseOne choices",
                 rawJSON: #"{"tag":"ChooseOne"}"#,
                 error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseOne question")
             ),
             (
+                name: "PlayerWindowChooseOne choices",
+                rawJSON: #"{"tag":"PlayerWindowChooseOne"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed PlayerWindowChooseOne question")
+            ),
+            (
+                name: "WindowChooseOne choices",
+                rawJSON: #"{"tag":"WindowChooseOne"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed WindowChooseOne question")
+            ),
+            (
+                name: "ChooseSome choices",
+                rawJSON: #"{"tag":"ChooseSome"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseSome question")
+            ),
+            (
+                name: "ChooseOneAtATime choices",
+                rawJSON: #"{"tag":"ChooseOneAtATime"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseOneAtATime question")
+            ),
+            (
+                name: "ChooseN amount",
                 rawJSON: #"{"tag":"ChooseN","choices":[{}]}"#,
                 error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseN question")
             ),
             (
+                name: "ChooseUpToN amount",
+                rawJSON: #"{"tag":"ChooseUpToN","choices":[{}]}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseUpToN question")
+            ),
+            (
+                name: "ChooseSome1 label",
                 rawJSON: #"{"tag":"ChooseSome1","choices":[{}]}"#,
                 error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseSome1 question")
             ),
             (
+                name: "ChooseOneAtATimeWithAuto label",
+                rawJSON: #"{"tag":"ChooseOneAtATimeWithAuto","choices":[{}]}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseOneAtATimeWithAuto question")
+            ),
+            (
+                name: "QuestionLabel question",
                 rawJSON: #"{"tag":"QuestionLabel","label":"x","card":null}"#,
                 error: QuestionPresentationBindingError.invalidRawQuestion("Malformed QuestionLabel wrapper")
             ),
             (
+                name: "PayCostQuestion cost",
+                rawJSON: #"{"tag":"PayCostQuestion","question":{"tag":"ChooseDeck"}}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed PayCostQuestion wrapper")
+            ),
+            (
+                name: "QuestionWithSource tooltip",
+                rawJSON: #"{"tag":"QuestionWithSource","source":{"tag":"GameSource"},"question":{"tag":"ChooseDeck"}}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed QuestionWithSource wrapper")
+            ),
+            (
+                name: "ChooseOneFromEach groups",
                 rawJSON: #"{"tag":"ChooseOneFromEach"}"#,
                 error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseOneFromEach question")
             ),
             (
-                rawJSON: #"{"tag":"ChooseOneWizard","flavorText":{},"confirmLabel":"$confirm","backLabel":"$back"}"#,
+                name: "ChoosePaymentAmounts paymentAmountChoices",
+                rawJSON: #"{"tag":"ChoosePaymentAmounts","label":"$pay","paymentAmountTargetValue":null}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChoosePaymentAmounts question")
+            ),
+            (
+                name: "ChooseAmounts target",
+                rawJSON: #"{"tag":"ChooseAmounts","label":"$amount","amountTargetValue":null,"amountChoices":[]}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseAmounts question")
+            ),
+            (
+                name: "ChooseExchangeAmounts token",
+                rawJSON: #"{"tag":"ChooseExchangeAmounts","source":{"tag":"GameSource"},"investigator1Id":"c01001","investigator1InitialAmount":3,"investigator2Id":"c01002","investigator2InitialAmount":1}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseExchangeAmounts question")
+            ),
+            // Tag-only noChoice constructors have no branch-local required field beyond
+            // the shared raw-question tag used for dispatch, so their missing-tag rows
+            // assert the common tagged-object guard.
+            (
+                name: "ChooseDeck tag",
+                rawJSON: #"{"family":"ChooseDeck"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Raw question must be a tagged object")
+            ),
+            (
+                name: "ChooseUpgradeDeck tag",
+                rawJSON: #"{"family":"ChooseUpgradeDeck"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Raw question must be a tagged object")
+            ),
+            (
+                name: "ChooseJoinDeck usedInvestigators",
+                rawJSON: #"{"tag":"ChooseJoinDeck"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseJoinDeck question")
+            ),
+            (
+                name: "ChooseOneWizard confirmLabel",
+                rawJSON: #"{"tag":"ChooseOneWizard","flavorText":{},"wizardChoices":[{}],"backLabel":"$back"}"#,
                 error: QuestionPresentationBindingError.invalidRawQuestion("Malformed ChooseOneWizard question")
             ),
             (
-                rawJSON: #"{"tag":"PickSupplies","pointsRemaining":2,"chosenSupplies":[],"resupply":false}"#,
+                name: "PickSupplies pointsRemaining",
+                rawJSON: #"{"tag":"PickSupplies","chosenSupplies":[],"choices":[{}],"resupply":false}"#,
                 error: QuestionPresentationBindingError.invalidRawQuestion("Malformed PickSupplies question")
             ),
             (
+                name: "PickDestiny drawings",
+                rawJSON: #"{"tag":"PickDestiny"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed PickDestiny question")
+            ),
+            (
+                name: "PickScenarioSettings tag",
+                rawJSON: #"{"family":"PickScenarioSettings"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Raw question must be a tagged object")
+            ),
+            (
+                name: "PickCampaignSettings tag",
+                rawJSON: #"{"family":"PickCampaignSettings"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Raw question must be a tagged object")
+            ),
+            (
+                name: "ContinueCampaign tag",
+                rawJSON: #"{"family":"ContinueCampaign"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Raw question must be a tagged object")
+            ),
+            (
+                name: "DropDown options",
                 rawJSON: #"{"tag":"DropDown"}"#,
                 error: QuestionPresentationBindingError.invalidRawQuestion("Malformed DropDown question")
             ),
             (
-                rawJSON: #"{"tag":"Read","flavorText":{},"readCards":null}"#,
+                name: "PickCampaignSpecific contents",
+                rawJSON: #"{"tag":"PickCampaignSpecific"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed PickCampaignSpecific question")
+            ),
+            (
+                name: "PickScenarioSpecific contents",
+                rawJSON: #"{"tag":"PickScenarioSpecific"}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed PickScenarioSpecific question")
+            ),
+            (
+                name: "Read flavorText",
+                rawJSON: #"{"tag":"Read","readChoices":{"tag":"BasicReadChoices","contents":[{}]},"readCards":null}"#,
+                error: QuestionPresentationBindingError.invalidRawQuestion("Malformed Read question")
+            ),
+            (
+                name: "Read readChoices contents",
+                rawJSON: #"{"tag":"Read","flavorText":{},"readChoices":{"tag":"BasicReadChoices"},"readCards":null}"#,
                 error: QuestionPresentationBindingError.invalidRawQuestion("Malformed Read question")
             ),
         ]
         for testCase in missingFieldCases {
-            #expect(throws: testCase.error, "\(testCase.rawJSON)") {
+            #expect(throws: testCase.error, "\(testCase.name): \(testCase.rawJSON)") {
                 _ = try QuestionPresentationRawQuestionDeriver.derive(
                     ContractJSON.decode(JSONValue.self, from: Data(testCase.rawJSON.utf8))
                 )
