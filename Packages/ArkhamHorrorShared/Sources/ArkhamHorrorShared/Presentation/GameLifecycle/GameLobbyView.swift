@@ -419,7 +419,9 @@ private struct GameLobbyInviteSection: View {
 
 extension GameSummary {
     var viewerAlreadyHasSeat: Bool {
-        if !investigators.isEmpty { return true }
+        if !investigators.isEmpty {
+            return true
+        }
         switch gameState {
         case let .pending(players), let .chooseDecks(players):
             return !players.isEmpty

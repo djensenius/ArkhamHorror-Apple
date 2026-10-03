@@ -13,7 +13,7 @@ struct JoinGameInviteViewModelTests {
         viewModel.inviteText = "   "
 
         let result = await viewModel.submit(
-            joinInvite: { _ in Issue.record("join should not run"); return self.gameID },
+            joinInvite: { _ in Issue.record("join should not run"); return gameID },
             loadClaimSeatInvite: { _ in Issue.record("claim load should not run"); return [] }
         )
 
@@ -49,7 +49,7 @@ struct JoinGameInviteViewModelTests {
         var loadedGameID: GameID?
 
         let result = await viewModel.submit(
-            joinInvite: { _ in Issue.record("join should not run"); return self.gameID },
+            joinInvite: { _ in Issue.record("join should not run"); return gameID },
             loadClaimSeatInvite: { id in
                 loadedGameID = id
                 return [seat]
@@ -68,7 +68,7 @@ struct JoinGameInviteViewModelTests {
         let seat = try CardCode("c01001")
         viewModel.inviteText = "https://arkhamhorror.app/games/\(gameID.rawValue.uuidString)/claim-seat"
         _ = await viewModel.submit(
-            joinInvite: { _ in Issue.record("join should not run"); return self.gameID },
+            joinInvite: { _ in Issue.record("join should not run"); return gameID },
             loadClaimSeatInvite: { _ in [seat] }
         )
 
