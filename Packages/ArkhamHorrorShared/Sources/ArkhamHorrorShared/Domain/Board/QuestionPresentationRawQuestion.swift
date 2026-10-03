@@ -386,10 +386,7 @@ enum QuestionPresentationRawQuestionDeriver {
         return tag
     }
 
-    private static func hasRequiredKeys(
-        _ required: Set<String>,
-        in object: [String: JSONValue]
-    ) -> Bool {
+    private static func hasRequiredKeys(_ required: Set<String>, in object: [String: JSONValue]) -> Bool {
         required.isSubset(of: Set(object.keys))
     }
 
