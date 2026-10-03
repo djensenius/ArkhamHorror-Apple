@@ -138,16 +138,16 @@ struct BoardView: View {
             controllerInputScenePhaseDidChange(newValue)
         }
         #if os(macOS) && canImport(GameController)
-            .onChange(of: controlActiveState) { _, newValue in
-                controllerInputWindowFocusDidChange(newValue == .key, scenePhase: scenePhase)
-            }
+        .onChange(of: controlActiveState) { _, newValue in
+            controllerInputWindowFocusDidChange(newValue == .key, scenePhase: scenePhase)
+        }
         #endif
         #if (os(iOS) || os(visionOS)) && canImport(GameController)
-            .background {
-                BoardControllerInputWindowKeyObserver { isKey in
-                    controllerInputWindowFocusDidChange(isKey, scenePhase: scenePhase)
-                }
+        .background {
+            BoardControllerInputWindowKeyObserver { isKey in
+                controllerInputWindowFocusDidChange(isKey, scenePhase: scenePhase)
             }
+        }
         #endif
     }
 
@@ -160,7 +160,9 @@ struct BoardView: View {
             #endif
         }
     #else
-        private var controllerInputCurrentWindowIsKey: Bool { false }
+        private var controllerInputCurrentWindowIsKey: Bool {
+            false
+        }
     #endif
 
     @ViewBuilder
