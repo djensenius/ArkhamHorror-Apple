@@ -3,13 +3,13 @@ import Testing
 
 @Suite("CompatibilityEvaluator")
 struct CompatibilityEvaluatorTests {
-    /// Evaluator using the compiled-in pin (supportedSchemaRevision 0.1.48, min server 0.1.47,
+    /// Evaluator using the compiled-in pin (supportedSchemaRevision 0.1.48, min server 0.1.48,
     /// path /api/v1)
     private let evaluator = CompatibilityEvaluator(pin: .current)
 
     /// A baseline-compatible server response for tests that vary individual fields.
     private func compatibleServer(
-        schemaRevision: ContractRevision = .literal(major: 0, minor: 1, patch: 47),
+        schemaRevision: ContractRevision = .literal(major: 0, minor: 1, patch: 48),
         nativeClientMinimumRevision: ContractRevision = .literal(major: 0, minor: 1, patch: 0),
         apiBasePath: String = "/api/v1",
         capabilities: Set<String> = [],
@@ -57,7 +57,7 @@ struct CompatibilityEvaluatorTests {
     @Test("Server at exactly the minimum schema revision is compatible")
     func exactMinimumSchemaRevision() {
         let caps = compatibleServer(
-            schemaRevision: .literal(major: 0, minor: 1, patch: 47)
+            schemaRevision: .literal(major: 0, minor: 1, patch: 48)
         )
         let outcome = evaluator.evaluate(caps)
         if case .compatible = outcome {} else {
@@ -77,17 +77,17 @@ struct CompatibilityEvaluatorTests {
         }
     }
 
-    @Test("Server schema 0.1.48 is accepted when its client floor remains <=0.1.47")
+    @Test("Server schema 0.1.48 is accepted when its client floor remains <=0.1.48")
     func higherServerSchemaAccepted() {
-        // server 0.1.48 > client minimum 0.1.47: passes serverTooOld check
-        // server floor 0.1.47 <= client supports 0.1.48: passes clientTooOld check
+        // server 0.1.48 == client minimum 0.1.48: passes serverTooOld check
+        // server floor 0.1.48 <= client supports 0.1.48: passes clientTooOld check
         let caps = compatibleServer(
             schemaRevision: .literal(major: 0, minor: 1, patch: 48),
-            nativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 47)
+            nativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 48)
         )
         let outcome = evaluator.evaluate(caps)
         if case .compatible = outcome {} else {
-            Issue.record("Expected .compatible for server 0.1.48 with floor 0.1.47, got \(outcome)")
+            Issue.record("Expected .compatible for server 0.1.48 with floor 0.1.48, got \(outcome)")
         }
     }
 
@@ -160,12 +160,12 @@ struct CompatibilityEvaluatorTests {
         #expect(
             outcome == .incompatible(reason: .serverTooOld(
                 serverRevision: .literal(major: 0, minor: 1, patch: 5),
-                clientRequires: .literal(major: 0, minor: 1, patch: 47)
+                clientRequires: .literal(major: 0, minor: 1, patch: 48)
             ))
         )
     }
 
-    @Test("Numeric ordering prevents false serverTooOld: 0.1.9 vs 0.1.47")
+    @Test("Numeric ordering prevents false serverTooOld: 0.1.9 vs 0.1.48")
     func numericServerVersionOrdering() {
         let caps = compatibleServer(
             schemaRevision: .literal(major: 0, minor: 1, patch: 9)
@@ -174,7 +174,7 @@ struct CompatibilityEvaluatorTests {
         #expect(
             outcome == .incompatible(reason: .serverTooOld(
                 serverRevision: .literal(major: 0, minor: 1, patch: 9),
-                clientRequires: .literal(major: 0, minor: 1, patch: 47)
+                clientRequires: .literal(major: 0, minor: 1, patch: 48)
             ))
         )
     }
@@ -209,7 +209,7 @@ struct CompatibilityEvaluatorTests {
     @Test("clientTooOld is reported before serverTooOld when both conditions fail")
     func clientTooOldTakesPrecedence() {
         // client supports 0.1.48 < server floor 0.2.0 -> clientTooOld
-        // server schema 0.1.0 < client minimum 0.1.47 -> serverTooOld (not reached)
+        // server schema 0.1.0 < client minimum 0.1.48 -> serverTooOld (not reached)
         let caps = compatibleServer(
             schemaRevision: .literal(major: 0, minor: 1, patch: 0),
             nativeClientMinimumRevision: .literal(major: 0, minor: 2, patch: 0)

@@ -27,11 +27,12 @@ extension ContractPin {
     /// The canonical pin compiled into this client build.
     ///
     /// Contract revision `0.1.48` publishes the answer rejection WebSocket envelope
+    /// this client requires to release server-rejected amount/payment/exchange answers,
     /// on top of question presentation protocol version 2.
     static let current = ContractPin(
         backendCommit: "f454ccb9fb789739c666a9cbd74d3fdc14a81fb9",
         supportedSchemaRevision: .literal(major: 0, minor: 1, patch: 48),
-        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 47),
+        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 48),
         expectedApiBasePath: "/api/v1",
         sourceNativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 0)
     )
