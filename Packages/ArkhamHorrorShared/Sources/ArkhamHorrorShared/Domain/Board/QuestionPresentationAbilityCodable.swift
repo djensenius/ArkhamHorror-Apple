@@ -8,10 +8,9 @@ extension QuestionPresentation.Ability: Codable {
     }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
+            keyedBy: CodingKeys.self
         )
         let ability = try Self(
             cardCode: container.decode(String.self, forKey: .cardCode),
