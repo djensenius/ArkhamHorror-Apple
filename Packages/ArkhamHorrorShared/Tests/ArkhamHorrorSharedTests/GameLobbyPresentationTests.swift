@@ -13,12 +13,13 @@ struct GameLobbyPresentationTests {
     private func sampleGame(
         gameState: GameState = .active,
         investigators: [InvestigatorSummary] = [],
+        otherInvestigators: [InvestigatorSummary] = [],
         multiplayerVariant: MultiplayerVariant = .solo,
         hasOpenSeats: Bool = false
     ) -> GameSummary {
         GameSummary(
             id: GameID(UUID()), scenario: nil, campaign: nil, gameState: gameState,
-            name: "Sample", investigators: investigators, otherInvestigators: [],
+            name: "Sample", investigators: investigators, otherInvestigators: otherInvestigators,
             multiplayerVariant: multiplayerVariant, hasOpenSeats: hasOpenSeats
         )
     }
@@ -38,23 +39,52 @@ struct GameLobbyPresentationTests {
         _ = view.body
     }
 
-    @Test("GameLobbyView renders a web-compatible invite for a pending with-friends game")
+    @Test("GameLobbyView chooses web-compatible join and claim-seat invite URLs")
     func gameLobbyViewPendingWithFriendsInvite() async {
-        let game = sampleGame(gameState: .pending([]), multiplayerVariant: .withFriends)
-        let model = await model(gameListState: .loaded([.game(game)]))
-        let view = GameLobbyView(model: model, gameID: game.id)
-        _ = view.body
-        let inviteURL = GameInvite.webURL(for: game.id, route: .join, on: .hosted)
-        let expectedSuffix = "/games/\(game.id.rawValue.uuidString.lowercased())/join"
-        #expect(inviteURL?.path.hasSuffix(expectedSuffix) == true)
+        let claimedInvestigator = InvestigatorSummary(id: "01001", classSymbol: .guardian)
+        let joinGame = sampleGame(gameState: .pending([]), multiplayerVariant: .withFriends)
+        let claimGame = sampleGame(
+            gameState: .pending([]), investigators: [claimedInvestigator],
+            multiplayerVariant: .withFriends
+        )
+        let model = await model(gameListState: .loaded([.game(joinGame), .game(claimGame)]))
+
+        let joinView = GameLobbyView(model: model, gameID: joinGame.id)
+        let claimView = GameLobbyView(model: model, gameID: claimGame.id)
+
+        let joinSuffix = "/games/\(joinGame.id.rawValue.uuidString.lowercased())/join"
+        let claimSuffix = "/games/\(claimGame.id.rawValue.uuidString.lowercased())/claim-seat"
+        #expect(joinView.inviteURL(for: joinGame)?.path.hasSuffix(joinSuffix) == true)
+        #expect(claimView.inviteURL(for: claimGame)?.path.hasSuffix(claimSuffix) == true)
     }
 
-    @Test("GameLobbyView renders when open seats have not yet been loaded")
-    func gameLobbyViewOpenSeatsNotYetLoaded() async {
+    @Test("GameLobbyView only offers invites while a with-friends game is pending")
+    func gameLobbyViewInviteIsPendingOnly() async {
+        let model = await model(gameListState: .loaded([]))
+        let pending = sampleGame(gameState: .pending([]), multiplayerVariant: .withFriends)
+        let active = sampleGame(gameState: .active, multiplayerVariant: .withFriends)
+        let solo = sampleGame(gameState: .pending([]), multiplayerVariant: .solo)
+
+        #expect(GameLobbyView(model: model, gameID: pending.id).inviteURL(for: pending) != nil)
+        #expect(GameLobbyView(model: model, gameID: active.id).inviteURL(for: active) == nil)
+        #expect(GameLobbyView(model: model, gameID: solo.id).inviteURL(for: solo) == nil)
+    }
+
+    @Test("GameLobbyView auto-loads open seats when a with-friends lobby reports them")
+    func gameLobbyViewOpenSeatsNotYetLoaded() async throws {
+        let service = ScriptedGameLifecycleService()
         let game = sampleGame(multiplayerVariant: .withFriends, hasOpenSeats: true)
-        let model = await model(gameListState: .loaded([.game(game)]))
+        let seat = try CardCode("c01001")
+        await service.enqueueOpenSeatsResult(.success([seat]))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        model.gameListState = .loaded([.game(game)])
         let view = GameLobbyView(model: model, gameID: game.id)
-        _ = view.body
+
+        view.loadOpenSeatsIfNeeded(for: game)
+        await model.gameLifecycleActionTasks[game.id]?.value
+
+        #expect(await service.callOrder == ["openSeats"])
+        #expect(model.gameOpenSeats[game.id] == [seat])
     }
 
     @Test("GameLobbyView renders when open seats are loaded and populated")
@@ -64,6 +94,38 @@ struct GameLobbyPresentationTests {
         model.gameOpenSeats[game.id] = try [CardCode("c01001")]
         let view = GameLobbyView(model: model, gameID: game.id)
         _ = view.body
+    }
+
+    @Test("GameLobbyView does not offer claim buttons once server data shows a seat")
+    func gameLobbyViewOpenSeatsOwnedSeatStatus() async throws {
+        let investigator = InvestigatorSummary(id: "01001", classSymbol: .guardian)
+        let game = sampleGame(
+            investigators: [investigator], multiplayerVariant: .withFriends, hasOpenSeats: true
+        )
+        let model = await model(gameListState: .loaded([.game(game)]))
+        let view = GameLobbyView(model: model, gameID: game.id)
+        let openSeats = try [CardCode("c01002")]
+
+        #expect(game.viewerAlreadyHasSeat)
+        #expect(
+            view.openSeatsStatusText(for: game, openSeats: openSeats)
+                == "You already have a seat in this game."
+        )
+    }
+
+    @Test("GameLobbyView waiting text reports remaining players with plural handling")
+    func gameLobbyViewWaitingTextUsesRemainingPlayers() async {
+        let player = PlayerID(UUID())
+        let game = sampleGame(
+            gameState: .pending([player]),
+            investigators: [InvestigatorSummary(id: "01001", classSymbol: .guardian)],
+            otherInvestigators: [InvestigatorSummary(id: "01002", classSymbol: .seeker)],
+            multiplayerVariant: .withFriends
+        )
+        let model = await model(gameListState: .loaded([.game(game)]))
+        let view = GameLobbyView(model: model, gameID: game.id)
+
+        #expect(view.waitingText(for: game) == "Waiting for 1 more player to join.")
     }
 
     @Test(

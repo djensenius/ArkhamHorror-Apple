@@ -41,7 +41,8 @@ struct GameInvite: Equatable, Sendable {
               let uuid = UUID(uuidString: parts[gamesIndex + 1])
         else { throw ParseError.unsupported }
         let routePart = parts.indices.contains(gamesIndex + 2) ? parts[gamesIndex + 2] : "join"
-        guard let route = Route(rawValue: routePart) else { throw ParseError.unsupported }
+        guard let route = Route(rawValue: routePart), !parts.indices.contains(gamesIndex + 3)
+        else { throw ParseError.unsupported }
         return GameInvite(gameID: GameID(uuid), route: route)
     }
 

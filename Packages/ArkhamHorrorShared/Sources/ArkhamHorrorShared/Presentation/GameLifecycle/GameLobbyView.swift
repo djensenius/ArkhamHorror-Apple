@@ -39,16 +39,22 @@ struct GameLobbyView: View {
                 lobbyContent(for: game)
             } else {
                 ContentUnavailableView(
-                    "Game No Longer Available",
+                    gameLifecycleLocalized(
+                        "games.lobby.unavailable.title",
+                        "Game No Longer Available"
+                    ),
                     systemImage: "questionmark.circle",
-                    description: Text("This game may have been deleted or is no longer visible.")
+                    description: Text(gameLifecycleLocalized(
+                        "games.lobby.unavailable.description",
+                        "This game may have been deleted or is no longer visible."
+                    ))
                 )
             }
         }
-        .navigationTitle("Lobby")
+        .navigationTitle(gameLifecycleLocalized("games.lobby.title", "Lobby"))
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Done") { dismiss() }
+                Button(gameLifecycleLocalized("games.lobby.done", "Done")) { dismiss() }
             }
         }
         .navigationDestination(for: GameID.self) { gameID in
@@ -59,7 +65,7 @@ struct GameLobbyView: View {
     private func lobbyContent(for game: GameSummary) -> some View {
         List {
             lobbyHeaderSection(for: game)
-            waitingSection(for: game.gameState)
+            waitingSection(for: game)
             inviteSection(for: game)
             pendingJoinSection(for: game.gameState)
             enterGameSection(for: game.gameState)
@@ -80,7 +86,10 @@ struct GameLobbyView: View {
             model.joinGame(gameID)
         } label: {
             HStack {
-                Label("Join Lobby", systemImage: "person.badge.plus")
+                Label(
+                    gameLifecycleLocalized("games.lobby.join", "Join Lobby"),
+                    systemImage: "person.badge.plus"
+                )
                 if action == .joining {
                     Spacer()
                     ProgressView().controlSize(.small)
@@ -92,11 +101,11 @@ struct GameLobbyView: View {
     }
 
     @ViewBuilder
-    private var openSeatsContent: some View {
+    private func openSeatsContent(for game: GameSummary) -> some View {
         if let openSeats = model.gameOpenSeats[gameID] {
-            if openSeats.isEmpty {
+            if openSeats.isEmpty || game.viewerAlreadyHasSeat {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("No open seats remain.")
+                    Text(openSeatsStatusText(for: game, openSeats: openSeats))
                         .foregroundStyle(.secondary)
                     // A stale/racy empty result (or a transient backend issue) must
                     // never leave this lobby permanently non-retryable while
@@ -107,7 +116,7 @@ struct GameLobbyView: View {
                         model.loadOpenSeats(for: gameID)
                     } label: {
                         HStack {
-                            Text("Refresh")
+                            Text(gameLifecycleLocalized("games.lobby.openSeats.refresh", "Refresh"))
                             if action == .loadingOpenSeats {
                                 Spacer()
                                 ProgressView().controlSize(.small)
@@ -139,7 +148,7 @@ struct GameLobbyView: View {
                 model.loadOpenSeats(for: gameID)
             } label: {
                 HStack {
-                    Text("View Open Seats")
+                    Text(gameLifecycleLocalized("games.lobby.openSeats.view", "View Open Seats"))
                     if action == .loadingOpenSeats {
                         Spacer()
                         ProgressView().controlSize(.small)
@@ -160,7 +169,12 @@ struct GameLobbyView: View {
                 model.continueWithoutUpgrading(investigatorId: investigator.id, in: gameID)
             } label: {
                 Label(
-                    "Continue as \(investigator.classSymbol.description) (\(investigator.id))",
+                    gameLifecycleLocalizedFormat(
+                        "games.lobby.chooseDeck.continueAs",
+                        "Continue as %@ (%@)",
+                        investigator.classSymbol.description,
+                        investigator.id
+                    ),
                     systemImage: "arrow.right.circle"
                 )
             }
@@ -184,7 +198,7 @@ struct GameLobbyView: View {
     }
 }
 
-private extension GameLobbyView {
+extension GameLobbyView {
     func lobbyHeaderSection(for game: GameSummary) -> some View {
         Section {
             VStack(alignment: .leading, spacing: 6) {
@@ -202,8 +216,8 @@ private extension GameLobbyView {
     }
 
     @ViewBuilder
-    func waitingSection(for state: GameState) -> some View {
-        if let waitingText = waitingText(for: state) {
+    func waitingSection(for game: GameSummary) -> some View {
+        if let waitingText = waitingText(for: game) {
             Section {
                 Text(waitingText)
                     .foregroundStyle(.secondary)
@@ -234,7 +248,10 @@ private extension GameLobbyView {
         if state.showsEnterGameLinkInLobby {
             Section {
                 NavigationLink(value: gameID) {
-                    Label("Enter Game", systemImage: "arrow.right.circle.fill")
+                    Label(
+                        gameLifecycleLocalized("games.lobby.enterGame", "Enter Game"),
+                        systemImage: "arrow.right.circle.fill"
+                    )
                 }
                 .accessibilityIdentifier(
                     AccountAccessibilityID.liveGameEnterButton(for: gameID.rawValue)
@@ -246,14 +263,18 @@ private extension GameLobbyView {
     @ViewBuilder
     func openSeatsSection(for game: GameSummary) -> some View {
         if game.hasOpenSeats, game.multiplayerVariant == .withFriends {
-            Section("Open Seats") { openSeatsContent }
+            Section(gameLifecycleLocalized("games.lobby.openSeats.section", "Open Seats")) {
+                openSeatsContent(for: game)
+            }
         }
     }
 
     @ViewBuilder
     func chooseDeckSection(for game: GameSummary) -> some View {
         if case .chooseDecks = game.gameState, !game.investigators.isEmpty {
-            Section("Choose Deck") { chooseDeckContent(for: game) }
+            Section(gameLifecycleLocalized("games.lobby.chooseDeck.section", "Choose Deck")) {
+                chooseDeckContent(for: game)
+            }
         }
     }
 
@@ -274,23 +295,51 @@ private extension GameLobbyView {
         return profile
     }
 
-    func waitingText(for state: GameState) -> String? {
-        switch state {
+    func waitingText(for game: GameSummary) -> String? {
+        switch game.gameState {
         case let .pending(players):
-            gameLifecycleLocalizedFormat(
-                "games.lobby.waiting.pending",
-                "Waiting for more players to join. %lld player(s) have joined.",
-                players.count
+            let knownSeatCount = game.investigators.count + game.otherInvestigators.count
+            guard knownSeatCount > 0 else {
+                return gameLifecycleLocalized(
+                    "games.lobby.waiting.pending.unknownRemaining",
+                    "Waiting for more players to join."
+                )
+            }
+            let remaining = max(knownSeatCount - players.count, 0)
+            return gameLifecycleLocalizedPlural(
+                count: remaining,
+                oneKey: "games.lobby.waiting.pending.remaining.one",
+                oneFallback: "Waiting for 1 more player to join.",
+                manyKey: "games.lobby.waiting.pending.remaining.many",
+                manyFallback: "Waiting for %lld more players to join."
             )
         case let .chooseDecks(players):
-            gameLifecycleLocalizedFormat(
-                "games.lobby.waiting.chooseDecks",
-                "Waiting for deck choices from %lld player(s).",
-                players.count
+            return gameLifecycleLocalizedPlural(
+                count: players.count,
+                oneKey: "games.lobby.waiting.chooseDecks.one",
+                oneFallback: "Waiting for 1 player's deck choice.",
+                manyKey: "games.lobby.waiting.chooseDecks.many",
+                manyFallback: "Waiting for %lld players' deck choices."
             )
         case .active, .over, .unknown:
-            nil
+            return nil
         }
+    }
+
+    func openSeatsStatusText(for game: GameSummary, openSeats: OpenSeats) -> String {
+        if game.viewerAlreadyHasSeat {
+            return gameLifecycleLocalized(
+                "games.lobby.openSeats.alreadyClaimed",
+                "You already have a seat in this game."
+            )
+        }
+        if openSeats.isEmpty {
+            return gameLifecycleLocalized(
+                "games.lobby.openSeats.empty",
+                "No open seats remain."
+            )
+        }
+        return ""
     }
 
     func inviteURL(for game: GameSummary) -> URL? {
@@ -365,6 +414,18 @@ private struct GameLobbyInviteSection: View {
         .accessibilityIdentifier(
             AccountAccessibilityID.gameInviteCopyButton(for: gameID.rawValue)
         )
+    }
+}
+
+extension GameSummary {
+    var viewerAlreadyHasSeat: Bool {
+        if !investigators.isEmpty { return true }
+        switch gameState {
+        case let .pending(players), let .chooseDecks(players):
+            return !players.isEmpty
+        case .active, .over, .unknown:
+            return false
+        }
     }
 }
 

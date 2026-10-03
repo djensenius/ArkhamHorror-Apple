@@ -15,3 +15,17 @@ func gameLifecycleLocalizedFormat(
         arguments: arguments
     )
 }
+
+func gameLifecycleLocalizedPlural(
+    count: Int,
+    oneKey: String,
+    oneFallback: String,
+    manyKey: String,
+    manyFallback: String
+) -> String {
+    if count == 1 {
+        gameLifecycleLocalized(oneKey, oneFallback)
+    } else {
+        gameLifecycleLocalizedFormat(manyKey, manyFallback, count)
+    }
+}

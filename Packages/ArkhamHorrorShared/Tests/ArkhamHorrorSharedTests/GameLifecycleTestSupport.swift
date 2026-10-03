@@ -20,6 +20,7 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private(set) var lastPeekLobbyGameID: GameID?
     private(set) var lastJoinGameID: GameID?
     private(set) var lastOpenSeatsGameID: GameID?
+    private(set) var lastClaimSeatGameID: GameID?
     private(set) var lastClaimSeatRequest: ClaimSeatRequest?
     private(set) var lastChooseDeckRequest: ChooseDeckRequest?
     private(set) var lastCreateGameRequest: CreateGameRequest?
@@ -348,11 +349,12 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     }
 
     func claimSeat(
-        _ request: ClaimSeatRequest, in _: GameID, on profile: ServerProfile, token: String
+        _ request: ClaimSeatRequest, in id: GameID, on profile: ServerProfile, token: String
     ) async throws {
         callOrder.append("claimSeat")
         lastToken = token
         lastProfileID = profile.id
+        lastClaimSeatGameID = id
         lastClaimSeatRequest = request
         try consume(&claimSeatQueue)
     }

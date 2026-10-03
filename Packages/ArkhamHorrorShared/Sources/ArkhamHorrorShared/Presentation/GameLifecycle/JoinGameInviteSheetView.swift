@@ -1,22 +1,33 @@
 import Observation
 import SwiftUI
 
+struct ClaimSeatInviteViewState: Equatable, Sendable {
+    let gameID: GameID
+    let seats: OpenSeats
+}
+
 @MainActor
 @Observable
 final class JoinGameInviteViewModel {
     var inviteText = ""
     private(set) var isSubmitting = false
+    private(set) var claimingSeat: CardCode?
     private(set) var failureMessage: String?
+    private(set) var claimSeatInvite: ClaimSeatInviteViewState?
 
     var canSubmit: Bool {
         !isSubmitting && !inviteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     @discardableResult
-    func submit(joinInvite: (GameID) async throws -> GameID) async -> GameID? {
+    func submit(
+        joinInvite: (GameID) async throws -> GameID,
+        loadClaimSeatInvite: (GameID) async throws -> OpenSeats
+    ) async -> GameID? {
         guard !isSubmitting else { return nil }
         isSubmitting = true
         failureMessage = nil
+        claimSeatInvite = nil
         defer { isSubmitting = false }
 
         let invite: GameInvite
@@ -31,7 +42,40 @@ final class JoinGameInviteViewModel {
         }
 
         do {
-            return try await joinInvite(invite.gameID)
+            switch invite.route {
+            case .join:
+                return try await joinInvite(invite.gameID)
+            case .claimSeat:
+                let seats = try await loadClaimSeatInvite(invite.gameID)
+                claimSeatInvite = ClaimSeatInviteViewState(gameID: invite.gameID, seats: seats)
+                return nil
+            }
+        } catch is CancellationError {
+            return nil
+        } catch let error as GameLifecycleError {
+            failureMessage = error.message
+            return nil
+        } catch {
+            failureMessage = gameLifecycleLocalized(
+                "games.joinInvite.error.generic",
+                "Couldn't join that game. Try again."
+            )
+            return nil
+        }
+    }
+
+    @discardableResult
+    func claimSeat(
+        _ seat: CardCode,
+        claimSeatInvite: (CardCode, GameID) async throws -> GameID
+    ) async -> GameID? {
+        guard claimingSeat == nil, let invite = self.claimSeatInvite else { return nil }
+        claimingSeat = seat
+        failureMessage = nil
+        defer { claimingSeat = nil }
+
+        do {
+            return try await claimSeatInvite(seat, invite.gameID)
         } catch is CancellationError {
             return nil
         } catch let error as GameLifecycleError {
@@ -56,60 +100,24 @@ struct JoinGameInviteSheetView: View {
 
     var body: some View {
         Form {
-            Section {
-                TextField(
-                    gameLifecycleLocalized(
-                        "games.joinInvite.placeholder",
-                        "https://arkhamhorror.app/games/.../join"
-                    ),
-                    text: Binding(
-                        get: { viewModel.inviteText },
-                        set: { viewModel.inviteText = $0 }
-                    )
-                )
-                .textContentType(.URL)
-                #if os(iOS) || os(visionOS)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                #endif
-                    .autocorrectionDisabled()
-                    .disabled(viewModel.isSubmitting)
-                    .accessibilityLabel(gameLifecycleLocalized(
-                        "games.joinInvite.field.accessibility",
-                        "Game invite link or ID"
-                    ))
-                    .accessibilityIdentifier(AccountAccessibilityID.joinGameInviteField)
-            } header: {
-                Text(gameLifecycleLocalized("games.joinInvite.section", "Invite"))
-            } footer: {
-                Text(gameLifecycleLocalized(
-                    "games.joinInvite.footer",
-                    "Paste the web invite link, or just the game ID. The server "
-                        + "decides whether you may join."
-                ))
-            }
-
-            if let failure = viewModel.failureMessage {
-                Section {
-                    ArkhamFailureText(message: failure)
-                        .accessibilityIdentifier(AccountAccessibilityID.joinGameInviteFailureText)
-                }
-            }
+            inviteInputSection
+            claimSeatSection
+            failureSection
         }
         .navigationTitle(gameLifecycleLocalized("games.joinInvite.title", "Join Game"))
         #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
         #if os(macOS)
-        .frame(minWidth: 420, minHeight: 260)
+        .frame(minWidth: 420, minHeight: 320)
         #endif
-        .interactiveDismissDisabled(viewModel.isSubmitting)
+        .interactiveDismissDisabled(viewModel.isSubmitting || viewModel.claimingSeat != nil)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button(gameLifecycleLocalized("common.cancel", "Cancel")) {
                     dismiss()
                 }
-                .disabled(viewModel.isSubmitting)
+                .disabled(viewModel.isSubmitting || viewModel.claimingSeat != nil)
                 .accessibilityIdentifier(AccountAccessibilityID.joinGameInviteCancelButton)
             }
             ToolbarItem(placement: .confirmationAction) {
@@ -128,10 +136,121 @@ struct JoinGameInviteSheetView: View {
         }
     }
 
+    private var inviteInputSection: some View {
+        Section {
+            TextField(
+                gameLifecycleLocalized(
+                    "games.joinInvite.placeholder",
+                    "https://arkhamhorror.app/games/.../join"
+                ),
+                text: Binding(
+                    get: { viewModel.inviteText },
+                    set: { viewModel.inviteText = $0 }
+                )
+            )
+            .textContentType(.URL)
+            #if os(iOS) || os(visionOS)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+            #endif
+                .autocorrectionDisabled()
+                .disabled(viewModel.isSubmitting || viewModel.claimingSeat != nil)
+                .accessibilityLabel(gameLifecycleLocalized(
+                    "games.joinInvite.field.accessibility",
+                    "Game invite link or ID"
+                ))
+                .accessibilityIdentifier(AccountAccessibilityID.joinGameInviteField)
+        } header: {
+            Text(gameLifecycleLocalized("games.joinInvite.section", "Invite"))
+        } footer: {
+            Text(gameLifecycleLocalized(
+                "games.joinInvite.footer",
+                "Paste the web invite link, or just the game ID. The server "
+                    + "decides whether you may join."
+            ))
+        }
+    }
+
+    @ViewBuilder
+    private var claimSeatSection: some View {
+        if let invite = viewModel.claimSeatInvite {
+            Section {
+                if invite.seats.isEmpty {
+                    Text(gameLifecycleLocalized(
+                        "games.lobby.openSeats.empty",
+                        "No open seats remain."
+                    ))
+                    .foregroundStyle(.secondary)
+                } else {
+                    ForEach(invite.seats, id: \.rawValue) { seat in
+                        Button {
+                            Task { await claimSeat(seat) }
+                        } label: {
+                            HStack {
+                                Label(
+                                    gameLifecycleLocalizedFormat(
+                                        "games.joinInvite.claimSeat",
+                                        "Claim %@",
+                                        seat.rawValue
+                                    ),
+                                    systemImage: "person.fill.badge.plus"
+                                )
+                                if viewModel.claimingSeat == seat {
+                                    Spacer()
+                                    ProgressView().controlSize(.small)
+                                }
+                            }
+                        }
+                        .disabled(viewModel.claimingSeat != nil || viewModel.isSubmitting)
+                        .accessibilityIdentifier(
+                            AccountAccessibilityID.gameClaimSeatButton(
+                                for: invite.gameID.rawValue,
+                                seat: seat.rawValue
+                            )
+                        )
+                    }
+                }
+            } header: {
+                Text(gameLifecycleLocalized("games.joinInvite.openSeats.section", "Open Seats"))
+            } footer: {
+                Text(gameLifecycleLocalized(
+                    "games.joinInvite.openSeats.footer",
+                    "Choose one of the server's open seats."
+                ))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var failureSection: some View {
+        if let failure = viewModel.failureMessage {
+            Section {
+                ArkhamFailureText(message: failure)
+                    .accessibilityIdentifier(AccountAccessibilityID.joinGameInviteFailureText)
+            }
+        }
+    }
+
     private func submit() async {
-        guard let id = await viewModel.submit(joinInvite: { gameID in
-            try await model.joinGameFromInvite(gameID)
-        }) else { return }
+        guard let id = await viewModel.submit(
+            joinInvite: { gameID in
+                try await model.joinGameFromInvite(gameID)
+            },
+            loadClaimSeatInvite: { gameID in
+                try await model.loadClaimSeatInvite(gameID)
+            }
+        ) else { return }
+        onJoined(id)
+        dismiss()
+    }
+
+    private func claimSeat(_ seat: CardCode) async {
+        guard let id = await viewModel.claimSeat(
+            seat,
+            claimSeatInvite: { seat, gameID in
+                try await model.claimSeatFromInvite(seat, in: gameID)
+            }
+        ) else { return }
         onJoined(id)
         dismiss()
     }

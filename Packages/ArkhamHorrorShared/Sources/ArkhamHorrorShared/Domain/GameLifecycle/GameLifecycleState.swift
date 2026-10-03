@@ -81,21 +81,42 @@ extension GameLifecycleError {
     var message: String {
         switch self {
         case .sessionExpired:
-            "Your session has expired. Sign in again to continue."
+            gameLifecycleLocalized(
+                "games.lifecycle.error.sessionExpired",
+                "Your session has expired. Sign in again to continue."
+            )
         case .nonHTTPResponse, .transportFailure:
-            "This server could not be reached. Check your connection and try again."
+            gameLifecycleLocalized(
+                "games.lifecycle.error.transport",
+                "This server could not be reached. Check your connection and try again."
+            )
         case let .unexpectedStatus(code) where code == 403:
-            "That action isn't available for this game right now."
+            gameLifecycleLocalized(
+                "games.lifecycle.error.forbidden",
+                "That action isn't available for this game right now."
+            )
         case let .unexpectedStatus(code) where code == 404:
-            "This game is no longer available."
+            gameLifecycleLocalized(
+                "games.lifecycle.error.notFound",
+                "This game is no longer available."
+            )
         case .unexpectedStatus, .malformedPayload:
-            "This server responded unexpectedly. Try again."
+            gameLifecycleLocalized(
+                "games.lifecycle.error.unexpected",
+                "This server responded unexpectedly. Try again."
+            )
         case let .operationFailed(error):
             error.errorMsg
         case .requestEncodingFailed, .invalidPathSegment:
-            "This request couldn't be made. Try again."
+            gameLifecycleLocalized(
+                "games.lifecycle.error.request",
+                "This request couldn't be made. Try again."
+            )
         case .tokenUnavailable:
-            "Could not securely access your session. Try again."
+            gameLifecycleLocalized(
+                "games.lifecycle.error.tokenUnavailable",
+                "Could not securely access your session. Try again."
+            )
         }
     }
 }
@@ -143,9 +164,9 @@ extension GameSummary {
     /// compatibility without a dedicated unsupported-state UI.
     private var multiplayerVariantLabel: String {
         if multiplayerVariant == .solo {
-            "Solo"
+            gameLifecycleLocalized("games.multiplayer.solo", "Solo")
         } else if multiplayerVariant == .withFriends {
-            "With Friends"
+            gameLifecycleLocalized("games.multiplayer.withFriends", "With Friends")
         } else {
             multiplayerVariant.rawValue
         }
@@ -157,15 +178,23 @@ extension GameState {
     var statusText: String {
         switch self {
         case let .pending(players):
-            "Pending lobby (\(players.count) joined)"
+            gameLifecycleLocalizedFormat(
+                "games.state.pending",
+                "Pending lobby (%lld joined)",
+                players.count
+            )
         case let .chooseDecks(players):
-            "Choosing decks (\(players.count) waiting)"
+            gameLifecycleLocalizedFormat(
+                "games.state.chooseDecks",
+                "Choosing decks (%lld waiting)",
+                players.count
+            )
         case .active:
-            "In progress"
+            gameLifecycleLocalized("games.state.active", "In progress")
         case .over:
-            "Completed"
+            gameLifecycleLocalized("games.state.over", "Completed")
         case .unknown:
-            "Update required"
+            gameLifecycleLocalized("games.state.unknown", "Update required")
         }
     }
 }
