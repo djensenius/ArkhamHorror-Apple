@@ -629,10 +629,12 @@ extension AppModelLiveGameTests {
             }
             #expect(result == .sentAwaitingSnapshot)
 
+            let sessionAttemptID = try #require(prompt.identity.sessionAttemptID)
+            let connectionID = try #require(prompt.identity.connectionID)
             model.handleBasicChoiceAnswerRejected(
                 gameID: gameID,
-                sessionAttemptID: try #require(prompt.identity.sessionAttemptID),
-                connectionID: try #require(prompt.identity.connectionID),
+                sessionAttemptID: sessionAttemptID,
+                connectionID: connectionID,
                 rejection: AnswerRejectedMessage(
                     reason: "unversioned should not match",
                     questionVersion: nil
