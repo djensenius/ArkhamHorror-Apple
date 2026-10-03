@@ -106,12 +106,13 @@ struct AppModelGameInviteTests {
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         let invite = try await model.loadClaimSeatInvite(gameID)
-        model.signOut()
-        await model.flowTask?.value
+        let originalGeneration = model.generation
+        model.generation += 1
 
         await #expect(throws: CancellationError.self) {
             try await model.claimSeatFromInvite(seat, using: invite)
         }
+        #expect(model.generation == originalGeneration + 1)
         #expect(await service.callOrder == ["peekLobby", "openSeats", "getGame"])
     }
 
