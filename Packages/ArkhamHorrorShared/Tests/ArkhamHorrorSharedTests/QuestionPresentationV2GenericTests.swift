@@ -162,7 +162,6 @@ struct QuestionPresentationV2GenericTests {
         let mutations: [(String, JSONValue?)] = [
             ("/protocolVersion", .number(.integer(1))),
             ("/questionKind", .string("future")),
-            ("/extra", .bool(true)),
             ("/choices/0/kind", .string("future")),
             ("/choices/0/sourceIndex", .number(.integer(1))),
             ("/choices/1/sourceIndex", .number(.integer(3))),
@@ -170,8 +169,6 @@ struct QuestionPresentationV2GenericTests {
             ("/tooltip", .null),
             ("/label", .null),
             ("/answer/alternateTags", .null),
-            ("/selection/extra", .bool(true)),
-            ("/answer/extra", .bool(true)),
             ("/selection/min", nil),
         ]
         for (pointer, value) in mutations {
@@ -221,12 +218,6 @@ struct QuestionPresentationV2GenericTests {
         )
         try expectPresentationMutationRejects(
             fixture: "question-presentation-generic-choose-amounts",
-            pointer: "/amountChoices/0/extra",
-            value: .bool(true),
-            note: "amountChoice is closed"
-        )
-        try expectPresentationMutationRejects(
-            fixture: "question-presentation-generic-choose-amounts",
             pointer: "/amountChoices/0/choiceId",
             value: nil,
             note: "amountChoice.choiceId is required"
@@ -269,16 +260,6 @@ struct QuestionPresentationV2GenericTests {
             value: nil,
             note: "pileCard.cardOwner is nullable but required"
         )
-        try expectRepresentativeMutationRejects(
-            pointer: "/choices/18/tarotCard/extra",
-            value: .bool(true),
-            note: "tarotCard is closed"
-        )
-        try expectRepresentativeMutationRejects(
-            pointer: "/choices/29/cards/0/extra",
-            value: .bool(true),
-            note: "pileCard is closed"
-        )
     }
 
     @Test("Schema-permitted nulls decode only at their documented locations")
@@ -301,6 +282,152 @@ struct QuestionPresentationV2GenericTests {
         _ = try ContractJSON.decode(
             QuestionPresentation.self,
             from: Data(nullableSpecificValue.utf8)
+        )
+    }
+
+    @Test("Additive prompt fields decode, bind, and preserve answer bytes")
+    func additivePromptFieldsDecodeBindAndPreserveAnswerBytes() throws {
+        for testCase in try additiveToleranceCases() {
+            let basePresentation = try ContractJSON.decode(
+                QuestionPresentation.self,
+                from: testCase.presentationData
+            )
+            let baseRawQuestion = try ContractJSON.decode(
+                JSONValue.self,
+                from: testCase.rawData
+            )
+            let baseBinding = try basePresentation.bind(
+                to: baseRawQuestion,
+                expectedQuestionVersion: basePresentation.questionVersion
+            )
+            let baseAnswer = try answerBytes(for: basePresentation)
+
+            let mutatedPresentationData = try mutatedData(
+                testCase.presentationData,
+                mutations: testCase.presentationMutations
+            )
+            let mutatedRawData = try mutatedData(
+                testCase.rawData,
+                mutations: testCase.rawMutations
+            )
+            let mutatedPresentation = try ContractJSON.decode(
+                QuestionPresentation.self,
+                from: mutatedPresentationData
+            )
+            let mutatedRawQuestion = try ContractJSON.decode(
+                JSONValue.self,
+                from: mutatedRawData
+            )
+            let mutatedBinding = try mutatedPresentation.bind(
+                to: mutatedRawQuestion,
+                expectedQuestionVersion: mutatedPresentation.questionVersion
+            )
+
+            #expect(mutatedBinding.rawChoices == baseBinding.rawChoices, "\(testCase.name) raw choices")
+            #expect(
+                mutatedBinding.isRenderableInCurrentClient == testCase.isRenderableInCurrentClient,
+                "\(testCase.name) renderability"
+            )
+            #expect(try answerBytes(for: mutatedPresentation) == baseAnswer, "\(testCase.name) answer bytes")
+        }
+    }
+
+    @Test("Additive-field tolerance still requires fields each raw family uses")
+    func additiveRawQuestionToleranceStillRequiresFields() throws {
+        let missingFieldCases = [
+            #"{"tag":"ChooseOne"}"#,
+            #"{"tag":"ChooseN","choices":[{}]}"#,
+            #"{"tag":"ChooseSome1","choices":[{}]}"#,
+            #"{"tag":"QuestionLabel","label":"x","card":null}"#,
+            #"{"tag":"ChooseOneFromEach"}"#,
+            #"{"tag":"ChooseOneWizard","flavorText":{},"confirmLabel":"$confirm","backLabel":"$back"}"#,
+            #"{"tag":"PickSupplies","pointsRemaining":2,"chosenSupplies":[],"resupply":false}"#,
+            #"{"tag":"DropDown"}"#,
+            #"{"tag":"Read","flavorText":{},"readCards":null}"#,
+        ]
+        let presentation = QuestionPresentation(
+            protocolVersion: 2,
+            questionVersion: 1,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: []
+        )
+        for rawJSON in missingFieldCases {
+            #expect(throws: QuestionPresentationBindingError.self, "\(rawJSON)") {
+                try presentation.bind(
+                    to: ContractJSON.decode(JSONValue.self, from: Data(rawJSON.utf8)),
+                    expectedQuestionVersion: 1
+                )
+            }
+        }
+    }
+
+    @Test("Answer tag advertisements ignore unknown extras but require sendable tags")
+    func answerTagAdvertisementsAreTolerantButRequired() throws {
+        let singleChoice = #"{"kind":"singleChoice","tag":"Answer","alternateTags":["FutureAnswer","OrderedAnswer"]}"#
+        #expect(
+            try ContractJSON.decode(
+                QuestionPresentation.Answer.self,
+                from: Data(singleChoice.utf8)
+            ) == .singleChoice(alternateTags: ["OrderedAnswer"])
+        )
+
+        let deck = #"{"kind":"deck","tags":["FutureDeckAnswer","DeckAnswer","DeckListAnswer"]}"#
+        #expect(
+            try ContractJSON.decode(
+                QuestionPresentation.Answer.self,
+                from: Data(deck.utf8)
+            ) == .deck(tags: ["DeckAnswer", "DeckListAnswer"])
+        )
+
+        let continuation = #"{"kind":"continueCampaign","tags":["CampaignStepAnswer","FutureAnswer"]}"#
+        #expect(
+            try ContractJSON.decode(
+                QuestionPresentation.Answer.self,
+                from: Data(continuation.utf8)
+            ) == .continueCampaign(tags: ["CampaignStepAnswer"])
+        )
+
+        for invalid in [
+            #"{"kind":"future","tag":"Answer"}"#,
+            #"{"kind":"deck","tags":["FutureDeckAnswer"]}"#,
+            #"{"kind":"continueCampaign","tags":["FutureAnswer"]}"#,
+        ] {
+            #expect(throws: DecodingError.self, "\(invalid)") {
+                try ContractJSON.decode(QuestionPresentation.Answer.self, from: Data(invalid.utf8))
+            }
+        }
+    }
+
+    @Test("Previously closed additive presentation fields now decode")
+    func additivePresentationFieldMutationsDecode() throws {
+        try expectPresentationMutationDecodes(
+            fixture: "question-presentation-generic-choose-n",
+            pointer: "/extra",
+            value: .bool(true)
+        )
+        try expectPresentationMutationDecodes(
+            fixture: "question-presentation-generic-choose-n",
+            pointer: "/selection/extra",
+            value: .bool(true)
+        )
+        try expectPresentationMutationDecodes(
+            fixture: "question-presentation-generic-choose-n",
+            pointer: "/answer/extra",
+            value: .bool(true)
+        )
+        try expectPresentationMutationDecodes(
+            fixture: "question-presentation-generic-choose-amounts",
+            pointer: "/amountChoices/0/extra",
+            value: .bool(true)
+        )
+        try expectRepresentativeMutationDecodes(
+            pointer: "/choices/18/tarotCard/extra",
+            value: .bool(true)
+        )
+        try expectRepresentativeMutationDecodes(
+            pointer: "/choices/29/cards/0/extra",
+            value: .bool(true)
         )
     }
 
@@ -448,6 +575,313 @@ struct QuestionPresentationV2GenericTests {
             }
             """#
         )
+    }
+
+    private struct AdditiveToleranceCase {
+        let name: String
+        let presentationData: Data
+        let rawData: Data
+        let presentationMutations: [AdditiveMutation]
+        let rawMutations: [AdditiveMutation]
+        let isRenderableInCurrentClient: Bool
+    }
+
+    private struct AdditiveMutation {
+        let pointer: String
+        let value: JSONValue
+    }
+
+    private func additiveToleranceCases() throws -> [AdditiveToleranceCase] {
+        let singleChoiceExtras = [
+            AdditiveMutation(pointer: "/extra", value: .bool(true)),
+            AdditiveMutation(pointer: "/choices/0/extra", value: .bool(true)),
+            AdditiveMutation(pointer: "/answer/extra", value: .bool(true)),
+        ]
+        return try [
+            .init(
+                name: "direct choices",
+                presentationData: fixture("question-presentation-generic-cost-ability-window"),
+                rawData: fixture("question-generic-cost-ability-window"),
+                presentationMutations: singleChoiceExtras + [
+                    .init(pointer: "/choices/1/entity/extra", value: .string("entity-addition")),
+                    .init(pointer: "/choices/1/ability/extra", value: .string("ability-addition")),
+                    .init(pointer: "/choices/1/cost/extra", value: .string("cost-addition")),
+                    .init(pointer: "/answer/alternateTags", value: .array([.string("FutureAnswer"), .string("OrderedAnswer")])),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "counted choices",
+                presentationData: fixture("question-presentation-generic-choose-n"),
+                rawData: fixture("question-generic-choose-n"),
+                presentationMutations: singleChoiceExtras + [
+                    .init(pointer: "/selection/extra", value: .bool(true)),
+                    .init(pointer: "/choices/0/label/extra", value: .string("label-addition")),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "labeled choices",
+                presentationData: fixture("question-presentation-generic-one-at-a-time-auto"),
+                rawData: fixture("question-generic-one-at-a-time-auto"),
+                presentationMutations: singleChoiceExtras + [
+                    .init(pointer: "/selection/extra", value: .bool(true)),
+                    .init(pointer: "/choices/0/label/extra", value: .string("label-addition")),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "wrapped question",
+                presentationData: fixture("question-presentation-generic-wrapped"),
+                rawData: fixture("question-generic-wrapped"),
+                presentationMutations: singleChoiceExtras + [
+                    .init(pointer: "/questionLabel/extra", value: .string("question-label-addition")),
+                    .init(pointer: "/payCost/extra", value: .bool(true)),
+                    .init(pointer: "/questionSource/extra", value: .bool(true)),
+                    .init(pointer: "/questionSource/raw/extra", value: .bool(true)),
+                    .init(pointer: "/choices/0/label/extra", value: .string("choice-label-addition")),
+                ],
+                rawMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/source/extra", value: .bool(true)),
+                    .init(pointer: "/question/extra", value: .bool(true)),
+                ],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "amounts",
+                presentationData: fixture("question-presentation-generic-choose-amounts"),
+                rawData: fixture("question-generic-choose-amounts"),
+                presentationMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/answer/extra", value: .bool(true)),
+                    .init(pointer: "/label/extra", value: .string("label-addition")),
+                    .init(pointer: "/target/extra", value: .bool(true)),
+                    .init(pointer: "/resolveTarget/extra", value: .bool(true)),
+                    .init(pointer: "/amountChoices/0/extra", value: .bool(true)),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "payment amounts",
+                presentationData: fixture("question-presentation-generic-payment-amounts"),
+                rawData: fixture("question-generic-payment-amounts"),
+                presentationMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/answer/extra", value: .bool(true)),
+                    .init(pointer: "/label/extra", value: .string("label-addition")),
+                    .init(pointer: "/target/extra", value: .bool(true)),
+                    .init(pointer: "/paymentChoices/0/extra", value: .bool(true)),
+                    .init(pointer: "/paymentChoices/0/title/extra", value: .string("title-addition")),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "exchange amounts",
+                presentationData: Data(exchangePresentationJSON.utf8),
+                rawData: Data(exchangeRawJSON.utf8),
+                presentationMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/answer/extra", value: .bool(true)),
+                    .init(pointer: "/source/extra", value: .bool(true)),
+                    .init(pointer: "/source/raw/extra", value: .bool(true)),
+                ],
+                rawMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/source/extra", value: .bool(true)),
+                ],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "deck",
+                presentationData: fixture("question-presentation-generic-choose-deck"),
+                rawData: fixture("question-generic-choose-deck"),
+                presentationMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/answer/extra", value: .bool(true)),
+                    .init(pointer: "/answer/tags", value: .array([.string("FutureDeckAnswer"), .string("DeckAnswer"), .string("DeckListAnswer")])),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: false
+            ),
+            .init(
+                name: "continue campaign",
+                presentationData: Data(continueCampaignPresentationJSON.utf8),
+                rawData: Data(#"{"tag":"ContinueCampaign"}"#.utf8),
+                presentationMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/answer/extra", value: .bool(true)),
+                    .init(pointer: "/answer/tags", value: .array([.string("CampaignStepAnswer"), .string("FutureAnswer")])),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "one from each",
+                presentationData: fixture("question-presentation-generic-one-from-each"),
+                rawData: fixture("question-generic-one-from-each"),
+                presentationMutations: singleChoiceExtras + [
+                    .init(pointer: "/choices/0/label/extra", value: .string("label-addition")),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "wizard",
+                presentationData: Data(wizardPresentationJSON.utf8),
+                rawData: Data(wizardRawJSON.utf8),
+                presentationMutations: singleChoiceExtras + [
+                    .init(pointer: "/choices/0/label/extra", value: .string("label-addition")),
+                    .init(pointer: "/flavorText/extra", value: .bool(true)),
+                    .init(pointer: "/confirmLabel/extra", value: .string("confirm-addition")),
+                    .init(pointer: "/backLabel/extra", value: .string("back-addition")),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "pick supplies",
+                presentationData: Data(pickSuppliesPresentationJSON.utf8),
+                rawData: Data(pickSuppliesRawJSON.utf8),
+                presentationMutations: singleChoiceExtras + [
+                    .init(pointer: "/choices/0/label/extra", value: .string("label-addition")),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "dropdown",
+                presentationData: Data(singleChoicePresentation(kind: "dropDown").utf8),
+                rawData: Data(#"{"tag":"DropDown","options":[["$option",{"tag":"Value"}]]}"#.utf8),
+                presentationMutations: singleChoiceExtras + [
+                    .init(pointer: "/choices/0/label/extra", value: .string("label-addition")),
+                ],
+                rawMutations: [.init(pointer: "/extra", value: .bool(true))],
+                isRenderableInCurrentClient: true
+            ),
+            .init(
+                name: "read",
+                presentationData: fixture("question-presentation-generic-read"),
+                rawData: fixture("question-generic-read"),
+                presentationMutations: singleChoiceExtras + [
+                    .init(pointer: "/choices/0/label/extra", value: .string("label-addition")),
+                    .init(pointer: "/flavorText/extra", value: .bool(true)),
+                ],
+                rawMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/readChoices/extra", value: .bool(true)),
+                ],
+                isRenderableInCurrentClient: true
+            ),
+        ]
+    }
+
+    private func mutatedData(
+        _ data: Data,
+        mutations: [AdditiveMutation]
+    ) throws -> Data {
+        var mutationObject = try JSONValueMutationObject(fixtureData: data)
+        for mutation in mutations {
+            mutationObject = try mutationObject.replacing(pointer: mutation.pointer, with: mutation.value)
+        }
+        return try mutationObject.data()
+    }
+
+    private func answerBytes(for presentation: QuestionPresentation) throws -> Data {
+        let playerID = try fixedPlayerID()
+        switch presentation.answer {
+        case .singleChoice:
+            return try ContractJSON.encode(BasicChoiceAnswer(
+                choice: 0,
+                playerID: playerID,
+                questionVersion: presentation.questionVersion
+            ))
+        case .amounts:
+            let choiceID = try #require(presentation.amountChoices?.first?.choiceID)
+            return try ContractJSON.encode(AmountsAnswer(
+                amounts: [choiceID: 0],
+                playerID: playerID,
+                questionVersion: presentation.questionVersion
+            ))
+        case .paymentAmounts:
+            let choiceID = try #require(presentation.paymentChoices?.first?.choiceID)
+            return try ContractJSON.encode(PaymentAmountsAnswer(
+                amounts: [choiceID: 0],
+                playerID: playerID,
+                questionVersion: presentation.questionVersion
+            ))
+        case .exchangeAmounts:
+            let source = try #require(presentation.source?.raw)
+            let fromInvestigator = try #require(presentation.fromInvestigator)
+            let toInvestigator = try #require(presentation.toInvestigator)
+            let token = try #require(presentation.token)
+            return try ContractJSON.encode(ExchangeAmountsAnswer(
+                source: source,
+                fromInvestigator: fromInvestigator,
+                toInvestigator: toInvestigator,
+                token: token,
+                amount: 0
+            ))
+        case .deck:
+            return try ContractJSON.encode(DeckAnswer(
+                deckId: try fixedDeckID(),
+                playerId: playerID
+            ))
+        case .continueCampaign:
+            return try ContractJSON.encode(CampaignStepAnswer(
+                contents: .object(["tag": .string("NextStep")])
+            ))
+        case .standaloneSettings, .campaignSettings, .pickDestiny,
+             .campaignSpecific, .scenarioSpecific:
+            throw MutationError.invalidPointer
+        }
+    }
+
+    private func fixedPlayerID() throws -> PlayerID {
+        guard let uuid = UUID(uuidString: "00000000-0000-0000-0000-000000000001") else {
+            throw MutationError.invalidPointer
+        }
+        return PlayerID(uuid)
+    }
+
+    private func fixedDeckID() throws -> DeckID {
+        guard let uuid = UUID(uuidString: "00000000-0000-0000-0000-000000000002") else {
+            throw MutationError.invalidPointer
+        }
+        return DeckID(uuid)
+    }
+
+    private var exchangeRawJSON: String {
+        #"{"tag":"ChooseExchangeAmounts","source":{"tag":"GameSource"},"investigator1Id":"c01001","investigator1InitialAmount":3,"investigator2Id":"c01002","investigator2InitialAmount":1,"token":"ResourceToken"}"#
+    }
+
+    private var exchangePresentationJSON: String {
+        #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseExchangeAmounts","choiceCount":0,"choices":[],"answer":{"kind":"exchangeAmounts","tag":"ExchangeAmountsAnswer"},"source":{"raw":{"tag":"GameSource"}},"fromInvestigator":"c01001","fromInitialAmount":3,"toInvestigator":"c01002","toInitialAmount":1,"token":"ResourceToken"}"#
+    }
+
+    private var continueCampaignPresentationJSON: String {
+        #"{"protocolVersion":2,"questionVersion":1,"questionKind":"continueCampaign","choiceCount":0,"choices":[],"answer":{"kind":"continueCampaign","tags":["CampaignStepAnswer"]}}"#
+    }
+
+    private var wizardRawJSON: String {
+        #"{"tag":"ChooseOneWizard","flavorText":{"title":null,"body":[]},"wizardChoices":[{"tag":"Label","label":"$ok","messages":[]}],"confirmLabel":"$confirm","backLabel":"$back"}"#
+    }
+
+    private var wizardPresentationJSON: String {
+        #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOneWizard","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"wizardChoice","selectable":true,"label":{"kind":"embeddedI18n","text":"$ok"}}],"answer":{"kind":"singleChoice","tag":"Answer"},"flavorText":{"title":null,"body":[]},"confirmLabel":{"kind":"embeddedI18n","text":"$confirm"},"backLabel":{"kind":"embeddedI18n","text":"$back"}}"#
+    }
+
+    private var pickSuppliesRawJSON: String {
+        #"{"tag":"PickSupplies","pointsRemaining":2,"chosenSupplies":["Provisions"],"choices":[{"tag":"Label","label":"$supply","messages":[]}],"resupply":false}"#
+    }
+
+    private var pickSuppliesPresentationJSON: String {
+        #"{"protocolVersion":2,"questionVersion":1,"questionKind":"pickSupplies","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"localizedLabel","selectable":true,"label":{"kind":"embeddedI18n","text":"$supply"}}],"answer":{"kind":"singleChoice","tag":"Answer"},"pointsRemaining":2,"chosenSupplies":["Provisions"],"resupply":false}"#
     }
 
     private func expectPresentationMutationRejects(
