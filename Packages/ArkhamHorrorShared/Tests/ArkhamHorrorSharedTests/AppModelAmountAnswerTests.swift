@@ -335,6 +335,168 @@ extension AppModelLiveGameTests {
         ])
     }
 
+    @Test("Unchanged GameUpdate before AnswerRejected still frees the amount prompt")
+    func unchangedSnapshotThenAnswerRejectedFreesAmountPrompt() async throws {
+        let firstID = "00000000-0000-0000-0000-0000000000d1"
+        let secondID = "00000000-0000-0000-0000-0000000000d2"
+        let choices = [
+            amountChoice(firstID, min: 0, max: 2, label: "A"),
+            amountChoice(secondID, min: 0, max: 2, label: "B"),
+        ]
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .total(2)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .total(2),
+                questionVersion: 646
+            ),
+            questionVersion: 646
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let rejectedAmounts = [firstID: 3, secondID: 0]
+        #expect(
+            await model.submitAmountsAnswer(prompt.identity, amounts: rejectedAmounts)
+                == .sentAwaitingSnapshot
+        )
+
+        try await connection.enqueue(.event(.message(ContractJSON.encode(
+            BoardSnapshotUpdate.snapshot(envelope.game)
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == .awaitingSnapshot)
+        #expect(model.basicChoicePresentation(for: gameID)?.serverFeedback == nil)
+
+        await connection.enqueue(.event(.message(Data(
+            #"{"tag":"AnswerRejected","reason":"still illegal","questionVersion":646}"#.utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        let current = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(current.actionPhase == nil)
+        #expect(current.canSubmit)
+        #expect(current.serverFeedback == "still illegal")
+    }
+
+    @Test("Vendored AnswerRejected socket bytes free the matching amount prompt")
+    func vendoredAnswerRejectedFixtureFreesAmountPrompt() async throws {
+        let firstID = "00000000-0000-0000-0000-0000000000e1"
+        let secondID = "00000000-0000-0000-0000-0000000000e2"
+        let choices = [
+            amountChoice(firstID, min: 0, max: 2, label: "A"),
+            amountChoice(secondID, min: 0, max: 2, label: "B"),
+        ]
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .total(2)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .total(2),
+                questionVersion: 8
+            ),
+            questionVersion: 8
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let rejectedAmounts = [firstID: 3, secondID: 0]
+        #expect(
+            await model.submitAmountsAnswer(prompt.identity, amounts: rejectedAmounts)
+                == .sentAwaitingSnapshot
+        )
+
+        try await connection.enqueue(.event(.message(fixtureData(named: "answer-rejected"))))
+        await connection.waitUntilAwaitingNextEvent()
+        let current = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(current.actionPhase == nil)
+        #expect(current.canSubmit)
+        #expect(current.serverFeedback == "Stale question")
+    }
+
+    @Test("Null-version AnswerRejected frees a matching exchange prompt")
+    func nullVersionAnswerRejectedFreesExchangePrompt() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try exchangeEnvelope(fromInitialAmount: 2, toInitialAmount: 1)
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(
+            await model.submitExchangeAmountsAnswer(prompt.identity, amount: 1)
+                == .sentAwaitingSnapshot
+        )
+
+        await connection.enqueue(.event(.message(Data(
+            #"{"tag":"AnswerRejected","reason":"exchange rejected","questionVersion":null}"#.utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        let current = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(current.actionPhase == nil)
+        #expect(current.canSubmit)
+        #expect(current.serverFeedback == "exchange rejected")
+    }
+
+    @Test("AnswerRejected ignores mismatched transport, session, and owner")
+    func answerRejectedCorrelationMismatchesAreIgnored() async throws {
+        enum Mismatch: Equatable {
+            case connection
+            case session
+            case owner
+        }
+
+        for mismatch in [Mismatch.connection, .session, .owner] {
+            let (model, fakes) = makeSignedInModel()
+            await model.flowTask?.value
+            makeModern(model)
+            let envelope = try exchangeEnvelope(fromInitialAmount: 2, toInitialAmount: 1)
+            let connection = FakeGameSocketConnection()
+            await connection.enqueueSendResult(.success(()))
+            let gameID = await startChoiceSession(
+                model: model, fakes: fakes, envelope: envelope, connection: connection
+            )
+            let prompt = try #require(model.basicChoicePresentation(for: gameID))
+            #expect(
+                await model.submitExchangeAmountsAnswer(prompt.identity, amount: 1)
+                    == .sentAwaitingSnapshot
+            )
+            let originalSession = try #require(prompt.identity.sessionAttemptID)
+            let originalConnection = try #require(prompt.identity.connectionID)
+            if mismatch == .owner {
+                model.liveGameParticipantIdentities[gameID] = .participant(
+                    BoardTestFixtures.playerID("000000000002")
+                )
+            }
+
+            model.handleBasicChoiceAnswerRejected(
+                gameID: gameID,
+                sessionAttemptID: mismatch == .session ? UUID() : originalSession,
+                connectionID: mismatch == .connection ? UUID() : originalConnection,
+                rejection: AnswerRejectedMessage(
+                    reason: "wrong correlation",
+                    questionVersion: nil
+                )
+            )
+
+            #expect(model.basicChoiceActions[gameID]?.phase == .awaitingSnapshot)
+            #expect(model.basicChoiceServerFeedback[gameID] == nil)
+        }
+    }
+
     @Test("Overflowing amount totals show guidance without trapping and still send")
     @MainActor
     func overflowingAmountTotalsShowGuidanceAndStillSend() async throws {
