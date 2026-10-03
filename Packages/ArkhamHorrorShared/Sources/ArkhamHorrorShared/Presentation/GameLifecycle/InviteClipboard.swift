@@ -10,7 +10,9 @@ import Foundation
 enum InviteClipboard {
     @MainActor
     static func copy(_ value: String) {
-        #if canImport(UIKit)
+        #if os(tvOS)
+            _ = value
+        #elseif canImport(UIKit)
             UIPasteboard.general.string = value
         #elseif canImport(AppKit)
             NSPasteboard.general.clearContents()

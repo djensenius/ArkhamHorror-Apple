@@ -320,12 +320,7 @@ private struct GameLobbyInviteSection: View {
 
     var body: some View {
         Section {
-            Text(inviteURL.absoluteString)
-                .font(.footnote.monospaced())
-                .textSelection(.enabled)
-                .accessibilityIdentifier(
-                    AccountAccessibilityID.gameInviteURLText(for: gameID.rawValue)
-                )
+            inviteURLText
             copyButton
         } header: {
             Text(gameLifecycleLocalized("games.lobby.invite.section", "Invite Others"))
@@ -335,6 +330,19 @@ private struct GameLobbyInviteSection: View {
                 "Friends can open this web-compatible link to join or claim a seat."
             ))
         }
+    }
+
+    private var inviteURLText: some View {
+        let text = Text(inviteURL.absoluteString)
+            .font(.footnote.monospaced())
+            .accessibilityIdentifier(
+                AccountAccessibilityID.gameInviteURLText(for: gameID.rawValue)
+            )
+        #if os(tvOS)
+            text
+        #else
+            text.textSelection(.enabled)
+        #endif
     }
 
     private var copyButton: some View {
