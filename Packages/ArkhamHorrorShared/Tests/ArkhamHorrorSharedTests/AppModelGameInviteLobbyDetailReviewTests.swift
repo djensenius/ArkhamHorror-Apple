@@ -97,6 +97,33 @@ struct AppModelGameInviteLobbyDetailReviewTests {
         #expect(await service.callOrder == ["getGame", "getGame"])
     }
 
+    @Test("stale detail task cleanup is owned by task UUID even after session changes")
+    func staleDetailCleanupClearsByTaskIDAfterSessionChange() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.setGetGameGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        model.loadLobbyDetailsIfNeeded(for: gameID)
+        await service.waitUntilGetGamePending(1)
+        let staleTask = try #require(model.gameLobbyDetailTasks[gameID])
+        model.generation += 1
+        await service.resumeOldestGetGame(with: .success(getGameEnvelope(gameID: gameID)))
+        await staleTask.value
+
+        #expect(model.gameLobbyDetailTasks[gameID] == nil)
+        #expect(model.gameLobbyDetailTaskIDs[gameID] == nil)
+
+        model.loadLobbyDetailsIfNeeded(for: gameID)
+        await service.waitUntilGetGamePending(1)
+        let replacementTask = try #require(model.gameLobbyDetailTasks[gameID])
+        await service.resumeOldestGetGame(with: .success(getGameEnvelope(gameID: gameID)))
+        await replacementTask.value
+
+        #expect(model.gameLobbyViewerHasSeats[gameID] == true)
+        #expect(model.gameLobbyDetailTasks[gameID] == nil)
+    }
+
     @Test("cached player counts do not skip the viewer-specific seat lookup")
     func cachedPlayerCountDoesNotSkipViewerSeatLookup() async throws {
         let service = ScriptedGameLifecycleService()

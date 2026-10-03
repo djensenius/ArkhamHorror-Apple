@@ -187,7 +187,7 @@ extension AppModel {
         session: GameInviteSession,
         taskID: UUID
     ) async {
-        defer { clearLobbyDetailTaskIfCurrent(for: id, session: session, taskID: taskID) }
+        defer { clearLobbyDetailTaskIfCurrent(for: id, taskID: taskID) }
         let token: String
         do {
             token = try await currentGameInviteToken(for: session)
@@ -216,14 +216,8 @@ extension AppModel {
         }
     }
 
-    private func clearLobbyDetailTaskIfCurrent(
-        for id: GameID,
-        session: GameInviteSession,
-        taskID: UUID
-    ) {
-        guard gameLobbyDetailTaskIDs[id] == taskID,
-              (try? ensureCurrentGameInviteSession(session)) != nil
-        else { return }
+    private func clearLobbyDetailTaskIfCurrent(for id: GameID, taskID: UUID) {
+        guard gameLobbyDetailTaskIDs[id] == taskID else { return }
         gameLobbyDetailTasks[id] = nil
         gameLobbyDetailTaskIDs[id] = nil
     }
