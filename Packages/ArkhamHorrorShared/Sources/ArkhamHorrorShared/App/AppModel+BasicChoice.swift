@@ -513,9 +513,9 @@ extension AppModel {
     }
 
     /// `GameError` is broadcast room-wide and carries no player, question, or request
-    /// correlation. Amount/payment/exchange rejects are server-validated with no state
-    /// change, so clear those in-flight claims while keeping sanitized feedback visible;
-    /// other answer families still remain outcome-uncertain without a correlation field.
+    /// correlation. It is generic feedback, not an answer rejection; a same-transport
+    /// in-flight choice can only become outcome-uncertain until an authoritative
+    /// `AnswerRejected` or changed snapshot arrives.
     func handleUncorrelatedBasicChoiceGameError(
         gameID: GameID, sessionAttemptID: UUID, connectionID: UUID?
     ) {
@@ -527,11 +527,7 @@ extension AppModel {
         else { return }
         switch action.phase {
         case .sending, .awaitingSnapshot:
-            if action.submission.isServerValidatedAmountAnswer {
-                basicChoiceActions[gameID] = nil
-            } else {
-                basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
-            }
+            basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
         case .uncertain, .retryable:
             break
         }
@@ -544,15 +540,6 @@ private extension BasicChoiceSubmission {
         case .singleChoice, .amounts, .paymentAmounts, .continueCampaign:
             true
         case .exchangeAmount:
-            false
-        }
-    }
-
-    var isServerValidatedAmountAnswer: Bool {
-        switch self {
-        case .amounts, .paymentAmounts, .exchangeAmount:
-            true
-        case .singleChoice, .continueCampaign:
             false
         }
     }

@@ -309,17 +309,19 @@ extension AppModelLiveGameTests {
         let rejectedBytes = try amountAnswerBytes(amounts: rejectedAmounts, version: 645)
         #expect(await connection.sentData == [rejectedBytes])
 
-        await connection.enqueue(.event(.message(Data(
-            #"{"tag":"GameError","contents":"illegal amount"}"#.utf8
+        let rejectionBytes = Data(
+            #"{"tag":"AnswerRejected","reason":"illegal amount","questionVersion":645}"#.utf8
+        )
+        await connection.enqueue(.event(.message(rejectionBytes)))
+        await connection.waitUntilAwaitingNextEvent()
+        try await connection.enqueue(.event(.message(ContractJSON.encode(
+            BoardSnapshotUpdate.snapshot(envelope.game)
         ))))
         await connection.waitUntilAwaitingNextEvent()
         let current = try #require(model.basicChoicePresentation(for: gameID))
         #expect(current.actionPhase == nil)
         #expect(current.canSubmit)
-        #expect(
-            current.serverFeedback
-                == "The server reported a game error that could not be tied to your choice."
-        )
+        #expect(current.serverFeedback == "illegal amount")
 
         let legalAmounts = [firstID: 1, secondID: 1]
         await connection.enqueueSendResult(.success(()))
