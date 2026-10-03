@@ -512,11 +512,12 @@ extension QuestionPresentation.Answer: Codable {
         switch kind {
         case .singleChoice:
             try Self.requireTag("Answer", in: container)
-            let alternateTags = try container.decodePresentIfContained([String].self, forKey: .alternateTags)
-            if let alternateTags, alternateTags != ["OrderedAnswer"] {
-                throw DecodingError.dataCorruptedError(forKey: .alternateTags, in: container, debugDescription: "Unsupported alternate answer tags")
-            }
-            self = .singleChoice(alternateTags: alternateTags)
+            let alternateTags = try Self.supportedTags(
+                decodedIfPresent: .alternateTags,
+                supported: ["OrderedAnswer"],
+                in: container
+            )
+            self = .singleChoice(alternateTags: alternateTags.isEmpty ? nil : alternateTags)
         case .amounts:
             try Self.requireTag("AmountsAnswer", in: container)
             self = .amounts
@@ -527,10 +528,11 @@ extension QuestionPresentation.Answer: Codable {
             try Self.requireTag("ExchangeAmountsAnswer", in: container)
             self = .exchangeAmounts
         case .deck:
-            let tags = try container.decode([String].self, forKey: .tags)
-            guard tags == ["DeckAnswer", "DeckListAnswer"] else {
-                throw DecodingError.dataCorruptedError(forKey: .tags, in: container, debugDescription: "Unsupported deck answer tags")
-            }
+            let tags = try Self.requireAdvertisedTags(
+                ["DeckAnswer", "DeckListAnswer"],
+                supported: ["DeckAnswer", "DeckListAnswer"],
+                in: container
+            )
             self = .deck(tags: tags)
         case .standaloneSettings:
             try Self.requireTag("StandaloneSettingsAnswer", in: container)
@@ -548,24 +550,17 @@ extension QuestionPresentation.Answer: Codable {
             try Self.requireTag("ScenarioSpecificAnswer", in: container)
             self = .scenarioSpecific
         case .continueCampaign:
-            let tags = try container.decode([String].self, forKey: .tags)
-            let allowedTags: Set = [
-                "CampaignStepAnswer",
-                "RetireInvestigatorAnswer",
-                "RejoinInvestigatorAnswer",
-                "ApplyOverlayAnswer",
-                "JoinCampaignAnswer",
-            ]
-            guard !tags.isEmpty,
-                  Set(tags).count == tags.count,
-                  Set(tags).isSubset(of: allowedTags)
-            else {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .tags,
-                    in: container,
-                    debugDescription: "Invalid continue-campaign tags"
-                )
-            }
+            let tags = try Self.requireAdvertisedTags(
+                ["CampaignStepAnswer"],
+                supported: [
+                    "CampaignStepAnswer",
+                    "RetireInvestigatorAnswer",
+                    "RejoinInvestigatorAnswer",
+                    "ApplyOverlayAnswer",
+                    "JoinCampaignAnswer",
+                ],
+                in: container
+            )
             self = .continueCampaign(tags: tags)
         }
     }
@@ -610,6 +605,35 @@ extension QuestionPresentation.Answer: Codable {
         guard actual == expected else {
             throw DecodingError.dataCorruptedError(forKey: .tag, in: container, debugDescription: "Expected \(expected)")
         }
+    }
+
+    private static func requireAdvertisedTags(
+        _ required: Set<String>,
+        supported: [String],
+        in container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> [String] {
+        let rawTags = try container.decode([String].self, forKey: .tags)
+        let advertised = Set(rawTags)
+        guard required.isSubset(of: advertised) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .tags,
+                in: container,
+                debugDescription: "Missing required answer tag"
+            )
+        }
+        return supported.filter(advertised.contains)
+    }
+
+    private static func supportedTags(
+        decodedIfPresent key: CodingKeys,
+        supported: [String],
+        in container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> [String] {
+        guard let rawTags = try container.decodePresentIfContained([String].self, forKey: key) else {
+            return []
+        }
+        let advertised = Set(rawTags)
+        return supported.filter(advertised.contains)
     }
 
     private func encode(
