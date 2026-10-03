@@ -828,8 +828,9 @@ struct QuestionPresentationV2GenericTests {
                 amount: 0
             ))
         case .deck:
+            let deckID = try fixedDeckID()
             return try ContractJSON.encode(DeckAnswer(
-                deckId: try fixedDeckID(),
+                deckId: deckID,
                 playerId: playerID
             ))
         case .continueCampaign:
