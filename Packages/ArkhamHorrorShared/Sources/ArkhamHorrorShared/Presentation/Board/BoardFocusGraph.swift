@@ -207,9 +207,7 @@ enum BoardFocusGraphBuilder {
             }
             return rowChoices
         }
-        if amountPrompt.isLegal(normalized) {
-            ids.append(BoardFocusID.promptAmountSubmit)
-        }
+        ids.append(BoardFocusID.promptAmountSubmit)
         return ids
     }
 
@@ -224,9 +222,7 @@ enum BoardFocusGraphBuilder {
         if exchangePrompt.canAdjust(amount: exchangeAmount, delta: 1) {
             ids.append(BoardFocusID.promptExchangeIncrease)
         }
-        if exchangePrompt.isLegal(exchangeAmount) {
-            ids.append(BoardFocusID.promptExchangeSubmit)
-        }
+        ids.append(BoardFocusID.promptExchangeSubmit)
         return ids
     }
 

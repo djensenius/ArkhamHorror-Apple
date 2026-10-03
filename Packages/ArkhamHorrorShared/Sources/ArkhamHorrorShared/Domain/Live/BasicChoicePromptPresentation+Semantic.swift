@@ -189,16 +189,8 @@ extension BasicChoicePromptPresentation {
         presentation: QuestionPresentation
     ) -> Bool {
         switch presentation.answer {
-        case .singleChoice:
+        case .singleChoice, .amounts, .paymentAmounts, .exchangeAmounts:
             true
-        case .amounts:
-            rawQuestion.hasTag("ChooseAmounts")
-                || rawQuestion.wrapsQuestion(tag: "QuestionLabel", innerTag: "ChooseAmounts")
-        case .paymentAmounts:
-            rawQuestion.hasTag("ChoosePaymentAmounts")
-                || rawQuestion.wrapsQuestion(tag: "PayCostQuestion", innerTag: "ChoosePaymentAmounts")
-        case .exchangeAmounts:
-            presentation.questionKind == .chooseExchangeAmounts
         case .continueCampaign:
             presentation.questionKind == .continueCampaign
                 && (rawQuestion.hasTag("ContinueCampaign")

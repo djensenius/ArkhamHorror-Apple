@@ -238,14 +238,11 @@ extension AppModel {
         guard presentation.isAuthorized else {
             return .reject(.readOnly)
         }
-        // Revalidated immediately before send using the current authoritative prompt
-        // identity and actionability rules -- never the projection captured whenever
-        // this choice was last rendered. Generic semantic choices trust the
-        // server-owned descriptor except for client display prerequisites such as
-        // resolvable label text.
-        guard let projection = liveGameStates[identity.gameID]?.lastKnownProjection,
-              presentation.isSubmissionSupported(submission, in: projection)
-        else { return .reject(.unsupportedChoice) }
+        guard clientActionabilityAllows(
+            submission,
+            presentation: presentation,
+            gameID: identity.gameID
+        ) else { return .reject(.unsupportedChoice) }
         guard isRetry || presentation.canSubmit else {
             return .reject(.readOnly)
         }
@@ -262,6 +259,16 @@ extension AppModel {
             phase: .sending
         )
         return .send(connection: connection, actionAttemptID: actionAttemptID)
+    }
+
+    private func clientActionabilityAllows(
+        _ submission: BasicChoiceSubmission,
+        presentation: BasicChoicePromptPresentation,
+        gameID: GameID
+    ) -> Bool {
+        guard submission.needsClientActionabilityCheck else { return true }
+        guard let projection = liveGameStates[gameID]?.lastKnownProjection else { return false }
+        return presentation.isSubmissionSupported(submission, in: projection)
     }
 
     private func performBasicChoiceSend(
@@ -479,8 +486,9 @@ extension AppModel {
     }
 
     /// `GameError` is broadcast room-wide and carries no player, question, or request
-    /// correlation. It therefore cannot prove this client's answer was rejected.
-    /// Definitive rejection requires a future backend correlation field.
+    /// correlation. Amount/payment/exchange rejects are server-validated with no state
+    /// change, so clear those in-flight claims while keeping sanitized feedback visible;
+    /// other answer families still remain outcome-uncertain without a correlation field.
     func handleUncorrelatedBasicChoiceGameError(
         gameID: GameID, sessionAttemptID: UUID, connectionID: UUID?
     ) {
@@ -492,9 +500,33 @@ extension AppModel {
         else { return }
         switch action.phase {
         case .sending, .awaitingSnapshot:
-            basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
+            if action.submission.isServerValidatedAmountAnswer {
+                basicChoiceActions[gameID] = nil
+            } else {
+                basicChoiceActions[gameID]?.phase = .retryable(.outcomeUncertain)
+            }
         case .uncertain, .retryable:
             break
+        }
+    }
+}
+
+private extension BasicChoiceSubmission {
+    var needsClientActionabilityCheck: Bool {
+        switch self {
+        case .singleChoice, .continueCampaign:
+            true
+        case .amounts, .paymentAmounts, .exchangeAmount:
+            false
+        }
+    }
+
+    var isServerValidatedAmountAnswer: Bool {
+        switch self {
+        case .amounts, .paymentAmounts, .exchangeAmount:
+            true
+        case .singleChoice, .continueCampaign:
+            false
         }
     }
 }
@@ -510,95 +542,11 @@ private extension BasicChoicePromptPresentation {
                 return false
             }
             return canSubmitSingleChoiceAnswer && isChoiceActionable(choice, in: projection)
-        case let .amounts(amounts):
-            return supportsAmountSubmission(amounts)
-        case let .paymentAmounts(amounts):
-            return supportsPaymentAmountSubmission(amounts)
-        case let .exchangeAmount(amount):
-            return supportsExchangeSubmission(amount)
+        case .amounts, .paymentAmounts, .exchangeAmount:
+            return true
         case let .continueCampaign(step):
             return supportsContinueCampaignSubmission(step, in: projection)
         }
-    }
-
-    func supportsAmountSubmission(_ amounts: [String: Int]) -> Bool {
-        guard let presentation = semanticPresentation?.presentation,
-              case .amounts = presentation.answer,
-              Self.supportsSemanticPrompt(
-                  rawQuestion: identity.rawQuestion,
-                  presentation: presentation
-              ),
-              let choices = presentation.amountChoices,
-              amountRowLabelsResolved(
-                  choices.map {
-                      AmountRowLabel(
-                          key: amountChoicePromptLabelKey($0.choiceID),
-                          text: $0.label,
-                          upperBound: $0.maxBound
-                      )
-                  }
-              )
-        else { return false }
-        return amountAllocationValid(
-            amounts: amounts,
-            choices: choices.map {
-                AmountChoiceBounds(
-                    id: $0.choiceID,
-                    lowerBound: $0.minBound,
-                    upperBound: $0.maxBound
-                )
-            },
-            target: presentation.target
-        )
-    }
-
-    func supportsPaymentAmountSubmission(_ amounts: [String: Int]) -> Bool {
-        guard let presentation = semanticPresentation?.presentation,
-              case .paymentAmounts = presentation.answer,
-              Self.supportsSemanticPrompt(
-                  rawQuestion: identity.rawQuestion,
-                  presentation: presentation
-              ),
-              let choices = presentation.paymentChoices,
-              amountRowLabelsResolved(
-                  choices.map {
-                      AmountRowLabel(
-                          key: paymentChoicePromptLabelKey($0.choiceID),
-                          text: $0.title.text,
-                          upperBound: $0.max
-                      )
-                  }
-              )
-        else { return false }
-        return amountAllocationValid(
-            amounts: amounts,
-            choices: choices.map {
-                AmountChoiceBounds(id: $0.choiceID, lowerBound: $0.min, upperBound: $0.max)
-            },
-            target: presentation.target
-        )
-    }
-
-    func supportsExchangeSubmission(_ amount: Int) -> Bool {
-        guard let presentation = semanticPresentation?.presentation,
-              case .exchangeAmounts = presentation.answer,
-              Self.supportsSemanticPrompt(
-                  rawQuestion: identity.rawQuestion,
-                  presentation: presentation
-              ),
-              let fromInitialAmount = presentation.fromInitialAmount,
-              let toInitialAmount = presentation.toInitialAmount,
-              presentation.source != nil,
-              presentation.fromInvestigator != nil,
-              presentation.toInvestigator != nil,
-              presentation.token != nil
-        else { return false }
-        guard fromInitialAmount >= 0, toInitialAmount >= 0 else { return false }
-        let lowerBound = 0.subtractingReportingOverflow(toInitialAmount)
-        guard !lowerBound.overflow, lowerBound.partialValue <= fromInitialAmount else {
-            return false
-        }
-        return amount >= lowerBound.partialValue && amount <= fromInitialAmount
     }
 
     func supportsContinueCampaignSubmission(
@@ -615,68 +563,6 @@ private extension BasicChoicePromptPresentation {
         else { return false }
         return step == continuation.nextStep
             || (continuation.canUpgradeDecks && step == continuation.upgradeStep)
-    }
-
-    struct AmountChoiceBounds: Sendable, Equatable {
-        let id: String
-        let lowerBound: Int
-        let upperBound: Int
-    }
-
-    struct AmountRowLabel: Sendable, Equatable {
-        let key: String
-        let text: String
-        let upperBound: Int
-    }
-
-    func amountRowLabelsResolved(_ labels: [AmountRowLabel]) -> Bool {
-        labels.allSatisfy { label in
-            amountRowLabelUnavailableReason(
-                key: label.key,
-                labelText: label.text,
-                upperBound: label.upperBound
-            ) == nil
-        }
-    }
-
-    func amountAllocationValid(
-        amounts: [String: Int],
-        choices: [AmountChoiceBounds],
-        target: QuestionPresentation.AmountTarget?
-    ) -> Bool {
-        let choiceIDs = Set(choices.map(\.id))
-        guard choiceIDs.count == choices.count,
-              Set(amounts.keys) == choiceIDs
-        else { return false }
-        var total = 0
-        for choice in choices {
-            guard choice.lowerBound <= choice.upperBound,
-                  let amount = amounts[choice.id],
-                  amount >= choice.lowerBound,
-                  amount <= choice.upperBound
-            else { return false }
-            let result = total.addingReportingOverflow(amount)
-            guard !result.overflow else { return false }
-            total = result.partialValue
-        }
-        return amountTargetSatisfied(target, total: total)
-    }
-
-    func amountTargetSatisfied(
-        _ target: QuestionPresentation.AmountTarget?, total: Int
-    ) -> Bool {
-        switch target {
-        case nil:
-            true
-        case let .min(minimum):
-            total >= minimum
-        case let .max(maximum):
-            total <= maximum
-        case let .total(required):
-            total == required
-        case let .oneOf(allowed):
-            allowed.contains(total)
-        }
     }
 }
 

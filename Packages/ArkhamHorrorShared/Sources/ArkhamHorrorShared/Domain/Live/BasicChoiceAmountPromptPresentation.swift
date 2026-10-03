@@ -77,23 +77,6 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
         return false
     }
 
-    func isLegal(_ amounts: [String: Int]) -> Bool {
-        guard visibleRows.allSatisfy(\.isLabelResolved) else { return false }
-        let choiceIDs = Set(rows.map(\.id))
-        guard choiceIDs.count == rows.count,
-              Set(amounts.keys) == choiceIDs
-        else { return false }
-        for row in rows {
-            guard row.minBound <= row.maxBound,
-                  let amount = amounts[row.id],
-                  amount >= row.minBound,
-                  amount <= row.maxBound
-            else { return false }
-        }
-        guard let total = total(for: amounts) else { return false }
-        return targetSatisfied(total: total)
-    }
-
     func targetHint(in presentation: BasicChoicePromptPresentation) -> String {
         switch target {
         case nil:
@@ -128,7 +111,7 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
         }
     }
 
-    func disabledReason(
+    func guidanceMessage(
         for amounts: [String: Int], in presentation: BasicChoicePromptPresentation
     ) -> String? {
         if let unresolvedReason = visibleRows.first(where: { !$0.isLabelResolved }) {
@@ -244,15 +227,13 @@ struct BasicChoiceExchangePrompt: Sendable, Equatable {
         return result.partialValue
     }
 
-    func isLegal(_ amount: Int) -> Bool {
-        guard let bounds, bounds.contains(amount) else { return false }
-        return fromCount(for: amount) != nil && toCount(for: amount) != nil
-    }
-
     func canAdjust(amount: Int, delta: Int) -> Bool {
         let result = amount.addingReportingOverflow(delta)
-        guard !result.overflow else { return false }
-        return isLegal(result.partialValue)
+        guard !result.overflow, let bounds, bounds.contains(result.partialValue) else {
+            return false
+        }
+        return fromCount(for: result.partialValue) != nil
+            && toCount(for: result.partialValue) != nil
     }
 
     func adjustedAmount(_ amount: Int, delta: Int) -> Int {
@@ -266,11 +247,7 @@ extension BasicChoicePromptPresentation {
     // swiftlint:disable:next function_body_length
     func amountPrompt(in _: BoardProjection) -> BasicChoiceAmountPrompt? {
         guard let presentation = semanticPresentation?.presentation,
-              canSubmitPromptAnswer,
-              Self.supportsSemanticPrompt(
-                  rawQuestion: identity.rawQuestion,
-                  presentation: presentation
-              )
+              canSubmitPromptAnswer
         else { return nil }
         switch presentation.answer {
         case .amounts:
@@ -353,10 +330,6 @@ extension BasicChoicePromptPresentation {
         guard let presentation = semanticPresentation?.presentation,
               case .exchangeAmounts = presentation.answer,
               canSubmitPromptAnswer,
-              Self.supportsSemanticPrompt(
-                  rawQuestion: identity.rawQuestion,
-                  presentation: presentation
-              ),
               let fromInvestigator = presentation.fromInvestigator,
               let fromInitialAmount = presentation.fromInitialAmount,
               let toInvestigator = presentation.toInvestigator,
