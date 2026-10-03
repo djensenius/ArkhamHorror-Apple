@@ -4,22 +4,22 @@ import Testing
 
 @Suite("Schema 0.1.46 additive fields")
 struct Schema146AdditiveFieldsTests {
-    @Test("v2 presentation abilities reject removed additive fields")
-    func presentationAbilityRemovedFieldsReject() throws {
-        _ = try decodeSchema146Ability(schema146PresentationAbilityJSON)
+    @Test("v2 presentation abilities ignore removed additive fields")
+    func presentationAbilityRemovedFieldsDecode() throws {
+        let base = try decodeSchema146Ability(schema146PresentationAbilityJSON)
         // `blocksIn`/`nonBlocking` were raw Ability compatibility fields in schema 0.1.46.
-        // Question/Presentation.hs no longer publishes them in protocolVersion 2, so the
-        // closed presentation decoder rejects even their former default values.
-        #expect(throws: DecodingError.self) {
+        // Presentation protocol v2 no longer uses them, so additive values must be ignored
+        // instead of making an otherwise renderable prompt require an update.
+        #expect(
             try decodeSchema146Ability(
                 schema146PresentationAbilityJSON.dropLast()
                     + #", "blocksIn": null, "nonBlocking": false}"#
-            )
-        }
+            ) == base
+        )
     }
 
-    @Test("explicit presentation ability defaults no longer decode as Gathering references")
-    func presentationAbilityDefaultsRejectBeforeOverlayMatching() throws {
+    @Test("explicit presentation ability defaults still decode as Gathering references")
+    func presentationAbilityDefaultsDecodeBeforeOverlayMatching() throws {
         var value = try schema146FixtureValue("question-presentation-gathering-movement")
         for sourceIndex in [9, 10, 11] {
             value = try schema146ApplyingReplace(
@@ -29,27 +29,29 @@ struct Schema146AdditiveFieldsTests {
                 "/choices/\(sourceIndex)/ability/nonBlocking", with: .bool(false), to: value
             )
         }
-        #expect(throws: DecodingError.self) {
-            try ContractJSON.decode(
-                QuestionPresentation.self,
-                from: ContractJSON.encode(value)
-            )
-        }
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: ContractJSON.encode(value)
+        )
+        #expect(presentation.choices[9].kind == .move)
+        #expect(presentation.choices[10].kind == .move)
+        #expect(presentation.choices[11].kind == .investigate)
     }
 
-    @Test("presentation abilities reject non-default additive fields")
-    func presentationAbilityRejectsNonDefaults() {
-        #expect(throws: DecodingError.self) {
+    @Test("presentation abilities ignore non-default additive fields")
+    func presentationAbilityIgnoresNonDefaults() throws {
+        let base = try decodeSchema146Ability(schema146PresentationAbilityJSON)
+        #expect(
             try decodeSchema146Ability(
                 schema146PresentationAbilityJSON.dropLast() + #", "nonBlocking": true}"#
-            )
-        }
-        #expect(throws: DecodingError.self) {
+            ) == base
+        )
+        #expect(
             try decodeSchema146Ability(
                 schema146PresentationAbilityJSON.dropLast()
                     + #", "blocksIn": {"tag":"Future"}}"#
-            )
-        }
+            ) == base
+        )
     }
 
     @Test("round-end forced ability message binds the prompted investigator")

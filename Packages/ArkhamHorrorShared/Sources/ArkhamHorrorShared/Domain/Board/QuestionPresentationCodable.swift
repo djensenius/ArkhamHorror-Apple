@@ -43,10 +43,9 @@ extension QuestionPresentation: Codable {
     }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
+            keyedBy: CodingKeys.self
         )
         let protocolVersion = try container.decode(Int.self, forKey: .protocolVersion)
         guard protocolVersion == Self.supportedProtocolVersion else {
@@ -346,10 +345,9 @@ extension QuestionPresentation.Choice: Codable {
     }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
+            keyedBy: CodingKeys.self
         )
         let choice = try Self(
             sourceIndex: container.decode(Int.self, forKey: .sourceIndex),
@@ -510,20 +508,16 @@ extension QuestionPresentation.Answer: Codable {
     init(from decoder: any Decoder) throws {
         let kindContainer = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try kindContainer.decode(Kind.self, forKey: .kind)
-        let allowed: [CodingKeys] = switch kind {
-        case .deck, .continueCampaign: [.kind, .tags]
-        case .singleChoice: [.kind, .tag, .alternateTags]
-        default: [.kind, .tag]
-        }
-        let container = try questionPresentationClosedContainer(decoder, keyedBy: CodingKeys.self, allowing: allowed)
+        let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
         switch kind {
         case .singleChoice:
             try Self.requireTag("Answer", in: container)
-            let alternateTags = try container.decodePresentIfContained([String].self, forKey: .alternateTags)
-            if let alternateTags, alternateTags != ["OrderedAnswer"] {
-                throw DecodingError.dataCorruptedError(forKey: .alternateTags, in: container, debugDescription: "Unsupported alternate answer tags")
-            }
-            self = .singleChoice(alternateTags: alternateTags)
+            let alternateTags = try Self.supportedTags(
+                decodedIfPresent: .alternateTags,
+                supported: ["OrderedAnswer"],
+                in: container
+            )
+            self = .singleChoice(alternateTags: alternateTags.isEmpty ? nil : alternateTags)
         case .amounts:
             try Self.requireTag("AmountsAnswer", in: container)
             self = .amounts
@@ -534,10 +528,11 @@ extension QuestionPresentation.Answer: Codable {
             try Self.requireTag("ExchangeAmountsAnswer", in: container)
             self = .exchangeAmounts
         case .deck:
-            let tags = try container.decode([String].self, forKey: .tags)
-            guard tags == ["DeckAnswer", "DeckListAnswer"] else {
-                throw DecodingError.dataCorruptedError(forKey: .tags, in: container, debugDescription: "Unsupported deck answer tags")
-            }
+            let tags = try Self.requireAdvertisedTags(
+                ["DeckAnswer"],
+                supported: ["DeckAnswer"],
+                in: container
+            )
             self = .deck(tags: tags)
         case .standaloneSettings:
             try Self.requireTag("StandaloneSettingsAnswer", in: container)
@@ -555,24 +550,17 @@ extension QuestionPresentation.Answer: Codable {
             try Self.requireTag("ScenarioSpecificAnswer", in: container)
             self = .scenarioSpecific
         case .continueCampaign:
-            let tags = try container.decode([String].self, forKey: .tags)
-            let allowedTags: Set = [
-                "CampaignStepAnswer",
-                "RetireInvestigatorAnswer",
-                "RejoinInvestigatorAnswer",
-                "ApplyOverlayAnswer",
-                "JoinCampaignAnswer",
-            ]
-            guard !tags.isEmpty,
-                  Set(tags).count == tags.count,
-                  Set(tags).isSubset(of: allowedTags)
-            else {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .tags,
-                    in: container,
-                    debugDescription: "Invalid continue-campaign tags"
-                )
-            }
+            let tags = try Self.requireAdvertisedTags(
+                ["CampaignStepAnswer"],
+                supported: [
+                    "CampaignStepAnswer",
+                    "RetireInvestigatorAnswer",
+                    "RejoinInvestigatorAnswer",
+                    "ApplyOverlayAnswer",
+                    "JoinCampaignAnswer",
+                ],
+                in: container
+            )
             self = .continueCampaign(tags: tags)
         }
     }
@@ -619,6 +607,35 @@ extension QuestionPresentation.Answer: Codable {
         }
     }
 
+    private static func requireAdvertisedTags(
+        _ required: Set<String>,
+        supported: [String],
+        in container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> [String] {
+        let rawTags = try container.decode([String].self, forKey: .tags)
+        let advertised = Set(rawTags)
+        guard required.isSubset(of: advertised) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .tags,
+                in: container,
+                debugDescription: "Missing required answer tag"
+            )
+        }
+        return supported.filter(advertised.contains)
+    }
+
+    private static func supportedTags(
+        decodedIfPresent key: CodingKeys,
+        supported: [String],
+        in container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> [String] {
+        guard let rawTags = try container.decodePresentIfContained([String].self, forKey: key) else {
+            return []
+        }
+        let advertised = Set(rawTags)
+        return supported.filter(advertised.contains)
+    }
+
     private func encode(
         _ kind: Kind,
         tag: String,
@@ -633,7 +650,7 @@ extension QuestionPresentation.Entity: Codable {
     private enum CodingKeys: String, CodingKey, CaseIterable { case kind, id }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(decoder, keyedBy: CodingKeys.self, allowing: Array(CodingKeys.allCases))
+        let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
         try self.init(kind: container.decode(QuestionPresentation.EntityKind.self, forKey: .kind), id: container.decode(String.self, forKey: .id))
     }
 
@@ -648,7 +665,7 @@ extension QuestionPresentation.Label: Codable {
     private enum CodingKeys: String, CodingKey, CaseIterable { case kind, text }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(decoder, keyedBy: CodingKeys.self, allowing: Array(CodingKeys.allCases))
+        let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
         try self.init(kind: container.decode(QuestionPresentation.LabelKind.self, forKey: .kind), text: container.decode(String.self, forKey: .text))
     }
 
@@ -663,9 +680,12 @@ extension QuestionPresentation.Source: Codable {
     private enum CodingKeys: String, CodingKey, CaseIterable { case raw, entity }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(decoder, keyedBy: CodingKeys.self, allowing: Array(CodingKeys.allCases))
+        let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
         let raw = try container.decode(JSONValue.self, forKey: .raw)
-        try Self.validateRawSource(raw, codingPath: decoder.codingPath + [CodingKeys.raw])
+        _ = try Self.normalizedRawSource(
+            raw,
+            codingPath: decoder.codingPath + [CodingKeys.raw]
+        )
         try self.init(raw: raw, entity: container.decodePresentIfContained(QuestionPresentation.Entity.self, forKey: .entity))
     }
 
@@ -676,6 +696,13 @@ extension QuestionPresentation.Source: Codable {
     }
 
     fileprivate static func validateRawSource(_ value: JSONValue, codingPath: [any CodingKey]) throws {
+        _ = try normalizedRawSource(value, codingPath: codingPath)
+    }
+
+    private static func normalizedRawSource(
+        _ value: JSONValue,
+        codingPath: [any CodingKey]
+    ) throws -> JSONValue {
         guard case let .object(object) = value,
               case let .string(tag)? = object["tag"],
               !tag.isEmpty
@@ -683,19 +710,21 @@ extension QuestionPresentation.Source: Codable {
             throw DecodingError.dataCorrupted(.init(codingPath: codingPath, debugDescription: "Source raw must be a tagged object"))
         }
         if tag == "ProxySource" {
-            guard Set(object.keys) == ["tag", "source", "originalSource"],
-                  let source = object["source"],
+            guard let source = object["source"],
                   let originalSource = object["originalSource"]
             else {
                 throw DecodingError.dataCorrupted(.init(codingPath: codingPath, debugDescription: "Malformed ProxySource"))
             }
-            try validateRawSource(source, codingPath: codingPath)
-            try validateRawSource(originalSource, codingPath: codingPath)
-        } else {
-            guard Set(object.keys).isSubset(of: ["tag", "contents"]) else {
-                throw DecodingError.dataCorrupted(.init(codingPath: codingPath, debugDescription: "Malformed tagged source"))
-            }
+            return try .object([
+                "tag": .string(tag),
+                "source": normalizedRawSource(source, codingPath: codingPath),
+                "originalSource": normalizedRawSource(originalSource, codingPath: codingPath),
+            ])
         }
+        if let contents = object["contents"] {
+            return .object(["tag": .string(tag), "contents": contents])
+        }
+        return .object(["tag": .string(tag)])
     }
 }
 
@@ -712,16 +741,16 @@ extension QuestionPresentation.Component: Codable {
         let tag = try tagContainer.decode(String.self, forKey: .tag)
         switch tag {
         case "InvestigatorComponent":
-            let container = try questionPresentationClosedContainer(decoder, keyedBy: CodingKeys.self, allowing: [.tag, .investigatorID, .tokenType])
+            let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
             self = try .investigator(
                 investigatorID: container.decode(String.self, forKey: .investigatorID),
                 tokenType: container.decode(QuestionPresentation.GameTokenType.self, forKey: .tokenType)
             )
         case "InvestigatorDeckComponent":
-            let container = try questionPresentationClosedContainer(decoder, keyedBy: CodingKeys.self, allowing: [.tag, .investigatorID])
+            let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
             self = try .investigatorDeck(investigatorID: container.decode(String.self, forKey: .investigatorID))
         case "AssetComponent":
-            let container = try questionPresentationClosedContainer(decoder, keyedBy: CodingKeys.self, allowing: [.tag, .assetID, .tokenType])
+            let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
             self = try .asset(
                 assetID: container.decode(String.self, forKey: .assetID),
                 tokenType: container.decode(QuestionPresentation.GameTokenType.self, forKey: .tokenType)
@@ -753,7 +782,7 @@ extension QuestionPresentation.AmountTarget: Codable {
     private enum CodingKeys: String, CodingKey, CaseIterable { case tag, contents }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(decoder, keyedBy: CodingKeys.self, allowing: Array(CodingKeys.allCases))
+        let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
         let tag = try container.decode(String.self, forKey: .tag)
         switch tag {
         case "MinAmountTarget": self = try .min(container.decode(Int.self, forKey: .contents))
@@ -788,10 +817,9 @@ extension QuestionPresentation.Selection {
     private enum CodingKeys: String, CodingKey, CaseIterable { case min, max }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
+            keyedBy: CodingKeys.self
         )
         try self.init(
             min: container.decode(Int.self, forKey: .min),
@@ -810,10 +838,9 @@ extension QuestionPresentation.TarotCard {
     private enum CodingKeys: String, CodingKey, CaseIterable { case facing, arcana }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
+            keyedBy: CodingKeys.self
         )
         try self.init(
             facing: container.decode(Facing.self, forKey: .facing),
@@ -867,10 +894,9 @@ extension QuestionPresentation.PileCard {
     private enum CodingKeys: String, CodingKey, CaseIterable { case cardID = "cardId", cardOwner }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
+            keyedBy: CodingKeys.self
         )
         guard container.contains(.cardOwner) else {
             throw DecodingError.keyNotFound(
@@ -908,10 +934,9 @@ extension QuestionPresentation.AmountChoice {
     }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
+            keyedBy: CodingKeys.self
         )
         try self.init(
             choiceID: container.decode(String.self, forKey: .choiceID),
@@ -936,10 +961,9 @@ extension QuestionPresentation.PaymentAmountChoice {
     }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
+            keyedBy: CodingKeys.self
         )
         try self.init(
             choiceID: container.decode(String.self, forKey: .choiceID),
@@ -964,10 +988,9 @@ extension QuestionPresentation.DestinyDrawing {
     private enum CodingKeys: String, CodingKey, CaseIterable { case scenario, tarot }
 
     init(from decoder: any Decoder) throws {
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: Array(CodingKeys.allCases)
+            keyedBy: CodingKeys.self
         )
         try self.init(
             scenario: container.decode(JSONValue.self, forKey: .scenario),
@@ -982,23 +1005,11 @@ extension QuestionPresentation.DestinyDrawing {
     }
 }
 
-func questionPresentationClosedContainer<Key: CodingKey>(
+func questionPresentationKeyedContainer<Key: CodingKey>(
     _ decoder: any Decoder,
-    keyedBy type: Key.Type,
-    allowing allowedKeys: [Key]
+    keyedBy type: Key.Type
 ) throws -> KeyedDecodingContainer<Key> {
-    let rawContainer = try decoder.container(keyedBy: AnyCodingKey.self)
-    let allowed = Set(allowedKeys.map(\.stringValue))
-    let unknown = Set(rawContainer.allKeys.map(\.stringValue)).subtracting(allowed)
-    guard unknown.isEmpty else {
-        throw DecodingError.dataCorrupted(
-            .init(
-                codingPath: decoder.codingPath,
-                debugDescription: "Unexpected keys: \(unknown.sorted().joined(separator: ", "))"
-            )
-        )
-    }
-    return try decoder.container(keyedBy: type)
+    try decoder.container(keyedBy: type)
 }
 
 extension KeyedDecodingContainer {
@@ -1045,8 +1056,7 @@ extension KeyedDecodingContainer {
 enum QuestionPresentationJSONShape {
     static func validateTaggedJSON(_ value: JSONValue, codingPath: [any CodingKey]) throws {
         guard case let .object(object) = value,
-              case .string? = object["tag"],
-              Set(object.keys).isSubset(of: ["tag", "contents"])
+              case .string? = object["tag"]
         else {
             throw DecodingError.dataCorrupted(.init(
                 codingPath: codingPath,
@@ -1067,16 +1077,6 @@ enum QuestionPresentationJSONShape {
         let taggedKeys: Set = ["tag", "contents"]
         if Set(object.keys).isSubset(of: taggedKeys) {
             return
-        }
-        let allowed: Set = [
-            "tag", "source", "amount", "tokenStrategy", "steps", "tokenGroups",
-            "chooseAndThen", "tokenMatcher", "tokenMatcherChoices",
-        ]
-        guard Set(object.keys).isSubset(of: allowed) else {
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: codingPath,
-                debugDescription: "Unexpected chaos bag step keys"
-            ))
         }
         if let source = object["source"] {
             try QuestionPresentation.Source.validateRawSource(

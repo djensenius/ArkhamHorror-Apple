@@ -18,28 +18,14 @@ extension QuestionPresentation.Cost: Codable {
         case all
         case choice
         case other
-
-        var allowedKeys: [CodingKeys] {
-            switch self {
-            case .free, .other:
-                [.kind]
-            case .action, .resource, .clue:
-                [.kind, .amount]
-            case .groupClue, .groupResource:
-                [.kind, .amount, .scope]
-            case .all, .choice:
-                [.kind, .costs]
-            }
-        }
     }
 
     init(from decoder: any Decoder) throws {
         let kindContainer = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try kindContainer.decode(Kind.self, forKey: .kind)
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: kind.allowedKeys
+            keyedBy: CodingKeys.self
         )
         self = try Self.decodeCost(kind, from: container)
     }
@@ -178,28 +164,14 @@ extension QuestionPresentation.Amount: Codable {
         case variable = "x"
         case star
         case unknown
-
-        var allowedKeys: [CodingKeys] {
-            switch self {
-            case .fixed, .perPlayer:
-                [.kind, .value]
-            case .fixedPlusPerPlayer:
-                [.kind, .fixed, .perPlayer]
-            case .byPlayerCount:
-                [.kind, .values]
-            case .variable, .star, .unknown:
-                [.kind]
-            }
-        }
     }
 
     init(from decoder: any Decoder) throws {
         let kindContainer = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try kindContainer.decode(Kind.self, forKey: .kind)
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: kind.allowedKeys
+            keyedBy: CodingKeys.self
         )
         self = try Self.decodeAmount(kind, from: container, codingPath: decoder.codingPath)
     }
@@ -335,13 +307,9 @@ extension QuestionPresentation.Scope: Codable {
     init(from decoder: any Decoder) throws {
         let kindContainer = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try kindContainer.decode(Kind.self, forKey: .kind)
-        let allowedKeys: [CodingKeys] = kind == .location
-            ? [.kind, .locationID]
-            : [.kind]
-        let container = try questionPresentationClosedContainer(
+        let container = try questionPresentationKeyedContainer(
             decoder,
-            keyedBy: CodingKeys.self,
-            allowing: allowedKeys
+            keyedBy: CodingKeys.self
         )
         switch kind {
         case .anywhere:
