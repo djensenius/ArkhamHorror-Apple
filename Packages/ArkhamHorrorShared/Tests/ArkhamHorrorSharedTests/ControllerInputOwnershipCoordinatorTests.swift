@@ -56,24 +56,22 @@ struct ControllerInputOwnershipCoordinatorTests {
         #expect(handled == [.command(.primaryAction)])
     }
 
-    @Test("Only the current input owner may dispatch controller events")
-    func onlyCurrentOwnerMayDispatchControllerEvents() {
+    @Test("Releasing the current input owner hands control back to a remaining board")
+    func releasingCurrentInputOwnerHandsControlBackToRemainingBoard() {
         let coordinator = ControllerInputOwnershipCoordinator()
         let firstBoard = OwnerToken()
         let secondBoard = OwnerToken()
 
         coordinator.claim(firstBoard)
-        #expect(coordinator.canDispatch(for: firstBoard))
-        #expect(!coordinator.canDispatch(for: secondBoard))
-
         coordinator.claim(secondBoard)
         #expect(!coordinator.canDispatch(for: firstBoard))
         #expect(coordinator.canDispatch(for: secondBoard))
 
-        coordinator.release(firstBoard)
-        #expect(coordinator.canDispatch(for: secondBoard))
-
         coordinator.release(secondBoard)
+        #expect(coordinator.canDispatch(for: firstBoard))
+        #expect(!coordinator.canDispatch(for: secondBoard))
+
+        coordinator.release(firstBoard)
         #expect(!coordinator.canDispatch(for: firstBoard))
         #expect(!coordinator.canDispatch(for: secondBoard))
     }

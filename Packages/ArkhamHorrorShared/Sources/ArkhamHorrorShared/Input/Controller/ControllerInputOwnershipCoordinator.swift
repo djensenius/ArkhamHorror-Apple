@@ -11,18 +11,20 @@ import Foundation
 final class ControllerInputOwnershipCoordinator {
     static let shared = ControllerInputOwnershipCoordinator()
 
-    private var currentOwner: ObjectIdentifier?
+    private var activeOwners: [ObjectIdentifier] = []
 
     func claim(_ owner: AnyObject) {
-        currentOwner = ObjectIdentifier(owner)
+        let id = ObjectIdentifier(owner)
+        activeOwners.removeAll { $0 == id }
+        activeOwners.append(id)
     }
 
     func release(_ owner: AnyObject) {
-        guard currentOwner == ObjectIdentifier(owner) else { return }
-        currentOwner = nil
+        let id = ObjectIdentifier(owner)
+        activeOwners.removeAll { $0 == id }
     }
 
     func canDispatch(for owner: AnyObject) -> Bool {
-        currentOwner == ObjectIdentifier(owner)
+        activeOwners.last == ObjectIdentifier(owner)
     }
 }
