@@ -19,7 +19,8 @@ import SwiftUI
         var scenePhase: ScenePhase
 
         var decision: BoardControllerInputOwnershipDecision {
-            guard started else { return .none }
+            guard started else { return .release }
+            guard scenePhase != .background else { return .release }
             guard scenePhase == .active, isKey else { return .none }
             return .claim
         }
@@ -181,7 +182,7 @@ extension BoardView {
 
         func stopControllerInputIfAvailable() {
             controllerInputStarted = false
-            ControllerInputOwnershipCoordinator.shared.release(controllerInputOwner)
+            applyControllerInputOwnership(scenePhase: .background)
             controllerInputCenter?.stop()
         }
 
