@@ -168,13 +168,19 @@ extension AppModel {
         for task in gameLifecycleActionTasks.values {
             task.cancel()
         }
+        for task in gameLobbyDetailTasks.values {
+            task.cancel()
+        }
         gameListTask = nil
         gameListState = .idle
         gameLifecycleActions = [:]
         gameLifecycleActionFailures = [:]
         gameOpenSeats = [:]
+        gameLobbyPlayerCounts = [:]
+        gameLobbyViewerHasSeats = [:]
         gameLifecycleActionAttempts = [:]
         gameLifecycleActionTasks = [:]
+        gameLobbyDetailTasks = [:]
         gameListGeneration += 1
         resetLiveGameState()
     }

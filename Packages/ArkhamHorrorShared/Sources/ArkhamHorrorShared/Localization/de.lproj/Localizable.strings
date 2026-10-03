@@ -235,3 +235,4 @@
 "games.state.unknown" = "Aktualisierung erforderlich";
 "games.multiplayer.solo" = "Solo";
 "games.multiplayer.withFriends" = "Mit Freunden";
+"games.lobby.continue" = "Fortsetzen";

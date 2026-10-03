@@ -1,9 +1,43 @@
+import Foundation
+
 /// Web-compatible multiplayer invite operations for ``AppModel``.
+struct GameInviteSessionToken: Equatable, Sendable {
+    let profileID: UUID
+    let generation: Int
+    let credentialEpoch: Int
+    let globalEpoch: Int
+}
+
+struct ClaimSeatInviteDetails: Equatable, Sendable {
+    let gameID: GameID
+    let seats: OpenSeats
+    let playerCount: Int
+    let viewerHasSeat: Bool
+    let sessionToken: GameInviteSessionToken
+
+    var showsClaimButtons: Bool {
+        !viewerHasSeat && !seats.isEmpty
+    }
+
+    var canContinue: Bool {
+        viewerHasSeat && seats.isEmpty
+    }
+}
+
 private struct GameInviteSession: Sendable {
     let profile: ServerProfile
     let generation: Int
     let credentialEpoch: Int
     let globalEpoch: Int
+
+    var token: GameInviteSessionToken {
+        GameInviteSessionToken(
+            profileID: profile.id,
+            generation: generation,
+            credentialEpoch: credentialEpoch,
+            globalEpoch: globalEpoch
+        )
+    }
 }
 
 extension AppModel {
@@ -22,7 +56,8 @@ extension AppModel {
             let preview = try await gameLifecycleService.peekLobby(
                 id, on: inviteSession.profile, token: token
             )
-            guard preview == .game(id) else { throw GameLifecycleError.malformedPayload }
+            guard preview.id == id else { throw GameLifecycleError.malformedPayload }
+            gameLobbyPlayerCounts[id] = preview.playerCount
             try ensureCurrentGameInviteSession(inviteSession)
             let joined = try await gameLifecycleService.joinGame(
                 id, on: inviteSession.profile, token: token
@@ -41,21 +76,33 @@ extension AppModel {
     /// Loads the claim-seat invite surface through the web sequence for
     /// `/claim-seat`: `GET /join` for display/authorization, then `GET /open-seats`.
     /// It deliberately never calls `PUT /join`; claiming is a separate explicit seat
-    /// choice sent through ``claimSeatFromInvite(_:in:)``.
-    func loadClaimSeatInvite(_ id: GameID) async throws -> OpenSeats {
+    /// choice sent through ``claimSeatFromInvite(_:using:)``.
+    func loadClaimSeatInvite(_ id: GameID) async throws -> ClaimSeatInviteDetails {
         let inviteSession = try currentGameInviteSession()
         let token = try await currentGameInviteToken(for: inviteSession)
         do {
             let preview = try await gameLifecycleService.peekLobby(
                 id, on: inviteSession.profile, token: token
             )
-            guard preview == .game(id) else { throw GameLifecycleError.malformedPayload }
+            guard preview.id == id else { throw GameLifecycleError.malformedPayload }
+            gameLobbyPlayerCounts[id] = preview.playerCount
             try ensureCurrentGameInviteSession(inviteSession)
             let seats = try await gameLifecycleService.openSeats(
                 for: id, on: inviteSession.profile, token: token
             )
             try ensureCurrentGameInviteSession(inviteSession)
-            return seats
+            let fullGame = try await getClaimSeatViewerSnapshot(
+                id,
+                session: inviteSession,
+                token: token
+            )
+            return ClaimSeatInviteDetails(
+                gameID: id,
+                seats: seats,
+                playerCount: fullGame?.game.playerCount ?? preview.playerCount,
+                viewerHasSeat: fullGame?.playerID != nil,
+                sessionToken: inviteSession.token
+            )
         } catch let error as GameLifecycleError {
             await handleGameInviteLifecycleError(error, session: inviteSession)
             throw error
@@ -66,8 +113,11 @@ extension AppModel {
     /// games-list refresh before returning, so presenting the lobby cannot flash a
     /// stale "game unavailable" state while the joined game is still loading.
     @discardableResult
-    func claimSeatFromInvite(_ seat: CardCode, in id: GameID) async throws -> GameID {
+    func claimSeatFromInvite(_ seat: CardCode, using details: ClaimSeatInviteDetails)
+        async throws -> GameID
+    {
         let inviteSession = try currentGameInviteSession()
+        try ensureCurrentGameInviteSession(inviteSession, matches: details.sessionToken)
         let token = try await currentGameInviteToken(for: inviteSession)
         guard let investigatorId = try? InvestigatorCode(openSeat: seat) else {
             throw GameLifecycleError.malformedPayload
@@ -75,15 +125,68 @@ extension AppModel {
         do {
             try await gameLifecycleService.claimSeat(
                 ClaimSeatRequest(investigatorId: investigatorId),
-                in: id,
+                in: details.gameID,
                 on: inviteSession.profile,
                 token: token
             )
             try await refreshGamesForInvite(inviteSession)
-            return id
+            return details.gameID
         } catch let error as GameLifecycleError {
             await handleGameInviteLifecycleError(error, session: inviteSession)
             throw error
+        }
+    }
+
+    func loadLobbyDetailsIfNeeded(for id: GameID) {
+        guard gameLobbyPlayerCounts[id] == nil,
+              gameLobbyDetailTasks[id] == nil,
+              case let .signedIn(profile, _, _) = sessionState
+        else { return }
+        let session = GameInviteSession(
+            profile: profile,
+            generation: generation,
+            credentialEpoch: currentCredentialEpoch(for: profile.id),
+            globalEpoch: currentGlobalCredentialEpoch()
+        )
+        gameLobbyDetailTasks[id] = Task { [weak self] in
+            await self?.performLoadLobbyDetails(for: id, session: session)
+        }
+    }
+
+    private func performLoadLobbyDetails(for id: GameID, session: GameInviteSession) async {
+        defer { gameLobbyDetailTasks[id] = nil }
+        let token: String
+        do {
+            token = try await currentGameInviteToken(for: session)
+            let envelope = try await gameLifecycleService.getGame(id, on: session.profile, token: token)
+            try ensureCurrentGameInviteSession(session)
+            gameLobbyPlayerCounts[id] = envelope.game.playerCount
+            gameLobbyViewerHasSeats[id] = envelope.playerID != nil
+        } catch is CancellationError {
+            return
+        } catch let error as GameLifecycleError {
+            await handleGameInviteLifecycleError(error, session: session)
+        } catch {
+            return
+        }
+    }
+
+    private func getClaimSeatViewerSnapshot(
+        _ id: GameID,
+        session: GameInviteSession,
+        token: String
+    ) async throws -> GetGameEnvelope? {
+        do {
+            let envelope = try await gameLifecycleService.getGame(id, on: session.profile, token: token)
+            gameLobbyPlayerCounts[id] = envelope.game.playerCount
+            gameLobbyViewerHasSeats[id] = envelope.playerID != nil
+            return envelope
+        } catch GameLifecycleError.sessionExpired {
+            throw GameLifecycleError.sessionExpired
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return nil
         }
     }
 
@@ -120,6 +223,14 @@ extension AppModel {
               case let .signedIn(profile, _, _) = sessionState,
               profile.id == session.profile.id
         else { throw CancellationError() }
+    }
+
+    private func ensureCurrentGameInviteSession(
+        _ session: GameInviteSession,
+        matches token: GameInviteSessionToken
+    ) throws {
+        guard session.token == token else { throw CancellationError() }
+        try ensureCurrentGameInviteSession(session)
     }
 
     private func refreshGamesForInvite(_ session: GameInviteSession) async throws {

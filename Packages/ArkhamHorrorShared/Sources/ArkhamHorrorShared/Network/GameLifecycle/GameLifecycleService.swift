@@ -110,11 +110,11 @@ struct GameLifecycleService: Sendable {
 
     func peekLobby(
         _ id: GameID, on profile: ServerProfile, token: String
-    ) async throws -> GameLifecycleEnvelope {
+    ) async throws -> GameLifecyclePreview {
         let url = try gameURL(id, suffix: "/join", on: profile)
         let request = makeRequest(url: url, method: "GET", token: token)
         return try await perform(
-            request, decoding: GameLifecycleEnvelope.self, badRequest: .operation
+            request, decoding: GameLifecyclePreview.self, badRequest: .lifecycleOperation
         )
     }
 
@@ -124,7 +124,7 @@ struct GameLifecycleService: Sendable {
         let url = try gameURL(id, suffix: "/join", on: profile)
         let request = makeRequest(url: url, method: "PUT", token: token)
         return try await perform(
-            request, decoding: GameLifecycleEnvelope.self, badRequest: .operation
+            request, decoding: GameLifecycleEnvelope.self, badRequest: .lifecycleOperation
         )
     }
 
@@ -133,7 +133,7 @@ struct GameLifecycleService: Sendable {
     ) async throws -> OpenSeats {
         let url = try gameURL(id, suffix: "/open-seats", on: profile)
         let request = makeRequest(url: url, method: "GET", token: token)
-        return try await perform(request, decoding: OpenSeats.self, badRequest: .operation)
+        return try await perform(request, decoding: OpenSeats.self, badRequest: .lifecycleOperation)
     }
 
     func claimSeat(
@@ -142,7 +142,7 @@ struct GameLifecycleService: Sendable {
         let url = try gameURL(id, suffix: "/claim-seat", on: profile)
         var urlRequest = makeRequest(url: url, method: "POST", token: token)
         try attachJSONBody(request, to: &urlRequest)
-        try await performNoContent(urlRequest, badRequest: .operation)
+        try await performNoContent(urlRequest, badRequest: .lifecycleOperation)
     }
 
     func chooseDeck(
@@ -151,7 +151,7 @@ struct GameLifecycleService: Sendable {
         let url = try gameURL(id, suffix: "/decks", on: profile)
         var urlRequest = makeRequest(url: url, method: "PUT", token: token)
         try attachJSONBody(request, to: &urlRequest)
-        try await performNoContent(urlRequest, badRequest: .operation)
+        try await performNoContent(urlRequest, badRequest: .deckOperation)
     }
 
     // MARK: - URL construction
@@ -239,7 +239,8 @@ struct GameLifecycleService: Sendable {
 
     private enum BadRequestDecoder: Equatable {
         case generic
-        case operation
+        case lifecycleOperation
+        case deckOperation
     }
 
     /// Executes `request`, mapping every failure mode to a typed ``GameLifecycleError``
@@ -292,7 +293,14 @@ struct GameLifecycleService: Sendable {
         switch decoder {
         case .generic:
             return .unexpectedStatus(statusCode)
-        case .operation:
+        case .lifecycleOperation:
+            if statusCode == 400 || statusCode == 403,
+               let message = operationFailureMessage(from: data)
+            {
+                return .operationFailed(DeckOperationError(errorMsg: message))
+            }
+            return statusCode == 400 ? .malformedPayload : .unexpectedStatus(statusCode)
+        case .deckOperation:
             if let message = operationFailureMessage(from: data) {
                 return .operationFailed(DeckOperationError(errorMsg: message))
             }
@@ -351,13 +359,20 @@ private struct LifecycleOperationErrorBody: Decodable {
     private enum CodingKeys: String, CodingKey {
         case message
         case errorMsg
+        case errors
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let errors = try container.decodeIfPresent([String].self, forKey: .errors) ?? []
+        let joinedErrors = errors
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
         let yesodMessage = try container.decodeIfPresent(String.self, forKey: .message)
         let deckMessage = try container.decodeIfPresent(String.self, forKey: .errorMsg)
-        message = [yesodMessage, deckMessage]
+        let errorsMessage = joinedErrors.isEmpty ? nil : joinedErrors
+        message = [errorsMessage, yesodMessage, deckMessage]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
     }

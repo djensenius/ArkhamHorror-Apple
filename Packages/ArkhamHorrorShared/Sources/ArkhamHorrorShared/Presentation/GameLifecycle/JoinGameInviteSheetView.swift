@@ -1,10 +1,7 @@
 import Observation
 import SwiftUI
 
-struct ClaimSeatInviteViewState: Equatable, Sendable {
-    let gameID: GameID
-    let seats: OpenSeats
-}
+typealias ClaimSeatInviteViewState = ClaimSeatInviteDetails
 
 @MainActor
 @Observable
@@ -22,7 +19,7 @@ final class JoinGameInviteViewModel {
     @discardableResult
     func submit(
         joinInvite: (GameID) async throws -> GameID,
-        loadClaimSeatInvite: (GameID) async throws -> OpenSeats
+        loadClaimSeatInvite: (GameID) async throws -> ClaimSeatInviteViewState
     ) async -> GameID? {
         guard !isSubmitting else { return nil }
         isSubmitting = true
@@ -46,8 +43,7 @@ final class JoinGameInviteViewModel {
             case .join:
                 return try await joinInvite(invite.gameID)
             case .claimSeat:
-                let seats = try await loadClaimSeatInvite(invite.gameID)
-                claimSeatInvite = ClaimSeatInviteViewState(gameID: invite.gameID, seats: seats)
+                claimSeatInvite = try await loadClaimSeatInvite(invite.gameID)
                 return nil
             }
         } catch is CancellationError {
@@ -67,7 +63,8 @@ final class JoinGameInviteViewModel {
     @discardableResult
     func claimSeat(
         _ seat: CardCode,
-        claimSeatInvite: (CardCode, GameID) async throws -> GameID
+        claimSeatInvite: (CardCode, ClaimSeatInviteViewState) async throws -> GameID,
+        reloadClaimSeatInvite: (GameID) async throws -> ClaimSeatInviteViewState
     ) async -> GameID? {
         guard claimingSeat == nil, let invite = self.claimSeatInvite else { return nil }
         claimingSeat = seat
@@ -75,17 +72,19 @@ final class JoinGameInviteViewModel {
         defer { claimingSeat = nil }
 
         do {
-            return try await claimSeatInvite(seat, invite.gameID)
+            return try await claimSeatInvite(seat, invite)
         } catch is CancellationError {
             return nil
         } catch let error as GameLifecycleError {
             failureMessage = error.message
+            self.claimSeatInvite = try? await reloadClaimSeatInvite(invite.gameID)
             return nil
         } catch {
             failureMessage = gameLifecycleLocalized(
                 "games.joinInvite.error.generic",
                 "Couldn't join that game. Try again."
             )
+            self.claimSeatInvite = try? await reloadClaimSeatInvite(invite.gameID)
             return nil
         }
     }
@@ -175,41 +174,7 @@ struct JoinGameInviteSheetView: View {
     private var claimSeatSection: some View {
         if let invite = viewModel.claimSeatInvite {
             Section {
-                if invite.seats.isEmpty {
-                    Text(gameLifecycleLocalized(
-                        "games.lobby.openSeats.empty",
-                        "No open seats remain."
-                    ))
-                    .foregroundStyle(.secondary)
-                } else {
-                    ForEach(invite.seats, id: \.rawValue) { seat in
-                        Button {
-                            Task { await claimSeat(seat) }
-                        } label: {
-                            HStack {
-                                Label(
-                                    gameLifecycleLocalizedFormat(
-                                        "games.joinInvite.claimSeat",
-                                        "Claim %@",
-                                        seat.rawValue
-                                    ),
-                                    systemImage: "person.fill.badge.plus"
-                                )
-                                if viewModel.claimingSeat == seat {
-                                    Spacer()
-                                    ProgressView().controlSize(.small)
-                                }
-                            }
-                        }
-                        .disabled(viewModel.claimingSeat != nil || viewModel.isSubmitting)
-                        .accessibilityIdentifier(
-                            AccountAccessibilityID.gameClaimSeatButton(
-                                for: invite.gameID.rawValue,
-                                seat: seat.rawValue
-                            )
-                        )
-                    }
-                }
+                claimSeatContent(for: invite)
             } header: {
                 Text(gameLifecycleLocalized("games.joinInvite.openSeats.section", "Open Seats"))
             } footer: {
@@ -219,6 +184,71 @@ struct JoinGameInviteSheetView: View {
                 ))
             }
         }
+    }
+
+    @ViewBuilder
+    private func claimSeatContent(for invite: ClaimSeatInviteViewState) -> some View {
+        if invite.viewerHasSeat {
+            Text(gameLifecycleLocalized(
+                "games.lobby.openSeats.alreadyClaimed",
+                "You already have a seat in this game."
+            ))
+            .foregroundStyle(.secondary)
+            if invite.canContinue {
+                continueButton(for: invite)
+            }
+        } else if invite.seats.isEmpty {
+            Text(gameLifecycleLocalized(
+                "games.lobby.openSeats.empty",
+                "No open seats remain."
+            ))
+            .foregroundStyle(.secondary)
+        } else if invite.showsClaimButtons {
+            claimSeatButtons(for: invite)
+        }
+    }
+
+    private func claimSeatButtons(for invite: ClaimSeatInviteViewState) -> some View {
+        ForEach(invite.seats, id: \.rawValue) { seat in
+            Button {
+                Task { await claimSeat(seat) }
+            } label: {
+                HStack {
+                    Label(
+                        gameLifecycleLocalizedFormat(
+                            "games.joinInvite.claimSeat",
+                            "Claim %@",
+                            seat.rawValue
+                        ),
+                        systemImage: "person.fill.badge.plus"
+                    )
+                    if viewModel.claimingSeat == seat {
+                        Spacer()
+                        ProgressView().controlSize(.small)
+                    }
+                }
+            }
+            .disabled(viewModel.claimingSeat != nil || viewModel.isSubmitting)
+            .accessibilityIdentifier(
+                AccountAccessibilityID.gameClaimSeatButton(
+                    for: invite.gameID.rawValue,
+                    seat: seat.rawValue
+                )
+            )
+        }
+    }
+
+    private func continueButton(for invite: ClaimSeatInviteViewState) -> some View {
+        Button {
+            onJoined(invite.gameID)
+            dismiss()
+        } label: {
+            Label(
+                gameLifecycleLocalized("games.lobby.continue", "Continue"),
+                systemImage: "arrow.right.circle.fill"
+            )
+        }
+        .accessibilityIdentifier(AccountAccessibilityID.liveGameEnterButton(for: invite.gameID.rawValue))
     }
 
     @ViewBuilder
@@ -247,8 +277,11 @@ struct JoinGameInviteSheetView: View {
     private func claimSeat(_ seat: CardCode) async {
         guard let id = await viewModel.claimSeat(
             seat,
-            claimSeatInvite: { seat, gameID in
-                try await model.claimSeatFromInvite(seat, in: gameID)
+            claimSeatInvite: { seat, invite in
+                try await model.claimSeatFromInvite(seat, using: invite)
+            },
+            reloadClaimSeatInvite: { gameID in
+                try await model.loadClaimSeatInvite(gameID)
             }
         ) else { return }
         onJoined(id)

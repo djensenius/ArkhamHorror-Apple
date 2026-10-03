@@ -113,19 +113,37 @@ struct GameLobbyPresentationTests {
         )
     }
 
-    @Test("GameLobbyView waiting text reports remaining players with plural handling")
+    @Test("GameLobbyView waiting text uses server playerCount with plural handling")
     func gameLobbyViewWaitingTextUsesRemainingPlayers() async {
-        let player = PlayerID(UUID())
-        let game = sampleGame(
-            gameState: .pending([player]),
-            investigators: [InvestigatorSummary(id: "01001", classSymbol: .guardian)],
-            otherInvestigators: [InvestigatorSummary(id: "01002", classSymbol: .seeker)],
-            multiplayerVariant: .withFriends
+        let firstPlayer = PlayerID(UUID())
+        let secondPlayer = PlayerID(UUID())
+        let oneRemaining = sampleGame(
+            gameState: .pending([firstPlayer]), multiplayerVariant: .withFriends
         )
-        let model = await model(gameListState: .loaded([.game(game)]))
-        let view = GameLobbyView(model: model, gameID: game.id)
+        let manyRemaining = sampleGame(
+            gameState: .pending([firstPlayer]), multiplayerVariant: .withFriends
+        )
+        let chooseDecks = sampleGame(
+            gameState: .chooseDecks([firstPlayer, secondPlayer]), multiplayerVariant: .withFriends
+        )
+        let model = await model(gameListState: .loaded([
+            .game(oneRemaining), .game(manyRemaining), .game(chooseDecks),
+        ]))
+        model.gameLobbyPlayerCounts[oneRemaining.id] = 2
+        model.gameLobbyPlayerCounts[manyRemaining.id] = 4
 
-        #expect(view.waitingText(for: game) == "Waiting for 1 more player to join.")
+        #expect(
+            GameLobbyView(model: model, gameID: oneRemaining.id)
+                .waitingText(for: oneRemaining) == "Waiting for 1 more player to join."
+        )
+        #expect(
+            GameLobbyView(model: model, gameID: manyRemaining.id)
+                .waitingText(for: manyRemaining) == "Waiting for 3 more players to join."
+        )
+        #expect(
+            GameLobbyView(model: model, gameID: chooseDecks.id)
+                .waitingText(for: chooseDecks) == "Waiting for 2 players' deck choices."
+        )
     }
 
     @Test(

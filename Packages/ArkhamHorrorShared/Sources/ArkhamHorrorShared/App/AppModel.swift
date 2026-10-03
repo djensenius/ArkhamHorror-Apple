@@ -258,6 +258,11 @@ final class AppModel {
     /// The most recently loaded open-seat list per game, populated by
     /// ``loadOpenSeats(for:)``.
     var gameOpenSeats: [GameID: OpenSeats] = [:]
+    /// Server-owned lobby seat counts, loaded from `PublicGame.playerCount` through
+    /// GET `/join` or GET `/games/:id` rather than inferred from list rows.
+    var gameLobbyPlayerCounts: [GameID: Int] = [:]
+    /// Whether the current signed-in viewer has a server-reported seat in a lobby.
+    var gameLobbyViewerHasSeats: [GameID: Bool] = [:]
 
     /// A monotonically increasing counter guarding stale games-list load/refresh
     /// completions against a *newer* load/refresh — independent of ``generation``,
@@ -276,6 +281,8 @@ final class AppModel {
     @ObservationIgnored var gameLifecycleActionAttempts: [GameID: UUID] = [:]
     /// The in-flight task for each ``GameID``'s current action, if any.
     @ObservationIgnored var gameLifecycleActionTasks: [GameID: Task<Void, Never>] = [:]
+    /// The in-flight server-detail load for each lobby, if any.
+    @ObservationIgnored var gameLobbyDetailTasks: [GameID: Task<Void, Never>] = [:]
 
     // MARK: - Live-game state (see `AppModel+LiveGame.swift`/`AppModel+LiveGameSession.swift`)
 

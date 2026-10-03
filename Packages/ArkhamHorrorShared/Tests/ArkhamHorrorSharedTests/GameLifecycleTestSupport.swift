@@ -29,7 +29,7 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private var createGameQueue: [Result<GameLifecycleEnvelope, any Error>] = []
     private var deleteGameQueue: [Result<Void, any Error>] = []
     private var getGameQueue: [Result<GetGameEnvelope, any Error>] = []
-    private var peekLobbyQueue: [Result<GameLifecycleEnvelope, any Error>] = []
+    private var peekLobbyQueue: [Result<GameLifecyclePreview, any Error>] = []
     private var joinGameQueue: [Result<GameLifecycleEnvelope, any Error>] = []
     private var openSeatsQueue: [Result<OpenSeats, any Error>] = []
     private var claimSeatQueue: [Result<Void, any Error>] = []
@@ -79,7 +79,7 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         getGameQueue.append(result)
     }
 
-    func enqueuePeekLobbyResult(_ result: Result<GameLifecycleEnvelope, any Error>) {
+    func enqueuePeekLobbyResult(_ result: Result<GameLifecyclePreview, any Error>) {
         peekLobbyQueue.append(result)
     }
 
@@ -320,7 +320,7 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
 
     func peekLobby(
         _ id: GameID, on profile: ServerProfile, token: String
-    ) async throws -> GameLifecycleEnvelope {
+    ) async throws -> GameLifecyclePreview {
         callOrder.append("peekLobby")
         lastToken = token
         lastProfileID = profile.id

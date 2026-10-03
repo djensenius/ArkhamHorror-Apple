@@ -126,7 +126,8 @@ extension BoardTestFixtures {
         concealedCount: Int = 0,
         cardCount: Int = 0,
         cardValues: [WireCardID: JSONValue] = [:],
-        questionCount: Int = 0
+        questionCount: Int = 0,
+        playerCount: Int? = nil
     ) -> PublicGameSnapshot {
         var locationMap = UUIDKeyedMap<LocationIDTag, Location>()
         for (id, location) in locations {
@@ -163,7 +164,7 @@ extension BoardTestFixtures {
             acts: acts, agendas: agendas, treacheries: treacheries,
             events: entityMap(count: eventCount), concealed: entityMap(count: concealedCount),
             skills: entityMap(count: skillCount), stories: [:], scarletKeys: [:],
-            playerCount: max(
+            playerCount: playerCount ?? max(
                 investigators.count + otherInvestigators.count + killedInvestigators.count,
                 1
             ),

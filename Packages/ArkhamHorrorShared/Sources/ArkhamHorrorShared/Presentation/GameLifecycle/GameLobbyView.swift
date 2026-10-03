@@ -73,8 +73,8 @@ struct GameLobbyView: View {
             chooseDeckSection(for: game)
             failureSection
         }
-        .onAppear { loadOpenSeatsIfNeeded(for: game) }
-        .onChange(of: game.hasOpenSeats) { _, _ in loadOpenSeatsIfNeeded(for: game) }
+        .onAppear { loadLobbyDataIfNeeded(for: game) }
+        .onChange(of: game.hasOpenSeats) { _, _ in loadLobbyDataIfNeeded(for: game) }
     }
 
     private var action: GameLifecycleAction? {
@@ -116,7 +116,7 @@ struct GameLobbyView: View {
         _ openSeats: OpenSeats,
         for game: GameSummary
     ) -> some View {
-        if openSeats.isEmpty || game.viewerAlreadyHasSeat {
+        if openSeats.isEmpty || viewerAlreadyHasSeat(in: game) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(openSeatsStatusText(for: game, openSeats: openSeats))
                     .foregroundStyle(.secondary)
@@ -299,14 +299,14 @@ extension GameLobbyView {
     func waitingText(for game: GameSummary) -> String? {
         switch game.gameState {
         case let .pending(players):
-            let knownSeatCount = game.investigators.count + game.otherInvestigators.count
-            guard knownSeatCount > 0 else {
+            guard game.investigators.isEmpty else { return nil }
+            guard let playerCount = model.gameLobbyPlayerCounts[gameID] else {
                 return gameLifecycleLocalized(
                     "games.lobby.waiting.pending.unknownRemaining",
                     "Waiting for more players to join."
                 )
             }
-            let remaining = max(knownSeatCount - players.count, 0)
+            let remaining = max(playerCount - players.count, 0)
             return gameLifecycleLocalizedPlural(
                 count: remaining,
                 oneKey: "games.lobby.waiting.pending.remaining.one",
@@ -328,7 +328,7 @@ extension GameLobbyView {
     }
 
     func openSeatsStatusText(for game: GameSummary, openSeats: OpenSeats) -> String {
-        if game.viewerAlreadyHasSeat {
+        if viewerAlreadyHasSeat(in: game) {
             return gameLifecycleLocalized(
                 "games.lobby.openSeats.alreadyClaimed",
                 "You already have a seat in this game."
@@ -351,6 +351,15 @@ extension GameLobbyView {
         let investigators = game.investigators + game.otherInvestigators
         let route: GameInvite.Route = investigators.isEmpty ? .join : .claimSeat
         return GameInvite.webURL(for: gameID, route: route, on: profile)
+    }
+
+    func viewerAlreadyHasSeat(in game: GameSummary) -> Bool {
+        model.gameLobbyViewerHasSeats[gameID] ?? game.viewerAlreadyHasSeat
+    }
+
+    func loadLobbyDataIfNeeded(for game: GameSummary) {
+        model.loadLobbyDetailsIfNeeded(for: gameID)
+        loadOpenSeatsIfNeeded(for: game)
     }
 
     func loadOpenSeatsIfNeeded(for game: GameSummary) {
