@@ -328,7 +328,14 @@ struct QuestionPresentationV2GenericTests {
                 mutatedBinding.isRenderableInCurrentClient == testCase.isRenderableInCurrentClient,
                 "\(testCase.name) renderability"
             )
-            #expect(try answerBytes(for: mutatedPresentation) == baseAnswer, "\(testCase.name) answer bytes")
+            let mutatedAnswer = try answerBytes(for: mutatedPresentation)
+            if testCase.expectsExchangeSourceEcho {
+                let sentSource = try exchangeAnswerSource(from: mutatedAnswer)
+                let mutatedServerSource = try presentationSourceRaw(from: mutatedPresentationData)
+                #expect(sentSource == mutatedServerSource, "\(testCase.name) source echo")
+            } else {
+                #expect(mutatedAnswer == baseAnswer, "\(testCase.name) answer bytes")
+            }
         }
     }
 
@@ -584,6 +591,25 @@ struct QuestionPresentationV2GenericTests {
         let presentationMutations: [AdditiveMutation]
         let rawMutations: [AdditiveMutation]
         let isRenderableInCurrentClient: Bool
+        let expectsExchangeSourceEcho: Bool
+
+        init(
+            name: String,
+            presentationData: Data,
+            rawData: Data,
+            presentationMutations: [AdditiveMutation],
+            rawMutations: [AdditiveMutation],
+            isRenderableInCurrentClient: Bool,
+            expectsExchangeSourceEcho: Bool = false
+        ) {
+            self.name = name
+            self.presentationData = presentationData
+            self.rawData = rawData
+            self.presentationMutations = presentationMutations
+            self.rawMutations = rawMutations
+            self.isRenderableInCurrentClient = isRenderableInCurrentClient
+            self.expectsExchangeSourceEcho = expectsExchangeSourceEcho
+        }
     }
 
     private struct AdditiveMutation {
@@ -695,7 +721,24 @@ struct QuestionPresentationV2GenericTests {
                     .init(pointer: "/extra", value: .bool(true)),
                     .init(pointer: "/source/extra", value: .bool(true)),
                 ],
-                isRenderableInCurrentClient: true
+                isRenderableInCurrentClient: true,
+                expectsExchangeSourceEcho: true
+            ),
+            .init(
+                name: "exchange amounts nested source",
+                presentationData: Data(proxyExchangePresentationJSON.utf8),
+                rawData: Data(proxyExchangeRawJSON.utf8),
+                presentationMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/answer/extra", value: .bool(true)),
+                    .init(pointer: "/source/raw/source/extra", value: .string("child-addition")),
+                ],
+                rawMutations: [
+                    .init(pointer: "/extra", value: .bool(true)),
+                    .init(pointer: "/source/source/extra", value: .string("child-addition")),
+                ],
+                isRenderableInCurrentClient: true,
+                expectsExchangeSourceEcho: true
             ),
             .init(
                 name: "deck",
@@ -792,6 +835,23 @@ struct QuestionPresentationV2GenericTests {
         return try mutationObject.data()
     }
 
+    private func exchangeAnswerSource(from answerData: Data) throws -> JSONValue {
+        let value = try ContractJSON.decode(JSONValue.self, from: answerData)
+        guard case let .object(object) = value,
+              let source = object["source"]
+        else { throw MutationError.invalidPointer }
+        return source
+    }
+
+    private func presentationSourceRaw(from presentationData: Data) throws -> JSONValue {
+        let value = try ContractJSON.decode(JSONValue.self, from: presentationData)
+        guard case let .object(object) = value,
+              case let .object(source)? = object["source"],
+              let raw = source["raw"]
+        else { throw MutationError.invalidPointer }
+        return raw
+    }
+
     private func answerBytes(for presentation: QuestionPresentation) throws -> Data {
         let playerID = try fixedPlayerID()
         switch presentation.answer {
@@ -863,6 +923,14 @@ struct QuestionPresentationV2GenericTests {
 
     private var exchangePresentationJSON: String {
         #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseExchangeAmounts","choiceCount":0,"choices":[],"answer":{"kind":"exchangeAmounts","tag":"ExchangeAmountsAnswer"},"source":{"raw":{"tag":"GameSource"}},"fromInvestigator":"c01001","fromInitialAmount":3,"toInvestigator":"c01002","toInitialAmount":1,"token":"ResourceToken"}"#
+    }
+
+    private var proxyExchangeRawJSON: String {
+        #"{"tag":"ChooseExchangeAmounts","source":{"tag":"ProxySource","source":{"tag":"CardSource","contents":"01001"},"originalSource":{"tag":"GameSource"}},"investigator1Id":"c01001","investigator1InitialAmount":3,"investigator2Id":"c01002","investigator2InitialAmount":1,"token":"ResourceToken"}"#
+    }
+
+    private var proxyExchangePresentationJSON: String {
+        #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseExchangeAmounts","choiceCount":0,"choices":[],"answer":{"kind":"exchangeAmounts","tag":"ExchangeAmountsAnswer"},"source":{"raw":{"tag":"ProxySource","source":{"tag":"CardSource","contents":"01001"},"originalSource":{"tag":"GameSource"}}},"fromInvestigator":"c01001","fromInitialAmount":3,"toInvestigator":"c01002","toInitialAmount":1,"token":"ResourceToken"}"#
     }
 
     private var continueCampaignPresentationJSON: String {

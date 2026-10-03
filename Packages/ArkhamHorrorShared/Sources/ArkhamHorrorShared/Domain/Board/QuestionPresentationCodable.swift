@@ -681,8 +681,9 @@ extension QuestionPresentation.Source: Codable {
 
     init(from decoder: any Decoder) throws {
         let container = try questionPresentationKeyedContainer(decoder, keyedBy: CodingKeys.self)
-        let raw = try Self.normalizedRawSource(
-            container.decode(JSONValue.self, forKey: .raw),
+        let raw = try container.decode(JSONValue.self, forKey: .raw)
+        _ = try Self.normalizedRawSource(
+            raw,
             codingPath: decoder.codingPath + [CodingKeys.raw]
         )
         try self.init(raw: raw, entity: container.decodePresentIfContained(QuestionPresentation.Entity.self, forKey: .entity))
