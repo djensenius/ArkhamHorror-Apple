@@ -159,6 +159,35 @@ struct BoardProjectionCampaignSummaryTests {
         ) == "Translated time")
     }
 
+    @Test("Campaign log falls back to scenario log for null or malformed campaign logs")
+    func malformedCampaignLogFallsBackToScenarioStandaloneLog() throws {
+        let invalidLogs: [Any] = [NSNull(), "not an object", ["not", "an", "object"]]
+
+        for invalidLog in invalidLogs {
+            let inputs = try campaignLogInputs(campaignLog: invalidLog)
+            let summary = BoardCampaignSummaryBuilder.makeLogSummary(
+                campaign: inputs.campaign,
+                scenario: inputs.scenario
+            )
+
+            #expect(summary.entries.map { $0.title() } == ["Scenario fallback entry"])
+        }
+    }
+
+    @Test("Campaign log uses a valid campaign object before the scenario log")
+    func validCampaignLogObjectUsesCampaignLog() throws {
+        let inputs = try campaignLogInputs(campaignLog: campaignLog(recorded: [
+            logKey("CampaignPrimaryEntry"),
+        ]))
+
+        let summary = BoardCampaignSummaryBuilder.makeLogSummary(
+            campaign: inputs.campaign,
+            scenario: inputs.scenario
+        )
+
+        #expect(summary.entries.map { $0.title() } == ["Campaign primary entry"])
+    }
+
     private func assertCampaignHandoffFallback(_ summary: BoardCampaignSummary) {
         #expect(summary.resolutions.map { $0.title() } == [
             "Resolution 2",
@@ -346,6 +375,49 @@ struct BoardProjectionCampaignSummaryTests {
         ]
     }
 
+    private func campaignLogInputs(
+        campaignLog campaignLogPayload: Any
+    ) throws -> (campaign: JSONValue, scenario: Scenario) {
+        var root = try #require(
+            JSONSerialization.jsonObject(with: contractFixtureData(named: "mode-campaign-scenario"))
+                as? [String: Any]
+        )
+        var campaign = try #require(root["This"] as? [String: Any])
+        var scenario = try #require(root["That"] as? [String: Any])
+        campaign["log"] = campaignLogPayload
+        scenario["standaloneCampaignLog"] = campaignLog(recorded: [
+            logKey("ScenarioFallbackEntry"),
+        ])
+        root["This"] = campaign
+        root["That"] = scenario
+
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        let mode = try ContractJSON.decode(GameMode.self, from: data)
+        guard case let .campaignAndScenario(campaign, scenario) = mode else {
+            throw CampaignSummaryTestError.expectedCampaignAndScenarioMode
+        }
+        return (campaign, scenario)
+    }
+
+    private func campaignLog(recorded: [[String: Any]]) -> [String: Any] {
+        [
+            "crossedOut": [],
+            "options": [],
+            "orderedKeys": [],
+            "partners": [:],
+            "recorded": recorded,
+            "recordedCounts": [],
+            "recordedSets": [],
+        ]
+    }
+
+    private func logKey(_ contents: String) -> [String: Any] {
+        [
+            "tag": "HomebrewCampaignLogKey",
+            "contents": "test.\(contents)",
+        ]
+    }
+
     private func contractFixtureData(named fileName: String) throws -> Data {
         let url = try #require(Bundle.module.url(
             forResource: fileName,
@@ -437,4 +509,8 @@ struct BoardProjectionCampaignSummaryTests {
     private func message(_ text: String) -> LocaleCatalogEntry {
         .message(nodes: [.text(text)], variables: [])
     }
+}
+
+private enum CampaignSummaryTestError: Error {
+    case expectedCampaignAndScenarioMode
 }

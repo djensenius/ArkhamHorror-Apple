@@ -158,8 +158,13 @@ enum BoardCampaignSummaryBuilder {
         campaign: JSONValue?,
         scenario: Scenario?
     ) -> BoardCampaignLogSummary {
-        if let log = campaign?.objectValue?["log"] {
-            return makeLogSummary(from: log)
+        if let log = campaign?.objectValue?["log"]?.objectValue {
+            return makeLogSummary(
+                recorded: log["recorded"]?.arrayValue ?? [],
+                crossedOut: log["crossedOut"]?.arrayValue ?? [],
+                recordedCounts: log["recordedCounts"]?.arrayValue ?? [],
+                recordedSets: log["recordedSets"]?.arrayValue ?? []
+            )
         }
         if let scenario {
             return makeLogSummary(from: scenario.standaloneCampaignLog)
