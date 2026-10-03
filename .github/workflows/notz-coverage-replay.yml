@@ -57,6 +57,7 @@ jobs:
       - name: Replay coverage prompts
         run: mise run notz-coverage-replay
       - name: Download latest successful fork multiplayer coverage artifact
+        if: ${{ !cancelled() }}
         env:
           GH_PROMPT_DISABLED: "1"
           # Cross-repo artifact downloads may need a token with actions:read on
@@ -87,4 +88,5 @@ jobs:
           find "$coverage_dir" -type f -name '*.jsonl' -print | sort
           echo "ARKHAM_NOTZ_MP_COVERAGE_DIR=$coverage_dir" >> "$GITHUB_ENV"
       - name: Replay multiplayer coverage prompts
+        if: ${{ !cancelled() }}
         run: mise run notz-multiplayer-coverage-replay

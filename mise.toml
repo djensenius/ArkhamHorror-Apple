@@ -81,6 +81,7 @@ description = "Replay downloaded Night of the Zealot multiplayer coverage JSONL 
 run = '''
 set -euo pipefail
 : "${ARKHAM_NOTZ_MP_COVERAGE_DIR:?Set ARKHAM_NOTZ_MP_COVERAGE_DIR to the directory containing Night of the Zealot multiplayer coverage JSONL files}"
+unset ARKHAM_NOTZ_COVERAGE_DIR
 swift test --package-path Packages/ArkhamHorrorShared --filter NightOfTheZealotCoverageReplayTests --no-parallel
 '''
 
