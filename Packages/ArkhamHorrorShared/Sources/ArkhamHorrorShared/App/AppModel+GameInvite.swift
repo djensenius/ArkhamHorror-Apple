@@ -220,6 +220,8 @@ extension AppModel {
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
             return envelope
         } catch GameLifecycleError.unexpectedStatus(404) {
+            try ensureCurrentGameInviteSession(session)
+            gameLobbyViewerHasSeats[id] = false
             return nil
         } catch is CancellationError {
             throw CancellationError()

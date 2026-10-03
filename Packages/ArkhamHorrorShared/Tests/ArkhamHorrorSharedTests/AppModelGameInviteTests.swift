@@ -110,6 +110,25 @@ struct AppModelGameInviteTests {
         )
     }
 
+    @Test("claim-seat invite records viewer as unseated after a confirmed full-game 404")
+    func claimSeatInviteClearsStaleSeatCacheAfterFullGame404() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let seat = try CardCode("c01001")
+        await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 2)))
+        await service.enqueueOpenSeatsResult(.success([seat]))
+        await service.enqueueGetGameResult(.failure(GameLifecycleError.unexpectedStatus(404)))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        model.gameLobbyViewerHasSeats[gameID] = true
+
+        let invite = try await model.loadClaimSeatInvite(gameID)
+
+        #expect(invite.viewerHasSeat == false)
+        #expect(invite.showsClaimButtons)
+        #expect(model.gameLobbyViewerHasSeats[gameID] == false)
+        #expect(await service.callOrder == ["peekLobby", "openSeats", "getGame"])
+    }
+
     @Test("claim-seat invite snapshot cannot republish stale lobby flags after reset")
     func claimSeatInviteRejectsSnapshotAfterReset() async throws {
         let service = ScriptedGameLifecycleService()
