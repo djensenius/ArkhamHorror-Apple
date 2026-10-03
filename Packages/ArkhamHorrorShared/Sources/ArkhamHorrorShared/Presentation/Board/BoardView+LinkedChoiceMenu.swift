@@ -32,8 +32,8 @@ struct BoardLinkedChoiceMenuModalView: View {
                         "board.linkedChoiceMenu.title",
                         "Choose prompt action"
                     ))
-                        .font(.title3.bold())
-                        .foregroundStyle(ArkhamTheme.bone)
+                    .font(.title3.bold())
+                    .foregroundStyle(ArkhamTheme.bone)
                     ForEach(request.choices, id: \.choiceIndex) { choice in
                         choiceButton(choice)
                     }
@@ -41,8 +41,8 @@ struct BoardLinkedChoiceMenuModalView: View {
                         "board.linkedChoiceMenu.cancelHint",
                         "Press Back or Secondary Action to cancel."
                     ))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: 420)
