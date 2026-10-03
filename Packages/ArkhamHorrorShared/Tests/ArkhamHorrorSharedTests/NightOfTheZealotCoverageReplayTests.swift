@@ -58,7 +58,7 @@ struct NightOfTheZealotCoverageReplayTests {
     @Test("Replay multiplayer smoke JSONL fixture through the coverage harness")
     func replayMultiplayerSmokeJSONLFixture() async throws {
         try await runMultiplayer(
-            recordings: CoverageRecordingLoader.load(file: multiplayerSmokeFixtureURL())
+            recordings: CoverageRecordingLoader.load(directory: multiplayerSmokeFixtureDirectoryURL())
         )
     }
 
@@ -88,12 +88,12 @@ struct NightOfTheZealotCoverageReplayTests {
         )
     }
 
-    private func multiplayerSmokeFixtureURL() throws -> URL {
+    private func multiplayerSmokeFixtureDirectoryURL() throws -> URL {
         try #require(
             Bundle.module.url(
-                forResource: "2p-smoke",
-                withExtension: "jsonl",
-                subdirectory: "Fixtures/NightOfTheZealotMultiplayerCoverageReplay"
+                forResource: "NightOfTheZealotMultiplayerCoverageReplay",
+                withExtension: nil,
+                subdirectory: "Fixtures"
             )
         )
     }
@@ -142,14 +142,27 @@ struct NightOfTheZealotCoverageReplayTests {
 
         for group in recordings.groupsByFile() {
             guard let first = group.records.first else { continue }
-            let runDefinition = try MultiplayerRunDefinition(fileName: group.fileName)
-            let replay = try await CoverageReplaySession.start(
-                first: first,
-                baseEnvelopeData: baseEnvelopeData,
-                catalogDocuments: catalogDocuments,
-                deck: deck,
-                runDefinition: runDefinition
-            )
+            let runDefinition: MultiplayerRunDefinition
+            let replay: CoverageReplaySession
+            do {
+                runDefinition = try MultiplayerRunDefinition(fileName: group.fileName)
+                replay = try await CoverageReplaySession.start(
+                    first: first,
+                    baseEnvelopeData: baseEnvelopeData,
+                    catalogDocuments: catalogDocuments,
+                    deck: deck,
+                    runDefinition: runDefinition
+                )
+            } catch let failure as CoverageReplayPromptFailure {
+                failures.append(failure)
+                continue
+            } catch {
+                failures.append(CoverageReplayPromptFailure(
+                    record: first,
+                    reason: String(describing: error)
+                ))
+                continue
+            }
             for (index, record) in group.records.enumerated() {
                 do {
                     if index > 0 {
@@ -369,11 +382,18 @@ private struct CoverageReplaySession {
         runDefinition: MultiplayerRunDefinition
     ) async throws {
         let ownerID = try recording.record.recordedPlayerID()
-        guard runDefinition.seats.contains(where: { $0.playerID == recording.record.playerID })
-        else {
+        guard let ownerSeat = runDefinition.seat(playerID: recording.record.playerID) else {
             throw CoverageReplayPromptFailure(
                 record: recording,
                 reason: "record owner is not part of the multiplayer run"
+            )
+        }
+        guard ownerSeat.investigator == recording.record.investigator else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "record owner/investigator pair was " +
+                    "\(recording.record.playerID)/\(recording.record.investigator); " +
+                    "expected investigator \(ownerSeat.investigator)"
             )
         }
 
@@ -728,7 +748,9 @@ private struct MultiplayerSeat {
     let investigator: String
 
     func playerIDValue() throws -> PlayerID {
-        guard let uuid = UUID(uuidString: playerID) else { throw TestFailure() }
+        guard let uuid = UUID(uuidString: playerID) else {
+            throw CoverageReplayFailure(message: "Invalid multiplayer seat playerId \(playerID)")
+        }
         return PlayerID(uuid)
     }
 }
@@ -755,6 +777,10 @@ private struct MultiplayerRunDefinition {
     }
 
     private static let investigatorIDs = ["c01001", "c01002", "c01003", "c01004"]
+
+    func seat(playerID: String) -> MultiplayerSeat? {
+        seats.first { $0.playerID == playerID }
+    }
 
     static func playerCount(fileName: String) -> Int? {
         guard let first = fileName.first,
@@ -891,7 +917,11 @@ private enum CoverageEnvelopeBuilder {
               let templateInvestigator = investigators.keys.min(),
               let templateInvestigatorValue = investigators[templateInvestigator],
               case let .string(templatePlayer)? = game["activePlayerId"]
-        else { throw TestFailure() }
+        else {
+            throw CoverageReplayFailure(
+                message: "Base get-game fixture does not contain ownership fields"
+            )
+        }
 
         var rewrittenInvestigators: [String: JSONValue] = [:]
         for seat in runDefinition.seats {
@@ -913,8 +943,17 @@ private enum CoverageEnvelopeBuilder {
         game["playerOrder"] = .array(runDefinition.seats.map { .string($0.investigator) })
         game["leadInvestigatorId"] = .string(runDefinition.seats[0].investigator)
 
-        guard runDefinition.seats.contains(where: { $0.investigator == record.investigator })
-        else { throw TestFailure() }
+        guard let ownerSeat = runDefinition.seat(playerID: record.playerID) else {
+            throw CoverageReplayFailure(
+                message: "Record owner \(record.playerID) is not seated in this run"
+            )
+        }
+        guard ownerSeat.investigator == record.investigator else {
+            throw CoverageReplayFailure(
+                message: "Record owner \(record.playerID) belongs to " +
+                    "\(ownerSeat.investigator), not \(record.investigator)"
+            )
+        }
     }
 
     private static func renameObjectKey(
