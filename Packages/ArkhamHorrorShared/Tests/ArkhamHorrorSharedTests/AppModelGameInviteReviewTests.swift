@@ -253,7 +253,7 @@ struct AppModelGameInviteReviewTests {
         await service.waitUntilListGamesPending(1)
         model.refreshGames()
         await service.waitUntilListGamesPending(2)
-        await service.resumeNewestListGames(with: .success([]))
+        await service.resumeNewestListGames(with: .success([.game(gameSummary(id: gameID))]))
         await model.gameListTask?.value
         await service.resumeOldestListGames(with: .success([]))
 
