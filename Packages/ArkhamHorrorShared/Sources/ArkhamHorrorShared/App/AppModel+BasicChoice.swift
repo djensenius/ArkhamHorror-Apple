@@ -419,13 +419,12 @@ extension AppModel {
     /// A `.retryable` record is definitively not in flight -- the exact same authoritative
     /// prompt (`samePrompt`, established by the caller: same `scenarioSteps` *and* same raw
     /// question bytes) has just been observed again unanswered, so the prior send attempt
-    /// provably never advanced the game. That is exactly the fingerprint/version/projection
-    /// evidence needed to safely retire a record whose originally-targeted choice this
-    /// fresh authoritative `projection` (never a stale local rendering) no longer considers
-    /// actionable -- for example a target location/card disappearing, or required
-    /// deployment-owned text stopping resolution -- so a different, currently-actionable
-    /// choice isn't permanently blocked behind it (see independent-review blocker 2 on
-    /// PR #36).
+    /// provably never advanced the game. That lets us safely retire records that no longer
+    /// point at an activatable answer: missing original choices/descriptors, semantic
+    /// choices rejected by the server-provided presentation or label resolution, or legacy
+    /// choices that the current projection cannot submit. Retiring those stale records lets
+    /// a different, currently-actionable choice proceed instead of being permanently blocked
+    /// behind them (see independent-review blocker 2 on PR #36).
     ///
     /// Deliberately never applied to `.sending`/`.awaitingSnapshot`/`.uncertain`: while a
     /// send might still be in flight or its outcome is still genuinely unknown, retiring

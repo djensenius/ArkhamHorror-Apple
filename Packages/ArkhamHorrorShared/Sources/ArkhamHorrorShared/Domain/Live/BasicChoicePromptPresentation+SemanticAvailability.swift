@@ -68,7 +68,6 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
     func semanticUnavailableAnnouncement(
         for descriptor: QuestionPresentation.Choice,
         labelResolution: BasicChoiceLabelResolution?
@@ -86,64 +85,10 @@ extension BasicChoicePromptPresentation {
                     value: "The text for this choice is not currently available."
                 )
         }
-        switch descriptor.kind {
-        case .advanceAct:
-            return semanticLocalized(
-                "semantic.choice.unavailable.advanceAct",
-                value:
-                "The act or investigator for this choice is not currently available."
-            )
-        case .advanceAgenda:
-            return semanticLocalized(
-                "semantic.choice.unavailable.advanceAgenda",
-                value:
-                "The agenda or investigator for this choice is not currently available."
-            )
-        case .fight, .evade, .engage:
-            return semanticLocalized(
-                "semantic.choice.unavailable.enemy",
-                value:
-                "The enemy or investigator for this choice is not currently available."
-            )
-        case .investigate, .move:
-            return semanticLocalized(
-                "semantic.choice.unavailable.location",
-                value:
-                "The location or investigator for this choice is not currently available."
-            )
-        case .resolveForcedAbility:
-            return semanticLocalized(
-                "semantic.choice.unavailable.forcedAbility",
-                value:
-                "The source or investigator for this forced ability is not currently available."
-            )
-        case .chooseTarget:
-            return semanticLocalized(
-                "semantic.choice.unavailable.target",
-                value: "The target for this choice is not currently available."
-            )
-        case .assignDamage, .assignHorror:
-            return semanticLocalized(
-                "semantic.choice.unavailable.assignment",
-                value:
-                "The investigator for this assignment is not currently available."
-            )
-        case .drawCard, .drawEncounterCard, .endTurn, .gainResource, .skipTriggers,
-             .startSkillTest, .useAbility:
-            return semanticLocalized(
-                "semantic.choice.unavailable.investigator",
-                value:
-                "The investigator for this choice is not currently available."
-            )
-        case .applySkillTestResults, .auto, .auxiliaryComponentLabel, .cardPile,
-             .chaosTokenGroupChoice, .chaosTokenLabel, .componentLabel, .connectionLabel,
-             .costLabel, .effectActionButton, .info, .invalidLabel, .keyLabel,
-             .localizedLabel, .opaque, .skillLabel, .tarotLabel, .wizardChoice:
-            return semanticLocalized(
-                "semantic.choice.unavailable.generic",
-                value: "This choice is not currently available."
-            )
-        }
+        return semanticLocalized(
+            "semantic.choice.unavailable.generic",
+            value: "This choice is not currently available."
+        )
     }
 
     private func semanticActID(_ raw: String) -> ActID? {
