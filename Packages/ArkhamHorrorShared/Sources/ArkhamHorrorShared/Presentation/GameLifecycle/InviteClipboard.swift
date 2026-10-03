@@ -8,6 +8,16 @@ import Foundation
 #endif
 
 enum InviteClipboard {
+    static var canCopy: Bool {
+        #if os(tvOS)
+            false
+        #elseif canImport(UIKit) || canImport(AppKit)
+            true
+        #else
+            false
+        #endif
+    }
+
     @MainActor
     static func copy(_ value: String) {
         #if os(tvOS)

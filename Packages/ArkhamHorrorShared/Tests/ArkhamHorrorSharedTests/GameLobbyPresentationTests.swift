@@ -58,6 +58,17 @@ struct GameLobbyPresentationTests {
         #expect(claimView.inviteURL(for: claimGame)?.path.hasSuffix(claimSuffix) == true)
     }
 
+    @Test("Invite clipboard copy availability matches platform support")
+    func inviteClipboardCopyAvailabilityMatchesPlatformSupport() {
+        #if os(tvOS)
+            #expect(InviteClipboard.canCopy == false)
+        #elseif canImport(UIKit) || canImport(AppKit)
+            #expect(InviteClipboard.canCopy)
+        #else
+            #expect(InviteClipboard.canCopy == false)
+        #endif
+    }
+
     @Test("GameLobbyView only offers invites while a with-friends game is pending")
     func gameLobbyViewInviteIsPendingOnly() async {
         let model = await model(gameListState: .loaded([]))

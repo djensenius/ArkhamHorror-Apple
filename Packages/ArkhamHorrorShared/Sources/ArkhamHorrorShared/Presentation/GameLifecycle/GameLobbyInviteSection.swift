@@ -8,7 +8,9 @@ struct GameLobbyInviteSection: View {
     var body: some View {
         Section {
             inviteURLText
-            copyButton
+            if InviteClipboard.canCopy {
+                copyButton
+            }
         } header: {
             Text(gameLifecycleLocalized("games.lobby.invite.section", "Invite Others"))
         } footer: {
