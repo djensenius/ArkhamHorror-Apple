@@ -175,4 +175,18 @@ struct AppModelGameInviteTests {
         }
         #expect(await service.callOrder == ["peekLobby"])
     }
+
+    @Test("joinGameFromInvite rejects a PUT join response for a different game")
+    func joinGameFromInviteRejectsMismatchedJoinResponse() async throws {
+        let service = ScriptedGameLifecycleService()
+        let requestedID = GameID(UUID())
+        await service.enqueuePeekLobbyResult(.success(.game(requestedID)))
+        await service.enqueueJoinGameResult(.success(.game(GameID(UUID()))))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        await #expect(throws: GameLifecycleError.malformedPayload) {
+            try await model.joinGameFromInvite(requestedID)
+        }
+        #expect(await service.callOrder == ["peekLobby", "joinGame"])
+    }
 }

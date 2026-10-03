@@ -62,7 +62,7 @@ extension AppModel {
             let joined = try await gameLifecycleService.joinGame(
                 id, on: inviteSession.profile, token: token
             )
-            guard case let .game(joinedID) = joined else {
+            guard case let .game(joinedID) = joined, joinedID == id else {
                 throw GameLifecycleError.malformedPayload
             }
             try await refreshGamesForInvite(inviteSession)
