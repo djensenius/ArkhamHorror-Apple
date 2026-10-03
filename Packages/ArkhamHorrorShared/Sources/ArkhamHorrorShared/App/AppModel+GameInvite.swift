@@ -247,9 +247,19 @@ extension AppModel {
     private func refreshGamesForInvite(_ session: GameInviteSession) async throws {
         try ensureCurrentGameInviteSession(session)
         refreshGames()
+        let refreshGeneration = gameListGeneration
         let refreshTask = gameListTask
         await refreshTask?.value
         try ensureCurrentGameInviteSession(session)
+        guard refreshGeneration == gameListGeneration else { throw CancellationError() }
+        switch gameListState {
+        case .loaded:
+            return
+        case let .failed(error, _):
+            throw error
+        case .idle, .loading:
+            throw CancellationError()
+        }
     }
 
     private func handleGameInviteLifecycleError(

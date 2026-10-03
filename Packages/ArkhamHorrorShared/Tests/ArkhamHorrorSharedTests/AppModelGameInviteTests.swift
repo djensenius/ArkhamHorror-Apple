@@ -276,6 +276,22 @@ struct AppModelGameInviteTests {
         #expect(await service.callOrder == ["peekLobby", "joinGame"])
     }
 
+    @Test("joinGameFromInvite surfaces a failed post-join refresh")
+    func joinGameFromInviteSurfacesRefreshFailure() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.enqueuePeekLobbyResult(.success(.game(gameID)))
+        await service.enqueueJoinGameResult(.success(.game(gameID)))
+        await service.enqueueListGamesResult(.failure(GameLifecycleError.unexpectedStatus(500)))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        await #expect(throws: GameLifecycleError.unexpectedStatus(500)) {
+            try await model.joinGameFromInvite(gameID)
+        }
+        #expect(await service.callOrder == ["peekLobby", "joinGame", "listGames"])
+        #expect(model.gameListState == .failed(.unexpectedStatus(500), previous: nil))
+    }
+
     @Test("joinGameFromInvite rejects a preview for a different game")
     func joinGameFromInviteRejectsMismatchedPreview() async throws {
         let service = ScriptedGameLifecycleService()

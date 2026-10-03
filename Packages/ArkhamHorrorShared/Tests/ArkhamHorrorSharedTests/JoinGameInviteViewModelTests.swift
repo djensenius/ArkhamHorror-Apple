@@ -67,6 +67,24 @@ struct JoinGameInviteViewModelTests {
         #expect(viewModel.failureMessage == nil)
     }
 
+    @Test("join links keep the sheet open when joining or refreshing fails")
+    func joinInviteKeepsSheetOpenOnLifecycleFailure() async {
+        let viewModel = JoinGameInviteViewModel()
+        viewModel.inviteText = "https://arkhamhorror.app/games/\(gameID.rawValue.uuidString)/join"
+
+        let result = await viewModel.submit(
+            joinInvite: { _ in throw GameLifecycleError.unexpectedStatus(500) },
+            loadClaimSeatInvite: { _ in
+                Issue.record("claim load should not run")
+                return inviteDetails(seats: [])
+            }
+        )
+
+        #expect(result == nil)
+        #expect(viewModel.failureMessage == "This server responded unexpectedly. Try again.")
+        #expect(viewModel.claimSeatInvite == nil)
+    }
+
     @Test("claim-seat links load open seats without joining")
     func claimSeatInviteLoadsOpenSeats() async throws {
         let viewModel = JoinGameInviteViewModel()
