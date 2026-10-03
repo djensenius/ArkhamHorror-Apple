@@ -35,9 +35,6 @@ struct BoardView: View {
     @FocusState private var focusedID: SemanticFocusID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-    #if os(macOS) && canImport(GameController)
-        @Environment(\.controlActiveState) private var controlActiveState
-    #endif
     #if os(iOS) || os(visionOS)
         @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
@@ -103,7 +100,7 @@ struct BoardView: View {
             startControllerInputIfAvailable(
                 for: activeController,
                 scenePhase: scenePhase,
-                isKey: controllerInputCurrentWindowIsKey
+                isKey: controllerInputWindowIsKey
             )
             // Re-synced on every appearance, not only when the controller is first
             // created: if this view disappears and reappears with the same
@@ -137,30 +134,13 @@ struct BoardView: View {
         .onChange(of: scenePhase) { _, newValue in
             controllerInputScenePhaseDidChange(newValue)
         }
-        #if os(macOS) && canImport(GameController)
-        .onChange(of: controlActiveState) { _, newValue in
-            controllerInputWindowFocusDidChange(newValue == .key, scenePhase: scenePhase)
+        .boardControllerInputWindowFocusObserver(scenePhase: scenePhase) { isKey, scenePhase in
+            controllerInputWindowFocusDidChange(isKey, scenePhase: scenePhase)
         }
-        #endif
-        #if (os(iOS) || os(visionOS)) && canImport(GameController)
-        .background {
-            BoardControllerInputWindowKeyObserver { isKey in
-                controllerInputWindowFocusDidChange(isKey, scenePhase: scenePhase)
-            }
-        }
-        #endif
     }
 
-    #if canImport(GameController) && !os(tvOS)
-        private var controllerInputCurrentWindowIsKey: Bool {
-            #if os(macOS)
-                controlActiveState == .key
-            #else
-                controllerInputWindowIsKey
-            #endif
-        }
-    #else
-        private var controllerInputCurrentWindowIsKey: Bool {
+    #if !canImport(GameController) || os(tvOS)
+        private var controllerInputWindowIsKey: Bool {
             false
         }
     #endif

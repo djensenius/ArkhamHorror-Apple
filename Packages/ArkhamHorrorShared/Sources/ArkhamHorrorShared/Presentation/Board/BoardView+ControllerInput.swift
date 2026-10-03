@@ -146,6 +146,59 @@ import SwiftUI
     }
 #endif
 
+#if canImport(GameController) && !os(tvOS)
+    private struct BoardControllerInputWindowFocusModifier: ViewModifier {
+        let scenePhase: ScenePhase
+        let onChange: @MainActor (Bool, ScenePhase) -> Void
+
+        #if os(macOS)
+            @Environment(\.controlActiveState) private var controlActiveState
+        #endif
+
+        func body(content: Content) -> some View {
+            #if os(macOS)
+                content
+                    .onAppear {
+                        onChange(controlActiveState == .key, scenePhase)
+                    }
+                    .onChange(of: controlActiveState) { _, newValue in
+                        onChange(newValue == .key, scenePhase)
+                    }
+            #elseif os(iOS) || os(visionOS)
+                content
+                    .background {
+                        BoardControllerInputWindowKeyObserver { isKey in
+                            onChange(isKey, scenePhase)
+                        }
+                    }
+            #else
+                content
+            #endif
+        }
+    }
+
+    extension View {
+        func boardControllerInputWindowFocusObserver(
+            scenePhase: ScenePhase,
+            onChange: @escaping @MainActor (Bool, ScenePhase) -> Void
+        ) -> some View {
+            modifier(BoardControllerInputWindowFocusModifier(
+                scenePhase: scenePhase,
+                onChange: onChange
+            ))
+        }
+    }
+#else
+    extension View {
+        func boardControllerInputWindowFocusObserver(
+            scenePhase _: ScenePhase,
+            onChange _: @escaping @MainActor (Bool, ScenePhase) -> Void
+        ) -> some View {
+            self
+        }
+    }
+#endif
+
 extension BoardView {
     func updateControllerInputs(_ controller: BoardCommandController) {
         controller.updateChoiceHandler(onChoice)

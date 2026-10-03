@@ -68,8 +68,8 @@ import Testing
             #expect(!coordinator.canDispatch(for: secondBoard))
         }
 
-        @Test("Backgrounding or stopping the owner hands input to the remaining board")
-        func backgroundingOrStoppingOwnerHandsInputToRemainingBoard() {
+        @Test("Backgrounding the owner hands input to the remaining board")
+        func backgroundingOwnerHandsInputToRemainingBoard() {
             let coordinator = ControllerInputOwnershipCoordinator()
             let firstBoard = BoardControllerInputOwner()
             let secondBoard = BoardControllerInputOwner()
@@ -80,7 +80,11 @@ import Testing
                 coordinator: coordinator
             )
             BoardControllerInputOwnershipPolicy.apply(
-                BoardControllerInputOwnershipState(started: true, isKey: false, scenePhase: .active),
+                BoardControllerInputOwnershipState(
+                    started: true,
+                    isKey: false,
+                    scenePhase: .active
+                ),
                 owner: firstBoard,
                 coordinator: coordinator
             )
@@ -103,7 +107,19 @@ import Testing
             )
             #expect(coordinator.canDispatch(for: firstBoard))
             #expect(!coordinator.canDispatch(for: secondBoard))
+        }
 
+        @Test("Stopping the owner hands input to the remaining board")
+        func stoppingOwnerHandsInputToRemainingBoard() {
+            let coordinator = ControllerInputOwnershipCoordinator()
+            let firstBoard = BoardControllerInputOwner()
+            let secondBoard = BoardControllerInputOwner()
+
+            BoardControllerInputOwnershipPolicy.apply(
+                BoardControllerInputOwnershipState(started: true, isKey: true, scenePhase: .active),
+                owner: firstBoard,
+                coordinator: coordinator
+            )
             BoardControllerInputOwnershipPolicy.apply(
                 BoardControllerInputOwnershipState(started: true, isKey: true, scenePhase: .active),
                 owner: secondBoard,
@@ -113,7 +129,11 @@ import Testing
             #expect(coordinator.canDispatch(for: secondBoard))
 
             BoardControllerInputOwnershipPolicy.apply(
-                BoardControllerInputOwnershipState(started: false, isKey: true, scenePhase: .active),
+                BoardControllerInputOwnershipState(
+                    started: false,
+                    isKey: true,
+                    scenePhase: .active
+                ),
                 owner: secondBoard,
                 coordinator: coordinator
             )
@@ -121,7 +141,11 @@ import Testing
             #expect(!coordinator.canDispatch(for: secondBoard))
 
             BoardControllerInputOwnershipPolicy.apply(
-                BoardControllerInputOwnershipState(started: false, isKey: true, scenePhase: .active),
+                BoardControllerInputOwnershipState(
+                    started: false,
+                    isKey: true,
+                    scenePhase: .active
+                ),
                 owner: secondBoard,
                 coordinator: coordinator
             )
