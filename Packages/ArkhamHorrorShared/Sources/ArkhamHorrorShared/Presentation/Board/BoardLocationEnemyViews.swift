@@ -41,6 +41,16 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
             regular
         #endif
     }
+
+    func minimumCellSize(hasLinkedEnemyActions: Bool) -> CGSize {
+        guard hasLinkedEnemyActions else { return minimumCellSize }
+        let minimumTileHeight = 44 + compactIndicatorHeight + summaryButtonHeight
+            + (2 * verticalSpacing)
+        return CGSize(
+            width: minimumCellSize.width,
+            height: max(minimumCellSize.height, minimumTileHeight + 8)
+        )
+    }
 }
 
 enum BoardLocationEnemyTileLayoutDecision: Sendable, Equatable {
@@ -140,8 +150,6 @@ struct BoardEnemyCompactPanelView: View {
     let enemies: [BoardEnemyNode]
     let visibleCount: Int
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
-    let focusedID: SemanticFocusID?
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -153,8 +161,6 @@ struct BoardEnemyCompactPanelView: View {
                 BoardEnemyCompactChipView(
                     enemy: enemy,
                     linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
-                    focusedID: focusedID,
-                    focusBinding: focusBinding,
                     onLinkedChoice: onLinkedChoice
                 )
             }

@@ -32,7 +32,17 @@ struct BoardLocationBoardView: View {
             width: baseCellSize.width * zoomScale,
             height: baseCellSize.height * zoomScale
         )
-        let minimum = BoardLocationEnemyTileMetrics.current.minimumCellSize
+        let metrics = BoardLocationEnemyTileMetrics.current
+        let minimum = metrics.minimumCellSize(
+            hasLinkedEnemyActions: locations.contains { location in
+                let enemies = enemiesByLocationID[location.id] ?? []
+                let linkedEnemyChoices = BoardFocusGraphBuilder.linkedEnemyChoices(
+                    for: enemies,
+                    choiceLinks: choiceLinks
+                )
+                return hasFocusableLinkedEnemyActions(linkedEnemyChoices)
+            }
+        )
         return CGSize(
             width: max(scaled.width, minimum.width),
             height: max(scaled.height, minimum.height)
@@ -136,8 +146,12 @@ struct BoardLocationBoardView: View {
         linkedChoices: [BoardLinkedChoice]
     ) -> some View {
         BoardLinkedEnemyActionsControl(
-            title: "Enemy actions",
-            accessibilityLabel: "Enemy prompt actions at \(location.displayLabel)",
+            title: BoardLocalization.localized("board.enemyActions.title", "Enemy actions"),
+            accessibilityLabel: BoardLocalization.format(
+                "board.enemyActions.accessibility",
+                "Enemy prompt actions at %@",
+                location.displayLabel
+            ),
             focusID: BoardFocusID.locationEnemyActions(location.id),
             linkedChoices: linkedChoices,
             focusedID: focusedID,
@@ -256,8 +270,6 @@ struct BoardLocationBoardView: View {
                     BoardEnemyTileChipView(
                         enemy: enemy,
                         linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
-                        focusedID: focusedID,
-                        focusBinding: focusBinding,
                         onLinkedChoice: onLinkedChoice
                     )
                 }
@@ -356,8 +368,6 @@ struct BoardEnemyLocationsRowView: View {
                     enemies: enemies,
                     visibleCount: 3,
                     choiceLinks: choiceLinks,
-                    focusedID: focusedID,
-                    focusBinding: focusBinding,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -371,8 +381,12 @@ struct BoardEnemyLocationsRowView: View {
         linkedChoices: [BoardLinkedChoice]
     ) -> some View {
         BoardLinkedEnemyActionsControl(
-            title: "Enemy actions",
-            accessibilityLabel: "Enemy prompt actions at \(location.displayLabel)",
+            title: BoardLocalization.localized("board.enemyActions.title", "Enemy actions"),
+            accessibilityLabel: BoardLocalization.format(
+                "board.enemyActions.accessibility",
+                "Enemy prompt actions at %@",
+                location.displayLabel
+            ),
             focusID: BoardFocusID.enemyLocationEnemyActions(location.id),
             linkedChoices: linkedChoices,
             focusedID: focusedID,

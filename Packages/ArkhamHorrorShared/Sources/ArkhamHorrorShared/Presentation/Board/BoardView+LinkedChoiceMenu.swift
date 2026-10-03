@@ -28,13 +28,19 @@ struct BoardLinkedChoiceMenuModalView: View {
                 .onTapGesture {}
             ArkhamCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Choose prompt action")
+                    Text(BoardLocalization.localized(
+                        "board.linkedChoiceMenu.title",
+                        "Choose prompt action"
+                    ))
                         .font(.title3.bold())
                         .foregroundStyle(ArkhamTheme.bone)
                     ForEach(request.choices, id: \.choiceIndex) { choice in
                         choiceButton(choice)
                     }
-                    Text("Press Back or Secondary Action to cancel.")
+                    Text(BoardLocalization.localized(
+                        "board.linkedChoiceMenu.cancelHint",
+                        "Press Back or Secondary Action to cancel."
+                    ))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

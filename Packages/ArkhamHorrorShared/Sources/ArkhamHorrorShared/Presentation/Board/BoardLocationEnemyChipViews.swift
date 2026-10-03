@@ -3,8 +3,6 @@ import SwiftUI
 struct BoardEnemyTileChipView: View {
     let enemy: BoardEnemyNode
     let linkedChoices: [BoardLinkedChoice]
-    let focusedID: SemanticFocusID?
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -12,40 +10,34 @@ struct BoardEnemyTileChipView: View {
         enemy.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? enemy.displayName
     }
 
-    private var linkedFocusID: SemanticFocusID? {
-        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
-        case .submit, .menu: BoardFocusID.promptElement(.enemy(enemy.id))
-        case .highlightOnly: nil
-        }
-    }
-
     var body: some View {
         switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
         case .highlightOnly:
             chip(isFocused: false)
         case let .submit(choice):
-            Button { onLinkedChoice(choice.choiceIndex) } label: { chip(isFocused: isFocused) }
+            Button { onLinkedChoice(choice.choiceIndex) } label: { chip(isFocused: false) }
                 .buttonStyle(.plain)
-                .accessibilityHint(Text("Activates \(choice.title)"))
-                .linkedChoiceFocused(linkedFocusID, focusBinding: focusBinding)
+                .accessibilityHint(Text(BoardLocalization.format(
+                    "board.linkedChoice.activateHint",
+                    "Activates %@",
+                    choice.title
+                )))
         case let .menu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
                     Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
                 }
             } label: {
-                chip(isFocused: isFocused)
+                chip(isFocused: false)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
-            .accessibilityHint(Text("Choose which prompt action to take."))
-            .linkedChoiceFocused(linkedFocusID, focusBinding: focusBinding)
+            .accessibilityHint(Text(BoardLocalization.localized(
+                "board.linkedChoice.chooseHint",
+                "Choose which prompt action to take."
+            )))
         }
-    }
-
-    private var isFocused: Bool {
-        focusedID == linkedFocusID
     }
 
     private func chip(isFocused: Bool) -> some View {
@@ -102,8 +94,6 @@ struct BoardEnemyTileChipView: View {
 struct BoardEnemyCompactChipView: View {
     let enemy: BoardEnemyNode
     let linkedChoices: [BoardLinkedChoice]
-    let focusedID: SemanticFocusID?
-    let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -115,40 +105,34 @@ struct BoardEnemyCompactChipView: View {
         linkedChoices.filter(\.isActionable)
     }
 
-    private var linkedFocusID: SemanticFocusID? {
-        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
-        case .submit, .menu: BoardFocusID.promptElement(.enemy(enemy.id))
-        case .highlightOnly: nil
-        }
-    }
-
     var body: some View {
         switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
         case .highlightOnly:
             chip(isFocused: false)
         case let .submit(choice):
-            Button { onLinkedChoice(choice.choiceIndex) } label: { chip(isFocused: isFocused) }
+            Button { onLinkedChoice(choice.choiceIndex) } label: { chip(isFocused: false) }
                 .buttonStyle(.plain)
-                .accessibilityHint(Text("Activates \(choice.title)"))
-                .linkedChoiceFocused(linkedFocusID, focusBinding: focusBinding)
+                .accessibilityHint(Text(BoardLocalization.format(
+                    "board.linkedChoice.activateHint",
+                    "Activates %@",
+                    choice.title
+                )))
         case let .menu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
                     Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
                 }
             } label: {
-                chip(isFocused: isFocused)
+                chip(isFocused: false)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
-            .accessibilityHint(Text("Choose which prompt action to take."))
-            .linkedChoiceFocused(linkedFocusID, focusBinding: focusBinding)
+            .accessibilityHint(Text(BoardLocalization.localized(
+                "board.linkedChoice.chooseHint",
+                "Choose which prompt action to take."
+            )))
         }
-    }
-
-    private var isFocused: Bool {
-        focusedID == linkedFocusID
     }
 
     private func chip(isFocused: Bool) -> some View {
@@ -187,20 +171,6 @@ struct BoardEnemyCompactChipView: View {
         }
         guard !linkedChoices.isEmpty else { return .white.opacity(0.12) }
         return actionableChoices.isEmpty ? .orange.opacity(0.45) : ArkhamTheme.accent
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func linkedChoiceFocused(
-        _ focusID: SemanticFocusID?,
-        focusBinding: FocusState<SemanticFocusID?>.Binding
-    ) -> some View {
-        if let focusID {
-            focused(focusBinding, equals: focusID)
-        } else {
-            self
-        }
     }
 }
 

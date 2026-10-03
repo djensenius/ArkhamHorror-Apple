@@ -46,7 +46,11 @@ struct BoardLinkedChoiceFace<Content: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(Text("Activates \(choice.title)"))
+            .accessibilityHint(Text(BoardLocalization.format(
+                "board.linkedChoice.activateHint",
+                "Activates %@",
+                choice.title
+            )))
             .linkedChoiceFocused(focusID, focusBinding: focusBinding)
         case let .menu(actionableChoices):
             Menu {
@@ -57,7 +61,10 @@ struct BoardLinkedChoiceFace<Content: View>: View {
                 content().cardFaceStyle(linkedChoices: linkedChoices, isFocused: isFocused)
             }
             .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(Text("Choose which prompt action to take."))
+            .accessibilityHint(Text(BoardLocalization.localized(
+                "board.linkedChoice.chooseHint",
+                "Choose which prompt action to take."
+            )))
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
