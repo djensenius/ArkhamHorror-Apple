@@ -191,7 +191,7 @@ enum QuestionPresentationRawQuestionDeriver {
         keys: Set<String>,
         kind: QuestionPresentation.Kind
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == keys else {
+        guard hasRequiredKeys(keys, in: object) else {
             throw invalid("Malformed \(tag(of: object)) question")
         }
         return .init(kind: kind, choices: [])
@@ -202,7 +202,7 @@ enum QuestionPresentationRawQuestionDeriver {
         keys: Set<String>,
         kind: QuestionPresentation.Kind
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == keys,
+        guard hasRequiredKeys(keys, in: object),
               case let .array(choices)? = object["choices"]
         else {
             throw invalid("Malformed \(tag(of: object)) question")
@@ -215,7 +215,7 @@ enum QuestionPresentationRawQuestionDeriver {
         tag: String,
         kind: QuestionPresentation.Kind
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == ["tag", "amount", "choices"],
+        guard hasRequiredKeys(["tag", "amount", "choices"], in: object),
               let amount = integer(object["amount"]),
               amount >= 0
         else {
@@ -233,7 +233,7 @@ enum QuestionPresentationRawQuestionDeriver {
         tag: String,
         kind: QuestionPresentation.Kind
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == ["tag", "label", "choices"],
+        guard hasRequiredKeys(["tag", "label", "choices"], in: object),
               case .string = object["label"]
         else {
             throw invalid("Malformed \(tag) question")
@@ -251,7 +251,7 @@ enum QuestionPresentationRawQuestionDeriver {
         keys: Set<String>,
         validate: ([String: JSONValue]) throws -> Void
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == keys, let question = object["question"] else {
+        guard hasRequiredKeys(keys, in: object), let question = object["question"] else {
             throw invalid("Malformed \(tag) wrapper")
         }
         try validate(object)
@@ -273,7 +273,7 @@ enum QuestionPresentationRawQuestionDeriver {
     private static func oneFromEachChoices(
         _ object: [String: JSONValue]
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == ["tag", "groups"],
+        guard hasRequiredKeys(["tag", "groups"], in: object),
               case let .array(groups)? = object["groups"]
         else {
             throw invalid("Malformed ChooseOneFromEach question")
@@ -292,7 +292,7 @@ enum QuestionPresentationRawQuestionDeriver {
         _ object: [String: JSONValue]
     ) throws -> QuestionPresentationRawQuestionShape {
         // Arkham/Question.hs:234-238 names this field wizardChoices.
-        guard Set(object.keys) == ["tag", "flavorText", "wizardChoices", "confirmLabel", "backLabel"],
+        guard hasRequiredKeys(["tag", "flavorText", "wizardChoices", "confirmLabel", "backLabel"], in: object),
               case let .array(choices)? = object["wizardChoices"]
         else {
             throw invalid("Malformed ChooseOneWizard question")
@@ -304,7 +304,7 @@ enum QuestionPresentationRawQuestionDeriver {
         _ object: [String: JSONValue],
         kind: QuestionPresentation.Kind
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == ["tag", "contents"],
+        guard hasRequiredKeys(["tag", "contents"], in: object),
               case let .array(contents)? = object["contents"],
               contents.count == 2,
               case .string = contents[0]
@@ -317,7 +317,7 @@ enum QuestionPresentationRawQuestionDeriver {
     private static func pickSuppliesChoices(
         _ object: [String: JSONValue]
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == ["tag", "pointsRemaining", "chosenSupplies", "choices", "resupply"],
+        guard hasRequiredKeys(["tag", "pointsRemaining", "chosenSupplies", "choices", "resupply"], in: object),
               case let .array(choices)? = object["choices"]
         else {
             throw invalid("Malformed PickSupplies question")
@@ -328,7 +328,7 @@ enum QuestionPresentationRawQuestionDeriver {
     private static func dropdownChoices(
         _ object: [String: JSONValue]
     ) throws -> QuestionPresentationRawQuestionShape {
-        guard Set(object.keys) == ["tag", "options"],
+        guard hasRequiredKeys(["tag", "options"], in: object),
               case let .array(options)? = object["options"]
         else {
             throw invalid("Malformed DropDown question")
@@ -343,7 +343,7 @@ enum QuestionPresentationRawQuestionDeriver {
             .isSubset(of: Set(object.keys)),
             object["tag"] == .string("Read"),
             case let .object(readChoices)? = object["readChoices"],
-            Set(readChoices.keys) == ["tag", "contents"],
+            hasRequiredKeys(["tag", "contents"], in: readChoices),
             case let .string(tag)? = readChoices["tag"]
         else {
             throw invalid("Malformed Read question")
@@ -384,6 +384,13 @@ enum QuestionPresentationRawQuestionDeriver {
     private static func tag(of object: [String: JSONValue]) -> String {
         guard case let .string(tag)? = object["tag"] else { return "untagged" }
         return tag
+    }
+
+    private static func hasRequiredKeys(
+        _ required: Set<String>,
+        in object: [String: JSONValue]
+    ) -> Bool {
+        required.isSubset(of: Set(object.keys))
     }
 
     private static func invalid(_ description: String) -> QuestionPresentationBindingError {
