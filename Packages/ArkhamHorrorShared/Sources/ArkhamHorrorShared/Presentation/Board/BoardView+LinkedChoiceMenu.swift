@@ -34,7 +34,9 @@ struct BoardLinkedChoiceMenuCancelDispatch: Sendable, Equatable {
 }
 
 enum BoardLinkedChoiceMenuCancelAction {
-    static func dispatch(for request: BoardLinkedChoiceMenuRequest) -> BoardLinkedChoiceMenuCancelDispatch {
+    static func dispatch(
+        for request: BoardLinkedChoiceMenuRequest
+    ) -> BoardLinkedChoiceMenuCancelDispatch {
         BoardLinkedChoiceMenuCancelDispatch(focusID: request.focusID, outcome: .reservedBack)
     }
 }

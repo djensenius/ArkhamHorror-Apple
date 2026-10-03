@@ -1,9 +1,5 @@
 import SwiftUI
 
-#if canImport(GameController) && !os(tvOS)
-    private final class BoardControllerInputOwner {}
-#endif
-
 /// The reusable, read-only native Arkham Horror board: a fixture/snapshot-backed
 /// presentation of a decoded ``PublicGameSnapshot`` (via ``BoardProjection``), adaptive
 /// across compact iPhone, iPad, resizable macOS, tvOS, and visionOS.
@@ -31,8 +27,8 @@ struct BoardView: View {
 
     @State private var controller: BoardCommandController?
     #if canImport(GameController) && !os(tvOS)
-        @State private var controllerInputCenter: ControllerInputCenter?
-        @State private var controllerInputOwner = BoardControllerInputOwner()
+        @State var controllerInputCenter: ControllerInputCenter?
+        @State var controllerInputOwner = BoardControllerInputOwner()
     #endif
     @FocusState private var focusedID: SemanticFocusID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -129,44 +125,6 @@ struct BoardView: View {
             controller?.updateCardCatalog(newValue)
         }
     }
-
-    private func updateControllerInputs(_ controller: BoardCommandController) {
-        controller.updateChoiceHandler(onChoice)
-        controller.updateAmountsHandler(onAmounts)
-        controller.updatePaymentAmountsHandler(onPaymentAmounts)
-        controller.updateExchangeAmountHandler(onExchangeAmount)
-        controller.updateRetryHandler(onRetryChoice)
-        controller.updateCatalogRetryHandler(onCatalogRetry)
-        controller.updateLocalPlayerID(localPlayerID)
-        controller.updateCardCatalog(cardCatalog)
-    }
-
-    #if canImport(GameController) && !os(tvOS)
-        private func startControllerInputIfAvailable(for controller: BoardCommandController) {
-            ControllerInputOwnershipCoordinator.shared.claim(controllerInputOwner)
-            if let controllerInputCenter {
-                controllerInputCenter.start()
-                return
-            }
-            let owner = controllerInputOwner
-            let center = ControllerInputCenter(discovery: GameControllerDiscovery()) { outcome in
-                guard ControllerInputOwnershipCoordinator.shared.canDispatch(for: owner) else {
-                    return
-                }
-                controller.handle(outcome)
-            }
-            controllerInputCenter = center
-            center.start()
-        }
-
-        private func stopControllerInputIfAvailable() {
-            ControllerInputOwnershipCoordinator.shared.release(controllerInputOwner)
-            controllerInputCenter?.stop()
-        }
-    #else
-        private func startControllerInputIfAvailable(for _: BoardCommandController) {}
-        private func stopControllerInputIfAvailable() {}
-    #endif
 
     @ViewBuilder
     private func boardBody(_ controller: BoardCommandController) -> some View {
