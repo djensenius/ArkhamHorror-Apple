@@ -670,10 +670,38 @@ final class BoardCommandController {
     private var focusedPromptElementDecision: BoardLinkedChoicePresentationDecision? {
         guard let currentFocus = coordinator.currentFocus else { return nil }
         let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
-        guard let linkedChoices = links.first(where: { entry in
+        if let linkedChoices = links.first(where: { entry in
             BoardFocusID.promptElement(entry.key) == currentFocus
-        })?.value else { return nil }
-        return BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        })?.value {
+            return BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        }
+        if let linkedChoices = linkedLocationEnemyChoices(focusID: currentFocus, links: links) {
+            return BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        }
+        return nil
+    }
+
+    private func linkedLocationEnemyChoices(
+        focusID: SemanticFocusID,
+        links: [BoardPromptElementID: [BoardLinkedChoice]]
+    ) -> [BoardLinkedChoice]? {
+        if let location = projection.locations.first(where: {
+            BoardFocusID.locationEnemyActions($0.id) == focusID
+        }) {
+            return BoardFocusGraphBuilder.linkedEnemyChoices(
+                for: projection.enemiesByLocationID[location.id] ?? [],
+                choiceLinks: links
+            )
+        }
+        if let location = projection.enemyLocations.first(where: {
+            BoardFocusID.enemyLocationEnemyActions($0.id) == focusID
+        }) {
+            return BoardFocusGraphBuilder.linkedEnemyChoices(
+                for: projection.enemiesByLocationID[location.id] ?? [],
+                choiceLinks: links
+            )
+        }
+        return nil
     }
 
     private func leavePrompt() -> Bool {

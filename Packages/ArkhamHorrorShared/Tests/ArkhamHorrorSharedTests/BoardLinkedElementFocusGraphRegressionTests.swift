@@ -92,8 +92,8 @@ struct BoardLinkedFocusGraphTests {
         )
     }
 
-    @Test("Location enemies chain through a location before the location's original down neighbor")
-    func locationEnemiesAreReachableBeforeOriginalDownNeighbor() {
+    @Test("Location enemy actions chain through a rendered container before the original down neighbor")
+    func locationEnemyActionsAreReachableBeforeOriginalDownNeighbor() {
         let rootID = BoardTestFixtures.locationID("000000000441")
         let locationID = BoardTestFixtures.locationID("000000000442")
         let downLocationID = BoardTestFixtures.locationID("000000000443")
@@ -132,19 +132,33 @@ struct BoardLinkedFocusGraphTests {
         )
         let locationFocus = BoardFocusID.location(locationID)
         let downLocationFocus = BoardFocusID.location(downLocationID)
+        let actionsFocus = BoardFocusID.locationEnemyActions(locationID)
         let firstEnemyFocus = BoardFocusID.promptElement(.enemy(firstEnemyID))
         let secondEnemyFocus = BoardFocusID.promptElement(.enemy(secondEnemyID))
+        var submittedChoices: [Int] = []
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            onChoice: { submittedChoices.append($0) }
+        )
 
         #expect(layout.neighbors[locationID]?[.down] == downLocationID)
-        #expect(graph.neighbor(from: locationFocus, direction: .down) == firstEnemyFocus)
-        #expect(graph.neighbor(from: firstEnemyFocus, direction: .up) == locationFocus)
-        #expect(graph.neighbor(from: firstEnemyFocus, direction: .down) == secondEnemyFocus)
-        #expect(graph.neighbor(from: secondEnemyFocus, direction: .up) == firstEnemyFocus)
-        #expect(graph.neighbor(from: secondEnemyFocus, direction: .down) == downLocationFocus)
+        #expect(graph.node(for: actionsFocus)?.zone == BoardFocusZone.locations)
+        #expect(!graph.contains(firstEnemyFocus))
+        #expect(!graph.contains(secondEnemyFocus))
+        #expect(graph.neighbor(from: locationFocus, direction: .down) == actionsFocus)
+        #expect(graph.neighbor(from: actionsFocus, direction: .up) == locationFocus)
+        #expect(graph.neighbor(from: actionsFocus, direction: .down) == downLocationFocus)
+        #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.linkedChoiceMenuChoice(7))
+        #expect(controller.handle(.command(.focusMove(.down))))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.linkedChoiceMenuChoice(8))
+        #expect(controller.handle(.command(.primaryAction)))
+        #expect(submittedChoices == [8])
     }
 
-    @Test("Enemy-location focus nodes match the rendered compact enemy count")
-    func enemyLocationFocusExcludesOverflowEnemies() {
+    @Test("Enemy-location action container reaches every linked enemy")
+    func enemyLocationActionContainerReachesEveryLinkedEnemy() {
         let enemyLocationID = BoardTestFixtures.locationID("000000000451")
         let enemyIDs = [
             BoardTestFixtures.enemyID("000000000452"),
@@ -168,17 +182,29 @@ struct BoardLinkedFocusGraphTests {
             prompt: prompt
         )
         let locationFocus = BoardFocusID.enemyLocation(enemyLocationID)
-        let firstEnemyFocus = BoardFocusID.promptElement(.enemy(enemyIDs[0]))
-        let secondEnemyFocus = BoardFocusID.promptElement(.enemy(enemyIDs[1]))
-        let thirdEnemyFocus = BoardFocusID.promptElement(.enemy(enemyIDs[2]))
-        let overflowEnemyFocus = BoardFocusID.promptElement(.enemy(enemyIDs[3]))
+        let actionsFocus = BoardFocusID.enemyLocationEnemyActions(enemyLocationID)
+        let enemyFocuses = enemyIDs.map { BoardFocusID.promptElement(.enemy($0)) }
+        var submittedChoices: [Int] = []
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            onChoice: { submittedChoices.append($0) }
+        )
 
         #expect(graph.order.filter { graph.node(for: $0)?.zone == BoardFocusZone.enemyLocations }
-            == [locationFocus, firstEnemyFocus, secondEnemyFocus, thirdEnemyFocus])
-        #expect(graph.neighbor(from: locationFocus, direction: .right) == firstEnemyFocus)
-        #expect(graph.neighbor(from: firstEnemyFocus, direction: .right) == secondEnemyFocus)
-        #expect(graph.neighbor(from: secondEnemyFocus, direction: .right) == thirdEnemyFocus)
-        #expect(!graph.contains(overflowEnemyFocus))
+            == [locationFocus, actionsFocus])
+        #expect(graph.neighbor(from: locationFocus, direction: .right) == actionsFocus)
+        #expect(enemyFocuses.allSatisfy { !graph.contains($0) })
+        #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.linkedChoiceMenuChoice(20))
+        for expectedIndex in [21, 22, 23] {
+            #expect(controller.handle(.command(.focusMove(.down))))
+            #expect(controller.coordinator.currentFocus == BoardFocusID.linkedChoiceMenuChoice(
+                expectedIndex
+            ))
+        }
+        #expect(controller.handle(.command(.primaryAction)))
+        #expect(submittedChoices == [23])
     }
 
     @Test("Full player area visibility controls hand and play card focus nodes")

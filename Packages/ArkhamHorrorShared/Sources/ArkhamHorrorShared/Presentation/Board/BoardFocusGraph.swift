@@ -86,6 +86,14 @@ enum BoardFocusID {
         SemanticFocusID(rawValue: "board.promptElement.\(id.rawFocusComponent)")
     }
 
+    static func locationEnemyActions(_ id: LocationID) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.location.\(id.description).enemyActions")
+    }
+
+    static func enemyLocationEnemyActions(_ id: LocationID) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.enemyLocation.\(id.description).enemyActions")
+    }
+
     static func linkedChoiceMenuChoice(_ index: Int) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.linkedChoiceMenu.choice.\(index)")
     }

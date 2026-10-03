@@ -94,6 +94,47 @@ enum BoardLocationEnemyTileLayout {
     }
 }
 
+struct BoardLinkedEnemyActionsControl: View {
+    let title: String
+    let accessibilityLabel: String
+    let focusID: SemanticFocusID
+    let linkedChoices: [BoardLinkedChoice]
+    let focusedID: SemanticFocusID?
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
+
+    var body: some View {
+        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        case .highlightOnly:
+            EmptyView()
+        case .submit, .menu:
+            SemanticActionControl(
+                accessibilityLabel: Text(accessibilityLabel),
+                semanticFocusID: focusID,
+                onOutcome: onOutcome,
+                label: {
+                    Label(title, systemImage: "figure.walk")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(
+                                    focusedID == focusID ? ArkhamTheme.accent : Color.clear,
+                                    lineWidth: 3
+                                )
+                        }
+                }
+            )
+            .buttonStyle(.plain)
+            .focused(focusBinding, equals: focusID)
+        }
+    }
+}
+
 struct BoardEnemyCompactPanelView: View {
     let title: String
     let enemies: [BoardEnemyNode]
