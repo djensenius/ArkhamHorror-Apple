@@ -96,6 +96,22 @@ struct AppModelGameInviteTests {
         )
     }
 
+    @Test("claim-seat invite propagates non-404 full-game snapshot failures")
+    func claimSeatInvitePropagatesNon404SnapshotFailures() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let seat = try CardCode("c01001")
+        await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 2)))
+        await service.enqueueOpenSeatsResult(.success([seat]))
+        await service.enqueueGetGameResult(.failure(GameLifecycleError.unexpectedStatus(403)))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        await #expect(throws: GameLifecycleError.unexpectedStatus(403)) {
+            _ = try await model.loadClaimSeatInvite(gameID)
+        }
+        #expect(await service.callOrder == ["peekLobby", "openSeats", "getGame"])
+    }
+
     @Test("claim-seat invite snapshot cannot republish stale lobby flags after reset")
     func claimSeatInviteRejectsSnapshotAfterReset() async throws {
         let service = ScriptedGameLifecycleService()

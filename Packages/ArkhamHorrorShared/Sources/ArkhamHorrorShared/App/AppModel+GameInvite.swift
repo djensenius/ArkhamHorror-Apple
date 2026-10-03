@@ -190,12 +190,12 @@ extension AppModel {
             gameLobbyPlayerCounts[id] = envelope.game.playerCount
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
             return envelope
-        } catch GameLifecycleError.sessionExpired {
-            throw GameLifecycleError.sessionExpired
+        } catch GameLifecycleError.unexpectedStatus(404) {
+            return nil
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            return nil
+            throw error
         }
     }
 
