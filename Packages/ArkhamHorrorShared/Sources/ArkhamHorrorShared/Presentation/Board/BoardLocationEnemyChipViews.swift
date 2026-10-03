@@ -189,7 +189,7 @@ enum BoardEnemyCompactFormatting {
             let seen = (seenCounts[summary] ?? 0) + 1
             seenCounts[summary] = seen
             let disambiguatedSummary = duplicateCounts[summary, default: 0] > 1
-                ? "\(summary) (enemy \(seen))"
+                ? duplicateEnemySummary(summary, ordinal: seen)
                 : summary
             return (choiceLinks[.enemy(enemy.id)] ?? []).map { choice in
                 BoardLinkedChoice(
@@ -206,6 +206,15 @@ enum BoardEnemyCompactFormatting {
         cardCatalog: CardCatalogSnapshot?
     ) -> String {
         enemy.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? enemy.displayName
+    }
+
+    private static func duplicateEnemySummary(_ summary: String, ordinal: Int) -> String {
+        BoardLocalization.format(
+            "board.enemyActions.duplicateSuffix",
+            "%1$@ (enemy %2$lld)",
+            summary,
+            ordinal
+        )
     }
 
     static func statsSummary(_ enemy: BoardEnemyNode) -> String {

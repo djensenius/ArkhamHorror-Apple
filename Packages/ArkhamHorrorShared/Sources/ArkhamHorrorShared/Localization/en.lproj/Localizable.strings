@@ -60,6 +60,7 @@
 "board.linkedChoice.chooseHint" = "Choose which prompt action to take.";
 "board.enemyActions.title" = "Enemy actions";
 "board.enemyActions.accessibility" = "Enemy prompt actions at %@";
+"board.enemyActions.duplicateSuffix" = "%1$@ (enemy %2$lld)";
 
 "semantic.choice.title.advanceAct" = "Advance act";
 "semantic.choice.title.advanceAgenda" = "Advance agenda";

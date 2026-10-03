@@ -19,12 +19,7 @@ struct BoardLinkedEnemyActionCatalogTests {
         let controller = BoardCommandController(
             projection: projection,
             prompt: prompt,
-            cardCatalog: CardCatalogSnapshot(namesByCode: [
-                BoardTestFixtures.cardCode("c01159"): CardName(
-                    title: "Ghoul Minion",
-                    subtitle: nil
-                ),
-            ])
+            cardCatalog: ghoulCatalog
         )
 
         #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
@@ -32,6 +27,42 @@ struct BoardLinkedEnemyActionCatalogTests {
             focusID: actionsFocus,
             choices: expectedDuplicateEnemyMenuChoices()
         ))
+    }
+
+    @Test("Duplicate enemy menu suffixes localize in German")
+    func duplicateEnemyMenuSuffixesLocalizeInGerman() {
+        let ids = enemyLocationIDs()
+        let enemies = locationEnemyProjection(ids: ids).enemiesByLocationID[ids.location] ?? []
+        let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]] = [
+            .enemy(ids.firstEnemy): [
+                BoardLinkedChoice(choiceIndex: 7, title: "Fight", isActionable: true),
+            ],
+            .enemy(ids.secondEnemy): [
+                BoardLinkedChoice(choiceIndex: 20, title: "Fight", isActionable: true),
+            ],
+        ]
+
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
+            let choices = BoardEnemyCompactFormatting.titledLinkedChoicesByEnemy(
+                enemies: enemies,
+                choiceLinks: choiceLinks,
+                cardCatalog: ghoulCatalog
+            )
+
+            #expect(choices.map(\.title) == [
+                "Ghoul Minion: F 2  H 2  E 3 (Gegner 1): Fight",
+                "Ghoul Minion: F 2  H 2  E 3 (Gegner 2): Fight",
+            ])
+        }
+    }
+
+    private var ghoulCatalog: CardCatalogSnapshot {
+        CardCatalogSnapshot(namesByCode: [
+            BoardTestFixtures.cardCode("c01159"): CardName(
+                title: "Ghoul Minion",
+                subtitle: nil
+            ),
+        ])
     }
 
     private func enemyLocationIDs() -> EnemyLocationIDs {
