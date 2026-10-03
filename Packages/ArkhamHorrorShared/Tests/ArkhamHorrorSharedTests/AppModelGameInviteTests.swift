@@ -70,6 +70,31 @@ struct AppModelGameInviteTests {
         #expect(await service.lastClaimSeatRequest?.investigatorId == expectedInvestigator)
     }
 
+    @Test("claim-seat invite snapshot cannot republish stale lobby flags after reset")
+    func claimSeatInviteRejectsSnapshotAfterReset() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let seat = try CardCode("c01001")
+        await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 3)))
+        await service.enqueueOpenSeatsResult(.success([seat]))
+        await service.setGetGameGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        let loadTask = Task { try await model.loadClaimSeatInvite(gameID) }
+        await service.waitUntilGetGamePending(1)
+        model.generation += 1
+        model.resetGameLifecycleState()
+        await service.resumeOldestGetGame(with: .success(
+            getGameEnvelope(gameID: gameID, playerCount: 3)
+        ))
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await loadTask.value
+        }
+        #expect(model.gameLobbyPlayerCounts[gameID] == nil)
+        #expect(model.gameLobbyViewerHasSeats[gameID] == nil)
+    }
+
     @Test("claim-seat invite cancellation protects a seat loaded by an old session")
     func claimSeatInviteRejectsSessionChangeAfterLoad() async throws {
         let service = ScriptedGameLifecycleService()

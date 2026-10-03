@@ -57,8 +57,8 @@ extension AppModel {
                 id, on: inviteSession.profile, token: token
             )
             guard preview.id == id else { throw GameLifecycleError.malformedPayload }
-            gameLobbyPlayerCounts[id] = preview.playerCount
             try ensureCurrentGameInviteSession(inviteSession)
+            gameLobbyPlayerCounts[id] = preview.playerCount
             let joined = try await gameLifecycleService.joinGame(
                 id, on: inviteSession.profile, token: token
             )
@@ -85,8 +85,8 @@ extension AppModel {
                 id, on: inviteSession.profile, token: token
             )
             guard preview.id == id else { throw GameLifecycleError.malformedPayload }
-            gameLobbyPlayerCounts[id] = preview.playerCount
             try ensureCurrentGameInviteSession(inviteSession)
+            gameLobbyPlayerCounts[id] = preview.playerCount
             let seats = try await gameLifecycleService.openSeats(
                 for: id, on: inviteSession.profile, token: token
             )
@@ -96,6 +96,7 @@ extension AppModel {
                 session: inviteSession,
                 token: token
             )
+            try ensureCurrentGameInviteSession(inviteSession)
             return ClaimSeatInviteDetails(
                 gameID: id,
                 seats: seats,
@@ -183,6 +184,7 @@ extension AppModel {
             let envelope = try await gameLifecycleService.getGame(
                 id, on: session.profile, token: token
             )
+            try ensureCurrentGameInviteSession(session)
             gameLobbyPlayerCounts[id] = envelope.game.playerCount
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
             return envelope
