@@ -13,7 +13,9 @@ final class JoinGameInviteViewModel {
     private(set) var claimSeatInvite: ClaimSeatInviteViewState?
 
     var canSubmit: Bool {
-        !isSubmitting && !inviteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !isSubmitting
+            && claimingSeat == nil
+            && !inviteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     @discardableResult
@@ -21,7 +23,7 @@ final class JoinGameInviteViewModel {
         joinInvite: (GameID) async throws -> GameID,
         loadClaimSeatInvite: (GameID) async throws -> ClaimSeatInviteViewState
     ) async -> GameID? {
-        guard !isSubmitting else { return nil }
+        guard !isSubmitting, claimingSeat == nil else { return nil }
         isSubmitting = true
         failureMessage = nil
         claimSeatInvite = nil

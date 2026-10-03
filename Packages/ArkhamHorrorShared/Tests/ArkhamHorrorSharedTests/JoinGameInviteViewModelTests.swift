@@ -2,6 +2,29 @@
 import Foundation
 import Testing
 
+private actor ClaimSeatOperationGate {
+    private var continuation: CheckedContinuation<GameID, Never>?
+    private var pendingWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitUntilPending() async {
+        if continuation != nil { return }
+        await withCheckedContinuation { pendingWaiters.append($0) }
+    }
+
+    func run() async -> GameID {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            pendingWaiters.forEach { $0.resume() }
+            pendingWaiters.removeAll()
+        }
+    }
+
+    func resume(with gameID: GameID) {
+        continuation?.resume(returning: gameID)
+        continuation = nil
+    }
+}
+
 @MainActor
 @Suite("JoinGameInviteViewModel")
 struct JoinGameInviteViewModelTests {
@@ -168,6 +191,52 @@ struct JoinGameInviteViewModelTests {
         #expect(failed == nil)
         #expect(viewModel.failureMessage == "Permission Denied. This seat is already taken")
         #expect(viewModel.claimSeatInvite == refreshedDetails)
+    }
+
+    @Test("submitting is disabled while a seat claim is in flight")
+    func submitIsDisabledWhileClaimingSeat() async throws {
+        let viewModel = JoinGameInviteViewModel()
+        let seat = try CardCode("c01001")
+        let details = inviteDetails(seats: [seat])
+        viewModel.inviteText = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        _ = await viewModel.submit(
+            joinInvite: { _ in Issue.record("join should not run"); return gameID },
+            loadClaimSeatInvite: { _ in details }
+        )
+        viewModel.inviteText = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/join"
+        let gate = ClaimSeatOperationGate()
+
+        let claimTask = Task {
+            await viewModel.claimSeat(
+                seat,
+                claimSeatInvite: { _, _ in await gate.run() },
+                reloadClaimSeatInvite: { _ in
+                    Issue.record("reload should not run")
+                    return details
+                }
+            )
+        }
+        await gate.waitUntilPending()
+
+        #expect(viewModel.canSubmit == false)
+        var submitCalled = false
+        let submitted = await viewModel.submit(
+            joinInvite: { _ in
+                submitCalled = true
+                return gameID
+            },
+            loadClaimSeatInvite: { _ in
+                submitCalled = true
+                return details
+            }
+        )
+
+        #expect(submitted == nil)
+        #expect(submitCalled == false)
+        await gate.resume(with: gameID)
+        #expect(await claimTask.value == gameID)
     }
 
     @Test("failed claim keeps the previous invite when refreshing open seats fails")
