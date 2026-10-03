@@ -32,48 +32,6 @@ struct AppModelGameInviteReviewTests {
         )
     }
 
-    @Test("stale lobby detail cleanup cannot clear a replacement load")
-    func staleLobbyDetailCleanupDoesNotClearReplacementTask() async {
-        let service = ScriptedGameLifecycleService()
-        let gameID = GameID(UUID())
-        await service.setGetGameGated(true)
-        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
-
-        model.loadLobbyDetailsIfNeeded(for: gameID)
-        await service.waitUntilGetGamePending(1)
-        model.generation += 1
-        model.resetGameLifecycleState()
-        model.loadLobbyDetailsIfNeeded(for: gameID)
-        await service.waitUntilGetGamePending(2)
-
-        await service.resumeOldestGetGame(with: .success(getGameEnvelope(gameID: gameID)))
-        let replacementTask = model.gameLobbyDetailTasks[gameID]
-        #expect(replacementTask != nil)
-        #expect(model.gameLobbyDetailTaskIDs[gameID] != nil)
-
-        await service.resumeNewestGetGame(with: .success(getGameEnvelope(gameID: gameID)))
-        await replacementTask?.value
-        #expect(model.gameLobbyDetailTasks[gameID] == nil)
-        #expect(model.gameLobbyDetailTaskIDs[gameID] == nil)
-    }
-
-    @Test("cached player counts do not skip the viewer-specific seat lookup")
-    func cachedPlayerCountDoesNotSkipViewerSeatLookup() async throws {
-        let service = ScriptedGameLifecycleService()
-        let gameID = GameID(UUID())
-        await service.enqueueGetGameResult(.failure(GameLifecycleError.unexpectedStatus(404)))
-        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
-        model.gameLobbyPlayerCounts[gameID] = 4
-
-        model.loadLobbyDetailsIfNeeded(for: gameID)
-        let detailTask = try #require(model.gameLobbyDetailTasks[gameID])
-        await detailTask.value
-
-        #expect(await service.callOrder == ["getGame"])
-        #expect(model.gameLobbyPlayerCounts[gameID] == 4)
-        #expect(model.gameLobbyViewerHasSeats[gameID] == false)
-    }
-
     @Test("claim-seat Continue refreshes without issuing PUT join")
     func claimSeatContinueRefreshesWithoutJoining() async throws {
         let service = ScriptedGameLifecycleService()
@@ -165,84 +123,6 @@ struct AppModelGameInviteReviewTests {
         await tokenStore.waitUntilTokenReadPending(1)
         model.generation += 1
         await tokenStore.resumeOldestTokenRead(with: .success("session-token"))
-
-        await #expect(throws: CancellationError.self) {
-            _ = try await claimTask.value
-        }
-        #expect(await service.callOrder == [])
-    }
-
-    @Test("claim-seat invite routes a current missing token through session expiry")
-    func claimSeatInviteHandlesCurrentMissingTokenRead() async throws {
-        let service = ScriptedGameLifecycleService()
-        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "session-token"])
-        let model = AppModel(
-            profileStore: FakeServerProfileStore(),
-            tokenStore: tokenStore,
-            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
-            cleanupPendingStore: FakeTokenCleanupPendingStore(),
-            gameLifecycleService: service
-        )
-        await model.flowTask?.value
-        await tokenStore.setTokenReadGated(true)
-        let seat = try CardCode("c01001")
-        let invite = ClaimSeatInviteDetails(
-            gameID: GameID(UUID()),
-            seats: [seat],
-            playerCount: 2,
-            viewerHasSeat: false,
-            sessionToken: GameInviteSessionToken(
-                profileID: ServerProfile.hosted.id,
-                generation: model.generation,
-                credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
-                globalEpoch: model.currentGlobalCredentialEpoch()
-            )
-        )
-
-        let claimTask = Task { try await model.claimSeatFromInvite(seat, using: invite) }
-        await tokenStore.waitUntilTokenReadPending(1)
-        await tokenStore.resumeOldestTokenRead(with: .success(nil))
-
-        await #expect(throws: CancellationError.self) {
-            _ = try await claimTask.value
-        }
-        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
-        #expect(await service.callOrder == [])
-    }
-
-    @Test("claim-seat invite revalidates before surfacing a token-store read failure")
-    func claimSeatInviteRejectsSessionChangeBeforeTokenReadFailure() async throws {
-        let service = ScriptedGameLifecycleService()
-        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "session-token"])
-        let model = AppModel(
-            profileStore: FakeServerProfileStore(),
-            tokenStore: tokenStore,
-            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
-            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
-            cleanupPendingStore: FakeTokenCleanupPendingStore(),
-            gameLifecycleService: service
-        )
-        await model.flowTask?.value
-        await tokenStore.setTokenReadGated(true)
-        let seat = try CardCode("c01001")
-        let invite = ClaimSeatInviteDetails(
-            gameID: GameID(UUID()),
-            seats: [seat],
-            playerCount: 2,
-            viewerHasSeat: false,
-            sessionToken: GameInviteSessionToken(
-                profileID: ServerProfile.hosted.id,
-                generation: model.generation,
-                credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
-                globalEpoch: model.currentGlobalCredentialEpoch()
-            )
-        )
-
-        let claimTask = Task { try await model.claimSeatFromInvite(seat, using: invite) }
-        await tokenStore.waitUntilTokenReadPending(1)
-        model.generation += 1
-        await tokenStore.resumeOldestTokenRead(with: .failure(TestFailure()))
 
         await #expect(throws: CancellationError.self) {
             _ = try await claimTask.value

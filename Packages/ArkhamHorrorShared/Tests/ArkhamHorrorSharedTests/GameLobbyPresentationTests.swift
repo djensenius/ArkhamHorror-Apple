@@ -130,7 +130,9 @@ struct GameLobbyPresentationTests {
     func gameLobbyViewWaitsForViewerSeatData() async throws {
         let joinedPlayer = PlayerID(UUID())
         let game = sampleGame(
-            gameState: .pending([joinedPlayer]), multiplayerVariant: .withFriends, hasOpenSeats: true
+            gameState: .pending([joinedPlayer]),
+            multiplayerVariant: .withFriends,
+            hasOpenSeats: true
         )
         let model = await model(gameListState: .loaded([.game(game)]))
         let view = GameLobbyView(model: model, gameID: game.id)
@@ -146,7 +148,7 @@ struct GameLobbyPresentationTests {
         model.gameLobbyViewerHasSeats[game.id] = false
         #expect(view.viewerSeatStatus(in: game) == .unseated)
         #expect(view.showsClaimSeatButtons(for: game, openSeats: openSeats))
-        #expect(view.openSeatsStatusText(for: game, openSeats: openSeats) == "")
+        #expect(view.openSeatsStatusText(for: game, openSeats: openSeats).isEmpty)
     }
 
     @Test("GameLobbyView waiting text uses server playerCount with plural handling")
