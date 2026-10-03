@@ -1,5 +1,34 @@
+import SwiftUI
+
 #if canImport(GameController) && !os(tvOS)
     final class BoardControllerInputOwner {}
+
+    enum BoardControllerInputSceneOwnership {
+        @MainActor
+        static func scenePhaseDidChange(
+            _ phase: ScenePhase,
+            owner: BoardControllerInputOwner,
+            coordinator: ControllerInputOwnershipCoordinator = .shared
+        ) {
+            guard phase == .active else { return }
+            coordinator.claim(owner)
+        }
+    }
+
+    enum BoardControllerInputDispatchGate {
+        @MainActor
+        @discardableResult
+        static func dispatch(
+            _ outcome: SemanticDispatchOutcome,
+            owner: BoardControllerInputOwner,
+            coordinator: ControllerInputOwnershipCoordinator = .shared,
+            handler: (SemanticDispatchOutcome) -> Void
+        ) -> Bool {
+            guard coordinator.canDispatch(for: owner) else { return false }
+            handler(outcome)
+            return true
+        }
+    }
 #endif
 
 extension BoardView {
@@ -23,10 +52,9 @@ extension BoardView {
             }
             let owner = controllerInputOwner
             let center = ControllerInputCenter(discovery: GameControllerDiscovery()) { outcome in
-                guard ControllerInputOwnershipCoordinator.shared.canDispatch(for: owner) else {
-                    return
+                BoardControllerInputDispatchGate.dispatch(outcome, owner: owner) {
+                    controller.handle($0)
                 }
-                controller.handle(outcome)
             }
             controllerInputCenter = center
             center.start()
@@ -36,8 +64,16 @@ extension BoardView {
             ControllerInputOwnershipCoordinator.shared.release(controllerInputOwner)
             controllerInputCenter?.stop()
         }
+
+        func controllerInputScenePhaseDidChange(_ phase: ScenePhase) {
+            BoardControllerInputSceneOwnership.scenePhaseDidChange(
+                phase,
+                owner: controllerInputOwner
+            )
+        }
     #else
         func startControllerInputIfAvailable(for _: BoardCommandController) {}
         func stopControllerInputIfAvailable() {}
+        func controllerInputScenePhaseDidChange(_: ScenePhase) {}
     #endif
 }

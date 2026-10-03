@@ -32,6 +32,7 @@ struct BoardView: View {
     #endif
     @FocusState private var focusedID: SemanticFocusID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     #if os(iOS) || os(visionOS)
         @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
@@ -123,6 +124,9 @@ struct BoardView: View {
         }
         .onChange(of: cardCatalog) { _, newValue in
             controller?.updateCardCatalog(newValue)
+        }
+        .onChange(of: scenePhase) { _, newValue in
+            controllerInputScenePhaseDidChange(newValue)
         }
     }
 
