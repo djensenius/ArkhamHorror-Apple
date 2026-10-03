@@ -80,7 +80,7 @@ struct BoardSnapshotAdversarialTests {
 
     // MARK: - Unknown tags
 
-    @Test("GameError decodes as the typed rejection frame")
+    @Test("GameError decodes as uncorrelated room feedback")
     func gameErrorIsRecognized() throws {
         let bytes = Data(#"{"tag": "GameError", "contents": "boom"}"#.utf8)
         let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
@@ -89,6 +89,44 @@ struct BoardSnapshotAdversarialTests {
             return
         }
         #expect(rawMessage == "boom")
+    }
+
+    @Test("AnswerRejected decodes from the exact vendored fixture bytes")
+    func answerRejectedFixtureIsRecognized() throws {
+        let bytes = try fixtureData(named: "answer-rejected")
+        let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
+        guard case let .answerRejected(rejection) = update else {
+            Issue.record("Expected .answerRejected")
+            return
+        }
+        #expect(rejection.reason == "Stale question")
+        #expect(rejection.questionVersion == 8)
+    }
+
+    @Test("AnswerRejected without a questionVersion is accepted for versionless answers")
+    func answerRejectedQuestionVersionCanBeAbsent() throws {
+        let bytes = Data(#"{"tag":"AnswerRejected","reason":"Exchange rejected"}"#.utf8)
+        let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
+        guard case let .answerRejected(rejection) = update else {
+            Issue.record("Expected .answerRejected")
+            return
+        }
+        #expect(rejection.reason == "Exchange rejected")
+        #expect(rejection.questionVersion == nil)
+    }
+
+    @Test("AnswerRejected tolerates the earlier contents-wrapped draft shape")
+    func answerRejectedContentsWrappedDraftShapeDecodes() throws {
+        let bytes = Data(
+            #"{"tag":"AnswerRejected","contents":{"reason":"No","questionVersion":12}}"#.utf8
+        )
+        let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
+        guard case let .answerRejected(rejection) = update else {
+            Issue.record("Expected .answerRejected")
+            return
+        }
+        #expect(rejection.reason == "No")
+        #expect(rejection.questionVersion == 12)
     }
 
     @Test("A genuinely unknown ServerMessage tag also decodes as unsupported, not a crash")

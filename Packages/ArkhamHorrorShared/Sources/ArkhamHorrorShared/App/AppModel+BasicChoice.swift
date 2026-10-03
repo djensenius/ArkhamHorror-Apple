@@ -484,6 +484,34 @@ extension AppModel {
         basicChoiceActions[gameID] = nil
     }
 
+    func handleBasicChoiceAnswerRejected(
+        gameID: GameID,
+        sessionAttemptID: UUID,
+        connectionID: UUID?,
+        rejection: AnswerRejectedMessage
+    ) {
+        guard let action = basicChoiceActions[gameID],
+              action.identity.gameID == gameID,
+              action.identity.sessionAttemptID == sessionAttemptID,
+              liveGameParticipantIdentities[gameID] == .participant(action.identity.ownerID)
+        else { return }
+        if let connectionID, action.connectionID != connectionID {
+            return
+        }
+        if let questionVersion = rejection.questionVersion,
+           questionVersion != action.identity.questionVersion
+        {
+            return
+        }
+        switch action.phase {
+        case .sending, .awaitingSnapshot:
+            basicChoiceServerFeedback[gameID] = rejection.reason
+            basicChoiceActions[gameID] = nil
+        case .uncertain, .retryable:
+            break
+        }
+    }
+
     /// `GameError` is broadcast room-wide and carries no player, question, or request
     /// correlation. Amount/payment/exchange rejects are server-validated with no state
     /// change, so clear those in-flight claims while keeping sanitized feedback visible;
