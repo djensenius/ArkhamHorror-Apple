@@ -329,6 +329,9 @@ extension AppModelLiveGameTests {
             await model.submitAmountsAnswer(current.identity, amounts: legalAmounts)
                 == .sentAwaitingSnapshot
         )
+        let pendingLegal = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(pendingLegal.actionPhase == .awaitingSnapshot)
+        #expect(pendingLegal.serverFeedback == nil)
         #expect(try await connection.sentData == [
             rejectedBytes,
             amountAnswerBytes(amounts: legalAmounts, version: 645),

@@ -143,5 +143,6 @@ extension AppModel {
         }
         campaignDeckSubmissions = [:]
         basicChoiceServerFeedback = [:]
+        basicChoiceServerFeedbackSources = [:]
     }
 }

@@ -239,10 +239,11 @@ extension AppModel {
                 gameID: attempt.gameID, projection: projection
             )
             projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-            if previousPromptKey != basicChoicePromptKey(
+            let samePrompt = previousPromptKey == basicChoicePromptKey(
                 gameID: attempt.gameID, projection: projection
-            ) {
-                basicChoiceServerFeedback[attempt.gameID] = nil
+            )
+            if !samePrompt || basicChoiceServerFeedbackSources[attempt.gameID] == .gameError {
+                clearBasicChoiceServerFeedback(gameID: attempt.gameID)
             }
             reconcileBasicChoice(
                 gameID: attempt.gameID, projection: projection, isRESTSnapshot: false

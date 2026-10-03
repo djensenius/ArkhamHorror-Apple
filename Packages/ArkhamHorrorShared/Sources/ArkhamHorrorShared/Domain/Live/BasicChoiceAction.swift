@@ -89,6 +89,11 @@ enum BasicChoiceActionPhase: Sendable, Equatable {
     case retryable(BasicChoiceRetryReason)
 }
 
+enum BasicChoiceServerFeedbackSource: Sendable, Equatable {
+    case answerRejected
+    case gameError
+}
+
 /// One localized choice label captured from the same immutable catalog snapshot used by
 /// every prompt surface. Raw wire keys are never a presentation fallback.
 enum BasicChoiceLabelResolution: Sendable, Equatable {

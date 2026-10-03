@@ -250,6 +250,7 @@ extension AppModel {
               liveGameSessions[identity.gameID]?.attemptID == connection.attemptID
         else { return .reject(.readOnly) }
 
+        clearBasicChoiceServerFeedback(gameID: identity.gameID)
         let actionAttemptID = UUID()
         basicChoiceActions[identity.gameID] = BasicChoiceActionRecord(
             identity: identity,
@@ -505,11 +506,29 @@ extension AppModel {
         }
         switch action.phase {
         case .sending, .awaitingSnapshot:
-            basicChoiceServerFeedback[gameID] = rejection.reason
+            setBasicChoiceServerFeedback(
+                gameID: gameID,
+                message: rejection.reason,
+                source: .answerRejected
+            )
             basicChoiceActions[gameID] = nil
         case .uncertain, .retryable:
             break
         }
+    }
+
+    func clearBasicChoiceServerFeedback(gameID: GameID) {
+        basicChoiceServerFeedback[gameID] = nil
+        basicChoiceServerFeedbackSources[gameID] = nil
+    }
+
+    func setBasicChoiceServerFeedback(
+        gameID: GameID,
+        message: String,
+        source: BasicChoiceServerFeedbackSource
+    ) {
+        basicChoiceServerFeedback[gameID] = message
+        basicChoiceServerFeedbackSources[gameID] = source
     }
 
     /// `GameError` is broadcast room-wide and carries no player, question, or request
@@ -519,8 +538,11 @@ extension AppModel {
     func handleUncorrelatedBasicChoiceGameError(
         gameID: GameID, sessionAttemptID: UUID, connectionID: UUID?
     ) {
-        basicChoiceServerFeedback[gameID] =
-            "The server reported a game error that could not be tied to your choice."
+        setBasicChoiceServerFeedback(
+            gameID: gameID,
+            message: "The server reported a game error that could not be tied to your choice.",
+            source: .gameError
+        )
         guard let action = basicChoiceActions[gameID],
               action.identity.sessionAttemptID == sessionAttemptID,
               action.connectionID == connectionID

@@ -131,6 +131,12 @@ extension AppModelLiveGameTests {
                 ?? true
         ))
 
+        try await connection.enqueue(.event(.message(ContractJSON.encode(
+            BoardSnapshotUpdate.snapshot(envelope.game)
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        #expect(model.basicChoicePresentation(for: gameID)?.serverFeedback == nil)
+
         await connection.enqueueSendResult(.success(()))
         let currentIdentity = try #require(
             model.basicChoicePresentation(for: gameID)?.identity
