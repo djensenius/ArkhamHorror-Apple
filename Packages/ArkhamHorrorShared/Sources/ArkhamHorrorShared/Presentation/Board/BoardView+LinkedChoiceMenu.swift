@@ -28,6 +28,17 @@ enum BoardLinkedChoiceMenuLayout {
     }
 }
 
+struct BoardLinkedChoiceMenuCancelDispatch: Sendable, Equatable {
+    let focusID: SemanticFocusID
+    let outcome: SemanticDispatchOutcome
+}
+
+enum BoardLinkedChoiceMenuCancelAction {
+    static func dispatch(for request: BoardLinkedChoiceMenuRequest) -> BoardLinkedChoiceMenuCancelDispatch {
+        BoardLinkedChoiceMenuCancelDispatch(focusID: request.focusID, outcome: .reservedBack)
+    }
+}
+
 enum BoardLinkedChoiceMenuScrollTarget {
     static func focusedChoiceID(
         choices: [BoardLinkedChoice],
@@ -65,7 +76,13 @@ struct BoardLinkedChoiceMenuModalView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
+            .accessibilityAction(.escape, cancel)
         }
+    }
+
+    private func cancel() {
+        let dispatch = BoardLinkedChoiceMenuCancelAction.dispatch(for: request)
+        onOutcome(dispatch.focusID, dispatch.outcome)
     }
 
     private func modalContent(choiceListHeight: CGFloat) -> some View {
