@@ -243,7 +243,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
                       forSourceIndex: choice.index
                   )
             else { return false }
-            return isSemanticChoiceActionable(descriptor, in: projection)
+            return isSemanticChoiceActionable(descriptor)
         }
         return projection.isChoiceActionable(
             choice,

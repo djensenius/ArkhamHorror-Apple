@@ -105,14 +105,6 @@
 "semantic.cost.unit.clue.plural" = "clues";
 
 "semantic.choice.unavailable.text" = "The text for this choice is not currently available.";
-"semantic.choice.unavailable.advanceAct" = "The act or investigator for this choice is not currently available.";
-"semantic.choice.unavailable.advanceAgenda" = "The agenda or investigator for this choice is not currently available.";
-"semantic.choice.unavailable.enemy" = "The enemy or investigator for this choice is not currently available.";
-"semantic.choice.unavailable.location" = "The location or investigator for this choice is not currently available.";
-"semantic.choice.unavailable.forcedAbility" = "The source or investigator for this forced ability is not currently available.";
-"semantic.choice.unavailable.target" = "The target for this choice is not currently available.";
-"semantic.choice.unavailable.investigator" = "The investigator for this choice is not currently available.";
-"semantic.choice.unavailable.assignment" = "The investigator for this assignment is not currently available.";
 "semantic.choice.unavailable.generic" = "This choice is not currently available.";
 
 "basicChoice.choiceText.loading" = "The text for this choice is still loading.";
