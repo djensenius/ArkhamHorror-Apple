@@ -65,6 +65,11 @@ struct GameLifecycleServiceLobbyActionTests {
                 #"{"message":"Invalid Arguments","errors":["Invalid investigator for this game"]}"#,
                 "Invalid investigator for this game"
             ),
+            (
+                400,
+                #"{"message":"Invalid Arguments","errors":[]}"#,
+                "Invalid Arguments"
+            ),
         ]
     )
     func claimSeatSurfacesServerAuthoredErrors(

@@ -70,6 +70,32 @@ struct AppModelGameInviteTests {
         #expect(await service.lastClaimSeatRequest?.investigatorId == expectedInvestigator)
     }
 
+    @Test("claim-seat invite lets a viewer without a seat claim an open seat")
+    func claimSeatInviteClaimsSeatForUnseatedViewer() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let seat = try CardCode("c01001")
+        await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 2)))
+        await service.enqueueOpenSeatsResult(.success([seat]))
+        await service.enqueueGetGameResult(.failure(GameLifecycleError.unexpectedStatus(404)))
+        await service.enqueueClaimSeatResult(.success(()))
+        await service.enqueueListGamesResult(.success([]))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        let invite = try await model.loadClaimSeatInvite(gameID)
+        let claimedID = try await model.claimSeatFromInvite(seat, using: invite)
+
+        #expect(invite.seats == [seat])
+        #expect(invite.viewerHasSeat == false)
+        #expect(invite.showsClaimButtons)
+        #expect(claimedID == gameID)
+        #expect(
+            await service.callOrder == [
+                "peekLobby", "openSeats", "getGame", "claimSeat", "listGames",
+            ]
+        )
+    }
+
     @Test("claim-seat invite snapshot cannot republish stale lobby flags after reset")
     func claimSeatInviteRejectsSnapshotAfterReset() async throws {
         let service = ScriptedGameLifecycleService()

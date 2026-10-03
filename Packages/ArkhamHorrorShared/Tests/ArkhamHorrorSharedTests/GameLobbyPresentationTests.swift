@@ -107,6 +107,7 @@ struct GameLobbyPresentationTests {
         let openSeats = try [CardCode("c01002")]
 
         #expect(game.viewerAlreadyHasSeat)
+        #expect(!view.showsClaimSeatButtons(for: game, openSeats: openSeats))
         #expect(
             view.openSeatsStatusText(for: game, openSeats: openSeats)
                 == "You already have a seat in this game."

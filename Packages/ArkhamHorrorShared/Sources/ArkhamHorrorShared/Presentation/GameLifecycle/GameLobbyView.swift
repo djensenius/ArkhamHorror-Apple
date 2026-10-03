@@ -116,19 +116,7 @@ struct GameLobbyView: View {
         _ openSeats: OpenSeats,
         for game: GameSummary
     ) -> some View {
-        if openSeats.isEmpty || viewerAlreadyHasSeat(in: game) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(openSeatsStatusText(for: game, openSeats: openSeats))
-                    .foregroundStyle(.secondary)
-                // A stale/racy empty result (or a transient backend issue) must never
-                // leave this lobby permanently non-retryable while `hasOpenSeats` might
-                // still legitimately be true. This reuses the initial load action, so it
-                // is never a distinct, second concurrent load.
-                loadOpenSeatsButton(
-                    title: gameLifecycleLocalized("games.lobby.openSeats.refresh", "Refresh")
-                )
-            }
-        } else {
+        if showsClaimSeatButtons(for: game, openSeats: openSeats) {
             ForEach(openSeats, id: \.rawValue) { seat in
                 Button {
                     model.claimSeat(seat, in: gameID)
@@ -140,6 +128,18 @@ struct GameLobbyView: View {
                     AccountAccessibilityID.gameClaimSeatButton(
                         for: gameID.rawValue, seat: seat.rawValue
                     )
+                )
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(openSeatsStatusText(for: game, openSeats: openSeats))
+                    .foregroundStyle(.secondary)
+                // A stale/racy empty result (or a transient backend issue) must never
+                // leave this lobby permanently non-retryable while `hasOpenSeats` might
+                // still legitimately be true. This reuses the initial load action, so it
+                // is never a distinct, second concurrent load.
+                loadOpenSeatsButton(
+                    title: gameLifecycleLocalized("games.lobby.openSeats.refresh", "Refresh")
                 )
             }
         }
@@ -325,6 +325,10 @@ extension GameLobbyView {
         case .active, .over, .unknown:
             return nil
         }
+    }
+
+    func showsClaimSeatButtons(for game: GameSummary, openSeats: OpenSeats) -> Bool {
+        !openSeats.isEmpty && !viewerAlreadyHasSeat(in: game)
     }
 
     func openSeatsStatusText(for game: GameSummary, openSeats: OpenSeats) -> String {
