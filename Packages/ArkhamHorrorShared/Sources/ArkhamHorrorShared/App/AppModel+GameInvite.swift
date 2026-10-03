@@ -252,8 +252,12 @@ extension AppModel {
         } catch GameLifecycleTokenAccessError.stale {
             throw CancellationError()
         } catch GameLifecycleTokenAccessError.noToken {
+            try ensureCurrentGameInviteSession(session)
+            await handleGameInviteLifecycleError(.sessionExpired, session: session)
+            try ensureCurrentGameInviteSession(session)
             throw GameLifecycleError.sessionExpired
         } catch GameLifecycleTokenAccessError.tokenStore {
+            try ensureCurrentGameInviteSession(session)
             throw GameLifecycleError.tokenUnavailable
         }
     }

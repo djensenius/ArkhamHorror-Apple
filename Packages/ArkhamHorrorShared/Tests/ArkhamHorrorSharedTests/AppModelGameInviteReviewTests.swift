@@ -155,6 +155,84 @@ struct AppModelGameInviteReviewTests {
         #expect(await service.callOrder == [])
     }
 
+    @Test("claim-seat invite routes a current missing token through session expiry")
+    func claimSeatInviteHandlesCurrentMissingTokenRead() async throws {
+        let service = ScriptedGameLifecycleService()
+        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "session-token"])
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            gameLifecycleService: service
+        )
+        await model.flowTask?.value
+        await tokenStore.setTokenReadGated(true)
+        let seat = try CardCode("c01001")
+        let invite = ClaimSeatInviteDetails(
+            gameID: GameID(UUID()),
+            seats: [seat],
+            playerCount: 2,
+            viewerHasSeat: false,
+            sessionToken: GameInviteSessionToken(
+                profileID: ServerProfile.hosted.id,
+                generation: model.generation,
+                credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                globalEpoch: model.currentGlobalCredentialEpoch()
+            )
+        )
+
+        let claimTask = Task { try await model.claimSeatFromInvite(seat, using: invite) }
+        await tokenStore.waitUntilTokenReadPending(1)
+        await tokenStore.resumeOldestTokenRead(with: .success(nil))
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await claimTask.value
+        }
+        #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+        #expect(await service.callOrder == [])
+    }
+
+    @Test("claim-seat invite revalidates before surfacing a token-store read failure")
+    func claimSeatInviteRejectsSessionChangeBeforeTokenReadFailure() async throws {
+        let service = ScriptedGameLifecycleService()
+        let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: "session-token"])
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: tokenStore,
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            gameLifecycleService: service
+        )
+        await model.flowTask?.value
+        await tokenStore.setTokenReadGated(true)
+        let seat = try CardCode("c01001")
+        let invite = ClaimSeatInviteDetails(
+            gameID: GameID(UUID()),
+            seats: [seat],
+            playerCount: 2,
+            viewerHasSeat: false,
+            sessionToken: GameInviteSessionToken(
+                profileID: ServerProfile.hosted.id,
+                generation: model.generation,
+                credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+                globalEpoch: model.currentGlobalCredentialEpoch()
+            )
+        )
+
+        let claimTask = Task { try await model.claimSeatFromInvite(seat, using: invite) }
+        await tokenStore.waitUntilTokenReadPending(1)
+        model.generation += 1
+        await tokenStore.resumeOldestTokenRead(with: .failure(TestFailure()))
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await claimTask.value
+        }
+        #expect(await service.callOrder == [])
+    }
+
     @Test("claim-seat invite revalidates before propagating a claim failure")
     func claimSeatInviteRejectsSessionChangeBeforeClaimFailure() async throws {
         let service = ScriptedGameLifecycleService()
