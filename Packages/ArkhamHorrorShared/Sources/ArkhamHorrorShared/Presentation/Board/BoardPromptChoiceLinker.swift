@@ -32,6 +32,11 @@ struct BoardLinkedChoice: Sendable, Equatable {
     let isActionable: Bool
 }
 
+struct BoardLinkedChoiceMenuRequest: Sendable, Equatable {
+    let focusID: SemanticFocusID
+    let choices: [BoardLinkedChoice]
+}
+
 enum BoardPromptChoiceLinker {
     static func links(
         prompt: BasicChoicePromptPresentation?,

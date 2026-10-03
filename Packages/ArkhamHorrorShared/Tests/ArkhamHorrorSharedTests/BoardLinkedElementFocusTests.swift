@@ -154,8 +154,8 @@ struct BoardLinkedElementFocusTests {
         #expect(submittedChoices == [7])
     }
 
-    @Test("Primary action on a multi-choice linked enemy is left for the native choice menu")
-    func primaryActionOnMultiLinkedEnemyDoesNotSubmitOrInspect() {
+    @Test("Primary action on a multi-choice linked enemy requests the choice menu")
+    func primaryActionOnMultiLinkedEnemyRequestsMenuWithoutSubmittingOrInspecting() {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
         let playerID = BoardTestFixtures.playerID("000000000001")
         let enemyID = BoardTestFixtures.enemyID("000000000431")
@@ -179,9 +179,16 @@ struct BoardLinkedElementFocusTests {
             onChoice: { submittedChoices.append($0) }
         )
 
-        #expect(!controller.handle(
+        #expect(controller.handle(
             focusID: BoardFocusID.promptElement(.enemy(enemyID)),
             .command(.primaryAction)
+        ))
+        #expect(controller.linkedChoiceMenuRequest == BoardLinkedChoiceMenuRequest(
+            focusID: BoardFocusID.promptElement(.enemy(enemyID)),
+            choices: [
+                BoardLinkedChoice(choiceIndex: 7, title: "Fight", isActionable: true),
+                BoardLinkedChoice(choiceIndex: 8, title: "Evade", isActionable: true),
+            ]
         ))
         #expect(submittedChoices.isEmpty)
         #expect(!controller.coordinator.isModalPresented)

@@ -171,6 +171,13 @@ struct BoardView: View {
                 )
             }
         }
+        .confirmationDialog(
+            "Choose prompt action",
+            isPresented: linkedChoiceMenuBinding(controller),
+            titleVisibility: .visible
+        ) {
+            linkedChoiceMenuButtons(controller)
+        }
         .environment(\.boardCardCatalog, cardCatalog)
         .semanticKeyboardInput { controller.handle($0) }
         #if os(tvOS)

@@ -39,6 +39,9 @@ final class BoardCommandController {
     private(set) var preModalZone: SemanticFocusZone?
     /// The most recently dispatched command, for on-screen/test verification.
     private(set) var lastCommand: SemanticCommand?
+    /// A keyboard/controller request to present the same linked-choice selection surface
+    /// that pointer users get from a multi-choice board element.
+    private(set) var linkedChoiceMenuRequest: BoardLinkedChoiceMenuRequest?
     private var onChoice: (Int) -> Void
     private var onAmounts: ([String: Int]) -> Void
     private var onPaymentAmounts: ([String: Int]) -> Void
@@ -120,6 +123,7 @@ final class BoardCommandController {
     func applySnapshot(
         _ newProjection: BoardProjection, prompt newPrompt: BasicChoicePromptPresentation? = nil
     ) {
+        linkedChoiceMenuRequest = nil
         if coordinator.isModalPresented {
             dismissModal()
         }
@@ -145,6 +149,7 @@ final class BoardCommandController {
 
     func applyPrompt(_ newPrompt: BasicChoicePromptPresentation?) {
         guard prompt != newPrompt else { return }
+        linkedChoiceMenuRequest = nil
         prompt = newPrompt
         resetPromptInputStateIfNeeded(prompt: newPrompt)
         let graph = BoardFocusGraphBuilder.makeGraph(
@@ -597,11 +602,20 @@ final class BoardCommandController {
         switch linkedDecision {
         case let .submit(choice):
             return activatePromptChoice(choice.choiceIndex)
-        case .menu:
-            return false
+        case let .menu(choices):
+            guard let focusID = coordinator.currentFocus else { return false }
+            linkedChoiceMenuRequest = BoardLinkedChoiceMenuRequest(
+                focusID: focusID,
+                choices: choices
+            )
+            return true
         case .highlightOnly:
             return nil
         }
+    }
+
+    func clearLinkedChoiceMenuRequest() {
+        linkedChoiceMenuRequest = nil
     }
 
     private var focusedPromptElementDecision: BoardLinkedChoicePresentationDecision? {
