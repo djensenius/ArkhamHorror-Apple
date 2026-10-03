@@ -27,12 +27,15 @@ struct AppModelGameInviteLobbyDetailReviewTests {
 
         model.loadLobbyDetailsIfNeeded(for: gameID)
         await service.waitUntilGetGamePending(1)
+        let staleTask = model.gameLobbyDetailTasks[gameID]
+        #expect(staleTask != nil)
         model.generation += 1
         model.resetGameLifecycleState()
         model.loadLobbyDetailsIfNeeded(for: gameID)
         await service.waitUntilGetGamePending(2)
 
         await service.resumeOldestGetGame(with: .success(getGameEnvelope(gameID: gameID)))
+        await staleTask?.value
         let replacementTask = model.gameLobbyDetailTasks[gameID]
         #expect(replacementTask != nil)
         #expect(model.gameLobbyDetailTaskIDs[gameID] != nil)
