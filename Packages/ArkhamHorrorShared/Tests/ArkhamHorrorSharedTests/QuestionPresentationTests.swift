@@ -170,12 +170,11 @@ struct QuestionPresentationTests {
 
     // swiftlint:disable line_length
     @Test(
-        "Closed presentation shapes reject malformed or unknown values",
+        "Presentation shapes reject malformed required values",
         arguments: [
             #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":0,"choices":[]}"#,
             #"{"protocolVersion":2,"questionVersion":-1,"questionKind":"chooseOne","choiceCount":0,"choices":[]}"#,
             #"{"protocolVersion":2,"questionVersion":1,"questionKind":"future","choiceCount":0,"choices":[]}"#,
-            #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":0,"choices":[],"extra":true}"#,
             #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"gainResource"}]}"#,
             #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"localizedLabel"}]}"#,
             #"{"protocolVersion":2,"questionVersion":1,"questionKind":"chooseOne","choiceCount":1,"choices":[{"sourceIndex":0,"kind":"advanceAct","entity":{"kind":"agenda","id":"a"}}]}"#,
