@@ -125,6 +125,13 @@ struct AppModelGameInviteRefreshReviewTests {
         await service.enqueueListGamesResult(.success([]))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
         let details = inviteDetails(gameID: gameID, seat: seat, model: model)
+        let reloadedDetails = ClaimSeatInviteDetails(
+            gameID: gameID,
+            seats: [],
+            playerCount: details.playerCount,
+            viewerHasSeat: true,
+            sessionToken: details.sessionToken
+        )
         let viewModel = JoinGameInviteViewModel()
         viewModel.inviteText = "https://arkhamhorror.app/games/"
             + "\(gameID.rawValue.uuidString)/claim-seat"
@@ -139,14 +146,14 @@ struct AppModelGameInviteRefreshReviewTests {
                 try await model.claimSeatFromInvite(seat, using: invite)
             },
             reloadClaimSeatInvite: { _ in
-                Issue.record("reload should not run for refresh-only failure")
-                return details
+                reloadedDetails
             }
         )
 
         #expect(claimedID == nil)
         #expect(viewModel.failureMessage == refreshFailureMessage)
-        #expect(viewModel.claimSeatInvite == details)
+        #expect(viewModel.claimSeatInvite == reloadedDetails)
+        #expect(viewModel.claimSeatInvite?.canContinue == true)
         #expect(await service.callOrder == ["claimSeat", "listGames"])
     }
 }
