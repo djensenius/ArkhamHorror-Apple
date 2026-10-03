@@ -5,6 +5,25 @@ enum BoardPromptElementID: Sendable, Equatable, Hashable {
     case playerCard(BoardPlayerCardID)
     case enemy(EnemyID)
     case treachery(TreacheryID)
+
+    var rawFocusComponent: String {
+        switch self {
+        case let .playerCard(cardID): "playerCard.\(cardID.rawFocusComponent)"
+        case let .enemy(enemyID): "enemy.\(enemyID.codingKey.stringValue)"
+        case let .treachery(treacheryID): "treachery.\(treacheryID.codingKey.stringValue)"
+        }
+    }
+}
+
+extension BoardPlayerCardID {
+    var rawFocusComponent: String {
+        switch self {
+        case let .card(id): "card.\(id.codingKey.stringValue)"
+        case let .asset(id): "asset.\(id.codingKey.stringValue)"
+        case let .event(id): "event.\(id.codingKey.stringValue)"
+        case let .skill(id): "skill.\(id.codingKey.stringValue)"
+        }
+    }
 }
 
 struct BoardLinkedChoice: Sendable, Equatable {

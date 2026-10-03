@@ -26,6 +26,9 @@ struct BoardView: View {
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
     @State private var controller: BoardCommandController?
+    #if canImport(GameController)
+        @State private var controllerInputCenter: ControllerInputCenter?
+    #endif
     @FocusState private var focusedID: SemanticFocusID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(iOS) || os(visionOS)
@@ -95,6 +98,7 @@ struct BoardView: View {
                 controller = newController
                 activeController = newController
             }
+            startControllerInputIfAvailable(for: activeController)
             // Re-synced on every appearance, not only when the controller is first
             // created: if this view disappears and reappears with the same
             // already-existing controller (for example a tab/detail switch), SwiftUI may
@@ -102,6 +106,9 @@ struct BoardView: View {
             // which would otherwise leave platform focus stale. Matches
             // `SemanticInputHarnessView`'s identical `.onAppear` re-sync.
             focusedID = activeController.coordinator.currentFocus
+        }
+        .onDisappear {
+            stopControllerInputIfAvailable()
         }
         .onChange(of: projection) { _, newValue in
             controller?.updateChoiceHandler(onChoice)
@@ -127,6 +134,27 @@ struct BoardView: View {
             controller?.updateLocalPlayerID(newValue)
         }
     }
+
+    #if canImport(GameController)
+        private func startControllerInputIfAvailable(for controller: BoardCommandController) {
+            if let controllerInputCenter {
+                controllerInputCenter.start()
+                return
+            }
+            let center = ControllerInputCenter(discovery: GameControllerDiscovery()) { outcome in
+                controller.handle(outcome)
+            }
+            controllerInputCenter = center
+            center.start()
+        }
+
+        private func stopControllerInputIfAvailable() {
+            controllerInputCenter?.stop()
+        }
+    #else
+        private func startControllerInputIfAvailable(for _: BoardCommandController) {}
+        private func stopControllerInputIfAvailable() {}
+    #endif
 
     @ViewBuilder
     private func boardBody(_ controller: BoardCommandController) -> some View {

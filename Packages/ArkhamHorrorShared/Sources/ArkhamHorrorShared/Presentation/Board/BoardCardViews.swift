@@ -12,6 +12,8 @@ struct BoardPlayerAreaView: View {
     let engagedEnemies: [BoardEnemyNode]
     let investigatorDisplayNames: [InvestigatorID: String]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    let focusedID: SemanticFocusID?
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -27,6 +29,8 @@ struct BoardPlayerAreaView: View {
                     title: "Engaged", enemies: engagedEnemies,
                     investigatorDisplayNames: investigatorDisplayNames,
                     choiceLinks: choiceLinks,
+                    focusedID: focusedID,
+                    focusBinding: focusBinding,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -34,6 +38,8 @@ struct BoardPlayerAreaView: View {
                 BoardThreatAreaView(
                     treacheries: threatTreacheries,
                     choiceLinks: choiceLinks,
+                    focusedID: focusedID,
+                    focusBinding: focusBinding,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -52,6 +58,8 @@ struct BoardPlayerAreaView: View {
                     BoardPlayerCardFaceView(
                         card: card,
                         linkedChoices: choiceLinks[.playerCard(card.id)] ?? [],
+                        focusedID: focusedID,
+                        focusBinding: focusBinding,
                         onLinkedChoice: onLinkedChoice
                     )
                 }
@@ -63,6 +71,8 @@ struct BoardPlayerAreaView: View {
 struct BoardPlayerCardFaceView: View {
     let card: BoardPlayerCardNode
     let linkedChoices: [BoardLinkedChoice]
+    let focusedID: SemanticFocusID?
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -72,6 +82,13 @@ struct BoardPlayerCardFaceView: View {
 
     private var accessibilitySummary: String {
         BoardAccessibility.summary(playerCard: card, displayName: displayName)
+    }
+
+    private var linkedFocusID: SemanticFocusID? {
+        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        case .submit, .menu: BoardFocusID.promptElement(.playerCard(card.id))
+        case .highlightOnly: nil
+        }
     }
 
     var body: some View {
@@ -124,6 +141,9 @@ struct BoardPlayerCardFaceView: View {
         BoardLinkedChoiceFace(
             accessibilityLabel: accessibilityLabel,
             linkedChoices: linkedChoices,
+            focusID: linkedFocusID,
+            isFocused: focusedID == linkedFocusID,
+            focusBinding: focusBinding,
             onLinkedChoice: onLinkedChoice,
             content: content
         )
@@ -135,6 +155,8 @@ struct BoardEnemyPanelView: View {
     let enemies: [BoardEnemyNode]
     var investigatorDisplayNames: [InvestigatorID: String] = [:]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    let focusedID: SemanticFocusID?
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -147,6 +169,8 @@ struct BoardEnemyPanelView: View {
                     enemy: enemy,
                     investigatorDisplayNames: investigatorDisplayNames,
                     linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
+                    focusedID: focusedID,
+                    focusBinding: focusBinding,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -158,6 +182,8 @@ struct BoardEnemyCardView: View {
     let enemy: BoardEnemyNode
     let investigatorDisplayNames: [InvestigatorID: String]
     let linkedChoices: [BoardLinkedChoice]
+    let focusedID: SemanticFocusID?
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -173,6 +199,13 @@ struct BoardEnemyCardView: View {
                 investigatorDisplayNames[$0]
             }
         )
+    }
+
+    private var linkedFocusID: SemanticFocusID? {
+        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        case .submit, .menu: BoardFocusID.promptElement(.enemy(enemy.id))
+        case .highlightOnly: nil
+        }
     }
 
     var body: some View {
@@ -241,6 +274,9 @@ struct BoardEnemyCardView: View {
         BoardLinkedChoiceFace(
             accessibilityLabel: accessibilityLabel,
             linkedChoices: linkedChoices,
+            focusID: linkedFocusID,
+            isFocused: focusedID == linkedFocusID,
+            focusBinding: focusBinding,
             onLinkedChoice: onLinkedChoice,
             content: content
         )
@@ -250,6 +286,8 @@ struct BoardEnemyCardView: View {
 struct BoardThreatAreaView: View {
     let treacheries: [BoardThreatTreacheryNode]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    let focusedID: SemanticFocusID?
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
@@ -261,6 +299,8 @@ struct BoardThreatAreaView: View {
                 BoardThreatTreacheryCardView(
                     treachery: treachery,
                     linkedChoices: choiceLinks[.treachery(treachery.id)] ?? [],
+                    focusedID: focusedID,
+                    focusBinding: focusBinding,
                     onLinkedChoice: onLinkedChoice
                 )
             }
@@ -271,6 +311,8 @@ struct BoardThreatAreaView: View {
 struct BoardThreatTreacheryCardView: View {
     let treachery: BoardThreatTreacheryNode
     let linkedChoices: [BoardLinkedChoice]
+    let focusedID: SemanticFocusID?
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onLinkedChoice: (Int) -> Void
     @Environment(\.boardCardCatalog) private var cardCatalog
 
@@ -280,6 +322,13 @@ struct BoardThreatTreacheryCardView: View {
 
     private var accessibilitySummary: String {
         BoardAccessibility.summary(threatTreachery: treachery, displayName: displayName)
+    }
+
+    private var linkedFocusID: SemanticFocusID? {
+        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        case .submit, .menu: BoardFocusID.promptElement(.treachery(treachery.id))
+        case .highlightOnly: nil
+        }
     }
 
     var body: some View {
@@ -306,6 +355,9 @@ struct BoardThreatTreacheryCardView: View {
         BoardLinkedChoiceFace(
             accessibilityLabel: accessibilityLabel,
             linkedChoices: linkedChoices,
+            focusID: linkedFocusID,
+            isFocused: focusedID == linkedFocusID,
+            focusBinding: focusBinding,
             onLinkedChoice: onLinkedChoice,
             content: content
         )

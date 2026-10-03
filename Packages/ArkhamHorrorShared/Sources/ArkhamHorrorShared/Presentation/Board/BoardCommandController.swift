@@ -86,13 +86,29 @@ final class BoardCommandController {
             layout: layout,
             prompt: prompt,
             amountDraft: initialAmountDraft,
-            exchangeAmount: 0
+            exchangeAmount: 0,
+            fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
+                in: projection, prompt: prompt, localPlayerID: localPlayerID
+            )
         )
         coordinator = FocusCoordinator(graph: graph, initialFocus: graph.order.first)
     }
 
     private static func activeLocationID(in projection: BoardProjection) -> LocationID? {
         projection.investigators.first(where: \.isActiveInvestigator)?.currentLocationID
+    }
+
+    private static func fullPlayerAreaPlayerID(
+        in projection: BoardProjection,
+        prompt: BasicChoicePromptPresentation?,
+        localPlayerID: PlayerID?
+    ) -> PlayerID? {
+        let activePlayerID = projection.investigators.first(where: \.isActiveInvestigator)?.playerID
+        return Self.fullPlayerAreaPlayerID(
+            promptOwnerID: prompt?.ownerID,
+            localPlayerID: localPlayerID,
+            activeInvestigatorPlayerID: activePlayerID
+        )
     }
 
     /// Replaces the current projection with a freshly-decoded one (for example after a
@@ -119,7 +135,10 @@ final class BoardCommandController {
             layout: layout,
             prompt: newPrompt,
             amountDraft: amountDraft,
-            exchangeAmount: exchangeAmount
+            exchangeAmount: exchangeAmount,
+            fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
+                in: newProjection, prompt: newPrompt, localPlayerID: localPlayerID
+            )
         )
         coordinator.applySnapshot(newGraph)
     }
@@ -133,7 +152,10 @@ final class BoardCommandController {
             layout: layout,
             prompt: newPrompt,
             amountDraft: amountDraft,
-            exchangeAmount: exchangeAmount
+            exchangeAmount: exchangeAmount,
+            fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
+                in: projection, prompt: newPrompt, localPlayerID: localPlayerID
+            )
         )
         coordinator.applySnapshot(graph)
     }
@@ -224,31 +246,45 @@ final class BoardCommandController {
     private func applyPromptCommand(_ command: SemanticCommand) -> Bool {
         switch command {
         case .primaryAction:
-            if activateFocusedAmountControl(primary: true) {
-                return true
-            }
-            if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
-                return activatePromptCatalogRetry()
-            }
-            if coordinator.currentFocus == BoardFocusID.promptRetry {
-                return activatePromptRetry()
-            }
-            if let index = focusedPromptChoiceIndex {
-                return activatePromptChoice(index)
-            }
-            return coordinator.isModalPresented ? closeInspector() : openInspector()
+            return applyPrimaryAction()
         case .secondaryAction:
-            if activateFocusedAmountControl(primary: false) {
-                return true
-            }
-            return coordinator.isModalPresented ? closeInspector() : leavePrompt()
+            return applySecondaryAction()
         case .jumpToActivePrompt:
             return jumpToActivePrompt()
         case .togglePromptSurface:
-            return focusedZone == BoardFocusZone.prompt ? leavePrompt() : jumpToActivePrompt()
+            if focusedZone == BoardFocusZone.prompt {
+                return leavePrompt()
+            }
+            return jumpToActivePrompt()
         default:
             return false
         }
+    }
+
+    private func applyPrimaryAction() -> Bool {
+        if let linkedElementResult = activateFocusedPromptElementOrDeferMenu() {
+            return linkedElementResult
+        }
+        if activateFocusedAmountControl(primary: true) {
+            return true
+        }
+        if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
+            return activatePromptCatalogRetry()
+        }
+        if coordinator.currentFocus == BoardFocusID.promptRetry {
+            return activatePromptRetry()
+        }
+        if let index = focusedPromptChoiceIndex {
+            return activatePromptChoice(index)
+        }
+        return coordinator.isModalPresented ? closeInspector() : openInspector()
+    }
+
+    private func applySecondaryAction() -> Bool {
+        if activateFocusedAmountControl(primary: false) {
+            return true
+        }
+        return coordinator.isModalPresented ? closeInspector() : leavePrompt()
     }
 
     /// Presents the inspector for whatever is currently focused, recording it in
@@ -468,7 +504,10 @@ final class BoardCommandController {
             layout: layout,
             prompt: prompt,
             amountDraft: amountDraft,
-            exchangeAmount: exchangeAmount
+            exchangeAmount: exchangeAmount,
+            fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
+                in: projection, prompt: prompt, localPlayerID: localPlayerID
+            )
         )
         coordinator.applySnapshot(graph)
     }
@@ -551,6 +590,27 @@ final class BoardCommandController {
         prompt?.choices.first {
             BoardFocusID.promptChoice($0.index) == coordinator.currentFocus
         }?.index
+    }
+
+    private func activateFocusedPromptElementOrDeferMenu() -> Bool? {
+        guard let linkedDecision = focusedPromptElementDecision else { return nil }
+        switch linkedDecision {
+        case let .submit(choice):
+            return activatePromptChoice(choice.choiceIndex)
+        case .menu:
+            return false
+        case .highlightOnly:
+            return nil
+        }
+    }
+
+    private var focusedPromptElementDecision: BoardLinkedChoicePresentationDecision? {
+        guard let currentFocus = coordinator.currentFocus else { return nil }
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+        guard let linkedChoices = links.first(where: { entry in
+            BoardFocusID.promptElement(entry.key) == currentFocus
+        })?.value else { return nil }
+        return BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
     }
 
     private func leavePrompt() -> Bool {
@@ -649,7 +709,9 @@ extension BoardCommandController {
     }
 
     func updateLocalPlayerID(_ playerID: PlayerID?) {
+        guard localPlayerID != playerID else { return }
         localPlayerID = playerID
+        refreshFocusGraphForPromptControls()
     }
 
     nonisolated static func fullPlayerAreaPlayerID(

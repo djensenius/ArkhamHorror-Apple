@@ -216,6 +216,8 @@ struct BoardLocationBoardView: View {
                     BoardEnemyTileChipView(
                         enemy: enemy,
                         linkedChoices: choiceLinks[.enemy(enemy.id)] ?? [],
+                        focusedID: focusedID,
+                        focusBinding: focusBinding,
                         onLinkedChoice: onLinkedChoice
                     )
                 }
@@ -307,6 +309,8 @@ struct BoardEnemyLocationsRowView: View {
                     enemies: enemies,
                     visibleCount: 3,
                     choiceLinks: choiceLinks,
+                    focusedID: focusedID,
+                    focusBinding: focusBinding,
                     onLinkedChoice: onLinkedChoice
                 )
             }
