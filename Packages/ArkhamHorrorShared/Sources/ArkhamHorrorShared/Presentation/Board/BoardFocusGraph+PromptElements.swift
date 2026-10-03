@@ -1,6 +1,8 @@
 import Foundation
 
 extension BoardFocusGraphBuilder {
+    private static let enemyLocationVisibleEnemyCount = 3
+
     // swiftlint:disable:next function_parameter_count
     static func appendLocations(
         _ locations: [BoardLocationNode],
@@ -19,7 +21,8 @@ extension BoardFocusGraphBuilder {
             for (direction, neighborID) in layout.neighbors[location.id] ?? [:] {
                 neighbors[direction] = BoardFocusID.location(neighborID)
             }
-            if neighbors[.down] == nil, let firstEnemy = linkedEnemyIDs.first {
+            let originalDownNeighbor = neighbors[.down]
+            if let firstEnemy = linkedEnemyIDs.first {
                 neighbors[.down] = firstEnemy
             }
             nodes.append(
@@ -31,6 +34,7 @@ extension BoardFocusGraphBuilder {
             appendLinkedElementVerticalChain(
                 linkedEnemyIDs,
                 previousID: BoardFocusID.location(location.id),
+                nextAfterLastID: originalDownNeighbor,
                 zone: BoardFocusZone.locations,
                 nodes: &nodes
             )
@@ -46,6 +50,7 @@ extension BoardFocusGraphBuilder {
     private static func appendLinkedElementVerticalChain(
         _ ids: [SemanticFocusID],
         previousID: SemanticFocusID,
+        nextAfterLastID: SemanticFocusID? = nil,
         zone: SemanticFocusZone,
         nodes: inout [FocusNode]
     ) {
@@ -54,6 +59,8 @@ extension BoardFocusGraphBuilder {
             var neighbors: [FocusDirection: SemanticFocusID] = [.up: previous]
             if index < ids.count - 1 {
                 neighbors[.down] = ids[index + 1]
+            } else if let nextAfterLastID {
+                neighbors[.down] = nextAfterLastID
             }
             nodes.append(FocusNode(id: id, zone: zone, neighbors: neighbors))
         }
@@ -67,7 +74,10 @@ extension BoardFocusGraphBuilder {
         enemyLocations.flatMap { location in
             [BoardFocusID.enemyLocation(location.id)]
                 + promptElementIDs(
-                    for: enemiesByLocationID[location.id] ?? [],
+                    for: Array(
+                        (enemiesByLocationID[location.id] ?? [])
+                            .prefix(enemyLocationVisibleEnemyCount)
+                    ),
                     choiceLinks: choiceLinks
                 )
         }
@@ -78,14 +88,13 @@ extension BoardFocusGraphBuilder {
         choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]],
         fullPlayerAreaPlayerID: PlayerID?
     ) -> [SemanticFocusID] {
-        let activeInvestigatorID = projection.investigators.first(where: \.isActiveInvestigator)?.id
-        return projection.investigators.flatMap { investigator in
+        projection.investigators.flatMap { investigator in
             var ids = [BoardFocusID.investigator(investigator.id)]
             let showsFullArea = BoardPlayerAreaVisibility.shouldShowFullArea(
                 for: investigator,
                 fullPlayerAreaPlayerID: fullPlayerAreaPlayerID
             )
-            if showsFullArea || investigator.id == activeInvestigatorID {
+            if showsFullArea {
                 ids += promptElementIDs(
                     for: projection.orderedHandCardsByPlayer[investigator.playerID] ?? [],
                     choiceLinks: choiceLinks

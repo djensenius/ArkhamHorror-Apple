@@ -84,6 +84,9 @@ struct BoardCardRenderingProjectionTests {
         )
         let enemyFocus = BoardFocusID.promptElement(.enemy(enemyID))
         #expect(graph.node(for: enemyFocus)?.zone == BoardFocusZone.investigators)
+        #expect(graph.order.filter { $0.rawValue.hasPrefix("board.promptElement.") } == [
+            enemyFocus,
+        ])
         #expect(graph.zoneEntryPoints[BoardFocusZone.prompt] != nil)
         #expect(graph.contains(BoardFocusID.promptChoice(4)))
     }
