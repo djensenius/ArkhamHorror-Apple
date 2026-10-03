@@ -70,14 +70,7 @@ struct BoardView: View {
         .onAppear {
             let activeController: BoardCommandController
             if let controller {
-                controller.updateChoiceHandler(onChoice)
-                controller.updateAmountsHandler(onAmounts)
-                controller.updatePaymentAmountsHandler(onPaymentAmounts)
-                controller.updateExchangeAmountHandler(onExchangeAmount)
-                controller.updateRetryHandler(onRetryChoice)
-                controller.updateCatalogRetryHandler(onCatalogRetry)
-                controller.updateLocalPlayerID(localPlayerID)
-                controller.updateCardCatalog(cardCatalog)
+                updateControllerInputs(controller)
                 activeController = controller
                 // Catches a replacement snapshot that arrived while this view was
                 // off-screen and `.onChange(of: projection)` therefore couldn't fire; see
@@ -113,26 +106,16 @@ struct BoardView: View {
             stopControllerInputIfAvailable()
         }
         .onChange(of: projection) { _, newValue in
-            controller?.updateChoiceHandler(onChoice)
-            controller?.updateAmountsHandler(onAmounts)
-            controller?.updatePaymentAmountsHandler(onPaymentAmounts)
-            controller?.updateExchangeAmountHandler(onExchangeAmount)
-            controller?.updateRetryHandler(onRetryChoice)
-            controller?.updateCatalogRetryHandler(onCatalogRetry)
-            controller?.updateLocalPlayerID(localPlayerID)
-            controller?.updateCardCatalog(cardCatalog)
-            controller?.applySnapshot(newValue, prompt: prompt)
+            if let controller {
+                updateControllerInputs(controller)
+                controller.applySnapshot(newValue, prompt: prompt)
+            }
         }
         .onChange(of: prompt) { _, newValue in
-            controller?.updateChoiceHandler(onChoice)
-            controller?.updateAmountsHandler(onAmounts)
-            controller?.updatePaymentAmountsHandler(onPaymentAmounts)
-            controller?.updateExchangeAmountHandler(onExchangeAmount)
-            controller?.updateRetryHandler(onRetryChoice)
-            controller?.updateCatalogRetryHandler(onCatalogRetry)
-            controller?.updateLocalPlayerID(localPlayerID)
-            controller?.updateCardCatalog(cardCatalog)
-            controller?.applyPrompt(newValue)
+            if let controller {
+                updateControllerInputs(controller)
+                controller.applyPrompt(newValue)
+            }
         }
         .onChange(of: localPlayerID) { _, newValue in
             controller?.updateLocalPlayerID(newValue)
@@ -140,6 +123,17 @@ struct BoardView: View {
         .onChange(of: cardCatalog) { _, newValue in
             controller?.updateCardCatalog(newValue)
         }
+    }
+
+    private func updateControllerInputs(_ controller: BoardCommandController) {
+        controller.updateChoiceHandler(onChoice)
+        controller.updateAmountsHandler(onAmounts)
+        controller.updatePaymentAmountsHandler(onPaymentAmounts)
+        controller.updateExchangeAmountHandler(onExchangeAmount)
+        controller.updateRetryHandler(onRetryChoice)
+        controller.updateCatalogRetryHandler(onCatalogRetry)
+        controller.updateLocalPlayerID(localPlayerID)
+        controller.updateCardCatalog(cardCatalog)
     }
 
     #if canImport(GameController) && !os(tvOS)
