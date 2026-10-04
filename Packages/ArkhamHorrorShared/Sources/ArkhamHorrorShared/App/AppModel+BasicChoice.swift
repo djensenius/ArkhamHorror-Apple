@@ -538,25 +538,15 @@ extension AppModel {
         } else {
             guard action.submission.acceptsUnversionedRejection else { return }
         }
-        switch action.phase {
-        case .sending:
-            setBasicChoiceServerFeedback(
-                gameID: gameID,
-                message: rejection.reason,
-                source: .answerRejected
-            )
+        setBasicChoiceServerFeedback(
+            gameID: gameID,
+            message: rejection.reason,
+            source: .answerRejected
+        )
+        if action.phase == .sending {
             basicChoiceRejectedAttemptIDs[gameID, default: []].insert(action.attemptID)
-            basicChoiceActions[gameID] = nil
-        case .awaitingSnapshot:
-            setBasicChoiceServerFeedback(
-                gameID: gameID,
-                message: rejection.reason,
-                source: .answerRejected
-            )
-            basicChoiceActions[gameID] = nil
-        case .uncertain, .retryable:
-            break
         }
+        basicChoiceActions[gameID] = nil
     }
 
     func clearBasicChoiceServerFeedback(gameID: GameID) {

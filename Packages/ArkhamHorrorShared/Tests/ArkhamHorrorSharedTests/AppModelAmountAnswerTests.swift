@@ -32,6 +32,12 @@ private struct RejectedGatedAmountSend {
     let task: Task<BasicChoiceSubmitResult, Never>
 }
 
+private struct AmountSubmissionAfterGameError {
+    let model: AppModel
+    let gameID: GameID
+    let connection: FakeGameSocketConnection
+}
+
 extension AppModelLiveGameTests {
     @Test("Amount answer encoders match the vendored contract fixtures")
     func amountAnswerEncodingMatchesFixtures() throws {
@@ -408,6 +414,90 @@ extension AppModelLiveGameTests {
             rejectedBytes,
             amountAnswerBytes(amounts: legalAmounts, version: 645),
         ])
+    }
+
+    @Test("GameError then matched AnswerRejected releases the amount prompt")
+    func gameErrorThenMatchedAnswerRejectedReleasesAmountPrompt() async throws {
+        let state = try await amountSubmissionAfterGameError(questionVersion: 652)
+
+        await state.connection.enqueue(.event(.message(Data(
+            #"{"tag":"AnswerRejected","reason":"server amount reason","questionVersion":652}"#.utf8
+        ))))
+        await state.connection.waitUntilAwaitingNextEvent()
+
+        let current = try #require(state.model.basicChoicePresentation(for: state.gameID))
+        #expect(current.actionPhase == nil)
+        #expect(current.canSubmit)
+        #expect(current.serverFeedback == "server amount reason")
+        #expect(state.model.basicChoiceRejectedAttemptIDs[state.gameID] == nil)
+    }
+
+    @Test("GameError then unmatched AnswerRejected leaves the amount prompt uncertain")
+    func gameErrorThenUnmatchedAnswerRejectedLeavesAmountPromptUncertain() async throws {
+        let state = try await amountSubmissionAfterGameError(questionVersion: 653)
+        let feedbackAfterGameError = state.model.basicChoiceServerFeedback[state.gameID]
+
+        await state.connection.enqueue(.event(.message(Data(
+            #"{"tag":"AnswerRejected","reason":"wrong version","questionVersion":654}"#.utf8
+        ))))
+        await state.connection.waitUntilAwaitingNextEvent()
+
+        let current = try #require(state.model.basicChoicePresentation(for: state.gameID))
+        #expect(current.actionPhase == .retryable(.outcomeUncertain))
+        #expect(current.serverFeedback == feedbackAfterGameError)
+        #expect(state.model.basicChoiceRejectedAttemptIDs[state.gameID] == nil)
+    }
+
+    private func amountSubmissionAfterGameError(
+        questionVersion: Int
+    ) async throws -> AmountSubmissionAfterGameError {
+        let firstID = "00000000-0000-0000-0000-0000000000a7"
+        let secondID = "00000000-0000-0000-0000-0000000000a8"
+        let choices = [
+            amountChoice(firstID, min: 0, max: 2, label: "A"),
+            amountChoice(secondID, min: 0, max: 2, label: "B"),
+        ]
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .total(2)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .total(2),
+                questionVersion: questionVersion
+            ),
+            questionVersion: questionVersion
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let amounts = [firstID: 3, secondID: 0]
+        #expect(
+            await model.submitAmountsAnswer(prompt.identity, amounts: amounts)
+                == .sentAwaitingSnapshot
+        )
+        #expect(try await connection.sentData == [
+            amountAnswerBytes(amounts: amounts, version: questionVersion),
+        ])
+
+        await connection.enqueue(.event(.message(Data(
+            #"{"tag":"GameError","contents":"unrelated room error"}"#.utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        let uncertain = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(uncertain.actionPhase == .retryable(.outcomeUncertain))
+        #expect(uncertain.serverFeedback == "The server reported a game error "
+            + "that could not be tied to your choice.")
+        #expect(model.basicChoiceRejectedAttemptIDs[gameID] == nil)
+        return AmountSubmissionAfterGameError(
+            model: model,
+            gameID: gameID,
+            connection: connection
+        )
     }
 
     @Test("AnswerRejected during gated sends does not report transport failure")
