@@ -16,19 +16,21 @@ struct LiveChooseDeckSelectionViewTests {
             uuidString: "00000000-0000-0000-0000-000000000102"
         ))
 
-        let oldAttempt = try #require(state.beginSending(
+        let startedOldAttempt = state.beginSending(
             deckID: oldDeckID,
             attemptID: oldAttemptID
-        ))
+        )
+        let oldAttempt = try #require(startedOldAttempt)
         #expect(state.isSending(deckID: oldDeckID))
         #expect(state.beginSending(deckID: replacementDeckID) == nil)
         #expect(state.sendFailure == nil)
 
         state.releaseActiveAttemptIfPickerEnabled(true)
-        let replacementAttempt = try #require(state.beginSending(
+        let startedReplacementAttempt = state.beginSending(
             deckID: replacementDeckID,
             attemptID: replacementAttemptID
-        ))
+        )
+        let replacementAttempt = try #require(startedReplacementAttempt)
         state.finish(oldAttempt, didSend: false)
 
         #expect(state.activeAttempt == replacementAttempt)
@@ -48,7 +50,8 @@ struct LiveChooseDeckSelectionViewTests {
         let attemptID = try #require(UUID(
             uuidString: "00000000-0000-0000-0000-000000000103"
         ))
-        let attempt = try #require(state.beginSending(deckID: deckID, attemptID: attemptID))
+        let startedAttempt = state.beginSending(deckID: deckID, attemptID: attemptID)
+        let attempt = try #require(startedAttempt)
 
         state.releaseActiveAttemptIfPickerEnabled(false)
         #expect(state.activeAttempt == attempt)
