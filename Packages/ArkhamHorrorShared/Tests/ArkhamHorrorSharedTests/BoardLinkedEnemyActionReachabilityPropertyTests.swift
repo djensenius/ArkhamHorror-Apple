@@ -1,151 +1,326 @@
 @testable import ArkhamHorrorShared
 import Testing
 
-@MainActor
+private let exhaustiveEnemyActionRootCases = (1 ... 5).flatMap { count in
+    (0 ..< count).map { rootIndex in (count, rootIndex) }
+}
+
 @Suite("Board linked enemy action reachability properties")
+// swiftlint:disable file_length
 // swiftlint:disable:next type_body_length
 struct EnemyActionReachabilityPropertyTests {
-    @Test("All connected graphs up to five locations keep headers and actions reachable")
-    func exhaustiveConnectedGraphsUpToFiveLocationsStayReachable() throws {
-        for count in 1 ... 5 {
-            for edges in connectedGraphs(locationCount: count) {
-                try assertReachabilityInvariants(locationCount: count, edges: edges)
-            }
+    @Test(
+        "All connected graphs up to five locations keep headers and actions reachable",
+        arguments: exhaustiveEnemyActionRootCases
+    )
+    func exhaustiveConnectedGraphsUpToFiveLocationsStayReachable(
+        locationCount: Int,
+        rootIndex: Int
+    ) throws {
+        for edges in connectedGraphs(locationCount: locationCount) {
+            try assertReachabilityInvariants(
+                locationCount: locationCount,
+                edges: edges,
+                rootIndex: rootIndex
+            )
         }
     }
 
-    @Test("Seeded larger connected graphs keep headers and actions reachable")
-    func sampledLargerConnectedGraphsStayReachable() throws {
-        for count in 6 ... 7 {
-            for edges in sampledConnectedGraphs(locationCount: count, sampleCount: 12) {
-                try assertReachabilityInvariants(locationCount: count, edges: edges)
-            }
+    @Test(
+        "Seeded larger connected graphs keep headers and actions reachable",
+        arguments: [6, 7]
+    )
+    func sampledLargerConnectedGraphsStayReachable(locationCount: Int) throws {
+        for edges in sampledConnectedGraphs(locationCount: locationCount, sampleCount: 12) {
+            try assertReachabilityInvariants(
+                locationCount: locationCount,
+                edges: edges,
+                rootIndex: 0
+            )
         }
     }
 
     private func assertReachabilityInvariants(
         locationCount: Int,
-        edges: [(Int, Int)]
+        edges: [(Int, Int)],
+        rootIndex: Int
     ) throws {
         let ids = locationIDs(count: locationCount)
+        let rootID = ids[rootIndex]
         let baselineProjection = makeProjection(ids: ids, edges: edges, actionLocations: [])
         let layout = BoardLayoutBuilder.makeLayout(
             locations: baselineProjection.locations,
-            preferredRootID: ids[0]
+            preferredRootID: rootID
         )
-        let baselineGraph = makeGraph(projection: baselineProjection, layout: layout, choices: [])
+        let baselineGraph = makeLocationGraph(
+            locations: baselineProjection.locations,
+            enemiesByLocationID: [:],
+            choiceLinks: [:],
+            layout: layout
+        )
         let baselineEntry = try #require(baselineGraph.zoneEntryPoints[BoardFocusZone.locations])
         let baselineHeaders = reachableHeaders(from: baselineEntry, in: baselineGraph)
 
         for actionLocations in actionPlacements(locationCount: locationCount) {
             let enemyIDs = actionLocations.indices.map { enemyID($0) }
-            let projection = makeProjection(
+            let graph = makeLocationGraph(
+                locations: baselineProjection.locations,
+                enemiesByLocationID: enemiesByLocation(
+                    ids: ids,
+                    actionLocations: actionLocations,
+                    enemyIDs: enemyIDs
+                ),
+                choiceLinks: enemyChoiceLinks(enemyIDs: enemyIDs),
+                layout: layout
+            )
+            try assertReachableLocationsAndActions(
+                graph: graph,
+                baselineHeaders: baselineHeaders,
                 ids: ids,
-                edges: edges,
                 actionLocations: actionLocations,
-                enemyIDs: enemyIDs
+                edges: edges,
+                rootIndex: rootIndex
             )
-            let graph = makeGraph(
-                projection: projection,
+            try assertEnemyActionTopologyMatchesHeaderOnlyGraph(
+                graph: graph,
+                baselineGraph: baselineGraph,
+                ids: ids,
                 layout: layout,
-                choices: enemyIDs.enumerated().map { offset, enemyID in
-                    fightChoice(index: 100 + offset, enemyID: enemyID)
-                }
+                actionLocations: actionLocations,
+                edges: edges,
+                rootIndex: rootIndex
             )
-            let entry = try #require(graph.zoneEntryPoints[BoardFocusZone.locations])
-            let reachable = reachableIDs(from: entry, in: graph)
-            let reachableHeaders = locationHeaders(in: reachable, graph: graph)
-            let expectedHeaders = Set(ids.map(BoardFocusID.location))
-            let expectedActions = Set(actionLocations.map {
-                BoardFocusID.locationEnemyActions(ids[$0])
-            })
+        }
+    }
 
-            #expect(
-                reachableHeaders.isSuperset(of: expectedHeaders)
-                    && reachableHeaders.isSuperset(of: baselineHeaders)
-                    && reachable.isSuperset(of: expectedActions)
-                    && reciprocityHolds(
-                        graph: graph,
-                        layout: layout,
-                        ids: ids,
+    // swiftlint:disable:next function_parameter_count
+    private func assertReachableLocationsAndActions(
+        graph: FocusGraph,
+        baselineHeaders: Set<SemanticFocusID>,
+        ids: [LocationID],
+        actionLocations: [Int],
+        edges: [(Int, Int)],
+        rootIndex: Int
+    ) throws {
+        let entry = try #require(graph.zoneEntryPoints[BoardFocusZone.locations])
+        let reachable = reachableIDs(from: entry, in: graph)
+        let reachableHeaders = locationHeaders(in: reachable, graph: graph)
+        let expectedHeaders = Set(ids.map(BoardFocusID.location))
+        let expectedActions = Set(actionLocations.map {
+            BoardFocusID.locationEnemyActions(ids[$0])
+        })
+        guard reachableHeaders.isSuperset(of: expectedHeaders),
+              reachableHeaders.isSuperset(of: baselineHeaders),
+              reachable.isSuperset(of: expectedActions)
+        else {
+            throw invariantFailure(
+                "reachability failed: reachableHeaders=\(sortedDescriptions(reachableHeaders)) "
+                    + "expectedHeaders=\(sortedDescriptions(expectedHeaders)) "
+                    + "baselineHeaders=\(sortedDescriptions(baselineHeaders)) "
+                    + "reachableActions="
+                    + "\(sortedDescriptions(reachable.intersection(expectedActions))) "
+                    + "expectedActions=\(sortedDescriptions(expectedActions))",
+                edges: edges,
+                rootIndex: rootIndex,
+                actionLocations: actionLocations
+            )
+        }
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    private func assertEnemyActionTopologyMatchesHeaderOnlyGraph(
+        graph: FocusGraph,
+        baselineGraph: FocusGraph,
+        ids: [LocationID],
+        layout: BoardLayout,
+        actionLocations: [Int],
+        edges: [(Int, Int)],
+        rootIndex: Int
+    ) throws {
+        for index in ids.indices {
+            for direction in FocusDirection.allCases {
+                let headerFailure = headerTopologyFailure(
+                    graph: graph,
+                    baselineGraph: baselineGraph,
+                    ids: ids,
+                    headerIndex: index,
+                    direction: direction
+                )
+                guard headerFailure == nil else {
+                    throw invariantFailure(
+                        headerFailure ?? "header topology failed",
+                        edges: edges,
+                        rootIndex: rootIndex,
                         actionLocations: actionLocations
                     )
-            )
+                }
+            }
+        }
+        for actionIndex in actionLocations {
+            for direction in [FocusDirection.down, .left, .right] {
+                let actionFailure = actionTopologyFailure(
+                    graph: graph,
+                    baselineGraph: baselineGraph,
+                    ids: ids,
+                    layout: layout,
+                    actionIndex: actionIndex,
+                    direction: direction
+                )
+                guard actionFailure == nil else {
+                    throw invariantFailure(
+                        actionFailure ?? "action topology failed",
+                        edges: edges,
+                        rootIndex: rootIndex,
+                        actionLocations: actionLocations
+                    )
+                }
+            }
         }
     }
 
-    private func reciprocityHolds(
+    private func headerTopologyFailure(
         graph: FocusGraph,
-        layout: BoardLayout,
+        baselineGraph: FocusGraph,
         ids: [LocationID],
-        actionLocations: [Int]
-    ) -> Bool {
-        let reciprocalClaims = uniqueReciprocalClaims(
-            layout: layout,
-            ids: ids,
-            actionLocations: actionLocations
+        headerIndex: Int,
+        direction: FocusDirection
+    ) -> String? {
+        let locationID = ids[headerIndex]
+        let headerID = BoardFocusID.location(locationID)
+        let baselineTarget = explicitNeighbor(
+            in: baselineGraph,
+            from: headerID,
+            direction: direction
         )
-        for actionIndex in actionLocations {
-            let locationID = ids[actionIndex]
-            let headerID = BoardFocusID.location(locationID)
-            let actionID = BoardFocusID.locationEnemyActions(locationID)
-            guard graph.neighbor(from: actionID, direction: .up) == headerID,
-                  graph.neighbor(from: headerID, direction: .down) == actionID
-            else { return false }
-
-            for direction in [FocusDirection.down, .left, .right] {
-                let reverse = direction.boardOppositeForTest
-                guard let targetID = graph.neighbor(from: actionID, direction: direction) else {
-                    continue
-                }
-                if targetID == actionID {
-                    continue
-                }
-                let claim = ReverseClaim(target: targetID, direction: reverse)
-                if reciprocalClaims[claim] == actionID {
-                    let returnTarget = graph.neighbor(from: targetID, direction: reverse)
-                    guard returnTarget == actionID || isLocationHeader(returnTarget, graph: graph)
-                    else { return false }
-                }
-            }
+        let target = explicitNeighbor(in: graph, from: headerID, direction: direction)
+        guard target != baselineTarget else { return nil }
+        guard let actionLocationIndex = actionLocationIndex(
+            forActionID: target,
+            ids: ids,
+            graph: graph
+        ) else {
+            return "header \(headerID) \(direction) changed from \(describe(baselineTarget)) "
+                + "to non-action target \(describe(target))"
         }
-        return true
+        let actionLocationID = ids[actionLocationIndex]
+        let actionID = BoardFocusID.locationEnemyActions(actionLocationID)
+        let actionLocationHeaderID = BoardFocusID.location(actionLocationID)
+        if direction == .down, actionLocationIndex == headerIndex {
+            let actionDown = explicitNeighbor(in: graph, from: actionID, direction: .down)
+            if baselineTarget == nil {
+                return actionDown == actionID ? nil : "single-location header \(headerID) "
+                    + "down inserts \(actionID), but action down is \(describe(actionDown))"
+            }
+            return actionDown == baselineTarget ? nil : "header \(headerID) down inserts "
+                + "\(actionID), but action down is \(describe(actionDown)); expected "
+                + "original down target \(describe(baselineTarget))"
+        }
+        return baselineTarget == actionLocationHeaderID ? nil : "header \(headerID) "
+            + "\(direction) changed from \(describe(baselineTarget)) to \(actionID), "
+            + "but the header-only edge did not point at \(actionLocationHeaderID)"
     }
 
-    private func uniqueReciprocalClaims(
-        layout: BoardLayout,
+    // swiftlint:disable:next function_parameter_count
+    private func actionTopologyFailure(
+        graph: FocusGraph,
+        baselineGraph: FocusGraph,
         ids: [LocationID],
-        actionLocations: [Int]
-    ) -> [ReverseClaim: SemanticFocusID] {
-        guard ids.count > 1 else { return [:] }
-        var groupedClaims: [ReverseClaim: [SemanticFocusID]] = [:]
-        for actionIndex in actionLocations {
-            let locationID = ids[actionIndex]
-            let actionID = BoardFocusID.locationEnemyActions(locationID)
-            for direction in [FocusDirection.down, .left, .right] {
-                let reverse = direction.boardOppositeForTest
-                let targetID = headerBaseTarget(
-                    from: actionIndex,
-                    direction: direction,
-                    ids: ids,
-                    layout: layout
-                )
-                guard headerBaseTarget(
-                    from: targetID,
-                    direction: reverse,
-                    ids: ids,
-                    layout: layout
-                ) == locationID else { continue }
-                let claim = ReverseClaim(
-                    target: BoardFocusID.location(targetID),
-                    direction: reverse
-                )
-                groupedClaims[claim, default: []].append(actionID)
-            }
+        layout: BoardLayout,
+        actionIndex: Int,
+        direction: FocusDirection
+    ) -> String? {
+        let locationID = ids[actionIndex]
+        let headerID = BoardFocusID.location(locationID)
+        let actionID = BoardFocusID.locationEnemyActions(locationID)
+        let headerBaseTarget = headerBaseFocusTarget(
+            from: actionIndex,
+            direction: direction,
+            ids: ids,
+            layout: layout
+        )
+        let target = explicitNeighbor(in: graph, from: actionID, direction: direction)
+        if headerBaseTarget == nil {
+            return target == actionID ? nil : "action \(actionID) \(direction) is "
+                + "\(describe(target)); expected self because the header-only graph has no target"
         }
-        return Dictionary(uniqueKeysWithValues: groupedClaims.compactMap { claim, actionIDs in
-            actionIDs.count == 1 ? (claim, actionIDs[0]) : nil
-        })
+        guard target == headerBaseTarget else {
+            return "action \(actionID) \(direction) is \(describe(target)); expected "
+                + "header-only target \(describe(headerBaseTarget))"
+        }
+        return reciprocalTopologyFailure(
+            graph: graph,
+            baselineGraph: baselineGraph,
+            ids: ids,
+            layout: layout,
+            headerID: headerID,
+            actionID: actionID,
+            target: target,
+            direction: direction
+        )
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    private func reciprocalTopologyFailure(
+        graph: FocusGraph,
+        baselineGraph: FocusGraph,
+        ids: [LocationID],
+        layout: BoardLayout,
+        headerID: SemanticFocusID,
+        actionID: SemanticFocusID,
+        target: SemanticFocusID?,
+        direction: FocusDirection
+    ) -> String? {
+        guard let target,
+              let targetIndex = ids.firstIndex(where: { BoardFocusID.location($0) == target })
+        else { return nil }
+        let reverse = direction.boardOppositeForTest
+        let headerBaseReturn = headerBaseFocusTarget(
+            from: targetIndex,
+            direction: reverse,
+            ids: ids,
+            layout: layout
+        )
+        guard headerBaseReturn == headerID else { return nil }
+        let returnTarget = explicitNeighbor(in: graph, from: target, direction: reverse)
+        if returnTarget == actionID {
+            return nil
+        }
+        let baselineReturn = explicitNeighbor(in: baselineGraph, from: target, direction: reverse)
+        let repairRestoredHeaderSlot = (reverse == .left || reverse == .right)
+            && returnTarget == baselineReturn
+        return repairRestoredHeaderSlot ? nil : "action \(actionID) \(direction) reaches "
+            + "\(target), whose \(reverse) return is \(describe(returnTarget)); expected "
+            + "\(actionID) unless the reachability repair restored "
+            + "the exact no-actions target \(describe(baselineReturn))"
+    }
+
+    private func explicitNeighbor(
+        in graph: FocusGraph,
+        from id: SemanticFocusID,
+        direction: FocusDirection
+    ) -> SemanticFocusID? {
+        graph.node(for: id)?.neighbors[direction]
+    }
+
+    private func actionLocationIndex(
+        forActionID id: SemanticFocusID?,
+        ids: [LocationID],
+        graph: FocusGraph
+    ) -> Int? {
+        guard let id, graph.node(for: id)?.zone == BoardFocusZone.locations,
+              id.rawValue.contains("enemyActions")
+        else { return nil }
+        return ids.firstIndex { BoardFocusID.locationEnemyActions($0) == id }
+    }
+
+    private func headerBaseFocusTarget(
+        from index: Int,
+        direction: FocusDirection,
+        ids: [LocationID],
+        layout: BoardLayout
+    ) -> SemanticFocusID? {
+        headerBaseTarget(from: index, direction: direction, ids: ids, layout: layout)
+            .map(BoardFocusID.location)
     }
 
     private func headerBaseTarget(
@@ -153,20 +328,13 @@ struct EnemyActionReachabilityPropertyTests {
         direction: FocusDirection,
         ids: [LocationID],
         layout: BoardLayout
-    ) -> LocationID {
-        let locationID = ids[index]
-        return (layout.neighbors[locationID] ?? [:])[direction]
-            ?? fallbackTarget(from: index, direction: direction, ids: ids)
-    }
-
-    private func headerBaseTarget(
-        from locationID: LocationID,
-        direction: FocusDirection,
-        ids: [LocationID],
-        layout: BoardLayout
     ) -> LocationID? {
-        guard let index = ids.firstIndex(of: locationID) else { return nil }
-        return headerBaseTarget(from: index, direction: direction, ids: ids, layout: layout)
+        let locationID = ids[index]
+        if let layoutTarget = (layout.neighbors[locationID] ?? [:])[direction] {
+            return layoutTarget
+        }
+        guard ids.count > 1 else { return nil }
+        return fallbackTarget(from: index, direction: direction, ids: ids)
     }
 
     private func fallbackTarget(
@@ -182,16 +350,55 @@ struct EnemyActionReachabilityPropertyTests {
         }
     }
 
-    private func makeGraph(
-        projection: BoardProjection,
-        layout: BoardLayout,
-        choices: [BasicChoice]
+    private func makeLocationGraph(
+        locations: [BoardLocationNode],
+        enemiesByLocationID: [LocationID: [BoardEnemyNode]],
+        choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]],
+        layout: BoardLayout
     ) -> FocusGraph {
-        BoardFocusGraphBuilder.makeGraph(
-            projection: projection,
+        var nodes: [FocusNode] = []
+        var zoneEntryPoints: [SemanticFocusZone: SemanticFocusID] = [:]
+        BoardFocusGraphBuilder.appendLocations(
+            locations,
+            enemiesByLocationID: enemiesByLocationID,
+            choiceLinks: choiceLinks,
             layout: layout,
-            prompt: enemyPrompt(choices: choices)
+            nodes: &nodes,
+            zoneEntryPoints: &zoneEntryPoints
         )
+        return FocusGraph(
+            nodes: nodes,
+            zoneEntryPoints: zoneEntryPoints,
+            wrapPolicy: .wrapWithinZone
+        )
+    }
+
+    private func enemiesByLocation(
+        ids: [LocationID],
+        actionLocations: [Int],
+        enemyIDs: [EnemyID]
+    ) -> [LocationID: [BoardEnemyNode]] {
+        Dictionary(
+            uniqueKeysWithValues: zip(actionLocations, enemyIDs).map { locationIndex, enemyID in
+                let locationID = ids[locationIndex]
+                return (locationID, [enemyNode(enemyID, locationID: locationID)])
+            }
+        )
+    }
+
+    private func enemyChoiceLinks(
+        enemyIDs: [EnemyID]
+    ) -> [BoardPromptElementID: [BoardLinkedChoice]] {
+        Dictionary(uniqueKeysWithValues: enemyIDs.enumerated().map { offset, enemyID in
+            (
+                BoardPromptElementID.enemy(enemyID),
+                [BoardLinkedChoice(
+                    choiceIndex: 100 + offset,
+                    title: "Fight Enemy",
+                    isActionable: true
+                )]
+            )
+        })
     }
 
     private func makeProjection(
@@ -215,6 +422,25 @@ struct EnemyActionReachabilityPropertyTests {
             locations: locations,
             enemyValues: Dictionary(uniqueKeysWithValues: enemyIDs.map { ($0, .null) })
         ))
+    }
+
+    private func enemyNode(_ id: EnemyID, locationID: LocationID) -> BoardEnemyNode {
+        BoardEnemyNode(
+            id: id,
+            cardCode: nil,
+            displayName: "Enemy \(id)",
+            fight: nil,
+            health: nil,
+            evade: nil,
+            damage: nil,
+            horror: nil,
+            attackDamage: nil,
+            attackHorror: nil,
+            exhausted: false,
+            engagedInvestigatorID: nil,
+            locationID: locationID,
+            tokenCounts: []
+        )
     }
 
     private func location(
@@ -284,9 +510,14 @@ struct EnemyActionReachabilityPropertyTests {
     private func sampledConnectedGraphs(locationCount: Int, sampleCount: Int) -> [[(Int, Int)]] {
         let pairs = edgePairs(locationCount: locationCount)
         var generator = SeededGenerator(state: UInt64(locationCount * 1001))
-        return (0 ..< sampleCount).map { _ in
-            pairs.filter { $0.1 == $0.0 + 1 || generator.nextBool() }
+        var samples: [[(Int, Int)]] = []
+        while samples.count < sampleCount {
+            let edges = pairs.filter { _ in generator.nextBool() }
+            if isConnected(locationCount: locationCount, edges: edges) {
+                samples.append(edges)
+            }
         }
+        return samples
     }
 
     private func edgePairs(locationCount: Int) -> [(Int, Int)] {
@@ -329,61 +560,47 @@ struct EnemyActionReachabilityPropertyTests {
         BoardTestFixtures.enemyID("0000000008\(index)0")
     }
 
-    private func enemyPrompt(choices: [BasicChoice]) -> BasicChoicePromptPresentation {
-        let rawQuestion: JSONValue = .object([
-            "tag": .string(BasicChoiceQuestionKind.chooseOne.rawValue),
-            "choices": .array(choices.map(\.rawValue)),
-        ])
-        return BasicChoicePromptPresentation(
-            identity: BasicChoicePromptIdentity(
-                gameID: BoardTestFixtures.gameID(),
-                ownerID: BoardTestFixtures.playerID("000000000001"),
-                questionVersion: 1,
-                rawQuestion: rawQuestion,
-                sessionAttemptID: nil,
-                connectionID: nil
-            ),
-            question: .supported(BasicChoiceQuestion(
-                kind: .chooseOne,
-                choices: choices,
-                story: nil,
-                rawValue: rawQuestion
-            )),
-            readOnlyReason: nil,
-            actionPhase: nil,
-            actionChoiceIndex: nil,
-            serverFeedback: nil
+    private func invariantFailure(
+        _ message: String,
+        edges: [(Int, Int)],
+        rootIndex: Int,
+        actionLocations: [Int]
+    ) -> InvariantFailure {
+        InvariantFailure(
+            message: message,
+            edges: edges,
+            rootIndex: rootIndex,
+            actionLocations: actionLocations
         )
     }
 
-    private func fightChoice(index: Int, enemyID: EnemyID) -> BasicChoice {
-        BasicChoice(
-            index: index,
-            rawValue: .string("fight-\(index)"),
-            content: .fight(enemyAbility(), enemyID: enemyID)
-        )
+    private func sortedDescriptions(_ ids: Set<SemanticFocusID>) -> [String] {
+        ids.map(\.rawValue).sorted()
     }
 
-    private func enemyAbility() -> BasicChoiceAbility {
-        BasicChoiceAbility(
-            investigatorID: BoardTestFixtures.investigatorID("c01001"),
-            cardCode: BoardTestFixtures.cardCode("c01160"),
-            rawAbility: .null,
-            windows: [],
-            before: [],
-            messages: []
-        )
+    private func describe(_ id: SemanticFocusID?) -> String {
+        id?.rawValue ?? "nil"
     }
 
-    private struct ReverseClaim: Hashable {
-        var target: SemanticFocusID; var direction: FocusDirection
+    private struct InvariantFailure: Error, CustomStringConvertible {
+        var message: String; var edges: [(Int, Int)]; var rootIndex: Int
+        var actionLocations: [Int]
+
+        var description: String {
+            "\(message); edges=\(edges); rootIndex=\(rootIndex); "
+                + "actionLocations=\(actionLocations)"
+        }
     }
 
     private struct SeededGenerator {
         var state: UInt64
         mutating func nextBool() -> Bool {
-            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-            return (state & 1) == 0
+            state &+= 0x9E37_79B9_7F4A_7C15
+            var value = state
+            value = (value ^ (value >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            value = (value ^ (value >> 27)) &* 0x94D0_49BB_1331_11EB
+            value ^= value >> 31
+            return ((value >> 63) & 1) == 1
         }
     }
 }
