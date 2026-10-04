@@ -37,6 +37,10 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
         horizontalSpacing: 4,
         verticalSpacing: 4
     )
+    /// tvOS uses a 180×160 minimum so the location name box, compact enemy count,
+    /// and optional enemy-actions control remain legible from the couch after the
+    /// 4pt-per-edge tile gutter is removed; smaller cells hid the indicator at
+    /// minimum zoom on Siri Remote/controller layouts.
     static let tvOS = BoardLocationEnemyTileMetrics(
         chipRowHeight: 32,
         summaryButtonHeight: 22,
