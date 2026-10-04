@@ -78,7 +78,7 @@
 "board.multiplayer.status.pending.many" = "Pending prompts: %@";
 "board.multiplayer.status.local.ready" = "Your prompt is ready.";
 "board.multiplayer.status.waiting.players" = "Waiting for %@.";
-"board.multiplayer.status.waiting.identityUnknown" = "Waiting for %@.";
+"board.multiplayer.status.waiting.identityUnknown" = "Waiting for player identity.";
 "board.multiplayer.status.investigator.unknown" = "Unknown investigator";
 "board.multiplayer.status.turn.none" = "No turn investigator";
 "board.multiplayer.list.two" = "%1$@ and %2$@";

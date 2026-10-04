@@ -103,10 +103,9 @@ struct BoardMultiplayerStatus: Sendable, Equatable {
         guard !pendingPromptNames.isEmpty else { return nil }
         let names = localizedList(pendingPromptNames)
         if localPlayerID == nil {
-            return BoardLocalization.format(
+            return BoardLocalization.localized(
                 "board.multiplayer.status.waiting.identityUnknown",
-                "Waiting for %@.",
-                names
+                "Waiting for player identity."
             )
         }
         return BoardLocalization.format(

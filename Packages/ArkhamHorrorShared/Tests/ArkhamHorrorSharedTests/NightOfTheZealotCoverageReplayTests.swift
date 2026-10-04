@@ -104,7 +104,7 @@ struct NightOfTheZealotCoverageReplayTests {
             projection: projection,
             localPlayerID: nil
         )
-        #expect(unknownIdentityStatus.localPromptText == "Waiting for Daisy Walker.")
+        #expect(unknownIdentityStatus.localPromptText == "Waiting for player identity.")
     }
 
     @Test("Multiplayer status distinguishes active from turn and handles no turn")
