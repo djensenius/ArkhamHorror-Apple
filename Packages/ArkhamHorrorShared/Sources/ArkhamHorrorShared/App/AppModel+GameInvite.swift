@@ -164,10 +164,10 @@ extension AppModel {
     }
 
     func loadLobbyDetailsIfNeeded(for id: GameID) {
-        guard gameLobbyPlayerCounts[id] == nil || gameLobbyViewerHasSeats[id] == nil,
-              gameLobbyDetailTasks[id] == nil,
+        guard gameLobbyDetailTasks[id] == nil,
               case let .signedIn(profile, _, _) = sessionState
         else { return }
+        gameLobbyViewerHasSeats[id] = nil
         gameLobbyViewerSeatFailures[id] = nil
         let session = GameInviteSession(
             profile: profile,

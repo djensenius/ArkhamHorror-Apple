@@ -261,7 +261,7 @@ final class AppModel {
     /// Server-owned lobby seat counts, loaded from `PublicGame.playerCount` through
     /// GET `/join` or GET `/games/:id` rather than inferred from list rows.
     var gameLobbyPlayerCounts: [GameID: Int] = [:]
-    /// Whether the current signed-in viewer has a server-reported seat in a lobby.
+    /// Latest server-reported answer for whether the current signed-in viewer has a seat.
     var gameLobbyViewerHasSeats: [GameID: Bool] = [:]
     /// Most recent failures while loading viewer-specific lobby membership.
     var gameLobbyViewerSeatFailures: [GameID: GameLifecycleError] = [:]

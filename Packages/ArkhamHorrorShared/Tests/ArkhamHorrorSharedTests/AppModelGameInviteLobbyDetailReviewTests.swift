@@ -140,4 +140,26 @@ struct AppModelGameInviteLobbyDetailReviewTests {
         #expect(model.gameLobbyPlayerCounts[gameID] == 4)
         #expect(model.gameLobbyViewerHasSeats[gameID] == false)
     }
+
+    @Test("reentering a lobby re-fetches viewer membership instead of reusing the old answer")
+    func reenteringLobbyRechecksViewerMembership() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.enqueueGetGameResult(.failure(GameLifecycleError.unexpectedStatus(404)))
+        await service.enqueueGetGameResult(.success(getGameEnvelope(gameID: gameID)))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        model.loadLobbyDetailsIfNeeded(for: gameID)
+        var detailTask = try #require(model.gameLobbyDetailTasks[gameID])
+        await detailTask.value
+        #expect(model.gameLobbyViewerHasSeats[gameID] == false)
+
+        model.loadLobbyDetailsIfNeeded(for: gameID)
+        #expect(model.gameLobbyViewerHasSeats[gameID] == nil)
+        detailTask = try #require(model.gameLobbyDetailTasks[gameID])
+        await detailTask.value
+
+        #expect(await service.callOrder == ["getGame", "getGame"])
+        #expect(model.gameLobbyViewerHasSeats[gameID] == true)
+    }
 }
