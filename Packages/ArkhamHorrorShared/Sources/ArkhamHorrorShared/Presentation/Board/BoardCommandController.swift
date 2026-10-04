@@ -20,6 +20,7 @@ final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
     private(set) var localPlayerID: PlayerID?
+    private var cardCatalog: CardCatalogSnapshot?
     private(set) var layout: BoardLayout
     private(set) var coordinator: FocusCoordinator
     /// Local zoom scale, clamped to ``zoomRange``. Never mutates backend topology; purely
@@ -39,6 +40,9 @@ final class BoardCommandController {
     private(set) var preModalZone: SemanticFocusZone?
     /// The most recently dispatched command, for on-screen/test verification.
     private(set) var lastCommand: SemanticCommand?
+    /// A keyboard/controller request to present the same linked-choice selection surface
+    /// that pointer users get from a multi-choice board element.
+    private(set) var linkedChoiceMenuRequest: BoardLinkedChoiceMenuRequest?
     private var onChoice: (Int) -> Void
     private var onAmounts: ([String: Int]) -> Void
     private var onPaymentAmounts: ([String: Int]) -> Void
@@ -56,6 +60,7 @@ final class BoardCommandController {
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
         localPlayerID: PlayerID? = nil,
+        cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
         onPaymentAmounts: @escaping ([String: Int]) -> Void = { _ in },
@@ -66,6 +71,7 @@ final class BoardCommandController {
         self.projection = projection
         self.prompt = prompt
         self.localPlayerID = localPlayerID
+        self.cardCatalog = cardCatalog
         self.onChoice = onChoice
         self.onAmounts = onAmounts
         self.onPaymentAmounts = onPaymentAmounts
@@ -86,13 +92,29 @@ final class BoardCommandController {
             layout: layout,
             prompt: prompt,
             amountDraft: initialAmountDraft,
-            exchangeAmount: 0
+            exchangeAmount: 0,
+            fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
+                in: projection, prompt: prompt, localPlayerID: localPlayerID
+            )
         )
         coordinator = FocusCoordinator(graph: graph, initialFocus: graph.order.first)
     }
 
     private static func activeLocationID(in projection: BoardProjection) -> LocationID? {
         projection.investigators.first(where: \.isActiveInvestigator)?.currentLocationID
+    }
+
+    private static func fullPlayerAreaPlayerID(
+        in projection: BoardProjection,
+        prompt: BasicChoicePromptPresentation?,
+        localPlayerID: PlayerID?
+    ) -> PlayerID? {
+        let activePlayerID = projection.investigators.first(where: \.isActiveInvestigator)?.playerID
+        return Self.fullPlayerAreaPlayerID(
+            promptOwnerID: prompt?.ownerID,
+            localPlayerID: localPlayerID,
+            activeInvestigatorPlayerID: activePlayerID
+        )
     }
 
     /// Replaces the current projection with a freshly-decoded one (for example after a
@@ -104,6 +126,7 @@ final class BoardCommandController {
     func applySnapshot(
         _ newProjection: BoardProjection, prompt newPrompt: BasicChoicePromptPresentation? = nil
     ) {
+        linkedChoiceMenuRequest = nil
         if coordinator.isModalPresented {
             dismissModal()
         }
@@ -119,13 +142,20 @@ final class BoardCommandController {
             layout: layout,
             prompt: newPrompt,
             amountDraft: amountDraft,
-            exchangeAmount: exchangeAmount
+            exchangeAmount: exchangeAmount,
+            fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
+                in: newProjection, prompt: newPrompt, localPlayerID: localPlayerID
+            )
         )
         coordinator.applySnapshot(newGraph)
     }
 
     func applyPrompt(_ newPrompt: BasicChoicePromptPresentation?) {
         guard prompt != newPrompt else { return }
+        if linkedChoiceMenuRequest != nil {
+            _ = dismissLinkedChoiceMenu()
+        }
+        linkedChoiceMenuRequest = nil
         prompt = newPrompt
         resetPromptInputStateIfNeeded(prompt: newPrompt)
         let graph = BoardFocusGraphBuilder.makeGraph(
@@ -133,7 +163,10 @@ final class BoardCommandController {
             layout: layout,
             prompt: newPrompt,
             amountDraft: amountDraft,
-            exchangeAmount: exchangeAmount
+            exchangeAmount: exchangeAmount,
+            fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
+                in: projection, prompt: newPrompt, localPlayerID: localPlayerID
+            )
         )
         coordinator.applySnapshot(graph)
     }
@@ -176,6 +209,9 @@ final class BoardCommandController {
     }
 
     private func handleBack() -> Bool {
+        if dismissLinkedChoiceMenu() {
+            return true
+        }
         guard coordinator.isModalPresented else { return leavePrompt() }
         dismissModal()
         return true
@@ -191,6 +227,9 @@ final class BoardCommandController {
             coordinator.move(direction)
             return true
         case .inspect:
+            if dismissLinkedChoiceMenu() {
+                return true
+            }
             // While the inspector is already presented, its only interactive content is
             // the Close control itself (see `BoardInspectorView`): treat activating it
             // (a tap, Enter, or controller A-button primaryAction) as closing, exactly
@@ -224,31 +263,51 @@ final class BoardCommandController {
     private func applyPromptCommand(_ command: SemanticCommand) -> Bool {
         switch command {
         case .primaryAction:
-            if activateFocusedAmountControl(primary: true) {
-                return true
-            }
-            if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
-                return activatePromptCatalogRetry()
-            }
-            if coordinator.currentFocus == BoardFocusID.promptRetry {
-                return activatePromptRetry()
-            }
-            if let index = focusedPromptChoiceIndex {
-                return activatePromptChoice(index)
-            }
-            return coordinator.isModalPresented ? closeInspector() : openInspector()
+            return applyPrimaryAction()
         case .secondaryAction:
-            if activateFocusedAmountControl(primary: false) {
-                return true
-            }
-            return coordinator.isModalPresented ? closeInspector() : leavePrompt()
+            return applySecondaryAction()
         case .jumpToActivePrompt:
             return jumpToActivePrompt()
         case .togglePromptSurface:
-            return focusedZone == BoardFocusZone.prompt ? leavePrompt() : jumpToActivePrompt()
+            if focusedZone == BoardFocusZone.prompt {
+                return leavePrompt()
+            }
+            return jumpToActivePrompt()
         default:
             return false
         }
+    }
+
+    private func applyPrimaryAction() -> Bool {
+        if let linkedChoiceIndex = focusedLinkedChoiceMenuChoiceIndex {
+            return activateLinkedChoiceMenuChoice(linkedChoiceIndex)
+        }
+        if let linkedElementResult = activateFocusedPromptElementOrDeferMenu() {
+            return linkedElementResult
+        }
+        if activateFocusedAmountControl(primary: true) {
+            return true
+        }
+        if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
+            return activatePromptCatalogRetry()
+        }
+        if coordinator.currentFocus == BoardFocusID.promptRetry {
+            return activatePromptRetry()
+        }
+        if let index = focusedPromptChoiceIndex {
+            return activatePromptChoice(index)
+        }
+        return coordinator.isModalPresented ? closeInspector() : openInspector()
+    }
+
+    private func applySecondaryAction() -> Bool {
+        if dismissLinkedChoiceMenu() {
+            return true
+        }
+        if activateFocusedAmountControl(primary: false) {
+            return true
+        }
+        return coordinator.isModalPresented ? closeInspector() : leavePrompt()
     }
 
     /// Presents the inspector for whatever is currently focused, recording it in
@@ -268,7 +327,10 @@ final class BoardCommandController {
     /// innermost one — leaving `isModalPresented == true` with no inspector content
     /// visible, and the board stuck disabled/`accessibilityHidden` behind it.
     private func openInspector() -> Bool {
-        guard !coordinator.isModalPresented, let focused = coordinator.currentFocus else {
+        guard !coordinator.isModalPresented,
+              let focused = coordinator.currentFocus,
+              BoardInspectorContent.resolve(id: focused, in: projection) != nil
+        else {
             return false
         }
         inspectedID = focused
@@ -466,7 +528,11 @@ final class BoardCommandController {
             layout: layout,
             prompt: prompt,
             amountDraft: amountDraft,
-            exchangeAmount: exchangeAmount
+            exchangeAmount: exchangeAmount,
+            fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
+                in: projection, prompt: prompt, localPlayerID: localPlayerID
+            ),
+            linkedChoiceMenuRequest: linkedChoiceMenuRequest
         )
         coordinator.applySnapshot(graph)
     }
@@ -549,6 +615,121 @@ final class BoardCommandController {
         prompt?.choices.first {
             BoardFocusID.promptChoice($0.index) == coordinator.currentFocus
         }?.index
+    }
+
+    private func activateFocusedPromptElementOrDeferMenu() -> Bool? {
+        guard let linkedDecision = focusedPromptElementDecision else { return nil }
+        switch linkedDecision {
+        case let .submit(choice):
+            return activatePromptChoice(choice.choiceIndex)
+        case let .menu(choices):
+            guard let focusID = coordinator.currentFocus else { return false }
+            presentLinkedChoiceMenu(from: focusID, choices: choices)
+            return true
+        case .highlightOnly:
+            return nil
+        }
+    }
+
+    @discardableResult
+    func clearLinkedChoiceMenuRequest() -> Bool {
+        dismissLinkedChoiceMenu()
+    }
+
+    @discardableResult
+    func activateLinkedChoiceMenuChoice(_ choiceIndex: Int) -> Bool {
+        let isRequestedChoice = linkedChoiceMenuRequest?.choices.contains {
+            $0.choiceIndex == choiceIndex
+        } == true
+        guard isRequestedChoice, activatePromptChoice(choiceIndex) else { return false }
+        _ = dismissLinkedChoiceMenu()
+        return true
+    }
+
+    private var focusedLinkedChoiceMenuChoiceIndex: Int? {
+        guard let request = linkedChoiceMenuRequest,
+              let currentFocus = coordinator.currentFocus
+        else { return nil }
+        return request.choices.first {
+            BoardFocusID.linkedChoiceMenuChoice($0.choiceIndex) == currentFocus
+        }?.choiceIndex
+    }
+
+    private func presentLinkedChoiceMenu(
+        from focusID: SemanticFocusID,
+        choices: [BoardLinkedChoice]
+    ) {
+        linkedChoiceMenuRequest = BoardLinkedChoiceMenuRequest(focusID: focusID, choices: choices)
+        preModalZone = focusedZone
+        refreshFocusGraphForPromptControls()
+        coordinator.presentModal(entry: BoardFocusID.linkedChoiceMenuChoice(choices[0].choiceIndex))
+    }
+
+    private func dismissLinkedChoiceMenu() -> Bool {
+        guard linkedChoiceMenuRequest != nil else { return false }
+        if coordinator.isModalPresented {
+            dismissModal()
+        } else {
+            preModalZone = nil
+        }
+        linkedChoiceMenuRequest = nil
+        refreshFocusGraphForPromptControls()
+        return true
+    }
+
+    private var focusedPromptElementDecision: BoardLinkedChoicePresentationDecision? {
+        guard let currentFocus = coordinator.currentFocus else { return nil }
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+        if let linkedChoices = links.first(where: { entry in
+            BoardFocusID.promptElement(entry.key) == currentFocus
+        })?.value {
+            return BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        }
+        if let linkedChoices = linkedLocationEnemyChoices(focusID: currentFocus, links: links) {
+            return BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        }
+        return nil
+    }
+
+    private func linkedLocationEnemyChoices(
+        focusID: SemanticFocusID,
+        links: [BoardPromptElementID: [BoardLinkedChoice]]
+    ) -> [BoardLinkedChoice]? {
+        if let location = projection.locations.first(where: {
+            BoardFocusID.locationEnemyActions($0.id) == focusID
+        }) {
+            return BoardEnemyCompactFormatting.titledLinkedChoicesByEnemy(
+                enemies: projection.enemiesByLocationID[location.id] ?? [],
+                choiceLinks: links,
+                cardCatalog: cardCatalog
+            )
+        }
+        if let location = projection.enemyLocations.first(where: {
+            BoardFocusID.enemyLocationEnemyActions($0.id) == focusID
+        }) {
+            return BoardEnemyCompactFormatting.titledLinkedChoicesByEnemy(
+                enemies: projection.enemiesByLocationID[location.id] ?? [],
+                choiceLinks: links,
+                cardCatalog: cardCatalog
+            )
+        }
+        return nil
+    }
+
+    private func refreshOpenLinkedChoiceMenuTitlesForCardCatalog() {
+        guard let request = linkedChoiceMenuRequest else { return }
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+        guard let refreshedChoices = linkedLocationEnemyChoices(
+            focusID: request.focusID,
+            links: links
+        ) else { return }
+        let refreshedByIndex = Dictionary(refreshedChoices.map {
+            ($0.choiceIndex, $0)
+        }, uniquingKeysWith: { first, _ in first })
+        linkedChoiceMenuRequest = BoardLinkedChoiceMenuRequest(
+            focusID: request.focusID,
+            choices: request.choices.map { refreshedByIndex[$0.choiceIndex] ?? $0 }
+        )
     }
 
     private func leavePrompt() -> Bool {
@@ -640,6 +821,11 @@ extension BoardCommandController {
         onRetry = handler
     }
 
+    func updateCardCatalog(_ cardCatalog: CardCatalogSnapshot?) {
+        self.cardCatalog = cardCatalog
+        refreshOpenLinkedChoiceMenuTitlesForCardCatalog()
+    }
+
     func updateCatalogRetryHandler(
         _ handler: @escaping (BasicChoiceCatalogRetryPresentation) -> Void
     ) {
@@ -647,7 +833,9 @@ extension BoardCommandController {
     }
 
     func updateLocalPlayerID(_ playerID: PlayerID?) {
+        guard localPlayerID != playerID else { return }
         localPlayerID = playerID
+        refreshFocusGraphForPromptControls()
     }
 
     nonisolated static func fullPlayerAreaPlayerID(

@@ -54,6 +54,14 @@
 "amountPrompt.token.damage" = "Schaden";
 "amountPrompt.token.horror" = "Horror";
 
+"board.linkedChoiceMenu.title" = "Aufforderungsaktion wählen";
+"board.linkedChoiceMenu.cancelHint" = "Drücke Zurück oder Sekundäraktion zum Abbrechen.";
+"board.linkedChoice.activateHint" = "Aktiviert %@";
+"board.linkedChoice.chooseHint" = "Wähle, welche Aufforderungsaktion ausgeführt wird.";
+"board.enemyActions.title" = "Gegneraktionen";
+"board.enemyActions.accessibility" = "Gegner-Aufforderungsaktionen bei %@";
+"board.enemyActions.duplicateSuffix" = "%1$@ (Gegner %2$lld)";
+
 "semantic.choice.title.advanceAct" = "Akt weiterentwickeln";
 "semantic.choice.title.advanceAgenda" = "Agenda weiterentwickeln";
 "semantic.choice.title.applyResults" = "Ergebnisse anwenden";
