@@ -17,7 +17,7 @@ private struct LocationEnemyActionEdgePlan {
 }
 
 extension BoardFocusGraphBuilder {
-    // swiftlint:disable:next function_parameter_count
+    // swiftlint:disable:next function_body_length function_parameter_count
     static func appendLocations(
         _ locations: [BoardLocationNode],
         enemiesByLocationID: [LocationID: [BoardEnemyNode]],
@@ -31,41 +31,61 @@ extension BoardFocusGraphBuilder {
             enemiesByLocationID: enemiesByLocationID,
             choiceLinks: choiceLinks
         )
+        let headerFallbackTargets = locationHeaderFallbackTargets(locations)
+        let headerBaseTargets = locationHeaderBaseTargets(
+            locations: locations,
+            layout: layout,
+            headerFallbackTargets: headerFallbackTargets
+        )
         let actionEdgePlan = locationEnemyActionEdgePlan(
             locations: locations,
             layout: layout,
-            actionIDs: actionIDs
+            actionIDs: actionIDs,
+            headerBaseTargets: headerBaseTargets
         )
-        let headerFallbackTargets = locationHeaderFallbackTargets(locations)
-        for location in locations {
-            let layoutNeighbors = layout.neighbors[location.id] ?? [:]
-            let actionID = actionIDs[location.id]
-            nodes.append(FocusNode(
-                id: BoardFocusID.location(location.id),
-                zone: BoardFocusZone.locations,
-                neighbors: locationNeighbors(
-                    layoutNeighbors,
-                    headerFallbackTargets: headerFallbackTargets[location.id] ?? [:],
-                    actionID: actionID,
-                    reciprocalTargets: actionEdgePlan.reverseTargets[location.id] ?? [:]
-                )
-            ))
-            if let actionID {
-                nodes.append(FocusNode(
-                    id: actionID,
-                    zone: BoardFocusZone.locations,
-                    neighbors: locationEnemyActionNeighbors(
-                        locationID: location.id,
-                        plannedTargets: actionEdgePlan.forwardTargets[location.id] ?? [:]
-                    )
-                ))
-            }
-        }
         // The entry point is whichever location BFS layering placed first (column 0, row
         // 0), matching the layout's own deterministic root — falling back to the first
         // projection-ordered location if, for any reason, layout has no positions at all.
         let rootID = layout.positions
             .first { $0.value == BoardGridPosition(column: 0, row: 0) }?.key ?? locations[0].id
+        var headerNeighbors: [LocationID: [FocusDirection: SemanticFocusID]] = [:]
+        var actionNeighbors: [LocationID: [FocusDirection: SemanticFocusID]] = [:]
+        for location in locations {
+            let layoutNeighbors = layout.neighbors[location.id] ?? [:]
+            let actionID = actionIDs[location.id]
+            headerNeighbors[location.id] = locationNeighbors(
+                layoutNeighbors,
+                headerFallbackTargets: headerFallbackTargets[location.id] ?? [:],
+                actionID: actionID,
+                reciprocalTargets: actionEdgePlan.reverseTargets[location.id] ?? [:]
+            )
+            if actionID != nil {
+                actionNeighbors[location.id] = locationEnemyActionNeighbors(
+                    locationID: location.id,
+                    plannedTargets: actionEdgePlan.forwardTargets[location.id] ?? [:]
+                )
+            }
+        }
+        repairLocationHeaderReachability(
+            locations: locations,
+            rootID: rootID,
+            headerNeighbors: &headerNeighbors,
+            actionNeighbors: actionNeighbors
+        )
+        for location in locations {
+            nodes.append(FocusNode(
+                id: BoardFocusID.location(location.id),
+                zone: BoardFocusZone.locations,
+                neighbors: headerNeighbors[location.id] ?? [:]
+            ))
+            if let actionID = actionIDs[location.id] {
+                nodes.append(FocusNode(
+                    id: actionID,
+                    zone: BoardFocusZone.locations,
+                    neighbors: actionNeighbors[location.id] ?? [:]
+                ))
+            }
+        }
         zoneEntryPoints[BoardFocusZone.locations] = BoardFocusID.location(rootID)
     }
 
@@ -102,10 +122,25 @@ extension BoardFocusGraphBuilder {
         return targets
     }
 
+    private static func locationHeaderBaseTargets(
+        locations: [BoardLocationNode],
+        layout: BoardLayout,
+        headerFallbackTargets: [LocationID: [FocusDirection: LocationID]]
+    ) -> [LocationID: [FocusDirection: LocationID]] {
+        Dictionary(uniqueKeysWithValues: locations.map { location in
+            var targets = headerFallbackTargets[location.id] ?? [:]
+            for (direction, neighborID) in layout.neighbors[location.id] ?? [:] {
+                targets[direction] = neighborID
+            }
+            return (location.id, targets)
+        })
+    }
+
     private static func locationEnemyActionEdgePlan(
         locations: [BoardLocationNode],
         layout: BoardLayout,
-        actionIDs: [LocationID: SemanticFocusID]
+        actionIDs: [LocationID: SemanticFocusID],
+        headerBaseTargets: [LocationID: [FocusDirection: LocationID]]
     ) -> LocationEnemyActionEdgePlan {
         let headerFallbackTargets = locationHeaderFallbackTargets(locations)
         var plan = LocationEnemyActionEdgePlan()
@@ -116,7 +151,7 @@ extension BoardFocusGraphBuilder {
                 if let neighborID = layoutNeighbors[direction] {
                     planRealLayoutActionEdge(
                         from: location.id, actionID: actionID, direction: direction,
-                        neighborID: neighborID, plan: &plan
+                        neighborID: neighborID, headerBaseTargets: headerBaseTargets, plan: &plan
                     )
                 } else if let fallbackID = headerFallbackTargets[location.id]?[direction] {
                     planHeaderFallbackActionEdge(
@@ -131,14 +166,23 @@ extension BoardFocusGraphBuilder {
         return plan
     }
 
+    // swiftlint:disable:next function_parameter_count
     private static func planRealLayoutActionEdge(
         from locationID: LocationID,
         actionID: SemanticFocusID,
         direction: FocusDirection,
         neighborID: LocationID,
+        headerBaseTargets: [LocationID: [FocusDirection: LocationID]],
         plan: inout LocationEnemyActionEdgePlan
     ) {
         let reverse = direction.boardOpposite
+        let isReciprocalHeaderEdge = headerBaseTargets[neighborID]?[reverse] == locationID
+        guard isReciprocalHeaderEdge else {
+            plan.forwardTargets[locationID, default: [:]][direction] = BoardFocusID.location(
+                neighborID
+            )
+            return
+        }
         guard plan.reverseTargets[neighborID]?[reverse] == nil else {
             // This action control lost the shared-neighbor reverse edge; keep its
             // forward edge from wrapping into a one-way trip through that neighbor.
@@ -151,6 +195,7 @@ extension BoardFocusGraphBuilder {
         plan.reverseTargets[neighborID, default: [:]][reverse] = actionID
     }
 
+    // swiftlint:disable:next function_parameter_count
     private static func planHeaderFallbackActionEdge(
         actionLocationID: LocationID,
         actionID: SemanticFocusID,
