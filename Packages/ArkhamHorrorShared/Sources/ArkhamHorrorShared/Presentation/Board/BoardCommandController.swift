@@ -723,9 +723,9 @@ final class BoardCommandController {
             focusID: request.focusID,
             links: links
         ) else { return }
-        let refreshedByIndex = Dictionary(uniqueKeysWithValues: refreshedChoices.map {
+        let refreshedByIndex = Dictionary(refreshedChoices.map {
             ($0.choiceIndex, $0)
-        })
+        }, uniquingKeysWith: { first, _ in first })
         linkedChoiceMenuRequest = BoardLinkedChoiceMenuRequest(
             focusID: request.focusID,
             choices: request.choices.map { refreshedByIndex[$0.choiceIndex] ?? $0 }
