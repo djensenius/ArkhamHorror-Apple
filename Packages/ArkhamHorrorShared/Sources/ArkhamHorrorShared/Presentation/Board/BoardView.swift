@@ -194,9 +194,11 @@ struct BoardView: View {
             if BoardLayoutDecision.usesCompactLayout(horizontalSizeClass: horizontalSizeClass) {
                 BoardCompactLayoutView(controller: controller, focusBinding: $focusedID)
                     .safeAreaInset(edge: .bottom) {
-                        promptSurface(controller, isCompact: true)
-                            .padding(.horizontal, 10)
-                            .padding(.bottom, 6)
+                        if controller.shouldShowPromptSurface {
+                            promptSurface(controller, isCompact: true)
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 6)
+                        }
                     }
             } else {
                 regularContent(controller)
@@ -209,7 +211,7 @@ struct BoardView: View {
     private func regularContent(_ controller: BoardCommandController) -> some View {
         HStack(spacing: 0) {
             BoardRegularLayoutView(controller: controller, focusBinding: $focusedID)
-            if prompt != nil {
+            if controller.shouldShowPromptSurface {
                 Divider()
                 promptSurface(controller, isCompact: false)
                     .padding(16)
@@ -221,14 +223,21 @@ struct BoardView: View {
     private func promptSurface(
         _ controller: BoardCommandController, isCompact: Bool
     ) -> some View {
-        if let prompt {
-            BasicChoicePromptView(
-                presentation: prompt,
-                controller: controller,
-                focusBinding: $focusedID,
-                isCompact: isCompact
-            )
+        let status = controller.multiplayerStatus
+        VStack(alignment: .leading, spacing: 10) {
+            if status.shouldShowPromptSurface {
+                BoardMultiplayerPromptStatusView(status: status)
+            }
+            if let prompt = controller.prompt {
+                BasicChoicePromptView(
+                    presentation: prompt,
+                    controller: controller,
+                    focusBinding: $focusedID,
+                    isCompact: isCompact
+                )
+            }
         }
+        .frame(maxWidth: isCompact ? .infinity : 360, alignment: .leading)
     }
 
     /// Resolves the entity content for the currently-inspected node, or `nil` when no

@@ -1,6 +1,15 @@
 /// Act/agenda/location/investigator entity-building helpers for
 /// ``BoardProjectionBuilder``, split into this extension purely to stay under SwiftLint's
 /// type-body-length budget for the primary declaration.
+private struct BoardInvestigatorServerStatus {
+    let activeInvestigatorID: InvestigatorID
+    let activePlayerID: PlayerID
+    let turnPlayerInvestigatorID: InvestigatorID?
+    let leadInvestigatorID: InvestigatorID
+    let isMultiplayer: Bool
+    let pendingPromptPlayerIDs: Set<PlayerID>
+}
+
 extension BoardProjectionBuilder {
     // MARK: - Acts / agendas
 
@@ -174,14 +183,20 @@ extension BoardProjectionBuilder {
             .sorted { $0.rawValue.rawValue < $1.rawValue.rawValue }
         orderedIDs.append(contentsOf: remaining)
 
+        let status = BoardInvestigatorServerStatus(
+            activeInvestigatorID: snapshot.activeInvestigatorID,
+            activePlayerID: snapshot.activePlayerID,
+            turnPlayerInvestigatorID: snapshot.turnPlayerInvestigatorID,
+            leadInvestigatorID: snapshot.leadInvestigatorID,
+            isMultiplayer: snapshot.playerOrder.count > 1,
+            pendingPromptPlayerIDs: Set(snapshot.question.keys)
+        )
         return orderedIDs.compactMap { id in
             guard let investigator = snapshot.investigators[id] else { return nil }
             return makeInvestigatorNode(
                 investigator,
                 currentLocation: currentLocations[id],
-                activeInvestigatorID: snapshot.activeInvestigatorID,
-                turnPlayerInvestigatorID: snapshot.turnPlayerInvestigatorID,
-                leadInvestigatorID: snapshot.leadInvestigatorID
+                serverStatus: status
             )
         }
     }
@@ -231,12 +246,10 @@ extension BoardProjectionBuilder {
         )
     }
 
-    static func makeInvestigatorNode(
+    private static func makeInvestigatorNode(
         _ investigator: Investigator,
         currentLocation: LocationID?,
-        activeInvestigatorID: InvestigatorID,
-        turnPlayerInvestigatorID: InvestigatorID?,
-        leadInvestigatorID: InvestigatorID
+        serverStatus: BoardInvestigatorServerStatus
     ) -> BoardInvestigatorNode {
         BoardInvestigatorNode(
             id: investigator.id,
@@ -262,9 +275,12 @@ extension BoardProjectionBuilder {
             killed: investigator.killed,
             drivenInsane: investigator.drivenInsane,
             currentLocationID: currentLocation,
-            isActiveInvestigator: investigator.id == activeInvestigatorID,
-            isTurnPlayer: investigator.id == turnPlayerInvestigatorID,
-            isLeadInvestigator: investigator.id == leadInvestigatorID,
+            isActiveInvestigator: investigator.id == serverStatus.activeInvestigatorID,
+            isActingPlayer: investigator.playerID == serverStatus.activePlayerID,
+            isTurnPlayer: investigator.id == serverStatus.turnPlayerInvestigatorID,
+            isLeadInvestigator: investigator.id == serverStatus.leadInvestigatorID,
+            isMultiplayer: serverStatus.isMultiplayer,
+            hasPendingPrompt: serverStatus.pendingPromptPlayerIDs.contains(investigator.playerID),
             engagedEnemyCount: investigator.engagedEnemies.count,
             assetCount: investigator.assets.count,
             eventCount: investigator.events.count,

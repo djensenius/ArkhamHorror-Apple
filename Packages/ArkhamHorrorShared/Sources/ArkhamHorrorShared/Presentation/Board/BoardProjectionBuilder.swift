@@ -22,9 +22,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             from: snapshot, locations: locations, enemyLocations: enemyLocations
         )
         return BoardProjection(
-            gameName: BoardDisplayFormatting.safeLabel(
-                snapshot.name, fallback: snapshot.id.description
-            ),
+            gameName: safeGameName(snapshot),
             hasCampaignContext: scenarioContext.hasCampaignContext,
             scenario: scenarioContext.scenario,
             campaignContinuation: scenarioContext.campaignContinuation,
@@ -38,6 +36,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             locations: locations,
             enemyLocations: enemyLocations,
             investigators: investigators,
+            playerOrderCount: snapshot.playerOrder.count,
             enemyIDs: snapshot.enemies.keys.sorted {
                 $0.codingKey.stringValue < $1.codingKey.stringValue
             },
@@ -60,6 +59,10 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             ),
             questions: snapshot.question
         )
+    }
+
+    private static func safeGameName(_ snapshot: PublicGameSnapshot) -> String {
+        BoardDisplayFormatting.safeLabel(snapshot.name, fallback: snapshot.id.description)
     }
 
     // MARK: - Scenario / campaign

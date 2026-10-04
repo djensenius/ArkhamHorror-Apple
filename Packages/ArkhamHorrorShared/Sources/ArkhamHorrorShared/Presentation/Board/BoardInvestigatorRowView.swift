@@ -110,9 +110,7 @@ struct BoardInvestigatorRowView: View {
                 BoardStatBadge(systemImage: "brain.head.profile", value: "\(investigator.sanity)")
                 BoardStatBadge(systemImage: "bolt.fill", value: "\(investigator.remainingActions)")
             }
-            if investigator.isActiveInvestigator {
-                Text("Active").font(.caption2).foregroundStyle(ArkhamTheme.accent)
-            }
+            roleBadges(investigator)
             statusBadges(investigator)
         }
     }
@@ -183,6 +181,44 @@ struct BoardInvestigatorRowView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func roleBadges(_ investigator: BoardInvestigatorNode) -> some View {
+        let labels = roleLabels(for: investigator)
+        if !labels.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(labels, id: \.self) { label in
+                    roleChip(label)
+                }
+            }
+        }
+    }
+
+    private func roleLabels(for investigator: BoardInvestigatorNode) -> [String] {
+        var labels: [String] = []
+        if investigator.isActingPlayer {
+            labels.append(BoardLocalization.localized("board.role.active", "Active"))
+        }
+        if investigator.isMultiplayer, investigator.isTurnPlayer {
+            labels.append(BoardLocalization.localized("board.role.turn", "Turn"))
+        }
+        if investigator.isMultiplayer, investigator.isLeadInvestigator {
+            labels.append(BoardLocalization.localized("board.role.lead", "Lead"))
+        }
+        if investigator.isMultiplayer, investigator.hasPendingPrompt {
+            labels.append(BoardLocalization.localized("board.role.prompt", "Prompt"))
+        }
+        return labels
+    }
+
+    private func roleChip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 5)
+            .background(ArkhamTheme.accent.opacity(0.25), in: Capsule())
+            .foregroundStyle(ArkhamTheme.accent)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
