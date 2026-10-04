@@ -39,12 +39,16 @@ struct AppModelGameInviteTests {
         await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 3)))
         await service.enqueueJoinGameResult(.success(.game(gameID)))
         await service.enqueueListGamesResult(.success([.game(gameSummary(id: gameID))]))
+        await service.enqueueGetGameResult(.success(
+            getGameEnvelope(gameID: gameID, playerCount: 3)
+        ))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         let joinedID = try await model.joinGameFromInvite(gameID)
+        await model.gameLobbyDetailTasks[gameID]?.value
 
         #expect(joinedID == gameID)
-        #expect(await service.callOrder == ["peekLobby", "joinGame", "listGames"])
+        #expect(await service.callOrder == ["peekLobby", "joinGame", "listGames", "getGame"])
         #expect(await service.lastPeekLobbyGameID == gameID)
         #expect(await service.lastJoinGameID == gameID)
         #expect(await service.lastToken == "session-token")
@@ -63,10 +67,14 @@ struct AppModelGameInviteTests {
         ))
         await service.enqueueClaimSeatResult(.success(()))
         await service.enqueueListGamesResult(.success([.game(gameSummary(id: gameID))]))
+        await service.enqueueGetGameResult(.success(
+            getGameEnvelope(gameID: gameID, playerCount: 2)
+        ))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         let invite = try await model.loadClaimSeatInvite(gameID)
         let claimedID = try await model.claimSeatFromInvite(invite.seats[0], using: invite)
+        await model.gameLobbyDetailTasks[gameID]?.value
 
         #expect(invite.seats == [seat])
         #expect(invite.viewerHasSeat)
@@ -74,7 +82,7 @@ struct AppModelGameInviteTests {
         #expect(claimedID == gameID)
         #expect(
             await service.callOrder == [
-                "peekLobby", "openSeats", "getGame", "claimSeat", "listGames",
+                "peekLobby", "openSeats", "getGame", "claimSeat", "listGames", "getGame",
             ]
         )
         #expect(await service.lastPeekLobbyGameID == gameID)
@@ -94,10 +102,14 @@ struct AppModelGameInviteTests {
         await service.enqueueGetGameResult(.failure(GameLifecycleError.unexpectedStatus(404)))
         await service.enqueueClaimSeatResult(.success(()))
         await service.enqueueListGamesResult(.success([.game(gameSummary(id: gameID))]))
+        await service.enqueueGetGameResult(.success(
+            getGameEnvelope(gameID: gameID, playerCount: 2)
+        ))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         let invite = try await model.loadClaimSeatInvite(gameID)
         let claimedID = try await model.claimSeatFromInvite(seat, using: invite)
+        await model.gameLobbyDetailTasks[gameID]?.value
 
         #expect(invite.seats == [seat])
         #expect(invite.viewerHasSeat == false)
@@ -105,7 +117,7 @@ struct AppModelGameInviteTests {
         #expect(claimedID == gameID)
         #expect(
             await service.callOrder == [
-                "peekLobby", "openSeats", "getGame", "claimSeat", "listGames",
+                "peekLobby", "openSeats", "getGame", "claimSeat", "listGames", "getGame",
             ]
         )
     }

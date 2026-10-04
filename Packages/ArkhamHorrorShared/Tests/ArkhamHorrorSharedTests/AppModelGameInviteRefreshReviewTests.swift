@@ -22,6 +22,18 @@ struct AppModelGameInviteRefreshReviewTests {
         )
     }
 
+    private func getGameEnvelope(
+        playerID: PlayerID? = PlayerID(UUID()),
+        playerCount: Int = 2
+    ) -> GetGameEnvelope {
+        GetGameEnvelope(
+            playerID: playerID,
+            multiplayerMode: .withFriends,
+            game: BoardTestFixtures.snapshot(playerCount: playerCount),
+            eventID: nil
+        )
+    }
+
     private func inviteDetails(
         gameID: GameID,
         seat: CardCode,
@@ -48,6 +60,7 @@ struct AppModelGameInviteRefreshReviewTests {
         await service.enqueuePeekLobbyResult(.success(.game(gameID)))
         await service.enqueueJoinGameResult(.success(.game(gameID)))
         await service.enqueueListGamesResult(.success([.game(gameSummary(id: gameID))]))
+        await service.enqueueGetGameResult(.success(getGameEnvelope()))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
         let viewModel = JoinGameInviteViewModel()
         viewModel.inviteText = "https://arkhamhorror.app/games/\(gameID.rawValue.uuidString)/join"
@@ -71,9 +84,11 @@ struct AppModelGameInviteRefreshReviewTests {
             }
         )
 
+        await model.gameLobbyDetailTasks[gameID]?.value
+
         #expect(joinedID == gameID)
         #expect(viewModel.failureMessage == nil)
-        #expect(await service.callOrder == ["peekLobby", "joinGame", "listGames"])
+        #expect(await service.callOrder == ["peekLobby", "joinGame", "listGames", "getGame"])
     }
 
     @Test("join invite stays open when the refreshed list omits the joined game")
