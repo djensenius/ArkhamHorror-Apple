@@ -104,8 +104,30 @@ struct GenericSingleChoiceRendererTests {
                 ])
             }),
         ])
+        let prompt = try chooseNPrompt(
+            rawQuestion: rawQuestion,
+            presentation: presentation,
+            localeIdentifier: "en"
+        )
+
+        #expect(prompt.headerTitle(in: rendererProjection()) == "Make selections")
+        #expect(prompt.questionHint() == "Choose 2 more")
+
+        let germanPrompt = try chooseNPrompt(
+            rawQuestion: rawQuestion,
+            presentation: presentation,
+            localeIdentifier: "de"
+        )
+        #expect(germanPrompt.headerTitle(in: rendererProjection()) == "Auswahlen treffen")
+    }
+
+    private func chooseNPrompt(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation,
+        localeIdentifier: String
+    ) throws -> BasicChoicePromptPresentation {
         let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 779)
-        let prompt = BasicChoicePromptPresentation(
+        return BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
                 gameID: BoardTestFixtures.gameID(),
                 ownerID: BoardTestFixtures.playerID(),
@@ -117,15 +139,12 @@ struct GenericSingleChoiceRendererTests {
             ),
             question: BasicChoiceParser.parseQuestion(rawQuestion),
             semanticPresentation: binding,
-            semanticLocaleIdentifier: "en",
+            semanticLocaleIdentifier: localeIdentifier,
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
             serverFeedback: nil
         )
-
-        #expect(prompt.headerTitle(in: rendererProjection()) == "Make selections")
-        #expect(prompt.questionHint() == "Choose 2 more")
     }
 
     @Test("Tarot arcana titles use display names without appended ordinals")
