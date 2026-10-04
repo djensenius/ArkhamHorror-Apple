@@ -110,8 +110,8 @@ struct AppModelGameInviteTests {
         )
     }
 
-    @Test("claim-seat invite records viewer as unseated after a confirmed full-game 404")
-    func claimSeatInviteClearsStaleSeatCacheAfterFullGame404() async throws {
+    @Test("claim-seat invite reports viewer as unseated after full-game 404 without publishing")
+    func claimSeatInviteReportsFullGame404WithoutPublishingSeatStatus() async throws {
         let service = ScriptedGameLifecycleService()
         let gameID = GameID(UUID())
         let seat = try CardCode("c01001")
@@ -125,7 +125,30 @@ struct AppModelGameInviteTests {
 
         #expect(invite.viewerHasSeat == false)
         #expect(invite.showsClaimButtons)
+        #expect(model.gameLobbyViewerHasSeats[gameID] == true)
+        #expect(await service.callOrder == ["peekLobby", "openSeats", "getGame"])
+    }
+
+    @Test("claim-seat invite snapshot does not overwrite published lobby membership")
+    func claimSeatInviteSnapshotDoesNotOverwritePublishedLobbyMembership() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let seat = try CardCode("c01001")
+        await service.enqueuePeekLobbyResult(.success(.game(gameID, playerCount: 4)))
+        await service.enqueueOpenSeatsResult(.success([seat]))
+        await service.enqueueGetGameResult(.success(
+            getGameEnvelope(gameID: gameID, playerID: PlayerID(UUID()), playerCount: 4)
+        ))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        model.gameLobbyViewerHasSeats[gameID] = false
+        model.gameLobbyViewerSeatFailures[gameID] = .unexpectedStatus(500)
+
+        let invite = try await model.loadClaimSeatInvite(gameID)
+
+        #expect(invite.viewerHasSeat)
+        #expect(invite.canContinue == false)
         #expect(model.gameLobbyViewerHasSeats[gameID] == false)
+        #expect(model.gameLobbyViewerSeatFailures[gameID] == .unexpectedStatus(500))
         #expect(await service.callOrder == ["peekLobby", "openSeats", "getGame"])
     }
 
