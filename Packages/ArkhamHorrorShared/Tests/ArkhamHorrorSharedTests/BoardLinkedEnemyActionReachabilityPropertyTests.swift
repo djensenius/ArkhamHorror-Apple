@@ -217,6 +217,7 @@ struct EnemyActionReachabilityPropertyTests {
             + "\(describe(actionUp)); expected \(headerID)"
     }
 
+    // swiftlint:disable:next function_parameter_count
     private func headerTopologyFailure(
         graph: FocusGraph,
         baselineGraph: FocusGraph,
@@ -273,6 +274,7 @@ struct EnemyActionReachabilityPropertyTests {
         )
     }
 
+    // swiftlint:disable:next function_parameter_count
     private func headerRepairPairFailure(
         graph: FocusGraph,
         headerID: SemanticFocusID,
@@ -342,7 +344,6 @@ struct EnemyActionReachabilityPropertyTests {
             + "original down target \(describe(baselineTarget)), a reciprocal alternative, or self"
     }
 
-    // swiftlint:disable:next function_parameter_count
     private func actionTopologyFailure(
         graph: FocusGraph,
         ids: [LocationID],
@@ -455,7 +456,11 @@ struct EnemyActionReachabilityPropertyTests {
         ) {
             targets.insert(headerBaseTarget)
         }
-        if let fallbackTarget = fallbackFocusTarget(from: actionIndex, direction: direction, ids: ids) {
+        if let fallbackTarget = fallbackFocusTarget(
+            from: actionIndex,
+            direction: direction,
+            ids: ids
+        ) {
             targets.insert(fallbackTarget)
         }
         return targets
