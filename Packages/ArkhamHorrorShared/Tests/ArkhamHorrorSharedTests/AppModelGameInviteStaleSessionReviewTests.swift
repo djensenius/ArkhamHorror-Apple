@@ -63,6 +63,32 @@ struct InviteStaleSessionReviewTests {
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
     }
 
+    @Test("joinGameFromInvite skips session-expired handling after credential epoch changes")
+    func joinGameFromInviteRejectsBeforeHandlingStaleCredentialEpoch() async throws {
+        let service = ScriptedGameLifecycleService()
+        let admissions = TokenAccessAdmissionCounter()
+        let gameID = GameID(UUID())
+        await service.enqueuePeekLobbyResult(.success(.game(gameID)))
+        await service.setJoinGameGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        model.tokenAccessAdmissionHook = admissions.hook
+
+        let joinTask = Task { try await model.joinGameFromInvite(gameID) }
+        await service.waitUntilJoinGamePending(1)
+        await admissions.waitForAdmissions(1, of: ServerProfile.hosted.id)
+        model.invalidateCredentialEpoch(for: ServerProfile.hosted.id)
+        await service.resumeOldestJoinGame(with: .failure(GameLifecycleError.sessionExpired))
+
+        await #expect(throws: CancellationError.self) {
+            try await joinTask.value
+        }
+        #expect(admissions.count(of: ServerProfile.hosted.id) == 1)
+        #expect(await service.callOrder == ["peekLobby", "joinGame"])
+        #expect(
+            model.sessionState == .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        )
+    }
+
     @Test("claim-seat invite rejects stale GET join failures after session changes")
     func claimSeatInviteRejectsStalePreviewFailure() async throws {
         let service = ScriptedGameLifecycleService()
@@ -142,5 +168,30 @@ struct InviteStaleSessionReviewTests {
         }
         #expect(await service.callOrder == ["peekLobby"])
         #expect(model.sessionState == .signedOut(profile: .hosted, compatibility: .legacy))
+    }
+
+    @Test("claim-seat invite skips session-expired handling after credential epoch changes")
+    func claimSeatInviteRejectsBeforeHandlingStaleCredentialEpoch() async throws {
+        let service = ScriptedGameLifecycleService()
+        let admissions = TokenAccessAdmissionCounter()
+        let gameID = GameID(UUID())
+        await service.setPeekLobbyGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        model.tokenAccessAdmissionHook = admissions.hook
+
+        let loadTask = Task { try await model.loadClaimSeatInvite(gameID) }
+        await service.waitUntilPeekLobbyPending(1)
+        await admissions.waitForAdmissions(1, of: ServerProfile.hosted.id)
+        model.invalidateCredentialEpoch(for: ServerProfile.hosted.id)
+        await service.resumeOldestPeekLobby(with: .failure(GameLifecycleError.sessionExpired))
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await loadTask.value
+        }
+        #expect(admissions.count(of: ServerProfile.hosted.id) == 1)
+        #expect(await service.callOrder == ["peekLobby"])
+        #expect(
+            model.sessionState == .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
+        )
     }
 }
