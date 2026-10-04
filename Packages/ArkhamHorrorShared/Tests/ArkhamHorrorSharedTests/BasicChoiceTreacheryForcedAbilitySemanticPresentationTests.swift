@@ -37,6 +37,33 @@ extension BasicChoiceSemanticPresentationTests {
         #expect(submitted == [0])
     }
 
+    @Test("Treachery forced abilities use card-catalog names when the board entity is absent")
+    func treacheryForcedAbilityUsesCatalogName() throws {
+        let payload = try rawPayload("question-treachery-forced-ability")
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: fixtureData("question-presentation-treachery-forced-ability")
+        )
+        let binding = try presentation.bind(
+            to: payload.rawValue,
+            expectedQuestionVersion: presentation.questionVersion
+        )
+        let prompt = makePrompt(
+            payload: payload,
+            presentation: binding,
+            cardCatalog: try CardCatalogSnapshot(namesByCode: [
+                CardCode("c01007"): CardName(title: "Cover Up", subtitle: nil),
+            ])
+        )
+        let choice = try #require(prompt.choices.first)
+
+        #expect(
+            prompt.displayTitle(for: choice, in: treacheryForcedAbilityProjection())
+                == "Resolve forced ability at Cover Up (Free)"
+        )
+        #expect(prompt.isChoiceActionable(choice, in: treacheryForcedAbilityProjection()))
+    }
+
     @Test("Treachery forced abilities in non-window prompts use generic actionability")
     func treacheryForcedAbilityInChooseOneUsesGenericPath() throws {
         var raw = try fixtureJSON("question-treachery-forced-ability")
