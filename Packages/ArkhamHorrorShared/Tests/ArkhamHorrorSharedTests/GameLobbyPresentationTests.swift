@@ -155,20 +155,28 @@ struct GameLobbyPresentationTests {
     func gameLobbyViewWaitingTextUsesRemainingPlayers() async {
         let firstPlayer = PlayerID(UUID())
         let secondPlayer = PlayerID(UUID())
+        let claimedInvestigator = InvestigatorSummary(id: "01001", classSymbol: .guardian)
         let oneRemaining = sampleGame(
             gameState: .pending([firstPlayer]), multiplayerVariant: .withFriends
         )
         let manyRemaining = sampleGame(
             gameState: .pending([firstPlayer]), multiplayerVariant: .withFriends
         )
+        let pendingWithInvestigator = sampleGame(
+            gameState: .pending([firstPlayer]),
+            investigators: [claimedInvestigator],
+            multiplayerVariant: .withFriends
+        )
         let chooseDecks = sampleGame(
             gameState: .chooseDecks([firstPlayer, secondPlayer]), multiplayerVariant: .withFriends
         )
         let model = await model(gameListState: .loaded([
-            .game(oneRemaining), .game(manyRemaining), .game(chooseDecks),
+            .game(oneRemaining), .game(manyRemaining), .game(pendingWithInvestigator),
+            .game(chooseDecks),
         ]))
         model.gameLobbyPlayerCounts[oneRemaining.id] = 2
         model.gameLobbyPlayerCounts[manyRemaining.id] = 4
+        model.gameLobbyPlayerCounts[pendingWithInvestigator.id] = 4
 
         #expect(
             GameLobbyView(model: model, gameID: oneRemaining.id)
@@ -177,6 +185,10 @@ struct GameLobbyPresentationTests {
         #expect(
             GameLobbyView(model: model, gameID: manyRemaining.id)
                 .waitingText(for: manyRemaining) == "Waiting for 3 more players to join."
+        )
+        #expect(
+            GameLobbyView(model: model, gameID: pendingWithInvestigator.id)
+                .waitingText(for: pendingWithInvestigator) == nil
         )
         #expect(
             GameLobbyView(model: model, gameID: chooseDecks.id)
