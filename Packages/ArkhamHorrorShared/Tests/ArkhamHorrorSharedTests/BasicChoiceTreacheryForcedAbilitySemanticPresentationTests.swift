@@ -37,7 +37,7 @@ extension BasicChoiceSemanticPresentationTests {
         #expect(submitted == [0])
     }
 
-    @Test("Treachery forced abilities use card-catalog names when the board entity is absent")
+    @Test("Treachery forced abilities use catalog names outside the threat area")
     func treacheryForcedAbilityUsesCatalogName() throws {
         let payload = try rawPayload("question-treachery-forced-ability")
         let presentation = try ContractJSON.decode(

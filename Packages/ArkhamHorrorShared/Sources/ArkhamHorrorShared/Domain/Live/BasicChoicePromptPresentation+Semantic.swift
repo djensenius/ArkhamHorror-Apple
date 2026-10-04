@@ -1015,6 +1015,8 @@ extension BasicChoicePromptPresentation {
         if let title = descriptor.entity.flatMap({ semanticEntityTitle($0, in: projection) }) {
             return title
         }
+        // Display-only fallback: for treachery forced abilities the server-published
+        // ability card code names the treachery even when that entity is not on the board.
         guard descriptor.entity?.kind == .treachery,
               let cardCode = descriptor.ability?.cardCode
         else { return nil }
