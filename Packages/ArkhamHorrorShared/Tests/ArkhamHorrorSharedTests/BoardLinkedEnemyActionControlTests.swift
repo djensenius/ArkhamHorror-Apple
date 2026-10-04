@@ -162,6 +162,23 @@ struct BoardLinkedEnemyActionControlTests {
         #expect(!controller.coordinator.isModalPresented)
     }
 
+    @Test("Enemy action control accessibility hints describe submit and menu behavior")
+    func enemyActionControlAccessibilityHintsDescribeSubmitAndMenuBehavior() {
+        let fight = BoardLinkedChoice(choiceIndex: 7, title: "Fight", isActionable: true)
+        let evade = BoardLinkedChoice(choiceIndex: 8, title: "Evade", isActionable: true)
+
+        #expect(BoardLinkedEnemyActionsControl.accessibilityHint(for: .submit(fight))
+            == "Activates Fight")
+        #expect(BoardLinkedEnemyActionsControl.accessibilityHint(for: .menu([fight, evade]))
+            == "Choose which prompt action to take.")
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
+            #expect(BoardLinkedEnemyActionsControl.accessibilityHint(for: .submit(evade))
+                == "Aktiviert Evade")
+            #expect(BoardLinkedEnemyActionsControl.accessibilityHint(for: .menu([fight, evade]))
+                == "Wähle, welche Aufforderungsaktion ausgeführt wird.")
+        }
+    }
+
     @Test("Highlight-only location enemy choices do not create an action control")
     func highlightOnlyLocationEnemyChoicesDoNotCreateActionControl() {
         let playerID = BoardTestFixtures.playerID("000000000458")

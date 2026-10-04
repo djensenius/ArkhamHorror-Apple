@@ -114,7 +114,8 @@ struct BoardLinkedEnemyActionsControl: View {
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
 
     var body: some View {
-        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        let decision = BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        switch decision {
         case .highlightOnly:
             EmptyView()
         case .submit, .menu:
@@ -140,7 +141,26 @@ struct BoardLinkedEnemyActionsControl: View {
                 }
             )
             .buttonStyle(.plain)
+            .accessibilityHint(Text(Self.accessibilityHint(for: decision)))
             .focused(focusBinding, equals: focusID)
+        }
+    }
+
+    static func accessibilityHint(for decision: BoardLinkedChoicePresentationDecision) -> String {
+        switch decision {
+        case let .submit(choice):
+            BoardLocalization.format(
+                "board.linkedChoice.activateHint",
+                "Activates %@",
+                choice.title
+            )
+        case .menu:
+            BoardLocalization.localized(
+                "board.linkedChoice.chooseHint",
+                "Choose which prompt action to take."
+            )
+        case .highlightOnly:
+            ""
         }
     }
 }
