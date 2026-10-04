@@ -234,12 +234,12 @@ struct BoardLinkedFocusGraphTests {
 
         #expect(graph.neighbor(from: firstActionsFocus, direction: .left) == rootFocus)
         #expect(graph.neighbor(from: rootFocus, direction: .right) == firstActionsFocus)
-        #expect(graph.neighbor(from: secondActionsFocus, direction: .left) == secondActionsFocus)
+        #expect(graph.neighbor(from: secondActionsFocus, direction: .left) == rootFocus)
         #expect(graph.neighbor(from: firstActionLocationFocus, direction: .right)
             == sharedNeighborFocus)
         #expect(graph.neighbor(from: firstActionsFocus, direction: .right) == sharedNeighborFocus)
         #expect(graph.neighbor(from: sharedNeighborFocus, direction: .left) == firstActionsFocus)
-        #expect(graph.neighbor(from: secondActionsFocus, direction: .right) == secondActionsFocus)
+        #expect(graph.neighbor(from: secondActionsFocus, direction: .right) == sharedNeighborFocus)
     }
 
     @Test("Enemy-location action container reaches every linked enemy")
