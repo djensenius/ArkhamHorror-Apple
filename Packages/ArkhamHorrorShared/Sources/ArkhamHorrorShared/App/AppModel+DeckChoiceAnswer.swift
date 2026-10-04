@@ -41,8 +41,14 @@ extension AppModel {
     func liveChooseDeckRejectionReason(
         for gameID: GameID, promptKey: BasicChoicePromptKey
     ) -> String? {
-        guard basicChoiceServerFeedbackSources[gameID] == .answerRejected,
-              let prompt = basicChoicePresentation(for: gameID),
+        guard basicChoiceServerFeedbackSources[gameID] == .answerRejected else { return nil }
+        return liveChooseDeckServerFeedback(for: gameID, promptKey: promptKey)
+    }
+
+    func liveChooseDeckServerFeedback(
+        for gameID: GameID, promptKey: BasicChoicePromptKey
+    ) -> String? {
+        guard let prompt = basicChoicePresentation(for: gameID),
               prompt.identity.promptKey == promptKey,
               LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion)
         else { return nil }
@@ -132,7 +138,9 @@ extension AppModel {
                     connection: connection
                 )
             }
-            return nil
+            guard case .retryable = action.phase,
+                  case .deck = action.submission
+            else { return nil }
         }
         clearBasicChoiceServerFeedback(gameID: prompt.gameID)
         let actionAttemptID = UUID()

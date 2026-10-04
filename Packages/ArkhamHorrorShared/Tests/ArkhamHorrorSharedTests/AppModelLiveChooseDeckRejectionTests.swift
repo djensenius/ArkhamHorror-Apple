@@ -6,6 +6,7 @@ private struct InstalledLiveChooseDeckPrompt {
     let attempt: LiveGameSessionAttempt
     let projection: BoardProjection
     let connectionID: UUID
+    let connection: FakeGameSocketConnection
 }
 
 @MainActor
@@ -33,6 +34,10 @@ extension AppModelLiveChooseDeckTests {
             user: .sample
         )
         return model
+    }
+
+    private func sampleOwnerID() throws -> PlayerID {
+        try PlayerID(#require(UUID(uuidString: "00000000-0000-0000-0000-000000000001")))
     }
 
     private func chooseDeckProjection(
@@ -112,7 +117,8 @@ extension AppModelLiveChooseDeckTests {
         return InstalledLiveChooseDeckPrompt(
             attempt: attempt,
             projection: projection,
-            connectionID: connectionID
+            connectionID: connectionID,
+            connection: connection
         )
     }
 
@@ -136,9 +142,7 @@ extension AppModelLiveChooseDeckTests {
         let model = await makeSignedInRejectionModel()
         let connection = FakeGameSocketConnection()
         let gameID = GameID(UUID())
-        let ownerID = try PlayerID(#require(
-            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
-        ))
+        let ownerID = try sampleOwnerID()
         let deck = try sampleRejectedDeck()
         let installed = installRejectedLivePrompt(
             on: model,
@@ -193,9 +197,7 @@ extension AppModelLiveChooseDeckTests {
         let model = await makeSignedInRejectionModel()
         let connection = FakeGameSocketConnection()
         let gameID = GameID(UUID())
-        let ownerID = try PlayerID(#require(
-            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
-        ))
+        let ownerID = try sampleOwnerID()
         let deck = try sampleRejectedDeck()
         let installed = installRejectedLivePrompt(
             on: model,
@@ -216,6 +218,69 @@ extension AppModelLiveChooseDeckTests {
 
         #expect(model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) == nil)
         #expect(model.basicChoiceActions[gameID]?.phase == .retryable(.outcomeUncertain))
+        #expect(model.liveChooseDeckServerFeedback(
+            for: gameID,
+            promptKey: promptKey
+        ) == "The server reported a game error that could not be tied to your choice.")
+
+        await connection.enqueueSendResult(.success(()))
+        #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
+        #expect(await connection.sentData.count == 2)
+        #expect(model.basicChoiceActions[gameID]?.phase == .awaitingSnapshot)
         consume.cancel()
+    }
+
+    @Test("Reconnect retryable live deck answer can send and ignores old rejection")
+    func reconnectRetryableDeckAnswerCanSend() async throws {
+        let model = await makeSignedInRejectionModel()
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        let deck = try sampleRejectedDeck()
+        let installed = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
+        await connection.enqueueSendResult(.success(()))
+        #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
+
+        model.markBasicChoiceOutcomeUncertain(gameID: gameID, connectionID: installed.connectionID)
+        let reconnected = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        model.reconcileBasicChoice(
+            gameID: gameID,
+            projection: reconnected.projection,
+            isRESTSnapshot: true
+        )
+        #expect(model.basicChoiceActions[gameID]?.phase == .retryable(.outcomeUncertain))
+        #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
+
+        await reconnected.connection.enqueueSendResult(.success(()))
+        #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
+        #expect(await reconnected.connection.sentData.count == 1)
+
+        let oldRejection = Data(
+            #"{"tag":"AnswerRejected","reason":"old rejection","questionVersion":null}"#.utf8
+        )
+        let oldUpdate = try ContractJSON.decode(BoardSnapshotUpdate.self, from: oldRejection)
+        guard case let .answerRejected(rejection) = oldUpdate else {
+            Issue.record("Expected exact old rejection bytes to decode")
+            return
+        }
+        model.handleBasicChoiceAnswerRejected(
+            gameID: gameID,
+            sessionAttemptID: installed.attempt.attemptID,
+            connectionID: installed.connectionID,
+            rejection: rejection
+        )
+        #expect(model.basicChoiceActions[gameID]?.phase == .awaitingSnapshot)
+        #expect(model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) == nil)
     }
 }

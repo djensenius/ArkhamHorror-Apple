@@ -482,8 +482,11 @@ extension AppModel {
     private func retireStaleRetryRecordIfNeeded(
         gameID: GameID, current: BasicChoiceQuestionPayload?, projection: BoardProjection
     ) {
-        guard case .retryable = basicChoiceActions[gameID]?.phase,
-              let choiceIndex = basicChoiceActions[gameID]?.choiceIndex,
+        guard case .retryable = basicChoiceActions[gameID]?.phase else { return }
+        if case .deck = basicChoiceActions[gameID]?.submission {
+            return
+        }
+        guard let choiceIndex = basicChoiceActions[gameID]?.choiceIndex,
               let current,
               let ownerID = basicChoiceActions[gameID]?.identity.ownerID
         else { return }

@@ -47,7 +47,7 @@ struct LiveChooseDeckSelectionView: View {
     }
 
     private var failureMessage: String? {
-        model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) ?? sendFailure
+        model.liveChooseDeckServerFeedback(for: gameID, promptKey: promptKey) ?? sendFailure
     }
 
     private var isAwaitingServerAnswer: Bool {
