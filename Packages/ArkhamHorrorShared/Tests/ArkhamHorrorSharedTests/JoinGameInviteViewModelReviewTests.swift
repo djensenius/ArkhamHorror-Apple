@@ -123,7 +123,8 @@ struct JoinGameInviteViewModelReviewTests {
         let firstDetails = inviteDetails(seats: [firstSeat])
         let firstURL = "https://arkhamhorror.app/games/"
             + "\(gameID.rawValue.uuidString)/claim-seat"
-        let secondGameID = GameID(UUID(uuidString: "00000000-0000-0000-0000-000000000043")!)
+        let secondGameUUID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000043"))
+        let secondGameID = GameID(secondGameUUID)
         let secondURL = "https://arkhamhorror.app/games/"
             + "\(secondGameID.rawValue.uuidString)/claim-seat"
         viewModel.inviteText = firstURL

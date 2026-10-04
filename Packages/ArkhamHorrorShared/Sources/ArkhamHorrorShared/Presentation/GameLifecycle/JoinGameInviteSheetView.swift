@@ -13,6 +13,7 @@ final class JoinGameInviteViewModel {
             }
         }
     }
+
     private(set) var isSubmitting = false
     private(set) var claimingSeat: CardCode?
     private(set) var failureMessage: String?
