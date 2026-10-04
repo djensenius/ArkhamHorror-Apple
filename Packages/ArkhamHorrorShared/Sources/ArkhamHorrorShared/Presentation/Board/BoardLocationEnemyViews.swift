@@ -1,16 +1,31 @@
 import SwiftUI
 
+/// Point-based constants for the compact enemy affordances inside a location tile.
+/// These values are deliberately smaller than full card art: they preserve prompt
+/// reachability when the board is zoomed out while still leaving enough room for the
+/// location name box to remain the primary content of the tile.
 struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
+    /// Height of a rendered one-line enemy chip.
     let chipRowHeight: CGFloat
+    /// Height of a text overflow button such as "+2 more enemies".
     let summaryButtonHeight: CGFloat
+    /// Height of the smallest tappable/count indicator used at minimum zoom.
     let compactIndicatorHeight: CGFloat
+    /// Minimum width for a chip before the layout switches to an overflow affordance.
     let chipMinWidth: CGFloat
+    /// Minimum width for a text overflow button.
     let moreButtonMinWidth: CGFloat
+    /// Minimum width for the compact count badge.
     let compactIndicatorMinWidth: CGFloat
+    /// Minimum grid cell size before subtracting ``BoardLocationTileGeometryPlan/tileGutter``.
     let minimumCellSize: CGSize
+    /// Horizontal spacing between chips and overflow controls.
     let horizontalSpacing: CGFloat
+    /// Vertical spacing between the location header, enemy panel, and action control.
     let verticalSpacing: CGFloat
 
+    /// Pointer/touch platforms can use a tighter board: text is near the player and the
+    /// prompt panel remains available as a redundant action path.
     static let regular = BoardLocationEnemyTileMetrics(
         chipRowHeight: 24,
         summaryButtonHeight: 18,
@@ -54,10 +69,14 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
 }
 
 struct BoardLocationTileGeometryPlan: Sendable, Equatable {
+    /// The unzoomed board cell size inherited from the original PR #79 layout.
     static let baseCellSize = CGSize(width: 150, height: 112)
+    /// Total per-axis gutter between neighboring cells; each tile is inset by 4pt per edge.
     static let tileGutter: CGFloat = 8
 
+    /// Grid cell size used for positioning and drawing connection lines.
     let cellSize: CGSize
+    /// Actual tile size inside the cell after the gutter is reserved.
     let tileSize: CGSize
 
     static func plan(
