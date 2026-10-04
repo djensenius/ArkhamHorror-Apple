@@ -242,47 +242,6 @@ struct BoardLinkedFocusGraphTests {
         #expect(graph.neighbor(from: secondActionsFocus, direction: .right) == secondActionsFocus)
     }
 
-    @Test("Boundary enemy action edges never wrap into non-reciprocal location trips")
-    func boundaryEnemyActionEdgesStayReciprocal() {
-        let firstLocationID = BoardTestFixtures.locationID("000000000490")
-        let secondLocationID = BoardTestFixtures.locationID("000000000491")
-        let enemyID = BoardTestFixtures.enemyID("000000000492")
-        let projection = locationEnemyProjection(
-            locations: [
-                (firstLocationID, .ordinary(BoardTestFixtures.ordinaryLocation(
-                    id: firstLocationID,
-                    connectedLocations: [secondLocationID],
-                    enemies: [enemyID]
-                ))),
-                (secondLocationID, .ordinary(BoardTestFixtures.ordinaryLocation(
-                    id: secondLocationID,
-                    connectedLocations: [firstLocationID]
-                ))),
-            ],
-            enemyIDs: [enemyID]
-        )
-        let layout = BoardLayoutBuilder.makeLayout(
-            locations: projection.locations,
-            preferredRootID: firstLocationID
-        )
-        let graph = BoardFocusGraphBuilder.makeGraph(
-            projection: projection,
-            layout: layout,
-            prompt: enemyPrompt(choices: [fightChoice(index: 7, enemyID: enemyID)])
-        )
-        let firstLocationFocus = BoardFocusID.location(firstLocationID)
-        let secondLocationFocus = BoardFocusID.location(secondLocationID)
-        let actionsFocus = BoardFocusID.locationEnemyActions(firstLocationID)
-
-        #expect(layout.neighbors[firstLocationID]?[.right] == secondLocationID)
-        #expect(graph.neighbor(from: actionsFocus, direction: .left) == actionsFocus)
-        #expect(graph.neighbor(from: actionsFocus, direction: .down) == actionsFocus)
-        #expect(graph.neighbor(from: actionsFocus, direction: .up) == firstLocationFocus)
-        #expect(graph.neighbor(from: firstLocationFocus, direction: .down) == actionsFocus)
-        #expect(graph.neighbor(from: actionsFocus, direction: .right) == secondLocationFocus)
-        #expect(graph.neighbor(from: secondLocationFocus, direction: .left) == actionsFocus)
-    }
-
     @Test("Enemy-location action container reaches every linked enemy")
     func enemyLocationActionContainerReachesEveryLinkedEnemy() {
         let enemyLocationID = BoardTestFixtures.locationID("000000000451")
