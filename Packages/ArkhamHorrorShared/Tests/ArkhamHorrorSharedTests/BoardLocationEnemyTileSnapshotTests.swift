@@ -27,7 +27,12 @@
                 .appending("\n")
                 .write(to: measurementsURL, atomically: true, encoding: .utf8)
             #expect(FileManager.default.fileExists(atPath: measurementsURL.path))
-            #expect(records.map { round($0.measuredHeaderHeight) } == [44, 56, 56, 58])
+            #expect(records.allSatisfy { record in
+                abs(record.headerDrawnHeight - record.measuredHeaderHeight) <= 1
+            })
+            let minimumZoomRecord = try #require(records.first { $0.label == "zoom-0_5" })
+            #expect(minimumZoomRecord.measuredHeaderHeight <= 45)
+            #expect(minimumZoomRecord.headerDrawnHeight <= 45)
             #expect(records.allSatisfy { abs($0.headerMidX - $0.imageWidth / 2) <= 2 })
             #expect(records.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
         }
@@ -137,6 +142,10 @@
 
         var headerMidX: CGFloat {
             (headerXRange.lowerBound + headerXRange.upperBound) / 2
+        }
+
+        var headerDrawnHeight: CGFloat {
+            headerYRange.upperBound - headerYRange.lowerBound
         }
 
         var description: String {

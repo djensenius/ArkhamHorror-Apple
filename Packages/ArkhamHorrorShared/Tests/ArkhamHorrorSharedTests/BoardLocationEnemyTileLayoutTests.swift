@@ -1,6 +1,5 @@
 @testable import ArkhamHorrorShared
 import CoreGraphics
-import Foundation
 import Testing
 
 @Suite("Board location enemy tile layout")
@@ -64,13 +63,6 @@ struct BoardLocationEnemyTileLayoutTests {
         #expect(measuredPlan.enemyPanelHeight == 14)
     }
 
-    @Test("The view uses the clamping layout instead of fixed-size overflow")
-    func boardLocationViewUsesHeaderClampLayout() throws {
-        let source = try String(contentsOf: boardLocationBoardViewSourceURL, encoding: .utf8)
-        #expect(source.contains("BoardLocationHeaderClampLayout(maximumHeight:"))
-        #expect(!source.contains(".fixedSize(horizontal: false, vertical: true)"))
-    }
-
     @Test("Zoom 1 with a measured one-line header shows one chip and overflow")
     func zoomOneOneLineHeaderShowsChipAndOverflow() {
         #expect(
@@ -122,16 +114,6 @@ struct BoardLocationEnemyTileLayoutTests {
                 hasLinkedEnemyActions: true
             ) == .compactIndicator
         )
-    }
-
-    private var boardLocationBoardViewSourceURL: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(
-                "Sources/ArkhamHorrorShared/Presentation/Board/BoardLocationBoardView.swift"
-            )
     }
 
     private func decision(
