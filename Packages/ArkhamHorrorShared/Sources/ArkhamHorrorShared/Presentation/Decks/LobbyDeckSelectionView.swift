@@ -77,9 +77,7 @@ struct LobbyDeckSelectionView: View {
         let state = viewModel.validationState(for: deck)
         let investigatorID = viewModel.claimedInvestigatorID(for: deck, in: investigators)
         Button {
-            if let investigatorID {
-                model.chooseDeck(deck, investigatorId: investigatorID, in: gameID)
-            }
+            performLobbyDeckRowTap(deck: deck, investigatorID: investigatorID)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "rectangle.stack.fill")
@@ -104,6 +102,16 @@ struct LobbyDeckSelectionView: View {
         .accessibilityIdentifier(AccountAccessibilityID.lobbyDeckButton(
             for: gameID.rawValue, deckID: deck.id.rawValue
         ))
+    }
+
+    func performLobbyDeckRowTapForTesting(deck: Deck, investigatorID: String?) {
+        performLobbyDeckRowTap(deck: deck, investigatorID: investigatorID)
+    }
+
+    private func performLobbyDeckRowTap(deck: Deck, investigatorID: String?) {
+        if let investigatorID {
+            model.chooseDeck(deck, investigatorId: investigatorID, in: gameID)
+        }
     }
 
     @ViewBuilder
