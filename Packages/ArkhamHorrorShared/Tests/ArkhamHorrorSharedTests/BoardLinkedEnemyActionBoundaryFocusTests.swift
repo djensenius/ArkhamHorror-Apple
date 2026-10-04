@@ -30,8 +30,8 @@ struct BoardLinkedEnemyActionBoundaryFocusTests {
         let actionsFocus = BoardFocusID.locationEnemyActions(firstLocationID)
 
         #expect(layout.neighbors[firstLocationID]?[.right] == secondLocationID)
-        #expect(graph.neighbor(from: actionsFocus, direction: .left) == actionsFocus)
-        #expect(graph.neighbor(from: actionsFocus, direction: .down) == actionsFocus)
+        #expect(graph.neighbor(from: actionsFocus, direction: .left) == secondLocationFocus)
+        #expect(graph.neighbor(from: actionsFocus, direction: .down) == secondLocationFocus)
         #expect(graph.neighbor(from: actionsFocus, direction: .up) == firstLocationFocus)
         #expect(graph.neighbor(from: firstLocationFocus, direction: .down) == actionsFocus)
         #expect(graph.neighbor(from: actionsFocus, direction: .right) == secondLocationFocus)

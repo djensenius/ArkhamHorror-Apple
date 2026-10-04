@@ -86,17 +86,17 @@ extension BoardFocusGraphBuilder {
 
     private static func locationHeaderFallbackTargets(
         _ locations: [BoardLocationNode]
-    ) -> [LocationID: [FocusDirection: SemanticFocusID]] {
+    ) -> [LocationID: [FocusDirection: LocationID]] {
         guard locations.count > 1 else { return [:] }
-        var targets: [LocationID: [FocusDirection: SemanticFocusID]] = [:]
+        var targets: [LocationID: [FocusDirection: LocationID]] = [:]
         for (index, location) in locations.enumerated() {
             let previous = locations[(index - 1 + locations.count) % locations.count]
             let next = locations[(index + 1) % locations.count]
             targets[location.id] = [
-                .up: BoardFocusID.location(previous.id),
-                .left: BoardFocusID.location(previous.id),
-                .down: BoardFocusID.location(next.id),
-                .right: BoardFocusID.location(next.id),
+                .up: previous.id,
+                .left: previous.id,
+                .down: next.id,
+                .right: next.id,
             ]
         }
         return targets
@@ -107,38 +107,76 @@ extension BoardFocusGraphBuilder {
         layout: BoardLayout,
         actionIDs: [LocationID: SemanticFocusID]
     ) -> LocationEnemyActionEdgePlan {
+        let headerFallbackTargets = locationHeaderFallbackTargets(locations)
         var plan = LocationEnemyActionEdgePlan()
         for location in locations {
             guard let actionID = actionIDs[location.id] else { continue }
             let layoutNeighbors = layout.neighbors[location.id] ?? [:]
             for direction in [FocusDirection.down, .left, .right] {
-                guard let neighborID = layoutNeighbors[direction] else {
+                if let neighborID = layoutNeighbors[direction] {
+                    planRealLayoutActionEdge(
+                        from: location.id, actionID: actionID, direction: direction,
+                        neighborID: neighborID, plan: &plan
+                    )
+                } else if let fallbackID = headerFallbackTargets[location.id]?[direction] {
+                    planHeaderFallbackActionEdge(
+                        actionLocationID: location.id, actionID: actionID, direction: direction,
+                        fallbackID: fallbackID, layout: layout, plan: &plan
+                    )
+                } else {
                     plan.forwardTargets[location.id, default: [:]][direction] = actionID
-                    continue
                 }
-                let reverse = direction.boardOpposite
-                guard plan.reverseTargets[neighborID]?[reverse] == nil else {
-                    // This action control lost the shared-neighbor reverse edge; keep its
-                    // forward edge from wrapping into a one-way trip through that neighbor.
-                    plan.forwardTargets[location.id, default: [:]][direction] = actionID
-                    continue
-                }
-                plan.forwardTargets[location.id, default: [:]][direction] = BoardFocusID.location(
-                    neighborID
-                )
-                plan.reverseTargets[neighborID, default: [:]][reverse] = actionID
             }
         }
         return plan
     }
 
+    private static func planRealLayoutActionEdge(
+        from locationID: LocationID,
+        actionID: SemanticFocusID,
+        direction: FocusDirection,
+        neighborID: LocationID,
+        plan: inout LocationEnemyActionEdgePlan
+    ) {
+        let reverse = direction.boardOpposite
+        guard plan.reverseTargets[neighborID]?[reverse] == nil else {
+            // This action control lost the shared-neighbor reverse edge; keep its
+            // forward edge from wrapping into a one-way trip through that neighbor.
+            plan.forwardTargets[locationID, default: [:]][direction] = actionID
+            return
+        }
+        plan.forwardTargets[locationID, default: [:]][direction] = BoardFocusID.location(
+            neighborID
+        )
+        plan.reverseTargets[neighborID, default: [:]][reverse] = actionID
+    }
+
+    private static func planHeaderFallbackActionEdge(
+        actionLocationID: LocationID,
+        actionID: SemanticFocusID,
+        direction: FocusDirection,
+        fallbackID: LocationID,
+        layout: BoardLayout,
+        plan: inout LocationEnemyActionEdgePlan
+    ) {
+        let reverse = direction.boardOpposite
+        plan.forwardTargets[actionLocationID, default: [:]][direction] = BoardFocusID.location(
+            fallbackID
+        )
+        guard (layout.neighbors[fallbackID] ?? [:])[reverse] == nil else { return }
+        guard plan.reverseTargets[fallbackID]?[reverse] == nil else { return }
+        plan.reverseTargets[fallbackID, default: [:]][reverse] = actionID
+    }
+
     private static func locationNeighbors(
         _ layoutNeighbors: [FocusDirection: LocationID],
-        headerFallbackTargets: [FocusDirection: SemanticFocusID],
+        headerFallbackTargets: [FocusDirection: LocationID],
         actionID: SemanticFocusID?,
         reciprocalTargets: [FocusDirection: SemanticFocusID]
     ) -> [FocusDirection: SemanticFocusID] {
-        var neighbors = headerFallbackTargets
+        var neighbors = Dictionary(uniqueKeysWithValues: headerFallbackTargets.map {
+            ($0.key, BoardFocusID.location($0.value))
+        })
         for (direction, locationID) in layoutNeighbors {
             neighbors[direction] = BoardFocusID.location(locationID)
         }
