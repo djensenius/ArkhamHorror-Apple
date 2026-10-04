@@ -135,6 +135,7 @@ struct EnemyActionReachabilityPropertyTests {
                     graph: graph,
                     baselineGraph: baselineGraph,
                     ids: ids,
+                    layout: layout,
                     headerIndex: index,
                     direction: direction
                 )
@@ -151,7 +152,6 @@ struct EnemyActionReachabilityPropertyTests {
         for actionIndex in actionLocations {
             try assertActionTopologyMatchesHeaderOnlyGraph(
                 graph: graph,
-                baselineGraph: baselineGraph,
                 ids: ids,
                 layout: layout,
                 actionIndex: actionIndex,
@@ -165,7 +165,6 @@ struct EnemyActionReachabilityPropertyTests {
     // swiftlint:disable:next function_parameter_count
     private func assertActionTopologyMatchesHeaderOnlyGraph(
         graph: FocusGraph,
-        baselineGraph: FocusGraph,
         ids: [LocationID],
         layout: BoardLayout,
         actionIndex: Int,
@@ -185,7 +184,6 @@ struct EnemyActionReachabilityPropertyTests {
         for direction in [FocusDirection.down, .left, .right] {
             let actionFailure = actionTopologyFailure(
                 graph: graph,
-                baselineGraph: baselineGraph,
                 ids: ids,
                 layout: layout,
                 actionIndex: actionIndex,
@@ -223,6 +221,7 @@ struct EnemyActionReachabilityPropertyTests {
         graph: FocusGraph,
         baselineGraph: FocusGraph,
         ids: [LocationID],
+        layout: BoardLayout,
         headerIndex: Int,
         direction: FocusDirection
     ) -> String? {
@@ -240,14 +239,22 @@ struct EnemyActionReachabilityPropertyTests {
             ids: ids,
             graph: graph
         ) else {
-            let repairHeaderSlot = (direction == .left || direction == .right)
-                && isLocationHeader(target, graph: graph)
-            return repairHeaderSlot ? nil : "header \(headerID) \(direction) changed from "
-                + "\(describe(baselineTarget)) to non-action target \(describe(target))"
+            return headerRepairPairFailure(
+                graph: graph,
+                headerID: headerID,
+                target: target,
+                direction: direction,
+                baselineTarget: baselineTarget,
+                headerBaseTarget: headerBaseFocusTarget(
+                    from: headerIndex,
+                    direction: direction,
+                    ids: ids,
+                    layout: layout
+                )
+            )
         }
         let actionLocationID = ids[actionLocationIndex]
         let actionID = BoardFocusID.locationEnemyActions(actionLocationID)
-        let actionLocationHeaderID = BoardFocusID.location(actionLocationID)
         if direction == .down, actionLocationIndex == headerIndex {
             return insertedActionDownFailure(
                 graph: graph,
@@ -257,12 +264,62 @@ struct EnemyActionReachabilityPropertyTests {
                 baselineTarget: baselineTarget
             )
         }
-        if direction == .left || direction == .right {
+        return headerToActionFailure(
+            graph: graph,
+            ids: ids,
+            headerID: headerID,
+            actionID: actionID,
+            direction: direction
+        )
+    }
+
+    private func headerRepairPairFailure(
+        graph: FocusGraph,
+        headerID: SemanticFocusID,
+        target: SemanticFocusID?,
+        direction: FocusDirection,
+        baselineTarget: SemanticFocusID?,
+        headerBaseTarget: SemanticFocusID?
+    ) -> String? {
+        if target == headerBaseTarget {
             return nil
         }
-        return baselineTarget == actionLocationHeaderID ? nil : "header \(headerID) "
-            + "\(direction) changed from \(describe(baselineTarget)) to \(actionID), "
-            + "but the header-only edge did not point at \(actionLocationHeaderID)"
+        guard direction == .left || direction == .right, isLocationHeader(target, graph: graph)
+        else {
+            return "header \(headerID) \(direction) changed from \(describe(baselineTarget)) "
+                + "to non-action target \(describe(target))"
+        }
+        let returnTarget = explicitNeighbor(
+            in: graph,
+            from: target ?? headerID,
+            direction: direction.boardOppositeForTest
+        )
+        return returnTarget == headerID ? nil : "header \(headerID) \(direction) changed "
+            + "from \(describe(baselineTarget)) to \(describe(target)), but the repair "
+            + "pair returns to \(describe(returnTarget))"
+    }
+
+    private func headerToActionFailure(
+        graph: FocusGraph,
+        ids: [LocationID],
+        headerID: SemanticFocusID,
+        actionID: SemanticFocusID,
+        direction: FocusDirection
+    ) -> String? {
+        let reverse = direction.boardOppositeForTest
+        let actionReturn = explicitNeighbor(in: graph, from: actionID, direction: reverse)
+        guard actionReturn == headerID else {
+            return "header \(headerID) \(direction) points at \(actionID), whose "
+                + "\(reverse) return is \(describe(actionReturn)); expected \(headerID)"
+        }
+        let sharingHeaders = ids.map(BoardFocusID.location).filter {
+            explicitNeighbor(in: graph, from: $0, direction: direction) == actionID
+        }
+        guard sharingHeaders == [headerID] else {
+            return "headers \(sortedDescriptions(Set(sharingHeaders))) share action slot "
+                + "\(actionID).\(reverse); expected only \(headerID)"
+        }
+        return nil
     }
 
     private func insertedActionDownFailure(
@@ -288,7 +345,6 @@ struct EnemyActionReachabilityPropertyTests {
     // swiftlint:disable:next function_parameter_count
     private func actionTopologyFailure(
         graph: FocusGraph,
-        baselineGraph: FocusGraph,
         ids: [LocationID],
         layout: BoardLayout,
         actionIndex: Int,
@@ -297,27 +353,27 @@ struct EnemyActionReachabilityPropertyTests {
         let locationID = ids[actionIndex]
         let headerID = BoardFocusID.location(locationID)
         let actionID = BoardFocusID.locationEnemyActions(locationID)
-        let headerBaseTarget = headerBaseFocusTarget(
-            from: actionIndex,
+        let target = explicitNeighbor(in: graph, from: actionID, direction: direction)
+        let allowedTargets = allowedActionForwardTargets(
+            actionID: actionID,
+            actionIndex: actionIndex,
             direction: direction,
             ids: ids,
             layout: layout
         )
-        let target = explicitNeighbor(in: graph, from: actionID, direction: direction)
-        if headerBaseTarget == nil {
-            return target == actionID ? nil : "action \(actionID) \(direction) is "
-                + "\(describe(target)); expected self because the header-only graph has no target"
+        guard let target, allowedTargets.contains(target) else {
+            return "action \(actionID) \(direction) is \(describe(target)); expected one of "
+                + "\(sortedDescriptions(allowedTargets))"
         }
         if target == actionID {
             return nil
         }
         guard isLocationHeader(target, graph: graph) else {
             return "action \(actionID) \(direction) is \(describe(target)); expected "
-                + "a reciprocal location header target or self"
+                + "an allowed location header target or self"
         }
         return reciprocalTopologyFailure(
             graph: graph,
-            baselineGraph: baselineGraph,
             ids: ids,
             layout: layout,
             headerID: headerID,
@@ -330,7 +386,6 @@ struct EnemyActionReachabilityPropertyTests {
     // swiftlint:disable:next function_parameter_count
     private func reciprocalTopologyFailure(
         graph: FocusGraph,
-        baselineGraph: FocusGraph,
         ids: [LocationID],
         layout: BoardLayout,
         headerID: SemanticFocusID,
@@ -348,19 +403,21 @@ struct EnemyActionReachabilityPropertyTests {
             ids: ids,
             layout: layout
         )
+        guard headerBaseReturn == headerID else {
+            return "action \(actionID) \(direction) reaches \(target), whose header-only "
+                + "\(reverse) return is \(describe(headerBaseReturn)); expected \(headerID)"
+        }
         let returnTarget = explicitNeighbor(in: graph, from: target, direction: reverse)
         if returnTarget == actionID {
             return nil
         }
-        let baselineReturn = explicitNeighbor(in: baselineGraph, from: target, direction: reverse)
-        let repairRestoredHeaderSlot = headerBaseReturn == headerID
-            && (reverse == .left || reverse == .right)
+        let repairRestoredHeaderSlot = (reverse == .left || reverse == .right)
             && isLocationHeader(returnTarget, graph: graph)
-            && returnTarget != headerID
+            && explicitNeighbor(in: graph, from: returnTarget ?? target, direction: direction)
+            == target
         return repairRestoredHeaderSlot ? nil : "action \(actionID) \(direction) reaches "
             + "\(target), whose \(reverse) return is \(describe(returnTarget)); expected "
-            + "\(actionID) unless the reachability repair rewrote a reciprocal slot to "
-            + "another location header (baseline was \(describe(baselineReturn)))"
+            + "\(actionID) unless the reachability repair rewrote a matching header pair"
     }
 
     private func explicitNeighbor(
@@ -382,6 +439,28 @@ struct EnemyActionReachabilityPropertyTests {
         return ids.firstIndex { BoardFocusID.locationEnemyActions($0) == id }
     }
 
+    private func allowedActionForwardTargets(
+        actionID: SemanticFocusID,
+        actionIndex: Int,
+        direction: FocusDirection,
+        ids: [LocationID],
+        layout: BoardLayout
+    ) -> Set<SemanticFocusID> {
+        var targets: Set<SemanticFocusID> = [actionID]
+        if let headerBaseTarget = headerBaseFocusTarget(
+            from: actionIndex,
+            direction: direction,
+            ids: ids,
+            layout: layout
+        ) {
+            targets.insert(headerBaseTarget)
+        }
+        if let fallbackTarget = fallbackFocusTarget(from: actionIndex, direction: direction, ids: ids) {
+            targets.insert(fallbackTarget)
+        }
+        return targets
+    }
+
     private func headerBaseFocusTarget(
         from index: Int,
         direction: FocusDirection,
@@ -390,6 +469,15 @@ struct EnemyActionReachabilityPropertyTests {
     ) -> SemanticFocusID? {
         headerBaseTarget(from: index, direction: direction, ids: ids, layout: layout)
             .map(BoardFocusID.location)
+    }
+
+    private func fallbackFocusTarget(
+        from index: Int,
+        direction: FocusDirection,
+        ids: [LocationID]
+    ) -> SemanticFocusID? {
+        guard ids.count > 1 else { return nil }
+        return BoardFocusID.location(fallbackTarget(from: index, direction: direction, ids: ids))
     }
 
     private func headerBaseTarget(
