@@ -7,7 +7,7 @@ Vendored byte-for-byte from:
 schema revision `0.1.48`. Local validation can use the exact backend worktree as
 `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These 103 fixture files, and only these 103, live under `Fixtures/Contract/` — a
+These 106 fixture files, and only these 106, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
