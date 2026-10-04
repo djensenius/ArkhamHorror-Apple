@@ -28,6 +28,28 @@ struct BoardLocationEnemyTileLayoutTests {
         )
     }
 
+    @Test("Zoom 0.5 caps a tall measured name box before reserving enemy space")
+    func zoomHalfCapsTallMeasuredNameBox() {
+        let tileGeometry = BoardLocationTileGeometryPlan.plan(
+            zoomScale: 0.5,
+            hasLinkedEnemyActions: false,
+            metrics: .regular
+        )
+        #expect(tileGeometry.cellSize == CGSize(width: 90, height: 70))
+        #expect(tileGeometry.tileSize == CGSize(width: 82, height: 62))
+
+        let heightPlan = BoardLocationEnemyTileHeightPlan.plan(
+            tileHeight: tileGeometry.tileSize.height,
+            measuredHeaderHeight: 86,
+            hasEnemies: true,
+            hasLinkedEnemyActions: false,
+            metrics: .regular
+        )
+        #expect(heightPlan.headerMaxHeight == 44)
+        #expect(heightPlan.effectiveHeaderHeight == 44)
+        #expect(heightPlan.enemyPanelHeight == 14)
+    }
+
     @Test("Zoom 1 with a measured one-line header shows one chip and overflow")
     func zoomOneOneLineHeaderShowsChipAndOverflow() {
         #expect(
