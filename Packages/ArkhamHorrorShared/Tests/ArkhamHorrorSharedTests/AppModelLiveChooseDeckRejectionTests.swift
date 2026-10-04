@@ -150,7 +150,7 @@ extension AppModelLiveChooseDeckTests {
         _ model: AppModel, gameID: GameID, message: String
     ) {
         guard case .canAnswer = model.canAnswerLiveChooseDeck(for: gameID) else {
-            Issue.record(message)
+            Issue.record("\(message)")
             return
         }
     }
