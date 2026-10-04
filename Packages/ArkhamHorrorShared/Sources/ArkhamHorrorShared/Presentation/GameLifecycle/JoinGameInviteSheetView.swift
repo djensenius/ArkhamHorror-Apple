@@ -6,7 +6,13 @@ typealias ClaimSeatInviteViewState = ClaimSeatInviteDetails
 @MainActor
 @Observable
 final class JoinGameInviteViewModel {
-    var inviteText = ""
+    var inviteText = "" {
+        didSet {
+            if inviteText != oldValue {
+                claimSeatInvite = nil
+            }
+        }
+    }
     private(set) var isSubmitting = false
     private(set) var claimingSeat: CardCode?
     private(set) var failureMessage: String?

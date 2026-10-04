@@ -41,12 +41,13 @@ struct JoinGameInviteViewModelReviewTests {
     )
 
     private func inviteDetails(
+        gameID: GameID? = nil,
         seats: OpenSeats,
         viewerHasSeat: Bool = false,
         playerCount: Int = 2
     ) -> ClaimSeatInviteViewState {
         ClaimSeatInviteViewState(
-            gameID: gameID,
+            gameID: gameID ?? self.gameID,
             seats: seats,
             playerCount: playerCount,
             viewerHasSeat: viewerHasSeat,
@@ -115,6 +116,44 @@ struct JoinGameInviteViewModelReviewTests {
         #expect(viewModel.failureMessage == "This server responded unexpectedly. Try again.")
     }
 
+    @Test("changing the invite link clears the loaded claim-seat invite")
+    func changingInviteLinkClearsLoadedClaimSeatInvite() async throws {
+        let viewModel = JoinGameInviteViewModel()
+        let firstSeat = try CardCode("c01001")
+        let firstDetails = inviteDetails(seats: [firstSeat])
+        let firstURL = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        let secondGameID = GameID(UUID(uuidString: "00000000-0000-0000-0000-000000000043")!)
+        let secondURL = "https://arkhamhorror.app/games/"
+            + "\(secondGameID.rawValue.uuidString)/claim-seat"
+        viewModel.inviteText = firstURL
+        _ = await viewModel.submit(
+            joinInvite: { _ in Issue.record("join should not run"); return gameID },
+            loadClaimSeatInvite: { _ in firstDetails }
+        )
+        #expect(viewModel.claimSeatInvite == firstDetails)
+
+        viewModel.inviteText = secondURL
+
+        #expect(viewModel.claimSeatInvite == nil)
+        var actionCalled = false
+        let claimed = await viewModel.claimSeat(
+            firstSeat,
+            claimSeatInvite: { _, _ in actionCalled = true; return gameID },
+            reloadClaimSeatInvite: { _ in
+                Issue.record("reload should not run")
+                return firstDetails
+            }
+        )
+        let continued = await viewModel.continueFromClaimSeatInvite { _ in
+            actionCalled = true
+            return gameID
+        }
+        #expect(claimed == nil)
+        #expect(continued == nil)
+        #expect(actionCalled == false)
+    }
+
     @Test("submitting is disabled while a seat claim is in flight")
     func submitIsDisabledWhileClaimingSeat() async throws {
         let viewModel = JoinGameInviteViewModel()
@@ -126,8 +165,6 @@ struct JoinGameInviteViewModelReviewTests {
             joinInvite: { _ in Issue.record("join should not run"); return gameID },
             loadClaimSeatInvite: { _ in details }
         )
-        viewModel.inviteText = "https://arkhamhorror.app/games/"
-            + "\(gameID.rawValue.uuidString)/join"
         let gate = ClaimSeatOperationGate()
 
         let claimTask = Task {
@@ -141,6 +178,8 @@ struct JoinGameInviteViewModelReviewTests {
             )
         }
         await gate.waitUntilPending()
+        viewModel.inviteText = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/join"
 
         #expect(viewModel.canSubmit == false)
         var submitCalled = false
