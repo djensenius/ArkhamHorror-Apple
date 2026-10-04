@@ -65,7 +65,7 @@
 "board.role.turn" = "Zug";
 "board.role.lead" = "Leitung";
 "board.role.prompt" = "Aufforderung";
-"board.accessibility.investigator.active" = "Aktiver Ermittler";
+"board.accessibility.investigator.active" = "Aktiver Spieler";
 "board.accessibility.investigator.turn" = "Zug-Ermittler";
 "board.accessibility.investigator.lead" = "Leitender Ermittler";
 "board.accessibility.investigator.pendingPrompt" = "Ausstehende Aufforderung";

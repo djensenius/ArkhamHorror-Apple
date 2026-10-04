@@ -3,6 +3,7 @@
 /// type-body-length budget for the primary declaration.
 private struct BoardInvestigatorServerStatus {
     let activeInvestigatorID: InvestigatorID
+    let activePlayerID: PlayerID
     let turnPlayerInvestigatorID: InvestigatorID?
     let leadInvestigatorID: InvestigatorID
     let isMultiplayer: Bool
@@ -184,6 +185,7 @@ extension BoardProjectionBuilder {
 
         let status = BoardInvestigatorServerStatus(
             activeInvestigatorID: snapshot.activeInvestigatorID,
+            activePlayerID: snapshot.activePlayerID,
             turnPlayerInvestigatorID: snapshot.turnPlayerInvestigatorID,
             leadInvestigatorID: snapshot.leadInvestigatorID,
             isMultiplayer: snapshot.playerOrder.count > 1,
@@ -274,6 +276,7 @@ extension BoardProjectionBuilder {
             drivenInsane: investigator.drivenInsane,
             currentLocationID: currentLocation,
             isActiveInvestigator: investigator.id == serverStatus.activeInvestigatorID,
+            isActingPlayer: investigator.playerID == serverStatus.activePlayerID,
             isTurnPlayer: investigator.id == serverStatus.turnPlayerInvestigatorID,
             isLeadInvestigator: investigator.id == serverStatus.leadInvestigatorID,
             isMultiplayer: serverStatus.isMultiplayer,

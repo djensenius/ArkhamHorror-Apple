@@ -197,7 +197,7 @@ struct BoardInvestigatorRowView: View {
 
     private func roleLabels(for investigator: BoardInvestigatorNode) -> [String] {
         var labels: [String] = []
-        if investigator.isActiveInvestigator {
+        if investigator.isActingPlayer {
             labels.append(BoardLocalization.localized("board.role.active", "Active"))
         }
         if investigator.isMultiplayer, investigator.isTurnPlayer {

@@ -159,10 +159,10 @@ enum BoardAccessibility {
             investigator.remainingActions, singular: "action", plural: "actions"
         )
         parts.append("\(actionsPhrase) remaining")
-        if investigator.isActiveInvestigator {
+        if investigator.isActingPlayer {
             parts.append(BoardLocalization.localized(
                 "board.accessibility.investigator.active",
-                "Active investigator"
+                "Active player"
             ))
         }
         if investigator.isMultiplayer, investigator.isTurnPlayer {

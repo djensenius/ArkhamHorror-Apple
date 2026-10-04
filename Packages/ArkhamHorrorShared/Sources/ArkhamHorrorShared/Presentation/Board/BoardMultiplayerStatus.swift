@@ -18,7 +18,7 @@ struct BoardMultiplayerStatus: Sendable, Equatable {
     init(projection: BoardProjection, localPlayerID: PlayerID?) {
         playerOrderCount = projection.playerOrderCount
         activeInvestigatorName = projection.investigators
-            .first(where: \.isActiveInvestigator)?.displayName
+            .first(where: \.isActingPlayer)?.displayName
         turnInvestigatorName = projection.investigators
             .first(where: \.isTurnPlayer)?.displayName
         leadInvestigatorName = projection.investigators

@@ -65,7 +65,7 @@
 "board.role.turn" = "Turn";
 "board.role.lead" = "Lead";
 "board.role.prompt" = "Prompt";
-"board.accessibility.investigator.active" = "Active investigator";
+"board.accessibility.investigator.active" = "Active player";
 "board.accessibility.investigator.turn" = "Turn investigator";
 "board.accessibility.investigator.lead" = "Lead investigator";
 "board.accessibility.investigator.pendingPrompt" = "Pending prompt";

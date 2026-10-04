@@ -140,6 +140,8 @@ struct BoardInvestigatorNode: Sendable, Equatable, Identifiable {
     /// location's `investigators` array names this investigator.
     let currentLocationID: LocationID?
     let isActiveInvestigator: Bool
+    /// Display flag derived from `PublicGame.activePlayerId` by matching player identity.
+    let isActingPlayer: Bool
     let isTurnPlayer: Bool
     let isLeadInvestigator: Bool
     /// True only when the server's `playerOrder` names more than one investigator.

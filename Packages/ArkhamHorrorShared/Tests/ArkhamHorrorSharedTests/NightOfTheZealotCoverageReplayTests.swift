@@ -83,6 +83,7 @@ struct NightOfTheZealotCoverageReplayTests {
         #expect(projection.investigators.map(\.displayName) == ["Roland Banks", "Daisy Walker"])
         #expect(projection.investigators.map(\.isLeadInvestigator) == [true, false])
         #expect(projection.investigators.map(\.isActiveInvestigator) == [false, true])
+        #expect(projection.investigators.map(\.isActingPlayer) == [false, true])
         #expect(projection.investigators.map(\.isTurnPlayer) == [false, true])
         #expect(projection.investigators.map(\.isMultiplayer) == [true, true])
         #expect(projection.investigators.map(\.hasPendingPrompt) == [false, true])
@@ -115,6 +116,7 @@ struct NightOfTheZealotCoverageReplayTests {
             runDefinition: runDefinition,
             investigatorNames: distinctInvestigatorNames,
             activeInvestigatorID: "c01003",
+            activePlayerID: runDefinition.seats[1].playerID,
             turnPlayerInvestigatorID: .string("c01002")
         )
         let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
@@ -124,8 +126,9 @@ struct NightOfTheZealotCoverageReplayTests {
             "Roland Banks", "Daisy Walker", "Agnes Baker",
         ])
         #expect(projection.investigators.map(\.isActiveInvestigator) == [false, false, true])
+        #expect(projection.investigators.map(\.isActingPlayer) == [false, true, false])
         #expect(projection.investigators.map(\.isTurnPlayer) == [false, true, false])
-        #expect(status.actingText == "Acting: Agnes Baker")
+        #expect(status.actingText == "Acting: Daisy Walker")
         #expect(status.turnText == "Turn: Daisy Walker")
 
         let noTurnEnvelope = try smokeEnvelope(
@@ -294,6 +297,7 @@ struct NightOfTheZealotCoverageReplayTests {
         injectAdditiveField: Bool = false,
         investigatorNames: [String: String] = [:],
         activeInvestigatorID: String? = nil,
+        activePlayerID: String? = nil,
         turnPlayerInvestigatorID: JSONValue? = nil,
         privatePromptMarker: String? = nil
     ) throws -> GetGameEnvelope {
@@ -312,6 +316,9 @@ struct NightOfTheZealotCoverageReplayTests {
         applyInvestigatorNames(investigatorNames, to: &game)
         if let activeInvestigatorID {
             game["activeInvestigatorId"] = .string(activeInvestigatorID)
+        }
+        if let activePlayerID {
+            game["activePlayerId"] = .string(activePlayerID)
         }
         if let turnPlayerInvestigatorID {
             game["turnPlayerInvestigatorId"] = turnPlayerInvestigatorID
