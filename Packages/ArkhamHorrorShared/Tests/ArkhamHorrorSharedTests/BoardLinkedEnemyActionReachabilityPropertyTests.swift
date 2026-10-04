@@ -149,36 +149,55 @@ struct EnemyActionReachabilityPropertyTests {
             }
         }
         for actionIndex in actionLocations {
-            let pairFailure = actionHeaderPairFailure(
+            try assertActionTopologyMatchesHeaderOnlyGraph(
                 graph: graph,
+                baselineGraph: baselineGraph,
                 ids: ids,
-                actionIndex: actionIndex
+                layout: layout,
+                actionIndex: actionIndex,
+                edges: edges,
+                rootIndex: rootIndex,
+                actionLocations: actionLocations
             )
-            guard pairFailure == nil else {
+        }
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    private func assertActionTopologyMatchesHeaderOnlyGraph(
+        graph: FocusGraph,
+        baselineGraph: FocusGraph,
+        ids: [LocationID],
+        layout: BoardLayout,
+        actionIndex: Int,
+        edges: [(Int, Int)],
+        rootIndex: Int,
+        actionLocations: [Int]
+    ) throws {
+        let pairFailure = actionHeaderPairFailure(graph: graph, ids: ids, actionIndex: actionIndex)
+        guard pairFailure == nil else {
+            throw invariantFailure(
+                pairFailure ?? "action-header pair failed",
+                edges: edges,
+                rootIndex: rootIndex,
+                actionLocations: actionLocations
+            )
+        }
+        for direction in [FocusDirection.down, .left, .right] {
+            let actionFailure = actionTopologyFailure(
+                graph: graph,
+                baselineGraph: baselineGraph,
+                ids: ids,
+                layout: layout,
+                actionIndex: actionIndex,
+                direction: direction
+            )
+            guard actionFailure == nil else {
                 throw invariantFailure(
-                    pairFailure ?? "action-header pair failed",
+                    actionFailure ?? "action topology failed",
                     edges: edges,
                     rootIndex: rootIndex,
                     actionLocations: actionLocations
                 )
-            }
-            for direction in [FocusDirection.down, .left, .right] {
-                let actionFailure = actionTopologyFailure(
-                    graph: graph,
-                    baselineGraph: baselineGraph,
-                    ids: ids,
-                    layout: layout,
-                    actionIndex: actionIndex,
-                    direction: direction
-                )
-                guard actionFailure == nil else {
-                    throw invariantFailure(
-                        actionFailure ?? "action topology failed",
-                        edges: edges,
-                        rootIndex: rootIndex,
-                        actionLocations: actionLocations
-                    )
-                }
             }
         }
     }
