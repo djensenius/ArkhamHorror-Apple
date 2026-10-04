@@ -272,6 +272,7 @@ extension AppModel {
         return presentation.isSubmissionSupported(submission, in: projection)
     }
 
+    // swiftlint:disable:next function_body_length
     private func performBasicChoiceSend(
         _ identity: BasicChoicePromptIdentity,
         submission: BasicChoiceSubmission,

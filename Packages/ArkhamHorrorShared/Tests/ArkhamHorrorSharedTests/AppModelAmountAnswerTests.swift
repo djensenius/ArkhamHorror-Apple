@@ -25,6 +25,13 @@ private struct WrappedAmountSendCase {
     let connection: FakeGameSocketConnection
 }
 
+private struct RejectedGatedAmountSend {
+    let model: AppModel
+    let gameID: GameID
+    let connection: FakeGameSocketConnection
+    let task: Task<BasicChoiceSubmitResult, Never>
+}
+
 extension AppModelLiveGameTests {
     @Test("Amount answer encoders match the vendored contract fixtures")
     func amountAnswerEncodingMatchesFixtures() throws {
@@ -500,12 +507,7 @@ extension AppModelLiveGameTests {
     private func rejectedGatedAmountSend(
         reason: String,
         questionVersion: Int
-    ) async throws -> (
-        model: AppModel,
-        gameID: GameID,
-        connection: FakeGameSocketConnection,
-        task: Task<BasicChoiceSubmitResult, Never>
-    ) {
+    ) async throws -> RejectedGatedAmountSend {
         let firstID = "00000000-0000-0000-0000-0000000000d5"
         let secondID = "00000000-0000-0000-0000-0000000000d6"
         let choices = [
@@ -548,7 +550,12 @@ extension AppModelLiveGameTests {
         await connection.waitUntilAwaitingNextEvent()
         #expect(model.basicChoiceServerFeedback[gameID] == reason)
         #expect(model.basicChoiceActions[gameID] == nil)
-        return (model, gameID, connection, task)
+        return RejectedGatedAmountSend(
+            model: model,
+            gameID: gameID,
+            connection: connection,
+            task: task
+        )
     }
 
     @Test("Unchanged GameUpdate before AnswerRejected still frees the amount prompt")
