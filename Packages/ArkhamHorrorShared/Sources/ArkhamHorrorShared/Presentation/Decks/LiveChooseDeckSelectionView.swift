@@ -1,5 +1,45 @@
 import SwiftUI
 
+struct LiveChooseDeckSendAttempt: Equatable, Sendable {
+    let id: UUID
+    let deckID: DeckID
+}
+
+struct LiveChooseDeckSubmissionState: Equatable {
+    static let sendFailureMessage = "This deck could not be sent. Reconnect and try again."
+
+    private(set) var activeAttempt: LiveChooseDeckSendAttempt?
+    private(set) var sendFailure: String?
+
+    func isSending(deckID: DeckID) -> Bool {
+        activeAttempt?.deckID == deckID
+    }
+
+    mutating func beginSending(
+        deckID: DeckID,
+        attemptID: UUID = UUID()
+    ) -> LiveChooseDeckSendAttempt? {
+        guard activeAttempt == nil else { return nil }
+        let attempt = LiveChooseDeckSendAttempt(id: attemptID, deckID: deckID)
+        activeAttempt = attempt
+        sendFailure = nil
+        return attempt
+    }
+
+    mutating func releaseActiveAttemptIfPickerEnabled(_ pickerEnabled: Bool) {
+        guard pickerEnabled else { return }
+        activeAttempt = nil
+    }
+
+    mutating func finish(_ attempt: LiveChooseDeckSendAttempt, didSend: Bool) {
+        guard activeAttempt == attempt else { return }
+        if !didSend {
+            sendFailure = Self.sendFailureMessage
+        }
+        activeAttempt = nil
+    }
+}
+
 /// Saved-deck picker for the live WebSocket `ChooseDeck` question shown when a brand-new
 /// game is waiting for the player to choose their first deck.
 struct LiveChooseDeckSelectionView: View {
@@ -9,8 +49,7 @@ struct LiveChooseDeckSelectionView: View {
     let promptKey: BasicChoicePromptKey
 
     @State private var viewModel: LobbyDeckSelectionViewModel
-    @State private var isSubmitting = false
-    @State private var sendFailure: String?
+    @State private var submissionState = LiveChooseDeckSubmissionState()
 
     init(model: AppModel, profile: ServerProfile, gameID: GameID, promptKey: BasicChoicePromptKey) {
         self.model = model
@@ -47,7 +86,8 @@ struct LiveChooseDeckSelectionView: View {
     }
 
     private var failureMessage: String? {
-        model.liveChooseDeckServerFeedback(for: gameID, promptKey: promptKey) ?? sendFailure
+        model.liveChooseDeckServerFeedback(for: gameID, promptKey: promptKey) ??
+            submissionState.sendFailure
     }
 
     @ViewBuilder
@@ -87,14 +127,12 @@ struct LiveChooseDeckSelectionView: View {
             validation: state
         )
         return Button {
+            guard pickerEnabled,
+                  let attempt = submissionState.beginSending(deckID: deck.id)
+            else { return }
             Task {
-                isSubmitting = true
-                sendFailure = nil
                 let didSend = await model.chooseDeckForLivePrompt(deck, in: gameID)
-                if !didSend {
-                    sendFailure = "This deck could not be sent. Reconnect and try again."
-                }
-                isSubmitting = false
+                submissionState.finish(attempt, didSend: didSend)
             }
         } label: {
             HStack {
@@ -107,12 +145,15 @@ struct LiveChooseDeckSelectionView: View {
                     validationText(for: state)
                 }
                 Spacer()
-                if isSubmitting || state == .pending {
+                if submissionState.isSending(deckID: deck.id) || state == .pending {
                     ProgressView().controlSize(.small)
                 }
             }
         }
         .disabled(!pickerEnabled)
+        .onChange(of: pickerEnabled) { _, isEnabled in
+            submissionState.releaseActiveAttemptIfPickerEnabled(isEnabled)
+        }
     }
 
     @ViewBuilder
