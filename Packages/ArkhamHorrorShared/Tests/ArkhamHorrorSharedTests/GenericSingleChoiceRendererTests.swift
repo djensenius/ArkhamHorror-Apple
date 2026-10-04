@@ -286,25 +286,25 @@ struct GenericSingleChoiceRendererTests {
         )] = [
             (
                 "playerWindowChooseOne",
-                rawDirectQuestion(tag: "PlayerWindowChooseOne", count: 32),
+                GenericSingleChoiceRawQuestionFixtures.directQuestion(tag: "PlayerWindowChooseOne", count: 32),
                 [0: .resolved("Basic label")],
                 "Basic label"
             ),
             (
                 "windowChooseOne",
-                rawDirectQuestion(tag: "WindowChooseOne", count: 32),
+                GenericSingleChoiceRawQuestionFixtures.directQuestion(tag: "WindowChooseOne", count: 32),
                 [0: .resolved("Basic label")],
                 "Basic label"
             ),
             (
                 "chooseSome1",
-                rawChooseSome1Question(),
+                GenericSingleChoiceRawQuestionFixtures.chooseSome1Question(),
                 [0: .resolved("A choice")],
                 "A choice"
             ),
             (
                 "chooseOneWizard",
-                rawChooseOneWizardQuestion(),
+                GenericSingleChoiceRawQuestionFixtures.chooseOneWizardQuestion(),
                 [0: .resolved("Wizard choice")],
                 "Wizard choice"
             ),
@@ -323,58 +323,6 @@ struct GenericSingleChoiceRendererTests {
 
     private func representativePresentation(named name: String) throws -> RepresentativePresentation {
         try #require(representativePresentations().first { $0.name == name })
-    }
-
-    private func rawDirectQuestion(tag: String, count: Int) -> JSONValue {
-        .object([
-            "tag": .string(tag),
-            "choices": .array((0 ..< count).map { rawLabel("$choice.\($0)") }),
-        ])
-    }
-
-    private func rawChooseSome1Question() -> JSONValue {
-        .object([
-            "tag": .string("ChooseSome1"),
-            "label": .string("$done"),
-            "choices": .array([rawLabel("$a"), rawDone("$done")]),
-        ])
-    }
-
-    private func rawChooseOneWizardQuestion() -> JSONValue {
-        .object([
-            "tag": .string("ChooseOneWizard"),
-            "flavorText": flavorText(),
-            "wizardChoices": .array([rawWizardChoice("$wizard")]),
-            "confirmLabel": .string("$confirm"),
-            "backLabel": .string("$back"),
-        ])
-    }
-
-    private func rawLabel(_ label: String) -> JSONValue {
-        .object([
-            "tag": .string("Label"),
-            "label": .string(label),
-            "messages": .array([]),
-        ])
-    }
-
-    private func rawDone(_ label: String) -> JSONValue {
-        .object([
-            "tag": .string("Done"),
-            "label": .string(label),
-        ])
-    }
-
-    private func rawWizardChoice(_ label: String) -> JSONValue {
-        .object([
-            "label": .string(label),
-            "flavorText": flavorText(),
-            "messages": .array([]),
-        ])
-    }
-
-    private func flavorText() -> JSONValue {
-        .object(["title": .null, "body": .array([])])
     }
 
     private func fixturePrompt(
@@ -431,7 +379,7 @@ struct GenericSingleChoiceRendererTests {
             choiceCount: choices.count,
             choices: choices
         )
-        let rawQuestion = rawQuestion(tag: "ChooseOne", count: choices.count)
+        let rawQuestion = GenericSingleChoiceRawQuestionFixtures.directQuestion(tag: "ChooseOne", count: choices.count)
         let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 777)
         return try BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
@@ -470,7 +418,7 @@ struct GenericSingleChoiceRendererTests {
             choiceCount: 1,
             choices: [choice]
         )
-        let rawQuestion = rawQuestion(tag: "ChooseOne", count: 1)
+        let rawQuestion = GenericSingleChoiceRawQuestionFixtures.directQuestion(tag: "ChooseOne", count: 1)
         let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 780)
         return BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
@@ -513,7 +461,7 @@ struct GenericSingleChoiceRendererTests {
             choiceCount: choices.count,
             choices: choices
         )
-        let rawQuestion = rawQuestion(tag: "ChooseOne", count: choices.count)
+        let rawQuestion = GenericSingleChoiceRawQuestionFixtures.directQuestion(tag: "ChooseOne", count: choices.count)
         let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 778)
         return BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
@@ -667,19 +615,6 @@ struct GenericSingleChoiceRendererTests {
         return BoardProjectionBuilder.makeProjection(from: snapshot)
     }
 
-    private func rawQuestion(tag: String, count: Int) -> JSONValue {
-        .object([
-            "tag": .string(tag),
-            "choices": .array((0 ..< count).map { index in
-                .object([
-                    "tag": .string("Label"),
-                    "label": .string("$choice.\(index)"),
-                    "messages": .array([]),
-                ])
-            }),
-        ])
-    }
-
     private func representativePresentations() throws -> [RepresentativePresentation] {
         struct Representatives: Decodable {
             let presentations: [RepresentativePresentation]
@@ -778,25 +713,25 @@ extension AppModelLiveGameTests {
 
         try await assertRepresentativePromptSends(
             name: "playerWindowChooseOne",
-            rawQuestion: rawDirectQuestion(tag: "PlayerWindowChooseOne", count: 32),
+            rawQuestion: GenericSingleChoiceRawQuestionFixtures.directQuestion(tag: "PlayerWindowChooseOne", count: 32),
             choiceIndex: 0,
             documents: documents
         )
         try await assertRepresentativePromptSends(
             name: "windowChooseOne",
-            rawQuestion: rawDirectQuestion(tag: "WindowChooseOne", count: 32),
+            rawQuestion: GenericSingleChoiceRawQuestionFixtures.directQuestion(tag: "WindowChooseOne", count: 32),
             choiceIndex: 0,
             documents: documents
         )
         try await assertRepresentativePromptSends(
             name: "chooseSome1",
-            rawQuestion: rawChooseSome1Question(),
+            rawQuestion: GenericSingleChoiceRawQuestionFixtures.chooseSome1Question(),
             choiceIndex: 0,
             documents: documents
         )
         try await assertRepresentativePromptSends(
             name: "chooseOneWizard",
-            rawQuestion: rawChooseOneWizardQuestion(),
+            rawQuestion: GenericSingleChoiceRawQuestionFixtures.chooseOneWizardQuestion(),
             choiceIndex: 0,
             documents: documents
         )
@@ -978,62 +913,7 @@ extension AppModelLiveGameTests {
         return try #require(representatives.presentations.first { $0.name == name })
     }
 
-    private func rawDirectQuestion(tag: String, count: Int) -> JSONValue {
-        .object([
-            "tag": .string(tag),
-            "choices": .array((0 ..< count).map { rawLabel("$choice.\($0)") }),
-        ])
-    }
 
-    private func rawChooseSome1Question() -> JSONValue {
-        // Arkham/Question.hs:196 declares ChooseSome1's raw label/choices fields;
-        // Arkham/Question/Presentation.hs:463-470 adds selection and completionLabel.
-        .object([
-            "tag": .string("ChooseSome1"),
-            "label": .string("$done"),
-            "choices": .array([rawLabel("$a"), rawDone("$done")]),
-        ])
-    }
-
-    private func rawChooseOneWizardQuestion() -> JSONValue {
-        // Arkham/Question.hs:156-159 and 234-238 define WizardChoice and
-        // ChooseOneWizard; Arkham/Question/Presentation.hs:528-533 binds
-        // wizardChoices to source-indexed wizardChoice descriptors.
-        .object([
-            "tag": .string("ChooseOneWizard"),
-            "flavorText": flavorText(),
-            "wizardChoices": .array([rawWizardChoice("$wizard")]),
-            "confirmLabel": .string("$confirm"),
-            "backLabel": .string("$back"),
-        ])
-    }
-
-    private func rawLabel(_ label: String) -> JSONValue {
-        .object([
-            "tag": .string("Label"),
-            "label": .string(label),
-            "messages": .array([]),
-        ])
-    }
-
-    private func rawDone(_ label: String) -> JSONValue {
-        .object([
-            "tag": .string("Done"),
-            "label": .string(label),
-        ])
-    }
-
-    private func rawWizardChoice(_ label: String) -> JSONValue {
-        .object([
-            "label": .string(label),
-            "flavorText": flavorText(),
-            "messages": .array([]),
-        ])
-    }
-
-    private func flavorText() -> JSONValue {
-        .object(["title": .null, "body": .array([])])
-    }
 }
 
 private enum GenericRendererTestError: Error {
