@@ -178,17 +178,19 @@ extension BoardFocusGraphBuilder {
         let reverse = direction.boardOpposite
         let isReciprocalHeaderEdge = headerBaseTargets[neighborID]?[reverse] == locationID
         guard isReciprocalHeaderEdge else {
+            // Another location/action may already own this neighbor's reverse slot. In that
+            // case keep the action's forward edge on the header-only target, but do not
+            // replace the neighbor's unrelated return edge.
             plan.forwardTargets[locationID, default: [:]][direction] = BoardFocusID.location(
                 neighborID
             )
             return
         }
-        guard plan.reverseTargets[neighborID]?[reverse] == nil else {
-            // This action control lost the shared-neighbor reverse edge; keep its
-            // forward edge from wrapping into a one-way trip through that neighbor.
-            plan.forwardTargets[locationID, default: [:]][direction] = actionID
-            return
-        }
+        assert(
+            plan.reverseTargets[neighborID]?[reverse] == nil,
+            "Reciprocal layout action claims are unique because the header-only reverse edge "
+                + "can point at only one location."
+        )
         plan.forwardTargets[locationID, default: [:]][direction] = BoardFocusID.location(
             neighborID
         )
@@ -209,7 +211,11 @@ extension BoardFocusGraphBuilder {
             fallbackID
         )
         guard (layout.neighbors[fallbackID] ?? [:])[reverse] == nil else { return }
-        guard plan.reverseTargets[fallbackID]?[reverse] == nil else { return }
+        assert(
+            plan.reverseTargets[fallbackID]?[reverse] == nil,
+            "Fallback action claims are unique because each fallback reverse slot has one "
+                + "header-only predecessor."
+        )
         plan.reverseTargets[fallbackID, default: [:]][reverse] = actionID
     }
 

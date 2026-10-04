@@ -140,7 +140,8 @@ enum BoardLayoutBuilder {
     /// choosing the relative direction from each pair's already-computed grid position.
     /// When more than one real neighbor would resolve to the same direction (a topology
     /// richer than 4-way), only the first (by sorted id) is declared as an explicit edge;
-    /// every location still stays reachable through ``FocusWrapPolicy/wrapWithinZone``.
+    /// the board focus graph adds its own deterministic fallback and repair edges when
+    /// declaring location nodes.
     private static func assignNeighbors(
         locations: [BoardLocationNode],
         positions: [LocationID: BoardGridPosition],
