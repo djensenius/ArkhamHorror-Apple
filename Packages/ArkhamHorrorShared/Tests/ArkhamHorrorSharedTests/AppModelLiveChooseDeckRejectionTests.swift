@@ -75,14 +75,11 @@ extension AppModelLiveChooseDeckTests {
         )
     }
 
-    private func installRejectedLivePrompt(
+    private func makeLiveChooseDeckAttempt(
         on model: AppModel,
-        gameID: GameID,
-        ownerID: PlayerID,
-        connection: FakeGameSocketConnection
-    ) -> InstalledLiveChooseDeckPrompt {
-        let projection = chooseDeckProjection(ownerID: ownerID)
-        let attempt = LiveGameSessionAttempt(
+        gameID: GameID
+    ) -> LiveGameSessionAttempt {
+        LiveGameSessionAttempt(
             gameID: gameID,
             profile: .hosted,
             attemptID: UUID(),
@@ -90,6 +87,16 @@ extension AppModelLiveChooseDeckTests {
             credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
             globalEpoch: model.currentGlobalCredentialEpoch()
         )
+    }
+
+    private func installRejectedLivePrompt(
+        on model: AppModel,
+        gameID: GameID,
+        ownerID: PlayerID,
+        connection: FakeGameSocketConnection
+    ) -> InstalledLiveChooseDeckPrompt {
+        let projection = chooseDeckProjection(ownerID: ownerID)
+        let attempt = makeLiveChooseDeckAttempt(on: model, gameID: gameID)
         let connectionID = UUID()
         model.liveGameParticipantIdentities[gameID] = .participant(ownerID)
         model.liveGameStates[gameID] = .live(projection)
