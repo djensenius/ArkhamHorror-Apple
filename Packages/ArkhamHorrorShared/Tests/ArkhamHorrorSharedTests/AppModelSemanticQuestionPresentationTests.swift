@@ -711,11 +711,11 @@ extension AppModelLiveGameTests {
                 cardName: percentName
             )
             let titles = prompt.choices.map { prompt.displayTitle(for: $0, in: projection) }
-            let disabledReason = percentDisabledLabelReason(
+            let guidanceReason = percentGuidanceLabelReason(
                 title: percentName,
                 in: prompt
             )
-            #expect(titles + [disabledReason] == testCase.expected)
+            #expect(titles + [guidanceReason] == testCase.expected)
         }
     }
 
@@ -1071,7 +1071,7 @@ extension AppModelLiveGameTests {
         return BoardProjectionBuilder.makeProjection(from: decoded.game)
     }
 
-    private func percentDisabledLabelReason(
+    private func percentGuidanceLabelReason(
         title: String,
         in prompt: BasicChoicePromptPresentation
     ) -> String {
@@ -1088,7 +1088,7 @@ extension AppModelLiveGameTests {
             rows: [row],
             target: .total(1)
         )
-        return amountPrompt.disabledReason(
+        return amountPrompt.guidanceMessage(
             for: ["percent-label": 1],
             in: prompt
         ) ?? ""

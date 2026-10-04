@@ -265,6 +265,54 @@ extension AppModelCampaignPromptTests {
         #expect(await connection.sentData == [expected, expected])
     }
 
+    @Test("Null-version AnswerRejected releases a ContinueCampaign submission")
+    func nullVersionAnswerRejectedReleasesContinueCampaignSubmission() async throws {
+        let service = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: service)
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let projection = try continuationProjection(
+            ownerID: ownerID,
+            mode: campaignOnlyMode()
+        )
+        let continuation = try #require(projection.campaignContinuation)
+        installPrompt(
+            projection,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(await model.submitContinueCampaignAnswer(
+            prompt.identity,
+            step: continuation.nextStep
+        ) == .sentAwaitingSnapshot)
+
+        let sessionAttemptID = try #require(prompt.identity.sessionAttemptID)
+        let connectionID = try #require(prompt.identity.connectionID)
+        model.handleBasicChoiceAnswerRejected(
+            gameID: gameID,
+            sessionAttemptID: sessionAttemptID,
+            connectionID: connectionID,
+            rejection: AnswerRejectedMessage(
+                reason: "campaign step rejected",
+                questionVersion: nil
+            )
+        )
+
+        let rejected = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(rejected.actionPhase == nil)
+        #expect(rejected.canSubmit)
+        #expect(rejected.serverFeedback == "campaign step rejected")
+        let expectedAnswer = try campaignAnswerBytes(step: continuation.nextStep)
+        #expect(await connection.sentData == [expectedAnswer])
+    }
+
     @Test("ContinueCampaign presentation exposes server rejection feedback")
     func continueCampaignPresentationSurfacesServerFeedback() async throws {
         let service = ScriptedGameLifecycleService()

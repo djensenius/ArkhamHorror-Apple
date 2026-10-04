@@ -312,8 +312,12 @@ final class AppModel {
     /// the live-game lifecycle resets; failures release immediately for retry. Intentionally
     /// observable so waiting indicators and sheet controls refresh as soon as a claim changes.
     var campaignDeckSubmissions: [GameID: CampaignDeckSubmissionAttempt] = [:]
-    /// Sanitized room-wide feedback, never treated as correlated answer rejection.
+    /// Sanitized feedback for the currently displayed prompt.
     var basicChoiceServerFeedback: [GameID: String] = [:]
+    /// Tracks whether same-prompt socket snapshots should retain or clear the feedback.
+    var basicChoiceServerFeedbackSources: [GameID: BasicChoiceServerFeedbackSource] = [:]
+    /// Send attempts that received an authoritative rejection before their send task resumed.
+    var basicChoiceRejectedAttemptIDs: [GameID: Set<UUID>] = [:]
 
     // MARK: - Locale catalog state (see `AppModel+LocaleCatalog.swift`)
 

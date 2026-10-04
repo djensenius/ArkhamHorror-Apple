@@ -46,17 +46,48 @@ extension GetGameEnvelope: Codable {
     }
 }
 
+/// A server-authored answer rejection sent only to the answering connection.
+struct AnswerRejectedMessage: Sendable, Equatable, Hashable {
+    let reason: String
+    let questionVersion: Int?
+}
+
+extension AnswerRejectedMessage: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case reason
+        case questionVersion
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        reason = try container.decode(String.self, forKey: .reason)
+        questionVersion = try decodeRequiredNullable(
+            Int.self,
+            from: container,
+            forKey: .questionVersion,
+            codingPath: decoder.codingPath + [CodingKeys.questionVersion]
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(reason, forKey: .reason)
+        try container.encode(questionVersion, forKey: .questionVersion)
+    }
+}
+
 /// A WebSocket server-to-client envelope this contract slice recognizes
-/// (`contracts/schemas/server-message.schema.json`'s `GameUpdate` variant). Every other
-/// `GameError` is recognized only as uncorrelated, room-wide feedback: the backend
-/// supplies no player/question/request correlation, so it can never establish that
-/// this client's answer was rejected. Every other `ServerMessage` tag belongs to a
-/// later contract slice; this type only discriminates far enough to decode a
-/// `GameUpdate` or `GameError`, or report an explicit, typed, non-fatal
-/// ``unsupportedMessage(tag:rawContents:)`` for anything else — never a silent no-op.
+/// (`contracts/schemas/server-message.schema.json`). `GameError` is recognized only as
+/// uncorrelated, room-wide feedback: the backend supplies no player/question/request
+/// correlation, so it can never establish that this client's answer was rejected.
+/// Every other `ServerMessage` tag belongs to a later contract slice; this type only
+/// discriminates far enough to decode a `GameUpdate`, `GameError`, or `AnswerRejected`,
+/// or report an explicit, typed, non-fatal ``unsupportedMessage(tag:rawContents:)`` for
+/// anything else — never a silent no-op.
 enum BoardSnapshotUpdate: Sendable {
     case snapshot(PublicGameSnapshot)
     case gameError(rawMessage: String)
+    case answerRejected(AnswerRejectedMessage)
     /// A recognized-or-unrecognized `ServerMessage` tag this contract slice does not
     /// decode further. `rawContents` preserves whatever `contents`-shaped payload (if
     /// any) accompanied it, for diagnostics.
@@ -69,6 +100,8 @@ extension BoardSnapshotUpdate: Codable {
     private enum CodingKeys: String, CodingKey {
         case tag
         case contents
+        case reason
+        case questionVersion
     }
 
     init(from decoder: any Decoder) throws {
@@ -78,15 +111,22 @@ extension BoardSnapshotUpdate: Codable {
             self = .gameError(rawMessage: message)
             return
         }
+        if tag == "AnswerRejected" {
+            if let rejection = Self.decodeAnswerRejected(from: container) {
+                self = .answerRejected(rejection)
+            } else {
+                self = try .unsupportedMessage(
+                    tag: tag,
+                    rawContents: Self.rawContents(from: container)
+                )
+            }
+            return
+        }
         guard tag == "GameUpdate" else {
-            // Distinguishes an absent `contents` key (`nil`) from an explicit
-            // `"contents": null` (`.some(.null)`): `decodeIfPresent(JSONValue.self, ...)`
-            // would collapse both to `nil`, losing exactly the raw-payload diagnostic
-            // this case exists to preserve.
-            let rawContents = container.contains(.contents)
-                ? try container.decode(JSONValue.self, forKey: .contents)
-                : nil
-            self = .unsupportedMessage(tag: tag, rawContents: rawContents)
+            self = try .unsupportedMessage(
+                tag: tag,
+                rawContents: Self.rawContents(from: container)
+            )
             return
         }
         self = try .snapshot(container.decode(PublicGameSnapshot.self, forKey: .contents))
@@ -101,9 +141,50 @@ extension BoardSnapshotUpdate: Codable {
         case let .gameError(rawMessage):
             try container.encode("GameError", forKey: .tag)
             try container.encode(rawMessage, forKey: .contents)
+        case let .answerRejected(rejection):
+            try container.encode("AnswerRejected", forKey: .tag)
+            try container.encode(rejection.reason, forKey: .reason)
+            try container.encode(rejection.questionVersion, forKey: .questionVersion)
         case let .unsupportedMessage(tag, rawContents):
             try container.encode(tag, forKey: .tag)
             try container.encodeIfPresent(rawContents, forKey: .contents)
         }
+    }
+
+    private static func rawContents(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> JSONValue? {
+        // Distinguishes an absent `contents` key (`nil`) from an explicit
+        // `"contents": null` (`.some(.null)`): `decodeIfPresent(JSONValue.self, ...)`
+        // would collapse both to `nil`, losing exactly the raw-payload diagnostic
+        // this case exists to preserve.
+        container.contains(.contents)
+            ? try container.decode(JSONValue.self, forKey: .contents)
+            : nil
+    }
+
+    private static func decodeAnswerRejected(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) -> AnswerRejectedMessage? {
+        if container.contains(.contents) {
+            if let wrapped = try? container.decode(AnswerRejectedMessage.self, forKey: .contents) {
+                return wrapped
+            }
+        }
+        guard let reason = try? container.decode(String.self, forKey: .reason) else {
+            return nil
+        }
+        let questionVersion: Int?
+        do {
+            questionVersion = try decodeRequiredNullable(
+                Int.self,
+                from: container,
+                forKey: .questionVersion,
+                codingPath: container.codingPath + [CodingKeys.questionVersion]
+            )
+        } catch {
+            return nil
+        }
+        return AnswerRejectedMessage(reason: reason, questionVersion: questionVersion)
     }
 }

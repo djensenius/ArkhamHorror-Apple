@@ -410,7 +410,6 @@ final class BoardCommandController {
               let amountPrompt = prompt.amountPrompt(in: projection)
         else { return false }
         let amounts = amountPrompt.normalizedAmounts(amountDraft)
-        guard amountPrompt.isLegal(amounts) else { return false }
         switch amountPrompt.kind {
         case .amounts:
             onAmounts(amounts)
@@ -424,8 +423,7 @@ final class BoardCommandController {
     func activateExchangeSubmit() -> Bool {
         guard let prompt,
               prompt.canSubmit,
-              let exchangePrompt = prompt.exchangePrompt(in: projection),
-              exchangePrompt.isLegal(exchangeAmount)
+              prompt.exchangePrompt(in: projection) != nil
         else { return false }
         onExchangeAmount(exchangeAmount)
         return true

@@ -235,8 +235,16 @@ extension AppModel {
         }
         switch update {
         case let .snapshot(snapshot):
+            let previousPromptKey = basicChoicePromptKey(
+                gameID: attempt.gameID, projection: projection
+            )
             projection = BoardProjectionBuilder.makeProjection(from: snapshot)
-            basicChoiceServerFeedback[attempt.gameID] = nil
+            let samePrompt = previousPromptKey == basicChoicePromptKey(
+                gameID: attempt.gameID, projection: projection
+            )
+            if !samePrompt || basicChoiceServerFeedbackSources[attempt.gameID] == .gameError {
+                clearBasicChoiceServerFeedback(gameID: attempt.gameID)
+            }
             reconcileBasicChoice(
                 gameID: attempt.gameID, projection: projection, isRESTSnapshot: false
             )
@@ -247,10 +255,40 @@ extension AppModel {
                 sessionAttemptID: attempt.attemptID,
                 connectionID: connectionID
             )
+        case let .answerRejected(rejection):
+            handleBasicChoiceAnswerRejected(
+                gameID: attempt.gameID,
+                sessionAttemptID: attempt.attemptID,
+                connectionID: connectionID,
+                rejection: rejection
+            )
         case .unsupportedMessage:
             break
         }
         return true
+    }
+
+    private func basicChoicePromptKey(
+        gameID: GameID, projection: BoardProjection
+    ) -> BasicChoicePromptKey? {
+        let participantIdentity = liveGameParticipantIdentities[gameID]
+        let selected: (PlayerID, BasicChoiceQuestionPayload)? = switch participantIdentity {
+        case let .participant(playerID):
+            projection.questions[playerID].map { (playerID, $0) }
+        case .spectator:
+            projection.questions
+                .min { $0.key.rawValue.uuidString < $1.key.rawValue.uuidString }
+                .map { ($0.key, $0.value) }
+        case .none:
+            nil
+        }
+        guard let (ownerID, payload) = selected else { return nil }
+        return basicChoicePromptKey(
+            gameID: gameID,
+            ownerID: ownerID,
+            payload: payload,
+            projection: projection
+        )
     }
 
     private func isCurrentLiveGameConnection(
