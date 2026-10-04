@@ -48,12 +48,13 @@ extension BasicChoiceSemanticPresentationTests {
             to: payload.rawValue,
             expectedQuestionVersion: presentation.questionVersion
         )
+        let catalog = try CardCatalogSnapshot(namesByCode: [
+            CardCode("c01007"): CardName(title: "Cover Up", subtitle: nil),
+        ])
         let prompt = makePrompt(
             payload: payload,
             presentation: binding,
-            cardCatalog: try CardCatalogSnapshot(namesByCode: [
-                CardCode("c01007"): CardName(title: "Cover Up", subtitle: nil),
-            ])
+            cardCatalog: catalog
         )
         let choice = try #require(prompt.choices.first)
 
