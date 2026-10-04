@@ -194,26 +194,50 @@ extension AppModel {
             let envelope = try await gameLifecycleService.getGame(
                 id, on: session.profile, token: token
             )
-            try ensureCurrentGameInviteSession(session)
+            try ensureCurrentLobbyDetailTask(for: id, session: session, taskID: taskID)
             gameLobbyPlayerCounts[id] = envelope.game.playerCount
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
             gameLobbyViewerSeatFailures[id] = nil
         } catch is CancellationError {
             return
         } catch GameLifecycleError.unexpectedStatus(404) {
-            guard (try? ensureCurrentGameInviteSession(session)) != nil else { return }
+            guard isCurrentLobbyDetailTask(for: id, session: session, taskID: taskID) else {
+                return
+            }
             gameLobbyViewerHasSeats[id] = false
             gameLobbyViewerSeatFailures[id] = nil
         } catch let error as GameLifecycleError {
-            guard (try? ensureCurrentGameInviteSession(session)) != nil else { return }
+            guard isCurrentLobbyDetailTask(for: id, session: session, taskID: taskID) else {
+                return
+            }
             gameLobbyViewerHasSeats[id] = nil
             gameLobbyViewerSeatFailures[id] = error
             await handleGameInviteLifecycleError(error, session: session)
         } catch {
-            guard (try? ensureCurrentGameInviteSession(session)) != nil else { return }
+            guard isCurrentLobbyDetailTask(for: id, session: session, taskID: taskID) else {
+                return
+            }
             gameLobbyViewerHasSeats[id] = nil
             gameLobbyViewerSeatFailures[id] = .transportFailure("Lobby membership unavailable")
         }
+    }
+
+    private func isCurrentLobbyDetailTask(
+        for id: GameID,
+        session: GameInviteSession,
+        taskID: UUID
+    ) -> Bool {
+        guard gameLobbyDetailTaskIDs[id] == taskID else { return false }
+        return (try? ensureCurrentGameInviteSession(session)) != nil
+    }
+
+    private func ensureCurrentLobbyDetailTask(
+        for id: GameID,
+        session: GameInviteSession,
+        taskID: UUID
+    ) throws {
+        guard gameLobbyDetailTaskIDs[id] == taskID else { throw CancellationError() }
+        try ensureCurrentGameInviteSession(session)
     }
 
     private func clearLobbyDetailTaskIfCurrent(for id: GameID, taskID: UUID) {

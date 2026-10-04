@@ -162,4 +162,29 @@ struct AppModelGameInviteLobbyDetailReviewTests {
         #expect(await service.callOrder == ["getGame", "getGame"])
         #expect(model.gameLobbyViewerHasSeats[gameID] == true)
     }
+
+    @Test("superseded lobby detail results cannot overwrite their replacement")
+    func supersededLobbyDetailResultCannotOverwriteReplacement() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        await service.setGetGameGated(true)
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+
+        model.loadLobbyDetailsIfNeeded(for: gameID)
+        await service.waitUntilGetGamePending(1)
+        let staleTask = try #require(model.gameLobbyDetailTasks[gameID])
+        model.reloadLobbyViewerSeatStatus(for: gameID)
+        await service.waitUntilGetGamePending(2)
+        let replacementTask = try #require(model.gameLobbyDetailTasks[gameID])
+
+        await service.resumeNewestGetGame(with: .success(getGameEnvelope(gameID: gameID)))
+        await replacementTask.value
+        #expect(model.gameLobbyViewerHasSeats[gameID] == true)
+
+        await service.resumeOldestGetGame(with: .failure(GameLifecycleError.unexpectedStatus(404)))
+        await staleTask.value
+
+        #expect(model.gameLobbyViewerHasSeats[gameID] == true)
+        #expect(model.gameLobbyViewerSeatFailures[gameID] == nil)
+    }
 }
