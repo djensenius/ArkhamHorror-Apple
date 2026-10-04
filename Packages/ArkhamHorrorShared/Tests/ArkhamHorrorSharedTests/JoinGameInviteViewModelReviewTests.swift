@@ -224,6 +224,9 @@ struct JoinGameInviteViewModelReviewTests {
         let secondURL = "https://arkhamhorror.app/games/"
             + "\(secondGameID.rawValue.uuidString)/claim-seat"
         let gate = ClaimSeatInviteLoadGate()
+        let claimFailure = DeckOperationError(
+            errorMsg: "Permission Denied. This seat is already taken"
+        )
         viewModel.inviteText = firstURL
         _ = await viewModel.submit(
             joinInvite: { _ in Issue.record("join should not run"); return gameID },
@@ -234,9 +237,7 @@ struct JoinGameInviteViewModelReviewTests {
             await viewModel.claimSeat(
                 firstSeat,
                 claimSeatInvite: { _, _ in
-                    throw GameLifecycleError.operationFailed(
-                        DeckOperationError(errorMsg: "Permission Denied. This seat is already taken")
-                    )
+                    throw GameLifecycleError.operationFailed(claimFailure)
                 },
                 reloadClaimSeatInvite: { _ in await gate.run() }
             )
