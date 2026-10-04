@@ -41,7 +41,7 @@ extension AppModelLiveChooseDeckTests {
         try PlayerID(#require(UUID(uuidString: "00000000-0000-0000-0000-000000000001")))
     }
 
-    func chooseDeckProjection(
+    private func chooseDeckProjection(
         ownerID: PlayerID,
         rawQuestion: JSONValue = .object(["tag": .string("ChooseDeck")])
     ) -> BoardProjection {
@@ -81,7 +81,7 @@ extension AppModelLiveChooseDeckTests {
         )
     }
 
-    func makeLiveChooseDeckAttempt(
+    private func makeLiveChooseDeckAttempt(
         on model: AppModel,
         gameID: GameID
     ) -> LiveGameSessionAttempt {
