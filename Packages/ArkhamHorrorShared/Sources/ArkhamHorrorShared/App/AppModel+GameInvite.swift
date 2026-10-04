@@ -329,12 +329,13 @@ extension AppModel {
         refreshGames()
         let refreshGeneration = gameListGeneration
         let refreshTask = gameListTask
-        await refreshTask?.value
+        guard let refreshTask else { throw GameLifecycleError.inviteRefreshFailed }
+        await refreshTask.value
         try ensureCurrentGameInviteSession(session)
         guard refreshGeneration == gameListGeneration else {
             throw GameLifecycleError.inviteRefreshFailed
         }
-        guard case let .loaded(games) = gameListState,
+        guard case let .loaded(games) = gameListRefreshCompletions[refreshGeneration],
               games.contains(where: { entry in
                   switch entry {
                   case let .game(summary):

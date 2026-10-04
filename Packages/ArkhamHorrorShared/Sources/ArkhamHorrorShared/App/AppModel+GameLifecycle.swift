@@ -4,6 +4,11 @@ import Foundation
 /// stale/superseded read (never surfaced as an application error, exactly like
 /// ``StaleCredentialEpochError`` elsewhere) from a genuine ``TokenStore`` failure or
 /// an absent token.
+enum GameListRefreshCompletion: Sendable {
+    case loaded(GameList)
+    case didNotLoad
+}
+
 enum GameLifecycleTokenAccessError: Error, Sendable {
     /// The captured credential/global epoch no longer matches: a concurrent
     /// sign-out, profile-endpoint edit, or storage reset has already superseded this
@@ -173,6 +178,7 @@ extension AppModel {
         }
         gameListTask = nil
         gameListState = .idle
+        gameListRefreshCompletions = [:]
         gameLifecycleActions = [:]
         gameLifecycleActionFailures = [:]
         gameOpenSeats = [:]
@@ -219,20 +225,26 @@ extension AppModel {
             globalEpoch: currentGlobalCredentialEpoch()
         )
         gameListState = .loading(previous: gameListState.games)
+        gameListRefreshCompletions = [:]
         gameListTask = Task { [weak self] in
             await self?.performRefreshGames(attempt)
         }
     }
 
     private func performRefreshGames(_ attempt: GameListLoadAttempt) async {
-        guard let token = await resolveGameListToken(attempt) else { return }
+        guard let token = await resolveGameListToken(attempt) else {
+            recordGameListRefreshCompletion(.didNotLoad, for: attempt)
+            return
+        }
 
         do {
             let games = try await gameLifecycleService.listGames(on: attempt.profile, token: token)
             guard isCurrentGameList(attempt) else { return }
             gameListState = .loaded(games)
+            recordGameListRefreshCompletion(.loaded(games), for: attempt)
         } catch is CancellationError {
             revertGameListStateAfterCancellation(attempt)
+            recordGameListRefreshCompletion(.didNotLoad, for: attempt)
         } catch let error as GameLifecycleError {
             guard isCurrentGameList(attempt) else { return }
             gameListState = .failed(error, previous: gameListState.games)
@@ -244,12 +256,22 @@ extension AppModel {
                     globalEpoch: attempt.globalEpoch
                 )
             }
+            recordGameListRefreshCompletion(.didNotLoad, for: attempt)
         } catch {
             guard isCurrentGameList(attempt) else { return }
             gameListState = .failed(
                 .transportFailure("Unexpected game-list failure."), previous: gameListState.games
             )
+            recordGameListRefreshCompletion(.didNotLoad, for: attempt)
         }
+    }
+
+    private func recordGameListRefreshCompletion(
+        _ completion: GameListRefreshCompletion,
+        for attempt: GameListLoadAttempt
+    ) {
+        guard isCurrentGameList(attempt) else { return }
+        gameListRefreshCompletions[attempt.listGeneration] = completion
     }
 
     /// Reverts `gameListState` out of `.loading` back to a neutral, retry-able state

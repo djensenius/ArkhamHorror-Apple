@@ -274,6 +274,8 @@ final class AppModel {
     @ObservationIgnored var gameListGeneration = 0
     /// The in-flight games list load/refresh task, if any.
     @ObservationIgnored var gameListTask: Task<Void, Never>?
+    /// Terminal server result for a specific games-list generation.
+    @ObservationIgnored var gameListRefreshCompletions: [Int: GameListRefreshCompletion] = [:]
     /// The identity of the currently in-flight action for each ``GameID``, so a
     /// superseded action's stale completion (started, then superseded by a newer
     /// action on the very same game) can never mutate ``gameLifecycleActions``/

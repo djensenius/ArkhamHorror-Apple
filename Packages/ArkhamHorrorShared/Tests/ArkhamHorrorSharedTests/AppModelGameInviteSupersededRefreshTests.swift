@@ -96,4 +96,29 @@ struct AppModelGameInviteSupersededRefreshTests {
         }
         #expect(await service.callOrder == ["listGames", "listGames"])
     }
+
+    @Test("cancelled invite refresh is not accepted from the restored previous list")
+    func cancelledInviteRefreshDoesNotSucceedFromRestoredList() async throws {
+        let service = ScriptedGameLifecycleService()
+        let gameID = GameID(UUID())
+        let seat = try CardCode("c01001")
+        let targetGames: GameList = [.game(gameSummary(id: gameID))]
+        await service.enqueueClaimSeatResult(.success(()))
+        await service.enqueueListGamesResult(.failure(CancellationError()))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        model.gameListState = .loaded(targetGames)
+        let invite = claimSeatInviteDetails(
+            gameID: gameID,
+            seats: [seat],
+            viewerHasSeat: false,
+            model: model
+        )
+
+        await #expect(throws: GameLifecycleError.inviteRefreshFailed) {
+            try await model.claimSeatFromInvite(seat, using: invite)
+        }
+
+        #expect(model.gameListState == .loaded(targetGames))
+        #expect(await service.callOrder == ["claimSeat", "listGames"])
+    }
 }
