@@ -10,15 +10,21 @@ struct PublicGamePresentationBindingTests {
         guard case let .object(root) = value,
               case let .object(game)? = root["game"],
               case let .string(playerID)? = root["playerId"],
+              case let .object(questions)? = game["question"],
+              case let .object(rawQuestion)? = questions[playerID],
+              case let .array(rawChoices)? = rawQuestion["choices"],
+              rawChoices.count == 4,
               case let .object(presentations)? = game["questionPresentation"],
               case let .object(presentation)? = presentations[playerID],
-              presentation["choiceCount"] == .number(.integer(4))
+              presentation["choiceCount"] == .number(.integer(4)),
+              case let .array(presentationChoices)? = presentation["choices"],
+              presentationChoices.count == 4
         else { throw TestFailure() }
 
         value = try EnemyAttackFixtures.applying(
-            operation: "replace",
-            path: ["game", "questionPresentation", playerID, "choiceCount"].map { Substring($0) },
-            replacement: .number(.integer(3)),
+            operation: "remove",
+            path: ["game", "question", playerID, "choices", "3"].map { Substring($0) },
+            replacement: nil,
             to: value
         )
         let envelope = try ContractJSON.decode(
@@ -26,8 +32,15 @@ struct PublicGamePresentationBindingTests {
             from: ContractJSON.encode(value)
         )
         let ownerID = try #require(envelope.playerID)
+        let decodedPresentation = try #require(envelope.game.questionPresentation?[ownerID])
         let payload = try #require(envelope.game.question[ownerID])
+        guard case let .object(decodedRawQuestion) = payload.rawValue,
+              case let .array(decodedRawChoices)? = decodedRawQuestion["choices"]
+        else { throw TestFailure() }
 
+        #expect(decodedRawChoices.count == 3)
+        #expect(decodedPresentation.choiceCount == 4)
+        #expect(decodedPresentation.choices.map(\.sourceIndex) == [0, 1, 2, 3])
         #expect(payload.isUpdateRequired)
         #expect(payload.presentation == nil)
     }
