@@ -9,8 +9,12 @@ struct LiveChooseDeckSelectionViewTests {
         var state = LiveChooseDeckSubmissionState()
         let oldDeckID = DeckID(UUID())
         let replacementDeckID = DeckID(UUID())
-        let oldAttemptID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000101"))
-        let replacementAttemptID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000102"))
+        let oldAttemptID = try #require(UUID(
+            uuidString: "00000000-0000-0000-0000-000000000101"
+        ))
+        let replacementAttemptID = try #require(UUID(
+            uuidString: "00000000-0000-0000-0000-000000000102"
+        ))
 
         let oldAttempt = try #require(state.beginSending(
             deckID: oldDeckID,
@@ -41,7 +45,9 @@ struct LiveChooseDeckSelectionViewTests {
     func activeDeckSendAttemptIsReleasedOnlyWhenPickerIsEnabled() throws {
         var state = LiveChooseDeckSubmissionState()
         let deckID = DeckID(UUID())
-        let attemptID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000103"))
+        let attemptID = try #require(UUID(
+            uuidString: "00000000-0000-0000-0000-000000000103"
+        ))
         let attempt = try #require(state.beginSending(deckID: deckID, attemptID: attemptID))
 
         state.releaseActiveAttemptIfPickerEnabled(false)

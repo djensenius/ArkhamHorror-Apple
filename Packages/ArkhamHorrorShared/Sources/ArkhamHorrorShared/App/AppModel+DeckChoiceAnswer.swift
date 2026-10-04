@@ -107,45 +107,44 @@ extension AppModel {
             try await connection.connection.send(bytes)
             try Task.checkCancellation()
         } catch is CancellationError {
-            if consumeBasicChoiceRejectedAttempt(
-                gameID: gameID,
-                actionAttemptID: actionAttemptID
-            ) {
-                return true
-            }
-            markLiveChooseDeckAction(
+            return failLiveChooseDeckSend(
                 gameID: gameID,
                 actionAttemptID: actionAttemptID,
                 connectionID: connection.connectionID,
                 phase: didStartSend ? .uncertain : .retryable(.transportFailure)
             )
-            return false
         } catch {
-            if consumeBasicChoiceRejectedAttempt(
-                gameID: gameID,
-                actionAttemptID: actionAttemptID
-            ) {
-                return true
-            }
-            markLiveChooseDeckAction(
+            return failLiveChooseDeckSend(
                 gameID: gameID,
                 actionAttemptID: actionAttemptID,
                 connectionID: connection.connectionID,
                 phase: .retryable(.transportFailure)
             )
-            return false
         }
 
-        if consumeBasicChoiceRejectedAttempt(
+        return finishLiveChooseDeckSend(
             gameID: gameID,
-            actionAttemptID: actionAttemptID
-        ) {
+            prompt: prompt.identity,
+            deckID: deck.id,
+            actionAttemptID: actionAttemptID,
+            connectionID: connection.connectionID
+        )
+    }
+
+    private func finishLiveChooseDeckSend(
+        gameID: GameID,
+        prompt: BasicChoicePromptIdentity,
+        deckID: DeckID,
+        actionAttemptID: UUID,
+        connectionID: UUID
+    ) -> Bool {
+        if consumeBasicChoiceRejectedAttempt(gameID: gameID, actionAttemptID: actionAttemptID) {
             return true
         }
-        guard liveGameConnections[gameID]?.connectionID == connection.connectionID,
+        guard liveGameConnections[gameID]?.connectionID == connectionID,
               basicChoiceActions[gameID]?.attemptID == actionAttemptID,
-              basicChoiceActions[gameID]?.identity == prompt.identity,
-              basicChoiceActions[gameID]?.submission == .deck(deck.id),
+              basicChoiceActions[gameID]?.identity == prompt,
+              basicChoiceActions[gameID]?.submission == .deck(deckID),
               basicChoiceActions[gameID]?.phase == .sending
         else { return false }
         basicChoiceActions[gameID]?.phase = .awaitingSnapshot
@@ -180,6 +179,24 @@ extension AppModel {
             phase: .sending
         )
         return actionAttemptID
+    }
+
+    private func failLiveChooseDeckSend(
+        gameID: GameID,
+        actionAttemptID: UUID,
+        connectionID: UUID,
+        phase: BasicChoiceActionPhase
+    ) -> Bool {
+        if consumeBasicChoiceRejectedAttempt(gameID: gameID, actionAttemptID: actionAttemptID) {
+            return true
+        }
+        markLiveChooseDeckAction(
+            gameID: gameID,
+            actionAttemptID: actionAttemptID,
+            connectionID: connectionID,
+            phase: phase
+        )
+        return false
     }
 
     private func markLiveChooseDeckAction(
