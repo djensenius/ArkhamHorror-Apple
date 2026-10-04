@@ -9,6 +9,11 @@ enum BoardLocationHeaderSizing {
         guard let maximumHeight else { return naturalHeight }
         return min(naturalHeight, maximumHeight)
     }
+
+    static func reportedWidth(naturalWidth: CGFloat, proposedWidth: CGFloat?) -> CGFloat {
+        guard let proposedWidth else { return naturalWidth }
+        return min(naturalWidth, proposedWidth)
+    }
 }
 
 struct BoardLocationHeaderClampLayout: Layout {
@@ -20,11 +25,14 @@ struct BoardLocationHeaderClampLayout: Layout {
         cache _: inout ()
     ) -> CGSize {
         guard let subview = subviews.first else { return .zero }
-        let naturalSize = subview.sizeThatFits(.init(width: proposal.width, height: nil))
+        let measuredSize = measuredSubviewSize(subview, proposal: proposal)
         return CGSize(
-            width: proposal.width ?? naturalSize.width,
+            width: BoardLocationHeaderSizing.reportedWidth(
+                naturalWidth: measuredSize.width,
+                proposedWidth: proposal.width
+            ),
             height: BoardLocationHeaderSizing.drawnHeight(
-                naturalHeight: naturalSize.height,
+                naturalHeight: measuredSize.height,
                 maximumHeight: maximumHeight
             )
         )
@@ -32,15 +40,31 @@ struct BoardLocationHeaderClampLayout: Layout {
 
     func placeSubviews(
         in bounds: CGRect,
-        proposal _: ProposedViewSize,
+        proposal: ProposedViewSize,
         subviews: Subviews,
         cache _: inout ()
     ) {
         guard let subview = subviews.first else { return }
-        subview.place(
-            at: bounds.origin,
-            anchor: .topLeading,
-            proposal: .init(width: bounds.width, height: nil)
+        let measuredSize = measuredSubviewSize(subview, proposal: proposal)
+        let proposedHeight = BoardLocationHeaderSizing.drawnHeight(
+            naturalHeight: measuredSize.height,
+            maximumHeight: maximumHeight
         )
+        subview.place(
+            at: CGPoint(x: bounds.midX, y: bounds.minY),
+            anchor: .top,
+            proposal: .init(width: proposal.width, height: proposedHeight)
+        )
+    }
+
+    private func measuredSubviewSize(
+        _ subview: LayoutSubview,
+        proposal: ProposedViewSize
+    ) -> CGSize {
+        let naturalSize = subview.sizeThatFits(.init(width: proposal.width, height: nil))
+        guard let maximumHeight, naturalSize.height > maximumHeight else {
+            return naturalSize
+        }
+        return subview.sizeThatFits(.init(width: proposal.width, height: maximumHeight))
     }
 }

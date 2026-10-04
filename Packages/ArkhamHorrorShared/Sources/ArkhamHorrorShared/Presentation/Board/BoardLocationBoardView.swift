@@ -1,6 +1,6 @@
 import SwiftUI
 
-private struct BoardLocationHeaderHeightPreferenceKey: PreferenceKey {
+struct BoardLocationHeaderHeightPreferenceKey: PreferenceKey {
     static let defaultValue: [LocationID: CGFloat] = [:]
 
     static func reduce(value: inout [LocationID: CGFloat], nextValue: () -> [LocationID: CGFloat]) {
@@ -102,7 +102,6 @@ struct BoardLocationBoardView: View {
                 BoardLocationHeaderClampLayout(maximumHeight: heightPlan.headerMaxHeight) {
                     locationHeader(location, id: id, hasEnemies: !enemies.isEmpty)
                 }
-                .clipped()
                 .background { headerHeightReader(for: location.id) }
                 if !enemies.isEmpty {
                     measuredLocationEnemyPanel(enemies, height: heightPlan.enemyPanelHeight)

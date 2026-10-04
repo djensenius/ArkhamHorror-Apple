@@ -9,223 +9,313 @@
     @Suite("Board location enemy tile snapshots")
     struct BoardLocationEnemyTileSnapshotTests {
         @MainActor
-        @Test("Writes visual snapshots for location tile zoom levels")
-        func writesVisualSnapshotsForLocationTileZoomLevels() throws {
-            let records = try [CGFloat(0.5), 1, 3].map { try writeVisualSnapshot(zoom: $0) }
+        @Test("Writes real board location snapshots for location tile zoom levels")
+        func writesRealBoardLocationSnapshotsForZoomLevels() throws {
+            let cases = [
+                BoardLocationSnapshotCase(label: "zoom-0_5", zoom: 0.5, enemyCount: 3),
+                BoardLocationSnapshotCase(label: "zoom-1", zoom: 1, enemyCount: 3),
+                BoardLocationSnapshotCase(label: "zoom-3", zoom: 3, enemyCount: 3),
+                BoardLocationSnapshotCase(label: "zoom-1-no-enemies", zoom: 1, enemyCount: 0),
+            ]
+            let records = try cases.map { try writeVisualSnapshot(testCase: $0) }
             let measurementsURL = URL(
                 fileURLWithPath: "/tmp/arkham-task-1.7-location-tile-measurements.txt"
             )
             try records
-                .map { record in
-                    [
-                        "zoom=\(record.zoom)",
-                        "path=\(record.path)",
-                        "tile=\(record.tileSize.width)x\(record.tileSize.height)",
-                        "header=\(record.headerHeight)",
-                        "enemyPanel=\(record.enemyPanelHeight)",
-                    ].joined(separator: " ")
-                }
+                .map(\.description)
                 .joined(separator: "\n")
                 .appending("\n")
                 .write(to: measurementsURL, atomically: true, encoding: .utf8)
             #expect(FileManager.default.fileExists(atPath: measurementsURL.path))
-            #expect(records.map(\.headerHeight) == [44, 66, 66])
+            #expect(records.map { round($0.measuredHeaderHeight) } == [44, 56, 56, 58])
+            #expect(records.allSatisfy { abs($0.headerMidX - $0.imageWidth / 2) <= 2 })
             #expect(records.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
         }
 
         @MainActor
-        private func writeVisualSnapshot(zoom: CGFloat) throws -> BoardLocationTileSnapshotRecord {
-            let metrics = BoardLocationEnemyTileMetrics.regular
-            let tileGeometry = BoardLocationTileGeometryPlan.plan(
-                zoomScale: zoom,
-                hasLinkedEnemyActions: false,
-                metrics: metrics
-            )
-            let uncappedPlan = BoardLocationEnemyTileHeightPlan.plan(
-                tileHeight: tileGeometry.tileSize.height,
-                measuredHeaderHeight: BoardLocationTileSnapshotView.naturalHeaderHeight,
-                hasEnemies: true,
-                hasLinkedEnemyActions: false,
-                metrics: metrics
-            )
-            let headerHeight = BoardLocationHeaderSizing.drawnHeight(
-                naturalHeight: BoardLocationTileSnapshotView.naturalHeaderHeight,
-                maximumHeight: uncappedPlan.headerMaxHeight
-            )
-            let heightPlan = BoardLocationEnemyTileHeightPlan.plan(
-                tileHeight: tileGeometry.tileSize.height,
-                measuredHeaderHeight: headerHeight,
-                hasEnemies: true,
-                hasLinkedEnemyActions: false,
-                metrics: metrics
-            )
-            let zoomLabel = zoom == 0.5 ? "0_5" : String(Int(zoom))
-            let path = "/tmp/arkham-task-1.7-location-tile-zoom-\(zoomLabel).png"
-            let renderer = ImageRenderer(content: BoardLocationTileSnapshotView(
-                zoomScale: zoom,
-                headerHeight: headerHeight,
-                enemyPanelHeight: heightPlan.enemyPanelHeight
-            ))
+        @Test("Header clamp layout centers a narrow header in a wider tile")
+        func headerClampLayoutCentersNarrowHeader() throws {
+            let renderer = ImageRenderer(content: BoardLocationHeaderClampProbeView())
             renderer.scale = 2
-            guard let image = renderer.nsImage,
-                  let tiffData = image.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: tiffData),
-                  let pngData = bitmap.representation(using: .png, properties: [:])
-            else { throw CocoaError(.fileWriteUnknown) }
-            try pngData.write(to: URL(fileURLWithPath: path), options: .atomic)
-            return BoardLocationTileSnapshotRecord(
-                zoom: zoom,
-                path: path,
-                tileSize: tileGeometry.tileSize,
-                headerHeight: headerHeight,
-                enemyPanelHeight: heightPlan.enemyPanelHeight
+            let bitmap = try bitmap(from: renderer)
+            let bounds = try colorBounds(
+                in: bitmap,
+                matching: { color in
+                    color.red > 200 && color.green < 80 && color.blue < 80
+                }
+            )
+            let minimumX = CGFloat(bounds.minimumX) / renderer.scale
+            let maximumX = CGFloat(bounds.maximumX + 1) / renderer.scale
+            #expect(minimumX >= 59 && minimumX <= 61)
+            #expect(maximumX >= 139 && maximumX <= 141)
+            #expect(BoardLocationHeaderSizing.reportedWidth(
+                naturalWidth: 80,
+                proposedWidth: 200
+            ) == 80)
+        }
+
+        @Test("Header sizing helper covers nil, below, equal, and above cap")
+        func headerSizingHelperCoversClampCases() {
+            #expect(BoardLocationHeaderSizing.drawnHeight(
+                naturalHeight: 66,
+                maximumHeight: nil
+            ) == 66)
+            #expect(BoardLocationHeaderSizing.drawnHeight(
+                naturalHeight: 44,
+                maximumHeight: 44
+            ) == 44)
+            #expect(BoardLocationHeaderSizing.drawnHeight(
+                naturalHeight: 40,
+                maximumHeight: 44
+            ) == 40)
+            #expect(BoardLocationHeaderSizing.drawnHeight(
+                naturalHeight: 86,
+                maximumHeight: 44
+            ) == 44)
+        }
+
+        @MainActor
+        private func writeVisualSnapshot(
+            testCase: BoardLocationSnapshotCase
+        ) throws -> BoardLocationSnapshotRecord {
+            let recorder = BoardLocationHeaderMeasurementRecorder()
+            let locationID = BoardTestFixtures.locationID("000000000700")
+            let content = BoardLocationBoardSnapshotView(
+                locationID: locationID,
+                zoomScale: testCase.zoom,
+                enemyCount: testCase.enemyCount,
+                recorder: recorder
+            )
+            .background(Color.black)
+            let renderer = ImageRenderer(content: content)
+            renderer.scale = 2
+            let bitmap = try bitmap(from: renderer)
+            guard let measuredHeaderHeight = recorder.heights[locationID] else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            let zoomPath = "/tmp/arkham-task-1.7-location-tile-\(testCase.label).png"
+            try pngData(from: bitmap).write(to: URL(fileURLWithPath: zoomPath), options: .atomic)
+            let headerBounds = try colorBounds(in: bitmap, matching: isHeaderBackground)
+            let scale = renderer.scale
+            return BoardLocationSnapshotRecord(
+                label: testCase.label,
+                zoom: testCase.zoom,
+                enemyCount: testCase.enemyCount,
+                path: zoomPath,
+                imageWidth: CGFloat(bitmap.pixelsWide) / scale,
+                imageHeight: CGFloat(bitmap.pixelsHigh) / scale,
+                measuredHeaderHeight: measuredHeaderHeight,
+                headerXRange: CGFloat(headerBounds.minimumX) / scale
+                    ..< CGFloat(headerBounds.maximumX + 1) / scale,
+                headerYRange: CGFloat(headerBounds.minimumY) / scale
+                    ..< CGFloat(headerBounds.maximumY + 1) / scale
             )
         }
     }
 
-    private struct BoardLocationTileSnapshotRecord: Equatable {
-        let zoom: CGFloat
-        let path: String
-        let tileSize: CGSize
-        let headerHeight: CGFloat
-        let enemyPanelHeight: CGFloat
+    @MainActor
+    private final class BoardLocationHeaderMeasurementRecorder {
+        var heights: [LocationID: CGFloat] = [:]
     }
 
-    private struct BoardLocationTileSnapshotView: View {
-        static let naturalHeaderHeight: CGFloat = 66
+    private struct BoardLocationSnapshotCase {
+        let label: String
+        let zoom: CGFloat
+        let enemyCount: Int
+    }
 
+    private struct BoardLocationSnapshotRecord {
+        let label: String
+        let zoom: CGFloat
+        let enemyCount: Int
+        let path: String
+        let imageWidth: CGFloat
+        let imageHeight: CGFloat
+        let measuredHeaderHeight: CGFloat
+        let headerXRange: Range<CGFloat>
+        let headerYRange: Range<CGFloat>
+
+        var headerMidX: CGFloat {
+            (headerXRange.lowerBound + headerXRange.upperBound) / 2
+        }
+
+        var description: String {
+            [
+                "label=\(label)",
+                "zoom=\(zoom)",
+                "enemies=\(enemyCount)",
+                "path=\(path)",
+                "image=\(imageWidth)x\(imageHeight)",
+                "header=\(measuredHeaderHeight)",
+                "headerX=\(headerXRange.lowerBound)..<\(headerXRange.upperBound)",
+                "headerY=\(headerYRange.lowerBound)..<\(headerYRange.upperBound)",
+            ].joined(separator: " ")
+        }
+    }
+
+    private struct BoardLocationBoardSnapshotView: View {
+        let locationID: LocationID
         let zoomScale: CGFloat
-        let headerHeight: CGFloat
-        let enemyPanelHeight: CGFloat
+        let enemyCount: Int
+        let recorder: BoardLocationHeaderMeasurementRecorder
         @FocusState private var focusedID: SemanticFocusID?
 
-        private var metrics: BoardLocationEnemyTileMetrics {
-            .regular
-        }
-
-        private var tileSize: CGSize {
-            BoardLocationTileGeometryPlan.plan(
-                zoomScale: zoomScale,
-                hasLinkedEnemyActions: false,
-                metrics: metrics
-            ).tileSize
+        private var location: BoardLocationNode {
+            BoardLocationNode(
+                id: locationID,
+                cardCode: BoardTestFixtures.cardCode("c01111"),
+                displayLabel: "Study",
+                revealed: true,
+                symbol: .circle,
+                shroudSummary: "2",
+                investigateSkill: .intellect,
+                clueCount: 2,
+                doomCount: 0,
+                otherTokenCounts: [],
+                investigatorIDs: [],
+                enemyCount: enemyCount,
+                assetCount: 0,
+                eventCount: 0,
+                treacheryCount: 0,
+                concealedCount: 0,
+                connectedLocationIDs: [],
+                placementSummary: nil
+            )
         }
 
         private var enemies: [BoardEnemyNode] {
-            [
-                enemy("000000000701", name: "Ghoul Minion"),
-                enemy("000000000702", name: "Ravenous Ghoul"),
-                enemy("000000000703", name: "Swarm of Rats"),
-            ]
+            (0 ..< enemyCount).map { index in
+                BoardEnemyNode(
+                    id: BoardTestFixtures.enemyID("00000000070\(index + 1)"),
+                    cardCode: nil,
+                    displayName: ["Ghoul Minion", "Ravenous Ghoul", "Swarm of Rats"][index],
+                    fight: nil,
+                    health: nil,
+                    evade: nil,
+                    damage: nil,
+                    horror: nil,
+                    attackDamage: nil,
+                    attackHorror: nil,
+                    exhausted: false,
+                    engagedInvestigatorID: nil,
+                    locationID: locationID,
+                    tokenCounts: []
+                )
+            }
+        }
+
+        private var layout: BoardLayout {
+            BoardLayout(
+                positions: [locationID: BoardGridPosition(column: 0, row: 0)],
+                neighbors: [:],
+                connections: [],
+                columnCount: 1,
+                rowCount: 1
+            )
         }
 
         var body: some View {
-            VStack(spacing: metrics.verticalSpacing) {
-                BoardLocationHeaderClampLayout(maximumHeight: headerHeight) {
-                    locationHeader
-                }
-                .clipped()
-                enemyPanel
-            }
-            .frame(width: tileSize.width, height: tileSize.height, alignment: .top)
-            .padding(12)
-            .background(Color.black.opacity(0.88))
-        }
-
-        private var locationHeader: some View {
-            BoardEntityTile(
-                id: BoardFocusID.location(BoardTestFixtures.locationID("000000000700")),
-                accessibilityLabel: "Study, 2 clues, 3 enemies",
-                isFocused: false,
+            BoardLocationBoardView(
+                locations: [location],
+                enemiesByLocationID: [locationID: enemies],
+                choiceLinks: [:],
+                layout: layout,
+                zoomScale: zoomScale,
+                focusedID: focusedID,
                 focusBinding: $focusedID,
                 onOutcome: { _, _ in },
-                content: {
-                    ViewThatFits(in: .vertical) {
-                        VStack(spacing: 2) {
-                            locationTitle
-                            HStack(spacing: 4) {
-                                BoardStatBadge(systemImage: "sparkles", value: "2")
-                                BoardStatBadge(systemImage: "figure.walk", value: "3")
-                            }
-                        }
-                        locationTitle
-                    }
-                }
+                onLinkedChoice: { _ in }
             )
-        }
-
-        private var locationTitle: some View {
-            Text("Study")
-                .font(.subheadline.bold())
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .truncationMode(.tail)
-                .foregroundStyle(ArkhamTheme.bone)
-        }
-
-        @ViewBuilder private var enemyPanel: some View {
-            let decision = BoardLocationEnemyTileLayout.decision(
-                enemyCount: enemies.count,
-                availableWidth: tileSize.width,
-                availableHeight: enemyPanelHeight,
-                metrics: metrics
-            )
-            switch decision {
-            case .hidden:
-                EmptyView()
-            case .compactIndicator:
-                BoardEnemyOverflowMenu(
-                    label: "\(enemies.count)",
-                    labelStyle: .compactBadge,
-                    enemies: enemies,
-                    choiceLinks: [:],
-                    onLinkedChoice: { _ in }
-                )
-            case .summaryButton:
-                BoardEnemyOverflowMenu(
-                    label: "\(enemies.count) enemies",
-                    enemies: enemies,
-                    choiceLinks: [:],
-                    onLinkedChoice: { _ in }
-                )
-            case let .chips(visibleCount, hasMore):
-                HStack(spacing: metrics.horizontalSpacing) {
-                    ForEach(Array(enemies.prefix(visibleCount))) { enemy in
-                        BoardEnemyTileChipView(
-                            enemy: enemy,
-                            linkedChoices: [],
-                            onLinkedChoice: { _ in }
-                        )
-                    }
-                    if hasMore {
-                        BoardEnemyOverflowMenu(
-                            label: "+\(enemies.count - visibleCount) more",
-                            enemies: enemies,
-                            choiceLinks: [:],
-                            onLinkedChoice: { _ in }
-                        )
-                    }
-                }
+            .onPreferenceChange(BoardLocationHeaderHeightPreferenceKey.self) { heights in
+                recorder.heights = heights
             }
         }
+    }
 
-        private func enemy(_ suffix: String, name: String) -> BoardEnemyNode {
-            BoardEnemyNode(
-                id: BoardTestFixtures.enemyID(suffix),
-                cardCode: nil,
-                displayName: name,
-                fight: nil,
-                health: nil,
-                evade: nil,
-                damage: nil,
-                horror: nil,
-                attackDamage: nil,
-                attackHorror: nil,
-                exhausted: false,
-                engagedInvestigatorID: nil,
-                locationID: BoardTestFixtures.locationID("000000000700"),
-                tokenCounts: []
-            )
+    private struct BoardLocationHeaderClampProbeView: View {
+        var body: some View {
+            VStack {
+                BoardLocationHeaderClampLayout(maximumHeight: nil) {
+                    Color.red.frame(width: 80, height: 44)
+                }
+            }
+            .frame(width: 200, height: 60)
+            .background(Color.black)
         }
+    }
+
+    private struct PixelColor {
+        let red: Int
+        let green: Int
+        let blue: Int
+        let alpha: Int
+    }
+
+    private struct PixelBounds {
+        let minimumX: Int
+        let maximumX: Int
+        let minimumY: Int
+        let maximumY: Int
+    }
+
+    @MainActor
+    private func bitmap(from renderer: ImageRenderer<some View>) throws -> NSBitmapImageRep {
+        guard let image = renderer.nsImage,
+              let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData)
+        else { throw CocoaError(.fileWriteUnknown) }
+        return bitmap
+    }
+
+    private func pngData(from bitmap: NSBitmapImageRep) throws -> Data {
+        guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return pngData
+    }
+
+    private func colorBounds(
+        in bitmap: NSBitmapImageRep,
+        matching predicate: (PixelColor) -> Bool
+    ) throws -> PixelBounds {
+        var minimumX = bitmap.pixelsWide
+        var maximumX = 0
+        var minimumY = bitmap.pixelsHigh
+        var maximumY = 0
+        for row in 0 ..< bitmap.pixelsHigh {
+            for column in 0 ..< bitmap.pixelsWide {
+                let color = pixelColor(in: bitmap, column: column, row: row)
+                guard predicate(color) else { continue }
+                minimumX = min(minimumX, column)
+                maximumX = max(maximumX, column)
+                minimumY = min(minimumY, row)
+                maximumY = max(maximumY, row)
+            }
+        }
+        guard minimumX <= maximumX, minimumY <= maximumY else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return PixelBounds(
+            minimumX: minimumX,
+            maximumX: maximumX,
+            minimumY: minimumY,
+            maximumY: maximumY
+        )
+    }
+
+    private func pixelColor(in bitmap: NSBitmapImageRep, column: Int, row: Int) -> PixelColor {
+        let color = bitmap.colorAt(x: column, y: row) ?? .clear
+        return PixelColor(
+            red: Int((color.redComponent * 255).rounded()),
+            green: Int((color.greenComponent * 255).rounded()),
+            blue: Int((color.blueComponent * 255).rounded()),
+            alpha: Int((color.alphaComponent * 255).rounded())
+        )
+    }
+
+    private func isHeaderBackground(_ color: PixelColor) -> Bool {
+        let spread = max(color.red, color.green, color.blue)
+            - min(color.red, color.green, color.blue)
+        return color.alpha > 200 && spread <= 8 && color.red >= 80 && color.red <= 190
     }
 #endif
