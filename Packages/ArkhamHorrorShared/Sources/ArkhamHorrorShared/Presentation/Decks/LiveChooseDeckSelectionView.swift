@@ -37,14 +37,24 @@ struct LiveChooseDeckSelectionView: View {
                     .font(.headline)
                     .foregroundStyle(ArkhamTheme.bone)
                 content
-                if let sendFailure {
-                    ArkhamFailureText(message: sendFailure)
+                if let failureMessage {
+                    ArkhamFailureText(message: failureMessage)
                 }
             }
         }
         .task {
             await viewModel.load()
         }
+    }
+
+    private var failureMessage: String? {
+        model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) ?? sendFailure
+    }
+
+    private var isAwaitingServerAnswer: Bool {
+        hasSentAnswer && model.liveChooseDeckRejectionReason(
+            for: gameID, promptKey: promptKey
+        ) == nil
     }
 
     @ViewBuilder
@@ -106,7 +116,7 @@ struct LiveChooseDeckSelectionView: View {
                 }
             }
         }
-        .disabled(hasSentAnswer || isSubmitting || state != .valid)
+        .disabled(isAwaitingServerAnswer || isSubmitting || state != .valid)
     }
 
     @ViewBuilder

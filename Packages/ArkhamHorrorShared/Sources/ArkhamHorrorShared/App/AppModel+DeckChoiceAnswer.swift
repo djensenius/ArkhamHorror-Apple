@@ -38,6 +38,17 @@ extension AppModel {
         return .canAnswer(promptKey: prompt.identity.promptKey)
     }
 
+    func liveChooseDeckRejectionReason(
+        for gameID: GameID, promptKey: BasicChoicePromptKey
+    ) -> String? {
+        guard basicChoiceServerFeedbackSources[gameID] == .answerRejected,
+              let prompt = basicChoicePresentation(for: gameID),
+              prompt.identity.promptKey == promptKey,
+              LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion)
+        else { return nil }
+        return basicChoiceServerFeedback[gameID]
+    }
+
     /// Answers the live, in-game `ChooseDeck` prompt using the same WebSocket answer
     /// family as the web client. This is intentionally separate from the pre-game
     /// REST `PUT /games/{id}/decks` upgrade/replace route.
@@ -46,6 +57,11 @@ extension AppModel {
               let prompt = basicChoicePresentation(for: gameID),
               let connection = liveGameConnections[gameID]
         else { return false }
+        guard let actionAttemptID = prepareLiveChooseDeckSend(
+            prompt: prompt.identity,
+            deckID: deck.id,
+            connection: connection
+        ) else { return false }
 
         do {
             try Task.checkCancellation()
@@ -54,9 +70,68 @@ extension AppModel {
                 playerId: prompt.ownerID
             ))
             try await connection.connection.send(bytes)
-            return true
+            try Task.checkCancellation()
         } catch {
+            clearLiveChooseDeckAction(
+                gameID: gameID,
+                actionAttemptID: actionAttemptID,
+                connectionID: connection.connectionID
+            )
             return false
         }
+
+        if consumeBasicChoiceRejectedAttempt(
+            gameID: gameID,
+            actionAttemptID: actionAttemptID
+        ) {
+            return true
+        }
+        guard liveGameConnections[gameID]?.connectionID == connection.connectionID,
+              basicChoiceActions[gameID]?.identity == prompt.identity,
+              basicChoiceActions[gameID]?.submission == .deck(deck.id),
+              basicChoiceActions[gameID]?.phase == .sending
+        else { return false }
+        basicChoiceActions[gameID]?.phase = .awaitingSnapshot
+        return true
+    }
+
+    private func prepareLiveChooseDeckSend(
+        prompt: BasicChoicePromptIdentity,
+        deckID: DeckID,
+        connection: LiveGameConnectionHandle
+    ) -> UUID? {
+        if let action = basicChoiceActions[prompt.gameID] {
+            guard action.identity.promptKey == prompt.promptKey else {
+                basicChoiceActions[prompt.gameID] = nil
+                return prepareLiveChooseDeckSend(
+                    prompt: prompt,
+                    deckID: deckID,
+                    connection: connection
+                )
+            }
+            return nil
+        }
+        clearBasicChoiceServerFeedback(gameID: prompt.gameID)
+        let actionAttemptID = UUID()
+        basicChoiceActions[prompt.gameID] = BasicChoiceActionRecord(
+            identity: prompt,
+            submission: .deck(deckID),
+            attemptID: actionAttemptID,
+            connectionID: connection.connectionID,
+            phase: .sending
+        )
+        return actionAttemptID
+    }
+
+    private func clearLiveChooseDeckAction(
+        gameID: GameID,
+        actionAttemptID: UUID,
+        connectionID: UUID
+    ) {
+        guard basicChoiceActions[gameID]?.attemptID == actionAttemptID,
+              basicChoiceActions[gameID]?.connectionID == connectionID,
+              basicChoiceActions[gameID]?.phase == .sending
+        else { return }
+        basicChoiceActions[gameID] = nil
     }
 }

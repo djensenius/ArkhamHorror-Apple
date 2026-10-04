@@ -340,7 +340,7 @@ extension AppModel {
         return .sentAwaitingSnapshot
     }
 
-    private func consumeBasicChoiceRejectedAttempt(
+    func consumeBasicChoiceRejectedAttempt(
         gameID: GameID,
         actionAttemptID: UUID
     ) -> Bool {
@@ -392,6 +392,11 @@ extension AppModel {
             ))
         case let .continueCampaign(step):
             return try ContractJSON.encode(CampaignStepAnswer(contents: step))
+        case let .deck(deckID):
+            return try ContractJSON.encode(DeckAnswer(
+                deckId: deckID,
+                playerId: identity.ownerID
+            ))
         }
     }
 
@@ -593,12 +598,14 @@ private extension BasicChoiceSubmission {
         switch self {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign:
             true
+        case .deck:
+            false
         }
     }
 
     var acceptsUnversionedRejection: Bool {
         switch self {
-        case .exchangeAmount, .continueCampaign:
+        case .exchangeAmount, .continueCampaign, .deck:
             true
         case .singleChoice, .amounts, .paymentAmounts:
             false
@@ -631,6 +638,8 @@ private extension BasicChoicePromptPresentation {
             return exchangePrompt(in: projection) != nil
         case let .continueCampaign(step):
             return supportsContinueCampaignSubmission(step, in: projection)
+        case .deck:
+            return true
         }
     }
 
