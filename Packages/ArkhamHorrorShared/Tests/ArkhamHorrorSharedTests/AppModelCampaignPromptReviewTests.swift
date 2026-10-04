@@ -309,7 +309,8 @@ extension AppModelCampaignPromptTests {
         #expect(rejected.actionPhase == nil)
         #expect(rejected.canSubmit)
         #expect(rejected.serverFeedback == "campaign step rejected")
-        #expect(await connection.sentData == [campaignAnswerBytes(step: continuation.nextStep)])
+        let expectedAnswer = try campaignAnswerBytes(step: continuation.nextStep)
+        #expect(await connection.sentData == [expectedAnswer])
     }
 
     @Test("ContinueCampaign presentation exposes server rejection feedback")
