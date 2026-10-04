@@ -199,7 +199,11 @@ extension AppModel {
             gameLobbyViewerHasSeats[id] = envelope.playerID != nil
             gameLobbyViewerSeatFailures[id] = nil
         } catch is CancellationError {
-            return
+            guard isCurrentLobbyDetailTask(for: id, session: session, taskID: taskID) else {
+                return
+            }
+            gameLobbyViewerHasSeats[id] = nil
+            gameLobbyViewerSeatFailures[id] = .transportFailure("Lobby membership unavailable")
         } catch GameLifecycleError.unexpectedStatus(404) {
             guard isCurrentLobbyDetailTask(for: id, session: session, taskID: taskID) else {
                 return
