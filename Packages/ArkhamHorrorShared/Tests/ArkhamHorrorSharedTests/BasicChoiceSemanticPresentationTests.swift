@@ -289,6 +289,7 @@ extension BasicChoiceSemanticPresentationTests {
         payload: BasicChoiceQuestionPayload,
         presentation: BoundQuestionPresentation,
         semanticLocaleIdentifier: String? = "en",
+        cardCatalog: CardCatalogSnapshot? = nil,
         choiceLabelResolutions: [Int: BasicChoiceLabelResolution]? = nil
     ) -> BasicChoicePromptPresentation {
         BasicChoicePromptPresentation(
@@ -300,6 +301,7 @@ extension BasicChoiceSemanticPresentationTests {
             question: payload.state,
             semanticPresentation: presentation,
             semanticLocaleIdentifier: semanticLocaleIdentifier,
+            cardCatalog: cardCatalog,
             choiceLabelResolutions: choiceLabelResolutions,
             readOnlyReason: nil,
             actionPhase: nil,

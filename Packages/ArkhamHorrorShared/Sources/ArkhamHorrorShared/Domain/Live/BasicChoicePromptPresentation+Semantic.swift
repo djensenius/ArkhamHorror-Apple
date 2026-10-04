@@ -773,7 +773,7 @@ extension BasicChoicePromptPresentation {
                     value: "Move"
                 )
         case .resolveForcedAbility:
-            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
+            semanticForcedAbilitySourceTitle(for: descriptor, in: projection)
                 .map {
                     semanticLocalized(
                         "semantic.choice.title.resolveForcedAbility",
@@ -1006,6 +1006,21 @@ extension BasicChoicePromptPresentation {
             value: "Use \(card) ability \(ability.index)",
             arguments: [card, Int64(ability.index)]
         )
+    }
+
+    private func semanticForcedAbilitySourceTitle(
+        for descriptor: QuestionPresentation.Choice,
+        in projection: BoardProjection
+    ) -> String? {
+        if let title = descriptor.entity.flatMap({ semanticEntityTitle($0, in: projection) }) {
+            return title
+        }
+        // Display-only fallback: for treachery forced abilities the server-published
+        // ability card code names the treachery even when that entity is not on the board.
+        guard descriptor.entity?.kind == .treachery,
+              let cardCode = descriptor.ability?.cardCode
+        else { return nil }
+        return semanticCardName(cardCode, in: projection)
     }
 
     private func semanticAbilitySubtitle(_ ability: QuestionPresentation.Ability) -> String {
