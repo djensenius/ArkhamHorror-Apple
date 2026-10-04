@@ -54,6 +54,12 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         (threshold: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
 
+    private var isOpenSeatsGated = false
+    private var openSeatsContinuations: [CheckedContinuation<OpenSeats, any Error>] = []
+    private var openSeatsPendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
     private var isDeleteGameGated = false
     private var deleteGameContinuations: [GameLifecycleVoidContinuation] = []
     private var deleteGamePendingWaiters: [
@@ -130,6 +136,10 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         isJoinGameGated = gated
     }
 
+    func setOpenSeatsGated(_ gated: Bool) {
+        isOpenSeatsGated = gated
+    }
+
     func setDeleteGameGated(_ gated: Bool) {
         isDeleteGameGated = gated
     }
@@ -192,6 +202,20 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     func resumeOldestJoinGame(with result: Result<GameLifecycleEnvelope, any Error>) {
         guard !joinGameContinuations.isEmpty else { return }
         resume(joinGameContinuations.removeFirst(), with: result)
+    }
+
+    /// Suspends until at least `count` `openSeats` calls are simultaneously pending.
+    func waitUntilOpenSeatsPending(_ count: Int) async {
+        if openSeatsContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { openSeatsPendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `openSeats` call.
+    func resumeOldestOpenSeats(with result: Result<OpenSeats, any Error>) {
+        guard !openSeatsContinuations.isEmpty else { return }
+        resume(openSeatsContinuations.removeFirst(), with: result)
     }
 
     /// Suspends until at least `count` `deleteGame` calls are simultaneously pending.
@@ -305,6 +329,14 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private func notifyJoinGameWaiters() {
         joinGamePendingWaiters.removeAll { entry in
             guard joinGameContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func notifyOpenSeatsWaiters() {
+        openSeatsPendingWaiters.removeAll { entry in
+            guard openSeatsContinuations.count >= entry.threshold else { return false }
             entry.continuation.resume()
             return true
         }
@@ -465,6 +497,12 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         lastToken = token
         lastProfileID = profile.id
         lastOpenSeatsGameID = id
+        if isOpenSeatsGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                openSeatsContinuations.append(continuation)
+                notifyOpenSeatsWaiters()
+            }
+        }
         return try consume(&openSeatsQueue)
     }
 
