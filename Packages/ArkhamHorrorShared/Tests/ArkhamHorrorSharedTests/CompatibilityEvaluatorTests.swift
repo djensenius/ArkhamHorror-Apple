@@ -77,17 +77,17 @@ struct CompatibilityEvaluatorTests {
         }
     }
 
-    @Test("Server schema 0.1.48 is accepted when its client floor remains <=0.1.48")
+    @Test("Server schema 0.1.49 is accepted when its client floor remains <=0.1.48")
     func higherServerSchemaAccepted() {
-        // server 0.1.48 == client minimum 0.1.48: passes serverTooOld check
+        // server 0.1.49 > client minimum 0.1.48: passes serverTooOld check
         // server floor 0.1.48 <= client supports 0.1.48: passes clientTooOld check
         let caps = compatibleServer(
-            schemaRevision: .literal(major: 0, minor: 1, patch: 48),
+            schemaRevision: .literal(major: 0, minor: 1, patch: 49),
             nativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 48)
         )
         let outcome = evaluator.evaluate(caps)
         if case .compatible = outcome {} else {
-            Issue.record("Expected .compatible for server 0.1.48 with floor 0.1.48, got \(outcome)")
+            Issue.record("Expected .compatible for server 0.1.49 with floor 0.1.48, got \(outcome)")
         }
     }
 
