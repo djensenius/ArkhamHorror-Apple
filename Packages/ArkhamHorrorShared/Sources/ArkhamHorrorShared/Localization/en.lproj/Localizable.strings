@@ -61,6 +61,14 @@
 "board.enemyActions.title" = "Enemy actions";
 "board.enemyActions.accessibility" = "Enemy prompt actions at %@";
 "board.enemyActions.duplicateSuffix" = "%1$@ (enemy %2$lld)";
+"board.role.active" = "Active";
+"board.role.turn" = "Turn";
+"board.role.lead" = "Lead";
+"board.role.prompt" = "Prompt";
+"board.accessibility.investigator.active" = "Active investigator";
+"board.accessibility.investigator.turn" = "Turn investigator";
+"board.accessibility.investigator.lead" = "Lead investigator";
+"board.accessibility.investigator.pendingPrompt" = "Pending prompt";
 "board.multiplayer.status.title" = "Multiplayer status";
 "board.multiplayer.status.active" = "Acting: %@";
 "board.multiplayer.status.turn" = "Turn: %@";
@@ -70,7 +78,7 @@
 "board.multiplayer.status.pending.many" = "Pending prompts: %@";
 "board.multiplayer.status.local.ready" = "Your prompt is ready.";
 "board.multiplayer.status.waiting.players" = "Waiting for %@.";
-"board.multiplayer.status.waiting.spectator" = "Spectating. Waiting for %@.";
+"board.multiplayer.status.waiting.identityUnknown" = "Waiting for %@.";
 "board.multiplayer.status.investigator.unknown" = "Unknown investigator";
 "board.multiplayer.status.turn.none" = "No turn investigator";
 "board.multiplayer.list.two" = "%1$@ and %2$@";

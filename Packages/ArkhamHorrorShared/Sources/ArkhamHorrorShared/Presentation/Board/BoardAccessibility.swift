@@ -160,16 +160,28 @@ enum BoardAccessibility {
         )
         parts.append("\(actionsPhrase) remaining")
         if investigator.isActiveInvestigator {
-            parts.append("Active investigator")
+            parts.append(BoardLocalization.localized(
+                "board.accessibility.investigator.active",
+                "Active investigator"
+            ))
         }
-        if investigator.isTurnPlayer {
-            parts.append("Turn investigator")
+        if investigator.isMultiplayer, investigator.isTurnPlayer {
+            parts.append(BoardLocalization.localized(
+                "board.accessibility.investigator.turn",
+                "Turn investigator"
+            ))
         }
         if investigator.isLeadInvestigator {
-            parts.append("Lead investigator")
+            parts.append(BoardLocalization.localized(
+                "board.accessibility.investigator.lead",
+                "Lead investigator"
+            ))
         }
-        if investigator.hasPendingPrompt {
-            parts.append("Pending prompt")
+        if investigator.isMultiplayer, investigator.hasPendingPrompt {
+            parts.append(BoardLocalization.localized(
+                "board.accessibility.investigator.pendingPrompt",
+                "Pending prompt"
+            ))
         }
         if investigator.defeated {
             parts.append("Defeated")

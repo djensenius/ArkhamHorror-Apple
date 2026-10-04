@@ -7,7 +7,7 @@ import SwiftUI
 /// per-player question map projected as `hasPendingPrompt`. It never infers whose turn is
 /// next and never inspects another player's prompt payload.
 struct BoardMultiplayerStatus: Sendable, Equatable {
-    let playerCount: Int
+    let playerOrderCount: Int
     let activeInvestigatorName: String?
     let turnInvestigatorName: String?
     let leadInvestigatorName: String?
@@ -16,7 +16,7 @@ struct BoardMultiplayerStatus: Sendable, Equatable {
     let localHasPendingPrompt: Bool
 
     init(projection: BoardProjection, localPlayerID: PlayerID?) {
-        playerCount = projection.counters.playerCount
+        playerOrderCount = projection.playerOrderCount
         activeInvestigatorName = projection.investigators
             .first(where: \.isActiveInvestigator)?.displayName
         turnInvestigatorName = projection.investigators
@@ -30,8 +30,12 @@ struct BoardMultiplayerStatus: Sendable, Equatable {
         localHasPendingPrompt = localPlayerID.map { projection.questions[$0] != nil } ?? false
     }
 
+    var isMultiplayer: Bool {
+        playerOrderCount > 1
+    }
+
     var shouldShowPromptSurface: Bool {
-        playerCount > 1 || !pendingPromptNames.isEmpty
+        isMultiplayer
     }
 
     var title: String {
@@ -89,6 +93,7 @@ struct BoardMultiplayerStatus: Sendable, Equatable {
     }
 
     var localPromptText: String? {
+        guard isMultiplayer else { return nil }
         if localHasPendingPrompt {
             return BoardLocalization.localized(
                 "board.multiplayer.status.local.ready",
@@ -99,8 +104,8 @@ struct BoardMultiplayerStatus: Sendable, Equatable {
         let names = localizedList(pendingPromptNames)
         if localPlayerID == nil {
             return BoardLocalization.format(
-                "board.multiplayer.status.waiting.spectator",
-                "Spectating. Waiting for %@.",
+                "board.multiplayer.status.waiting.identityUnknown",
+                "Waiting for %@.",
                 names
             )
         }
@@ -179,13 +184,15 @@ struct BoardMultiplayerPromptStatusView: View {
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(status.localHasPendingPrompt ? ArkhamTheme.accent : .secondary)
                 .accessibilityIdentifier("liveGame.prompt.multiplayerStatus.waiting")
+                .accessibilityAddTraits(.updatesFrequently)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(status.accessibilityLabel)
+        .accessibilityAddTraits(.updatesFrequently)
         .accessibilityIdentifier("liveGame.prompt.multiplayerStatus")
     }
 }

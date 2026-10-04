@@ -142,6 +142,8 @@ struct BoardInvestigatorNode: Sendable, Equatable, Identifiable {
     let isActiveInvestigator: Bool
     let isTurnPlayer: Bool
     let isLeadInvestigator: Bool
+    /// True only when the server's `playerOrder` names more than one investigator.
+    let isMultiplayer: Bool
     /// True when the server's per-player `question` map contains this investigator's
     /// player. Does not inspect or expose the prompt payload.
     let hasPendingPrompt: Bool
@@ -351,6 +353,8 @@ struct BoardProjection: Sendable, Equatable {
     /// Ordered by `PublicGame.playerOrder`, then any remaining investigators (not named in
     /// `playerOrder`) by raw card-code text.
     let investigators: [BoardInvestigatorNode]
+    /// Exact `PublicGame.playerOrder.count`, used for multiplayer-only presentation gates.
+    let playerOrderCount: Int
     /// Opaque enemy values remain out of scope; their canonical IDs are sorted by raw UUID
     /// text so identity-based prompt actionability is deterministic.
     let enemyIDs: [EnemyID]

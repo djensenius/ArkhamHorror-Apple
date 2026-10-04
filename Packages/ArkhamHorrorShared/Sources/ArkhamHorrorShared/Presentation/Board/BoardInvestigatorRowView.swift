@@ -198,16 +198,16 @@ struct BoardInvestigatorRowView: View {
     private func roleLabels(for investigator: BoardInvestigatorNode) -> [String] {
         var labels: [String] = []
         if investigator.isActiveInvestigator {
-            labels.append("Active")
+            labels.append(BoardLocalization.localized("board.role.active", "Active"))
         }
-        if investigator.isTurnPlayer {
-            labels.append("Turn")
+        if investigator.isMultiplayer, investigator.isTurnPlayer {
+            labels.append(BoardLocalization.localized("board.role.turn", "Turn"))
         }
-        if investigator.isLeadInvestigator {
-            labels.append("Lead")
+        if investigator.isMultiplayer, investigator.isLeadInvestigator {
+            labels.append(BoardLocalization.localized("board.role.lead", "Lead"))
         }
-        if investigator.hasPendingPrompt {
-            labels.append("Prompt")
+        if investigator.isMultiplayer, investigator.hasPendingPrompt {
+            labels.append(BoardLocalization.localized("board.role.prompt", "Prompt"))
         }
         return labels
     }

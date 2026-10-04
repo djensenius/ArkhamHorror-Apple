@@ -5,6 +5,7 @@ private struct BoardInvestigatorServerStatus {
     let activeInvestigatorID: InvestigatorID
     let turnPlayerInvestigatorID: InvestigatorID?
     let leadInvestigatorID: InvestigatorID
+    let isMultiplayer: Bool
     let pendingPromptPlayerIDs: Set<PlayerID>
 }
 
@@ -185,6 +186,7 @@ extension BoardProjectionBuilder {
             activeInvestigatorID: snapshot.activeInvestigatorID,
             turnPlayerInvestigatorID: snapshot.turnPlayerInvestigatorID,
             leadInvestigatorID: snapshot.leadInvestigatorID,
+            isMultiplayer: snapshot.playerOrder.count > 1,
             pendingPromptPlayerIDs: Set(snapshot.question.keys)
         )
         return orderedIDs.compactMap { id in
@@ -274,6 +276,7 @@ extension BoardProjectionBuilder {
             isActiveInvestigator: investigator.id == serverStatus.activeInvestigatorID,
             isTurnPlayer: investigator.id == serverStatus.turnPlayerInvestigatorID,
             isLeadInvestigator: investigator.id == serverStatus.leadInvestigatorID,
+            isMultiplayer: serverStatus.isMultiplayer,
             hasPendingPrompt: serverStatus.pendingPromptPlayerIDs.contains(investigator.playerID),
             engagedEnemyCount: investigator.engagedEnemies.count,
             assetCount: investigator.assets.count,
