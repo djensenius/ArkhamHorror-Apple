@@ -37,6 +37,41 @@ extension AppModelLiveGameTests {
         }
     }
 
+    @Test("AnswerRejected frees a single-choice prompt only when the version matches")
+    func answerRejectedFreesMatchingSingleChoicePrompt() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try rolandReactionEnvelope(loadGetGame())
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let presentation = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(
+            await model.submitBasicChoice(presentation.identity, choiceIndex: 0)
+                == .sentAwaitingSnapshot
+        )
+
+        await connection.enqueue(.event(.message(Data(
+            #"{"tag":"AnswerRejected","reason":"stale duplicate","questionVersion":99}"#.utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        let afterStaleRejection = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(afterStaleRejection.actionPhase == .awaitingSnapshot)
+        #expect(afterStaleRejection.serverFeedback == nil)
+
+        await connection.enqueue(.event(.message(Data(
+            #"{"tag":"AnswerRejected","reason":"Wrong choice id","questionVersion":32}"#.utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        let afterMatchingRejection = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(afterMatchingRejection.actionPhase == nil)
+        #expect(afterMatchingRejection.canSubmit)
+        #expect(afterMatchingRejection.serverFeedback == "Wrong choice id")
+    }
+
     @Test("An older Roland reaction cannot submit after a newer snapshot")
     func staleRolandReactionFailsClosed() async throws {
         let (model, fakes) = makeSignedInModel()

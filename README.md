@@ -106,12 +106,15 @@ hashes remain unchanged at Q33, and exercises that same strict prompt path.
 
 ### Backend replay authority
 
-As of Tuesday, September 29, 2026, this repository is pinned to backend
-contract commit `f3a0acbe2c6952c5fbb3f3374a3ef85f94f250e1` from
-`djensenius/ArkhamHorror#99`, at contract revision `0.1.47`. That revision
-carries the upstream sync plus the 0.1.47 presentation-v2 tooling update, keeps the
-locale catalog at revision `1.8a1ee0327f7b38b73adeade57b3326d8`, and publishes
-the exact negative-regression set vendored with the pinned contract. The authenticated Attic replay submits
+As of Saturday, October 3, 2026, this repository is pinned to backend
+contract commit `f454ccb9fb789739c666a9cbd74d3fdc14a81fb9` from
+`djensenius/ArkhamHorror#130`, at contract revision `0.1.48`. That revision
+carries the participant-socket `AnswerRejected` envelope on top of the 0.1.47
+presentation-v2 tooling update, keeps the locale catalog at revision
+`1.8a1ee0327f7b38b73adeade57b3326d8`, and publishes the exact
+negative-regression set vendored with the pinned contract. Deploy the backend at
+this revision before this client, because the client requires 0.1.48 answer
+rejection feedback to release rejected amount/payment/exchange submissions. The authenticated Attic replay submits
 Q34-Q70 by semantic role and validates the terminal `Over` state.
 
 Fight, Evade, Engage, the round transition, Roland's clue discovery, Cover
@@ -148,7 +151,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.47",
+       "contractSchemaRevision": "0.1.48",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -209,7 +212,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend revision above:
 
 1. Confirm `ContractPin.current` is
-   `f3a0acbe2c6952c5fbb3f3374a3ef85f94f250e1` / `0.1.47`, then build the
+   `f454ccb9fb789739c666a9cbd74d3fdc14a81fb9` / `0.1.48`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can

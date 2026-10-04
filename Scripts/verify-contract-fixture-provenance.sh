@@ -87,6 +87,7 @@ echo "Verifying vendored contract fixtures against backend commit $backend_commi
 fixture_paths="
 act-no-advance-cost.json:contracts/fixtures/act-no-advance-cost.json
 answer-amounts.json:contracts/fixtures/answer-amounts.json
+answer-rejected.json:contracts/fixtures/answer-rejected.json
 answer-enemy-attack-assign-damage.json:contracts/fixtures/answer-enemy-attack-assign-damage.json
 answer-enemy-attack-assign-horror.json:contracts/fixtures/answer-enemy-attack-assign-horror.json
 answer-enemy-attack-assign-remaining-damage.json:contracts/fixtures/answer-enemy-attack-assign-remaining-damage.json
