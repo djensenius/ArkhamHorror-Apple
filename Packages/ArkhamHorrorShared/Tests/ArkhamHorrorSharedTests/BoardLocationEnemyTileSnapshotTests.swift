@@ -38,6 +38,9 @@
             let minimumZoomRecord = try #require(records.first { $0.label == "zoom-0_5" })
             #expect(minimumZoomRecord.measuredHeaderHeight <= 45)
             #expect(minimumZoomRecord.headerDrawnHeight <= 45)
+            #expect(records.filter { $0.label != "zoom-0_5" }.allSatisfy {
+                $0.measuredHeaderHeight > BoardLocationHeaderSizing.minimumInteractiveHeight + 1
+            })
             #expect(records.allSatisfy { abs($0.headerMidX - $0.imageWidth / 2) <= 2 })
             if artifactDirectory == nil {
                 #expect(records.allSatisfy { $0.path == nil })
