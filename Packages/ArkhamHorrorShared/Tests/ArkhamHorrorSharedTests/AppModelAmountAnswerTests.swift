@@ -403,7 +403,8 @@ extension AppModelLiveGameTests {
         ])
     }
 
-    @Test("AnswerRejected during a gated send does not report transport failure")
+    @Test("AnswerRejected during gated sends does not report transport failure")
+    // swiftlint:disable:next function_body_length
     func answerRejectedDuringSendingDoesNotReportTransportFailure() async throws {
         let firstID = "00000000-0000-0000-0000-0000000000d3"
         let secondID = "00000000-0000-0000-0000-0000000000d4"
@@ -429,23 +430,42 @@ extension AppModelLiveGameTests {
             model: model, fakes: fakes, envelope: envelope, connection: connection
         )
         let prompt = try #require(model.basicChoicePresentation(for: gameID))
-        let rejectedAmounts = [firstID: 3, secondID: 0]
-        let send = Task {
-            await model.submitAmountsAnswer(prompt.identity, amounts: rejectedAmounts)
+        let firstRejectedAmounts = [firstID: 3, secondID: 0]
+        let firstSend = Task {
+            await model.submitAmountsAnswer(prompt.identity, amounts: firstRejectedAmounts)
         }
         await connection.waitUntilSendPending(1)
         #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == .sending)
 
         await connection.enqueue(.event(.message(Data(
-            #"{"tag":"AnswerRejected","reason":"fast rejection","questionVersion":649}"#.utf8
+            #"{"tag":"AnswerRejected","reason":"fast rejection 1","questionVersion":649}"#.utf8
         ))))
         await connection.waitUntilAwaitingNextEvent()
-        let rejected = try #require(model.basicChoicePresentation(for: gameID))
-        #expect(rejected.actionPhase == nil)
-        #expect(rejected.serverFeedback == "fast rejection")
+        let firstRejected = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(firstRejected.actionPhase == nil)
+        #expect(firstRejected.serverFeedback == "fast rejection 1")
+
+        let secondRejectedAmounts = [firstID: 0, secondID: 3]
+        let secondSend = Task {
+            await model.submitAmountsAnswer(firstRejected.identity, amounts: secondRejectedAmounts)
+        }
+        await connection.waitUntilSendPending(2)
+        let secondPending = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(secondPending.actionPhase == .sending)
+        #expect(secondPending.serverFeedback == nil)
+
+        await connection.enqueue(.event(.message(Data(
+            #"{"tag":"AnswerRejected","reason":"fast rejection 2","questionVersion":649}"#.utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        let secondRejected = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(secondRejected.actionPhase == nil)
+        #expect(secondRejected.serverFeedback == "fast rejection 2")
 
         await connection.resumeOldestSend(with: .success(()))
-        #expect(await send.value == .sentAwaitingSnapshot)
+        await connection.resumeOldestSend(with: .success(()))
+        #expect(await firstSend.value == .sentAwaitingSnapshot)
+        #expect(await secondSend.value == .sentAwaitingSnapshot)
         #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == nil)
     }
 
