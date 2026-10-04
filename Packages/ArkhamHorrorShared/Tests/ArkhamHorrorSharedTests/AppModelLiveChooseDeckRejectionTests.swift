@@ -259,6 +259,46 @@ extension AppModelLiveChooseDeckTests {
         consume.cancel()
     }
 
+    @Test("Rejection while deck send is suspended permits an immediate replacement")
+    func rejectionWhileDeckSendSuspendedEnablesReplacement() async throws {
+        let model = await makeSignedInRejectionModel()
+        let connection = FakeGameSocketConnection()
+        await connection.setSendGated(true)
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        let deck = try sampleRejectedDeck()
+        let installed = installRejectedLivePrompt(
+            on: model, gameID: gameID, ownerID: ownerID, connection: connection
+        )
+        let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
+        let consume = consumeLivePrompt(on: model, connection: connection, installed: installed)
+        await connection.waitUntilAwaitingNextEvent()
+
+        let first = Task { await model.chooseDeckForLivePrompt(deck, in: gameID) }
+        await connection.waitUntilSendPending(1)
+        let rejection = Data(
+            #"{"tag":"AnswerRejected","reason":"Suspended send rejected","questionVersion":null}"#
+                .utf8
+        )
+        await connection.enqueue(.event(.message(rejection)))
+        await connection.waitUntilAwaitingNextEvent()
+        #expect(model.liveChooseDeckRejectionReason(
+            for: gameID,
+            promptKey: promptKey
+        ) == "Suspended send rejected")
+        #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
+
+        let second = Task { await model.chooseDeckForLivePrompt(deck, in: gameID) }
+        await connection.waitUntilSendPending(2)
+        await connection.resumeOldestSend(with: .success(()))
+        #expect(await first.value)
+        #expect(model.basicChoiceActions[gameID]?.phase == .sending)
+        await connection.resumeOldestSend(with: .success(()))
+        #expect(await second.value)
+        #expect(model.basicChoiceActions[gameID]?.phase == .awaitingSnapshot)
+        consume.cancel()
+    }
+
     @Test("Late success for an old retryable deck attempt cannot advance its replacement")
     func lateOldDeckSendSuccessCannotAdvanceReplacement() async throws {
         let model = await makeSignedInRejectionModel()

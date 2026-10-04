@@ -111,7 +111,7 @@ struct LiveChooseDeckSelectionView: View {
                 }
             }
         }
-        .disabled(isAwaitingServerAnswer || isSubmitting || state != .valid)
+        .disabled(isAwaitingServerAnswer || state != .valid)
     }
 
     @ViewBuilder
