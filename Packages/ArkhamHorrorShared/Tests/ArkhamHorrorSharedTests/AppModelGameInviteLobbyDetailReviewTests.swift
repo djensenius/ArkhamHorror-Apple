@@ -145,13 +145,16 @@ struct AppModelGameInviteLobbyDetailReviewTests {
     func reenteringLobbyRechecksViewerMembership() async throws {
         let service = ScriptedGameLifecycleService()
         let gameID = GameID(UUID())
-        await service.enqueueGetGameResult(.failure(GameLifecycleError.unexpectedStatus(404)))
+        await service.enqueueGetGameResult(.success(
+            getGameEnvelope(gameID: gameID, playerID: nil, playerCount: 4)
+        ))
         await service.enqueueGetGameResult(.success(getGameEnvelope(gameID: gameID)))
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
 
         model.loadLobbyDetailsIfNeeded(for: gameID)
         var detailTask = try #require(model.gameLobbyDetailTasks[gameID])
         await detailTask.value
+        #expect(model.gameLobbyPlayerCounts[gameID] == 4)
         #expect(model.gameLobbyViewerHasSeats[gameID] == false)
 
         model.loadLobbyDetailsIfNeeded(for: gameID)
