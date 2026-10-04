@@ -26,8 +26,15 @@ struct BoardView: View {
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
     @State private var controller: BoardCommandController?
+    #if canImport(GameController) && !os(tvOS)
+        @State var controllerInputCenter: ControllerInputCenter?
+        @State var controllerInputOwner = BoardControllerInputOwner()
+        @State var controllerInputStarted = false
+        @State var controllerInputWindowIsKey = false
+    #endif
     @FocusState private var focusedID: SemanticFocusID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     #if os(iOS) || os(visionOS)
         @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
@@ -67,13 +74,7 @@ struct BoardView: View {
         .onAppear {
             let activeController: BoardCommandController
             if let controller {
-                controller.updateChoiceHandler(onChoice)
-                controller.updateAmountsHandler(onAmounts)
-                controller.updatePaymentAmountsHandler(onPaymentAmounts)
-                controller.updateExchangeAmountHandler(onExchangeAmount)
-                controller.updateRetryHandler(onRetryChoice)
-                controller.updateCatalogRetryHandler(onCatalogRetry)
-                controller.updateLocalPlayerID(localPlayerID)
+                updateControllerInputs(controller)
                 activeController = controller
                 // Catches a replacement snapshot that arrived while this view was
                 // off-screen and `.onChange(of: projection)` therefore couldn't fire; see
@@ -85,6 +86,7 @@ struct BoardView: View {
                     projection: projection,
                     prompt: prompt,
                     localPlayerID: localPlayerID,
+                    cardCatalog: cardCatalog,
                     onChoice: onChoice,
                     onAmounts: onAmounts,
                     onPaymentAmounts: onPaymentAmounts,
@@ -95,6 +97,11 @@ struct BoardView: View {
                 controller = newController
                 activeController = newController
             }
+            startControllerInputIfAvailable(
+                for: activeController,
+                scenePhase: scenePhase,
+                isKey: controllerInputWindowIsKey
+            )
             // Re-synced on every appearance, not only when the controller is first
             // created: if this view disappears and reappears with the same
             // already-existing controller (for example a tab/detail switch), SwiftUI may
@@ -103,30 +110,40 @@ struct BoardView: View {
             // `SemanticInputHarnessView`'s identical `.onAppear` re-sync.
             focusedID = activeController.coordinator.currentFocus
         }
+        .onDisappear {
+            stopControllerInputIfAvailable()
+        }
         .onChange(of: projection) { _, newValue in
-            controller?.updateChoiceHandler(onChoice)
-            controller?.updateAmountsHandler(onAmounts)
-            controller?.updatePaymentAmountsHandler(onPaymentAmounts)
-            controller?.updateExchangeAmountHandler(onExchangeAmount)
-            controller?.updateRetryHandler(onRetryChoice)
-            controller?.updateCatalogRetryHandler(onCatalogRetry)
-            controller?.updateLocalPlayerID(localPlayerID)
-            controller?.applySnapshot(newValue, prompt: prompt)
+            if let controller {
+                updateControllerInputs(controller)
+                controller.applySnapshot(newValue, prompt: prompt)
+            }
         }
         .onChange(of: prompt) { _, newValue in
-            controller?.updateChoiceHandler(onChoice)
-            controller?.updateAmountsHandler(onAmounts)
-            controller?.updatePaymentAmountsHandler(onPaymentAmounts)
-            controller?.updateExchangeAmountHandler(onExchangeAmount)
-            controller?.updateRetryHandler(onRetryChoice)
-            controller?.updateCatalogRetryHandler(onCatalogRetry)
-            controller?.updateLocalPlayerID(localPlayerID)
-            controller?.applyPrompt(newValue)
+            if let controller {
+                updateControllerInputs(controller)
+                controller.applyPrompt(newValue)
+            }
         }
         .onChange(of: localPlayerID) { _, newValue in
             controller?.updateLocalPlayerID(newValue)
         }
+        .onChange(of: cardCatalog) { _, newValue in
+            controller?.updateCardCatalog(newValue)
+        }
+        .onChange(of: scenePhase) { _, newValue in
+            controllerInputScenePhaseDidChange(newValue)
+        }
+        .boardControllerInputWindowFocusObserver(scenePhase: scenePhase) { isKey, scenePhase in
+            controllerInputWindowFocusDidChange(isKey, scenePhase: scenePhase)
+        }
     }
+
+    #if !canImport(GameController) || os(tvOS)
+        private var controllerInputWindowIsKey: Bool {
+            false
+        }
+    #endif
 
     @ViewBuilder
     private func boardBody(_ controller: BoardCommandController) -> some View {
@@ -138,6 +155,14 @@ struct BoardView: View {
             if let inspectorContent = resolvedInspectorContent(controller) {
                 BoardInspectorView(
                     content: inspectorContent,
+                    focusBinding: $focusedID,
+                    onOutcome: { controller.handle(focusID: $0, $1) }
+                )
+            }
+            if let request = controller.linkedChoiceMenuRequest {
+                BoardLinkedChoiceMenuModalView(
+                    request: request,
+                    focusedID: controller.coordinator.currentFocus,
                     focusBinding: $focusedID,
                     onOutcome: { controller.handle(focusID: $0, $1) }
                 )

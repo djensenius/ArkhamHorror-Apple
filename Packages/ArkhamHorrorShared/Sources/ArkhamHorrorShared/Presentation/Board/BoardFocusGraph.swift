@@ -15,6 +15,9 @@ enum BoardFocusZone {
     /// `cycleZone` must never land here, since this zone only ever exists to hold the
     /// inspector's single Close control while a modal is presented.
     static let inspector: SemanticFocusZone = "board.inspector"
+    /// The linked-choice modal's own zone. Deliberately **not** a member of
+    /// ``cycleOrder`` for the same modal-isolation reason as ``inspector``.
+    static let linkedChoiceMenu: SemanticFocusZone = "board.linkedChoiceMenu"
 
     /// The fixed cycling order every ``BoardCommandController/cycleZone(_:)`` call walks,
     /// deliberately declared once here rather than derived from `FocusGraph.order` (whose
@@ -78,6 +81,22 @@ enum BoardFocusID {
     static func investigator(_ id: InvestigatorID) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.investigator.\(id.description)")
     }
+
+    static func promptElement(_ id: BoardPromptElementID) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.promptElement.\(id.rawFocusComponent)")
+    }
+
+    static func locationEnemyActions(_ id: LocationID) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.location.\(id.description).enemyActions")
+    }
+
+    static func enemyLocationEnemyActions(_ id: LocationID) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.enemyLocation.\(id.description).enemyActions")
+    }
+
+    static func linkedChoiceMenuChoice(_ index: Int) -> SemanticFocusID {
+        SemanticFocusID(rawValue: "board.linkedChoiceMenu.choice.\(index)")
+    }
 }
 
 /// Builds a deterministic ``FocusGraph`` from a ``BoardProjection`` and its matching
@@ -86,15 +105,19 @@ enum BoardFocusID {
 /// zone (every other zone); ``FocusWrapPolicy/wrapWithinZone`` guarantees every entity
 /// stays reachable by directional movement even where an explicit edge is absent.
 enum BoardFocusGraphBuilder {
+    // swiftlint:disable:next function_body_length
     static func makeGraph(
         projection: BoardProjection,
         layout: BoardLayout,
         prompt: BasicChoicePromptPresentation? = nil,
         amountDraft: [String: Int] = [:],
-        exchangeAmount: Int = 0
+        exchangeAmount: Int = 0,
+        fullPlayerAreaPlayerID: PlayerID? = nil,
+        linkedChoiceMenuRequest: BoardLinkedChoiceMenuRequest? = nil
     ) -> FocusGraph {
         var nodes: [FocusNode] = []
         var zoneEntryPoints: [SemanticFocusZone: SemanticFocusID] = [:]
+        let choiceLinks = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
 
         nodes.append(FocusNode(id: BoardFocusID.scenarioHeader, zone: BoardFocusZone.scenario))
         zoneEntryPoints[BoardFocusZone.scenario] = BoardFocusID.scenarioHeader
@@ -121,16 +144,26 @@ enum BoardFocusGraphBuilder {
         )
 
         appendLocations(
-            projection.locations, layout: layout, nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
+            projection.locations, enemiesByLocationID: projection.enemiesByLocationID,
+            choiceLinks: choiceLinks, layout: layout, nodes: &nodes,
+            zoneEntryPoints: &zoneEntryPoints
         )
 
-        let enemyLocationChain = projection.enemyLocations.map { BoardFocusID.enemyLocation($0.id) }
+        let enemyLocationChain = enemyLocationFocusIDs(
+            projection.enemyLocations,
+            enemiesByLocationID: projection.enemiesByLocationID,
+            choiceLinks: choiceLinks
+        )
         appendHorizontalChain(
             enemyLocationChain, zone: BoardFocusZone.enemyLocations,
             nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
         )
 
-        let investigatorChain = projection.investigators.map { BoardFocusID.investigator($0.id) }
+        let investigatorChain = investigatorFocusIDs(
+            projection: projection,
+            choiceLinks: choiceLinks,
+            fullPlayerAreaPlayerID: fullPlayerAreaPlayerID
+        )
         appendHorizontalChain(
             investigatorChain, zone: BoardFocusZone.investigators,
             nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
@@ -139,15 +172,39 @@ enum BoardFocusGraphBuilder {
         nodes.append(FocusNode(id: BoardFocusID.chaosBagSummary, zone: BoardFocusZone.chaosBag))
         zoneEntryPoints[BoardFocusZone.chaosBag] = BoardFocusID.chaosBagSummary
 
+        appendInspectorCloseNode(nodes: &nodes, zoneEntryPoints: &zoneEntryPoints)
+        appendLinkedChoiceMenuNodes(
+            linkedChoiceMenuRequest, nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
+        )
+
+        return FocusGraph(
+            nodes: nodes, zoneEntryPoints: zoneEntryPoints, wrapPolicy: .wrapWithinZone
+        )
+    }
+
+    private static func appendInspectorCloseNode(
+        nodes: inout [FocusNode],
+        zoneEntryPoints: inout [SemanticFocusZone: SemanticFocusID]
+    ) {
         // Always present (independent of any projection content) so `presentModal(entry:)`
         // always has a real, distinct node to transition `currentFocus` to — see
         // `BoardFocusID.inspectorClose`'s own documentation. Excluded from `cycleOrder`,
         // so normal zone cycling never lands here.
         nodes.append(FocusNode(id: BoardFocusID.inspectorClose, zone: BoardFocusZone.inspector))
         zoneEntryPoints[BoardFocusZone.inspector] = BoardFocusID.inspectorClose
+    }
 
-        return FocusGraph(
-            nodes: nodes, zoneEntryPoints: zoneEntryPoints, wrapPolicy: .wrapWithinZone
+    private static func appendLinkedChoiceMenuNodes(
+        _ request: BoardLinkedChoiceMenuRequest?,
+        nodes: inout [FocusNode],
+        zoneEntryPoints: inout [SemanticFocusZone: SemanticFocusID]
+    ) {
+        guard let request else { return }
+        appendVerticalChain(
+            request.choices.map { BoardFocusID.linkedChoiceMenuChoice($0.choiceIndex) },
+            zone: BoardFocusZone.linkedChoiceMenu,
+            nodes: &nodes,
+            zoneEntryPoints: &zoneEntryPoints
         )
     }
 
@@ -330,30 +387,5 @@ enum BoardFocusGraphBuilder {
             nodes.append(FocusNode(id: id, zone: zone, neighbors: neighbors))
         }
         zoneEntryPoints[zone] = ids[0]
-    }
-
-    private static func appendLocations(
-        _ locations: [BoardLocationNode], layout: BoardLayout,
-        nodes: inout [FocusNode], zoneEntryPoints: inout [SemanticFocusZone: SemanticFocusID]
-    ) {
-        guard !locations.isEmpty else { return }
-        for location in locations {
-            var neighbors: [FocusDirection: SemanticFocusID] = [:]
-            for (direction, neighborID) in layout.neighbors[location.id] ?? [:] {
-                neighbors[direction] = BoardFocusID.location(neighborID)
-            }
-            nodes.append(
-                FocusNode(
-                    id: BoardFocusID.location(location.id), zone: BoardFocusZone.locations,
-                    neighbors: neighbors
-                )
-            )
-        }
-        // The entry point is whichever location BFS layering placed first (column 0, row
-        // 0), matching the layout's own deterministic root — falling back to the first
-        // projection-ordered location if, for any reason, layout has no positions at all.
-        let rootID = layout.positions
-            .first { $0.value == BoardGridPosition(column: 0, row: 0) }?.key ?? locations[0].id
-        zoneEntryPoints[BoardFocusZone.locations] = BoardFocusID.location(rootID)
     }
 }

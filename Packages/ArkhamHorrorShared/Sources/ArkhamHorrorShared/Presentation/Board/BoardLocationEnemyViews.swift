@@ -41,6 +41,56 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
             regular
         #endif
     }
+
+    func minimumCellSize(hasLinkedEnemyActions: Bool) -> CGSize {
+        guard hasLinkedEnemyActions else { return minimumCellSize }
+        let minimumTileHeight = 44 + compactIndicatorHeight + summaryButtonHeight
+            + (2 * verticalSpacing)
+        return CGSize(
+            width: minimumCellSize.width,
+            height: max(minimumCellSize.height, minimumTileHeight + 8)
+        )
+    }
+}
+
+struct BoardLocationEnemyTileHeightPlan: Sendable, Equatable {
+    let headerMaxHeight: CGFloat?
+    let effectiveHeaderHeight: CGFloat
+    let enemyPanelHeight: CGFloat
+
+    static func plan(
+        tileHeight: CGFloat,
+        measuredHeaderHeight: CGFloat,
+        hasEnemies: Bool,
+        hasLinkedEnemyActions: Bool,
+        metrics: BoardLocationEnemyTileMetrics
+    ) -> BoardLocationEnemyTileHeightPlan {
+        guard hasEnemies else {
+            return BoardLocationEnemyTileHeightPlan(
+                headerMaxHeight: nil,
+                effectiveHeaderHeight: measuredHeaderHeight,
+                enemyPanelHeight: 0
+            )
+        }
+        let linkedEnemyActionsHeight = hasLinkedEnemyActions
+            ? metrics.summaryButtonHeight + metrics.verticalSpacing
+            : 0
+        let headerMaxHeight = max(
+            tileHeight - metrics.compactIndicatorHeight - metrics.verticalSpacing
+                - linkedEnemyActionsHeight,
+            44
+        )
+        let effectiveHeaderHeight = min(measuredHeaderHeight, headerMaxHeight)
+        let enemyPanelHeight = max(
+            tileHeight - effectiveHeaderHeight - metrics.verticalSpacing - linkedEnemyActionsHeight,
+            0
+        )
+        return BoardLocationEnemyTileHeightPlan(
+            headerMaxHeight: headerMaxHeight,
+            effectiveHeaderHeight: effectiveHeaderHeight,
+            enemyPanelHeight: enemyPanelHeight
+        )
+    }
 }
 
 enum BoardLocationEnemyTileLayoutDecision: Sendable, Equatable {
@@ -94,6 +144,67 @@ enum BoardLocationEnemyTileLayout {
     }
 }
 
+struct BoardLinkedEnemyActionsControl: View {
+    let title: String
+    let accessibilityLabel: String
+    let focusID: SemanticFocusID
+    let linkedChoices: [BoardLinkedChoice]
+    let focusedID: SemanticFocusID?
+    let focusBinding: FocusState<SemanticFocusID?>.Binding
+    let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
+
+    var body: some View {
+        let decision = BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        switch decision {
+        case .highlightOnly:
+            EmptyView()
+        case .submit, .menu:
+            SemanticActionControl(
+                accessibilityLabel: Text(accessibilityLabel),
+                semanticFocusID: focusID,
+                onOutcome: onOutcome,
+                label: {
+                    Label(title, systemImage: "figure.walk")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(
+                                    focusedID == focusID ? ArkhamTheme.accent : Color.clear,
+                                    lineWidth: 3
+                                )
+                        }
+                }
+            )
+            .buttonStyle(.plain)
+            .accessibilityHint(Text(Self.accessibilityHint(for: decision)))
+            .focused(focusBinding, equals: focusID)
+        }
+    }
+
+    static func accessibilityHint(for decision: BoardLinkedChoicePresentationDecision) -> String {
+        switch decision {
+        case let .submit(choice):
+            BoardLocalization.format(
+                "board.linkedChoice.activateHint",
+                "Activates %@",
+                choice.title
+            )
+        case .menu:
+            BoardLocalization.localized(
+                "board.linkedChoice.chooseHint",
+                "Choose which prompt action to take."
+            )
+        case .highlightOnly:
+            ""
+        }
+    }
+}
+
 struct BoardEnemyCompactPanelView: View {
     let title: String
     let enemies: [BoardEnemyNode]
@@ -123,83 +234,6 @@ struct BoardEnemyCompactPanelView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-struct BoardEnemyTileChipView: View {
-    let enemy: BoardEnemyNode
-    let linkedChoices: [BoardLinkedChoice]
-    let onLinkedChoice: (Int) -> Void
-    @Environment(\.boardCardCatalog) private var cardCatalog
-
-    private var displayName: String {
-        enemy.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? enemy.displayName
-    }
-
-    var body: some View {
-        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
-        case .highlightOnly:
-            chip
-        case let .submit(choice):
-            Button { onLinkedChoice(choice.choiceIndex) } label: { chip }
-                .buttonStyle(.plain)
-                .accessibilityHint(Text("Activates \(choice.title)"))
-        case let .menu(actionableChoices):
-            Menu {
-                ForEach(actionableChoices, id: \.choiceIndex) { choice in
-                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
-                }
-            } label: {
-                chip
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .accessibilityHint(Text("Choose which prompt action to take."))
-        }
-    }
-
-    private var chip: some View {
-        ViewThatFits(in: .vertical) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(displayName)
-                    .font(.caption2.bold())
-                    .lineLimit(1)
-                    .foregroundStyle(ArkhamTheme.bone)
-                Text(BoardEnemyCompactFormatting.statsSummary(enemy))
-                    .font(.caption2.monospacedDigit())
-                    .lineLimit(1)
-                    .foregroundStyle(.secondary)
-            }
-            Text(displayName)
-                .font(.caption2.bold())
-                .lineLimit(1)
-                .foregroundStyle(ArkhamTheme.bone)
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
-        .frame(
-            width: BoardLocationEnemyTileMetrics.current.chipMinWidth,
-            height: BoardLocationEnemyTileMetrics.current.chipRowHeight,
-            alignment: .leading
-        )
-        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 6))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(outlineColor, lineWidth: linkedChoices.isEmpty ? 1 : 2)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(BoardAccessibility.summary(
-            enemy: enemy,
-            displayName: displayName
-        )))
-    }
-
-    private var outlineColor: Color {
-        guard !linkedChoices.isEmpty else { return .white.opacity(0.12) }
-        return linkedChoices.contains(where: \.isActionable)
-            ? ArkhamTheme.accent
-            : .orange.opacity(0.45)
     }
 }
 
@@ -265,97 +299,5 @@ struct BoardEnemyOverflowMenu: View {
         return linkedChoices.contains(where: \.isActionable)
             ? "\(summary) — prompt action"
             : "\(summary) — prompt unavailable"
-    }
-}
-
-struct BoardEnemyCompactChipView: View {
-    let enemy: BoardEnemyNode
-    let linkedChoices: [BoardLinkedChoice]
-    let onLinkedChoice: (Int) -> Void
-    @Environment(\.boardCardCatalog) private var cardCatalog
-
-    private var displayName: String {
-        enemy.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? enemy.displayName
-    }
-
-    private var actionableChoices: [BoardLinkedChoice] {
-        linkedChoices.filter(\.isActionable)
-    }
-
-    var body: some View {
-        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
-        case .highlightOnly:
-            chip
-        case let .submit(choice):
-            Button { onLinkedChoice(choice.choiceIndex) } label: { chip }
-                .buttonStyle(.plain)
-                .accessibilityHint(Text("Activates \(choice.title)"))
-        case let .menu(actionableChoices):
-            Menu {
-                ForEach(actionableChoices, id: \.choiceIndex) { choice in
-                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
-                }
-            } label: {
-                chip
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .accessibilityHint(Text("Choose which prompt action to take."))
-        }
-    }
-
-    private var chip: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(displayName)
-                .font(.caption2.bold())
-                .lineLimit(1)
-                .foregroundStyle(ArkhamTheme.bone)
-            Text(BoardEnemyCompactFormatting.statsSummary(enemy))
-                .font(.caption2.monospacedDigit())
-                .lineLimit(1)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 6))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(outlineColor, lineWidth: linkedChoices.isEmpty ? 1 : 2)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(BoardAccessibility.summary(
-            enemy: enemy,
-            displayName: displayName
-        )))
-    }
-
-    private var outlineColor: Color {
-        guard !linkedChoices.isEmpty else { return .white.opacity(0.12) }
-        return actionableChoices.isEmpty ? .orange.opacity(0.45) : ArkhamTheme.accent
-    }
-}
-
-private enum BoardEnemyCompactFormatting {
-    static func statsSummary(_ enemy: BoardEnemyNode) -> String {
-        var parts: [String] = []
-        if let fight = enemy.fight {
-            parts.append("F \(fight.displayValue)")
-        }
-        if let health = enemy.health {
-            parts.append("H \(health.displayValue)")
-        }
-        if let evade = enemy.evade {
-            parts.append("E \(evade.displayValue)")
-        }
-        if let damage = enemy.damage, damage > 0 {
-            parts.append("Dmg \(damage)")
-        }
-        return parts.isEmpty ? "Enemy" : parts.joined(separator: "  ")
-    }
-
-    static func listSummary(_ enemy: BoardEnemyNode, displayName: String) -> String {
-        "\(displayName): \(statsSummary(enemy))"
     }
 }

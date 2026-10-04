@@ -54,6 +54,14 @@
 "amountPrompt.token.damage" = "damage";
 "amountPrompt.token.horror" = "horror";
 
+"board.linkedChoiceMenu.title" = "Choose prompt action";
+"board.linkedChoiceMenu.cancelHint" = "Press Back or Secondary Action to cancel.";
+"board.linkedChoice.activateHint" = "Activates %@";
+"board.linkedChoice.chooseHint" = "Choose which prompt action to take.";
+"board.enemyActions.title" = "Enemy actions";
+"board.enemyActions.accessibility" = "Enemy prompt actions at %@";
+"board.enemyActions.duplicateSuffix" = "%1$@ (enemy %2$lld)";
+
 "semantic.choice.title.advanceAct" = "Advance act";
 "semantic.choice.title.advanceAgenda" = "Advance agenda";
 "semantic.choice.title.applyResults" = "Apply results";

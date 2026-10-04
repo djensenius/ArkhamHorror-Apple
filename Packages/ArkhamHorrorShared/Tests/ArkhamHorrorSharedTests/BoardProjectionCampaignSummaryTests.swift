@@ -130,6 +130,12 @@ struct BoardProjectionCampaignSummaryTests {
             #expect(CampaignPromptLocalization.localized(
                 "campaign.between.resolutions", "fallback"
             ) == "Scenario resolutions")
+            #expect(BoardLocalization.localized(
+                "board.enemyActions.title", "fallback"
+            ) == "Enemy actions")
+            #expect(BoardLocalization.format(
+                "board.enemyActions.accessibility", "fallback %@", "Hallway"
+            ) == "Enemy prompt actions at Hallway")
         }
         CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
             #expect(BoardCampaignSummaryLocalization.system.localized(
@@ -141,6 +147,12 @@ struct BoardProjectionCampaignSummaryTests {
             #expect(CampaignPromptLocalization.localized(
                 "campaign.between.resolutions", "fallback"
             ) == "Szenario-Auflösungen")
+            #expect(BoardLocalization.localized(
+                "board.enemyActions.title", "fallback"
+            ) == "Gegneraktionen")
+            #expect(BoardLocalization.format(
+                "board.enemyActions.accessibility", "fallback %@", "Flur"
+            ) == "Gegner-Aufforderungsaktionen bei Flur")
         }
     }
 

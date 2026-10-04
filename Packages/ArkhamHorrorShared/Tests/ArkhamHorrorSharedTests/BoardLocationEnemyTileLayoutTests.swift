@@ -4,6 +4,22 @@ import Testing
 
 @Suite("Board location enemy tile layout")
 struct BoardLocationEnemyTileLayoutTests {
+    @Test("Minimum zoom can reserve room for an enemy action control")
+    func minimumZoomCanReserveRoomForEnemyActionControl() {
+        #expect(
+            BoardLocationEnemyTileMetrics.regular.minimumCellSize
+                == CGSize(width: 90, height: 70)
+        )
+        #expect(
+            BoardLocationEnemyTileMetrics.regular.minimumCellSize(hasLinkedEnemyActions: true)
+                == CGSize(width: 90, height: 92)
+        )
+        #expect(
+            BoardLocationEnemyTileMetrics.tvOS.minimumCellSize(hasLinkedEnemyActions: true)
+                == CGSize(width: 180, height: 160)
+        )
+    }
+
     @Test("Zoom 0.5 still leaves room for an actionable compact enemy indicator")
     func zoomHalfShowsCompactIndicator() {
         #expect(
@@ -52,19 +68,42 @@ struct BoardLocationEnemyTileLayoutTests {
         )
     }
 
+    @Test("tvOS minimum cell with linked action still leaves compact indicator room")
+    func tvOSMinimumCellWithLinkedActionShowsCompactIndicator() {
+        #expect(
+            decision(
+                zoom: 1,
+                headerHeight: 126,
+                enemyCount: 3,
+                metrics: .tvOS,
+                hasLinkedEnemyActions: true
+            ) == .compactIndicator
+        )
+    }
+
     private func decision(
         zoom: CGFloat,
         headerHeight: CGFloat,
         enemyCount: Int,
-        metrics: BoardLocationEnemyTileMetrics
+        metrics: BoardLocationEnemyTileMetrics,
+        hasLinkedEnemyActions: Bool = false
     ) -> BoardLocationEnemyTileLayoutDecision {
         let tileWidth = max(150 * zoom, metrics.minimumCellSize.width) - 8
-        let tileHeight = max(112 * zoom, metrics.minimumCellSize.height) - 8
-        let availableHeight = max(tileHeight - headerHeight - metrics.verticalSpacing, 0)
+        let tileHeight = max(
+            112 * zoom,
+            metrics.minimumCellSize(hasLinkedEnemyActions: hasLinkedEnemyActions).height
+        ) - 8
+        let heightPlan = BoardLocationEnemyTileHeightPlan.plan(
+            tileHeight: tileHeight,
+            measuredHeaderHeight: headerHeight,
+            hasEnemies: enemyCount > 0,
+            hasLinkedEnemyActions: hasLinkedEnemyActions,
+            metrics: metrics
+        )
         return BoardLocationEnemyTileLayout.decision(
             enemyCount: enemyCount,
             availableWidth: tileWidth,
-            availableHeight: availableHeight,
+            availableHeight: heightPlan.enemyPanelHeight,
             metrics: metrics
         )
     }
