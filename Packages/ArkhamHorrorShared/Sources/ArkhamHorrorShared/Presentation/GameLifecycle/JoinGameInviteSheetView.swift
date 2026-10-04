@@ -9,11 +9,13 @@ final class JoinGameInviteViewModel {
     var inviteText = "" {
         didSet {
             if inviteText != oldValue {
+                inviteInputRevision += 1
                 claimSeatInvite = nil
             }
         }
     }
 
+    private var inviteInputRevision = 0
     private(set) var isSubmitting = false
     private(set) var claimingSeat: CardCode?
     private(set) var failureMessage: String?
@@ -47,12 +49,15 @@ final class JoinGameInviteViewModel {
             return nil
         }
 
+        let submittedInviteRevision = inviteInputRevision
         do {
             switch invite.route {
             case .join:
                 return try await joinInvite(invite.gameID)
             case .claimSeat:
-                claimSeatInvite = try await loadClaimSeatInvite(invite.gameID)
+                let loadedInvite = try await loadClaimSeatInvite(invite.gameID)
+                guard inviteInputRevision == submittedInviteRevision else { return nil }
+                claimSeatInvite = loadedInvite
                 return nil
             }
         } catch is CancellationError {
@@ -76,6 +81,7 @@ final class JoinGameInviteViewModel {
         reloadClaimSeatInvite: (GameID) async throws -> ClaimSeatInviteViewState
     ) async -> GameID? {
         guard claimingSeat == nil, let invite = self.claimSeatInvite else { return nil }
+        let submittedInviteRevision = inviteInputRevision
         claimingSeat = seat
         failureMessage = nil
         defer { claimingSeat = nil }
@@ -86,7 +92,9 @@ final class JoinGameInviteViewModel {
             return nil
         } catch let error as GameLifecycleError {
             failureMessage = error.message
-            if let refreshedInvite = try? await reloadClaimSeatInvite(invite.gameID) {
+            if let refreshedInvite = try? await reloadClaimSeatInvite(invite.gameID),
+               inviteInputRevision == submittedInviteRevision
+            {
                 self.claimSeatInvite = refreshedInvite
             }
             return nil
@@ -95,7 +103,9 @@ final class JoinGameInviteViewModel {
                 "games.joinInvite.error.generic",
                 "Couldn't join that game. Try again."
             )
-            if let refreshedInvite = try? await reloadClaimSeatInvite(invite.gameID) {
+            if let refreshedInvite = try? await reloadClaimSeatInvite(invite.gameID),
+               inviteInputRevision == submittedInviteRevision
+            {
                 self.claimSeatInvite = refreshedInvite
             }
             return nil

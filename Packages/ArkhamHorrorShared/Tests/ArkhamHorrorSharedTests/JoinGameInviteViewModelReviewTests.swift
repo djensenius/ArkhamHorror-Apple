@@ -29,6 +29,33 @@ private actor ClaimSeatOperationGate {
     }
 }
 
+private actor ClaimSeatInviteLoadGate {
+    private var continuation: CheckedContinuation<ClaimSeatInviteViewState, Never>?
+    private var pendingWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitUntilPending() async {
+        if continuation != nil {
+            return
+        }
+        await withCheckedContinuation {
+            pendingWaiters.append($0)
+        }
+    }
+
+    func run() async -> ClaimSeatInviteViewState {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            pendingWaiters.forEach { $0.resume() }
+            pendingWaiters.removeAll()
+        }
+    }
+
+    func resume(with invite: ClaimSeatInviteViewState) {
+        continuation?.resume(returning: invite)
+        continuation = nil
+    }
+}
+
 @MainActor
 @Suite("JoinGameInviteViewModel review fixes")
 struct JoinGameInviteViewModelReviewTests {
@@ -153,6 +180,74 @@ struct JoinGameInviteViewModelReviewTests {
         #expect(claimed == nil)
         #expect(continued == nil)
         #expect(actionCalled == false)
+    }
+
+    @Test("late claim-seat loads are ignored after the invite link changes")
+    func lateClaimSeatLoadDoesNotRestoreOldInvite() async throws {
+        let viewModel = JoinGameInviteViewModel()
+        let firstSeat = try CardCode("c01001")
+        let firstDetails = inviteDetails(seats: [firstSeat])
+        let firstURL = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        let secondGameUUID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000043"))
+        let secondGameID = GameID(secondGameUUID)
+        let secondURL = "https://arkhamhorror.app/games/"
+            + "\(secondGameID.rawValue.uuidString)/claim-seat"
+        let gate = ClaimSeatInviteLoadGate()
+        viewModel.inviteText = firstURL
+
+        let loadTask = Task {
+            await viewModel.submit(
+                joinInvite: { _ in Issue.record("join should not run"); return gameID },
+                loadClaimSeatInvite: { _ in await gate.run() }
+            )
+        }
+        await gate.waitUntilPending()
+        viewModel.inviteText = secondURL
+
+        await gate.resume(with: firstDetails)
+
+        #expect(await loadTask.value == nil)
+        #expect(viewModel.claimSeatInvite == nil)
+    }
+
+    @Test("late claim-failure reloads are ignored after the invite link changes")
+    func lateClaimFailureReloadDoesNotRestoreOldInvite() async throws {
+        let viewModel = JoinGameInviteViewModel()
+        let firstSeat = try CardCode("c01001")
+        let firstDetails = inviteDetails(seats: [firstSeat])
+        let refreshedDetails = inviteDetails(seats: [])
+        let firstURL = "https://arkhamhorror.app/games/"
+            + "\(gameID.rawValue.uuidString)/claim-seat"
+        let secondGameUUID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000043"))
+        let secondGameID = GameID(secondGameUUID)
+        let secondURL = "https://arkhamhorror.app/games/"
+            + "\(secondGameID.rawValue.uuidString)/claim-seat"
+        let gate = ClaimSeatInviteLoadGate()
+        viewModel.inviteText = firstURL
+        _ = await viewModel.submit(
+            joinInvite: { _ in Issue.record("join should not run"); return gameID },
+            loadClaimSeatInvite: { _ in firstDetails }
+        )
+
+        let claimTask = Task {
+            await viewModel.claimSeat(
+                firstSeat,
+                claimSeatInvite: { _, _ in
+                    throw GameLifecycleError.operationFailed(
+                        DeckOperationError(errorMsg: "Permission Denied. This seat is already taken")
+                    )
+                },
+                reloadClaimSeatInvite: { _ in await gate.run() }
+            )
+        }
+        await gate.waitUntilPending()
+        viewModel.inviteText = secondURL
+
+        await gate.resume(with: refreshedDetails)
+
+        #expect(await claimTask.value == nil)
+        #expect(viewModel.claimSeatInvite == nil)
     }
 
     @Test("submitting is disabled while a seat claim is in flight")
