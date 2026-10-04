@@ -68,31 +68,99 @@ struct NightOfTheZealotCoverageReplayTests {
     func multiplayerStatusUsesServerFieldsFromSmokeSnapshotBytes() throws {
         let recording = try smokeRecording(named: "2p-smoke.jsonl")
         let runDefinition = try MultiplayerRunDefinition(fileName: recording.fileName)
-        let envelope = try smokeEnvelope(for: recording, runDefinition: runDefinition)
+        let envelope = try smokeEnvelope(
+            for: recording,
+            runDefinition: runDefinition,
+            investigatorNames: distinctInvestigatorNames
+        )
         let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
         let ownerID = try recording.record.recordedPlayerID()
         let waitingPlayerID = try runDefinition.seats[0].playerIDValue()
 
         #expect(projection.counters.playerCount == 2)
+        #expect(projection.playerOrderCount == 2)
         #expect(projection.investigators.map(\.id.rawValue.rawValue) == ["c01001", "c01002"])
+        #expect(projection.investigators.map(\.displayName) == ["Roland Banks", "Daisy Walker"])
         #expect(projection.investigators.map(\.isLeadInvestigator) == [true, false])
         #expect(projection.investigators.map(\.isActiveInvestigator) == [false, true])
         #expect(projection.investigators.map(\.isTurnPlayer) == [false, true])
+        #expect(projection.investigators.map(\.isMultiplayer) == [true, true])
         #expect(projection.investigators.map(\.hasPendingPrompt) == [false, true])
 
         let ownerStatus = BoardMultiplayerStatus(projection: projection, localPlayerID: ownerID)
+        #expect(ownerStatus.shouldShowPromptSurface)
         #expect(ownerStatus.localPromptText == "Your prompt is ready.")
-        #expect(ownerStatus.pendingPromptText == "Pending prompt: Roland Banks")
+        #expect(ownerStatus.pendingPromptText == "Pending prompt: Daisy Walker")
 
         let waitingStatus = BoardMultiplayerStatus(
             projection: projection,
             localPlayerID: waitingPlayerID
         )
-        #expect(waitingStatus.localPromptText == "Waiting for Roland Banks.")
-        #expect(waitingStatus.accessibilityLabel.contains("Turn: Roland Banks"))
+        #expect(waitingStatus.localPromptText == "Waiting for Daisy Walker.")
+        #expect(waitingStatus.accessibilityLabel.contains("Turn: Daisy Walker"))
 
-        let spectatorStatus = BoardMultiplayerStatus(projection: projection, localPlayerID: nil)
-        #expect(spectatorStatus.localPromptText == "Spectating. Waiting for Roland Banks.")
+        let unknownIdentityStatus = BoardMultiplayerStatus(
+            projection: projection,
+            localPlayerID: nil
+        )
+        #expect(unknownIdentityStatus.localPromptText == "Waiting for Daisy Walker.")
+    }
+
+    @Test("Multiplayer status distinguishes active from turn and handles no turn")
+    func multiplayerStatusDistinguishesActiveFromTurnAndNoTurn() throws {
+        let recording = try smokeRecording(named: "3p-smoke.jsonl")
+        let runDefinition = try MultiplayerRunDefinition(fileName: recording.fileName)
+        let envelope = try smokeEnvelope(
+            for: recording,
+            runDefinition: runDefinition,
+            investigatorNames: distinctInvestigatorNames,
+            activeInvestigatorID: "c01003",
+            turnPlayerInvestigatorID: .string("c01002")
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+        let status = BoardMultiplayerStatus(projection: projection, localPlayerID: nil)
+
+        #expect(projection.investigators.map(\.displayName) == [
+            "Roland Banks", "Daisy Walker", "Agnes Baker",
+        ])
+        #expect(projection.investigators.map(\.isActiveInvestigator) == [false, false, true])
+        #expect(projection.investigators.map(\.isTurnPlayer) == [false, true, false])
+        #expect(status.actingText == "Acting: Agnes Baker")
+        #expect(status.turnText == "Turn: Daisy Walker")
+
+        let noTurnEnvelope = try smokeEnvelope(
+            for: recording,
+            runDefinition: runDefinition,
+            investigatorNames: distinctInvestigatorNames,
+            turnPlayerInvestigatorID: .null
+        )
+        let noTurnProjection = BoardProjectionBuilder.makeProjection(from: noTurnEnvelope.game)
+        let noTurnStatus = BoardMultiplayerStatus(projection: noTurnProjection, localPlayerID: nil)
+        #expect(noTurnProjection.investigators.map(\.isTurnPlayer) == [false, false, false])
+        #expect(noTurnStatus.turnText == "Turn: No turn investigator")
+    }
+
+    @Test("Solo status stays hidden for smoke snapshot bytes")
+    func soloStatusStaysHiddenForSmokeSnapshotBytes() throws {
+        let recording = try #require(
+            CoverageRecordingLoader.load(file: smokeFixtureURL()).records.first
+        )
+        let envelope = try CoverageEnvelopeBuilder.envelope(
+            for: recording.record,
+            baseEnvelopeData: fixtureData(named: "get-game")
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+        let localPlayerID = try recording.record.recordedPlayerID()
+        let status = BoardMultiplayerStatus(projection: projection, localPlayerID: localPlayerID)
+        let investigator = try #require(projection.investigators.first)
+
+        #expect(projection.playerOrderCount == 1)
+        #expect(projection.questions.count == 1)
+        #expect(!status.shouldShowPromptSurface)
+        #expect(status.localPromptText == nil)
+        #expect(!investigator.isMultiplayer)
+        #expect(investigator.hasPendingPrompt)
+        #expect(!BoardAccessibility.summary(investigator: investigator).contains("Pending prompt"))
     }
 
     @Test("Multiplayer status lists several pending players from additive snapshot bytes")
@@ -104,7 +172,8 @@ struct NightOfTheZealotCoverageReplayTests {
             for: recording,
             runDefinition: runDefinition,
             additionalPromptPlayerIDs: Array(pendingPlayers.dropLast()),
-            injectAdditiveField: true
+            injectAdditiveField: true,
+            investigatorNames: distinctInvestigatorNames
         )
         let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
         let waitingPlayerID = try runDefinition.seats[0].playerIDValue()
@@ -115,10 +184,10 @@ struct NightOfTheZealotCoverageReplayTests {
 
         #expect(projection.questions.count == 3)
         #expect(projection.investigators.map(\.hasPendingPrompt) == [false, true, true, true])
-        #expect(status.pendingPromptNames == ["Roland Banks", "Roland Banks", "Roland Banks"])
+        #expect(status.pendingPromptNames == ["Daisy Walker", "Agnes Baker", "Skids O'Toole"])
         #expect(
             status.localPromptText
-                == "Waiting for Roland Banks, Roland Banks, and Roland Banks."
+                == "Waiting for Daisy Walker, Agnes Baker, and Skids O'Toole."
         )
         CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
             let localized = BoardMultiplayerStatus(
@@ -126,12 +195,44 @@ struct NightOfTheZealotCoverageReplayTests {
                 localPlayerID: waitingPlayerID
             )
             #expect(localized.title == "Mehrspielerstatus")
+            #expect(localized.actingText == "Aktiv: Skids O'Toole")
             #expect(
-                localized.localPromptText == "Warten auf Roland Banks, Roland Banks und "
-                    + "Roland Banks."
+                localized.localPromptText == "Warten auf Daisy Walker, Agnes Baker und "
+                    + "Skids O'Toole."
             )
             #expect(localized.accessibilityLabel.contains("Mehrspielerstatus"))
         }
+    }
+
+    @Test("Multiplayer status never includes another player's prompt contents")
+    func multiplayerStatusNeverIncludesAnotherPlayersPromptContents() throws {
+        let secret = "PRIVATE PROMPT CONTENTS SHOULD NOT BE READ"
+        let recording = try smokeRecording(named: "2p-smoke.jsonl")
+        let runDefinition = try MultiplayerRunDefinition(fileName: recording.fileName)
+        let envelope = try smokeEnvelope(
+            for: recording,
+            runDefinition: runDefinition,
+            investigatorNames: distinctInvestigatorNames,
+            privatePromptMarker: secret
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+        let waitingPlayerID = try runDefinition.seats[0].playerIDValue()
+        let status = BoardMultiplayerStatus(
+            projection: projection,
+            localPlayerID: waitingPlayerID
+        )
+        let combined = [
+            status.title,
+            status.actingText,
+            status.turnText,
+            status.leadText,
+            status.pendingPromptText,
+            status.localPromptText ?? "",
+            status.accessibilityLabel,
+        ].joined(separator: "\n")
+
+        #expect(!combined.contains(secret))
+        #expect(combined.contains("Daisy Walker"))
     }
 
     @Test("JSONL loader keeps physical line numbers across blanks and CRLF")
@@ -170,6 +271,15 @@ struct NightOfTheZealotCoverageReplayTests {
         )
     }
 
+    private var distinctInvestigatorNames: [String: String] {
+        [
+            "c01001": "Roland Banks",
+            "c01002": "Daisy Walker",
+            "c01003": "Agnes Baker",
+            "c01004": "Skids O'Toole",
+        ]
+    }
+
     private func smokeRecording(named fileName: String) throws -> CoverageRecording {
         let recordings = try CoverageRecordingLoader.load(
             directory: multiplayerSmokeFixtureDirectoryURL()
@@ -181,15 +291,17 @@ struct NightOfTheZealotCoverageReplayTests {
         for recording: CoverageRecording,
         runDefinition: MultiplayerRunDefinition,
         additionalPromptPlayerIDs: [PlayerID] = [],
-        injectAdditiveField: Bool = false
+        injectAdditiveField: Bool = false,
+        investigatorNames: [String: String] = [:],
+        activeInvestigatorID: String? = nil,
+        turnPlayerInvestigatorID: JSONValue? = nil,
+        privatePromptMarker: String? = nil
     ) throws -> GetGameEnvelope {
         let envelope = try CoverageEnvelopeBuilder.envelope(
             for: recording.record,
             baseEnvelopeData: fixtureData(named: "get-game"),
             runDefinition: runDefinition
         )
-        guard !additionalPromptPlayerIDs.isEmpty || injectAdditiveField else { return envelope }
-
         var root = try ContractJSON.decode(JSONValue.self, from: ContractJSON.encode(envelope))
         guard case var .object(rootObject) = root,
               case var .object(game) = rootObject["game"],
@@ -197,9 +309,23 @@ struct NightOfTheZealotCoverageReplayTests {
               case var .object(presentations) = game["questionPresentation"]
         else { throw TestFailure() }
 
+        applyInvestigatorNames(investigatorNames, to: &game)
+        if let activeInvestigatorID {
+            game["activeInvestigatorId"] = .string(activeInvestigatorID)
+        }
+        if let turnPlayerInvestigatorID {
+            game["turnPlayerInvestigatorId"] = turnPlayerInvestigatorID
+        }
+
+        let rawQuestion = rawQuestion(recording.record.rawQuestion, marker: privatePromptMarker)
+        if privatePromptMarker != nil {
+            for key in questions.keys {
+                questions[key] = rawQuestion
+            }
+        }
         for playerID in additionalPromptPlayerIDs {
             let key = playerID.codingKey.stringValue
-            questions[key] = recording.record.rawQuestion
+            questions[key] = rawQuestion
             presentations[key] = recording.record.questionPresentation
         }
         if injectAdditiveField {
@@ -210,6 +336,27 @@ struct NightOfTheZealotCoverageReplayTests {
         rootObject["game"] = .object(game)
         root = .object(rootObject)
         return try ContractJSON.decode(GetGameEnvelope.self, from: ContractJSON.encode(root))
+    }
+
+    private func applyInvestigatorNames(
+        _ names: [String: String],
+        to game: inout [String: JSONValue]
+    ) {
+        guard !names.isEmpty, case var .object(investigators)? = game["investigators"] else {
+            return
+        }
+        for (investigatorID, name) in names {
+            guard case var .object(investigator)? = investigators[investigatorID] else { continue }
+            investigator["name"] = .object(["subtitle": .null, "title": .string(name)])
+            investigators[investigatorID] = .object(investigator)
+        }
+        game["investigators"] = .object(investigators)
+    }
+
+    private func rawQuestion(_ value: JSONValue, marker: String?) -> JSONValue {
+        guard let marker, case var .object(object) = value else { return value }
+        object["privatePromptContents"] = .string(marker)
+        return .object(object)
     }
 
     private func run(recordings: CoverageRecordings) async throws {
