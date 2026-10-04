@@ -61,6 +61,20 @@
 "board.enemyActions.title" = "Gegneraktionen";
 "board.enemyActions.accessibility" = "Gegner-Aufforderungsaktionen bei %@";
 "board.enemyActions.duplicateSuffix" = "%1$@ (Gegner %2$lld)";
+"board.multiplayer.status.title" = "Mehrspielerstatus";
+"board.multiplayer.status.active" = "Am Zug: %@";
+"board.multiplayer.status.turn" = "Zug: %@";
+"board.multiplayer.status.lead" = "Leitung: %@";
+"board.multiplayer.status.pending.none" = "Keine ausstehenden Aufforderungen";
+"board.multiplayer.status.pending.one" = "Ausstehende Aufforderung: %@";
+"board.multiplayer.status.pending.many" = "Ausstehende Aufforderungen: %@";
+"board.multiplayer.status.local.ready" = "Deine Aufforderung ist bereit.";
+"board.multiplayer.status.waiting.players" = "Warten auf %@.";
+"board.multiplayer.status.waiting.spectator" = "Zuschauen. Warten auf %@.";
+"board.multiplayer.status.investigator.unknown" = "Unbekannter Ermittler";
+"board.multiplayer.status.turn.none" = "Kein Zug-Ermittler";
+"board.multiplayer.list.two" = "%1$@ und %2$@";
+"board.multiplayer.list.final" = "%1$@ und %2$@";
 
 "semantic.choice.title.advanceAct" = "Akt weiterentwickeln";
 "semantic.choice.title.advanceAgenda" = "Agenda weiterentwickeln";

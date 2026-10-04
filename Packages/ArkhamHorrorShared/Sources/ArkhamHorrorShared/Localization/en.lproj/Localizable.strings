@@ -61,6 +61,20 @@
 "board.enemyActions.title" = "Enemy actions";
 "board.enemyActions.accessibility" = "Enemy prompt actions at %@";
 "board.enemyActions.duplicateSuffix" = "%1$@ (enemy %2$lld)";
+"board.multiplayer.status.title" = "Multiplayer status";
+"board.multiplayer.status.active" = "Acting: %@";
+"board.multiplayer.status.turn" = "Turn: %@";
+"board.multiplayer.status.lead" = "Lead: %@";
+"board.multiplayer.status.pending.none" = "No pending prompts";
+"board.multiplayer.status.pending.one" = "Pending prompt: %@";
+"board.multiplayer.status.pending.many" = "Pending prompts: %@";
+"board.multiplayer.status.local.ready" = "Your prompt is ready.";
+"board.multiplayer.status.waiting.players" = "Waiting for %@.";
+"board.multiplayer.status.waiting.spectator" = "Spectating. Waiting for %@.";
+"board.multiplayer.status.investigator.unknown" = "Unknown investigator";
+"board.multiplayer.status.turn.none" = "No turn investigator";
+"board.multiplayer.list.two" = "%1$@ and %2$@";
+"board.multiplayer.list.final" = "%1$@, and %2$@";
 
 "semantic.choice.title.advanceAct" = "Advance act";
 "semantic.choice.title.advanceAgenda" = "Advance agenda";

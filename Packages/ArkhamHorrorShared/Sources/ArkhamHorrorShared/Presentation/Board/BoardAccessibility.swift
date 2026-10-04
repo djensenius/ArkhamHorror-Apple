@@ -162,8 +162,14 @@ enum BoardAccessibility {
         if investigator.isActiveInvestigator {
             parts.append("Active investigator")
         }
+        if investigator.isTurnPlayer {
+            parts.append("Turn investigator")
+        }
         if investigator.isLeadInvestigator {
             parts.append("Lead investigator")
+        }
+        if investigator.hasPendingPrompt {
+            parts.append("Pending prompt")
         }
         if investigator.defeated {
             parts.append("Defeated")

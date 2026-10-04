@@ -142,6 +142,9 @@ struct BoardInvestigatorNode: Sendable, Equatable, Identifiable {
     let isActiveInvestigator: Bool
     let isTurnPlayer: Bool
     let isLeadInvestigator: Bool
+    /// True when the server's per-player `question` map contains this investigator's
+    /// player. Does not inspect or expose the prompt payload.
+    let hasPendingPrompt: Bool
     let engagedEnemyCount: Int
     let assetCount: Int
     let eventCount: Int

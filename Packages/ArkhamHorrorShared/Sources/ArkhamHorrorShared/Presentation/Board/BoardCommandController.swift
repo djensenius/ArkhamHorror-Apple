@@ -854,4 +854,12 @@ extension BoardCommandController {
             activeInvestigatorPlayerID: activePlayerID
         )
     }
+
+    var multiplayerStatus: BoardMultiplayerStatus {
+        BoardMultiplayerStatus(projection: projection, localPlayerID: localPlayerID)
+    }
+
+    var shouldShowPromptSurface: Bool {
+        prompt != nil || multiplayerStatus.shouldShowPromptSurface
+    }
 }

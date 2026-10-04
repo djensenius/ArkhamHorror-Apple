@@ -110,9 +110,7 @@ struct BoardInvestigatorRowView: View {
                 BoardStatBadge(systemImage: "brain.head.profile", value: "\(investigator.sanity)")
                 BoardStatBadge(systemImage: "bolt.fill", value: "\(investigator.remainingActions)")
             }
-            if investigator.isActiveInvestigator {
-                Text("Active").font(.caption2).foregroundStyle(ArkhamTheme.accent)
-            }
+            roleBadges(investigator)
             statusBadges(investigator)
         }
     }
@@ -183,6 +181,44 @@ struct BoardInvestigatorRowView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func roleBadges(_ investigator: BoardInvestigatorNode) -> some View {
+        let labels = roleLabels(for: investigator)
+        if !labels.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(labels, id: \.self) { label in
+                    roleChip(label)
+                }
+            }
+        }
+    }
+
+    private func roleLabels(for investigator: BoardInvestigatorNode) -> [String] {
+        var labels: [String] = []
+        if investigator.isActiveInvestigator {
+            labels.append("Active")
+        }
+        if investigator.isTurnPlayer {
+            labels.append("Turn")
+        }
+        if investigator.isLeadInvestigator {
+            labels.append("Lead")
+        }
+        if investigator.hasPendingPrompt {
+            labels.append("Prompt")
+        }
+        return labels
+    }
+
+    private func roleChip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 5)
+            .background(ArkhamTheme.accent.opacity(0.25), in: Capsule())
+            .foregroundStyle(ArkhamTheme.accent)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
