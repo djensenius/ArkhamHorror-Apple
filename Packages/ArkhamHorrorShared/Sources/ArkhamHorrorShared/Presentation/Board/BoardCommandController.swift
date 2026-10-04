@@ -716,6 +716,22 @@ final class BoardCommandController {
         return nil
     }
 
+    private func refreshOpenLinkedChoiceMenuTitlesForCardCatalog() {
+        guard let request = linkedChoiceMenuRequest else { return }
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+        guard let refreshedChoices = linkedLocationEnemyChoices(
+            focusID: request.focusID,
+            links: links
+        ) else { return }
+        let refreshedByIndex = Dictionary(uniqueKeysWithValues: refreshedChoices.map {
+            ($0.choiceIndex, $0)
+        })
+        linkedChoiceMenuRequest = BoardLinkedChoiceMenuRequest(
+            focusID: request.focusID,
+            choices: request.choices.map { refreshedByIndex[$0.choiceIndex] ?? $0 }
+        )
+    }
+
     private func leavePrompt() -> Bool {
         guard focusedZone == BoardFocusZone.prompt else { return false }
         coordinator.syncExternalFocus(BoardFocusID.scenarioHeader)
@@ -807,6 +823,7 @@ extension BoardCommandController {
 
     func updateCardCatalog(_ cardCatalog: CardCatalogSnapshot?) {
         self.cardCatalog = cardCatalog
+        refreshOpenLinkedChoiceMenuTitlesForCardCatalog()
     }
 
     func updateCatalogRetryHandler(

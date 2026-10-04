@@ -29,6 +29,29 @@ struct BoardLinkedEnemyActionCatalogTests {
         ))
     }
 
+    @Test("Open location enemy action menu refreshes titles when catalog arrives")
+    func openLocationEnemyActionMenuRefreshesTitlesWhenCatalogArrives() throws {
+        let ids = enemyLocationIDs()
+        let projection = locationEnemyProjection(ids: ids)
+        let prompt = enemyPrompt(choices: duplicateEnemyChoices(ids))
+        let actionsFocus = BoardFocusID.locationEnemyActions(ids.location)
+        let controller = BoardCommandController(projection: projection, prompt: prompt)
+
+        #expect(controller.handle(focusID: actionsFocus, .command(.primaryAction)))
+        let fallbackRequest = try #require(controller.linkedChoiceMenuRequest)
+        #expect(fallbackRequest.choices == expectedFallbackDuplicateEnemyMenuChoices())
+        #expect(controller.handle(.command(.focusMove(.down))))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.linkedChoiceMenuChoice(8))
+
+        controller.updateCardCatalog(ghoulCatalog)
+
+        let refreshedRequest = try #require(controller.linkedChoiceMenuRequest)
+        #expect(refreshedRequest.focusID == actionsFocus)
+        #expect(refreshedRequest.choices.map(\.choiceIndex) == [7, 8, 20, 21])
+        #expect(refreshedRequest.choices == expectedDuplicateEnemyMenuChoices())
+        #expect(controller.coordinator.currentFocus == BoardFocusID.linkedChoiceMenuChoice(8))
+    }
+
     @Test("Duplicate enemy menu suffixes localize in German")
     func duplicateEnemyMenuSuffixesLocalizeInGerman() {
         let ids = enemyLocationIDs()
@@ -164,6 +187,31 @@ struct BoardLinkedEnemyActionCatalogTests {
             before: [],
             messages: []
         )
+    }
+
+    private func expectedFallbackDuplicateEnemyMenuChoices() -> [BoardLinkedChoice] {
+        [
+            BoardLinkedChoice(
+                choiceIndex: 7,
+                title: "Card c01159: F 2  H 2  E 3 (enemy 1): Fight",
+                isActionable: true
+            ),
+            BoardLinkedChoice(
+                choiceIndex: 8,
+                title: "Card c01159: F 2  H 2  E 3 (enemy 1): Evade",
+                isActionable: true
+            ),
+            BoardLinkedChoice(
+                choiceIndex: 20,
+                title: "Card c01159: F 2  H 2  E 3 (enemy 2): Fight",
+                isActionable: true
+            ),
+            BoardLinkedChoice(
+                choiceIndex: 21,
+                title: "Card c01159: F 2  H 2  E 3 (enemy 2): Evade",
+                isActionable: true
+            ),
+        ]
     }
 
     private func expectedDuplicateEnemyMenuChoices() -> [BoardLinkedChoice] {
