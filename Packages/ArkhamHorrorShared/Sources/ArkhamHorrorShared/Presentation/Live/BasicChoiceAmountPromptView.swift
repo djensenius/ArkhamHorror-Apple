@@ -6,8 +6,8 @@ extension BasicChoicePromptView {
         let amounts = controller.amountDraft(for: presentation)
         let normalized = amountPrompt.normalizedAmounts(amounts)
         let total = amountPrompt.total(for: normalized)
-        let submitEnabled = presentation.canSubmit && amountPrompt.isLegal(normalized)
-        let disabledReason = amountPrompt.disabledReason(for: normalized, in: presentation)
+        let submitEnabled = presentation.canSubmit
+        let guidanceMessage = amountPrompt.guidanceMessage(for: normalized, in: presentation)
         return VStack(alignment: .leading, spacing: 10) {
             Text(amountPrompt.legend)
                 .font(.callout.weight(.semibold))
@@ -21,10 +21,10 @@ extension BasicChoicePromptView {
                     .accessibilityIdentifier("liveGame.prompt.amount.total")
                 Text(amountPrompt.targetHint(in: presentation))
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(submitEnabled ? Color.secondary : Color.orange)
+                    .foregroundStyle(guidanceMessage == nil ? Color.secondary : Color.orange)
                     .accessibilityIdentifier("liveGame.prompt.amount.targetHint")
-                if let disabledReason {
-                    Text(disabledReason)
+                if let guidanceMessage {
+                    Text(guidanceMessage)
                         .font(.footnote)
                         .foregroundStyle(.orange)
                         .accessibilityIdentifier("liveGame.prompt.amount.disabledReason")
@@ -47,7 +47,7 @@ extension BasicChoicePromptView {
             .focused(focusBinding, equals: BoardFocusID.promptAmountSubmit)
             .disabled(!submitEnabled)
             .accessibilityHint(
-                disabledReason
+                guidanceMessage
                     ?? promptString(
                         "amountPrompt.submit.hint",
                         value: "Sends this allocation with version checking."
@@ -147,7 +147,7 @@ extension BasicChoicePromptView {
     // swiftlint:disable:next function_body_length
     func exchangeAmountPrompt(_ exchangePrompt: BasicChoiceExchangePrompt) -> some View {
         let amount = controller.exchangeAmount(for: presentation)
-        let submitEnabled = presentation.canSubmit && exchangePrompt.isLegal(amount)
+        let submitEnabled = presentation.canSubmit
         let tokenTitle = exchangeTokenTitle(exchangePrompt.token)
         let fromName = exchangePrompt.fromDisplayName
         let toName = exchangePrompt.toDisplayName

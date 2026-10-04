@@ -114,6 +114,7 @@ struct ContractFixtureDigestTests {
         let expected = Set([
             "act-no-advance-cost",
             "answer-amounts",
+            "answer-rejected",
             "answer-enemy-attack",
             "answer-enemy-attack-assign-damage",
             "answer-enemy-attack-assign-horror",
@@ -286,7 +287,7 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "f3a0acbe2c6952c5fbb3f3374a3ef85f94f250e1"
+            ContractPin.current.backendCommit == "f454ccb9fb789739c666a9cbd74d3fdc14a81fb9"
         )
     }
 

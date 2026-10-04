@@ -22,7 +22,7 @@ harness_root="$repo_root/.build/contract-fixture-provenance-selftest"
 real_contract_pin_file="$repo_root/Packages/ArkhamHorrorShared/Sources/ArkhamHorrorShared/Domain/Contract/ContractPin.swift"
 
 fixture_names="
-act-no-advance-cost.json answer-amounts.json answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json answer-enemy-attack-assign-remaining-damage.json \
+act-no-advance-cost.json answer-amounts.json answer-rejected.json answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json answer-enemy-attack-assign-remaining-damage.json \
 answer-enemy-attack-assign-remaining-horror.json answer-enemy-attack.json answer-exchange-amounts.json answer-payment-amounts.json answer-question.json capabilities-locale-catalog.json \
 capabilities.json card-code-entity-map.json catalog.json decks.json \
 game-lifecycle.json game-list.json game-update.json get-game.json \
@@ -133,7 +133,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.47",'
+    echo '  "schemaRevision": "0.1.48",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
