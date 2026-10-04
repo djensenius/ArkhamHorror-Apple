@@ -37,8 +37,58 @@ struct GameLifecycleServiceLobbyActionTests {
         #expect(request?.httpMethod == "POST")
         #expect(request?.url?.absoluteString.hasSuffix("/claim-seat") == true)
         let body = try #require(await transport.capturedBody)
+        #expect(body == Data(#"{"investigatorId":"01001"}"#.utf8))
         let decoded = try ContractJSON.decode(ClaimSeatRequest.self, from: body)
         #expect(decoded == claim)
+    }
+
+    @Test(
+        "claimSeat surfaces Yesod permissionDenied and invalidArgs messages verbatim",
+        arguments: [
+            (
+                403,
+                #"{"message":"Permission Denied. This seat is already taken"}"#,
+                "Permission Denied. This seat is already taken"
+            ),
+            (
+                403,
+                #"{"message":"Permission Denied. This game is not a multiplayer game"}"#,
+                "Permission Denied. This game is not a multiplayer game"
+            ),
+            (
+                403,
+                #"{"message":"Permission Denied. You already have a seat in this game"}"#,
+                "Permission Denied. You already have a seat in this game"
+            ),
+            (
+                400,
+                #"{"message":"Invalid Arguments","errors":["Invalid investigator for this game"]}"#,
+                "Invalid investigator for this game"
+            ),
+            (
+                400,
+                #"{"message":"Invalid Arguments","errors":[]}"#,
+                "Invalid Arguments"
+            ),
+        ]
+    )
+    func claimSeatSurfacesServerAuthoredErrors(
+        status: Int,
+        body: String,
+        message: String
+    ) async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/claim-seat")
+        let expected = GameLifecycleError.operationFailed(DeckOperationError(errorMsg: message))
+        let transport = GameLifecycleRecordingTransport(
+            data: Data(body.utf8), response: httpResponse(status, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+        let claim = try ClaimSeatRequest(investigatorId: InvestigatorCode("01001"))
+
+        await #expect(throws: expected) {
+            try await service.claimSeat(claim, in: gameID, on: profile, token: token)
+        }
+        #expect(expected.message == message)
     }
 
     @Test("claimSeat rejects an unexpected non-empty 2xx body as drift")
@@ -113,6 +163,56 @@ struct GameLifecycleServiceLobbyActionTests {
         #expect(body == expectedBody)
         let decoded = try ContractJSON.decode(ChooseDeckRequest.self, from: body)
         #expect(decoded == choice)
+    }
+
+    @Test("joinGame surfaces Yesod permissionDenied messages verbatim")
+    func joinGameSurfacesServerAuthoredErrors() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/join")
+        let message = "Permission Denied. "
+            + "You already occupy a seat in another group in this event"
+        let error = GameLifecycleError.operationFailed(DeckOperationError(errorMsg: message))
+        let body = #"{"message":"Permission Denied. "#
+            + #"You already occupy a seat in another group in this event"}"#
+        let transport = GameLifecycleRecordingTransport(
+            data: Data(body.utf8), response: httpResponse(403, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+
+        await #expect(throws: error) {
+            _ = try await service.joinGame(gameID, on: profile, token: token)
+        }
+        let request = await transport.capturedRequest
+        #expect(request?.httpMethod == "PUT")
+        #expect(request?.httpBody == nil)
+        #expect(error.message == message)
+    }
+
+    @Test("openSeats keeps generic Yesod 404 and 500 bodies localized")
+    func openSeatsKeepsGenericFailuresLocalized() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)/open-seats")
+        let service404 = GameLifecycleService(transport: GameLifecycleRecordingTransport(
+            data: Data(#"{"message":"Not Found"}"#.utf8),
+            response: httpResponse(404, url: url)
+        ))
+        await #expect(throws: GameLifecycleError.unexpectedStatus(404)) {
+            _ = try await service404.openSeats(for: gameID, on: profile, token: token)
+        }
+        #expect(
+            GameLifecycleError.unexpectedStatus(404).message
+                == "This game is no longer available."
+        )
+
+        let service500 = GameLifecycleService(transport: GameLifecycleRecordingTransport(
+            data: Data(#"{"message":"Internal Server Error"}"#.utf8),
+            response: httpResponse(500, url: url)
+        ))
+        await #expect(throws: GameLifecycleError.unexpectedStatus(500)) {
+            _ = try await service500.openSeats(for: gameID, on: profile, token: token)
+        }
+        #expect(
+            GameLifecycleError.unexpectedStatus(500).message
+                == "This server responded unexpectedly. Try again."
+        )
     }
 
     @Test("chooseDeck surfaces backend deck-update errors verbatim")

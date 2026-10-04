@@ -22,7 +22,7 @@ struct GameLifecycleServiceTests {
         if let id {
             Data(
                 """
-                {"tag":"\(tag)","id":"\(id)","name":"Ignored","log":[],
+                {"tag":"\(tag)","id":"\(id)","name":"Ignored","log":[],"playerCount":3,
                 "locations":{},"investigators":{},"unknownBoardField":{"deeply":"nested"}}
                 """.utf8
             )
@@ -186,7 +186,7 @@ struct GameLifecycleServiceTests {
         let request = await transport.capturedRequest
         #expect(request?.httpMethod == "GET")
         #expect(request?.url?.absoluteString.hasSuffix("/join") == true)
-        #expect(envelope == .game(gameID))
+        #expect(envelope == .game(gameID, playerCount: 3))
     }
 
     @Test("joinGame issues a PUT to /arkham/games/:id/join")

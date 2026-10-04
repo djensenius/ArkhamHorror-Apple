@@ -332,6 +332,12 @@ final class TokenAccessAdmissionCounter: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// Returns the admissions recorded for `profileID` so tests can assert no extra
+    /// queue entry was admitted after a deliberately stale operation completed.
+    func count(of profileID: UUID) -> Int {
+        currentCount(of: profileID)
+    }
+
     /// Suspends until at least `count` admissions have been recorded for `profileID`.
     func waitForAdmissions(_ count: Int, of profileID: UUID) async {
         if currentCount(of: profileID) >= count {

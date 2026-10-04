@@ -72,7 +72,7 @@ protocol GameLifecycleServicing: Sendable {
     /// joining it.
     func peekLobby(
         _ id: GameID, on profile: ServerProfile, token: String
-    ) async throws -> GameLifecycleEnvelope
+    ) async throws -> GameLifecyclePreview
 
     /// Joins a pending game via `PUT /arkham/games/:id/join`.
     func joinGame(

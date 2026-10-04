@@ -13,7 +13,9 @@ struct GamesListView: View {
 
     @State private var pendingDeletion: GameID?
     @State private var isCreatePresented = false
+    @State private var isJoinInvitePresented = false
     @State private var createHandoff = CreateGameLobbyHandoff()
+    @State private var joinInviteHandoff = CreateGameLobbyHandoff()
     @State private var presentedGameID: GameID?
 
     var body: some View {
@@ -28,6 +30,16 @@ struct GamesListView: View {
                     }
                     .accessibilityLabel("New game")
                     .accessibilityIdentifier(AccountAccessibilityID.createGameOpenButton)
+
+                    Button {
+                        isJoinInvitePresented = true
+                    } label: {
+                        Label(
+                            gameLifecycleLocalized("games.joinInvite.title", "Join Game"),
+                            systemImage: "person.badge.plus"
+                        )
+                    }
+                    .accessibilityIdentifier(AccountAccessibilityID.joinGameInviteOpenButton)
 
                     Button {
                         model.refreshGames()
@@ -82,6 +94,21 @@ struct GamesListView: View {
                     NavigationStack {
                         CreateGameSheetView(model: model) { gameID in
                             createHandoff.created(gameID)
+                        }
+                    }
+                }
+            )
+            .sheet(
+                isPresented: $isJoinInvitePresented,
+                onDismiss: {
+                    if let gameID = joinInviteHandoff.completedDismissal() {
+                        presentedGameID = gameID
+                    }
+                },
+                content: {
+                    NavigationStack {
+                        JoinGameInviteSheetView(model: model) { gameID in
+                            joinInviteHandoff.created(gameID)
                         }
                     }
                 }

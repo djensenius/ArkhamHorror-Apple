@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -17,6 +18,10 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private(set) var lastToken: String?
     private(set) var lastProfileID: UUID?
     private(set) var lastDeletedGameID: GameID?
+    private(set) var lastPeekLobbyGameID: GameID?
+    private(set) var lastJoinGameID: GameID?
+    private(set) var lastOpenSeatsGameID: GameID?
+    private(set) var lastClaimSeatGameID: GameID?
     private(set) var lastClaimSeatRequest: ClaimSeatRequest?
     private(set) var lastChooseDeckRequest: ChooseDeckRequest?
     private(set) var lastCreateGameRequest: CreateGameRequest?
@@ -25,7 +30,7 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private var createGameQueue: [Result<GameLifecycleEnvelope, any Error>] = []
     private var deleteGameQueue: [Result<Void, any Error>] = []
     private var getGameQueue: [Result<GetGameEnvelope, any Error>] = []
-    private var peekLobbyQueue: [Result<GameLifecycleEnvelope, any Error>] = []
+    private var peekLobbyQueue: [Result<GameLifecyclePreview, any Error>] = []
     private var joinGameQueue: [Result<GameLifecycleEnvelope, any Error>] = []
     private var openSeatsQueue: [Result<OpenSeats, any Error>] = []
     private var claimSeatQueue: [Result<Void, any Error>] = []
@@ -34,6 +39,24 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private var isListGamesGated = false
     private var listGamesContinuations: [CheckedContinuation<GameList, any Error>] = []
     private var listGamesPendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
+    private var isPeekLobbyGated = false
+    private var peekLobbyContinuations: [CheckedContinuation<GameLifecyclePreview, any Error>] = []
+    private var peekLobbyPendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
+    private var isJoinGameGated = false
+    private var joinGameContinuations: [CheckedContinuation<GameLifecycleEnvelope, any Error>] = []
+    private var joinGamePendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
+    private var isOpenSeatsGated = false
+    private var openSeatsContinuations: [CheckedContinuation<OpenSeats, any Error>] = []
+    private var openSeatsPendingWaiters: [
         (threshold: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
 
@@ -46,6 +69,12 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private var isChooseDeckGated = false
     private var chooseDeckContinuations: [GameLifecycleVoidContinuation] = []
     private var chooseDeckPendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
+    private var isClaimSeatGated = false
+    private var claimSeatContinuations: [GameLifecycleVoidContinuation] = []
+    private var claimSeatPendingWaiters: [
         (threshold: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
 
@@ -75,7 +104,7 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         getGameQueue.append(result)
     }
 
-    func enqueuePeekLobbyResult(_ result: Result<GameLifecycleEnvelope, any Error>) {
+    func enqueuePeekLobbyResult(_ result: Result<GameLifecyclePreview, any Error>) {
         peekLobbyQueue.append(result)
     }
 
@@ -99,12 +128,28 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         isListGamesGated = gated
     }
 
+    func setPeekLobbyGated(_ gated: Bool) {
+        isPeekLobbyGated = gated
+    }
+
+    func setJoinGameGated(_ gated: Bool) {
+        isJoinGameGated = gated
+    }
+
+    func setOpenSeatsGated(_ gated: Bool) {
+        isOpenSeatsGated = gated
+    }
+
     func setDeleteGameGated(_ gated: Bool) {
         isDeleteGameGated = gated
     }
 
     func setChooseDeckGated(_ gated: Bool) {
         isChooseDeckGated = gated
+    }
+
+    func setClaimSeatGated(_ gated: Bool) {
+        isClaimSeatGated = gated
     }
 
     func setGetGameGated(_ gated: Bool) {
@@ -129,6 +174,48 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     func resumeNewestListGames(with result: Result<GameList, any Error>) {
         guard !listGamesContinuations.isEmpty else { return }
         resume(listGamesContinuations.removeLast(), with: result)
+    }
+
+    /// Suspends until at least `count` `peekLobby` calls are simultaneously pending.
+    func waitUntilPeekLobbyPending(_ count: Int) async {
+        if peekLobbyContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { peekLobbyPendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `peekLobby` call.
+    func resumeOldestPeekLobby(with result: Result<GameLifecyclePreview, any Error>) {
+        guard !peekLobbyContinuations.isEmpty else { return }
+        resume(peekLobbyContinuations.removeFirst(), with: result)
+    }
+
+    /// Suspends until at least `count` `joinGame` calls are simultaneously pending.
+    func waitUntilJoinGamePending(_ count: Int) async {
+        if joinGameContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { joinGamePendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `joinGame` call.
+    func resumeOldestJoinGame(with result: Result<GameLifecycleEnvelope, any Error>) {
+        guard !joinGameContinuations.isEmpty else { return }
+        resume(joinGameContinuations.removeFirst(), with: result)
+    }
+
+    /// Suspends until at least `count` `openSeats` calls are simultaneously pending.
+    func waitUntilOpenSeatsPending(_ count: Int) async {
+        if openSeatsContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { openSeatsPendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `openSeats` call.
+    func resumeOldestOpenSeats(with result: Result<OpenSeats, any Error>) {
+        guard !openSeatsContinuations.isEmpty else { return }
+        resume(openSeatsContinuations.removeFirst(), with: result)
     }
 
     /// Suspends until at least `count` `deleteGame` calls are simultaneously pending.
@@ -167,6 +254,24 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         }
     }
 
+    /// Suspends until at least `count` `claimSeat` calls are simultaneously pending.
+    func waitUntilClaimSeatPending(_ count: Int) async {
+        if claimSeatContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { claimSeatPendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `claimSeat` call.
+    func resumeOldestClaimSeat(with result: Result<Void, any Error>) {
+        guard !claimSeatContinuations.isEmpty else { return }
+        let continuation = claimSeatContinuations.removeFirst()
+        switch result {
+        case .success: continuation.resume(returning: ())
+        case let .failure(error): continuation.resume(throwing: error)
+        }
+    }
+
     /// Suspends until at least `count` `getGame` calls are simultaneously pending.
     func waitUntilGetGamePending(_ count: Int) async {
         if getGameContinuations.count >= count {
@@ -195,9 +300,9 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         }
     }
 
-    private func resume(
-        _ continuation: CheckedContinuation<GameList, any Error>,
-        with result: Result<GameList, any Error>
+    private func resume<T: Sendable>(
+        _ continuation: CheckedContinuation<T, any Error>,
+        with result: Result<T, any Error>
     ) {
         switch result {
         case let .success(value): continuation.resume(returning: value)
@@ -208,6 +313,30 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private func notifyListGamesWaiters() {
         listGamesPendingWaiters.removeAll { entry in
             guard listGamesContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func notifyPeekLobbyWaiters() {
+        peekLobbyPendingWaiters.removeAll { entry in
+            guard peekLobbyContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func notifyJoinGameWaiters() {
+        joinGamePendingWaiters.removeAll { entry in
+            guard joinGameContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func notifyOpenSeatsWaiters() {
+        openSeatsPendingWaiters.removeAll { entry in
+            guard openSeatsContinuations.count >= entry.threshold else { return false }
             entry.continuation.resume()
             return true
         }
@@ -224,6 +353,14 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private func notifyChooseDeckWaiters() {
         chooseDeckPendingWaiters.removeAll { entry in
             guard chooseDeckContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func notifyClaimSeatWaiters() {
+        claimSeatPendingWaiters.removeAll { entry in
+            guard claimSeatContinuations.count >= entry.threshold else { return false }
             entry.continuation.resume()
             return true
         }
@@ -253,6 +390,13 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         try await withCheckedThrowingContinuation { (continuation: GameLifecycleVoidContinuation) in
             chooseDeckContinuations.append(continuation)
             notifyChooseDeckWaiters()
+        }
+    }
+
+    private func awaitClaimSeatGate() async throws {
+        try await withCheckedThrowingContinuation { (continuation: GameLifecycleVoidContinuation) in
+            claimSeatContinuations.append(continuation)
+            notifyClaimSeatWaiters()
         }
     }
 
@@ -315,39 +459,65 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     }
 
     func peekLobby(
-        _: GameID, on profile: ServerProfile, token: String
-    ) async throws -> GameLifecycleEnvelope {
+        _ id: GameID, on profile: ServerProfile, token: String
+    ) async throws -> GameLifecyclePreview {
         callOrder.append("peekLobby")
         lastToken = token
         lastProfileID = profile.id
+        lastPeekLobbyGameID = id
+        if isPeekLobbyGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                peekLobbyContinuations.append(continuation)
+                notifyPeekLobbyWaiters()
+            }
+        }
         return try consume(&peekLobbyQueue)
     }
 
     func joinGame(
-        _: GameID, on profile: ServerProfile, token: String
+        _ id: GameID, on profile: ServerProfile, token: String
     ) async throws -> GameLifecycleEnvelope {
         callOrder.append("joinGame")
         lastToken = token
         lastProfileID = profile.id
+        lastJoinGameID = id
+        if isJoinGameGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                joinGameContinuations.append(continuation)
+                notifyJoinGameWaiters()
+            }
+        }
         return try consume(&joinGameQueue)
     }
 
     func openSeats(
-        for _: GameID, on profile: ServerProfile, token: String
+        for id: GameID, on profile: ServerProfile, token: String
     ) async throws -> OpenSeats {
         callOrder.append("openSeats")
         lastToken = token
         lastProfileID = profile.id
+        lastOpenSeatsGameID = id
+        if isOpenSeatsGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                openSeatsContinuations.append(continuation)
+                notifyOpenSeatsWaiters()
+            }
+        }
         return try consume(&openSeatsQueue)
     }
 
     func claimSeat(
-        _ request: ClaimSeatRequest, in _: GameID, on profile: ServerProfile, token: String
+        _ request: ClaimSeatRequest, in id: GameID, on profile: ServerProfile, token: String
     ) async throws {
         callOrder.append("claimSeat")
         lastToken = token
         lastProfileID = profile.id
+        lastClaimSeatGameID = id
         lastClaimSeatRequest = request
+        if isClaimSeatGated {
+            try await awaitClaimSeatGate()
+            return
+        }
         try consume(&claimSeatQueue)
     }
 

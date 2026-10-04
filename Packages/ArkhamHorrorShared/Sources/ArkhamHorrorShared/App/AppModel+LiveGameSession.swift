@@ -390,7 +390,7 @@ extension AppModel {
         case .malformedPayload:
             .incompatiblePayload(lastKnown: lastKnown)
         case .unexpectedStatus, .operationFailed, .requestEncodingFailed, .invalidPathSegment,
-             .tokenUnavailable:
+             .tokenUnavailable, .inviteRefreshFailed:
             .terminalFailure(error, lastKnown: lastKnown)
         }
     }

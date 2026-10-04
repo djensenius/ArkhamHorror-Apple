@@ -51,6 +51,14 @@ struct GameLifecycleDomainTests {
         }
     }
 
+    @Test("A PublicGame lobby preview decodes the server-owned playerCount")
+    func previewDecodesPlayerCount() throws {
+        let id = UUID()
+        let json = #"{"tag":"PublicGame","id":"\#(id.uuidString)","playerCount":4}"#
+        let preview = try ContractJSON.decode(GameLifecyclePreview.self, from: Data(json.utf8))
+        #expect(preview == .game(GameID(id), playerCount: 4))
+    }
+
     // MARK: - GameListLoadState
 
     @Test("games/isLoading reflect every GameListLoadState case correctly")

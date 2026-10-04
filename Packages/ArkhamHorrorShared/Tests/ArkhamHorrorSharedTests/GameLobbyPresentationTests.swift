@@ -13,12 +13,13 @@ struct GameLobbyPresentationTests {
     private func sampleGame(
         gameState: GameState = .active,
         investigators: [InvestigatorSummary] = [],
+        otherInvestigators: [InvestigatorSummary] = [],
         multiplayerVariant: MultiplayerVariant = .solo,
         hasOpenSeats: Bool = false
     ) -> GameSummary {
         GameSummary(
             id: GameID(UUID()), scenario: nil, campaign: nil, gameState: gameState,
-            name: "Sample", investigators: investigators, otherInvestigators: [],
+            name: "Sample", investigators: investigators, otherInvestigators: otherInvestigators,
             multiplayerVariant: multiplayerVariant, hasOpenSeats: hasOpenSeats
         )
     }
@@ -38,12 +39,63 @@ struct GameLobbyPresentationTests {
         _ = view.body
     }
 
-    @Test("GameLobbyView renders when open seats have not yet been loaded")
-    func gameLobbyViewOpenSeatsNotYetLoaded() async {
+    @Test("GameLobbyView chooses web-compatible join and claim-seat invite URLs")
+    func gameLobbyViewPendingWithFriendsInvite() async {
+        let claimedInvestigator = InvestigatorSummary(id: "01001", classSymbol: .guardian)
+        let joinGame = sampleGame(gameState: .pending([]), multiplayerVariant: .withFriends)
+        let claimGame = sampleGame(
+            gameState: .pending([]), investigators: [claimedInvestigator],
+            multiplayerVariant: .withFriends
+        )
+        let model = await model(gameListState: .loaded([.game(joinGame), .game(claimGame)]))
+
+        let joinView = GameLobbyView(model: model, gameID: joinGame.id)
+        let claimView = GameLobbyView(model: model, gameID: claimGame.id)
+
+        let joinSuffix = "/games/\(joinGame.id.rawValue.uuidString.lowercased())/join"
+        let claimSuffix = "/games/\(claimGame.id.rawValue.uuidString.lowercased())/claim-seat"
+        #expect(joinView.inviteURL(for: joinGame)?.path.hasSuffix(joinSuffix) == true)
+        #expect(claimView.inviteURL(for: claimGame)?.path.hasSuffix(claimSuffix) == true)
+    }
+
+    @Test("Invite clipboard copy availability matches platform support")
+    func inviteClipboardCopyAvailabilityMatchesPlatformSupport() {
+        #if os(tvOS)
+            #expect(InviteClipboard.canCopy == false)
+        #elseif canImport(UIKit) || canImport(AppKit)
+            #expect(InviteClipboard.canCopy)
+        #else
+            #expect(InviteClipboard.canCopy == false)
+        #endif
+    }
+
+    @Test("GameLobbyView only offers invites while a with-friends game is pending")
+    func gameLobbyViewInviteIsPendingOnly() async {
+        let model = await model(gameListState: .loaded([]))
+        let pending = sampleGame(gameState: .pending([]), multiplayerVariant: .withFriends)
+        let active = sampleGame(gameState: .active, multiplayerVariant: .withFriends)
+        let solo = sampleGame(gameState: .pending([]), multiplayerVariant: .solo)
+
+        #expect(GameLobbyView(model: model, gameID: pending.id).inviteURL(for: pending) != nil)
+        #expect(GameLobbyView(model: model, gameID: active.id).inviteURL(for: active) == nil)
+        #expect(GameLobbyView(model: model, gameID: solo.id).inviteURL(for: solo) == nil)
+    }
+
+    @Test("GameLobbyView auto-loads open seats when a with-friends lobby reports them")
+    func gameLobbyViewOpenSeatsNotYetLoaded() async throws {
+        let service = ScriptedGameLifecycleService()
         let game = sampleGame(multiplayerVariant: .withFriends, hasOpenSeats: true)
-        let model = await model(gameListState: .loaded([.game(game)]))
+        let seat = try CardCode("c01001")
+        await service.enqueueOpenSeatsResult(.success([seat]))
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        model.gameListState = .loaded([.game(game)])
         let view = GameLobbyView(model: model, gameID: game.id)
-        _ = view.body
+
+        view.loadOpenSeatsIfNeeded(for: game)
+        await model.gameLifecycleActionTasks[game.id]?.value
+
+        #expect(await service.callOrder == ["openSeats"])
+        #expect(model.gameOpenSeats[game.id] == [seat])
     }
 
     @Test("GameLobbyView renders when open seats are loaded and populated")
@@ -53,6 +105,95 @@ struct GameLobbyPresentationTests {
         model.gameOpenSeats[game.id] = try [CardCode("c01001")]
         let view = GameLobbyView(model: model, gameID: game.id)
         _ = view.body
+    }
+
+    @Test("GameLobbyView does not offer claim buttons once server data shows a seat")
+    func gameLobbyViewOpenSeatsOwnedSeatStatus() async throws {
+        let investigator = InvestigatorSummary(id: "01001", classSymbol: .guardian)
+        let game = sampleGame(
+            investigators: [investigator], multiplayerVariant: .withFriends, hasOpenSeats: true
+        )
+        let model = await model(gameListState: .loaded([.game(game)]))
+        let view = GameLobbyView(model: model, gameID: game.id)
+        let openSeats = try [CardCode("c01002")]
+
+        model.gameLobbyViewerHasSeats[game.id] = true
+        #expect(view.viewerSeatStatus(in: game) == .seated)
+        #expect(!view.showsClaimSeatButtons(for: game, openSeats: openSeats))
+        #expect(
+            view.openSeatsStatusText(for: game, openSeats: openSeats)
+                == "You already have a seat in this game."
+        )
+    }
+
+    @Test("GameLobbyView keeps viewer seat lookup unresolved until server data arrives")
+    func gameLobbyViewWaitsForViewerSeatData() async throws {
+        let joinedPlayer = PlayerID(UUID())
+        let game = sampleGame(
+            gameState: .pending([joinedPlayer]),
+            multiplayerVariant: .withFriends,
+            hasOpenSeats: true
+        )
+        let model = await model(gameListState: .loaded([.game(game)]))
+        let view = GameLobbyView(model: model, gameID: game.id)
+        let openSeats = try [CardCode("c01002")]
+
+        #expect(view.viewerSeatStatus(in: game) == .unresolved)
+        #expect(!view.showsClaimSeatButtons(for: game, openSeats: openSeats))
+        #expect(
+            view.openSeatsStatusText(for: game, openSeats: openSeats)
+                == "Checking whether you already have a seat in this game."
+        )
+
+        model.gameLobbyViewerHasSeats[game.id] = false
+        #expect(view.viewerSeatStatus(in: game) == .unseated)
+        #expect(view.showsClaimSeatButtons(for: game, openSeats: openSeats))
+        #expect(view.openSeatsStatusText(for: game, openSeats: openSeats).isEmpty)
+    }
+
+    @Test("GameLobbyView waiting text uses server playerCount with plural handling")
+    func gameLobbyViewWaitingTextUsesRemainingPlayers() async {
+        let firstPlayer = PlayerID(UUID())
+        let secondPlayer = PlayerID(UUID())
+        let claimedInvestigator = InvestigatorSummary(id: "01001", classSymbol: .guardian)
+        let oneRemaining = sampleGame(
+            gameState: .pending([firstPlayer]), multiplayerVariant: .withFriends
+        )
+        let manyRemaining = sampleGame(
+            gameState: .pending([firstPlayer]), multiplayerVariant: .withFriends
+        )
+        let pendingWithInvestigator = sampleGame(
+            gameState: .pending([firstPlayer]),
+            investigators: [claimedInvestigator],
+            multiplayerVariant: .withFriends
+        )
+        let chooseDecks = sampleGame(
+            gameState: .chooseDecks([firstPlayer, secondPlayer]), multiplayerVariant: .withFriends
+        )
+        let model = await model(gameListState: .loaded([
+            .game(oneRemaining), .game(manyRemaining), .game(pendingWithInvestigator),
+            .game(chooseDecks),
+        ]))
+        model.gameLobbyPlayerCounts[oneRemaining.id] = 2
+        model.gameLobbyPlayerCounts[manyRemaining.id] = 4
+        model.gameLobbyPlayerCounts[pendingWithInvestigator.id] = 4
+
+        #expect(
+            GameLobbyView(model: model, gameID: oneRemaining.id)
+                .waitingText(for: oneRemaining) == "Waiting for 1 more player to join."
+        )
+        #expect(
+            GameLobbyView(model: model, gameID: manyRemaining.id)
+                .waitingText(for: manyRemaining) == "Waiting for 3 more players to join."
+        )
+        #expect(
+            GameLobbyView(model: model, gameID: pendingWithInvestigator.id)
+                .waitingText(for: pendingWithInvestigator) == nil
+        )
+        #expect(
+            GameLobbyView(model: model, gameID: chooseDecks.id)
+                .waitingText(for: chooseDecks) == "Waiting for 2 players' deck choices."
+        )
     }
 
     @Test(

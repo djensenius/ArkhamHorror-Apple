@@ -258,6 +258,13 @@ final class AppModel {
     /// The most recently loaded open-seat list per game, populated by
     /// ``loadOpenSeats(for:)``.
     var gameOpenSeats: [GameID: OpenSeats] = [:]
+    /// Server-owned lobby seat counts, loaded from `PublicGame.playerCount` through
+    /// GET `/join` or GET `/games/:id` rather than inferred from list rows.
+    var gameLobbyPlayerCounts: [GameID: Int] = [:]
+    /// Latest server-reported answer for whether the current signed-in viewer has a seat.
+    var gameLobbyViewerHasSeats: [GameID: Bool] = [:]
+    /// Most recent failures while loading viewer-specific lobby membership.
+    var gameLobbyViewerSeatFailures: [GameID: GameLifecycleError] = [:]
 
     /// A monotonically increasing counter guarding stale games-list load/refresh
     /// completions against a *newer* load/refresh — independent of ``generation``,
@@ -267,6 +274,8 @@ final class AppModel {
     @ObservationIgnored var gameListGeneration = 0
     /// The in-flight games list load/refresh task, if any.
     @ObservationIgnored var gameListTask: Task<Void, Never>?
+    /// Terminal server result for a specific games-list generation.
+    @ObservationIgnored var gameListRefreshCompletions: [Int: GameListRefreshCompletion] = [:]
     /// The identity of the currently in-flight action for each ``GameID``, so a
     /// superseded action's stale completion (started, then superseded by a newer
     /// action on the very same game) can never mutate ``gameLifecycleActions``/
@@ -276,6 +285,10 @@ final class AppModel {
     @ObservationIgnored var gameLifecycleActionAttempts: [GameID: UUID] = [:]
     /// The in-flight task for each ``GameID``'s current action, if any.
     @ObservationIgnored var gameLifecycleActionTasks: [GameID: Task<Void, Never>] = [:]
+    /// The in-flight server-detail load for each lobby, if any.
+    @ObservationIgnored var gameLobbyDetailTasks: [GameID: Task<Void, Never>] = [:]
+    /// Ownership tokens for in-flight lobby detail loads, so stale tasks cannot clear replacements.
+    @ObservationIgnored var gameLobbyDetailTaskIDs: [GameID: UUID] = [:]
 
     // MARK: - Live-game state (see `AppModel+LiveGame.swift`/`AppModel+LiveGameSession.swift`)
 

@@ -36,3 +36,32 @@ extension GameLifecycleEnvelope: Decodable {
         }
     }
 }
+
+/// The shallow `GET /arkham/games/:id/join` preview used by join/claim invite flows.
+/// In addition to verifying that the server returned the requested `PublicGame`, this
+/// reads the server-owned `playerCount` so native waiting text can match the web lobby
+/// without inferring seat count from partial list rows.
+struct GameLifecyclePreview: Sendable, Equatable {
+    let id: GameID
+    let playerCount: Int
+
+    static func game(_ id: GameID, playerCount: Int = 2) -> GameLifecyclePreview {
+        GameLifecyclePreview(id: id, playerCount: playerCount)
+    }
+}
+
+extension GameLifecyclePreview: Decodable {
+    private enum CodingKeys: String, CodingKey {
+        case tag
+        case id
+        case playerCount
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let tag = try container.decode(String.self, forKey: .tag)
+        guard tag == "PublicGame" else { throw GameLifecycleError.malformedPayload }
+        id = try container.decode(GameID.self, forKey: .id)
+        playerCount = try container.decode(Int.self, forKey: .playerCount)
+    }
+}
