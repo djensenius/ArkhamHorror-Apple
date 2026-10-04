@@ -407,6 +407,33 @@ extension AppModelLiveChooseDeckTests {
         consume.cancel()
     }
 
+    @Test("Cancelled live deck send after handoff is uncertain")
+    func cancelledLiveDeckSendAfterHandoffIsUncertain() async throws {
+        let model = await makeSignedInRejectionModel()
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        let deck = try sampleRejectedDeck()
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
+        await connection.enqueueSendResult(.failure(CancellationError()))
+
+        #expect(await !model.chooseDeckForLivePrompt(deck, in: gameID))
+        #expect(await connection.sentData.count == 1)
+        #expect(model.basicChoiceActions[gameID]?.phase == .uncertain)
+        #expect(model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
+        #expect(!model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .valid
+        ))
+    }
+
     @Test("Late success for an old retryable deck attempt cannot advance its replacement")
     func lateOldDeckSendSuccessCannotAdvanceReplacement() async throws {
         let model = await makeSignedInRejectionModel()

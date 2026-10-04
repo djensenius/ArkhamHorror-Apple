@@ -96,13 +96,30 @@ extension AppModel {
             connection: connection
         ) else { return false }
 
+        var didStartSend = false
         do {
             try Task.checkCancellation()
             let bytes = try ContractJSON.encode(DeckAnswer(
                 deckId: deck.id,
                 playerId: prompt.ownerID
             ))
+            didStartSend = true
             try await connection.connection.send(bytes)
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            if consumeBasicChoiceRejectedAttempt(
+                gameID: gameID,
+                actionAttemptID: actionAttemptID
+            ) {
+                return true
+            }
+            markLiveChooseDeckAction(
+                gameID: gameID,
+                actionAttemptID: actionAttemptID,
+                connectionID: connection.connectionID,
+                phase: didStartSend ? .uncertain : .retryable(.transportFailure)
+            )
+            return false
         } catch {
             if consumeBasicChoiceRejectedAttempt(
                 gameID: gameID,
@@ -110,10 +127,11 @@ extension AppModel {
             ) {
                 return true
             }
-            markLiveChooseDeckActionRetryable(
+            markLiveChooseDeckAction(
                 gameID: gameID,
                 actionAttemptID: actionAttemptID,
-                connectionID: connection.connectionID
+                connectionID: connection.connectionID,
+                phase: .retryable(.transportFailure)
             )
             return false
         }
@@ -164,15 +182,16 @@ extension AppModel {
         return actionAttemptID
     }
 
-    private func markLiveChooseDeckActionRetryable(
+    private func markLiveChooseDeckAction(
         gameID: GameID,
         actionAttemptID: UUID,
-        connectionID: UUID
+        connectionID: UUID,
+        phase: BasicChoiceActionPhase
     ) {
         guard basicChoiceActions[gameID]?.attemptID == actionAttemptID,
               basicChoiceActions[gameID]?.connectionID == connectionID,
               basicChoiceActions[gameID]?.phase == .sending
         else { return }
-        basicChoiceActions[gameID]?.phase = .retryable(.transportFailure)
+        basicChoiceActions[gameID]?.phase = phase
     }
 }
