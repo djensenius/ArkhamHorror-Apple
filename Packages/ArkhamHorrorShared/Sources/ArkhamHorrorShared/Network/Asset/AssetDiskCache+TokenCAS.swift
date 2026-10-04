@@ -212,8 +212,8 @@ extension AssetDiskCache {
     /// crash-safety reasoning this closes. Never mints a fresh identifier
     /// for this retraction: both disposition commits reuse `token`'s own
     /// already-issued ``AuthorityID`` verbatim (see
-    /// ``beginRetraction(_:token:)``/``completeRetraction(_:token:)``'s
-    /// own doc comments for why minting a fresh one here would wrongly reject a different,
+    /// ``resolvedMutationAuthorityLocked(for:token:)``'s own doc comment
+    /// for why minting a fresh one here would wrongly reject a different,
     /// concurrent, already-issued-but-not-yet-applied operation for this
     /// same key as stale).
     ///
