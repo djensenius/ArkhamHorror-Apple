@@ -42,6 +42,18 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         (threshold: Int, continuation: CheckedContinuation<Void, Never>)
     ] = []
 
+    private var isPeekLobbyGated = false
+    private var peekLobbyContinuations: [CheckedContinuation<GameLifecyclePreview, any Error>] = []
+    private var peekLobbyPendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
+    private var isJoinGameGated = false
+    private var joinGameContinuations: [CheckedContinuation<GameLifecycleEnvelope, any Error>] = []
+    private var joinGamePendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
     private var isDeleteGameGated = false
     private var deleteGameContinuations: [GameLifecycleVoidContinuation] = []
     private var deleteGamePendingWaiters: [
@@ -110,6 +122,14 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         isListGamesGated = gated
     }
 
+    func setPeekLobbyGated(_ gated: Bool) {
+        isPeekLobbyGated = gated
+    }
+
+    func setJoinGameGated(_ gated: Bool) {
+        isJoinGameGated = gated
+    }
+
     func setDeleteGameGated(_ gated: Bool) {
         isDeleteGameGated = gated
     }
@@ -144,6 +164,34 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     func resumeNewestListGames(with result: Result<GameList, any Error>) {
         guard !listGamesContinuations.isEmpty else { return }
         resume(listGamesContinuations.removeLast(), with: result)
+    }
+
+    /// Suspends until at least `count` `peekLobby` calls are simultaneously pending.
+    func waitUntilPeekLobbyPending(_ count: Int) async {
+        if peekLobbyContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { peekLobbyPendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `peekLobby` call.
+    func resumeOldestPeekLobby(with result: Result<GameLifecyclePreview, any Error>) {
+        guard !peekLobbyContinuations.isEmpty else { return }
+        resume(peekLobbyContinuations.removeFirst(), with: result)
+    }
+
+    /// Suspends until at least `count` `joinGame` calls are simultaneously pending.
+    func waitUntilJoinGamePending(_ count: Int) async {
+        if joinGameContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { joinGamePendingWaiters.append((count, $0)) }
+    }
+
+    /// Resumes the oldest (first-issued) still-pending `joinGame` call.
+    func resumeOldestJoinGame(with result: Result<GameLifecycleEnvelope, any Error>) {
+        guard !joinGameContinuations.isEmpty else { return }
+        resume(joinGameContinuations.removeFirst(), with: result)
     }
 
     /// Suspends until at least `count` `deleteGame` calls are simultaneously pending.
@@ -228,9 +276,9 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         }
     }
 
-    private func resume(
-        _ continuation: CheckedContinuation<GameList, any Error>,
-        with result: Result<GameList, any Error>
+    private func resume<T: Sendable>(
+        _ continuation: CheckedContinuation<T, any Error>,
+        with result: Result<T, any Error>
     ) {
         switch result {
         case let .success(value): continuation.resume(returning: value)
@@ -241,6 +289,22 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     private func notifyListGamesWaiters() {
         listGamesPendingWaiters.removeAll { entry in
             guard listGamesContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func notifyPeekLobbyWaiters() {
+        peekLobbyPendingWaiters.removeAll { entry in
+            guard peekLobbyContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func notifyJoinGameWaiters() {
+        joinGamePendingWaiters.removeAll { entry in
+            guard joinGameContinuations.count >= entry.threshold else { return false }
             entry.continuation.resume()
             return true
         }
@@ -369,6 +433,12 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         lastToken = token
         lastProfileID = profile.id
         lastPeekLobbyGameID = id
+        if isPeekLobbyGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                peekLobbyContinuations.append(continuation)
+                notifyPeekLobbyWaiters()
+            }
+        }
         return try consume(&peekLobbyQueue)
     }
 
@@ -379,6 +449,12 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
         lastToken = token
         lastProfileID = profile.id
         lastJoinGameID = id
+        if isJoinGameGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                joinGameContinuations.append(continuation)
+                notifyJoinGameWaiters()
+            }
+        }
         return try consume(&joinGameQueue)
     }
 

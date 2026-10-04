@@ -69,7 +69,9 @@ extension AppModel {
             reloadLobbyViewerSeatStatus(for: joinedID)
             return joinedID
         } catch let error as GameLifecycleError {
+            try ensureCurrentGameInviteSession(inviteSession)
             await handleGameInviteLifecycleError(error, session: inviteSession)
+            try ensureCurrentGameInviteSession(inviteSession)
             throw error
         }
     }
