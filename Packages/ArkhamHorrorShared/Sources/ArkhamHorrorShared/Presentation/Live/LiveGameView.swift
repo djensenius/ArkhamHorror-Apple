@@ -161,8 +161,7 @@ struct LiveGameView: View {
 
     // swiftlint:disable:next function_body_length
     private func board(_ projection: BoardProjection) -> some View {
-        let participantPlayerID = localParticipantPlayerID
-        let renderedPrompt = promptForLocalParticipant(participantPlayerID: participantPlayerID)
+        let renderedPrompt = prompt
         if let renderedPrompt, isBetweenScenarioPrompt(renderedPrompt, in: projection) {
             return AnyView(BetweenScenariosView(
                 model: model,
@@ -174,7 +173,7 @@ struct LiveGameView: View {
         let board = BoardView(
             projection: projection,
             prompt: renderedPrompt,
-            localPlayerID: participantPlayerID,
+            localPlayerID: localParticipantPlayerID,
             cardCatalog: model.cardCatalog,
             onChoice: { index in
                 guard let identity = renderedPrompt?.identity else { return }
@@ -225,13 +224,6 @@ struct LiveGameView: View {
         } else {
             return AnyView(board)
         }
-    }
-
-    private func promptForLocalParticipant(
-        participantPlayerID: PlayerID?
-    ) -> BasicChoicePromptPresentation? {
-        guard let participantPlayerID, prompt?.ownerID == participantPlayerID else { return nil }
-        return prompt
     }
 
     private func isBetweenScenarioPrompt(
