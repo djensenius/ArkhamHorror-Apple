@@ -93,23 +93,17 @@ struct BoardLocationEnemyTileLayoutTests {
             112 * zoom,
             metrics.minimumCellSize(hasLinkedEnemyActions: hasLinkedEnemyActions).height
         ) - 8
-        let linkedEnemyActionsHeight = hasLinkedEnemyActions
-            ? metrics.summaryButtonHeight + metrics.verticalSpacing
-            : 0
-        let headerMaxHeight = max(
-            tileHeight - metrics.compactIndicatorHeight - metrics.verticalSpacing
-                - linkedEnemyActionsHeight,
-            44
-        )
-        let effectiveHeaderHeight = min(headerHeight, headerMaxHeight)
-        let availableHeight = max(
-            tileHeight - effectiveHeaderHeight - metrics.verticalSpacing - linkedEnemyActionsHeight,
-            0
+        let heightPlan = BoardLocationEnemyTileHeightPlan.plan(
+            tileHeight: tileHeight,
+            measuredHeaderHeight: headerHeight,
+            hasEnemies: enemyCount > 0,
+            hasLinkedEnemyActions: hasLinkedEnemyActions,
+            metrics: metrics
         )
         return BoardLocationEnemyTileLayout.decision(
             enemyCount: enemyCount,
             availableWidth: tileWidth,
-            availableHeight: availableHeight,
+            availableHeight: heightPlan.enemyPanelHeight,
             metrics: metrics
         )
     }

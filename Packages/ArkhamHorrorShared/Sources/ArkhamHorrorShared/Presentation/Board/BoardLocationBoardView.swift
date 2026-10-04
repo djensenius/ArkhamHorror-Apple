@@ -95,27 +95,20 @@ struct BoardLocationBoardView: View {
                 choiceLinks: choiceLinks
             )
             let hasLinkedEnemyActions = hasFocusableLinkedEnemyActions(linkedEnemyChoices)
-            let linkedEnemyActionsHeight = hasLinkedEnemyActions
-                ? metrics.summaryButtonHeight + metrics.verticalSpacing
-                : 0
-            let measuredHeaderHeight = measuredHeaderHeights[location.id] ?? 0
-            let headerMaxHeight = enemies.isEmpty ? nil : max(
-                tileSize.height - metrics.compactIndicatorHeight - metrics.verticalSpacing
-                    - linkedEnemyActionsHeight,
-                44
-            )
-            let enemyPanelHeight = max(
-                tileSize.height - measuredHeaderHeight - metrics.verticalSpacing
-                    - linkedEnemyActionsHeight,
-                0
+            let heightPlan = BoardLocationEnemyTileHeightPlan.plan(
+                tileHeight: tileSize.height,
+                measuredHeaderHeight: measuredHeaderHeights[location.id] ?? 0,
+                hasEnemies: !enemies.isEmpty,
+                hasLinkedEnemyActions: hasLinkedEnemyActions,
+                metrics: metrics
             )
             VStack(spacing: metrics.verticalSpacing) {
                 locationHeader(location, id: id, hasEnemies: !enemies.isEmpty)
-                    .frame(maxHeight: headerMaxHeight)
+                    .frame(maxHeight: heightPlan.headerMaxHeight)
                     .fixedSize(horizontal: false, vertical: true)
                     .background { headerHeightReader(for: location.id) }
                 if !enemies.isEmpty {
-                    measuredLocationEnemyPanel(enemies, height: enemyPanelHeight)
+                    measuredLocationEnemyPanel(enemies, height: heightPlan.enemyPanelHeight)
                 }
                 if hasLinkedEnemyActions {
                     linkedEnemyActionsControl(

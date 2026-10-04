@@ -53,6 +53,46 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
     }
 }
 
+struct BoardLocationEnemyTileHeightPlan: Sendable, Equatable {
+    let headerMaxHeight: CGFloat?
+    let effectiveHeaderHeight: CGFloat
+    let enemyPanelHeight: CGFloat
+
+    static func plan(
+        tileHeight: CGFloat,
+        measuredHeaderHeight: CGFloat,
+        hasEnemies: Bool,
+        hasLinkedEnemyActions: Bool,
+        metrics: BoardLocationEnemyTileMetrics
+    ) -> BoardLocationEnemyTileHeightPlan {
+        guard hasEnemies else {
+            return BoardLocationEnemyTileHeightPlan(
+                headerMaxHeight: nil,
+                effectiveHeaderHeight: measuredHeaderHeight,
+                enemyPanelHeight: 0
+            )
+        }
+        let linkedEnemyActionsHeight = hasLinkedEnemyActions
+            ? metrics.summaryButtonHeight + metrics.verticalSpacing
+            : 0
+        let headerMaxHeight = max(
+            tileHeight - metrics.compactIndicatorHeight - metrics.verticalSpacing
+                - linkedEnemyActionsHeight,
+            44
+        )
+        let effectiveHeaderHeight = min(measuredHeaderHeight, headerMaxHeight)
+        let enemyPanelHeight = max(
+            tileHeight - effectiveHeaderHeight - metrics.verticalSpacing - linkedEnemyActionsHeight,
+            0
+        )
+        return BoardLocationEnemyTileHeightPlan(
+            headerMaxHeight: headerMaxHeight,
+            effectiveHeaderHeight: effectiveHeaderHeight,
+            enemyPanelHeight: enemyPanelHeight
+        )
+    }
+}
+
 enum BoardLocationEnemyTileLayoutDecision: Sendable, Equatable {
     case hidden
     case compactIndicator
