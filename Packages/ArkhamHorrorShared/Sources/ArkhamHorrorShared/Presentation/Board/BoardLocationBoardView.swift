@@ -25,28 +25,23 @@ struct BoardLocationBoardView: View {
     let onLinkedChoice: (Int) -> Void
     @State private var measuredHeaderHeights: [LocationID: CGFloat] = [:]
 
-    private let baseCellSize = CGSize(width: 150, height: 112)
-
     private var effectiveCellSize: CGSize {
-        let scaled = CGSize(
-            width: baseCellSize.width * zoomScale,
-            height: baseCellSize.height * zoomScale
-        )
-        let metrics = BoardLocationEnemyTileMetrics.current
-        let minimum = metrics.minimumCellSize(
-            hasLinkedEnemyActions: locations.contains { location in
-                let enemies = enemiesByLocationID[location.id] ?? []
-                let linkedEnemyChoices = BoardFocusGraphBuilder.linkedEnemyChoices(
-                    for: enemies,
-                    choiceLinks: choiceLinks
-                )
-                return hasFocusableLinkedEnemyActions(linkedEnemyChoices)
-            }
-        )
-        return CGSize(
-            width: max(scaled.width, minimum.width),
-            height: max(scaled.height, minimum.height)
-        )
+        BoardLocationTileGeometryPlan.plan(
+            zoomScale: zoomScale,
+            hasLinkedEnemyActions: boardHasLinkedEnemyActions,
+            metrics: .current
+        ).cellSize
+    }
+
+    private var boardHasLinkedEnemyActions: Bool {
+        locations.contains { location in
+            let enemies = enemiesByLocationID[location.id] ?? []
+            let linkedEnemyChoices = BoardFocusGraphBuilder.linkedEnemyChoices(
+                for: enemies,
+                choiceLinks: choiceLinks
+            )
+            return hasFocusableLinkedEnemyActions(linkedEnemyChoices)
+        }
     }
 
     private func center(for position: BoardGridPosition) -> CGPoint {
@@ -84,10 +79,11 @@ struct BoardLocationBoardView: View {
     private func locationTile(_ location: BoardLocationNode) -> some View {
         if let position = layout.positions[location.id] {
             let id = BoardFocusID.location(location.id)
-            let tileSize = CGSize(
-                width: effectiveCellSize.width - 8,
-                height: effectiveCellSize.height - 8
-            )
+            let tileSize = BoardLocationTileGeometryPlan.plan(
+                zoomScale: zoomScale,
+                hasLinkedEnemyActions: boardHasLinkedEnemyActions,
+                metrics: .current
+            ).tileSize
             let enemies = enemiesByLocationID[location.id] ?? []
             let metrics = BoardLocationEnemyTileMetrics.current
             let linkedEnemyChoices = BoardFocusGraphBuilder.linkedEnemyChoices(

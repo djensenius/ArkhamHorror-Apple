@@ -53,6 +53,33 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
     }
 }
 
+struct BoardLocationTileGeometryPlan: Sendable, Equatable {
+    static let baseCellSize = CGSize(width: 150, height: 112)
+    static let tileGutter: CGFloat = 8
+
+    let cellSize: CGSize
+    let tileSize: CGSize
+
+    static func plan(
+        zoomScale: CGFloat,
+        hasLinkedEnemyActions: Bool,
+        metrics: BoardLocationEnemyTileMetrics
+    ) -> BoardLocationTileGeometryPlan {
+        let minimumCellSize = metrics.minimumCellSize(
+            hasLinkedEnemyActions: hasLinkedEnemyActions
+        )
+        let cellSize = CGSize(
+            width: max(baseCellSize.width * zoomScale, minimumCellSize.width),
+            height: max(baseCellSize.height * zoomScale, minimumCellSize.height)
+        )
+        let tileSize = CGSize(
+            width: max(cellSize.width - tileGutter, 0),
+            height: max(cellSize.height - tileGutter, 0)
+        )
+        return BoardLocationTileGeometryPlan(cellSize: cellSize, tileSize: tileSize)
+    }
+}
+
 struct BoardLocationEnemyTileHeightPlan: Sendable, Equatable {
     let headerMaxHeight: CGFloat?
     let effectiveHeaderHeight: CGFloat

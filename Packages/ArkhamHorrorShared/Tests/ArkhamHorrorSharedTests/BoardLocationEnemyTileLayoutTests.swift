@@ -88,13 +88,13 @@ struct BoardLocationEnemyTileLayoutTests {
         metrics: BoardLocationEnemyTileMetrics,
         hasLinkedEnemyActions: Bool = false
     ) -> BoardLocationEnemyTileLayoutDecision {
-        let tileWidth = max(150 * zoom, metrics.minimumCellSize.width) - 8
-        let tileHeight = max(
-            112 * zoom,
-            metrics.minimumCellSize(hasLinkedEnemyActions: hasLinkedEnemyActions).height
-        ) - 8
+        let tileGeometry = BoardLocationTileGeometryPlan.plan(
+            zoomScale: zoom,
+            hasLinkedEnemyActions: hasLinkedEnemyActions,
+            metrics: metrics
+        )
         let heightPlan = BoardLocationEnemyTileHeightPlan.plan(
-            tileHeight: tileHeight,
+            tileHeight: tileGeometry.tileSize.height,
             measuredHeaderHeight: headerHeight,
             hasEnemies: enemyCount > 0,
             hasLinkedEnemyActions: hasLinkedEnemyActions,
@@ -102,7 +102,7 @@ struct BoardLocationEnemyTileLayoutTests {
         )
         return BoardLocationEnemyTileLayout.decision(
             enemyCount: enemyCount,
-            availableWidth: tileWidth,
+            availableWidth: tileGeometry.tileSize.width,
             availableHeight: heightPlan.enemyPanelHeight,
             metrics: metrics
         )
