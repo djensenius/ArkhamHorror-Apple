@@ -3,7 +3,7 @@ import Foundation
 import Testing
 
 @Suite("Public game question-presentation binding")
-struct PublicGameSnapshotPresentationBindingTests {
+struct PublicGamePresentationBindingTests {
     @Test("A presentation binding mismatch surfaces as update-required prompt state")
     func bindingMismatchMarksPromptUpdateRequired() throws {
         var value = try fixtureValue("get-game")
