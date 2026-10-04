@@ -49,6 +49,24 @@ extension AppModel {
         return basicChoiceServerFeedback[gameID]
     }
 
+    func liveChooseDeckIsAwaitingAnswer(
+        for gameID: GameID, promptKey: BasicChoicePromptKey
+    ) -> Bool {
+        guard let prompt = basicChoicePresentation(for: gameID),
+              prompt.identity.promptKey == promptKey,
+              LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion),
+              let action = basicChoiceActions[gameID],
+              action.identity.promptKey == promptKey,
+              case .deck = action.submission
+        else { return false }
+        switch action.phase {
+        case .sending, .awaitingSnapshot, .uncertain:
+            return true
+        case .retryable:
+            return false
+        }
+    }
+
     /// Answers the live, in-game `ChooseDeck` prompt using the same WebSocket answer
     /// family as the web client. This is intentionally separate from the pre-game
     /// REST `PUT /games/{id}/decks` upgrade/replace route.
@@ -70,8 +88,13 @@ extension AppModel {
                 playerId: prompt.ownerID
             ))
             try await connection.connection.send(bytes)
-            try Task.checkCancellation()
         } catch {
+            if consumeBasicChoiceRejectedAttempt(
+                gameID: gameID,
+                actionAttemptID: actionAttemptID
+            ) {
+                return true
+            }
             clearLiveChooseDeckAction(
                 gameID: gameID,
                 actionAttemptID: actionAttemptID,

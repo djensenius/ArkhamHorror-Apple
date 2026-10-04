@@ -138,6 +138,7 @@ extension AppModelLiveChooseDeckTests {
 
         #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
         #expect(model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) == nil)
+        #expect(model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
 
         let rejection = Data(
             #"{"tag":"AnswerRejected","reason":"Deck already claimed","questionVersion":null}"#
@@ -151,14 +152,24 @@ extension AppModelLiveChooseDeckTests {
             promptKey: promptKey
         ) == "Deck already claimed")
         #expect(model.basicChoiceActions[gameID] == nil)
+        #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
         guard case .canAnswer = model.canAnswerLiveChooseDeck(for: gameID) else {
             Issue.record("A rejected DeckAnswer should leave the ChooseDeck prompt answerable")
             return
         }
 
+        await connection.enqueueSendResult(.failure(GameSocketTransportError()))
+        #expect(await !model.chooseDeckForLivePrompt(deck, in: gameID))
+        #expect(model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) == nil)
+        #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
+        guard case .canAnswer = model.canAnswerLiveChooseDeck(for: gameID) else {
+            Issue.record("A failed retry should leave the ChooseDeck prompt answerable")
+            return
+        }
+
         await connection.enqueueSendResult(.success(()))
         #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
-        #expect(await connection.sentData.count == 2)
+        #expect(await connection.sentData.count == 3)
         consume.cancel()
     }
 

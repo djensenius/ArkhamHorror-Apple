@@ -10,7 +10,6 @@ struct LiveChooseDeckSelectionView: View {
 
     @State private var viewModel: LobbyDeckSelectionViewModel
     @State private var isSubmitting = false
-    @State private var hasSentAnswer = false
     @State private var sendFailure: String?
 
     init(model: AppModel, profile: ServerProfile, gameID: GameID, promptKey: BasicChoicePromptKey) {
@@ -52,9 +51,7 @@ struct LiveChooseDeckSelectionView: View {
     }
 
     private var isAwaitingServerAnswer: Bool {
-        hasSentAnswer && model.liveChooseDeckRejectionReason(
-            for: gameID, promptKey: promptKey
-        ) == nil
+        model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey)
     }
 
     @ViewBuilder
@@ -93,9 +90,7 @@ struct LiveChooseDeckSelectionView: View {
                 isSubmitting = true
                 sendFailure = nil
                 let didSend = await model.chooseDeckForLivePrompt(deck, in: gameID)
-                if didSend {
-                    hasSentAnswer = true
-                } else {
+                if !didSend {
                     sendFailure = "This deck could not be sent. Reconnect and try again."
                 }
                 isSubmitting = false
