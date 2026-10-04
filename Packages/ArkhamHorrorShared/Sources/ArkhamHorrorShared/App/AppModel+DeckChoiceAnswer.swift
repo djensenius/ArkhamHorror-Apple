@@ -101,7 +101,7 @@ extension AppModel {
             ) {
                 return true
             }
-            clearLiveChooseDeckAction(
+            markLiveChooseDeckActionRetryable(
                 gameID: gameID,
                 actionAttemptID: actionAttemptID,
                 connectionID: connection.connectionID
@@ -155,7 +155,7 @@ extension AppModel {
         return actionAttemptID
     }
 
-    private func clearLiveChooseDeckAction(
+    private func markLiveChooseDeckActionRetryable(
         gameID: GameID,
         actionAttemptID: UUID,
         connectionID: UUID
@@ -164,6 +164,6 @@ extension AppModel {
               basicChoiceActions[gameID]?.connectionID == connectionID,
               basicChoiceActions[gameID]?.phase == .sending
         else { return }
-        basicChoiceActions[gameID] = nil
+        basicChoiceActions[gameID]?.phase = .retryable(.transportFailure)
     }
 }

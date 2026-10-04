@@ -137,6 +137,30 @@ extension AppModelLiveChooseDeckTests {
         }
     }
 
+    private func enqueueAnswerRejected(
+        _ reason: String, on connection: FakeGameSocketConnection
+    ) async {
+        await connection.enqueue(.event(.message(Data(
+            "{\"tag\":\"AnswerRejected\",\"reason\":\"\(reason)\",\"questionVersion\":null}".utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+    }
+
+    private func expectLiveDeckAnswerable(
+        _ model: AppModel, gameID: GameID, message: String
+    ) {
+        guard case .canAnswer = model.canAnswerLiveChooseDeck(for: gameID) else {
+            Issue.record(message)
+            return
+        }
+    }
+
+    private func expectDeckRejectionReason(
+        _ reason: String, model: AppModel, gameID: GameID, promptKey: BasicChoicePromptKey
+    ) {
+        #expect(model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) == reason)
+    }
+
     @Test("AnswerRejected releases a live deck answer and surfaces the server reason")
     func answerRejectedReleasesLiveDeckAnswer() async throws {
         let model = await makeSignedInRejectionModel()
@@ -159,32 +183,36 @@ extension AppModelLiveChooseDeckTests {
         #expect(model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) == nil)
         #expect(model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
 
-        let rejection = Data(
-            #"{"tag":"AnswerRejected","reason":"Deck already claimed","questionVersion":null}"#
-                .utf8
-        )
-        await connection.enqueue(.event(.message(rejection)))
-        await connection.waitUntilAwaitingNextEvent()
+        await enqueueAnswerRejected("Deck already claimed", on: connection)
 
-        #expect(model.liveChooseDeckRejectionReason(
-            for: gameID,
-            promptKey: promptKey
-        ) == "Deck already claimed")
+        expectDeckRejectionReason(
+            "Deck already claimed", model: model, gameID: gameID, promptKey: promptKey
+        )
         #expect(model.basicChoiceActions[gameID] == nil)
         #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
-        guard case .canAnswer = model.canAnswerLiveChooseDeck(for: gameID) else {
-            Issue.record("A rejected DeckAnswer should leave the ChooseDeck prompt answerable")
-            return
-        }
+        expectLiveDeckAnswerable(
+            model,
+            gameID: gameID,
+            message: "A rejected DeckAnswer should leave the ChooseDeck prompt answerable"
+        )
 
         await connection.enqueueSendResult(.failure(GameSocketTransportError()))
         #expect(await !model.chooseDeckForLivePrompt(deck, in: gameID))
         #expect(model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) == nil)
+        #expect(model.basicChoiceActions[gameID]?.phase == .retryable(.transportFailure))
         #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
-        guard case .canAnswer = model.canAnswerLiveChooseDeck(for: gameID) else {
-            Issue.record("A failed retry should leave the ChooseDeck prompt answerable")
-            return
-        }
+        expectLiveDeckAnswerable(
+            model,
+            gameID: gameID,
+            message: "A failed retry should leave the ChooseDeck prompt answerable"
+        )
+
+        await enqueueAnswerRejected("Delayed deck reason", on: connection)
+        expectDeckRejectionReason(
+            "Delayed deck reason", model: model, gameID: gameID, promptKey: promptKey
+        )
+        #expect(model.basicChoiceActions[gameID] == nil)
+        #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
 
         await connection.enqueueSendResult(.success(()))
         #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
@@ -263,7 +291,8 @@ extension AppModelLiveChooseDeckTests {
 
         await connection.resumeOldestSend(with: .failure(GameSocketTransportError()))
         #expect(await !second.value)
-        #expect(model.basicChoiceActions[gameID] == nil)
+        #expect(model.basicChoiceActions[gameID]?.phase == .retryable(.transportFailure))
+        #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
         #expect(await connection.sentData.count == 2)
         consume.cancel()
     }
