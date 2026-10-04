@@ -912,8 +912,6 @@ extension AppModelLiveGameTests {
         )
         return try #require(representatives.presentations.first { $0.name == name })
     }
-
-
 }
 
 private enum GenericRendererTestError: Error {
