@@ -310,9 +310,10 @@ struct EnemyActionReachabilityPropertyTests {
         let baselineReturn = explicitNeighbor(in: baselineGraph, from: target, direction: reverse)
         let repairRestoredHeaderSlot = (reverse == .left || reverse == .right)
             && returnTarget == baselineReturn
+            && returnTarget != headerID
         return repairRestoredHeaderSlot ? nil : "action \(actionID) \(direction) reaches "
             + "\(target), whose \(reverse) return is \(describe(returnTarget)); expected "
-            + "\(actionID) unless the reachability repair restored "
+            + "\(actionID) unless the reachability repair rewrote that slot to "
             + "the exact no-actions target \(describe(baselineReturn))"
     }
 
