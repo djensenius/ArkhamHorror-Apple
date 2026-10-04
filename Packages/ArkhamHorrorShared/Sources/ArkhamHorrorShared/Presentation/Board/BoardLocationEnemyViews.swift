@@ -7,7 +7,7 @@ import SwiftUI
 struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
     /// Height of a rendered one-line enemy chip.
     let chipRowHeight: CGFloat
-    /// Height of a text overflow button such as "+2 more enemies".
+    /// Height of the all-enemies summary button such as "3 enemies".
     let summaryButtonHeight: CGFloat
     /// Height of the smallest tappable/count indicator used at minimum zoom.
     let compactIndicatorHeight: CGFloat
@@ -63,11 +63,11 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
 
     func minimumCellSize(hasLinkedEnemyActions: Bool) -> CGSize {
         guard hasLinkedEnemyActions else { return minimumCellSize }
-        let minimumTileHeight = 44 + compactIndicatorHeight + summaryButtonHeight
-            + (2 * verticalSpacing)
+        let minimumTileHeight = BoardLocationHeaderSizing.minimumInteractiveHeight
+            + compactIndicatorHeight + summaryButtonHeight + (2 * verticalSpacing)
         return CGSize(
             width: minimumCellSize.width,
-            height: max(minimumCellSize.height, minimumTileHeight + 8)
+            height: max(minimumCellSize.height, minimumTileHeight + BoardLocationTileGeometryPlan.tileGutter)
         )
     }
 }
