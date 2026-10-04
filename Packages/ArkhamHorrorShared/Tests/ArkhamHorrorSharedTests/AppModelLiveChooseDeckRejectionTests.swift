@@ -116,6 +116,21 @@ extension AppModelLiveChooseDeckTests {
         )
     }
 
+    private func consumeLivePrompt(
+        on model: AppModel,
+        connection: FakeGameSocketConnection,
+        installed: InstalledLiveChooseDeckPrompt
+    ) -> Task<LiveGameSocketConsumeOutcome, Never> {
+        Task {
+            await model.consumeLiveGameSocket(
+                installed.attempt,
+                connection: connection,
+                connectionID: installed.connectionID,
+                projection: installed.projection
+            )
+        }
+    }
+
     @Test("AnswerRejected releases a live deck answer and surfaces the server reason")
     func answerRejectedReleasesLiveDeckAnswer() async throws {
         let model = await makeSignedInRejectionModel()
@@ -132,14 +147,7 @@ extension AppModelLiveChooseDeckTests {
             connection: connection
         )
         let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
-        let consume = Task {
-            await model.consumeLiveGameSocket(
-                installed.attempt,
-                connection: connection,
-                connectionID: installed.connectionID,
-                projection: installed.projection
-            )
-        }
+        let consume = consumeLivePrompt(on: model, connection: connection, installed: installed)
         await connection.waitUntilAwaitingNextEvent()
         await connection.enqueueSendResult(.success(()))
 
@@ -196,14 +204,7 @@ extension AppModelLiveChooseDeckTests {
             connection: connection
         )
         let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
-        let consume = Task {
-            await model.consumeLiveGameSocket(
-                installed.attempt,
-                connection: connection,
-                connectionID: installed.connectionID,
-                projection: installed.projection
-            )
-        }
+        let consume = consumeLivePrompt(on: model, connection: connection, installed: installed)
         await connection.waitUntilAwaitingNextEvent()
         await connection.enqueueSendResult(.success(()))
 
