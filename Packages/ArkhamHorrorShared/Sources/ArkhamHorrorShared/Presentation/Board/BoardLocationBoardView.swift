@@ -99,10 +99,11 @@ struct BoardLocationBoardView: View {
                 metrics: metrics
             )
             VStack(spacing: metrics.verticalSpacing) {
-                locationHeader(location, id: id, hasEnemies: !enemies.isEmpty)
-                    .frame(maxHeight: heightPlan.headerMaxHeight)
-                    .clipped()
-                    .background { headerHeightReader(for: location.id) }
+                BoardLocationHeaderClampLayout(maximumHeight: heightPlan.headerMaxHeight) {
+                    locationHeader(location, id: id, hasEnemies: !enemies.isEmpty)
+                }
+                .clipped()
+                .background { headerHeightReader(for: location.id) }
                 if !enemies.isEmpty {
                     measuredLocationEnemyPanel(enemies, height: heightPlan.enemyPanelHeight)
                 }
