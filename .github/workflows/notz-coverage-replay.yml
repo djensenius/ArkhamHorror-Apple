@@ -56,3 +56,37 @@ jobs:
           echo "ARKHAM_NOTZ_COVERAGE_DIR=$coverage_dir" >> "$GITHUB_ENV"
       - name: Replay coverage prompts
         run: mise run notz-coverage-replay
+      - name: Download latest successful fork multiplayer coverage artifact
+        if: ${{ !cancelled() }}
+        env:
+          GH_PROMPT_DISABLED: "1"
+          # Cross-repo artifact downloads may need a token with actions:read on
+          # djensenius/ArkhamHorror; NOTZ_COVERAGE_TOKEN overrides github.token.
+          GH_TOKEN: ${{ secrets.NOTZ_COVERAGE_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          run_id="$(
+            gh run list \
+              --repo djensenius/ArkhamHorror \
+              --workflow notz-multiplayer-coverage.yml \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId'
+          )"
+          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+            echo "No successful Night of the Zealot multiplayer coverage run found" >&2
+            exit 1
+          fi
+          coverage_dir="$RUNNER_TEMP/night-of-the-zealot-multiplayer-coverage-jsonl"
+          mkdir -p "$coverage_dir"
+          gh run download "$run_id" \
+            --repo djensenius/ArkhamHorror \
+            --name night-of-the-zealot-multiplayer-coverage-jsonl \
+            --dir "$coverage_dir"
+          find "$coverage_dir" -type f -name '*.jsonl' -print | sort
+          echo "ARKHAM_NOTZ_MP_COVERAGE_DIR=$coverage_dir" >> "$GITHUB_ENV"
+      - name: Replay multiplayer coverage prompts
+        if: ${{ !cancelled() }}
+        run: mise run notz-multiplayer-coverage-replay
