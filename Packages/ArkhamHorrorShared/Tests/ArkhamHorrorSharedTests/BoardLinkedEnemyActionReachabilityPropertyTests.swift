@@ -58,9 +58,6 @@ struct EnemyActionReachabilityPropertyTests {
             choiceLinks: [:],
             layout: layout
         )
-        let baselineEntry = try #require(baselineGraph.zoneEntryPoints[BoardFocusZone.locations])
-        let baselineHeaders = reachableHeaders(from: baselineEntry, in: baselineGraph)
-
         for actionLocations in actionPlacements(locationCount: locationCount) {
             let enemyIDs = actionLocations.indices.map { enemyID($0) }
             let graph = makeLocationGraph(
@@ -75,7 +72,6 @@ struct EnemyActionReachabilityPropertyTests {
             )
             try assertReachableLocationsAndActions(
                 graph: graph,
-                baselineHeaders: baselineHeaders,
                 ids: ids,
                 actionLocations: actionLocations,
                 edges: edges,
@@ -93,10 +89,8 @@ struct EnemyActionReachabilityPropertyTests {
         }
     }
 
-    // swiftlint:disable:next function_parameter_count
     private func assertReachableLocationsAndActions(
         graph: FocusGraph,
-        baselineHeaders: Set<SemanticFocusID>,
         ids: [LocationID],
         actionLocations: [Int],
         edges: [(Int, Int)],
@@ -110,13 +104,11 @@ struct EnemyActionReachabilityPropertyTests {
             BoardFocusID.locationEnemyActions(ids[$0])
         })
         guard reachableHeaders.isSuperset(of: expectedHeaders),
-              reachableHeaders.isSuperset(of: baselineHeaders),
               reachable.isSuperset(of: expectedActions)
         else {
             throw invariantFailure(
                 "reachability failed: reachableHeaders=\(sortedDescriptions(reachableHeaders)) "
                     + "expectedHeaders=\(sortedDescriptions(expectedHeaders)) "
-                    + "baselineHeaders=\(sortedDescriptions(baselineHeaders)) "
                     + "reachableActions="
                     + "\(sortedDescriptions(reachable.intersection(expectedActions))) "
                     + "expectedActions=\(sortedDescriptions(expectedActions))",
@@ -157,6 +149,19 @@ struct EnemyActionReachabilityPropertyTests {
             }
         }
         for actionIndex in actionLocations {
+            let pairFailure = actionHeaderPairFailure(
+                graph: graph,
+                ids: ids,
+                actionIndex: actionIndex
+            )
+            guard pairFailure == nil else {
+                throw invariantFailure(
+                    pairFailure ?? "action-header pair failed",
+                    edges: edges,
+                    rootIndex: rootIndex,
+                    actionLocations: actionLocations
+                )
+            }
             for direction in [FocusDirection.down, .left, .right] {
                 let actionFailure = actionTopologyFailure(
                     graph: graph,
@@ -176,6 +181,23 @@ struct EnemyActionReachabilityPropertyTests {
                 }
             }
         }
+    }
+
+    private func actionHeaderPairFailure(
+        graph: FocusGraph,
+        ids: [LocationID],
+        actionIndex: Int
+    ) -> String? {
+        let locationID = ids[actionIndex]
+        let headerID = BoardFocusID.location(locationID)
+        let actionID = BoardFocusID.locationEnemyActions(locationID)
+        let headerDown = explicitNeighbor(in: graph, from: headerID, direction: .down)
+        guard headerDown == actionID else {
+            return "header \(headerID) down is \(describe(headerDown)); expected \(actionID)"
+        }
+        let actionUp = explicitNeighbor(in: graph, from: actionID, direction: .up)
+        return actionUp == headerID ? nil : "action \(actionID) up is "
+            + "\(describe(actionUp)); expected \(headerID)"
     }
 
     private func headerTopologyFailure(
