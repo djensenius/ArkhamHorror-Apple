@@ -36,6 +36,7 @@ extension BoardFocusGraphBuilder {
             layout: layout,
             actionIDs: actionIDs
         )
+        let headerFallbackTargets = locationHeaderFallbackTargets(locations)
         for location in locations {
             let layoutNeighbors = layout.neighbors[location.id] ?? [:]
             let actionID = actionIDs[location.id]
@@ -44,6 +45,7 @@ extension BoardFocusGraphBuilder {
                 zone: BoardFocusZone.locations,
                 neighbors: locationNeighbors(
                     layoutNeighbors,
+                    headerFallbackTargets: headerFallbackTargets[location.id] ?? [:],
                     actionID: actionID,
                     reciprocalTargets: actionEdgePlan.reverseTargets[location.id] ?? [:]
                 )
@@ -82,6 +84,24 @@ extension BoardFocusGraphBuilder {
         })
     }
 
+    private static func locationHeaderFallbackTargets(
+        _ locations: [BoardLocationNode]
+    ) -> [LocationID: [FocusDirection: SemanticFocusID]] {
+        guard locations.count > 1 else { return [:] }
+        var targets: [LocationID: [FocusDirection: SemanticFocusID]] = [:]
+        for (index, location) in locations.enumerated() {
+            let previous = locations[(index - 1 + locations.count) % locations.count]
+            let next = locations[(index + 1) % locations.count]
+            targets[location.id] = [
+                .up: BoardFocusID.location(previous.id),
+                .left: BoardFocusID.location(previous.id),
+                .down: BoardFocusID.location(next.id),
+                .right: BoardFocusID.location(next.id),
+            ]
+        }
+        return targets
+    }
+
     private static func locationEnemyActionEdgePlan(
         locations: [BoardLocationNode],
         layout: BoardLayout,
@@ -114,12 +134,14 @@ extension BoardFocusGraphBuilder {
 
     private static func locationNeighbors(
         _ layoutNeighbors: [FocusDirection: LocationID],
+        headerFallbackTargets: [FocusDirection: SemanticFocusID],
         actionID: SemanticFocusID?,
         reciprocalTargets: [FocusDirection: SemanticFocusID]
     ) -> [FocusDirection: SemanticFocusID] {
-        var neighbors = Dictionary(uniqueKeysWithValues: layoutNeighbors.map {
-            ($0.key, BoardFocusID.location($0.value))
-        })
+        var neighbors = headerFallbackTargets
+        for (direction, locationID) in layoutNeighbors {
+            neighbors[direction] = BoardFocusID.location(locationID)
+        }
         if let actionID {
             neighbors[.down] = actionID
         }
