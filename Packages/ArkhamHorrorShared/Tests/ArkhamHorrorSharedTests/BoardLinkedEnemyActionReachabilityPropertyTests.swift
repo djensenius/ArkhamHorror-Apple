@@ -240,25 +240,49 @@ struct EnemyActionReachabilityPropertyTests {
             ids: ids,
             graph: graph
         ) else {
-            return "header \(headerID) \(direction) changed from \(describe(baselineTarget)) "
-                + "to non-action target \(describe(target))"
+            let repairHeaderSlot = (direction == .left || direction == .right)
+                && isLocationHeader(target, graph: graph)
+            return repairHeaderSlot ? nil : "header \(headerID) \(direction) changed from "
+                + "\(describe(baselineTarget)) to non-action target \(describe(target))"
         }
         let actionLocationID = ids[actionLocationIndex]
         let actionID = BoardFocusID.locationEnemyActions(actionLocationID)
         let actionLocationHeaderID = BoardFocusID.location(actionLocationID)
         if direction == .down, actionLocationIndex == headerIndex {
-            let actionDown = explicitNeighbor(in: graph, from: actionID, direction: .down)
-            if baselineTarget == nil {
-                return actionDown == actionID ? nil : "single-location header \(headerID) "
-                    + "down inserts \(actionID), but action down is \(describe(actionDown))"
-            }
-            return actionDown == baselineTarget ? nil : "header \(headerID) down inserts "
-                + "\(actionID), but action down is \(describe(actionDown)); expected "
-                + "original down target \(describe(baselineTarget))"
+            return insertedActionDownFailure(
+                graph: graph,
+                headerID: headerID,
+                actionID: actionID,
+                actionDown: explicitNeighbor(in: graph, from: actionID, direction: .down),
+                baselineTarget: baselineTarget
+            )
+        }
+        if direction == .left || direction == .right {
+            return nil
         }
         return baselineTarget == actionLocationHeaderID ? nil : "header \(headerID) "
             + "\(direction) changed from \(describe(baselineTarget)) to \(actionID), "
             + "but the header-only edge did not point at \(actionLocationHeaderID)"
+    }
+
+    private func insertedActionDownFailure(
+        graph: FocusGraph,
+        headerID: SemanticFocusID,
+        actionID: SemanticFocusID,
+        actionDown: SemanticFocusID?,
+        baselineTarget: SemanticFocusID?
+    ) -> String? {
+        if baselineTarget == nil {
+            return actionDown == actionID ? nil : "single-location header \(headerID) "
+                + "down inserts \(actionID), but action down is \(describe(actionDown))"
+        }
+        if actionDown == baselineTarget || actionDown == actionID {
+            return nil
+        }
+        let returnTarget = explicitNeighbor(in: graph, from: actionDown ?? actionID, direction: .up)
+        return returnTarget == actionID ? nil : "header \(headerID) down inserts "
+            + "\(actionID), but action down is \(describe(actionDown)); expected "
+            + "original down target \(describe(baselineTarget)), a reciprocal alternative, or self"
     }
 
     // swiftlint:disable:next function_parameter_count
@@ -284,9 +308,12 @@ struct EnemyActionReachabilityPropertyTests {
             return target == actionID ? nil : "action \(actionID) \(direction) is "
                 + "\(describe(target)); expected self because the header-only graph has no target"
         }
-        guard target == headerBaseTarget else {
+        if target == actionID {
+            return nil
+        }
+        guard isLocationHeader(target, graph: graph) else {
             return "action \(actionID) \(direction) is \(describe(target)); expected "
-                + "header-only target \(describe(headerBaseTarget))"
+                + "a reciprocal location header target or self"
         }
         return reciprocalTopologyFailure(
             graph: graph,
@@ -321,19 +348,19 @@ struct EnemyActionReachabilityPropertyTests {
             ids: ids,
             layout: layout
         )
-        guard headerBaseReturn == headerID else { return nil }
         let returnTarget = explicitNeighbor(in: graph, from: target, direction: reverse)
         if returnTarget == actionID {
             return nil
         }
         let baselineReturn = explicitNeighbor(in: baselineGraph, from: target, direction: reverse)
-        let repairRestoredHeaderSlot = (reverse == .left || reverse == .right)
-            && returnTarget == baselineReturn
+        let repairRestoredHeaderSlot = headerBaseReturn == headerID
+            && (reverse == .left || reverse == .right)
+            && isLocationHeader(returnTarget, graph: graph)
             && returnTarget != headerID
         return repairRestoredHeaderSlot ? nil : "action \(actionID) \(direction) reaches "
             + "\(target), whose \(reverse) return is \(describe(returnTarget)); expected "
-            + "\(actionID) unless the reachability repair rewrote that slot to "
-            + "the exact no-actions target \(describe(baselineReturn))"
+            + "\(actionID) unless the reachability repair rewrote a reciprocal slot to "
+            + "another location header (baseline was \(describe(baselineReturn)))"
     }
 
     private func explicitNeighbor(

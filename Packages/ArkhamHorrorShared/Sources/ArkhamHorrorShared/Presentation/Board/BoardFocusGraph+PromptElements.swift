@@ -41,6 +41,7 @@ extension BoardFocusGraphBuilder {
             locations: locations,
             layout: layout,
             actionIDs: actionIDs,
+            headerFallbackTargets: headerFallbackTargets,
             headerBaseTargets: headerBaseTargets
         )
         // The entry point is whichever location BFS layering placed first (column 0, row
@@ -140,83 +141,77 @@ extension BoardFocusGraphBuilder {
         locations: [BoardLocationNode],
         layout: BoardLayout,
         actionIDs: [LocationID: SemanticFocusID],
+        headerFallbackTargets: [LocationID: [FocusDirection: LocationID]],
         headerBaseTargets: [LocationID: [FocusDirection: LocationID]]
     ) -> LocationEnemyActionEdgePlan {
-        let headerFallbackTargets = locationHeaderFallbackTargets(locations)
         var plan = LocationEnemyActionEdgePlan()
         for location in locations {
             guard let actionID = actionIDs[location.id] else { continue }
             let layoutNeighbors = layout.neighbors[location.id] ?? [:]
             for direction in [FocusDirection.down, .left, .right] {
-                if let neighborID = layoutNeighbors[direction] {
-                    planRealLayoutActionEdge(
-                        from: location.id, actionID: actionID, direction: direction,
-                        neighborID: neighborID, headerBaseTargets: headerBaseTargets, plan: &plan
-                    )
-                } else if let fallbackID = headerFallbackTargets[location.id]?[direction] {
-                    planHeaderFallbackActionEdge(
-                        actionLocationID: location.id, actionID: actionID, direction: direction,
-                        fallbackID: fallbackID, layout: layout, plan: &plan
-                    )
-                } else {
-                    plan.forwardTargets[location.id, default: [:]][direction] = actionID
-                }
+                let preferredTarget = layoutNeighbors[direction]
+                    ?? headerFallbackTargets[location.id]?[direction]
+                let fallbackTarget = headerFallbackTargets[location.id]?[direction]
+                planActionEdge(
+                    from: location.id,
+                    actionID: actionID,
+                    direction: direction,
+                    preferredTarget: preferredTarget,
+                    fallbackTarget: fallbackTarget,
+                    headerBaseTargets: headerBaseTargets,
+                    plan: &plan
+                )
             }
         }
         return plan
     }
 
     // swiftlint:disable:next function_parameter_count
-    private static func planRealLayoutActionEdge(
+    private static func planActionEdge(
         from locationID: LocationID,
         actionID: SemanticFocusID,
         direction: FocusDirection,
-        neighborID: LocationID,
+        preferredTarget: LocationID?,
+        fallbackTarget: LocationID?,
         headerBaseTargets: [LocationID: [FocusDirection: LocationID]],
         plan: inout LocationEnemyActionEdgePlan
     ) {
-        let reverse = direction.boardOpposite
-        let isReciprocalHeaderEdge = headerBaseTargets[neighborID]?[reverse] == locationID
-        guard isReciprocalHeaderEdge else {
-            // Another location/action may already own this neighbor's reverse slot. In that
-            // case keep the action's forward edge on the header-only target, but do not
-            // replace the neighbor's unrelated return edge.
-            plan.forwardTargets[locationID, default: [:]][direction] = BoardFocusID.location(
-                neighborID
-            )
+        var candidateTargets: [LocationID] = []
+        if let preferredTarget {
+            candidateTargets.append(preferredTarget)
+        }
+        if let fallbackTarget, !candidateTargets.contains(fallbackTarget) {
+            candidateTargets.append(fallbackTarget)
+        }
+        for targetID in candidateTargets where claimActionEdge(
+            from: locationID,
+            actionID: actionID,
+            direction: direction,
+            targetID: targetID,
+            headerBaseTargets: headerBaseTargets,
+            plan: &plan
+        ) {
             return
         }
-        assert(
-            plan.reverseTargets[neighborID]?[reverse] == nil,
-            "Reciprocal layout action claims are unique because the header-only reverse edge "
-                + "can point at only one location."
-        )
-        plan.forwardTargets[locationID, default: [:]][direction] = BoardFocusID.location(
-            neighborID
-        )
-        plan.reverseTargets[neighborID, default: [:]][reverse] = actionID
+        plan.forwardTargets[locationID, default: [:]][direction] = actionID
     }
 
     // swiftlint:disable:next function_parameter_count
-    private static func planHeaderFallbackActionEdge(
-        actionLocationID: LocationID,
+    private static func claimActionEdge(
+        from locationID: LocationID,
         actionID: SemanticFocusID,
         direction: FocusDirection,
-        fallbackID: LocationID,
-        layout: BoardLayout,
+        targetID: LocationID,
+        headerBaseTargets: [LocationID: [FocusDirection: LocationID]],
         plan: inout LocationEnemyActionEdgePlan
-    ) {
+    ) -> Bool {
         let reverse = direction.boardOpposite
-        plan.forwardTargets[actionLocationID, default: [:]][direction] = BoardFocusID.location(
-            fallbackID
-        )
-        guard (layout.neighbors[fallbackID] ?? [:])[reverse] == nil else { return }
-        assert(
-            plan.reverseTargets[fallbackID]?[reverse] == nil,
-            "Fallback action claims are unique because each fallback reverse slot has one "
-                + "header-only predecessor."
-        )
-        plan.reverseTargets[fallbackID, default: [:]][reverse] = actionID
+        guard headerBaseTargets[targetID]?[reverse] == locationID,
+              plan.reverseTargets[targetID]?[reverse] == nil
+        else { return false }
+        plan.forwardTargets[locationID, default: [:]][direction] = BoardFocusID.location(targetID)
+        plan.reverseTargets[targetID, default: [:]][reverse] = actionID
+        return true
     }
 
     private static func locationNeighbors(
