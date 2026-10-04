@@ -50,10 +50,6 @@ struct LiveChooseDeckSelectionView: View {
         model.liveChooseDeckServerFeedback(for: gameID, promptKey: promptKey) ?? sendFailure
     }
 
-    private var isAwaitingServerAnswer: Bool {
-        model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey)
-    }
-
     @ViewBuilder
     private var content: some View {
         switch viewModel.loadState {
@@ -85,6 +81,11 @@ struct LiveChooseDeckSelectionView: View {
 
     private func deckButton(_ deck: Deck) -> some View {
         let state = viewModel.validationState(for: deck)
+        let pickerEnabled = model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: state
+        )
         return Button {
             Task {
                 isSubmitting = true
@@ -111,7 +112,7 @@ struct LiveChooseDeckSelectionView: View {
                 }
             }
         }
-        .disabled(isAwaitingServerAnswer || state != .valid)
+        .disabled(!pickerEnabled)
     }
 
     @ViewBuilder

@@ -73,6 +73,15 @@ extension AppModel {
         }
     }
 
+    func liveChooseDeckPickerEnabled(
+        for gameID: GameID,
+        promptKey: BasicChoicePromptKey,
+        validation: LobbyDeckSelectionViewModel.ValidationState
+    ) -> Bool {
+        guard validation == .valid else { return false }
+        return !liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey)
+    }
+
     /// Answers the live, in-game `ChooseDeck` prompt using the same WebSocket answer
     /// family as the web client. This is intentionally separate from the pre-game
     /// REST `PUT /games/{id}/decks` upgrade/replace route.

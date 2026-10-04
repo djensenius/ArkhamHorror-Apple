@@ -161,6 +161,99 @@ extension AppModelLiveChooseDeckTests {
         #expect(model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) == reason)
     }
 
+    private func liveChooseDeckViewSource() throws -> String {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot
+            .appendingPathComponent("Sources")
+            .appendingPathComponent("ArkhamHorrorShared")
+            .appendingPathComponent("Presentation")
+            .appendingPathComponent("Decks")
+            .appendingPathComponent("LiveChooseDeckSelectionView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    @Test("Live deck picker enablement is delegated to the model presentation rule")
+    func liveChooseDeckViewUsesModelPickerEnabledRule() throws {
+        let source = try liveChooseDeckViewSource()
+
+        #expect(source.contains("let pickerEnabled = model.liveChooseDeckPickerEnabled("))
+        #expect(source.contains(".disabled(!pickerEnabled)"))
+        #expect(!source.contains(".disabled(isSubmitting"))
+    }
+
+    @Test("Live deck picker presentation is disabled only by validation and deck answer state")
+    func liveChooseDeckPickerEnabledUsesValidationAndAnswerState() async throws {
+        let model = await makeSignedInRejectionModel()
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        let deck = try sampleRejectedDeck()
+        let installed = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let promptKey = prompt.identity.promptKey
+
+        #expect(model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .valid
+        ))
+        #expect(!model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .pending
+        ))
+        #expect(!model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .invalid("invalid")
+        ))
+        #expect(!model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .failed("failed")
+        ))
+
+        for phase in [
+            BasicChoiceActionPhase.sending,
+            .awaitingSnapshot,
+            .uncertain,
+        ] {
+            model.basicChoiceActions[gameID] = BasicChoiceActionRecord(
+                identity: prompt.identity,
+                submission: .deck(deck.id),
+                attemptID: UUID(),
+                connectionID: installed.connectionID,
+                phase: phase
+            )
+            #expect(!model.liveChooseDeckPickerEnabled(
+                for: gameID,
+                promptKey: promptKey,
+                validation: .valid
+            ))
+        }
+
+        model.basicChoiceActions[gameID] = BasicChoiceActionRecord(
+            identity: prompt.identity,
+            submission: .deck(deck.id),
+            attemptID: UUID(),
+            connectionID: installed.connectionID,
+            phase: .retryable(.transportFailure)
+        )
+        #expect(model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .valid
+        ))
+    }
+
     @Test("AnswerRejected releases a live deck answer and surfaces the server reason")
     func answerRejectedReleasesLiveDeckAnswer() async throws {
         let model = await makeSignedInRejectionModel()
@@ -213,6 +306,11 @@ extension AppModelLiveChooseDeckTests {
         )
         #expect(model.basicChoiceActions[gameID] == nil)
         #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
+        expectLiveDeckAnswerable(
+            model,
+            gameID: gameID,
+            message: "A delayed rejected DeckAnswer should leave the prompt answerable"
+        )
 
         await connection.enqueueSendResult(.success(()))
         #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
@@ -276,6 +374,11 @@ extension AppModelLiveChooseDeckTests {
 
         let first = Task { await model.chooseDeckForLivePrompt(deck, in: gameID) }
         await connection.waitUntilSendPending(1)
+        #expect(!model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .valid
+        ))
         let rejection = Data(
             #"{"tag":"AnswerRejected","reason":"Suspended send rejected","questionVersion":null}"#
                 .utf8
@@ -287,6 +390,11 @@ extension AppModelLiveChooseDeckTests {
             promptKey: promptKey
         ) == "Suspended send rejected")
         #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
+        #expect(model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .valid
+        ))
 
         let second = Task { await model.chooseDeckForLivePrompt(deck, in: gameID) }
         await connection.waitUntilSendPending(2)
