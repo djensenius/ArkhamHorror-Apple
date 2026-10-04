@@ -467,6 +467,88 @@ extension AppModelLiveGameTests {
         #expect(await firstSend.value == .sentAwaitingSnapshot)
         #expect(await secondSend.value == .sentAwaitingSnapshot)
         #expect(model.basicChoicePresentation(for: gameID)?.actionPhase == nil)
+        #expect(model.basicChoiceRejectedAttemptIDs[gameID] == nil)
+    }
+
+    @Test("Rejected gated send consumes marker when transport fails")
+    func rejectedGatedSendErrorConsumesMarker() async throws {
+        let send = try await rejectedGatedAmountSend(
+            reason: "transport rejection",
+            questionVersion: 650
+        )
+        await send.connection.resumeOldestSend(with: .failure(GameSocketTransportError()))
+
+        #expect(await send.task.value == .sentAwaitingSnapshot)
+        #expect(send.model.basicChoiceRejectedAttemptIDs[send.gameID] == nil)
+        #expect(send.model.basicChoicePresentation(for: send.gameID)?.actionPhase == nil)
+    }
+
+    @Test("Rejected gated send consumes marker when cancelled")
+    func rejectedGatedSendCancellationConsumesMarker() async throws {
+        let send = try await rejectedGatedAmountSend(
+            reason: "cancelled rejection",
+            questionVersion: 651
+        )
+        send.task.cancel()
+        await send.connection.resumeOldestSend(with: .success(()))
+
+        #expect(await send.task.value == .sentAwaitingSnapshot)
+        #expect(send.model.basicChoiceRejectedAttemptIDs[send.gameID] == nil)
+        #expect(send.model.basicChoicePresentation(for: send.gameID)?.actionPhase == nil)
+    }
+
+    private func rejectedGatedAmountSend(
+        reason: String,
+        questionVersion: Int
+    ) async throws -> (
+        model: AppModel,
+        gameID: GameID,
+        connection: FakeGameSocketConnection,
+        task: Task<BasicChoiceSubmitResult, Never>
+    ) {
+        let firstID = "00000000-0000-0000-0000-0000000000d5"
+        let secondID = "00000000-0000-0000-0000-0000000000d6"
+        let choices = [
+            amountChoice(firstID, min: 0, max: 2, label: "A"),
+            amountChoice(secondID, min: 0, max: 2, label: "B"),
+        ]
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try amountEnvelope(
+            rawQuestion: chooseAmountsRawQuestion(choices: choices, target: .total(2)),
+            presentation: chooseAmountsPresentation(
+                choices: choices,
+                target: .total(2),
+                questionVersion: questionVersion
+            ),
+            questionVersion: questionVersion
+        )
+        let connection = FakeGameSocketConnection()
+        await connection.setSendGated(true)
+        let gameID = await startChoiceSession(
+            model: model,
+            fakes: fakes,
+            envelope: envelope,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let task = Task {
+            await model.submitAmountsAnswer(
+                prompt.identity,
+                amounts: [firstID: 3, secondID: 0]
+            )
+        }
+        await connection.waitUntilSendPending(1)
+        await connection.enqueue(.event(.message(Data(
+            """
+            {"tag":"AnswerRejected","reason":"\(reason)","questionVersion":\(questionVersion)}
+            """.utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        #expect(model.basicChoiceServerFeedback[gameID] == reason)
+        #expect(model.basicChoiceActions[gameID] == nil)
+        return (model, gameID, connection, task)
     }
 
     @Test("Unchanged GameUpdate before AnswerRejected still frees the amount prompt")

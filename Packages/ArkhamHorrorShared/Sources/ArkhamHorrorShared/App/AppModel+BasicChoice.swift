@@ -294,6 +294,12 @@ extension AppModel {
             try await connection.connection.send(bytes)
             try Task.checkCancellation()
         } catch is CancellationError {
+            if consumeBasicChoiceRejectedAttempt(
+                gameID: identity.gameID,
+                actionAttemptID: actionAttemptID
+            ) {
+                return .sentAwaitingSnapshot
+            }
             updateBasicChoiceAction(
                 gameID: identity.gameID,
                 actionAttemptID: actionAttemptID,
@@ -301,6 +307,12 @@ extension AppModel {
             )
             return .retryableFailure
         } catch {
+            if consumeBasicChoiceRejectedAttempt(
+                gameID: identity.gameID,
+                actionAttemptID: actionAttemptID
+            ) {
+                return .sentAwaitingSnapshot
+            }
             updateBasicChoiceAction(
                 gameID: identity.gameID,
                 actionAttemptID: actionAttemptID,
@@ -309,22 +321,36 @@ extension AppModel {
             return .retryableFailure
         }
 
+        if consumeBasicChoiceRejectedAttempt(
+            gameID: identity.gameID,
+            actionAttemptID: actionAttemptID
+        ) {
+            return .sentAwaitingSnapshot
+        }
+
         guard liveGameSessions[identity.gameID]?.attemptID == connection.attemptID,
               liveGameConnections[identity.gameID]?.connectionID == connection.connectionID,
               basicChoiceActions[identity.gameID]?.attemptID == actionAttemptID,
               basicChoiceActions[identity.gameID]?.phase == .sending
         else {
-            if basicChoiceRejectedAttemptIDs[identity.gameID]?.contains(actionAttemptID) == true {
-                basicChoiceRejectedAttemptIDs[identity.gameID]?.remove(actionAttemptID)
-                if basicChoiceRejectedAttemptIDs[identity.gameID]?.isEmpty == true {
-                    basicChoiceRejectedAttemptIDs[identity.gameID] = nil
-                }
-                return .sentAwaitingSnapshot
-            }
             return .retryableFailure
         }
         basicChoiceActions[identity.gameID]?.phase = .awaitingSnapshot
         return .sentAwaitingSnapshot
+    }
+
+    private func consumeBasicChoiceRejectedAttempt(
+        gameID: GameID,
+        actionAttemptID: UUID
+    ) -> Bool {
+        guard basicChoiceRejectedAttemptIDs[gameID]?.contains(actionAttemptID) == true else {
+            return false
+        }
+        basicChoiceRejectedAttemptIDs[gameID]?.remove(actionAttemptID)
+        if basicChoiceRejectedAttemptIDs[gameID]?.isEmpty == true {
+            basicChoiceRejectedAttemptIDs[gameID] = nil
+        }
+        return true
     }
 
     private func encodeSubmission(
@@ -512,13 +538,20 @@ extension AppModel {
             guard action.submission.acceptsUnversionedRejection else { return }
         }
         switch action.phase {
-        case .sending, .awaitingSnapshot:
+        case .sending:
             setBasicChoiceServerFeedback(
                 gameID: gameID,
                 message: rejection.reason,
                 source: .answerRejected
             )
             basicChoiceRejectedAttemptIDs[gameID, default: []].insert(action.attemptID)
+            basicChoiceActions[gameID] = nil
+        case .awaitingSnapshot:
+            setBasicChoiceServerFeedback(
+                gameID: gameID,
+                message: rejection.reason,
+                source: .answerRejected
+            )
             basicChoiceActions[gameID] = nil
         case .uncertain, .retryable:
             break
