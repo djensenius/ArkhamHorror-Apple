@@ -218,6 +218,7 @@ extension AppModelLiveChooseDeckTests {
 
         #expect(model.liveChooseDeckRejectionReason(for: gameID, promptKey: promptKey) == nil)
         #expect(model.basicChoiceActions[gameID]?.phase == .retryable(.outcomeUncertain))
+        #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
         #expect(model.liveChooseDeckServerFeedback(
             for: gameID,
             promptKey: promptKey
@@ -227,6 +228,43 @@ extension AppModelLiveChooseDeckTests {
         #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
         #expect(await connection.sentData.count == 2)
         #expect(model.basicChoiceActions[gameID]?.phase == .awaitingSnapshot)
+        consume.cancel()
+    }
+
+    @Test("Late success for an old retryable deck attempt cannot advance its replacement")
+    func lateOldDeckSendSuccessCannotAdvanceReplacement() async throws {
+        let model = await makeSignedInRejectionModel()
+        let connection = FakeGameSocketConnection()
+        await connection.setSendGated(true)
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        let deck = try sampleRejectedDeck()
+        let installed = installRejectedLivePrompt(
+            on: model, gameID: gameID, ownerID: ownerID, connection: connection
+        )
+        let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
+        let consume = consumeLivePrompt(on: model, connection: connection, installed: installed)
+        await connection.waitUntilAwaitingNextEvent()
+
+        let first = Task { await model.chooseDeckForLivePrompt(deck, in: gameID) }
+        await connection.waitUntilSendPending(1)
+        await connection.enqueue(.event(.message(Data(
+            #"{"tag":"GameError","contents":"room-wide error"}"#.utf8
+        ))))
+        await connection.waitUntilAwaitingNextEvent()
+        #expect(model.basicChoiceActions[gameID]?.phase == .retryable(.outcomeUncertain))
+        #expect(!model.liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey))
+
+        let second = Task { await model.chooseDeckForLivePrompt(deck, in: gameID) }
+        await connection.waitUntilSendPending(2)
+        await connection.resumeOldestSend(with: .success(()))
+        #expect(await !first.value)
+        #expect(model.basicChoiceActions[gameID]?.phase == .sending)
+
+        await connection.resumeOldestSend(with: .failure(GameSocketTransportError()))
+        #expect(await !second.value)
+        #expect(model.basicChoiceActions[gameID] == nil)
+        #expect(await connection.sentData.count == 2)
         consume.cancel()
     }
 

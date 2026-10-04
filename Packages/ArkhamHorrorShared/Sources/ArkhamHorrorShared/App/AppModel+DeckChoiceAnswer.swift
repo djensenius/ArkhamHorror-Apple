@@ -116,6 +116,7 @@ extension AppModel {
             return true
         }
         guard liveGameConnections[gameID]?.connectionID == connection.connectionID,
+              basicChoiceActions[gameID]?.attemptID == actionAttemptID,
               basicChoiceActions[gameID]?.identity == prompt.identity,
               basicChoiceActions[gameID]?.submission == .deck(deck.id),
               basicChoiceActions[gameID]?.phase == .sending
