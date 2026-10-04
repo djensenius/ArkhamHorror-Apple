@@ -92,7 +92,10 @@ extension BoardFocusGraphBuilder {
             guard let actionID = actionIDs[location.id] else { continue }
             let layoutNeighbors = layout.neighbors[location.id] ?? [:]
             for direction in [FocusDirection.down, .left, .right] {
-                guard let neighborID = layoutNeighbors[direction] else { continue }
+                guard let neighborID = layoutNeighbors[direction] else {
+                    plan.forwardTargets[location.id, default: [:]][direction] = actionID
+                    continue
+                }
                 let reverse = direction.boardOpposite
                 guard plan.reverseTargets[neighborID]?[reverse] == nil else {
                     // This action control lost the shared-neighbor reverse edge; keep its
