@@ -17,16 +17,21 @@
                 BoardLocationSnapshotCase(label: "zoom-3", zoom: 3, enemyCount: 3),
                 BoardLocationSnapshotCase(label: "zoom-1-no-enemies", zoom: 1, enemyCount: 0),
             ]
-            let records = try cases.map { try writeVisualSnapshot(testCase: $0) }
-            let measurementsURL = URL(
-                fileURLWithPath: "/tmp/arkham-task-1.7-location-tile-measurements.txt"
-            )
-            try records
-                .map(\.description)
-                .joined(separator: "\n")
-                .appending("\n")
-                .write(to: measurementsURL, atomically: true, encoding: .utf8)
-            #expect(FileManager.default.fileExists(atPath: measurementsURL.path))
+            let artifactDirectory = try snapshotArtifactDirectory()
+            let records = try cases.map {
+                try writeVisualSnapshot(testCase: $0, artifactDirectory: artifactDirectory)
+            }
+            if let artifactDirectory {
+                let measurementsURL = artifactDirectory.appendingPathComponent(
+                    "location-tile-measurements.txt"
+                )
+                try records
+                    .map(\.description)
+                    .joined(separator: "\n")
+                    .appending("\n")
+                    .write(to: measurementsURL, atomically: true, encoding: .utf8)
+                #expect(FileManager.default.fileExists(atPath: measurementsURL.path))
+            }
             #expect(records.allSatisfy { record in
                 abs(record.headerDrawnHeight - record.measuredHeaderHeight) <= 1
             })
@@ -34,7 +39,13 @@
             #expect(minimumZoomRecord.measuredHeaderHeight <= 45)
             #expect(minimumZoomRecord.headerDrawnHeight <= 45)
             #expect(records.allSatisfy { abs($0.headerMidX - $0.imageWidth / 2) <= 2 })
-            #expect(records.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+            if artifactDirectory == nil {
+                #expect(records.allSatisfy { $0.path == nil })
+            } else {
+                #expect(records.allSatisfy { record in
+                    record.path.map { FileManager.default.fileExists(atPath: $0) } ?? false
+                })
+            }
         }
 
         @MainActor
@@ -81,7 +92,8 @@
 
         @MainActor
         private func writeVisualSnapshot(
-            testCase: BoardLocationSnapshotCase
+            testCase: BoardLocationSnapshotCase,
+            artifactDirectory: URL?
         ) throws -> BoardLocationSnapshotRecord {
             let recorder = BoardLocationHeaderMeasurementRecorder()
             let locationID = BoardTestFixtures.locationID("000000000700")
@@ -98,15 +110,19 @@
             guard let measuredHeaderHeight = recorder.heights[locationID] else {
                 throw CocoaError(.fileReadUnknown)
             }
-            let zoomPath = "/tmp/arkham-task-1.7-location-tile-\(testCase.label).png"
-            try pngData(from: bitmap).write(to: URL(fileURLWithPath: zoomPath), options: .atomic)
+            let snapshotURL = artifactDirectory?.appendingPathComponent(
+                "location-tile-\(testCase.label).png"
+            )
+            if let snapshotURL {
+                try pngData(from: bitmap).write(to: snapshotURL, options: .atomic)
+            }
             let headerBounds = try colorBounds(in: bitmap, matching: isHeaderBackground)
             let scale = renderer.scale
             return BoardLocationSnapshotRecord(
                 label: testCase.label,
                 zoom: testCase.zoom,
                 enemyCount: testCase.enemyCount,
-                path: zoomPath,
+                path: snapshotURL?.path,
                 imageWidth: CGFloat(bitmap.pixelsWide) / scale,
                 imageHeight: CGFloat(bitmap.pixelsHigh) / scale,
                 measuredHeaderHeight: measuredHeaderHeight,
@@ -115,6 +131,20 @@
                 headerYRange: CGFloat(headerBounds.minimumY) / scale
                     ..< CGFloat(headerBounds.maximumY + 1) / scale
             )
+        }
+
+        private func snapshotArtifactDirectory() throws -> URL? {
+            guard ProcessInfo.processInfo.environment["ARKHAM_WRITE_LAYOUT_SNAPSHOTS"] == "1"
+            else { return nil }
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "arkham-task-1.7-layout-snapshots-\(UUID().uuidString)",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(
+                at: url,
+                withIntermediateDirectories: true
+            )
+            return url
         }
     }
 
@@ -133,7 +163,7 @@
         let label: String
         let zoom: CGFloat
         let enemyCount: Int
-        let path: String
+        let path: String?
         let imageWidth: CGFloat
         let imageHeight: CGFloat
         let measuredHeaderHeight: CGFloat
@@ -153,7 +183,7 @@
                 "label=\(label)",
                 "zoom=\(zoom)",
                 "enemies=\(enemyCount)",
-                "path=\(path)",
+                "path=\(path ?? "not-written")",
                 "image=\(imageWidth)x\(imageHeight)",
                 "header=\(measuredHeaderHeight)",
                 "headerX=\(headerXRange.lowerBound)..<\(headerXRange.upperBound)",
