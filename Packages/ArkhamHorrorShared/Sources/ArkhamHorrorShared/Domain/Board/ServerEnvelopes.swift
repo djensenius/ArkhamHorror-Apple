@@ -61,7 +61,12 @@ extension AnswerRejectedMessage: Codable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         reason = try container.decode(String.self, forKey: .reason)
-        questionVersion = try container.decodeIfPresent(Int.self, forKey: .questionVersion)
+        questionVersion = try decodeRequiredNullable(
+            Int.self,
+            from: container,
+            forKey: .questionVersion,
+            codingPath: decoder.codingPath + [CodingKeys.questionVersion]
+        )
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -171,7 +176,12 @@ extension BoardSnapshotUpdate: Codable {
         }
         let questionVersion: Int?
         do {
-            questionVersion = try container.decodeIfPresent(Int.self, forKey: .questionVersion)
+            questionVersion = try decodeRequiredNullable(
+                Int.self,
+                from: container,
+                forKey: .questionVersion,
+                codingPath: container.codingPath + [CodingKeys.questionVersion]
+            )
         } catch {
             return nil
         }

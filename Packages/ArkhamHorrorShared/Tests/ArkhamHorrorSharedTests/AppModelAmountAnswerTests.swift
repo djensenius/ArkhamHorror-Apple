@@ -674,6 +674,45 @@ extension AppModelLiveGameTests {
         #expect(current.serverFeedback == "exchange rejected")
     }
 
+    @Test("Malformed versionless AnswerRejected frames keep an exchange submission pending")
+    func malformedVersionlessAnswerRejectedDoesNotFreeExchangeSubmission() async throws {
+        let frames: [(message: String, rawContents: JSONValue?)] = [
+            (#"{"tag":"AnswerRejected","reason":"exchange rejected"}"#, nil),
+            (
+                #"{"tag":"AnswerRejected","contents":{"reason":"exchange rejected"}}"#,
+                .object(["reason": .string("exchange rejected")])
+            ),
+        ]
+        for frame in frames {
+            let bytes = Data(frame.message.utf8)
+            let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
+            #expect(update == .unsupportedMessage(
+                tag: "AnswerRejected",
+                rawContents: frame.rawContents
+            ))
+
+            let (model, fakes) = makeSignedInModel()
+            await model.flowTask?.value
+            makeModern(model)
+            let envelope = try exchangeEnvelope(fromInitialAmount: 2, toInitialAmount: 1)
+            let connection = FakeGameSocketConnection()
+            await connection.enqueueSendResult(.success(()))
+            let gameID = await startChoiceSession(
+                model: model, fakes: fakes, envelope: envelope, connection: connection
+            )
+            let prompt = try #require(model.basicChoicePresentation(for: gameID))
+            #expect(
+                await model.submitExchangeAmountsAnswer(prompt.identity, amount: 1)
+                    == .sentAwaitingSnapshot
+            )
+
+            await connection.enqueue(.event(.message(bytes)))
+            await connection.waitUntilAwaitingNextEvent()
+            #expect(model.basicChoiceActions[gameID]?.phase == .awaitingSnapshot)
+            #expect(model.basicChoiceServerFeedback[gameID] == nil)
+        }
+    }
+
     @Test("Null-version AnswerRejected does not free versioned prompt submissions")
     // swiftlint:disable:next function_body_length
     func nullVersionAnswerRejectedIgnoresVersionedSubmissions() async throws {

@@ -103,9 +103,14 @@ struct BoardSnapshotAdversarialTests {
         #expect(rejection.questionVersion == 8)
     }
 
-    @Test("AnswerRejected without a questionVersion is accepted for versionless answers")
-    func answerRejectedQuestionVersionCanBeAbsent() throws {
-        let bytes = Data(#"{"tag":"AnswerRejected","reason":"Exchange rejected"}"#.utf8)
+    @Test("AnswerRejected explicit null questionVersion is accepted for versionless answers")
+    func answerRejectedExplicitNullQuestionVersionIsAccepted() throws {
+        let bytes = Data(
+            """
+            {"tag":"AnswerRejected","reason":"Exchange rejected",\
+            "questionVersion":null,"extra":"ignored"}
+            """.utf8
+        )
         let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
         guard case let .answerRejected(rejection) = update else {
             Issue.record("Expected .answerRejected")
@@ -118,7 +123,10 @@ struct BoardSnapshotAdversarialTests {
     @Test("AnswerRejected tolerates the earlier contents-wrapped draft shape")
     func answerRejectedContentsWrappedDraftShapeDecodes() throws {
         let bytes = Data(
-            #"{"tag":"AnswerRejected","contents":{"reason":"No","questionVersion":12}}"#.utf8
+            """
+            {"tag":"AnswerRejected",\
+            "contents":{"reason":"No","questionVersion":12,"extra":"ignored"}}
+            """.utf8
         )
         let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
         guard case let .answerRejected(rejection) = update else {
@@ -127,6 +135,24 @@ struct BoardSnapshotAdversarialTests {
         }
         #expect(rejection.reason == "No")
         #expect(rejection.questionVersion == 12)
+    }
+
+    @Test("AnswerRejected missing questionVersion is unsupported")
+    func answerRejectedMissingQuestionVersionIsUnsupported() throws {
+        let frames: [(bytes: Data, rawContents: JSONValue?)] = [
+            (Data(#"{"tag":"AnswerRejected","reason":"Exchange rejected"}"#.utf8), nil),
+            (
+                Data(#"{"tag":"AnswerRejected","contents":{"reason":"Exchange rejected"}}"#.utf8),
+                .object(["reason": .string("Exchange rejected")])
+            ),
+        ]
+        for frame in frames {
+            let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: frame.bytes)
+            #expect(update == .unsupportedMessage(
+                tag: "AnswerRejected",
+                rawContents: frame.rawContents
+            ))
+        }
     }
 
     @Test("Malformed AnswerRejected decodes as unsupported instead of throwing")
