@@ -100,7 +100,8 @@ struct BoardLocationBoardView: View {
                 : 0
             let measuredHeaderHeight = measuredHeaderHeights[location.id] ?? 0
             let headerMaxHeight = enemies.isEmpty ? nil : max(
-                tileSize.height - metrics.compactIndicatorHeight - metrics.verticalSpacing,
+                tileSize.height - metrics.compactIndicatorHeight - metrics.verticalSpacing
+                    - linkedEnemyActionsHeight,
                 44
             )
             let enemyPanelHeight = max(

@@ -68,15 +68,44 @@ struct BoardLocationEnemyTileLayoutTests {
         )
     }
 
+    @Test("tvOS minimum cell with linked action still leaves compact indicator room")
+    func tvOSMinimumCellWithLinkedActionShowsCompactIndicator() {
+        #expect(
+            decision(
+                zoom: 1,
+                headerHeight: 126,
+                enemyCount: 3,
+                metrics: .tvOS,
+                hasLinkedEnemyActions: true
+            ) == .compactIndicator
+        )
+    }
+
     private func decision(
         zoom: CGFloat,
         headerHeight: CGFloat,
         enemyCount: Int,
-        metrics: BoardLocationEnemyTileMetrics
+        metrics: BoardLocationEnemyTileMetrics,
+        hasLinkedEnemyActions: Bool = false
     ) -> BoardLocationEnemyTileLayoutDecision {
         let tileWidth = max(150 * zoom, metrics.minimumCellSize.width) - 8
-        let tileHeight = max(112 * zoom, metrics.minimumCellSize.height) - 8
-        let availableHeight = max(tileHeight - headerHeight - metrics.verticalSpacing, 0)
+        let tileHeight = max(
+            112 * zoom,
+            metrics.minimumCellSize(hasLinkedEnemyActions: hasLinkedEnemyActions).height
+        ) - 8
+        let linkedEnemyActionsHeight = hasLinkedEnemyActions
+            ? metrics.summaryButtonHeight + metrics.verticalSpacing
+            : 0
+        let headerMaxHeight = max(
+            tileHeight - metrics.compactIndicatorHeight - metrics.verticalSpacing
+                - linkedEnemyActionsHeight,
+            44
+        )
+        let effectiveHeaderHeight = min(headerHeight, headerMaxHeight)
+        let availableHeight = max(
+            tileHeight - effectiveHeaderHeight - metrics.verticalSpacing - linkedEnemyActionsHeight,
+            0
+        )
         return BoardLocationEnemyTileLayout.decision(
             enemyCount: enemyCount,
             availableWidth: tileWidth,
