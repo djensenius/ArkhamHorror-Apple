@@ -335,6 +335,9 @@ struct BoardEnemyOverflowMenu: View {
                     .foregroundStyle(ArkhamTheme.accent)
             }
         }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .accessibilityLabel(Text("Show all \(enemies.count) enemies"))
     }
 
