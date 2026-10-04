@@ -1,16 +1,31 @@
 import SwiftUI
 
+/// Point-based constants for the compact enemy affordances inside a location tile.
+/// These values are deliberately smaller than full card art: they preserve prompt
+/// reachability when the board is zoomed out while still leaving enough room for the
+/// location name box to remain the primary content of the tile.
 struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
+    /// Height of a rendered one-line enemy chip.
     let chipRowHeight: CGFloat
+    /// Height of the all-enemies summary button such as "3 enemies".
     let summaryButtonHeight: CGFloat
+    /// Height of the smallest tappable/count indicator used at minimum zoom.
     let compactIndicatorHeight: CGFloat
+    /// Minimum width for a chip before the layout switches to an overflow affordance.
     let chipMinWidth: CGFloat
+    /// Minimum width for a text overflow button.
     let moreButtonMinWidth: CGFloat
+    /// Minimum width for the compact count badge.
     let compactIndicatorMinWidth: CGFloat
+    /// Minimum grid cell size before subtracting ``BoardLocationTileGeometryPlan/tileGutter``.
     let minimumCellSize: CGSize
+    /// Horizontal spacing between chips and overflow controls.
     let horizontalSpacing: CGFloat
+    /// Vertical spacing between the location header, enemy panel, and action control.
     let verticalSpacing: CGFloat
 
+    /// Pointer/touch platforms can use a tighter board: text is near the player and the
+    /// prompt panel remains available as a redundant action path.
     static let regular = BoardLocationEnemyTileMetrics(
         chipRowHeight: 24,
         summaryButtonHeight: 18,
@@ -22,6 +37,10 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
         horizontalSpacing: 4,
         verticalSpacing: 4
     )
+    /// tvOS uses a 180×160 minimum so the location name box, compact enemy count,
+    /// and optional enemy-actions control remain legible from the couch after the
+    /// 4pt-per-edge tile gutter is removed; smaller cells hid the indicator at
+    /// minimum zoom on Siri Remote/controller layouts.
     static let tvOS = BoardLocationEnemyTileMetrics(
         chipRowHeight: 32,
         summaryButtonHeight: 22,
@@ -44,12 +63,46 @@ struct BoardLocationEnemyTileMetrics: Sendable, Equatable {
 
     func minimumCellSize(hasLinkedEnemyActions: Bool) -> CGSize {
         guard hasLinkedEnemyActions else { return minimumCellSize }
-        let minimumTileHeight = 44 + compactIndicatorHeight + summaryButtonHeight
-            + (2 * verticalSpacing)
+        let minimumTileHeight = BoardLocationHeaderSizing.minimumInteractiveHeight
+            + compactIndicatorHeight + summaryButtonHeight + (2 * verticalSpacing)
         return CGSize(
             width: minimumCellSize.width,
-            height: max(minimumCellSize.height, minimumTileHeight + 8)
+            height: max(
+                minimumCellSize.height,
+                minimumTileHeight + BoardLocationTileGeometryPlan.tileGutter
+            )
         )
+    }
+}
+
+struct BoardLocationTileGeometryPlan: Sendable, Equatable {
+    /// The unzoomed board cell size inherited from the original PR #79 layout.
+    static let baseCellSize = CGSize(width: 150, height: 112)
+    /// Total per-axis gutter between neighboring cells; each tile is inset by 4pt per edge.
+    static let tileGutter: CGFloat = 8
+
+    /// Grid cell size used for positioning and drawing connection lines.
+    let cellSize: CGSize
+    /// Actual tile size inside the cell after the gutter is reserved.
+    let tileSize: CGSize
+
+    static func plan(
+        zoomScale: CGFloat,
+        hasLinkedEnemyActions: Bool,
+        metrics: BoardLocationEnemyTileMetrics
+    ) -> BoardLocationTileGeometryPlan {
+        let minimumCellSize = metrics.minimumCellSize(
+            hasLinkedEnemyActions: hasLinkedEnemyActions
+        )
+        let cellSize = CGSize(
+            width: max(baseCellSize.width * zoomScale, minimumCellSize.width),
+            height: max(baseCellSize.height * zoomScale, minimumCellSize.height)
+        )
+        let tileSize = CGSize(
+            width: max(cellSize.width - tileGutter, 0),
+            height: max(cellSize.height - tileGutter, 0)
+        )
+        return BoardLocationTileGeometryPlan(cellSize: cellSize, tileSize: tileSize)
     }
 }
 
@@ -78,7 +131,7 @@ struct BoardLocationEnemyTileHeightPlan: Sendable, Equatable {
         let headerMaxHeight = max(
             tileHeight - metrics.compactIndicatorHeight - metrics.verticalSpacing
                 - linkedEnemyActionsHeight,
-            44
+            BoardLocationHeaderSizing.minimumInteractiveHeight
         )
         let effectiveHeaderHeight = min(measuredHeaderHeight, headerMaxHeight)
         let enemyPanelHeight = max(
@@ -285,6 +338,9 @@ struct BoardEnemyOverflowMenu: View {
                     .foregroundStyle(ArkhamTheme.accent)
             }
         }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .accessibilityLabel(Text("Show all \(enemies.count) enemies"))
     }
 

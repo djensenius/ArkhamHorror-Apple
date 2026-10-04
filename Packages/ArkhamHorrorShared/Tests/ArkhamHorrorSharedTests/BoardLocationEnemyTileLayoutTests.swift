@@ -28,6 +28,41 @@ struct BoardLocationEnemyTileLayoutTests {
         )
     }
 
+    @Test("Zoom 0.5 offers natural name box height, then reports the clipped height")
+    func zoomHalfClampsNaturalNameBoxHeight() {
+        let tileGeometry = BoardLocationTileGeometryPlan.plan(
+            zoomScale: 0.5,
+            hasLinkedEnemyActions: false,
+            metrics: .regular
+        )
+        #expect(tileGeometry.cellSize == CGSize(width: 90, height: 70))
+        #expect(tileGeometry.tileSize == CGSize(width: 82, height: 62))
+
+        let uncappedPlan = BoardLocationEnemyTileHeightPlan.plan(
+            tileHeight: tileGeometry.tileSize.height,
+            measuredHeaderHeight: 86,
+            hasEnemies: true,
+            hasLinkedEnemyActions: false,
+            metrics: .regular
+        )
+        let drawnHeaderHeight = BoardLocationHeaderSizing.drawnHeight(
+            naturalHeight: 86,
+            maximumHeight: uncappedPlan.headerMaxHeight
+        )
+        #expect(uncappedPlan.headerMaxHeight == BoardLocationHeaderSizing.minimumInteractiveHeight)
+        #expect(drawnHeaderHeight == BoardLocationHeaderSizing.minimumInteractiveHeight)
+
+        let measuredPlan = BoardLocationEnemyTileHeightPlan.plan(
+            tileHeight: tileGeometry.tileSize.height,
+            measuredHeaderHeight: drawnHeaderHeight,
+            hasEnemies: true,
+            hasLinkedEnemyActions: false,
+            metrics: .regular
+        )
+        #expect(measuredPlan.effectiveHeaderHeight == drawnHeaderHeight)
+        #expect(measuredPlan.enemyPanelHeight == 14)
+    }
+
     @Test("Zoom 1 with a measured one-line header shows one chip and overflow")
     func zoomOneOneLineHeaderShowsChipAndOverflow() {
         #expect(
@@ -88,21 +123,32 @@ struct BoardLocationEnemyTileLayoutTests {
         metrics: BoardLocationEnemyTileMetrics,
         hasLinkedEnemyActions: Bool = false
     ) -> BoardLocationEnemyTileLayoutDecision {
-        let tileWidth = max(150 * zoom, metrics.minimumCellSize.width) - 8
-        let tileHeight = max(
-            112 * zoom,
-            metrics.minimumCellSize(hasLinkedEnemyActions: hasLinkedEnemyActions).height
-        ) - 8
-        let heightPlan = BoardLocationEnemyTileHeightPlan.plan(
-            tileHeight: tileHeight,
+        let tileGeometry = BoardLocationTileGeometryPlan.plan(
+            zoomScale: zoom,
+            hasLinkedEnemyActions: hasLinkedEnemyActions,
+            metrics: metrics
+        )
+        let uncappedPlan = BoardLocationEnemyTileHeightPlan.plan(
+            tileHeight: tileGeometry.tileSize.height,
             measuredHeaderHeight: headerHeight,
+            hasEnemies: enemyCount > 0,
+            hasLinkedEnemyActions: hasLinkedEnemyActions,
+            metrics: metrics
+        )
+        let drawnHeaderHeight = BoardLocationHeaderSizing.drawnHeight(
+            naturalHeight: headerHeight,
+            maximumHeight: uncappedPlan.headerMaxHeight
+        )
+        let heightPlan = BoardLocationEnemyTileHeightPlan.plan(
+            tileHeight: tileGeometry.tileSize.height,
+            measuredHeaderHeight: drawnHeaderHeight,
             hasEnemies: enemyCount > 0,
             hasLinkedEnemyActions: hasLinkedEnemyActions,
             metrics: metrics
         )
         return BoardLocationEnemyTileLayout.decision(
             enemyCount: enemyCount,
-            availableWidth: tileWidth,
+            availableWidth: tileGeometry.tileSize.width,
             availableHeight: heightPlan.enemyPanelHeight,
             metrics: metrics
         )
