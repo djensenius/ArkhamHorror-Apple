@@ -186,7 +186,8 @@ extension StoryNarrativeLocalization {
     ) -> [String: JSONValue]? {
         guard !parameters.isEmpty else { return [:] }
         var variables: [String: JSONValue] = [:]
-        for token in tokenizeChoiceLabelParameters(parameters) {
+        guard let tokens = tokenizeChoiceLabelParameters(parameters) else { return nil }
+        for token in tokens {
             guard let separator = token.firstIndex(of: "=") else { return nil }
             let name = String(token[..<separator])
             let encodedValue = token[token.index(after: separator)...]
@@ -197,7 +198,7 @@ extension StoryNarrativeLocalization {
         return variables
     }
 
-    private static func tokenizeChoiceLabelParameters(_ parameters: String) -> [String] {
+    private static func tokenizeChoiceLabelParameters(_ parameters: String) -> [String]? {
         var tokens: [String] = []
         var current = ""
         var quote: Character?
@@ -227,6 +228,7 @@ extension StoryNarrativeLocalization {
                 }
             }
         }
+        guard quote == nil else { return nil }
         if !current.isEmpty {
             tokens.append(current)
         }

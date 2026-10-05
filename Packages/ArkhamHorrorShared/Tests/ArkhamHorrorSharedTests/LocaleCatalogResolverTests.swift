@@ -185,6 +185,22 @@ struct LocaleCatalogResolverTests {
         ) == .failure(.catalog(.manifestDigestMismatch)))
     }
 
+    @Test("Production choice labels reject unterminated quoted variables")
+    func productionChoiceLabelsRejectUnterminatedQuotedVariables() {
+        let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.greet": message([
+                .text("Hello "),
+                .variable(name: "name", source: .named, isIcon: false),
+            ]),
+        ]))
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.greet name=s:\"Alice\"junk\"",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.unsupportedVariableValue))
+    }
+
     @Test("Production choice labels resolve plural catalog entries as singular labels")
     func productionChoiceLabelsResolvePluralSingular() {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
