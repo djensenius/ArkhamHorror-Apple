@@ -421,7 +421,8 @@ private struct LivePlaythroughBot {
                         selectedAnswer: selectedAnswer,
                         submission: submission,
                         outcome: .failed(failure.reason),
-                        serverFeedback: feedback
+                        serverFeedback: feedback,
+                        diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     return BotOutcome(
                         reachedDevourerResolution: false,
