@@ -294,8 +294,11 @@ struct GameLifecycleService: Sendable {
         case .generic:
             return .unexpectedStatus(statusCode)
         case .lifecycleOperation:
-            if let message = operationFailureMessage(from: data) {
-                return .operationFailed(DeckOperationError(errorMsg: message))
+            let isServerAuthoredStatus = statusCode == 400 || statusCode == 403
+            if isServerAuthoredStatus {
+                if let message = operationFailureMessage(from: data) {
+                    return .operationFailed(DeckOperationError(errorMsg: message))
+                }
             }
             return statusCode == 400 ? .malformedPayload : .unexpectedStatus(statusCode)
         case .deckOperation:
