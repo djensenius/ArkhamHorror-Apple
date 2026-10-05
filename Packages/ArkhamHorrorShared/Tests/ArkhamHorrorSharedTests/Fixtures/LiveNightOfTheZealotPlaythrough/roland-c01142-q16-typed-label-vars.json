@@ -1,0 +1,100 @@
+{
+  "description": "Captured Roland Banks The Devourer Below c01142 question 16 typed-label-variable prompt from playthrough-final-trace-roland-banks.jsonl.",
+  "source": {
+    "trace": "/tmp/arkham-logs/playthrough-final-trace-roland-banks.jsonl",
+    "traceLine": 254,
+    "scenario": "c01142",
+    "investigatorName": "Roland Banks",
+    "investigatorCode": "01001",
+    "questionVersion": 16,
+    "rawQuestionTag": "ChooseOne"
+  },
+  "expectedTitles": [
+    "Choose and discard 1 card from your hand",
+    "Take 1 damage and 1 horror"
+  ],
+  "rawQuestion": {
+    "choices": [
+      {
+        "label": "$label.discardCardsFromHand count=i:1.0",
+        "messages": [
+          {
+            "contents": {
+              "discardAmount": 1,
+              "discardBatchCards": [],
+              "discardDestination": "ToDiscardPile",
+              "discardFilter": {
+                "tag": "AnyCard"
+              },
+              "discardInvestigator": "c01001",
+              "discardSource": {
+                "contents": "93825363-9677-42a8-bf98-bd5625d1b35f",
+                "tag": "TreacherySource"
+              },
+              "discardStrategy": "DiscardChoose",
+              "discardTarget": null,
+              "discardThen": null
+            },
+            "tag": "DiscardFromHand"
+          }
+        ],
+        "tag": "Label"
+      },
+      {
+        "label": "$label.takeDamageAndHorror damage=i:1.0 horror=i:1.0",
+        "messages": [
+          {
+            "contents": {
+              "contents": [
+                "c01001",
+                {
+                  "contents": "93825363-9677-42a8-bf98-bd5625d1b35f",
+                  "tag": "TreacherySource"
+                },
+                {
+                  "tag": "DamageAny"
+                },
+                1,
+                1
+              ],
+              "tag": "InvestigatorAssignDamage_"
+            },
+            "tag": "InvestigatorMessage"
+          }
+        ],
+        "tag": "Label"
+      }
+    ],
+    "tag": "ChooseOne"
+  },
+  "questionPresentation": {
+    "answer": {
+      "kind": "singleChoice",
+      "tag": "Answer"
+    },
+    "choiceCount": 2,
+    "choices": [
+      {
+        "kind": "localizedLabel",
+        "label": {
+          "kind": "embeddedI18n",
+          "text": "$label.discardCardsFromHand count=i:1.0"
+        },
+        "selectable": true,
+        "sourceIndex": 0
+      },
+      {
+        "kind": "localizedLabel",
+        "label": {
+          "kind": "embeddedI18n",
+          "text": "$label.takeDamageAndHorror damage=i:1.0 horror=i:1.0"
+        },
+        "selectable": true,
+        "sourceIndex": 1
+      }
+    ],
+    "protocolVersion": 2,
+    "questionKind": "chooseOne",
+    "questionVersion": 16
+  }
+}

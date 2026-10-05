@@ -21,6 +21,11 @@ struct ProductionListItemResolution {
     let degradedReason: StoryUnavailableReason?
 }
 
+private struct ProductionChoiceLabelInvocation {
+    let key: String
+    let variables: JSONValue
+}
+
 // MARK: - Production catalog resolution
 
 extension StoryNarrativeLocalization {
@@ -124,17 +129,21 @@ extension StoryNarrativeLocalization {
         catalogUnavailability: StoryUnavailableReason
     ) -> Result<String, StoryUnavailableReason> {
         guard wireLabel.hasPrefix("$") else { return .failure(.unsupportedEntry) }
-        let key = String(wireLabel.dropFirst())
+        guard let invocation = parseProductionChoiceLabel(wireLabel) else {
+            return .failure(.unsupportedVariableValue)
+        }
         // Vue I18n resolves `$t(pluralKey)` without an explicit count through the singular
         // branch. Match that plural-branch selection without binding `count` as text, so
-        // any unbound placeholders in the selected output still fail closed.
+        // any unbound placeholders in the selected output still fail closed. Once the server
+        // supplies typed variables (`count=i:1.0`, `name=s:"..."`), bind them exactly once
+        // through the catalog path and let the normal plural selector use the bound count.
         switch resolveKey(
-            key,
-            variables: .object([:]),
+            invocation.key,
+            variables: invocation.variables,
             resolver: resolver,
             catalogUnavailability: catalogUnavailability,
             imageFallback: false,
-            usesImplicitSingularPlural: true
+            usesImplicitSingularPlural: invocation.variables == .object([:])
         ) {
         case let .failure(reason):
             return .failure(reason)
@@ -146,6 +155,119 @@ extension StoryNarrativeLocalization {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
             return .success(trimmed)
+        }
+    }
+
+    private static func parseProductionChoiceLabel(
+        _ wireLabel: String
+    ) -> ProductionChoiceLabelInvocation? {
+        var input = wireLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard input.hasPrefix("$") else { return nil }
+        input = String(input.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return nil }
+        let parts = splitChoiceLabelKeyAndParameters(input)
+        guard LocaleCatalogGrammar.isMessageKey(parts.key) else { return nil }
+        guard let variables = parseChoiceLabelVariables(parts.parameters) else { return nil }
+        return ProductionChoiceLabelInvocation(key: parts.key, variables: .object(variables))
+    }
+
+    private static func splitChoiceLabelKeyAndParameters(
+        _ input: String
+    ) -> (key: String, parameters: String) {
+        guard let spaceIndex = input.firstIndex(of: " ") else { return (input, "") }
+        let key = String(input[..<spaceIndex])
+        let parameters = input[input.index(after: spaceIndex)...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (key, parameters)
+    }
+
+    private static func parseChoiceLabelVariables(
+        _ parameters: String
+    ) -> [String: JSONValue]? {
+        guard !parameters.isEmpty else { return [:] }
+        var variables: [String: JSONValue] = [:]
+        for token in tokenizeChoiceLabelParameters(parameters) {
+            guard let separator = token.firstIndex(of: "=") else { return nil }
+            let name = String(token[..<separator])
+            let encodedValue = token[token.index(after: separator)...]
+            guard isChoiceLabelVariableName(name), variables[name] == nil else { return nil }
+            guard let value = parseChoiceLabelVariableValue(encodedValue) else { return nil }
+            variables[name] = value
+        }
+        return variables
+    }
+
+    private static func tokenizeChoiceLabelParameters(_ parameters: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var quote: Character?
+        var escaped = false
+        for character in parameters {
+            if let activeQuote = quote {
+                if character != "\\" {
+                    current.append(character)
+                }
+                if character == activeQuote, !escaped {
+                    quote = nil
+                }
+                if character == "\\", !escaped {
+                    escaped = true
+                } else {
+                    escaped = false
+                }
+            } else if character == " " {
+                if !current.isEmpty {
+                    tokens.append(current)
+                    current.removeAll(keepingCapacity: true)
+                }
+            } else {
+                current.append(character)
+                if character == "\"" || character == "'" {
+                    quote = character
+                }
+            }
+        }
+        if !current.isEmpty {
+            tokens.append(current)
+        }
+        return tokens
+    }
+
+    private static func parseChoiceLabelVariableValue(
+        _ encodedValue: some StringProtocol
+    ) -> JSONValue? {
+        if encodedValue.hasPrefix("i:") {
+            let raw = String(encodedValue.dropFirst(2))
+            guard let number = parseChoiceLabelInteger(raw) else { return nil }
+            return .number(number)
+        }
+        if encodedValue.hasPrefix("s:") {
+            let raw = String(encodedValue.dropFirst(2))
+            guard raw.count >= 2,
+                  let first = raw.first,
+                  first == "\"" || first == "'",
+                  raw.last == first
+            else { return nil }
+            return .string(String(raw.dropFirst().dropLast()))
+        }
+        return nil
+    }
+
+    private static func parseChoiceLabelInteger(_ raw: String) -> JSONNumber? {
+        guard let parsed = try? JSONNumber(exactDecimalLiteral: raw),
+              let magnitude = parsed.wholeNumberMagnitude
+        else { return nil }
+        let sign: JSONNumber.Sign = parsed.sign == .minus && magnitude != "0" ? .minus : .plus
+        return try? JSONNumber(sign: sign, coefficient: magnitude, exponent: .zero)
+    }
+
+    private static func isChoiceLabelVariableName(_ name: String) -> Bool {
+        guard !name.isEmpty else { return false }
+        return name.utf8.allSatisfy { byte in
+            (0x41 ... 0x5A).contains(byte)
+                || (0x61 ... 0x7A).contains(byte)
+                || (0x30 ... 0x39).contains(byte)
+                || byte == 0x5F
         }
     }
 
