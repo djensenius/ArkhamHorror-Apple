@@ -100,16 +100,15 @@ extension AppModelLiveGameTests {
         )
 
         model.liveGameParticipantIdentities[gameID] = .spectator
-        let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
-        #expect(spectatorPrompt.readOnlyReason == .spectator)
+        #expect(model.basicChoicePresentation(for: gameID) == nil)
         #expect(
-            await model.submitBasicChoice(spectatorPrompt.identity, choiceIndex: 0) == .readOnly
+            await model.submitBasicChoice(ownerPrompt.identity, choiceIndex: 0) == .staleQuestion
         )
         #expect(await connection.sentData.isEmpty)
     }
 
-    @Test("Spectator and legacy sessions remain explicitly read-only")
-    func spectatorAndLegacyRemainReadOnly() async throws {
+    @Test("Legacy participants are read-only, while spectators see no prompt contents")
+    func legacyParticipantReadOnlyAndSpectatorPromptHidden() async throws {
         let (model, fakes) = makeSignedInModel()
         await model.flowTask?.value
         let envelope = try loadGetGame()
@@ -117,10 +116,15 @@ extension AppModelLiveGameTests {
         let gameID = await startChoiceSession(
             model: model, fakes: fakes, envelope: envelope, connection: connection
         )
-        #expect(model.basicChoicePresentation(for: gameID)?.readOnlyReason == .legacyServer)
+        let legacyPrompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(legacyPrompt.readOnlyReason == .legacyServer)
 
         model.liveGameParticipantIdentities[gameID] = .spectator
-        #expect(model.basicChoicePresentation(for: gameID)?.readOnlyReason == .spectator)
+        #expect(model.basicChoicePresentation(for: gameID) == nil)
+        #expect(
+            await model.submitBasicChoice(legacyPrompt.identity, choiceIndex: 0) == .staleQuestion
+        )
+        #expect(await connection.sentData.isEmpty)
     }
 
     @Test("Concurrent submissions claim globally and send the exact answer bytes once")

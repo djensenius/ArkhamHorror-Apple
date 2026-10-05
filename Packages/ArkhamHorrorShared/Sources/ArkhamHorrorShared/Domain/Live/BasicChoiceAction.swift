@@ -336,7 +336,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         case .spectator:
             return basicChoiceLocalized(
                 "basicChoice.status.readOnly.spectator",
-                "Spectators can view this prompt but cannot answer it."
+                "Spectators cannot view or answer another player's prompt."
             )
         case .anotherPlayer:
             return basicChoiceLocalized(

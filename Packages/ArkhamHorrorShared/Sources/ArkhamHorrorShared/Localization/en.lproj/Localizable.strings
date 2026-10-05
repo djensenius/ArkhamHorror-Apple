@@ -148,7 +148,7 @@
 "basicChoice.status.retry.transportFailure" = "The choice could not be sent. Try again.";
 "basicChoice.status.retry.serverRejected" = "The server rejected this choice. Try again.";
 "basicChoice.status.retry.outcomeUncertain" = "The outcome is uncertain. Review the prompt, then retry manually.";
-"basicChoice.status.readOnly.spectator" = "Spectators can view this prompt but cannot answer it.";
+"basicChoice.status.readOnly.spectator" = "Spectators cannot view or answer another player's prompt.";
 "basicChoice.status.readOnly.anotherPlayer" = "Waiting for another player to answer.";
 "basicChoice.status.readOnly.legacyServer" = "Update the server before answering this prompt.";
 "basicChoice.status.readOnly.updateRequired" = "This prompt requires a newer app version.";

@@ -146,13 +146,10 @@ extension AppModelLiveGameTests {
             oldConnection: firstConnection,
             envelope: spectatorEnvelope
         )
-        let current = try #require(model.basicChoicePresentation(for: gameID))
-        #expect(current.readOnlyReason == .spectator)
-        #expect(current.actionPhase == nil)
-        #expect(!current.canSubmit)
+        #expect(model.basicChoicePresentation(for: gameID) == nil)
         #expect(model.basicChoiceActions[gameID] == nil)
         #expect(
-            await model.submitBasicChoice(current.identity, choiceIndex: 0) == .readOnly
+            await model.submitBasicChoice(oldIdentity, choiceIndex: 0) == .staleQuestion
         )
         #expect(await replacement.sentData.isEmpty)
     }

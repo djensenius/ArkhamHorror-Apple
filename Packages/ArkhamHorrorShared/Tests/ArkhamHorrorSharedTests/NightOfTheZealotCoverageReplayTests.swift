@@ -64,6 +64,102 @@ struct NightOfTheZealotCoverageReplayTests {
         try await runMultiplayer(recordings: recordings)
     }
 
+    @Test("Multiplayer reconnect restores participant prompt and fences in-flight answer")
+    // swiftlint:disable:next function_body_length
+    func multiplayerReconnectRestoresParticipantPromptAndFencesInFlightAnswer() async throws {
+        let recording = try smokeRecording(named: "3p-smoke.jsonl")
+        let runDefinition = try MultiplayerRunDefinition(fileName: recording.fileName)
+        let catalogDocuments = try makeSyntheticCatalog(for: [recording])
+        let replay = try await CoverageReplaySession.start(
+            first: recording,
+            baseEnvelopeData: fixtureData(named: "get-game"),
+            catalogDocuments: catalogDocuments,
+            deck: sampleDeck(),
+            runDefinition: runDefinition
+        )
+        let ownerID = try recording.record.recordedPlayerID()
+        replay.model.liveGameParticipantIdentities[replay.gameID] = .participant(ownerID)
+        let prompt = try #require(replay.model.basicChoicePresentation(for: replay.gameID))
+        #expect(prompt.ownerID == ownerID)
+        #expect(prompt.questionVersion == recording.record.questionVersion)
+        #expect(prompt.readOnlyReason == nil)
+
+        let submission = try RecordedCoverageSubmission(answer: recording.record.chosenAnswer)
+        guard case let .singleChoice(choiceIndex) = submission else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "smoke reconnect test expected a single-choice answer"
+            )
+        }
+        let expectedAnswer = try ContractJSON.encode(recording.record.chosenAnswer)
+        await replay.connection.setSendGated(true)
+        let firstSend = Task {
+            await submit(submission, prompt: prompt, model: replay.model)
+        }
+        await replay.connection.waitUntilSendPending(1)
+        #expect(replay.model.basicChoicePresentation(for: replay.gameID)?.actionPhase == .sending)
+        #expect(
+            await submit(submission, prompt: prompt, model: replay.model) == .alreadyPending
+        )
+
+        for seat in runDefinition.seats where seat.playerID != recording.record.playerID {
+            let seatPlayerID = try seat.playerIDValue()
+            replay.model.liveGameParticipantIdentities[replay.gameID] = .participant(
+                seatPlayerID
+            )
+            #expect(replay.model.basicChoicePresentation(for: replay.gameID) == nil)
+            #expect(
+                await submit(submission, prompt: prompt, model: replay.model) == .staleQuestion
+            )
+        }
+        replay.model.liveGameParticipantIdentities[replay.gameID] = .spectator
+        #expect(replay.model.basicChoicePresentation(for: replay.gameID) == nil)
+        #expect(
+            await submit(submission, prompt: prompt, model: replay.model) == .staleQuestion
+        )
+
+        replay.model.liveGameParticipantIdentities[replay.gameID] = .participant(ownerID)
+        await replay.connection.resumeOldestSend(with: .failure(GameSocketTransportError()))
+        #expect(await firstSend.value == .retryableFailure)
+        #expect(replay.model.basicChoicePresentation(for: replay.gameID)?.actionPhase
+            == .retryable(.transportFailure))
+
+        await replay.service.setGetGameGated(true)
+        let replacement = FakeGameSocketConnection()
+        await replay.socketFactory.enqueueConnectResult(.success(replacement))
+        await replay.connection.enqueue(.failure(GameSocketTransportError()))
+        await replay.service.waitUntilGetGamePending(1)
+        let reconnectingPrompt = try #require(
+            replay.model.basicChoicePresentation(for: replay.gameID)
+        )
+        #expect(reconnectingPrompt.ownerID == ownerID)
+        #expect(reconnectingPrompt.identity != prompt.identity)
+        #expect(!reconnectingPrompt.canRetry)
+        #expect(await replay.model.retryBasicChoice(reconnectingPrompt.identity) == .staleQuestion)
+
+        let restoredEnvelope = try CoverageEnvelopeBuilder.envelope(
+            for: recording.record,
+            baseEnvelopeData: fixtureData(named: "get-game"),
+            runDefinition: runDefinition
+        )
+        await replay.service.resumeOldestGetGame(with: .success(restoredEnvelope))
+        await replacement.waitUntilAwaitingNextEvent()
+        let current = try #require(replay.model.basicChoicePresentation(for: replay.gameID))
+        #expect(current.ownerID == ownerID)
+        #expect(current.canRetry)
+        #expect(current.actionChoiceIndex == choiceIndex)
+        #expect(current.actionPhase == .retryable(.transportFailure))
+        #expect(await replay.model.retryBasicChoice(prompt.identity) == .staleQuestion)
+        await replacement.enqueueSendResult(.success(()))
+        #expect(await replay.model.retryBasicChoice(current.identity) == .sentAwaitingSnapshot)
+        #expect(
+            await replay.model.submitBasicChoice(current.identity, choiceIndex: choiceIndex)
+                == .alreadyPending
+        )
+        #expect(await replay.connection.sentData == [expectedAnswer])
+        #expect(await replacement.sentData == [expectedAnswer])
+    }
+
     @Test("Multiplayer status uses server fields from smoke snapshot bytes")
     func multiplayerStatusUsesServerFieldsFromSmokeSnapshotBytes() throws {
         let recording = try smokeRecording(named: "2p-smoke.jsonl")
@@ -453,6 +549,27 @@ struct NightOfTheZealotCoverageReplayTests {
         }
     }
 
+    private func submit(
+        _ submission: RecordedCoverageSubmission,
+        prompt: BasicChoicePromptPresentation,
+        model: AppModel
+    ) async -> BasicChoiceSubmitResult {
+        switch submission {
+        case let .singleChoice(choice):
+            await model.submitBasicChoice(prompt.identity, choiceIndex: choice)
+        case let .amounts(amounts):
+            await model.submitAmountsAnswer(prompt.identity, amounts: amounts)
+        case let .paymentAmounts(amounts):
+            await model.submitPaymentAmountsAnswer(prompt.identity, amounts: amounts)
+        case let .exchangeAmount(amount):
+            await model.submitExchangeAmountsAnswer(prompt.identity, amount: amount)
+        case let .continueCampaign(step):
+            await model.submitContinueCampaignAnswer(prompt.identity, step: step)
+        case .unsupported:
+            .unsupportedChoice
+        }
+    }
+
     private func fixtureData(named fileName: String) throws -> Data {
         let url = try #require(
             Bundle.module.url(
@@ -545,6 +662,7 @@ private struct CoverageReplaySession {
     let model: AppModel
     let connection: FakeGameSocketConnection
     let service: ScriptedGameLifecycleService
+    let socketFactory: FakeGameSocketFactory
     let gameID: GameID
     let baseEnvelopeData: Data
     let deck: Deck
@@ -574,6 +692,7 @@ private struct CoverageReplaySession {
             model: model,
             connection: connection,
             service: fakes.service,
+            socketFactory: fakes.socketFactory,
             gameID: envelope.game.id,
             baseEnvelopeData: baseEnvelopeData,
             deck: deck,
@@ -699,7 +818,14 @@ private struct CoverageReplaySession {
     ) async throws {
         model.liveGameParticipantIdentities[gameID] = identity
         let presentedPrompt = model.basicChoicePresentation(for: gameID)
-        if let presentedPrompt {
+        if case .spectator = identity {
+            guard presentedPrompt == nil else {
+                throw CoverageReplayPromptFailure(
+                    record: recording,
+                    reason: "spectator saw another player's prompt contents"
+                )
+            }
+        } else if let presentedPrompt {
             let ownerID = try recording.record.recordedPlayerID()
             guard presentedPrompt.ownerID == ownerID else {
                 throw CoverageReplayPromptFailure(
