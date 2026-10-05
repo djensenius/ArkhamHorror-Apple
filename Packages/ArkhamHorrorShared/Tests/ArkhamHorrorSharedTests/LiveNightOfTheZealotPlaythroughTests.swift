@@ -14,6 +14,10 @@ private let notzScenarioOrder = ["01104", "01120", "01142"]
 struct LiveNightOfTheZealotPlaythroughTests {
     private static let resultPath = "/tmp/arkham-logs/playthrough-results.md"
 
+    private static func tracePath(for investigator: InvestigatorFixture) -> String {
+        "/tmp/arkham-logs/playthrough-trace-\(investigator.traceSlug).jsonl"
+    }
+
     @Test("Env-gated solo NotZ playthroughs for every core investigator")
     func coreInvestigatorCampaigns() async throws {
         guard let rawURL = ProcessInfo.processInfo.environment["ARKHAM_LIVE_SERVER_URL"],
@@ -100,6 +104,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
             let subscription = model.subscribeToLiveGame(gameID)
             defer { model.unsubscribeFromLiveGame(subscription) }
 
+            let trace = PlaythroughTraceRecorder(path: Self.tracePath(for: investigator))
+            try trace.reset()
             let bot = LivePlaythroughBot(
                 model: model,
                 lifecycle: lifecycle,
@@ -107,7 +113,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 token: token,
                 gameID: gameID,
                 investigator: investigator,
-                deckID: deck.id
+                deckID: deck.id,
+                trace: trace
             )
             let outcome = try await bot.driveUntilCampaignOver()
             scenarioOutcomes = outcome.scenarioOutcomes
@@ -215,17 +222,26 @@ private struct LivePlaythroughBot {
     let gameID: GameID
     let investigator: InvestigatorFixture
     let deckID: DeckID
+    let trace: PlaythroughTraceRecorder
 
     // swiftlint:disable:next function_body_length
     func driveUntilCampaignOver() async throws -> BotOutcome {
-        var answeredPromptKeys = Set<String>()
+        var repeatedQuestionShapes: [String: Int] = [:]
         let startedAt = Date()
         let timeout = ProcessInfo.processInfo.environment["ARKHAM_LIVE_PLAYTHROUGH_TIMEOUT"]
             .flatMap(TimeInterval.init) ?? 900
+        try trace.append(.runStarted(investigator: investigator, gameID: gameID))
         while Date().timeIntervalSince(startedAt) < timeout {
             let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
             let scenarioOutcomes = scenarioOutcomes(from: envelope.game)
             if envelope.game.gameState == .over {
+                try trace.append(.runFinished(
+                    investigator: investigator,
+                    gameID: gameID,
+                    reachedDevourerResolution: scenarioOutcomes["01142"]?
+                        .hasPrefix("resolution") == true,
+                    scenarioOutcomes: scenarioOutcomes
+                ))
                 return BotOutcome(
                     reachedDevourerResolution: scenarioOutcomes["01142"]?
                         .hasPrefix("resolution") == true,
@@ -242,85 +258,197 @@ private struct LivePlaythroughBot {
                 continue
             }
             let scenario = currentScenarioCode(projection: projection, snapshot: envelope.game)
-            let promptKey = prompt.identity.diagnosticKey
-            if answeredPromptKeys.contains(promptKey) {
-                return BotOutcome(
-                    reachedDevourerResolution: false,
-                    scenarioOutcomes: scenarioOutcomes,
-                    promptFailure: PromptFailure(
-                        scenario: scenario,
-                        investigator: investigator,
-                        questionVersion: prompt.questionVersion,
-                        rawQuestionTag: rawQuestionTag(prompt.identity.rawQuestion),
-                        reason: "same prompt remained after the bot answered it"
-                    )
-                )
-            }
+            let repeatKey = coverageRepeatKey(scenario: scenario, prompt: prompt)
+            let repeatCount = repeatedQuestionShapes[repeatKey, default: 0]
             guard prompt.isRenderableQuestion || isInitialChooseDeckPrompt(prompt) else {
+                let failure = PromptFailure(
+                    scenario: scenario,
+                    investigator: investigator,
+                    questionVersion: prompt.questionVersion,
+                    rawQuestionTag: describeRawQuestionTag(prompt.identity.rawQuestion),
+                    reason: "prompt is not renderable by this app version"
+                )
+                try trace.append(.prompt(
+                    investigator: investigator,
+                    gameID: gameID,
+                    scenario: scenario,
+                    prompt: prompt,
+                    projection: projection,
+                    repeatCount: repeatCount,
+                    selectedAnswer: nil,
+                    submission: nil,
+                    outcome: .failed(failure.reason),
+                    serverFeedback: serverFeedbackSummary()
+                ))
                 return BotOutcome(
                     reachedDevourerResolution: false,
                     scenarioOutcomes: scenarioOutcomes,
-                    promptFailure: PromptFailure(
-                        scenario: scenario,
-                        investigator: investigator,
-                        questionVersion: prompt.questionVersion,
-                        rawQuestionTag: rawQuestionTag(prompt.identity.rawQuestion),
-                        reason: "prompt is not renderable by this app version"
-                    )
+                    promptFailure: failure
                 )
             }
             guard prompt.canSubmit || prompt.isChooseUpgradeDeckPrompt
                 || isInitialChooseDeckPrompt(prompt)
             else {
+                let failure = PromptFailure(
+                    scenario: scenario,
+                    investigator: investigator,
+                    questionVersion: prompt.questionVersion,
+                    rawQuestionTag: describeRawQuestionTag(prompt.identity.rawQuestion),
+                    reason: prompt.statusMessage ?? "prompt is not answerable"
+                )
+                try trace.append(.prompt(
+                    investigator: investigator,
+                    gameID: gameID,
+                    scenario: scenario,
+                    prompt: prompt,
+                    projection: projection,
+                    repeatCount: repeatCount,
+                    selectedAnswer: nil,
+                    submission: nil,
+                    outcome: .failed(failure.reason),
+                    serverFeedback: serverFeedbackSummary()
+                ))
                 return BotOutcome(
                     reachedDevourerResolution: false,
                     scenarioOutcomes: scenarioOutcomes,
-                    promptFailure: PromptFailure(
-                        scenario: scenario,
-                        investigator: investigator,
-                        questionVersion: prompt.questionVersion,
-                        rawQuestionTag: rawQuestionTag(prompt.identity.rawQuestion),
-                        reason: prompt.statusMessage ?? "prompt is not answerable"
-                    )
+                    promptFailure: failure
                 )
             }
 
-            let answer: BotAnswer
+            let selectedAnswer: SelectedBotAnswer
             do {
-                answer = try selectAnswer(prompt: prompt, projection: projection)
+                selectedAnswer = try selectAnswer(
+                    prompt: prompt,
+                    projection: projection,
+                    repeatCount: repeatCount
+                )
             } catch let error as PlaythroughError {
+                let failure = PromptFailure(
+                    scenario: scenario,
+                    investigator: investigator,
+                    questionVersion: prompt.questionVersion,
+                    rawQuestionTag: describeRawQuestionTag(prompt.identity.rawQuestion),
+                    reason: error.description
+                )
+                try trace.append(.prompt(
+                    investigator: investigator,
+                    gameID: gameID,
+                    scenario: scenario,
+                    prompt: prompt,
+                    projection: projection,
+                    repeatCount: repeatCount,
+                    selectedAnswer: nil,
+                    submission: nil,
+                    outcome: .failed(failure.reason),
+                    serverFeedback: serverFeedbackSummary()
+                ))
                 return BotOutcome(
                     reachedDevourerResolution: false,
                     scenarioOutcomes: scenarioOutcomes,
-                    promptFailure: PromptFailure(
+                    promptFailure: failure
+                )
+            }
+
+            let submission = try selectedAnswer.answer.traceSubmission(prompt: prompt)
+            do {
+                let submitResult = try await submit(selectedAnswer.answer, prompt: prompt)
+                let advanced = try await waitForPromptAdvance(from: prompt.identity)
+                let feedback = serverFeedbackSummary()
+                if advanced {
+                    try trace.append(.prompt(
+                        investigator: investigator,
+                        gameID: gameID,
+                        scenario: scenario,
+                        prompt: prompt,
+                        projection: projection,
+                        repeatCount: repeatCount,
+                        selectedAnswer: selectedAnswer,
+                        submission: submission,
+                        outcome: .submittedAndAdvanced(submitResult),
+                        serverFeedback: feedback
+                    ))
+                    repeatedQuestionShapes[repeatKey] = repeatCount + 1
+                } else {
+                    let reason = [
+                        "same prompt remained after the bot answered it",
+                        feedback?.description,
+                    ].compactMap(\.self).joined(separator: "; ")
+                    let failure = PromptFailure(
                         scenario: scenario,
                         investigator: investigator,
                         questionVersion: prompt.questionVersion,
-                        rawQuestionTag: rawQuestionTag(prompt.identity.rawQuestion),
-                        reason: error.description
+                        rawQuestionTag: describeRawQuestionTag(prompt.identity.rawQuestion),
+                        reason: reason
                     )
+                    try trace.append(.prompt(
+                        investigator: investigator,
+                        gameID: gameID,
+                        scenario: scenario,
+                        prompt: prompt,
+                        projection: projection,
+                        repeatCount: repeatCount,
+                        selectedAnswer: selectedAnswer,
+                        submission: submission,
+                        outcome: .failed(failure.reason),
+                        serverFeedback: feedback
+                    ))
+                    return BotOutcome(
+                        reachedDevourerResolution: false,
+                        scenarioOutcomes: scenarioOutcomes,
+                        promptFailure: failure
+                    )
+                }
+            } catch let error as PlaythroughError {
+                let failure = PromptFailure(
+                    scenario: scenario,
+                    investigator: investigator,
+                    questionVersion: prompt.questionVersion,
+                    rawQuestionTag: describeRawQuestionTag(prompt.identity.rawQuestion),
+                    reason: error.description
+                )
+                try trace.append(.prompt(
+                    investigator: investigator,
+                    gameID: gameID,
+                    scenario: scenario,
+                    prompt: prompt,
+                    projection: projection,
+                    repeatCount: repeatCount,
+                    selectedAnswer: selectedAnswer,
+                    submission: submission,
+                    outcome: .failed(failure.reason),
+                    serverFeedback: serverFeedbackSummary()
+                ))
+                return BotOutcome(
+                    reachedDevourerResolution: false,
+                    scenarioOutcomes: scenarioOutcomes,
+                    promptFailure: failure
                 )
             }
-            answeredPromptKeys.insert(promptKey)
-            try await submit(answer, prompt: prompt)
-            try await waitForPromptAdvance(from: prompt.identity)
         }
         let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
+        let prompt = model.basicChoicePresentation(for: gameID)
+        let failure = PromptFailure(
+            scenario: currentScenarioCode(
+                projection: model.liveGameState(for: gameID).lastKnownProjection,
+                snapshot: envelope.game
+            ),
+            investigator: investigator,
+            questionVersion: prompt?.questionVersion ?? -1,
+            rawQuestionTag: prompt.map {
+                describeRawQuestionTag($0.identity.rawQuestion)
+            } ?? "none",
+            reason: "playthrough timed out before campaign end"
+        )
+        try trace.append(.runTimedOut(
+            investigator: investigator,
+            gameID: gameID,
+            failure: failure,
+            scenarioOutcomes: scenarioOutcomes(from: envelope.game)
+        ))
         return BotOutcome(
             reachedDevourerResolution: false,
             scenarioOutcomes: scenarioOutcomes(from: envelope.game),
-            promptFailure: PromptFailure(
-                scenario: currentScenarioCode(
-                    projection: model.liveGameState(for: gameID).lastKnownProjection,
-                    snapshot: envelope.game
-                ),
-                investigator: investigator,
-                questionVersion: model.basicChoicePresentation(for: gameID)?.questionVersion ?? -1,
-                rawQuestionTag: model.basicChoicePresentation(for: gameID).map {
-                    rawQuestionTag($0.identity.rawQuestion)
-                } ?? "none",
-                reason: "playthrough timed out before campaign end"
-            )
+            promptFailure: failure
         )
     }
 
@@ -330,41 +458,85 @@ private struct LivePlaythroughBot {
         }
     }
 
+    private func serverFeedbackSummary() -> TraceServerFeedback? {
+        guard let message = model.basicChoiceServerFeedback[gameID] else { return nil }
+        let source = switch model.basicChoiceServerFeedbackSources[gameID] {
+        case .answerRejected?: "AnswerRejected"
+        case .gameError?: "GameError"
+        case nil: "unknown"
+        }
+        return TraceServerFeedback(source: source, message: message)
+    }
+
     private func selectAnswer(
         prompt: BasicChoicePromptPresentation,
-        projection: BoardProjection
-    ) throws -> BotAnswer {
+        projection: BoardProjection,
+        repeatCount: Int
+    ) throws -> SelectedBotAnswer {
         if isInitialChooseDeckPrompt(prompt) {
-            return .savedDeck(deckID)
+            return SelectedBotAnswer(
+                answer: .savedDeck(deckID), note: "starter deck", chosenChoiceKind: nil
+            )
         }
         if prompt.isChooseUpgradeDeckPrompt {
-            return .skipDeckUpgrade(investigatorID: investigator.code)
+            return SelectedBotAnswer(
+                answer: .skipDeckUpgrade(investigatorID: investigator.code),
+                note: "continue without upgrading",
+                chosenChoiceKind: nil
+            )
         }
         if let continuation = projection.campaignContinuation, isContinueCampaignPrompt(prompt) {
-            return .continueCampaign(continuation.nextStep)
+            return SelectedBotAnswer(
+                answer: .continueCampaign(continuation.nextStep),
+                note: "continue with current server campaign step",
+                chosenChoiceKind: nil
+            )
         }
         if let amountPrompt = prompt.amountPrompt(in: projection) {
             return switch amountPrompt.kind {
-            case .amounts: .amounts(minimumAmounts(for: amountPrompt))
-            case .payment: .paymentAmounts(minimumAmounts(for: amountPrompt))
+            case .amounts:
+                SelectedBotAnswer(
+                    answer: .amounts(minimumAmounts(for: amountPrompt)),
+                    note: "minimum legal amounts",
+                    chosenChoiceKind: nil
+                )
+            case .payment:
+                SelectedBotAnswer(
+                    answer: .paymentAmounts(minimumAmounts(for: amountPrompt)),
+                    note: "minimum legal payment amounts",
+                    chosenChoiceKind: nil
+                )
             }
         }
         if prompt.exchangePrompt(in: projection) != nil {
-            return .exchangeAmount(0)
-        }
-        guard let choice = prompt.displayOrderedChoices().first(where: {
-            prompt.isChoiceActionable($0, in: projection)
-        }) else {
-            throw PlaythroughError.noSelectableChoice(
-                version: prompt.questionVersion,
-                tag: rawQuestionTag(prompt.identity.rawQuestion)
+            return SelectedBotAnswer(
+                answer: .exchangeAmount(0), note: "exchange 0", chosenChoiceKind: nil
             )
         }
-        return .choice(choice.index)
+        let selectableIndexes = prompt.identity.questionPresentation?.choices.compactMap {
+            $0.selectable ? $0.sourceIndex : nil
+        } ?? []
+        guard !selectableIndexes.isEmpty else {
+            throw PlaythroughError.noSelectableChoice(
+                version: prompt.questionVersion,
+                tag: describeRawQuestionTag(prompt.identity.rawQuestion)
+            )
+        }
+        let selectedIndex = selectableIndexes[repeatCount % selectableIndexes.count]
+        let chosenChoiceKind = prompt.identity.questionPresentation?.choices.first {
+            $0.sourceIndex == selectedIndex
+        }?.kind.rawValue
+        return SelectedBotAnswer(
+            answer: .choice(selectedIndex),
+            note: "selectable choice \(selectedIndex)",
+            chosenChoiceKind: chosenChoiceKind
+        )
     }
 
     // swiftlint:disable:next cyclomatic_complexity
-    private func submit(_ answer: BotAnswer, prompt: BasicChoicePromptPresentation) async throws {
+    private func submit(
+        _ answer: BotAnswer, prompt: BasicChoicePromptPresentation
+    ) async throws -> String {
         let result: BasicChoiceSubmitResult
         switch answer {
         case let .choice(index):
@@ -385,7 +557,7 @@ private struct LivePlaythroughBot {
                 DeckAnswer(deckId: deckID, playerId: prompt.identity.ownerID)
             )
             try await connection.send(bytes)
-            return
+            return "sent DeckAnswer over WebSocket"
         case let .skipDeckUpgrade(investigatorID):
             let deckResult = await model.continueCampaignWithoutUpgrading(
                 investigatorId: investigatorID,
@@ -394,14 +566,14 @@ private struct LivePlaythroughBot {
             )
             switch deckResult {
             case .submitted:
-                return
+                return "submitted deck-upgrade skip through AppModel"
             case let .failed(message):
                 throw PlaythroughError.submissionFailed(message)
             }
         }
         switch result {
         case .sentAwaitingSnapshot:
-            return
+            return "sentAwaitingSnapshot"
         case .alreadyPending:
             throw PlaythroughError.submissionFailed("answer already pending")
         case .readOnly:
@@ -415,8 +587,9 @@ private struct LivePlaythroughBot {
         }
     }
 
-    private func waitForPromptAdvance(from identity: BasicChoicePromptIdentity) async throws {
-        try await waitUntil(timeout: 30, description: "prompt advances") {
+    private func waitForPromptAdvance(from identity: BasicChoicePromptIdentity) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
             guard let current = model.basicChoicePresentation(for: gameID) else { return true }
             if current.identity.promptKey != identity.promptKey {
                 return true
@@ -425,8 +598,9 @@ private struct LivePlaythroughBot {
             if state.lastKnownProjection?.counters.gameStateSummary == "Completed" {
                 return true
             }
-            return false
+            try await Task.sleep(for: .milliseconds(100))
         }
+        return false
     }
 
     private func minimumAmounts(for prompt: BasicChoiceAmountPrompt) -> [String: Int] {
@@ -495,7 +669,7 @@ private struct LivePlaythroughBot {
     }
 }
 
-private enum BotAnswer {
+private enum BotAnswer: Sendable {
     case choice(Int)
     case amounts([String: Int])
     case paymentAmounts([String: Int])
@@ -503,6 +677,78 @@ private enum BotAnswer {
     case continueCampaign(JSONValue)
     case savedDeck(DeckID)
     case skipDeckUpgrade(investigatorID: String)
+}
+
+private struct SelectedBotAnswer: Sendable {
+    let answer: BotAnswer
+    let note: String
+    let chosenChoiceKind: String?
+}
+
+private extension BotAnswer {
+    func traceSubmission(prompt: BasicChoicePromptPresentation) throws -> TraceSubmission {
+        switch self {
+        case let .choice(index):
+            return try TraceSubmission(
+                kind: "Answer",
+                payload: BasicChoiceAnswer(
+                    choice: index,
+                    playerID: prompt.identity.ownerID,
+                    questionVersion: prompt.identity.questionVersion
+                )
+            )
+        case let .amounts(amounts):
+            return try TraceSubmission(
+                kind: "AmountsAnswer",
+                payload: AmountsAnswer(
+                    amounts: amounts,
+                    playerID: prompt.identity.ownerID,
+                    questionVersion: prompt.identity.questionVersion
+                )
+            )
+        case let .paymentAmounts(amounts):
+            return try TraceSubmission(
+                kind: "PaymentAmountsAnswer",
+                payload: PaymentAmountsAnswer(
+                    amounts: amounts,
+                    playerID: prompt.identity.ownerID,
+                    questionVersion: prompt.identity.questionVersion
+                )
+            )
+        case let .exchangeAmount(amount):
+            guard let presentation = prompt.identity.questionPresentation,
+                  let source = presentation.source?.raw,
+                  let fromInvestigator = presentation.fromInvestigator,
+                  let toInvestigator = presentation.toInvestigator,
+                  let token = presentation.token
+            else { throw PlaythroughError.submissionFailed("invalid exchange presentation") }
+            return try TraceSubmission(
+                kind: "ExchangeAmountsAnswer",
+                payload: ExchangeAmountsAnswer(
+                    source: source,
+                    fromInvestigator: fromInvestigator,
+                    toInvestigator: toInvestigator,
+                    token: token,
+                    amount: amount
+                )
+            )
+        case let .continueCampaign(step):
+            return try TraceSubmission(
+                kind: "CampaignStepAnswer",
+                payload: CampaignStepAnswer(contents: step)
+            )
+        case let .savedDeck(deckID):
+            return try TraceSubmission(
+                kind: "DeckAnswer",
+                payload: DeckAnswer(deckId: deckID, playerId: prompt.identity.ownerID)
+            )
+        case let .skipDeckUpgrade(investigatorID):
+            return TraceSubmission(
+                kind: "SkipDeckUpgrade",
+                encodedPayload: .object(["investigatorId": .string(investigatorID)])
+            )
+        }
+    }
 }
 
 private struct BotOutcome {
@@ -524,6 +770,274 @@ private struct PromptFailure: Sendable, Equatable {
 
     var markdownSummary: String {
         description.replacingOccurrences(of: "|", with: "\\|")
+    }
+}
+
+private struct TraceSubmission: Encodable, Sendable {
+    let kind: String
+    let encodedPayload: JSONValue
+
+    init(kind: String, encodedPayload: JSONValue) {
+        self.kind = kind
+        self.encodedPayload = encodedPayload
+    }
+
+    init(kind: String, payload: some Encodable) throws {
+        let data = try ContractJSON.encode(payload)
+        self.kind = kind
+        encodedPayload = try ContractJSON.decode(JSONValue.self, from: data)
+    }
+}
+
+private struct TraceServerFeedback: Encodable, Sendable {
+    let source: String
+    let message: String
+
+    var description: String {
+        "serverFeedback=\(source): \(message)"
+    }
+}
+
+private struct TraceOutcome: Encodable, Sendable {
+    let kind: String
+    let detail: String
+
+    static func submittedAndAdvanced(_ detail: String) -> Self {
+        TraceOutcome(kind: "submittedAndAdvanced", detail: detail)
+    }
+
+    static func failed(_ detail: String) -> Self {
+        TraceOutcome(kind: "failed", detail: detail)
+    }
+}
+
+private struct TraceSelectedAnswer: Encodable, Sendable {
+    let note: String
+    let chosenChoiceKind: String?
+    let answerKind: String
+    let choiceIndex: Int?
+}
+
+private struct TraceAppChoice: Encodable, Sendable {
+    let index: Int
+    let title: String
+    let contentKind: String
+    let isSupported: Bool
+    let isDisplayed: Bool
+    let isActionable: Bool
+    let semanticKind: String?
+    let semanticSelectable: Bool?
+    let rawValue: JSONValue
+}
+
+private struct TracePromptState: Encodable, Sendable {
+    let ownerID: PlayerID
+    let questionVersion: Int
+    let rawQuestionTag: String
+    let questionKind: String?
+    let rawQuestion: JSONValue
+    let questionPresentation: QuestionPresentation?
+    let serverSelectableIndexes: [Int]
+    let appDisplayOrderedChoiceIndexes: [Int]
+    let appChoices: [TraceAppChoice]
+    let isRenderableQuestion: Bool
+    let canSubmit: Bool
+    let statusMessage: String?
+    let readOnlyReason: String?
+    let actionPhase: String?
+}
+
+private struct PlaythroughTraceRecord: Encodable, Sendable {
+    let event: String
+    let timestamp: String
+    let investigatorCode: String
+    let investigatorName: String
+    let gameID: String
+    let scenario: String?
+    let repeatCount: Int?
+    let prompt: TracePromptState?
+    let selectedAnswer: TraceSelectedAnswer?
+    let submission: TraceSubmission?
+    let outcome: TraceOutcome?
+    let serverFeedback: TraceServerFeedback?
+    let scenarioOutcomes: [String: String]?
+
+    static func runStarted(
+        investigator: InvestigatorFixture, gameID: GameID
+    ) -> PlaythroughTraceRecord {
+        base(
+            event: "runStarted",
+            investigator: investigator,
+            gameID: gameID,
+            scenarioOutcomes: nil
+        )
+    }
+
+    static func runFinished(
+        investigator: InvestigatorFixture,
+        gameID: GameID,
+        reachedDevourerResolution: Bool,
+        scenarioOutcomes: [String: String]
+    ) -> PlaythroughTraceRecord {
+        base(
+            event: "runFinished",
+            investigator: investigator,
+            gameID: gameID,
+            outcome: TraceOutcome(
+                kind: reachedDevourerResolution ? "passed" : "failed",
+                detail: "gameState IsOver"
+            ),
+            scenarioOutcomes: scenarioOutcomes
+        )
+    }
+
+    static func runTimedOut(
+        investigator: InvestigatorFixture,
+        gameID: GameID,
+        failure: PromptFailure,
+        scenarioOutcomes: [String: String]
+    ) -> PlaythroughTraceRecord {
+        base(
+            event: "runTimedOut",
+            investigator: investigator,
+            gameID: gameID,
+            scenario: failure.scenario,
+            outcome: .failed(failure.reason),
+            scenarioOutcomes: scenarioOutcomes
+        )
+    }
+
+    static func prompt(
+        investigator: InvestigatorFixture,
+        gameID: GameID,
+        scenario: String,
+        prompt: BasicChoicePromptPresentation,
+        projection: BoardProjection,
+        repeatCount: Int,
+        selectedAnswer: SelectedBotAnswer?,
+        submission: TraceSubmission?,
+        outcome: TraceOutcome,
+        serverFeedback: TraceServerFeedback?
+    ) -> PlaythroughTraceRecord {
+        base(
+            event: "prompt",
+            investigator: investigator,
+            gameID: gameID,
+            scenario: scenario,
+            repeatCount: repeatCount,
+            prompt: TracePromptState(prompt: prompt, projection: projection),
+            selectedAnswer: selectedAnswer.map(TraceSelectedAnswer.init),
+            submission: submission,
+            outcome: outcome,
+            serverFeedback: serverFeedback,
+            scenarioOutcomes: nil
+        )
+    }
+
+    private static func base(
+        event: String,
+        investigator: InvestigatorFixture,
+        gameID: GameID,
+        scenario: String? = nil,
+        repeatCount: Int? = nil,
+        prompt: TracePromptState? = nil,
+        selectedAnswer: TraceSelectedAnswer? = nil,
+        submission: TraceSubmission? = nil,
+        outcome: TraceOutcome? = nil,
+        serverFeedback: TraceServerFeedback? = nil,
+        scenarioOutcomes: [String: String]?
+    ) -> PlaythroughTraceRecord {
+        PlaythroughTraceRecord(
+            event: event,
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            investigatorCode: investigator.code,
+            investigatorName: investigator.name,
+            gameID: gameID.rawValue.uuidString.lowercased(),
+            scenario: scenario,
+            repeatCount: repeatCount,
+            prompt: prompt,
+            selectedAnswer: selectedAnswer,
+            submission: submission,
+            outcome: outcome,
+            serverFeedback: serverFeedback,
+            scenarioOutcomes: scenarioOutcomes
+        )
+    }
+}
+
+private extension TraceSelectedAnswer {
+    init(_ answer: SelectedBotAnswer) {
+        note = answer.note
+        chosenChoiceKind = answer.chosenChoiceKind
+        switch answer.answer {
+        case let .choice(index):
+            answerKind = "Answer"
+            choiceIndex = index
+        case .amounts:
+            answerKind = "AmountsAnswer"
+            choiceIndex = nil
+        case .paymentAmounts:
+            answerKind = "PaymentAmountsAnswer"
+            choiceIndex = nil
+        case .exchangeAmount:
+            answerKind = "ExchangeAmountsAnswer"
+            choiceIndex = nil
+        case .continueCampaign:
+            answerKind = "CampaignStepAnswer"
+            choiceIndex = nil
+        case .savedDeck:
+            answerKind = "DeckAnswer"
+            choiceIndex = nil
+        case .skipDeckUpgrade:
+            answerKind = "SkipDeckUpgrade"
+            choiceIndex = nil
+        }
+    }
+}
+
+private extension TracePromptState {
+    init(prompt: BasicChoicePromptPresentation, projection: BoardProjection) {
+        let serverChoices = prompt.identity.questionPresentation?.choices ?? []
+        let displayChoices = prompt.displayOrderedChoices()
+        ownerID = prompt.identity.ownerID
+        questionVersion = prompt.questionVersion
+        rawQuestionTag = describeRawQuestionTag(prompt.identity.rawQuestion)
+        questionKind = prompt.identity.questionPresentation?.questionKind.rawValue
+        rawQuestion = prompt.identity.rawQuestion
+        questionPresentation = prompt.identity.questionPresentation
+        serverSelectableIndexes = serverChoices.compactMap { $0.selectable ? $0.sourceIndex : nil }
+        appDisplayOrderedChoiceIndexes = displayChoices.map(\.index)
+        appChoices = traceAppChoices(prompt: prompt, projection: projection)
+        isRenderableQuestion = prompt.isRenderableQuestion
+        canSubmit = prompt.canSubmit
+        statusMessage = prompt.statusMessage
+        readOnlyReason = prompt.readOnlyReason.map(describeReadOnlyReason)
+        actionPhase = prompt.actionPhase.map(describeActionPhase)
+    }
+}
+
+private struct PlaythroughTraceRecorder: Sendable {
+    let path: String
+
+    func reset() throws {
+        try FileManager.default.createDirectory(
+            atPath: (path as NSString).deletingLastPathComponent,
+            withIntermediateDirectories: true
+        )
+        try Data().write(to: URL(fileURLWithPath: path), options: .atomic)
+    }
+
+    func append(_ record: PlaythroughTraceRecord) throws {
+        var data = try ContractJSON.encode(record)
+        data.append(0x0A)
+        let url = URL(fileURLWithPath: path)
+        if let handle = try? FileHandle(forWritingTo: url) {
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+            try handle.close()
+        } else {
+            try data.write(to: url, options: .atomic)
+        }
     }
 }
 
@@ -628,6 +1142,12 @@ private struct InvestigatorFixture: Sendable, Equatable {
         return slots
     }
 
+    var traceSlug: String {
+        name.lowercased()
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: " ", with: "-")
+    }
+
     var createDeckRequest: CreateDeckRequest {
         guard let investigatorCode = try? InvestigatorCode(code) else {
             fatalError("Core investigator code fixture must be non-empty")
@@ -698,12 +1218,109 @@ private func currentScenarioCode(
     }
 }
 
-private func rawQuestionTag(_ value: JSONValue) -> String {
+private func describeRawQuestionTag(_ value: JSONValue) -> String {
     guard let object = value.objectValue else { return value.kindDescription }
     if let tag = object["tag"]?.stringValue {
         return tag
     }
     return value.kindDescription
+}
+
+private func coverageRepeatKey(
+    scenario: String, prompt: BasicChoicePromptPresentation
+) -> String {
+    let presentation = prompt.identity.questionPresentation
+        .flatMap { try? encodedJSONValue($0) }
+        .map(presentationWithoutQuestionVersion) ?? .null
+    return [
+        scenario,
+        jsonString(prompt.identity.rawQuestion),
+        jsonString(presentation),
+    ].joined(separator: ":")
+}
+
+private func presentationWithoutQuestionVersion(_ value: JSONValue) -> JSONValue {
+    guard case var .object(object) = value else { return value }
+    object.removeValue(forKey: "questionVersion")
+    return .object(object)
+}
+
+private func encodedJSONValue(_ value: some Encodable) throws -> JSONValue {
+    let data = try ContractJSON.encode(value)
+    return try ContractJSON.decode(JSONValue.self, from: data)
+}
+
+private func traceAppChoices(
+    prompt: BasicChoicePromptPresentation, projection: BoardProjection
+) -> [TraceAppChoice] {
+    let displayed = Set(prompt.displayOrderedChoices().map(\.index))
+    return prompt.choices.map { choice in
+        let descriptor = prompt.identity.questionPresentation?.choices.first {
+            $0.sourceIndex == choice.index
+        }
+        return TraceAppChoice(
+            index: choice.index,
+            title: choice.title,
+            contentKind: choiceContentKind(choice.content),
+            isSupported: choice.isSupported,
+            isDisplayed: displayed.contains(choice.index),
+            isActionable: prompt.isChoiceActionable(choice, in: projection),
+            semanticKind: descriptor?.kind.rawValue,
+            semanticSelectable: descriptor?.selectable,
+            rawValue: choice.rawValue
+        )
+    }
+}
+
+// swiftlint:disable:next cyclomatic_complexity
+private func choiceContentKind(_ content: BasicChoiceContent) -> String {
+    switch content {
+    case .gainResource: "gainResource"
+    case .drawCard: "drawCard"
+    case .drawEncounterCard: "drawEncounterCard"
+    case .resolveEnemyAttack: "resolveEnemyAttack"
+    case .assignEnemyAttackDamage: "assignEnemyAttackDamage"
+    case .endTurn: "endTurn"
+    case .investigate: "investigate"
+    case .fight: "fight"
+    case .evade: "evade"
+    case .engage: "engage"
+    case .rolandDefeatReaction: "rolandDefeatReaction"
+    case .coverUpReaction: "coverUpReaction"
+    case .resolveForcedAbility: "resolveForcedAbility"
+    case .advanceAgenda: "advanceAgenda"
+    case .chooseAgendaConsequence: "chooseAgendaConsequence"
+    case .assignAgendaHorror: "assignAgendaHorror"
+    case .continueReading: "continueReading"
+    case .finishMulligan: "finishMulligan"
+    case .chooseLocation: "chooseLocation"
+    case .chooseHandCard: "chooseHandCard"
+    case .skipTriggers: "skipTriggers"
+    case .startSkillTest: "startSkillTest"
+    case .applySkillTestResults: "applySkillTestResults"
+    case .unsupported: "unsupported"
+    }
+}
+
+private func describeReadOnlyReason(_ reason: BasicChoiceReadOnlyReason) -> String {
+    switch reason {
+    case .spectator: "spectator"
+    case .anotherPlayer: "anotherPlayer"
+    case .legacyServer: "legacyServer"
+    case .updateRequired: "updateRequired"
+    case .disconnected: "disconnected"
+    }
+}
+
+private func describeActionPhase(_ phase: BasicChoiceActionPhase) -> String {
+    switch phase {
+    case .sending: "sending"
+    case .awaitingSnapshot: "awaitingSnapshot"
+    case .uncertain: "uncertain"
+    case .retryable(.transportFailure): "retryable.transportFailure"
+    case .retryable(.serverRejected): "retryable.serverRejected"
+    case .retryable(.outcomeUncertain): "retryable.outcomeUncertain"
+    }
 }
 
 private func jsonString(_ value: JSONValue) -> String {
