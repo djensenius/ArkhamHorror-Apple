@@ -37,6 +37,14 @@ struct GamesListPresentationTests {
         return model
     }
 
+    private final class ChangeCounter: @unchecked Sendable {
+        private(set) var count = 0
+
+        func increment() {
+            count += 1
+        }
+    }
+
     // MARK: - GamesListView body evaluates for every load state
 
     @Test("GamesListView's body evaluates for .idle without crashing")
@@ -117,6 +125,22 @@ struct GamesListPresentationTests {
         let model = await model(gameListState: .failed(.unexpectedStatus(500), previous: games))
         let view = GamesListView(model: model)
         _ = view.body
+    }
+
+    @Test("GamesListView observes confirmed deletes independently of game-list state")
+    func gamesListViewBodyObservesConfirmedDeletes() async {
+        let model = await model(gameListState: .loading(previous: [.game(sampleGame())]))
+        let view = GamesListView(model: model)
+        let counter = ChangeCounter()
+
+        withObservationTracking {
+            _ = view.body
+        } onChange: {
+            counter.increment()
+        }
+        model.confirmedDeletedGameIDs.insert(GameID(UUID()))
+
+        #expect(counter.count == 1)
     }
 
     @Test("Create-game handoff opens the lobby only after the create sheet dismisses")
@@ -295,105 +319,5 @@ extension GamesListPresentationTests {
         let view = GamesListView(model: model)
 
         #expect(view.deleteFailurePresentation(for: game.id) == nil)
-    }
-
-    @Test("reconcileOpenGameSurfaces clears lobby sheet and live route after definite absence")
-    func reconcileOpenGameSurfacesClosesAbsentGame() {
-        let missingGameID = GameID(UUID())
-        let remainingGameID = GameID(UUID())
-        let games: GameList = [.game(sampleGame(id: remainingGameID))]
-        var presentedGameID: GameID? = missingGameID
-        var liveGamePath = [remainingGameID, missingGameID]
-
-        OpenGameSurfaceReconciler.reconcile(
-            presentedGameID: &presentedGameID,
-            liveGamePath: &liveGamePath,
-            gameListState: .loaded(games),
-            confirmedDeletedGameIDs: []
-        )
-
-        #expect(presentedGameID == nil)
-        #expect(liveGamePath == [remainingGameID])
-    }
-
-    @Test("reconcileOpenGameSurfaces keeps routes when absence is ambiguous")
-    func reconcileOpenGameSurfacesKeepsAmbiguousMissingGame() {
-        let missingGameID = GameID(UUID())
-        let remainingGameID = GameID(UUID())
-        let games: GameList = [
-            .game(sampleGame(id: remainingGameID)),
-            .failed(FailedGameEntry(error: "Could not decode a game.")),
-        ]
-        var presentedGameID: GameID? = missingGameID
-        var liveGamePath = [missingGameID]
-
-        OpenGameSurfaceReconciler.reconcile(
-            presentedGameID: &presentedGameID,
-            liveGamePath: &liveGamePath,
-            gameListState: .loaded(games),
-            confirmedDeletedGameIDs: []
-        )
-
-        #expect(presentedGameID == missingGameID)
-        #expect(liveGamePath == [missingGameID])
-    }
-
-    @Test("reconcileOpenGameSurfaces closes confirmed deletes even with failed list entries")
-    func reconcileOpenGameSurfacesClosesConfirmedDeleteWithFailedEntries() {
-        let deletedGameID = GameID(UUID())
-        let remainingGameID = GameID(UUID())
-        let games: GameList = [
-            .game(sampleGame(id: remainingGameID)),
-            .failed(FailedGameEntry(error: "Could not decode a game.")),
-        ]
-        var presentedGameID: GameID? = deletedGameID
-        var liveGamePath = [remainingGameID, deletedGameID]
-
-        OpenGameSurfaceReconciler.reconcile(
-            presentedGameID: &presentedGameID,
-            liveGamePath: &liveGamePath,
-            gameListState: .loaded(games),
-            confirmedDeletedGameIDs: [deletedGameID]
-        )
-
-        #expect(presentedGameID == nil)
-        #expect(liveGamePath == [remainingGameID])
-    }
-
-    @Test("confirmed deletes close lobby sheets and live routes while refresh is loading")
-    func confirmedDeleteReconciliationClosesDuringLoadingPreviousList() {
-        let deletedGameID = GameID(UUID())
-        let remainingGameID = GameID(UUID())
-        let previous: GameList = [.game(sampleGame(id: remainingGameID))]
-
-        let result = OpenGameSurfaceReconciler.reconciled(
-            presentedGameID: deletedGameID,
-            liveGamePath: [remainingGameID, deletedGameID],
-            gameListState: .loading(previous: previous),
-            confirmedDeletedGameIDs: [deletedGameID]
-        )
-
-        #expect(result.presentedGameID == nil)
-        #expect(result.liveGamePath == [remainingGameID])
-    }
-
-    @Test("confirmed deletes close lobby sheets and live routes after a failed refresh")
-    func confirmedDeleteReconciliationClosesDuringFailedPreviousList() {
-        let deletedGameID = GameID(UUID())
-        let remainingGameID = GameID(UUID())
-        let previous: GameList = [
-            .game(sampleGame(id: remainingGameID)),
-            .failed(FailedGameEntry(error: "Could not decode a game.")),
-        ]
-
-        let result = OpenGameSurfaceReconciler.reconciled(
-            presentedGameID: deletedGameID,
-            liveGamePath: [remainingGameID, deletedGameID],
-            gameListState: .failed(.unexpectedStatus(500), previous: previous),
-            confirmedDeletedGameIDs: [deletedGameID]
-        )
-
-        #expect(result.presentedGameID == nil)
-        #expect(result.liveGamePath == [remainingGameID])
     }
 }
