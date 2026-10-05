@@ -127,6 +127,59 @@ struct DevourerSetupStoryTests {
         #expect(Self.prompt(payload: payload, resolution: resolution).canSubmit)
     }
 
+    @Test("Missing variable entries still fail the whole setup story closed")
+    func missingVariableEntryStillMakesStoryUnavailable() async throws {
+        let sample = try Self.capturedSample()
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: ContractJSON.encode(sample.rawQuestion)
+        )
+        let story = try #require(payload.supportedQuestion?.story)
+        let resolver = try await Self.catalogResolver(
+            assetSource: .hosted,
+            chunkEntries: Self.catalogEntriesWithMissingVariableJSON()
+        )
+        let resolution = StoryNarrativeLocalization.resolve(
+            story.flavorText,
+            resolver: resolver,
+            catalogUnavailability: nil
+        )
+
+        #expect(resolution.story == nil)
+        #expect(resolution.unavailableReason == .missingVariable)
+        #expect(!Self.prompt(payload: payload, resolution: resolution).canSubmit)
+    }
+
+    @Test("Story view projections group encounter sets and expose neutral status labels")
+    func storyViewProjectionMatchesEncounterSetAndStatusSemantics() {
+        let devourer = StoryAssetReference(
+            role: .encounterSet,
+            assetPath: "encounter-sets/the-devourer-below.png",
+            alt: nil
+        )
+        let ancientEvils = StoryAssetReference(
+            role: .encounterSet,
+            assetPath: "encounter-sets/ancient-evils.png",
+            alt: nil
+        )
+        let groupChildren: [StoryNode] = [.image(devourer), .image(ancientEvils)]
+
+        #expect(StoryNodePresentation.encounterSetGroupReferences(groupChildren) == [
+            devourer, ancientEvils,
+        ])
+        #expect(StoryNodePresentation.encounterSetGroupReferences(
+            [.text("Gather "), .image(devourer)]
+        ) == nil)
+        #expect(StoryFlavorEntryStatus.status(for: [.invalidEntry]) == .invalid)
+        #expect(StoryFlavorEntryStatus.status(for: [.validEntry]) == .valid)
+        #expect(StoryFlavorEntryStatus.status(for: [.redEntry]) == nil)
+        #expect(StoryFlavorEntryStatus.invalid.accessibilityLabel == "Invalid")
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
+            #expect(StoryFlavorEntryStatus.valid.accessibilityLabel == "Gültig")
+            #expect(StoryFlavorEntryStatus.invalid.accessibilityLabel == "Ungültig")
+        }
+    }
+
     private static func fixture(_ name: String) throws -> Data {
         let url = try #require(
             Bundle.module.url(
@@ -175,13 +228,16 @@ struct DevourerSetupStoryTests {
     }
 
     private static func catalogResolver(
-        assetSource: AssetSourceNamespace?
+        assetSource: AssetSourceNamespace?,
+        chunkEntries: String = Self.catalogEntriesJSON
     ) async throws -> LocaleCatalogResolver {
-        let snapshot = try await catalogDocuments().loadSnapshot()
+        let snapshot = try await catalogDocuments(chunkEntries: chunkEntries).loadSnapshot()
         return LocaleCatalogResolver(snapshot: snapshot, assetSource: assetSource)
     }
 
-    private static func catalogDocuments() throws -> SyntheticLocaleCatalogDocuments {
+    private static func catalogDocuments(
+        chunkEntries: String = Self.catalogEntriesJSON
+    ) throws -> SyntheticLocaleCatalogDocuments {
         let entries = [
             "addToken",
             "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.fiveOrSixNames",
@@ -199,8 +255,37 @@ struct DevourerSetupStoryTests {
         return try SyntheticLocaleCatalogDocuments.make(
             entryKeys: entries,
             unsupportedKeys: 1,
-            chunkEntries: Self.catalogEntriesJSON
+            chunkEntries: chunkEntries
         )
+    }
+
+    private static func catalogEntriesWithMissingVariableJSON() throws -> String {
+        let key = "nightOfTheZealot.theDevourerBelow.setup.placeLocations"
+        let decoded = try ContractJSON.decode(JSONValue.self, from: Data(catalogEntriesJSON.utf8))
+        guard case var .object(entries) = decoded else { throw TestFailure() }
+        let missingVariableEntry = JSONValue.object([
+            "form": .string("message"),
+            "nodes": .array([
+                .object(["type": .string("text"), "value": .string("Place ")]),
+                .object([
+                    "name": .string("missing"),
+                    "role": .string("text"),
+                    "source": .string("named"),
+                    "type": .string("var"),
+                ]),
+                .object(["type": .string("text"), "value": .string(" locations.")]),
+            ]),
+            "variables": .array([
+                .object([
+                    "name": .string("missing"),
+                    "role": .string("text"),
+                    "source": .string("named"),
+                ]),
+            ]),
+        ])
+        guard LocaleCatalogEntry.decode(missingVariableEntry) != nil else { throw TestFailure() }
+        entries[key] = missingVariableEntry
+        return try String(decoding: ContractJSON.encode(JSONValue.object(entries)), as: UTF8.self)
     }
 
     /// Synthetic prose under the production keys. The captured prompt bytes provide the
