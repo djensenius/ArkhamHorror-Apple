@@ -64,6 +64,154 @@ struct NightOfTheZealotCoverageReplayTests {
         try await runMultiplayer(recordings: recordings)
     }
 
+    @Test("Multiplayer reconnect restores participant prompt and fences in-flight answer")
+    // swiftlint:disable:next function_body_length
+    func multiplayerReconnectRestoresParticipantPromptAndFencesInFlightAnswer() async throws {
+        let recording = try smokeRecording(named: "3p-smoke.jsonl")
+        let runDefinition = try MultiplayerRunDefinition(fileName: recording.fileName)
+        let catalogDocuments = try makeSyntheticCatalog(for: [recording])
+        let replay = try await CoverageReplaySession.start(
+            first: recording,
+            baseEnvelopeData: fixtureData(named: "get-game"),
+            catalogDocuments: catalogDocuments,
+            deck: sampleDeck(),
+            runDefinition: runDefinition
+        )
+        let ownerID = try recording.record.recordedPlayerID()
+        replay.model.liveGameParticipantIdentities[replay.gameID] = .participant(ownerID)
+        let prompt = try #require(replay.model.basicChoicePresentation(for: replay.gameID))
+        #expect(prompt.ownerID == ownerID)
+        #expect(prompt.questionVersion == recording.record.questionVersion)
+        #expect(prompt.readOnlyReason == nil)
+
+        let submission = try RecordedCoverageSubmission(answer: recording.record.chosenAnswer)
+        guard case let .singleChoice(choiceIndex) = submission else {
+            throw CoverageReplayPromptFailure(
+                record: recording,
+                reason: "smoke reconnect test expected a single-choice answer"
+            )
+        }
+        let expectedAnswer = try ContractJSON.encode(recording.record.chosenAnswer)
+        await replay.connection.setSendGated(true)
+        let firstSend = Task {
+            await submit(submission, prompt: prompt, model: replay.model)
+        }
+        await replay.connection.waitUntilSendPending(1)
+        #expect(replay.model.basicChoicePresentation(for: replay.gameID)?.actionPhase == .sending)
+        #expect(
+            await submit(submission, prompt: prompt, model: replay.model) == .alreadyPending
+        )
+
+        for seat in runDefinition.seats where seat.playerID != recording.record.playerID {
+            let seatPlayerID = try seat.playerIDValue()
+            replay.model.liveGameParticipantIdentities[replay.gameID] = .participant(
+                seatPlayerID
+            )
+            #expect(replay.model.basicChoicePresentation(for: replay.gameID) == nil)
+            #expect(
+                await submit(submission, prompt: prompt, model: replay.model) == .staleQuestion
+            )
+        }
+        replay.model.liveGameParticipantIdentities[replay.gameID] = .spectator
+        #expect(replay.model.basicChoicePresentation(for: replay.gameID) == nil)
+        #expect(
+            await submit(submission, prompt: prompt, model: replay.model) == .staleQuestion
+        )
+
+        replay.model.liveGameParticipantIdentities[replay.gameID] = .participant(ownerID)
+        await replay.connection.resumeOldestSend(with: .failure(GameSocketTransportError()))
+        #expect(await firstSend.value == .retryableFailure)
+        #expect(replay.model.basicChoicePresentation(for: replay.gameID)?.actionPhase
+            == .retryable(.transportFailure))
+
+        await replay.service.setGetGameGated(true)
+        let replacement = FakeGameSocketConnection()
+        await replay.socketFactory.enqueueConnectResult(.success(replacement))
+        await replay.connection.enqueue(.failure(GameSocketTransportError()))
+        await replay.service.waitUntilGetGamePending(1)
+        let reconnectingPrompt = try #require(
+            replay.model.basicChoicePresentation(for: replay.gameID)
+        )
+        #expect(reconnectingPrompt.ownerID == ownerID)
+        #expect(reconnectingPrompt.identity != prompt.identity)
+        #expect(!reconnectingPrompt.canRetry)
+        #expect(await replay.model.retryBasicChoice(reconnectingPrompt.identity) == .staleQuestion)
+
+        let restoredEnvelope = try CoverageEnvelopeBuilder.envelope(
+            for: recording.record,
+            baseEnvelopeData: fixtureData(named: "get-game"),
+            runDefinition: runDefinition
+        )
+        await replay.service.resumeOldestGetGame(with: .success(restoredEnvelope))
+        await replacement.waitUntilAwaitingNextEvent()
+        let current = try #require(replay.model.basicChoicePresentation(for: replay.gameID))
+        #expect(current.ownerID == ownerID)
+        #expect(current.canRetry)
+        #expect(current.actionChoiceIndex == choiceIndex)
+        #expect(current.actionPhase == .retryable(.transportFailure))
+        #expect(await replay.model.retryBasicChoice(prompt.identity) == .staleQuestion)
+        await replacement.enqueueSendResult(.success(()))
+        #expect(await replay.model.retryBasicChoice(current.identity) == .sentAwaitingSnapshot)
+        #expect(
+            await replay.model.submitBasicChoice(current.identity, choiceIndex: choiceIndex)
+                == .alreadyPending
+        )
+        #expect(await replay.connection.sentData == [expectedAnswer])
+        #expect(await replacement.sentData == [expectedAnswer])
+    }
+
+    @Test("Spectator socket snapshots do not correlate feedback to player prompts")
+    func spectatorSocketSnapshotsDoNotCorrelateFeedbackToPlayerPrompts() async throws {
+        let recording = try smokeRecording(named: "2p-smoke.jsonl")
+        let runDefinition = try MultiplayerRunDefinition(fileName: recording.fileName)
+        let catalogDocuments = try makeSyntheticCatalog(for: [recording])
+        let replay = try await CoverageReplaySession.start(
+            first: recording,
+            baseEnvelopeData: fixtureData(named: "get-game"),
+            catalogDocuments: catalogDocuments,
+            deck: sampleDeck(),
+            runDefinition: runDefinition
+        )
+        replay.model.liveGameParticipantIdentities[replay.gameID] = .spectator
+        replay.model.setBasicChoiceServerFeedback(
+            gameID: replay.gameID,
+            message: "spectator feedback is not prompt-correlated",
+            source: .answerRejected
+        )
+
+        let replacement = try smokeEnvelope(
+            for: recording,
+            runDefinition: runDefinition,
+            investigatorNames: distinctInvestigatorNames,
+            privatePromptMarker: "replacement prompt contents"
+        )
+        try await replay.connection.enqueue(.event(.message(
+            ContractJSON.encode(BoardSnapshotUpdate.snapshot(replacement.game))
+        )))
+        await replay.connection.waitUntilAwaitingNextEvent()
+        #expect(replay.model.basicChoiceServerFeedback[replay.gameID]
+            == "spectator feedback is not prompt-correlated")
+        #expect(replay.model.basicChoiceServerFeedbackSources[replay.gameID] == .answerRejected)
+
+        replay.model.setBasicChoiceServerFeedback(
+            gameID: replay.gameID,
+            message: "game error feedback clears on the next authoritative snapshot",
+            source: .gameError
+        )
+        let settled = try smokeEnvelope(
+            for: recording,
+            runDefinition: runDefinition,
+            investigatorNames: distinctInvestigatorNames,
+            privatePromptMarker: "settled prompt contents"
+        )
+        try await replay.connection.enqueue(.event(.message(
+            ContractJSON.encode(BoardSnapshotUpdate.snapshot(settled.game))
+        )))
+        await replay.connection.waitUntilAwaitingNextEvent()
+        #expect(replay.model.basicChoiceServerFeedback[replay.gameID] == nil)
+        #expect(replay.model.basicChoiceServerFeedbackSources[replay.gameID] == nil)
+    }
+
     @Test("Multiplayer status uses server fields from smoke snapshot bytes")
     func multiplayerStatusUsesServerFieldsFromSmokeSnapshotBytes() throws {
         let recording = try smokeRecording(named: "2p-smoke.jsonl")
@@ -99,6 +247,16 @@ struct NightOfTheZealotCoverageReplayTests {
         )
         #expect(waitingStatus.localPromptText == "Waiting for Daisy Walker.")
         #expect(waitingStatus.accessibilityLabel.contains("Turn: Daisy Walker"))
+
+        let spectatorStatus = BoardMultiplayerStatus(
+            projection: projection,
+            localPlayerID: nil,
+            isLocalSpectator: true
+        )
+        #expect(spectatorStatus.localPromptText == "Spectating. Waiting for Daisy Walker.")
+        #expect(
+            spectatorStatus.accessibilityLabel.contains("Spectating. Waiting for Daisy Walker.")
+        )
 
         let unknownIdentityStatus = BoardMultiplayerStatus(
             projection: projection,
@@ -167,6 +325,7 @@ struct NightOfTheZealotCoverageReplayTests {
     }
 
     @Test("Multiplayer status lists several pending players from additive snapshot bytes")
+    // swiftlint:disable:next function_body_length
     func multiplayerStatusListsSeveralPendingPlayersFromAdditiveSnapshotBytes() throws {
         let recording = try smokeRecording(named: "4p-smoke.jsonl")
         let runDefinition = try MultiplayerRunDefinition(fileName: recording.fileName)
@@ -192,16 +351,34 @@ struct NightOfTheZealotCoverageReplayTests {
             status.localPromptText
                 == "Waiting for Daisy Walker, Agnes Baker, and Skids O'Toole."
         )
+        let spectatorStatus = BoardMultiplayerStatus(
+            projection: projection,
+            localPlayerID: nil,
+            isLocalSpectator: true
+        )
+        #expect(
+            spectatorStatus.localPromptText
+                == "Spectating. Waiting for Daisy Walker, Agnes Baker, and Skids O'Toole."
+        )
         CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
             let localized = BoardMultiplayerStatus(
                 projection: projection,
                 localPlayerID: waitingPlayerID
+            )
+            let localizedSpectator = BoardMultiplayerStatus(
+                projection: projection,
+                localPlayerID: nil,
+                isLocalSpectator: true
             )
             #expect(localized.title == "Mehrspielerstatus")
             #expect(localized.actingText == "Aktiv: Skids O'Toole")
             #expect(
                 localized.localPromptText == "Warten auf Daisy Walker, Agnes Baker und "
                     + "Skids O'Toole."
+            )
+            #expect(
+                localizedSpectator.localPromptText == "Zuschauen. Warten auf Daisy Walker, "
+                    + "Agnes Baker und Skids O'Toole."
             )
             #expect(localized.accessibilityLabel.contains("Mehrspielerstatus"))
         }
@@ -219,10 +396,10 @@ struct NightOfTheZealotCoverageReplayTests {
             privatePromptMarker: secret
         )
         let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
-        let waitingPlayerID = try runDefinition.seats[0].playerIDValue()
         let status = BoardMultiplayerStatus(
             projection: projection,
-            localPlayerID: waitingPlayerID
+            localPlayerID: nil,
+            isLocalSpectator: true
         )
         let combined = [
             status.title,
@@ -453,6 +630,27 @@ struct NightOfTheZealotCoverageReplayTests {
         }
     }
 
+    private func submit(
+        _ submission: RecordedCoverageSubmission,
+        prompt: BasicChoicePromptPresentation,
+        model: AppModel
+    ) async -> BasicChoiceSubmitResult {
+        switch submission {
+        case let .singleChoice(choice):
+            await model.submitBasicChoice(prompt.identity, choiceIndex: choice)
+        case let .amounts(amounts):
+            await model.submitAmountsAnswer(prompt.identity, amounts: amounts)
+        case let .paymentAmounts(amounts):
+            await model.submitPaymentAmountsAnswer(prompt.identity, amounts: amounts)
+        case let .exchangeAmount(amount):
+            await model.submitExchangeAmountsAnswer(prompt.identity, amount: amount)
+        case let .continueCampaign(step):
+            await model.submitContinueCampaignAnswer(prompt.identity, step: step)
+        case .unsupported:
+            .unsupportedChoice
+        }
+    }
+
     private func fixtureData(named fileName: String) throws -> Data {
         let url = try #require(
             Bundle.module.url(
@@ -545,6 +743,7 @@ private struct CoverageReplaySession {
     let model: AppModel
     let connection: FakeGameSocketConnection
     let service: ScriptedGameLifecycleService
+    let socketFactory: FakeGameSocketFactory
     let gameID: GameID
     let baseEnvelopeData: Data
     let deck: Deck
@@ -574,6 +773,7 @@ private struct CoverageReplaySession {
             model: model,
             connection: connection,
             service: fakes.service,
+            socketFactory: fakes.socketFactory,
             gameID: envelope.game.id,
             baseEnvelopeData: baseEnvelopeData,
             deck: deck,
@@ -699,7 +899,14 @@ private struct CoverageReplaySession {
     ) async throws {
         model.liveGameParticipantIdentities[gameID] = identity
         let presentedPrompt = model.basicChoicePresentation(for: gameID)
-        if let presentedPrompt {
+        if case .spectator = identity {
+            guard presentedPrompt == nil else {
+                throw CoverageReplayPromptFailure(
+                    record: recording,
+                    reason: "spectator saw another player's prompt contents"
+                )
+            }
+        } else if let presentedPrompt {
             let ownerID = try recording.record.recordedPlayerID()
             guard presentedPrompt.ownerID == ownerID else {
                 throw CoverageReplayPromptFailure(

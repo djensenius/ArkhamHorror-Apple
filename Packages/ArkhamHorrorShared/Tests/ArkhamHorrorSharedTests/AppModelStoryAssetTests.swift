@@ -322,35 +322,30 @@ extension AppModelStoryAssetTests {
         try await withModel(settingsStatus: 503) { model, documents, _, _, _ in
             let gameID = try installGatheringReadPrompt(
                 on: model,
-                profile: documents.profile,
-                participant: .spectator
+                profile: documents.profile
             )
-            let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
+            let ownerPrompt = try #require(model.basicChoicePresentation(for: gameID))
             #expect(
-                spectatorPrompt.storyResolution?.unavailableReason
+                ownerPrompt.storyResolution?.unavailableReason
                     == .catalog(.unexpectedStatus(503))
             )
-            #expect(spectatorPrompt.catalogRetry != nil)
-            #expect(
-                spectatorPrompt.statusMessage
-                    == "Spectators can view this prompt but cannot answer it."
-            )
+            #expect(ownerPrompt.catalogRetry != nil)
 
             let waitingPrompt = BasicChoicePromptPresentation(
-                identity: spectatorPrompt.identity,
-                question: spectatorPrompt.question,
-                semanticPresentation: spectatorPrompt.semanticPresentation,
-                semanticLocaleIdentifier: spectatorPrompt.semanticLocaleIdentifier,
-                cardCatalog: spectatorPrompt.cardCatalog,
-                storyResolution: spectatorPrompt.storyResolution,
-                choiceLabelResolutions: spectatorPrompt.choiceLabelResolutions,
-                choiceFlavorResolutions: spectatorPrompt.choiceFlavorResolutions,
-                promptLabelResolutions: spectatorPrompt.promptLabelResolutions,
+                identity: ownerPrompt.identity,
+                question: ownerPrompt.question,
+                semanticPresentation: ownerPrompt.semanticPresentation,
+                semanticLocaleIdentifier: ownerPrompt.semanticLocaleIdentifier,
+                cardCatalog: ownerPrompt.cardCatalog,
+                storyResolution: ownerPrompt.storyResolution,
+                choiceLabelResolutions: ownerPrompt.choiceLabelResolutions,
+                choiceFlavorResolutions: ownerPrompt.choiceFlavorResolutions,
+                promptLabelResolutions: ownerPrompt.promptLabelResolutions,
                 readOnlyReason: .anotherPlayer,
                 actionPhase: nil,
                 actionChoiceIndex: nil,
                 serverFeedback: nil,
-                catalogRetry: spectatorPrompt.catalogRetry
+                catalogRetry: ownerPrompt.catalogRetry
             )
             #expect(waitingPrompt.statusMessage == "Waiting for another player to answer.")
             #expect(waitingPrompt.catalogRetry != nil)
