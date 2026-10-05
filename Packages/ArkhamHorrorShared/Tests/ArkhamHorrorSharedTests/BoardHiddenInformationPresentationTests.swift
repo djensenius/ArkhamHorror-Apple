@@ -63,6 +63,34 @@ struct BoardHiddenInformationPresentationTests {
         }
     }
 
+    @Test("Hidden hand placeholders cover empty and multi-card hands")
+    func hiddenHandPlaceholdersCoverEmptyAndMultiCardHands() {
+        let localPlayerID = BoardTestFixtures.playerID("000000000801")
+        let otherPlayerID = BoardTestFixtures.playerID("000000000802")
+
+        let emptyHandBacks = BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
+            for: investigatorNode(handCount: 0, playerID: otherPlayerID),
+            localPlayerID: localPlayerID,
+            isSolo: false
+        )
+        #expect(emptyHandBacks.isEmpty)
+
+        let threeHandBacks = BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
+            for: investigatorNode(handCount: 3, playerID: otherPlayerID),
+            localPlayerID: localPlayerID,
+            isSolo: false
+        )
+        #expect(threeHandBacks.map(\.id) == [0, 1, 2])
+        #expect(threeHandBacks.map(\.accessibilityLabel) == [
+            "Hidden hand card", "Hidden hand card", "Hidden hand card",
+        ])
+        #expect(BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
+            for: investigatorNode(handCount: 3, playerID: localPlayerID),
+            localPlayerID: localPlayerID,
+            isSolo: false
+        ).isEmpty)
+    }
+
     private func assertResolvedButHidden(
         projection: BoardProjection,
         local: BoardInvestigatorNode,
@@ -213,6 +241,53 @@ struct BoardHiddenInformationPresentationTests {
             localPlayerID: nil,
             activeInvestigatorPlayerID: other.playerID
         ) == nil)
+    }
+
+    private func investigatorNode(
+        handCount: Int,
+        playerID: PlayerID,
+        id: InvestigatorID = BoardTestFixtures.investigatorID("c01001")
+    ) -> BoardInvestigatorNode {
+        BoardInvestigatorNode(
+            id: id,
+            playerID: playerID,
+            displayName: "Roland Banks",
+            subtitle: nil,
+            investigatorClass: .guardian,
+            health: 9,
+            sanity: 5,
+            remainingActions: 3,
+            experiencePoints: 0,
+            spentExperience: 0,
+            physicalTrauma: 0,
+            mentalTrauma: 0,
+            unhealedHorrorThisRound: 0,
+            assignedHealthDamage: 0,
+            assignedSanityDamage: 0,
+            defeated: false,
+            resigned: false,
+            eliminated: false,
+            killed: false,
+            drivenInsane: false,
+            currentLocationID: nil,
+            isActiveInvestigator: false,
+            isActingPlayer: false,
+            isTurnPlayer: false,
+            isLeadInvestigator: false,
+            handCount: handCount,
+            deckCount: 0,
+            isMultiplayer: true,
+            hasPendingPrompt: false,
+            engagedEnemyCount: 0,
+            assetCount: 0,
+            eventCount: 0,
+            treacheryCount: 0,
+            skillCount: 0,
+            scarletKeyCount: 0,
+            tokenCounts: [],
+            movementSummary: nil,
+            placementSummary: "No location"
+        )
     }
 }
 
