@@ -47,7 +47,9 @@ struct StoryNodeViewProjectionTests {
         #expect(StoryFlavorEntryStatus.status(for: [.invalidEntry]) == .invalid)
         #expect(StoryFlavorEntryStatus.status(for: [.validEntry]) == .valid)
         #expect(StoryFlavorEntryStatus.status(for: [.redEntry]) == nil)
-        #expect(StoryFlavorEntryStatus.invalid.accessibilityLabel == "Invalid")
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("en") {
+            #expect(StoryFlavorEntryStatus.invalid.accessibilityLabel == "Invalid")
+        }
         CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
             #expect(StoryFlavorEntryStatus.valid.accessibilityLabel == "Gültig")
             #expect(StoryFlavorEntryStatus.invalid.accessibilityLabel == "Ungültig")
