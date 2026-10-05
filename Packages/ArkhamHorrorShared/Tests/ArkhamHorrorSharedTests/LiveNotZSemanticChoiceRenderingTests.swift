@@ -21,44 +21,54 @@ struct LiveNotZSemanticChoiceRenderingTests {
         let projection = try Self.capturedProjection()
 
         for sample in samples {
-            let prompt = try Self.prompt(for: sample)
-            let choice = try #require(
-                prompt.choices.first { $0.index == sample.source.choiceIndex },
-                "\(sample.kind) captured choice is present"
-            )
-            let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
-
-            #expect(prompt.isRenderableQuestion, "\(sample.kind) prompt is renderable")
-            #expect(prompt.canSubmit, "\(sample.kind) prompt remains submittable")
-            #expect(
-                prompt.displayOrderedChoices().map(\.index).contains(choice.index),
-                "\(sample.kind) captured choice is displayed"
-            )
-            #expect(
-                prompt.isChoiceActionable(choice, in: projection),
-                "\(sample.kind) captured choice is actionable"
-            )
-            #expect(
-                choice.title == "Update required",
-                Comment(rawValue:
-                    "\(sample.kind) preserves the legacy raw-choice diagnostic that caused the "
-                        + "round-3 harness misclassification")
-            )
-            #expect(
-                resolved.title == sample.expectedTitle,
-                "\(sample.kind) BasicChoicePromptView title comes from the semantic presentation"
-            )
-            #expect(resolved.title != "Update required", "\(sample.kind) does not render Update required")
-            #expect(
-                resolved.systemImage == sample.expectedSystemImage,
-                "\(sample.kind) uses the semantic icon rendered by BasicChoicePromptView"
-            )
-            #expect(
-                prompt.accessibilityHint(for: choice, in: projection)
-                    == "Activates choice \(choice.index + 1).",
-                "\(sample.kind) keeps single-choice actionability semantics"
-            )
+            try Self.assertSampleRenders(sample, projection: projection)
         }
+    }
+
+    private static func assertSampleRenders(
+        _ sample: RenderingSample,
+        projection: BoardProjection
+    ) throws {
+        let prompt = try Self.prompt(for: sample)
+        let choice = try #require(
+            prompt.choices.first { $0.index == sample.source.choiceIndex },
+            "\(sample.kind) captured choice is present"
+        )
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(prompt.isRenderableQuestion, "\(sample.kind) prompt is renderable")
+        #expect(prompt.canSubmit, "\(sample.kind) prompt remains submittable")
+        #expect(
+            prompt.displayOrderedChoices().map(\.index).contains(choice.index),
+            "\(sample.kind) captured choice is displayed"
+        )
+        #expect(
+            prompt.isChoiceActionable(choice, in: projection),
+            "\(sample.kind) captured choice is actionable"
+        )
+        #expect(
+            choice.title == "Update required",
+            Comment(rawValue:
+                "\(sample.kind) preserves the legacy raw-choice diagnostic that caused the "
+                    + "round-3 harness misclassification")
+        )
+        #expect(
+            resolved.title == sample.expectedTitle,
+            "\(sample.kind) BasicChoicePromptView title comes from the semantic presentation"
+        )
+        #expect(
+            resolved.title != "Update required",
+            "\(sample.kind) does not render Update required"
+        )
+        #expect(
+            resolved.systemImage == sample.expectedSystemImage,
+            "\(sample.kind) uses the semantic icon rendered by BasicChoicePromptView"
+        )
+        #expect(
+            prompt.accessibilityHint(for: choice, in: projection)
+                == "Activates choice \(choice.index + 1).",
+            "\(sample.kind) keeps single-choice actionability semantics"
+        )
     }
 
     @Test("Unresolved captured catalog labels remain visible but not pressable")
@@ -90,6 +100,7 @@ struct LiveNotZSemanticChoiceRenderingTests {
             to: sample.rawQuestion,
             expectedQuestionVersion: sample.source.questionVersion
         )
+        let cardCatalog = try capturedCardCatalog()
         return BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
                 gameID: BoardTestFixtures.gameID(),
@@ -103,7 +114,7 @@ struct LiveNotZSemanticChoiceRenderingTests {
             question: BasicChoiceParser.parseQuestion(sample.rawQuestion),
             semanticPresentation: bound,
             semanticLocaleIdentifier: "en",
-            cardCatalog: try capturedCardCatalog(),
+            cardCatalog: cardCatalog,
             choiceLabelResolutions: overrideResolutions ?? sample.choiceLabelResolutions,
             readOnlyReason: nil,
             actionPhase: nil,
