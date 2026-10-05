@@ -201,6 +201,23 @@ struct LocaleCatalogResolverTests {
         ) == .failure(.unsupportedVariableValue))
     }
 
+    @Test("Production choice labels reject variable names outside catalog grammar")
+    func productionChoiceLabelsRejectVariableNamesOutsideCatalogGrammar() {
+        let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.greet": message([
+                .text("Hello "),
+                .variable(name: "name", source: .named, isIcon: false),
+            ]),
+        ]))
+        let overlongName = String(repeating: "a", count: 65)
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.greet name=s:\"Alice\" \(overlongName)=s:\"ignored\"",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.unsupportedVariableValue))
+    }
+
     @Test("Production choice labels resolve plural catalog entries as singular labels")
     func productionChoiceLabelsResolvePluralSingular() {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [

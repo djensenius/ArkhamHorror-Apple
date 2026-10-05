@@ -191,7 +191,7 @@ extension StoryNarrativeLocalization {
             guard let separator = token.firstIndex(of: "=") else { return nil }
             let name = String(token[..<separator])
             let encodedValue = token[token.index(after: separator)...]
-            guard isChoiceLabelVariableName(name), variables[name] == nil else { return nil }
+            guard LocaleCatalogGrammar.isVariableName(name), variables[name] == nil else { return nil }
             guard let value = parseChoiceLabelVariableValue(encodedValue) else { return nil }
             variables[name] = value
         }
@@ -261,16 +261,6 @@ extension StoryNarrativeLocalization {
         else { return nil }
         let sign: JSONNumber.Sign = parsed.sign == .minus && magnitude != "0" ? .minus : .plus
         return try? JSONNumber(sign: sign, coefficient: magnitude, exponent: .zero)
-    }
-
-    private static func isChoiceLabelVariableName(_ name: String) -> Bool {
-        guard !name.isEmpty else { return false }
-        return name.utf8.allSatisfy { byte in
-            (0x41 ... 0x5A).contains(byte)
-                || (0x61 ... 0x7A).contains(byte)
-                || (0x30 ... 0x39).contains(byte)
-                || byte == 0x5F
-        }
     }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
