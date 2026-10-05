@@ -1349,7 +1349,7 @@ extension AppModelLiveGameTests {
         let amounts = ["00000000-0000-0000-0000-000000000065": 1]
 
         model.liveGameParticipantIdentities[gameID] = .spectator
-        #expect(await model.submitAmountsAnswer(identity, amounts: amounts) == .readOnly)
+        #expect(await model.submitAmountsAnswer(identity, amounts: amounts) == .staleQuestion)
         model.liveGameParticipantIdentities[gameID] = .participant(
             BoardTestFixtures.playerID("000000000002")
         )

@@ -69,6 +69,8 @@ struct BasicChoicePromptKey: Sendable, Equatable, Hashable {
 }
 
 enum BasicChoiceReadOnlyReason: Sendable, Equatable {
+    /// Defensive presentation state for any already-constructed prompt; normal live
+    /// spectator sessions do not construct a basic-choice prompt at all.
     case spectator
     case anotherPlayer
     case legacyServer
@@ -336,7 +338,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         case .spectator:
             return basicChoiceLocalized(
                 "basicChoice.status.readOnly.spectator",
-                "Spectators can view this prompt but cannot answer it."
+                "Spectators cannot view or answer another player's prompt."
             )
         case .anotherPlayer:
             return basicChoiceLocalized(

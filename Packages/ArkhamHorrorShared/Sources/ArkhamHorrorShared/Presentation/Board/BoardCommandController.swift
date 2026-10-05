@@ -20,6 +20,7 @@ final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
     private(set) var localPlayerID: PlayerID?
+    private(set) var isLocalSpectator: Bool
     private var cardCatalog: CardCatalogSnapshot?
     private(set) var layout: BoardLayout
     private(set) var coordinator: FocusCoordinator
@@ -60,6 +61,7 @@ final class BoardCommandController {
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
         localPlayerID: PlayerID? = nil,
+        isLocalSpectator: Bool = false,
         cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
@@ -71,6 +73,7 @@ final class BoardCommandController {
         self.projection = projection
         self.prompt = prompt
         self.localPlayerID = localPlayerID
+        self.isLocalSpectator = isLocalSpectator
         self.cardCatalog = cardCatalog
         self.onChoice = onChoice
         self.onAmounts = onAmounts
@@ -838,6 +841,10 @@ extension BoardCommandController {
         refreshFocusGraphForPromptControls()
     }
 
+    func updateIsLocalSpectator(_ isSpectator: Bool) {
+        isLocalSpectator = isSpectator
+    }
+
     nonisolated static func fullPlayerAreaPlayerID(
         promptOwnerID: PlayerID?,
         localPlayerID: PlayerID?,
@@ -856,7 +863,11 @@ extension BoardCommandController {
     }
 
     var multiplayerStatus: BoardMultiplayerStatus {
-        BoardMultiplayerStatus(projection: projection, localPlayerID: localPlayerID)
+        BoardMultiplayerStatus(
+            projection: projection,
+            localPlayerID: localPlayerID,
+            isLocalSpectator: isLocalSpectator
+        )
     }
 
     var shouldShowPromptSurface: Bool {

@@ -13,9 +13,10 @@ struct BoardMultiplayerStatus: Sendable, Equatable {
     let leadInvestigatorName: String?
     let pendingPromptNames: [String]
     let localPlayerID: PlayerID?
+    let isLocalSpectator: Bool
     let localHasPendingPrompt: Bool
 
-    init(projection: BoardProjection, localPlayerID: PlayerID?) {
+    init(projection: BoardProjection, localPlayerID: PlayerID?, isLocalSpectator: Bool = false) {
         playerOrderCount = projection.playerOrderCount
         activeInvestigatorName = projection.investigators
             .first(where: \.isActingPlayer)?.displayName
@@ -27,6 +28,7 @@ struct BoardMultiplayerStatus: Sendable, Equatable {
             .filter(\.hasPendingPrompt)
             .map(\.displayName)
         self.localPlayerID = localPlayerID
+        self.isLocalSpectator = isLocalSpectator
         localHasPendingPrompt = localPlayerID.map { projection.questions[$0] != nil } ?? false
     }
 
@@ -102,6 +104,13 @@ struct BoardMultiplayerStatus: Sendable, Equatable {
         }
         guard !pendingPromptNames.isEmpty else { return nil }
         let names = localizedList(pendingPromptNames)
+        if isLocalSpectator {
+            return BoardLocalization.format(
+                "board.multiplayer.status.waiting.spectator",
+                "Spectating. Waiting for %@.",
+                names
+            )
+        }
         if localPlayerID == nil {
             return BoardLocalization.localized(
                 "board.multiplayer.status.waiting.identityUnknown",

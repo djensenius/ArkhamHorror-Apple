@@ -9,6 +9,13 @@ import Testing
 /// paths against a real fork server.
 private let notzScenarioOrder = ["01104", "01120", "01142"]
 
+private func liveServerURLForPlaythrough() -> String? {
+    guard let rawURL = ProcessInfo.processInfo.environment["ARKHAM_LIVE_SERVER_URL"],
+          !rawURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return nil }
+    return rawURL
+}
+
 @MainActor
 @Suite("Live Night of the Zealot playthrough")
 struct LiveNightOfTheZealotPlaythroughTests {
@@ -18,11 +25,12 @@ struct LiveNightOfTheZealotPlaythroughTests {
         "/tmp/arkham-logs/playthrough-trace-\(investigator.traceSlug).jsonl"
     }
 
-    @Test("Env-gated solo NotZ playthroughs for every core investigator")
+    @Test(
+        "Env-gated solo NotZ playthroughs for every core investigator",
+        .enabled(if: liveServerURLForPlaythrough() != nil)
+    )
     func coreInvestigatorCampaigns() async throws {
-        guard let rawURL = ProcessInfo.processInfo.environment["ARKHAM_LIVE_SERVER_URL"],
-              !rawURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        let rawURL = try #require(liveServerURLForPlaythrough())
 
         let profile = try ServerProfile.custom(
             displayName: "Task 1.2.12 live server",
@@ -113,7 +121,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 token: token,
                 gameID: gameID,
                 investigator: investigator,
-                deckID: deck.id,
+                deck: deck,
                 trace: trace,
                 diagnosticBypassUnsupported: Self.diagnosticBypassUnsupported
             )
@@ -229,7 +237,7 @@ private struct LivePlaythroughBot {
     let token: String
     let gameID: GameID
     let investigator: InvestigatorFixture
-    let deckID: DeckID
+    let deck: Deck
     let trace: PlaythroughTraceRecorder
     let diagnosticBypassUnsupported: Bool
 
@@ -259,8 +267,16 @@ private struct LivePlaythroughBot {
                 )
             }
 
-            guard let projection = try await waitForProjection() else {
-                continue
+            let projection: BoardProjection
+            do {
+                projection = try await waitForProjection()
+            } catch let error as PlaythroughError {
+                guard case .timedOut = error else { throw error }
+                return try recordRunTimedOut(
+                    reason: error.description,
+                    snapshot: envelope.game,
+                    scenarioOutcomes: scenarioOutcomes
+                )
             }
             guard let prompt = model.basicChoicePresentation(for: gameID) else {
                 try await Task.sleep(for: .milliseconds(200))
@@ -365,7 +381,7 @@ private struct LivePlaythroughBot {
 
             let submission = try selectedAnswer.answer.traceSubmission(prompt: prompt)
             do {
-                let submitResult = try await submit(selectedAnswer.answer, prompt: prompt)
+                let submitOutcome = try await submit(selectedAnswer.answer, prompt: prompt)
                 let advanced = try await waitForPromptAdvance(from: prompt.identity)
                 let feedback = serverFeedbackSummary()
                 if advanced {
@@ -378,8 +394,9 @@ private struct LivePlaythroughBot {
                         repeatCount: repeatCount,
                         selectedAnswer: selectedAnswer,
                         submission: submission,
-                        outcome: .submittedAndAdvanced(submitResult),
-                        serverFeedback: feedback
+                        outcome: .submittedAndAdvanced(submitOutcome.detail),
+                        serverFeedback: feedback,
+                        diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     repeatedQuestionShapes[repeatKey] = repeatCount + 1
                 } else {
@@ -404,7 +421,8 @@ private struct LivePlaythroughBot {
                         selectedAnswer: selectedAnswer,
                         submission: submission,
                         outcome: .failed(failure.reason),
-                        serverFeedback: feedback
+                        serverFeedback: feedback,
+                        diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     return BotOutcome(
                         reachedDevourerResolution: false,
@@ -440,36 +458,49 @@ private struct LivePlaythroughBot {
             }
         }
         let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
+        let scenarioOutcomes = scenarioOutcomes(from: envelope.game)
+        return try recordRunTimedOut(
+            reason: "playthrough timed out before campaign end",
+            snapshot: envelope.game,
+            scenarioOutcomes: scenarioOutcomes
+        )
+    }
+
+    private func waitForProjection() async throws -> BoardProjection {
+        try await waitForValue(timeout: 20, description: "live projection") {
+            model.liveGameState(for: gameID).lastKnownProjection
+        }
+    }
+
+    private func recordRunTimedOut(
+        reason: String,
+        snapshot: PublicGameSnapshot,
+        scenarioOutcomes: [String: String]
+    ) throws -> BotOutcome {
         let prompt = model.basicChoicePresentation(for: gameID)
         let failure = PromptFailure(
             scenario: currentScenarioCode(
                 projection: model.liveGameState(for: gameID).lastKnownProjection,
-                snapshot: envelope.game
+                snapshot: snapshot
             ),
             investigator: investigator,
             questionVersion: prompt?.questionVersion ?? -1,
             rawQuestionTag: prompt.map {
                 describeRawQuestionTag($0.identity.rawQuestion)
             } ?? "none",
-            reason: "playthrough timed out before campaign end"
+            reason: reason
         )
         try trace.append(.runTimedOut(
             investigator: investigator,
             gameID: gameID,
             failure: failure,
-            scenarioOutcomes: scenarioOutcomes(from: envelope.game)
+            scenarioOutcomes: scenarioOutcomes
         ))
         return BotOutcome(
             reachedDevourerResolution: false,
-            scenarioOutcomes: scenarioOutcomes(from: envelope.game),
+            scenarioOutcomes: scenarioOutcomes,
             promptFailure: failure
         )
-    }
-
-    private func waitForProjection() async throws -> BoardProjection? {
-        try await waitForValue(timeout: 20, description: "live projection") {
-            model.liveGameState(for: gameID).lastKnownProjection
-        }
     }
 
     private func serverFeedbackSummary() -> TraceServerFeedback? {
@@ -490,7 +521,7 @@ private struct LivePlaythroughBot {
     ) throws -> SelectedBotAnswer {
         if isInitialChooseDeckPrompt(prompt) {
             return SelectedBotAnswer(
-                answer: .savedDeck(deckID), note: "starter deck", chosenChoiceKind: nil
+                answer: .savedDeck(deck), note: "starter deck", chosenChoiceKind: nil
             )
         }
         if prompt.isChooseUpgradeDeckPrompt {
@@ -549,15 +580,15 @@ private struct LivePlaythroughBot {
     }
 
     private func canDiagnosticBypassUnsupported(_ prompt: BasicChoicePromptPresentation) -> Bool {
-        guard diagnosticBypassUnsupported else { return false }
+        guard diagnosticBypassUnsupported, prompt.readOnlyReason == nil else { return false }
         return prompt.identity.questionPresentation?.choices
             .contains { $0.selectable } == true
     }
 
-    // swiftlint:disable:next function_body_length cyclomatic_complexity
+    // swiftlint:disable:next cyclomatic_complexity
     private func submit(
         _ answer: BotAnswer, prompt: BasicChoicePromptPresentation
-    ) async throws -> String {
+    ) async throws -> SubmissionOutcome {
         let result: BasicChoiceSubmitResult
         switch answer {
         case let .choice(index):
@@ -570,15 +601,13 @@ private struct LivePlaythroughBot {
             result = await model.submitExchangeAmountsAnswer(prompt.identity, amount: amount)
         case let .continueCampaign(step):
             result = await model.submitContinueCampaignAnswer(prompt.identity, step: step)
-        case let .savedDeck(deckID):
-            guard let connection = model.liveGameConnections[gameID]?.connection else {
-                throw PlaythroughError.submissionFailed("deck answer socket was not connected")
+        case let .savedDeck(deck):
+            guard await model.chooseDeckForLivePrompt(deck, in: gameID) else {
+                throw PlaythroughError.submissionFailed("live deck choice was not accepted")
             }
-            let bytes = try ContractJSON.encode(
-                DeckAnswer(deckId: deckID, playerId: prompt.identity.ownerID)
+            return SubmissionOutcome(
+                detail: "submitted DeckAnswer through AppModel chooseDeckForLivePrompt"
             )
-            try await connection.send(bytes)
-            return "sent DeckAnswer over WebSocket"
         case let .skipDeckUpgrade(investigatorID):
             let deckResult = await model.continueCampaignWithoutUpgrading(
                 investigatorId: investigatorID,
@@ -587,21 +616,18 @@ private struct LivePlaythroughBot {
             )
             switch deckResult {
             case .submitted:
-                return "submitted deck-upgrade skip through AppModel"
+                return SubmissionOutcome(detail: "submitted deck-upgrade skip through AppModel")
             case let .failed(message):
                 throw PlaythroughError.submissionFailed(message)
             }
         }
         switch result {
         case .sentAwaitingSnapshot:
-            return "sentAwaitingSnapshot"
+            return SubmissionOutcome(detail: "sentAwaitingSnapshot")
         case .alreadyPending:
             throw PlaythroughError.submissionFailed("answer already pending")
         case .readOnly:
-            guard diagnosticBypassUnsupported, case let .choice(index) = answer else {
-                throw PlaythroughError.submissionFailed("prompt became read-only")
-            }
-            return try await sendDiagnosticUnsupportedChoice(index, prompt: prompt)
+            throw PlaythroughError.submissionFailed("prompt became read-only")
         case .retryableFailure:
             throw PlaythroughError.submissionFailed("retryable answer failure")
         case .staleQuestion:
@@ -616,7 +642,7 @@ private struct LivePlaythroughBot {
 
     private func sendDiagnosticUnsupportedChoice(
         _ index: Int, prompt: BasicChoicePromptPresentation
-    ) async throws -> String {
+    ) async throws -> SubmissionOutcome {
         guard let connection = model.liveGameConnections[gameID]?.connection else {
             throw PlaythroughError.submissionFailed("diagnostic bypass socket was not connected")
         }
@@ -628,23 +654,39 @@ private struct LivePlaythroughBot {
             )
         )
         try await connection.send(bytes)
-        return "diagnostic bypass sent unsupported Answer over WebSocket"
+        return SubmissionOutcome(
+            detail: "diagnostic bypass sent unsupported Answer over WebSocket",
+            diagnosticBypass: true
+        )
     }
 
     private func waitForPromptAdvance(
         from identity: BasicChoicePromptIdentity
     ) async throws -> Bool {
         let deadline = Date().addingTimeInterval(30)
+        var nextServerStateCheck = Date()
         while Date() < deadline {
             guard let current = model.basicChoicePresentation(for: gameID) else { return true }
             if current.identity.promptKey != identity.promptKey {
                 return true
             }
-            let state = model.liveGameState(for: gameID)
-            if state.lastKnownProjection?.counters.gameStateSummary == "Completed" {
-                return true
+            if Date() >= nextServerStateCheck {
+                nextServerStateCheck = Date().addingTimeInterval(1)
+                if await serverSnapshotIsOver() {
+                    return true
+                }
             }
             try await Task.sleep(for: .milliseconds(100))
+        }
+        return false
+    }
+
+    private func serverSnapshotIsOver() async -> Bool {
+        guard let envelope = try? await lifecycle.getGame(gameID, on: profile, token: token) else {
+            return false
+        }
+        if case .over = envelope.game.gameState {
+            return true
         }
         return false
     }
@@ -721,7 +763,7 @@ private enum BotAnswer: Sendable {
     case paymentAmounts([String: Int])
     case exchangeAmount(Int)
     case continueCampaign(JSONValue)
-    case savedDeck(DeckID)
+    case savedDeck(Deck)
     case skipDeckUpgrade(investigatorID: String)
 }
 
@@ -729,6 +771,16 @@ private struct SelectedBotAnswer: Sendable {
     let answer: BotAnswer
     let note: String
     let chosenChoiceKind: String?
+}
+
+private struct SubmissionOutcome: Sendable {
+    let detail: String
+    let diagnosticBypass: Bool
+
+    init(detail: String, diagnosticBypass: Bool = false) {
+        self.detail = detail
+        self.diagnosticBypass = diagnosticBypass
+    }
 }
 
 private extension BotAnswer {
@@ -784,10 +836,10 @@ private extension BotAnswer {
                 kind: "CampaignStepAnswer",
                 payload: CampaignStepAnswer(contents: step)
             )
-        case let .savedDeck(deckID):
+        case let .savedDeck(deck):
             return try TraceSubmission(
                 kind: "DeckAnswer",
-                payload: DeckAnswer(deckId: deckID, playerId: prompt.identity.ownerID)
+                payload: DeckAnswer(deckId: deck.id, playerId: prompt.identity.ownerID)
             )
         case let .skipDeckUpgrade(investigatorID):
             return TraceSubmission(
@@ -875,6 +927,8 @@ private struct TraceAppChoice: Encodable, Sendable {
     let isSupported: Bool
     let isDisplayed: Bool
     let isActionable: Bool
+    let isSubmittable: Bool
+    let blocksSubmission: Bool
     let semanticKind: String?
     let semanticSelectable: Bool?
     let systemImage: String
@@ -914,6 +968,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
     let submission: TraceSubmission?
     let outcome: TraceOutcome?
     let serverFeedback: TraceServerFeedback?
+    let diagnosticBypass: Bool
     let scenarioOutcomes: [String: String]?
 
     static func runStarted(
@@ -972,7 +1027,8 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
         selectedAnswer: SelectedBotAnswer?,
         submission: TraceSubmission?,
         outcome: TraceOutcome,
-        serverFeedback: TraceServerFeedback?
+        serverFeedback: TraceServerFeedback?,
+        diagnosticBypass: Bool = false
     ) -> PlaythroughTraceRecord {
         base(
             event: "prompt",
@@ -985,6 +1041,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
             submission: submission,
             outcome: outcome,
             serverFeedback: serverFeedback,
+            diagnosticBypass: diagnosticBypass,
             scenarioOutcomes: nil
         )
     }
@@ -1000,6 +1057,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
         submission: TraceSubmission? = nil,
         outcome: TraceOutcome? = nil,
         serverFeedback: TraceServerFeedback? = nil,
+        diagnosticBypass: Bool = false,
         scenarioOutcomes: [String: String]?
     ) -> PlaythroughTraceRecord {
         PlaythroughTraceRecord(
@@ -1015,6 +1073,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
             submission: submission,
             outcome: outcome,
             serverFeedback: serverFeedback,
+            diagnosticBypass: diagnosticBypass,
             scenarioOutcomes: scenarioOutcomes
         )
     }
@@ -1315,14 +1374,19 @@ private func traceAppChoices(
         }
         let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
         let accessibilityHint = prompt.accessibilityHint(for: choice, in: projection)
+        let isDisplayed = displayed.contains(choice.index)
+        let isActionable = prompt.isChoiceActionable(choice, in: projection)
+        let isSubmittable = prompt.canSubmit && isActionable
         return TraceAppChoice(
             index: choice.index,
             title: resolved.title,
             legacyRawTitle: choice.title,
             contentKind: choiceContentKind(choice.content),
             isSupported: choice.isSupported,
-            isDisplayed: displayed.contains(choice.index),
-            isActionable: prompt.isChoiceActionable(choice, in: projection),
+            isDisplayed: isDisplayed,
+            isActionable: isActionable,
+            isSubmittable: isSubmittable,
+            blocksSubmission: isDisplayed && !isSubmittable,
             semanticKind: descriptor?.kind.rawValue,
             semanticSelectable: descriptor?.selectable,
             systemImage: resolved.systemImage,
@@ -1414,7 +1478,7 @@ private func waitForValue<T>(
     timeout: TimeInterval,
     description: String,
     producer: @escaping @MainActor () -> T?
-) async throws -> T? {
+) async throws -> T {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         if let value = producer() {
