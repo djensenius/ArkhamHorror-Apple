@@ -78,6 +78,7 @@
 "board.multiplayer.status.pending.many" = "Ausstehende Aufforderungen: %@";
 "board.multiplayer.status.local.ready" = "Deine Aufforderung ist bereit.";
 "board.multiplayer.status.waiting.players" = "Warten auf %@.";
+"board.multiplayer.status.waiting.spectator" = "Zuschauen. Warten auf %@.";
 "board.multiplayer.status.waiting.identityUnknown" = "Warten auf Spieleridentität.";
 "board.multiplayer.status.investigator.unknown" = "Unbekannter Ermittler";
 "board.multiplayer.status.turn.none" = "Kein Zug-Ermittler";

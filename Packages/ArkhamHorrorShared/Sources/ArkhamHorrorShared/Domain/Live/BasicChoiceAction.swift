@@ -69,6 +69,8 @@ struct BasicChoicePromptKey: Sendable, Equatable, Hashable {
 }
 
 enum BasicChoiceReadOnlyReason: Sendable, Equatable {
+    /// Defensive presentation state for any already-constructed prompt; normal live
+    /// spectator sessions do not construct a basic-choice prompt at all.
     case spectator
     case anotherPlayer
     case legacyServer

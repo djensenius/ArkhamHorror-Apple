@@ -160,6 +160,58 @@ struct NightOfTheZealotCoverageReplayTests {
         #expect(await replacement.sentData == [expectedAnswer])
     }
 
+    @Test("Spectator socket snapshots do not correlate feedback to player prompts")
+    func spectatorSocketSnapshotsDoNotCorrelateFeedbackToPlayerPrompts() async throws {
+        let recording = try smokeRecording(named: "2p-smoke.jsonl")
+        let runDefinition = try MultiplayerRunDefinition(fileName: recording.fileName)
+        let catalogDocuments = try makeSyntheticCatalog(for: [recording])
+        let replay = try await CoverageReplaySession.start(
+            first: recording,
+            baseEnvelopeData: fixtureData(named: "get-game"),
+            catalogDocuments: catalogDocuments,
+            deck: sampleDeck(),
+            runDefinition: runDefinition
+        )
+        replay.model.liveGameParticipantIdentities[replay.gameID] = .spectator
+        replay.model.setBasicChoiceServerFeedback(
+            gameID: replay.gameID,
+            message: "spectator feedback is not prompt-correlated",
+            source: .answerRejected
+        )
+
+        let replacement = try smokeEnvelope(
+            for: recording,
+            runDefinition: runDefinition,
+            investigatorNames: distinctInvestigatorNames,
+            privatePromptMarker: "replacement prompt contents"
+        )
+        try await replay.connection.enqueue(.event(.message(
+            ContractJSON.encode(BoardSnapshotUpdate.snapshot(replacement.game))
+        )))
+        await replay.connection.waitUntilAwaitingNextEvent()
+        #expect(replay.model.basicChoiceServerFeedback[replay.gameID]
+            == "spectator feedback is not prompt-correlated")
+        #expect(replay.model.basicChoiceServerFeedbackSources[replay.gameID] == .answerRejected)
+
+        replay.model.setBasicChoiceServerFeedback(
+            gameID: replay.gameID,
+            message: "game error feedback clears on the next authoritative snapshot",
+            source: .gameError
+        )
+        let settled = try smokeEnvelope(
+            for: recording,
+            runDefinition: runDefinition,
+            investigatorNames: distinctInvestigatorNames,
+            privatePromptMarker: "settled prompt contents"
+        )
+        try await replay.connection.enqueue(.event(.message(
+            ContractJSON.encode(BoardSnapshotUpdate.snapshot(settled.game))
+        )))
+        await replay.connection.waitUntilAwaitingNextEvent()
+        #expect(replay.model.basicChoiceServerFeedback[replay.gameID] == nil)
+        #expect(replay.model.basicChoiceServerFeedbackSources[replay.gameID] == nil)
+    }
+
     @Test("Multiplayer status uses server fields from smoke snapshot bytes")
     func multiplayerStatusUsesServerFieldsFromSmokeSnapshotBytes() throws {
         let recording = try smokeRecording(named: "2p-smoke.jsonl")
@@ -195,6 +247,16 @@ struct NightOfTheZealotCoverageReplayTests {
         )
         #expect(waitingStatus.localPromptText == "Waiting for Daisy Walker.")
         #expect(waitingStatus.accessibilityLabel.contains("Turn: Daisy Walker"))
+
+        let spectatorStatus = BoardMultiplayerStatus(
+            projection: projection,
+            localPlayerID: nil,
+            isLocalSpectator: true
+        )
+        #expect(spectatorStatus.localPromptText == "Spectating. Waiting for Daisy Walker.")
+        #expect(
+            spectatorStatus.accessibilityLabel.contains("Spectating. Waiting for Daisy Walker.")
+        )
 
         let unknownIdentityStatus = BoardMultiplayerStatus(
             projection: projection,
@@ -263,6 +325,7 @@ struct NightOfTheZealotCoverageReplayTests {
     }
 
     @Test("Multiplayer status lists several pending players from additive snapshot bytes")
+    // swiftlint:disable:next function_body_length
     func multiplayerStatusListsSeveralPendingPlayersFromAdditiveSnapshotBytes() throws {
         let recording = try smokeRecording(named: "4p-smoke.jsonl")
         let runDefinition = try MultiplayerRunDefinition(fileName: recording.fileName)
@@ -288,16 +351,34 @@ struct NightOfTheZealotCoverageReplayTests {
             status.localPromptText
                 == "Waiting for Daisy Walker, Agnes Baker, and Skids O'Toole."
         )
+        let spectatorStatus = BoardMultiplayerStatus(
+            projection: projection,
+            localPlayerID: nil,
+            isLocalSpectator: true
+        )
+        #expect(
+            spectatorStatus.localPromptText
+                == "Spectating. Waiting for Daisy Walker, Agnes Baker, and Skids O'Toole."
+        )
         CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
             let localized = BoardMultiplayerStatus(
                 projection: projection,
                 localPlayerID: waitingPlayerID
+            )
+            let localizedSpectator = BoardMultiplayerStatus(
+                projection: projection,
+                localPlayerID: nil,
+                isLocalSpectator: true
             )
             #expect(localized.title == "Mehrspielerstatus")
             #expect(localized.actingText == "Aktiv: Skids O'Toole")
             #expect(
                 localized.localPromptText == "Warten auf Daisy Walker, Agnes Baker und "
                     + "Skids O'Toole."
+            )
+            #expect(
+                localizedSpectator.localPromptText == "Zuschauen. Warten auf Daisy Walker, "
+                    + "Agnes Baker und Skids O'Toole."
             )
             #expect(localized.accessibilityLabel.contains("Mehrspielerstatus"))
         }
@@ -315,10 +396,10 @@ struct NightOfTheZealotCoverageReplayTests {
             privatePromptMarker: secret
         )
         let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
-        let waitingPlayerID = try runDefinition.seats[0].playerIDValue()
         let status = BoardMultiplayerStatus(
             projection: projection,
-            localPlayerID: waitingPlayerID
+            localPlayerID: nil,
+            isLocalSpectator: true
         )
         let combined = [
             status.title,

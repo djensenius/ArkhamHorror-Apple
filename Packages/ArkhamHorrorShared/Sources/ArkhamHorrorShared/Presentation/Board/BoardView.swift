@@ -17,6 +17,7 @@ struct BoardView: View {
     let projection: BoardProjection
     let prompt: BasicChoicePromptPresentation?
     let localPlayerID: PlayerID?
+    let isLocalSpectator: Bool
     let cardCatalog: CardCatalogSnapshot?
     let onChoice: (Int) -> Void
     let onAmounts: ([String: Int]) -> Void
@@ -43,6 +44,7 @@ struct BoardView: View {
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
         localPlayerID: PlayerID? = nil,
+        isLocalSpectator: Bool = false,
         cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
@@ -54,6 +56,7 @@ struct BoardView: View {
         self.projection = projection
         self.prompt = prompt
         self.localPlayerID = localPlayerID
+        self.isLocalSpectator = isLocalSpectator
         self.cardCatalog = cardCatalog
         self.onChoice = onChoice
         self.onAmounts = onAmounts
@@ -86,6 +89,7 @@ struct BoardView: View {
                     projection: projection,
                     prompt: prompt,
                     localPlayerID: localPlayerID,
+                    isLocalSpectator: isLocalSpectator,
                     cardCatalog: cardCatalog,
                     onChoice: onChoice,
                     onAmounts: onAmounts,
@@ -127,6 +131,9 @@ struct BoardView: View {
         }
         .onChange(of: localPlayerID) { _, newValue in
             controller?.updateLocalPlayerID(newValue)
+        }
+        .onChange(of: isLocalSpectator) { _, newValue in
+            controller?.updateIsLocalSpectator(newValue)
         }
         .onChange(of: cardCatalog) { _, newValue in
             controller?.updateCardCatalog(newValue)
