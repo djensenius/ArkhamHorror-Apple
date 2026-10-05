@@ -160,7 +160,7 @@ struct LiveGameView: View {
     }
 
     private var isSoloGame: Bool {
-        model.liveGameMultiplayerModes[gameID] == .solo
+        LiveGameMultiplayerPresentation.isSolo(model.liveGameMultiplayerModes[gameID])
     }
 
     // swiftlint:disable:next function_body_length
