@@ -189,7 +189,9 @@ extension StoryNarrativeLocalization {
             guard let separator = token.firstIndex(of: "=") else { return nil }
             let name = String(token[..<separator])
             let encodedValue = token[token.index(after: separator)...]
-            guard LocaleCatalogGrammar.isVariableName(name), variables[name] == nil else { return nil }
+            guard LocaleCatalogGrammar.isVariableName(name),
+                  variables[name] == nil
+            else { return nil }
             guard let value = parseChoiceLabelVariableValue(encodedValue) else { return nil }
             variables[name] = value
         }
