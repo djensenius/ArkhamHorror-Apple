@@ -45,11 +45,15 @@ struct BoardHiddenInformationPresentationTests {
     @Test("Hidden hand fan layout stays inside the investigator tile")
     func hiddenHandFanLayoutStaysInsideTile() {
         let tileWidth: CGFloat = 272
-        let cases: [(handCount: Int, expectedWidth: CGFloat, spacingIsNegative: Bool)] = [
-            (0, 0, false),
-            (3, 104, false),
-            (8, tileWidth, false),
-            (12, tileWidth, true),
+        let cases = [
+            HiddenHandFanLayoutCase(handCount: 0, expectedWidth: 0, spacingIsNegative: false),
+            HiddenHandFanLayoutCase(handCount: 3, expectedWidth: 104, spacingIsNegative: false),
+            HiddenHandFanLayoutCase(
+                handCount: 8, expectedWidth: tileWidth, spacingIsNegative: false
+            ),
+            HiddenHandFanLayoutCase(
+                handCount: 12, expectedWidth: tileWidth, spacingIsNegative: true
+            ),
         ]
 
         for testCase in cases {
@@ -69,14 +73,14 @@ struct BoardHiddenInformationPresentationTests {
         let otherPlayerID = BoardTestFixtures.playerID("000000000802")
 
         let emptyHandBacks = BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
-            for: investigatorNode(handCount: 0, playerID: otherPlayerID),
+            for: hiddenInformationInvestigatorNode(handCount: 0, playerID: otherPlayerID),
             localPlayerID: localPlayerID,
             isSolo: false
         )
         #expect(emptyHandBacks.isEmpty)
 
         let threeHandBacks = BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
-            for: investigatorNode(handCount: 3, playerID: otherPlayerID),
+            for: hiddenInformationInvestigatorNode(handCount: 3, playerID: otherPlayerID),
             localPlayerID: localPlayerID,
             isSolo: false
         )
@@ -85,7 +89,7 @@ struct BoardHiddenInformationPresentationTests {
             "Hidden hand card", "Hidden hand card", "Hidden hand card",
         ])
         #expect(BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
-            for: investigatorNode(handCount: 3, playerID: localPlayerID),
+            for: hiddenInformationInvestigatorNode(handCount: 3, playerID: localPlayerID),
             localPlayerID: localPlayerID,
             isSolo: false
         ).isEmpty)
@@ -241,53 +245,59 @@ struct BoardHiddenInformationPresentationTests {
             activeInvestigatorPlayerID: other.playerID
         ) == nil)
     }
+}
 
-    private func investigatorNode(
-        handCount: Int,
-        playerID: PlayerID,
-        id: InvestigatorID = BoardTestFixtures.investigatorID("c01001")
-    ) -> BoardInvestigatorNode {
-        BoardInvestigatorNode(
-            id: id,
-            playerID: playerID,
-            displayName: "Roland Banks",
-            subtitle: nil,
-            investigatorClass: .guardian,
-            health: 9,
-            sanity: 5,
-            remainingActions: 3,
-            experiencePoints: 0,
-            spentExperience: 0,
-            physicalTrauma: 0,
-            mentalTrauma: 0,
-            unhealedHorrorThisRound: 0,
-            assignedHealthDamage: 0,
-            assignedSanityDamage: 0,
-            defeated: false,
-            resigned: false,
-            eliminated: false,
-            killed: false,
-            drivenInsane: false,
-            currentLocationID: nil,
-            isActiveInvestigator: false,
-            isActingPlayer: false,
-            isTurnPlayer: false,
-            isLeadInvestigator: false,
-            handCount: handCount,
-            deckCount: 0,
-            isMultiplayer: true,
-            hasPendingPrompt: false,
-            engagedEnemyCount: 0,
-            assetCount: 0,
-            eventCount: 0,
-            treacheryCount: 0,
-            skillCount: 0,
-            scarletKeyCount: 0,
-            tokenCounts: [],
-            movementSummary: nil,
-            placementSummary: "No location"
-        )
-    }
+private struct HiddenHandFanLayoutCase {
+    let handCount: Int
+    let expectedWidth: CGFloat
+    let spacingIsNegative: Bool
+}
+
+private func hiddenInformationInvestigatorNode(
+    handCount: Int,
+    playerID: PlayerID,
+    id: InvestigatorID = BoardTestFixtures.investigatorID("c01001")
+) -> BoardInvestigatorNode {
+    BoardInvestigatorNode(
+        id: id,
+        playerID: playerID,
+        displayName: "Roland Banks",
+        subtitle: nil,
+        investigatorClass: .guardian,
+        health: 9,
+        sanity: 5,
+        remainingActions: 3,
+        experiencePoints: 0,
+        spentExperience: 0,
+        physicalTrauma: 0,
+        mentalTrauma: 0,
+        unhealedHorrorThisRound: 0,
+        assignedHealthDamage: 0,
+        assignedSanityDamage: 0,
+        defeated: false,
+        resigned: false,
+        eliminated: false,
+        killed: false,
+        drivenInsane: false,
+        currentLocationID: nil,
+        isActiveInvestigator: false,
+        isActingPlayer: false,
+        isTurnPlayer: false,
+        isLeadInvestigator: false,
+        handCount: handCount,
+        deckCount: 0,
+        isMultiplayer: true,
+        hasPendingPrompt: false,
+        engagedEnemyCount: 0,
+        assetCount: 0,
+        eventCount: 0,
+        treacheryCount: 0,
+        skillCount: 0,
+        scarletKeyCount: 0,
+        tokenCounts: [],
+        movementSummary: nil,
+        placementSummary: "No location"
+    )
 }
 
 struct MultiplayerHiddenFixture {
