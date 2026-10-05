@@ -72,6 +72,9 @@ struct GamesListView: View {
             .onChange(of: model.gameListState) { _, _ in
                 reconcileOpenGameSurfaces()
             }
+            .onChange(of: model.confirmedDeletedGameIDs) { _, _ in
+                reconcileOpenGameSurfaces()
+            }
             .confirmationDialog(
                 gameLifecycleLocalized(
                     "games.delete.confirmation.title",

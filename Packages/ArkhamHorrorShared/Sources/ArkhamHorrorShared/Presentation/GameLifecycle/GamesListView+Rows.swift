@@ -17,16 +17,11 @@ extension GamesListView {
     }
 
     func reconcileOpenGameSurfaces() {
-        OpenGameSurfaceReconciler.reconcileConfirmedDeletes(
+        OpenGameSurfaceReconciler.reconcile(
             presentedGameID: &presentedGameID,
             liveGamePath: &liveGamePath,
+            gameListState: model.gameListState,
             confirmedDeletedGameIDs: model.confirmedDeletedGameIDs
-        )
-        guard case let .loaded(games) = model.gameListState else { return }
-        OpenGameSurfaceReconciler.reconcileLoadedListAbsence(
-            presentedGameID: &presentedGameID,
-            liveGamePath: &liveGamePath,
-            games: games
         )
     }
 
@@ -215,7 +210,7 @@ enum OpenGameSurfaceReconciler {
     static func reconciled(
         presentedGameID: GameID?,
         liveGamePath: [GameID],
-        games: GameList,
+        gameListState: GameListLoadState,
         confirmedDeletedGameIDs: Set<GameID>
     ) -> OpenGameSurfaceReconciliation {
         let withoutConfirmedDeletes = reconciledConfirmedDeletes(
@@ -223,6 +218,9 @@ enum OpenGameSurfaceReconciler {
             liveGamePath: liveGamePath,
             confirmedDeletedGameIDs: confirmedDeletedGameIDs
         )
+        guard case let .loaded(games) = gameListState else {
+            return withoutConfirmedDeletes
+        }
         return reconciledLoadedListAbsence(
             presentedGameID: withoutConfirmedDeletes.presentedGameID,
             liveGamePath: withoutConfirmedDeletes.liveGamePath,
@@ -233,13 +231,13 @@ enum OpenGameSurfaceReconciler {
     static func reconcile(
         presentedGameID: inout GameID?,
         liveGamePath: inout [GameID],
-        games: GameList,
+        gameListState: GameListLoadState,
         confirmedDeletedGameIDs: Set<GameID>
     ) {
         let result = reconciled(
             presentedGameID: presentedGameID,
             liveGamePath: liveGamePath,
-            games: games,
+            gameListState: gameListState,
             confirmedDeletedGameIDs: confirmedDeletedGameIDs
         )
         presentedGameID = result.presentedGameID

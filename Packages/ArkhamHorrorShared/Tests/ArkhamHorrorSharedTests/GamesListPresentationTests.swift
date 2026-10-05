@@ -308,7 +308,7 @@ extension GamesListPresentationTests {
         OpenGameSurfaceReconciler.reconcile(
             presentedGameID: &presentedGameID,
             liveGamePath: &liveGamePath,
-            games: games,
+            gameListState: .loaded(games),
             confirmedDeletedGameIDs: []
         )
 
@@ -330,7 +330,7 @@ extension GamesListPresentationTests {
         OpenGameSurfaceReconciler.reconcile(
             presentedGameID: &presentedGameID,
             liveGamePath: &liveGamePath,
-            games: games,
+            gameListState: .loaded(games),
             confirmedDeletedGameIDs: []
         )
 
@@ -352,7 +352,7 @@ extension GamesListPresentationTests {
         OpenGameSurfaceReconciler.reconcile(
             presentedGameID: &presentedGameID,
             liveGamePath: &liveGamePath,
-            games: games,
+            gameListState: .loaded(games),
             confirmedDeletedGameIDs: [deletedGameID]
         )
 
@@ -360,14 +360,36 @@ extension GamesListPresentationTests {
         #expect(liveGamePath == [remainingGameID])
     }
 
-    @Test("confirmed deletes close lobby sheets and live routes before list-state reconciliation")
-    func confirmedDeleteReconciliationDoesNotRequireLoadedList() {
+    @Test("confirmed deletes close lobby sheets and live routes while refresh is loading")
+    func confirmedDeleteReconciliationClosesDuringLoadingPreviousList() {
         let deletedGameID = GameID(UUID())
         let remainingGameID = GameID(UUID())
+        let previous: GameList = [.game(sampleGame(id: remainingGameID))]
 
-        let result = OpenGameSurfaceReconciler.reconciledConfirmedDeletes(
+        let result = OpenGameSurfaceReconciler.reconciled(
             presentedGameID: deletedGameID,
             liveGamePath: [remainingGameID, deletedGameID],
+            gameListState: .loading(previous: previous),
+            confirmedDeletedGameIDs: [deletedGameID]
+        )
+
+        #expect(result.presentedGameID == nil)
+        #expect(result.liveGamePath == [remainingGameID])
+    }
+
+    @Test("confirmed deletes close lobby sheets and live routes after a failed refresh")
+    func confirmedDeleteReconciliationClosesDuringFailedPreviousList() {
+        let deletedGameID = GameID(UUID())
+        let remainingGameID = GameID(UUID())
+        let previous: GameList = [
+            .game(sampleGame(id: remainingGameID)),
+            .failed(FailedGameEntry(error: "Could not decode a game.")),
+        ]
+
+        let result = OpenGameSurfaceReconciler.reconciled(
+            presentedGameID: deletedGameID,
+            liveGamePath: [remainingGameID, deletedGameID],
+            gameListState: .failed(.unexpectedStatus(500), previous: previous),
             confirmedDeletedGameIDs: [deletedGameID]
         )
 
