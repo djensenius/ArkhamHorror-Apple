@@ -18,9 +18,7 @@ extension AppModel {
         let selected: (PlayerID, BasicChoiceQuestionPayload)? = switch identity {
         case let .participant(playerID):
             projection.questions[playerID].map { (playerID, $0) }
-        case .spectator:
-            firstQuestion(in: projection)
-        case .none:
+        case .spectator, .none:
             nil
         }
         guard let (ownerID, payload) = selected else { return nil }
@@ -120,14 +118,6 @@ extension AppModel {
             sessionAttemptID: sessionAttemptID,
             connectionID: connectionID
         )
-    }
-
-    private func firstQuestion(
-        in projection: BoardProjection
-    ) -> (PlayerID, BasicChoiceQuestionPayload)? {
-        projection.questions
-            .min { $0.key.rawValue.uuidString < $1.key.rawValue.uuidString }
-            .map { ($0.key, $0.value) }
     }
 
     private func readOnlyReason(
