@@ -78,6 +78,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
             )
             try await prepareSignedInSession(model: model, investigator: investigator)
             try await waitForLocaleCatalogIfAdvertised(model)
+            try await loadCardCatalog(model)
 
             guard case let .signedIn(signedInProfile, _, _) = model.sessionState else {
                 throw PlaythroughError.notSignedIn(String(describing: model.sessionState))
@@ -193,6 +194,21 @@ struct LiveNightOfTheZealotPlaythroughTests {
         guard model.localeCatalogRequest != nil || model.isLocaleCatalogLoading else { return }
         try await waitUntil(timeout: 30, description: "locale catalog loads or fails") {
             !model.isLocaleCatalogLoading
+        }
+    }
+
+    private func loadCardCatalog(_ model: AppModel) async throws {
+        model.loadCardCatalogIfNeeded()
+        try await waitUntil(timeout: 60, description: "card catalog loads or fails") {
+            !model.isCardCatalogLoading
+        }
+        if let failure = model.cardCatalogFailure {
+            throw PlaythroughError.cardCatalogUnavailable("card catalog failed: \(failure)")
+        }
+        guard model.cardCatalog != nil else {
+            throw PlaythroughError.cardCatalogUnavailable(
+                "card catalog finished without a snapshot"
+            )
         }
     }
 
@@ -919,13 +935,22 @@ private struct TraceSelectedAnswer: Encodable, Sendable {
 
 private struct TraceAppChoice: Encodable, Sendable {
     let index: Int
+    /// The title rendered by `BasicChoicePromptView` through
+    /// `BasicChoicePromptPresentation.resolvedChoiceLabel`, not the legacy raw parser title.
     let title: String
+    let legacyRawTitle: String
     let contentKind: String
     let isSupported: Bool
     let isDisplayed: Bool
     let isActionable: Bool
+    let isSubmittable: Bool
+    let blocksSubmission: Bool
     let semanticKind: String?
     let semanticSelectable: Bool?
+    let systemImage: String
+    let accessibilityLabel: String
+    let accessibilityHint: String
+    let rendersUpdateRequired: Bool
     let rawValue: JSONValue
 }
 
@@ -1179,6 +1204,7 @@ private enum PlaythroughError: Error, CustomStringConvertible {
     case notSignedIn(String)
     case registrationDidNotStart
     case noSelectableChoice(version: Int, tag: String)
+    case cardCatalogUnavailable(String)
     case submissionFailed(String)
     case timedOut(String)
 
@@ -1188,6 +1214,7 @@ private enum PlaythroughError: Error, CustomStringConvertible {
         case let .notSignedIn(state): "expected signedIn, got \(state)"
         case .registrationDidNotStart: "registration did not start"
         case let .noSelectableChoice(version, tag): "no selectable choice at q\(version) / \(tag)"
+        case let .cardCatalogUnavailable(reason): "card catalog unavailable: \(reason)"
         case let .submissionFailed(reason): "submission failed: \(reason)"
         case let .timedOut(description): "timed out waiting for \(description)"
         }
@@ -1363,15 +1390,28 @@ private func traceAppChoices(
         let descriptor = prompt.identity.questionPresentation?.choices.first {
             $0.sourceIndex == choice.index
         }
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+        let accessibilityHint = prompt.accessibilityHint(for: choice, in: projection)
+        let isDisplayed = displayed.contains(choice.index)
+        let isActionable = prompt.isChoiceActionable(choice, in: projection)
+        let isSubmittable = prompt.canSubmit && isActionable
         return TraceAppChoice(
             index: choice.index,
-            title: choice.title,
+            title: resolved.title,
+            legacyRawTitle: choice.title,
             contentKind: choiceContentKind(choice.content),
             isSupported: choice.isSupported,
-            isDisplayed: displayed.contains(choice.index),
-            isActionable: prompt.isChoiceActionable(choice, in: projection),
+            isDisplayed: isDisplayed,
+            isActionable: isActionable,
+            isSubmittable: isSubmittable,
+            blocksSubmission: isDisplayed && !isSubmittable,
             semanticKind: descriptor?.kind.rawValue,
             semanticSelectable: descriptor?.selectable,
+            systemImage: resolved.systemImage,
+            accessibilityLabel: resolved.accessibilityLabel,
+            accessibilityHint: accessibilityHint,
+            rendersUpdateRequired: !prompt.isRenderableQuestion
+                || resolved.title == "Update required",
             rawValue: choice.rawValue
         )
     }

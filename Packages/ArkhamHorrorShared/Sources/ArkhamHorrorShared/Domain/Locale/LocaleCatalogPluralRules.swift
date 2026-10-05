@@ -30,6 +30,16 @@ enum LocaleCatalogPluralRules {
         return select(number: number, caseCount: caseCount)
     }
 
+    static func selectImplicitSingular(
+        caseCount: Int,
+        locale: String
+    ) -> Result<Int, StoryUnavailableReason> {
+        guard caseCount >= 2, LocaleCatalogGrammar.isCatalogLocaleTag(locale) else {
+            return .failure(.unsupportedEntry)
+        }
+        return select(number: .integer(-1), caseCount: caseCount)
+    }
+
     private static func select(
         number: JSONNumber, caseCount: Int
     ) -> Result<Int, StoryUnavailableReason> {

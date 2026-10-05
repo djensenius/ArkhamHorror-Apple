@@ -1,0 +1,3274 @@
+{
+  "description": "Captured selected choices from the catalog-backed live Night of the Zealot playthrough that the diagnostic trace previously classified by legacy BasicChoiceContent as unsupported. Each sample keeps the raw question and v2 presentation bytes used by BasicChoicePromptPresentation/BasicChoicePromptView rendering tests.",
+  "samples": [
+    {
+      "expectedTitle": "Continue",
+      "kind": "localizedLabel",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 1,
+        "choices": [
+          {
+            "kind": "localizedLabel",
+            "label": {
+              "kind": "embeddedI18n",
+              "text": "$continue"
+            },
+            "selectable": true,
+            "sourceIndex": 0
+          }
+        ],
+        "flavorText": {
+          "body": [
+            {
+              "key": "nightOfTheZealot.prologue",
+              "tag": "I18nEntry",
+              "variables": {}
+            }
+          ],
+          "title": null
+        },
+        "protocolVersion": 2,
+        "questionKind": "read",
+        "questionVersion": 3,
+        "readChoiceKind": "basic"
+      },
+      "rawQuestion": {
+        "flavorText": {
+          "body": [
+            {
+              "key": "nightOfTheZealot.prologue",
+              "tag": "I18nEntry",
+              "variables": {}
+            }
+          ],
+          "title": null
+        },
+        "readCards": null,
+        "readChoices": {
+          "contents": [
+            {
+              "label": "$continue",
+              "messages": [],
+              "tag": "Label"
+            }
+          ],
+          "tag": "BasicReadChoices"
+        },
+        "tag": "Read"
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "agnes-baker",
+        "questionVersion": 3,
+        "rawQuestionTag": "Read",
+        "scenario": "campaign",
+        "traceLine": 4
+      }
+    },
+    {
+      "expectedTitle": "Use Captured ability card ability 1 (Free)",
+      "kind": "useAbility",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 1,
+        "choices": [
+          {
+            "ability": {
+              "actions": [],
+              "canBeCancelled": true,
+              "cardCode": "c01013",
+              "index": 1,
+              "type": "forced"
+            },
+            "actorId": "c01004",
+            "cost": {
+              "kind": "free"
+            },
+            "entity": {
+              "id": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+              "kind": "event"
+            },
+            "kind": "useAbility",
+            "selectable": true,
+            "sourceIndex": 0
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "windowChooseOne",
+        "questionVersion": 9
+      },
+      "rawQuestion": {
+        "choices": [
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": false,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01013",
+              "criteria": {
+                "tag": "InYourHand"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 1,
+              "limit": {
+                "contents": [
+                  {
+                    "tag": "PerWindow"
+                  },
+                  1
+                ],
+                "tag": "GroupLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+                "tag": "EventSource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+                "tag": "EventSource"
+              },
+              "target": null,
+              "tooltip": null,
+              "triggersSkillTest": false,
+              "type": {
+                "tag": "ForcedAbility",
+                "window": {
+                  "contents": [
+                    "When",
+                    {
+                      "tag": "You"
+                    }
+                  ],
+                  "tag": "TurnEnds"
+                }
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": [
+                  "When",
+                  {
+                    "tag": "You"
+                  }
+                ],
+                "tag": "TurnEnds"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01004",
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    [
+                      {
+                        "windowBatchId": "0891d9e5-e149-49db-8960-431ac738e960",
+                        "windowConditionTick": null,
+                        "windowTiming": "When",
+                        "windowType": {
+                          "contents": "c01004",
+                          "tag": "TurnEnds"
+                        }
+                      }
+                    ],
+                    [
+                      [
+                        {
+                          "additionalCosts": [],
+                          "basic": false,
+                          "blocksIn": null,
+                          "canBeCancelled": true,
+                          "cardCode": "c01013",
+                          "criteria": {
+                            "tag": "InYourHand"
+                          },
+                          "delayAdditionalCosts": null,
+                          "displayAs": null,
+                          "doesNotProvokeAttacksOfOpportunity": null,
+                          "evadeCriteriaOverride": null,
+                          "fightCriteriaOverride": null,
+                          "highlightFromWindow": false,
+                          "ignoreAllCosts": false,
+                          "index": 1,
+                          "limit": {
+                            "contents": [
+                              {
+                                "tag": "PerWindow"
+                              },
+                              1
+                            ],
+                            "tag": "GroupLimit"
+                          },
+                          "metadata": null,
+                          "nonBlocking": false,
+                          "requestor": {
+                            "contents": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+                            "tag": "EventSource"
+                          },
+                          "skipForAll": false,
+                          "source": {
+                            "contents": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+                            "tag": "EventSource"
+                          },
+                          "target": null,
+                          "tooltip": null,
+                          "triggersSkillTest": false,
+                          "type": {
+                            "tag": "ForcedAbility",
+                            "window": {
+                              "contents": [
+                                "When",
+                                {
+                                  "tag": "You"
+                                }
+                              ],
+                              "tag": "TurnEnds"
+                            }
+                          },
+                          "wantsSkillTest": null,
+                          "window": {
+                            "contents": [
+                              "When",
+                              {
+                                "tag": "You"
+                              }
+                            ],
+                            "tag": "TurnEnds"
+                          }
+                        },
+                        [
+                          {
+                            "windowBatchId": "0891d9e5-e149-49db-8960-431ac738e960",
+                            "windowConditionTick": null,
+                            "windowTiming": "When",
+                            "windowType": {
+                              "contents": "c01004",
+                              "tag": "TurnEnds"
+                            }
+                          }
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  "tag": "ResolveWindowInitiations"
+                },
+                "tag": "MoveWithSkillTest"
+              }
+            ],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": "0891d9e5-e149-49db-8960-431ac738e960",
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01004",
+                  "tag": "TurnEnds"
+                }
+              }
+            ]
+          }
+        ],
+        "tag": "WindowChooseOne"
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "agnes-baker",
+        "questionVersion": 9,
+        "rawQuestionTag": "WindowChooseOne",
+        "scenario": "c01104",
+        "traceLine": 14
+      }
+    },
+    {
+      "expectedTitle": "Assign horror to Captured investigator",
+      "kind": "assignHorror",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 1,
+        "choices": [
+          {
+            "entity": {
+              "id": "c01004",
+              "kind": "investigator"
+            },
+            "kind": "assignHorror",
+            "selectable": true,
+            "sourceIndex": 0
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "chooseOne",
+        "questionLabel": {
+          "kind": "embeddedI18n",
+          "text": "Assign 2 horror"
+        },
+        "questionSource": {
+          "entity": {
+            "id": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+            "kind": "card"
+          },
+          "raw": {
+            "contents": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+            "tag": "CardIdSource"
+          }
+        },
+        "questionVersion": 10
+      },
+      "rawQuestion": {
+        "question": {
+          "card": null,
+          "label": "Assign 2 horror",
+          "question": {
+            "choices": [
+              {
+                "component": {
+                  "investigatorId": "c01004",
+                  "tag": "InvestigatorComponent",
+                  "tokenType": "HorrorToken"
+                },
+                "messages": [
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+                          "tag": "CardIdSource"
+                        },
+                        0,
+                        2
+                      ],
+                      "tag": "InvestigatorDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+                          "tag": "CardIdSource"
+                        },
+                        {
+                          "tag": "DamageAny"
+                        },
+                        {
+                          "tag": "AnyAsset"
+                        },
+                        0,
+                        0,
+                        [],
+                        [
+                          {
+                            "contents": "c01004",
+                            "tag": "InvestigatorTarget"
+                          },
+                          {
+                            "contents": "c01004",
+                            "tag": "InvestigatorTarget"
+                          }
+                        ]
+                      ],
+                      "tag": "InvestigatorDoAssignDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  }
+                ],
+                "tag": "ComponentLabel"
+              }
+            ],
+            "tag": "ChooseOne"
+          },
+          "tag": "QuestionLabel"
+        },
+        "source": {
+          "contents": "d5f47558-15f7-4ba3-acf9-4947e6e9822e",
+          "tag": "CardIdSource"
+        },
+        "tag": "QuestionWithSource",
+        "tooltip": null
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "agnes-baker",
+        "questionVersion": 10,
+        "rawQuestionTag": "QuestionWithSource",
+        "scenario": "c01104",
+        "traceLine": 15
+      }
+    },
+    {
+      "expectedTitle": "Choose target",
+      "kind": "chooseTarget",
+      "questionPresentation": {
+        "answer": {
+          "alternateTags": [
+            "OrderedAnswer"
+          ],
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 1,
+        "choices": [
+          {
+            "entity": {
+              "id": "0860f0c6-5198-48ec-acb8-3816da085bd6",
+              "kind": "enemy"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 0
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "chooseOneAtATime",
+        "questionVersion": 13,
+        "selection": {
+          "max": 1,
+          "min": 1
+        }
+      },
+      "rawQuestion": {
+        "choices": [
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": {
+                    "attackAfter": [],
+                    "attackCanBeCanceled": true,
+                    "attackCancelled": false,
+                    "attackDamageReplacement": [],
+                    "attackDamageStrategy": {
+                      "tag": "DamageAny"
+                    },
+                    "attackDamaged": [],
+                    "attackDealDamage": true,
+                    "attackDespiteExhausted": false,
+                    "attackEnemy": "0860f0c6-5198-48ec-acb8-3816da085bd6",
+                    "attackExhaustsEnemy": false,
+                    "attackOriginalTarget": {
+                      "contents": {
+                        "contents": "c01004",
+                        "tag": "InvestigatorTarget"
+                      },
+                      "tag": "SingleAttackTarget"
+                    },
+                    "attackSource": {
+                      "contents": "0860f0c6-5198-48ec-acb8-3816da085bd6",
+                      "tag": "EnemySource"
+                    },
+                    "attackTarget": {
+                      "contents": {
+                        "contents": "c01004",
+                        "tag": "InvestigatorTarget"
+                      },
+                      "tag": "SingleAttackTarget"
+                    },
+                    "attackType": "AttackOfOpportunity"
+                  },
+                  "tag": "EnemyAttack_"
+                },
+                "tag": "EnemyAttackMessage"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "0860f0c6-5198-48ec-acb8-3816da085bd6",
+              "tag": "EnemyTarget"
+            }
+          }
+        ],
+        "tag": "ChooseOneAtATime"
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "agnes-baker",
+        "questionVersion": 13,
+        "rawQuestionTag": "ChooseOneAtATime",
+        "scenario": "c01104",
+        "traceLine": 18
+      }
+    },
+    {
+      "expectedTitle": "Advance agenda",
+      "kind": "advanceAgenda",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 1,
+        "choices": [
+          {
+            "entity": {
+              "id": "c01121a",
+              "kind": "agenda"
+            },
+            "kind": "advanceAgenda",
+            "selectable": true,
+            "sourceIndex": 0
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "chooseOne",
+        "questionVersion": 700
+      },
+      "rawQuestion": {
+        "choices": [
+          {
+            "messages": [
+              {
+                "contents": [
+                  "c01121a",
+                  "AgendaAdvancedWithDoom"
+                ],
+                "tag": "AdvanceAgendaBy"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "c01121a",
+              "tag": "AgendaTarget"
+            }
+          }
+        ],
+        "tag": "ChooseOne"
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "agnes-baker",
+        "questionVersion": 700,
+        "rawQuestionTag": "ChooseOne",
+        "scenario": "c01120",
+        "traceLine": 738
+      }
+    },
+    {
+      "expectedTitle": "Assign damage to Captured investigator",
+      "kind": "assignDamage",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 4,
+        "choices": [
+          {
+            "entity": {
+              "id": "c01004",
+              "kind": "investigator"
+            },
+            "kind": "assignDamage",
+            "selectable": true,
+            "sourceIndex": 0
+          },
+          {
+            "component": {
+              "assetId": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+              "tag": "AssetComponent",
+              "tokenType": "DamageToken"
+            },
+            "entity": {
+              "id": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+              "kind": "asset"
+            },
+            "kind": "componentLabel",
+            "selectable": true,
+            "sourceIndex": 1
+          },
+          {
+            "entity": {
+              "id": "c01004",
+              "kind": "investigator"
+            },
+            "kind": "assignHorror",
+            "selectable": true,
+            "sourceIndex": 2
+          },
+          {
+            "component": {
+              "assetId": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+              "tag": "AssetComponent",
+              "tokenType": "HorrorToken"
+            },
+            "entity": {
+              "id": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+              "kind": "asset"
+            },
+            "kind": "componentLabel",
+            "selectable": true,
+            "sourceIndex": 3
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "chooseOne",
+        "questionLabel": {
+          "kind": "embeddedI18n",
+          "text": "Assign 2 damage and 1 horror"
+        },
+        "questionSource": {
+          "entity": {
+            "id": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+            "kind": "enemy"
+          },
+          "raw": {
+            "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+            "tag": "EnemyAttackSource"
+          }
+        },
+        "questionVersion": 709
+      },
+      "rawQuestion": {
+        "question": {
+          "card": null,
+          "label": "Assign 2 damage and 1 horror",
+          "question": {
+            "choices": [
+              {
+                "component": {
+                  "investigatorId": "c01004",
+                  "tag": "InvestigatorComponent",
+                  "tokenType": "DamageToken"
+                },
+                "messages": [
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        1,
+                        0
+                      ],
+                      "tag": "InvestigatorDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        {
+                          "tag": "DamageAny"
+                        },
+                        {
+                          "tag": "AnyAsset"
+                        },
+                        1,
+                        1,
+                        [
+                          {
+                            "contents": "c01004",
+                            "tag": "InvestigatorTarget"
+                          }
+                        ],
+                        []
+                      ],
+                      "tag": "InvestigatorDoAssignDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  }
+                ],
+                "tag": "ComponentLabel"
+              },
+              {
+                "component": {
+                  "assetId": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                  "tag": "AssetComponent",
+                  "tokenType": "DamageToken"
+                },
+                "messages": [
+                  {
+                    "contents": [
+                      "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                      {
+                        "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                        "tag": "EnemyAttackSource"
+                      },
+                      1,
+                      0
+                    ],
+                    "tag": "AssignAssetDamageDeferred"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        {
+                          "tag": "DamageAny"
+                        },
+                        {
+                          "tag": "AnyAsset"
+                        },
+                        1,
+                        1,
+                        [
+                          {
+                            "contents": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                            "tag": "AssetTarget"
+                          }
+                        ],
+                        []
+                      ],
+                      "tag": "InvestigatorDoAssignDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  }
+                ],
+                "tag": "ComponentLabel"
+              },
+              {
+                "component": {
+                  "investigatorId": "c01004",
+                  "tag": "InvestigatorComponent",
+                  "tokenType": "HorrorToken"
+                },
+                "messages": [
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        0,
+                        1
+                      ],
+                      "tag": "InvestigatorDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        {
+                          "tag": "DamageAny"
+                        },
+                        {
+                          "tag": "AnyAsset"
+                        },
+                        2,
+                        0,
+                        [],
+                        [
+                          {
+                            "contents": "c01004",
+                            "tag": "InvestigatorTarget"
+                          }
+                        ]
+                      ],
+                      "tag": "InvestigatorDoAssignDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  }
+                ],
+                "tag": "ComponentLabel"
+              },
+              {
+                "component": {
+                  "assetId": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                  "tag": "AssetComponent",
+                  "tokenType": "HorrorToken"
+                },
+                "messages": [
+                  {
+                    "contents": [
+                      "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                      {
+                        "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                        "tag": "EnemyAttackSource"
+                      },
+                      0,
+                      1
+                    ],
+                    "tag": "AssignAssetDamageDeferred"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        {
+                          "tag": "DamageAny"
+                        },
+                        {
+                          "tag": "AnyAsset"
+                        },
+                        2,
+                        0,
+                        [],
+                        [
+                          {
+                            "contents": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                            "tag": "AssetTarget"
+                          }
+                        ]
+                      ],
+                      "tag": "InvestigatorDoAssignDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  }
+                ],
+                "tag": "ComponentLabel"
+              }
+            ],
+            "tag": "ChooseOne"
+          },
+          "tag": "QuestionLabel"
+        },
+        "source": {
+          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+          "tag": "EnemyAttackSource"
+        },
+        "tag": "QuestionWithSource",
+        "tooltip": null
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "agnes-baker",
+        "questionVersion": 709,
+        "rawQuestionTag": "QuestionWithSource",
+        "scenario": "c01120",
+        "traceLine": 747
+      }
+    },
+    {
+      "expectedTitle": "Damage on asset",
+      "kind": "componentLabel",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 4,
+        "choices": [
+          {
+            "entity": {
+              "id": "c01004",
+              "kind": "investigator"
+            },
+            "kind": "assignDamage",
+            "selectable": true,
+            "sourceIndex": 0
+          },
+          {
+            "component": {
+              "assetId": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+              "tag": "AssetComponent",
+              "tokenType": "DamageToken"
+            },
+            "entity": {
+              "id": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+              "kind": "asset"
+            },
+            "kind": "componentLabel",
+            "selectable": true,
+            "sourceIndex": 1
+          },
+          {
+            "entity": {
+              "id": "c01004",
+              "kind": "investigator"
+            },
+            "kind": "assignHorror",
+            "selectable": true,
+            "sourceIndex": 2
+          },
+          {
+            "component": {
+              "assetId": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+              "tag": "AssetComponent",
+              "tokenType": "HorrorToken"
+            },
+            "entity": {
+              "id": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+              "kind": "asset"
+            },
+            "kind": "componentLabel",
+            "selectable": true,
+            "sourceIndex": 3
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "chooseOne",
+        "questionLabel": {
+          "kind": "embeddedI18n",
+          "text": "Assign 2 damage and 1 horror"
+        },
+        "questionSource": {
+          "entity": {
+            "id": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+            "kind": "enemy"
+          },
+          "raw": {
+            "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+            "tag": "EnemyAttackSource"
+          }
+        },
+        "questionVersion": 715
+      },
+      "rawQuestion": {
+        "question": {
+          "card": null,
+          "label": "Assign 2 damage and 1 horror",
+          "question": {
+            "choices": [
+              {
+                "component": {
+                  "investigatorId": "c01004",
+                  "tag": "InvestigatorComponent",
+                  "tokenType": "DamageToken"
+                },
+                "messages": [
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        1,
+                        0
+                      ],
+                      "tag": "InvestigatorDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        {
+                          "tag": "DamageAny"
+                        },
+                        {
+                          "tag": "AnyAsset"
+                        },
+                        1,
+                        1,
+                        [
+                          {
+                            "contents": "c01004",
+                            "tag": "InvestigatorTarget"
+                          }
+                        ],
+                        []
+                      ],
+                      "tag": "InvestigatorDoAssignDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  }
+                ],
+                "tag": "ComponentLabel"
+              },
+              {
+                "component": {
+                  "assetId": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                  "tag": "AssetComponent",
+                  "tokenType": "DamageToken"
+                },
+                "messages": [
+                  {
+                    "contents": [
+                      "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                      {
+                        "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                        "tag": "EnemyAttackSource"
+                      },
+                      1,
+                      0
+                    ],
+                    "tag": "AssignAssetDamageDeferred"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        {
+                          "tag": "DamageAny"
+                        },
+                        {
+                          "tag": "AnyAsset"
+                        },
+                        1,
+                        1,
+                        [
+                          {
+                            "contents": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                            "tag": "AssetTarget"
+                          }
+                        ],
+                        []
+                      ],
+                      "tag": "InvestigatorDoAssignDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  }
+                ],
+                "tag": "ComponentLabel"
+              },
+              {
+                "component": {
+                  "investigatorId": "c01004",
+                  "tag": "InvestigatorComponent",
+                  "tokenType": "HorrorToken"
+                },
+                "messages": [
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        0,
+                        1
+                      ],
+                      "tag": "InvestigatorDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        {
+                          "tag": "DamageAny"
+                        },
+                        {
+                          "tag": "AnyAsset"
+                        },
+                        2,
+                        0,
+                        [],
+                        [
+                          {
+                            "contents": "c01004",
+                            "tag": "InvestigatorTarget"
+                          }
+                        ]
+                      ],
+                      "tag": "InvestigatorDoAssignDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  }
+                ],
+                "tag": "ComponentLabel"
+              },
+              {
+                "component": {
+                  "assetId": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                  "tag": "AssetComponent",
+                  "tokenType": "HorrorToken"
+                },
+                "messages": [
+                  {
+                    "contents": [
+                      "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                      {
+                        "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                        "tag": "EnemyAttackSource"
+                      },
+                      0,
+                      1
+                    ],
+                    "tag": "AssignAssetDamageDeferred"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        "c01004",
+                        {
+                          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+                          "tag": "EnemyAttackSource"
+                        },
+                        {
+                          "tag": "DamageAny"
+                        },
+                        {
+                          "tag": "AnyAsset"
+                        },
+                        2,
+                        0,
+                        [],
+                        [
+                          {
+                            "contents": "cd229500-9c65-4456-8bd7-967f3879ce6b",
+                            "tag": "AssetTarget"
+                          }
+                        ]
+                      ],
+                      "tag": "InvestigatorDoAssignDamage_"
+                    },
+                    "tag": "InvestigatorMessage"
+                  }
+                ],
+                "tag": "ComponentLabel"
+              }
+            ],
+            "tag": "ChooseOne"
+          },
+          "tag": "QuestionLabel"
+        },
+        "source": {
+          "contents": "d7ac46e2-ae25-4b89-bc9d-03736f31a883",
+          "tag": "EnemyAttackSource"
+        },
+        "tag": "QuestionWithSource",
+        "tooltip": null
+      },
+      "source": {
+        "choiceIndex": 1,
+        "investigatorSlug": "agnes-baker",
+        "questionVersion": 715,
+        "rawQuestionTag": "QuestionWithSource",
+        "scenario": "c01120",
+        "traceLine": 753
+      }
+    },
+    {
+      "expectedTitle": "Resolve forced ability at Captured treachery (Free)",
+      "kind": "resolveForcedAbility",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 1,
+        "choices": [
+          {
+            "ability": {
+              "actions": [],
+              "canBeCancelled": true,
+              "cardCode": "c01164",
+              "index": 1,
+              "type": "forced"
+            },
+            "actorId": "c01003",
+            "cost": {
+              "kind": "free"
+            },
+            "entity": {
+              "id": "49ad66d2-887e-4358-98d0-4a923b12b443",
+              "kind": "treachery"
+            },
+            "kind": "resolveForcedAbility",
+            "selectable": true,
+            "sourceIndex": 0
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "windowChooseOne",
+        "questionVersion": 18
+      },
+      "rawQuestion": {
+        "choices": [
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": false,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01164",
+              "criteria": {
+                "contents": {
+                  "tag": "You"
+                },
+                "tag": "InThreatAreaOf"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 1,
+              "limit": {
+                "contents": [
+                  {
+                    "tag": "PerWindow"
+                  },
+                  1
+                ],
+                "tag": "GroupLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "49ad66d2-887e-4358-98d0-4a923b12b443",
+                "tag": "TreacherySource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "49ad66d2-887e-4358-98d0-4a923b12b443",
+                "tag": "TreacherySource"
+              },
+              "target": null,
+              "tooltip": null,
+              "triggersSkillTest": true,
+              "type": {
+                "tag": "ForcedAbility",
+                "window": {
+                  "contents": [
+                    "When",
+                    {
+                      "tag": "You"
+                    }
+                  ],
+                  "tag": "TurnEnds"
+                }
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": [
+                  "When",
+                  {
+                    "tag": "You"
+                  }
+                ],
+                "tag": "TurnEnds"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01003",
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01003",
+                    [
+                      {
+                        "windowBatchId": "090954fb-777c-4a42-82a3-25e19e3b903b",
+                        "windowConditionTick": null,
+                        "windowTiming": "When",
+                        "windowType": {
+                          "contents": "c01003",
+                          "tag": "TurnEnds"
+                        }
+                      }
+                    ],
+                    [
+                      [
+                        {
+                          "additionalCosts": [],
+                          "basic": false,
+                          "blocksIn": null,
+                          "canBeCancelled": true,
+                          "cardCode": "c01164",
+                          "criteria": {
+                            "contents": {
+                              "tag": "You"
+                            },
+                            "tag": "InThreatAreaOf"
+                          },
+                          "delayAdditionalCosts": null,
+                          "displayAs": null,
+                          "doesNotProvokeAttacksOfOpportunity": null,
+                          "evadeCriteriaOverride": null,
+                          "fightCriteriaOverride": null,
+                          "highlightFromWindow": false,
+                          "ignoreAllCosts": false,
+                          "index": 1,
+                          "limit": {
+                            "contents": [
+                              {
+                                "tag": "PerWindow"
+                              },
+                              1
+                            ],
+                            "tag": "GroupLimit"
+                          },
+                          "metadata": null,
+                          "nonBlocking": false,
+                          "requestor": {
+                            "contents": "49ad66d2-887e-4358-98d0-4a923b12b443",
+                            "tag": "TreacherySource"
+                          },
+                          "skipForAll": false,
+                          "source": {
+                            "contents": "49ad66d2-887e-4358-98d0-4a923b12b443",
+                            "tag": "TreacherySource"
+                          },
+                          "target": null,
+                          "tooltip": null,
+                          "triggersSkillTest": true,
+                          "type": {
+                            "tag": "ForcedAbility",
+                            "window": {
+                              "contents": [
+                                "When",
+                                {
+                                  "tag": "You"
+                                }
+                              ],
+                              "tag": "TurnEnds"
+                            }
+                          },
+                          "wantsSkillTest": null,
+                          "window": {
+                            "contents": [
+                              "When",
+                              {
+                                "tag": "You"
+                              }
+                            ],
+                            "tag": "TurnEnds"
+                          }
+                        },
+                        [
+                          {
+                            "windowBatchId": "090954fb-777c-4a42-82a3-25e19e3b903b",
+                            "windowConditionTick": null,
+                            "windowTiming": "When",
+                            "windowType": {
+                              "contents": "c01003",
+                              "tag": "TurnEnds"
+                            }
+                          }
+                        ],
+                        []
+                      ]
+                    ]
+                  ],
+                  "tag": "ResolveWindowInitiations"
+                },
+                "tag": "MoveWithSkillTest"
+              }
+            ],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": "090954fb-777c-4a42-82a3-25e19e3b903b",
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01003",
+                  "tag": "TurnEnds"
+                }
+              }
+            ]
+          }
+        ],
+        "tag": "WindowChooseOne"
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "skids-otoole",
+        "questionVersion": 18,
+        "rawQuestionTag": "WindowChooseOne",
+        "scenario": "c01104",
+        "traceLine": 23
+      }
+    },
+    {
+      "expectedTitle": "Move to Captured location (1 action and additional cost)",
+      "kind": "move",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 11,
+        "choices": [
+          {
+            "actorId": "c01005",
+            "kind": "gainResource",
+            "selectable": true,
+            "sourceIndex": 0
+          },
+          {
+            "actorId": "c01005",
+            "kind": "drawCard",
+            "selectable": true,
+            "sourceIndex": 1
+          },
+          {
+            "actorId": "c01005",
+            "kind": "endTurn",
+            "selectable": true,
+            "sourceIndex": 2
+          },
+          {
+            "ability": {
+              "actions": [
+                "move"
+              ],
+              "canBeCancelled": true,
+              "cardCode": "c01150",
+              "index": 104,
+              "type": "action"
+            },
+            "actorId": "c01005",
+            "cost": {
+              "costs": [
+                {
+                  "amount": 1,
+                  "kind": "action"
+                },
+                {
+                  "kind": "other"
+                }
+              ],
+              "kind": "all"
+            },
+            "entity": {
+              "id": "01581c53-86ca-4a88-a192-ab1a2d2775e0",
+              "kind": "location"
+            },
+            "kind": "move",
+            "selectable": true,
+            "sourceIndex": 3
+          },
+          {
+            "ability": {
+              "actions": [
+                "move"
+              ],
+              "canBeCancelled": true,
+              "cardCode": "c01155",
+              "index": 104,
+              "type": "action"
+            },
+            "actorId": "c01005",
+            "cost": {
+              "costs": [
+                {
+                  "amount": 1,
+                  "kind": "action"
+                },
+                {
+                  "kind": "other"
+                }
+              ],
+              "kind": "all"
+            },
+            "entity": {
+              "id": "40aca17e-b9f5-46cd-8f34-89284fa336b8",
+              "kind": "location"
+            },
+            "kind": "move",
+            "selectable": true,
+            "sourceIndex": 4
+          },
+          {
+            "ability": {
+              "actions": [
+                "move"
+              ],
+              "canBeCancelled": true,
+              "cardCode": "c01152",
+              "index": 104,
+              "type": "action"
+            },
+            "actorId": "c01005",
+            "cost": {
+              "costs": [
+                {
+                  "amount": 1,
+                  "kind": "action"
+                },
+                {
+                  "kind": "other"
+                }
+              ],
+              "kind": "all"
+            },
+            "entity": {
+              "id": "594b1441-e2a2-4b50-a98c-1d7f173eb341",
+              "kind": "location"
+            },
+            "kind": "move",
+            "selectable": true,
+            "sourceIndex": 5
+          },
+          {
+            "ability": {
+              "actions": [
+                "move"
+              ],
+              "canBeCancelled": true,
+              "cardCode": "c01151",
+              "index": 104,
+              "type": "action"
+            },
+            "actorId": "c01005",
+            "cost": {
+              "costs": [
+                {
+                  "amount": 1,
+                  "kind": "action"
+                },
+                {
+                  "kind": "other"
+                }
+              ],
+              "kind": "all"
+            },
+            "entity": {
+              "id": "8b806f52-fc77-4281-ac07-652df5531ca4",
+              "kind": "location"
+            },
+            "kind": "move",
+            "selectable": true,
+            "sourceIndex": 6
+          },
+          {
+            "ability": {
+              "actions": [
+                "investigate"
+              ],
+              "canBeCancelled": true,
+              "cardCode": "c01149",
+              "index": 103,
+              "type": "action"
+            },
+            "actorId": "c01005",
+            "cost": {
+              "amount": 1,
+              "kind": "action"
+            },
+            "entity": {
+              "id": "d0886bf0-03b6-4596-bd66-d51d18b70dad",
+              "kind": "location"
+            },
+            "kind": "investigate",
+            "selectable": true,
+            "sourceIndex": 7
+          },
+          {
+            "ability": {
+              "actions": [
+                "activate",
+                "resign"
+              ],
+              "canBeCancelled": true,
+              "cardCode": "c01149",
+              "index": 99,
+              "type": "action"
+            },
+            "actorId": "c01005",
+            "cost": {
+              "amount": 1,
+              "kind": "action"
+            },
+            "entity": {
+              "id": "d0886bf0-03b6-4596-bd66-d51d18b70dad",
+              "kind": "location"
+            },
+            "kind": "useAbility",
+            "selectable": true,
+            "sourceIndex": 8
+          },
+          {
+            "ability": {
+              "actions": [
+                "fight"
+              ],
+              "canBeCancelled": true,
+              "cardCode": "c01160",
+              "index": 100,
+              "type": "action"
+            },
+            "actorId": "c01005",
+            "cost": {
+              "amount": 1,
+              "kind": "action"
+            },
+            "entity": {
+              "id": "529ba97d-3529-4fdd-b2f1-c78df6b2a2da",
+              "kind": "enemy"
+            },
+            "kind": "fight",
+            "selectable": true,
+            "sourceIndex": 9
+          },
+          {
+            "ability": {
+              "actions": [
+                "evade"
+              ],
+              "canBeCancelled": true,
+              "cardCode": "c01160",
+              "index": 101,
+              "type": "action"
+            },
+            "actorId": "c01005",
+            "cost": {
+              "amount": 1,
+              "kind": "action"
+            },
+            "entity": {
+              "id": "529ba97d-3529-4fdd-b2f1-c78df6b2a2da",
+              "kind": "enemy"
+            },
+            "kind": "evade",
+            "selectable": true,
+            "sourceIndex": 10
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "playerWindowChooseOne",
+        "questionVersion": 26
+      },
+      "rawQuestion": {
+        "choices": [
+          {
+            "component": {
+              "investigatorId": "c01005",
+              "tag": "InvestigatorComponent",
+              "tokenType": "ResourceToken"
+            },
+            "messages": [
+              {
+                "contents": [
+                  "c01005",
+                  1,
+                  {
+                    "contents": "c01005",
+                    "tag": "ResourceSource"
+                  },
+                  true
+                ],
+                "tag": "TakeResources"
+              }
+            ],
+            "tag": "ComponentLabel"
+          },
+          {
+            "component": {
+              "investigatorId": "c01005",
+              "tag": "InvestigatorDeckComponent"
+            },
+            "messages": [
+              {
+                "contents": [
+                  "c01005",
+                  {
+                    "cardDrawAction": true,
+                    "cardDrawAlreadyDrawn": [],
+                    "cardDrawAmount": 1,
+                    "cardDrawAndThen": null,
+                    "cardDrawDeck": {
+                      "contents": "c01005",
+                      "tag": "InvestigatorDeck"
+                    },
+                    "cardDrawDiscard": null,
+                    "cardDrawKind": "StandardCardDraw",
+                    "cardDrawPosition": "DrawFromTop",
+                    "cardDrawRules": [],
+                    "cardDrawSource": {
+                      "contents": "c01005",
+                      "tag": "InvestigatorSource"
+                    },
+                    "cardDrawState": {
+                      "tag": "UnresolvedCardDraw"
+                    },
+                    "cardDrawTarget": null
+                  }
+                ],
+                "tag": "DrawCards"
+              }
+            ],
+            "tag": "ComponentLabel"
+          },
+          {
+            "investigatorId": "c01005",
+            "messages": [
+              {
+                "contents": "c01005",
+                "tag": "ChooseEndTurn"
+              }
+            ],
+            "tag": "EndTurnButton"
+          },
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": true,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01150",
+              "criteria": {
+                "contents": [
+                  {
+                    "contents": {
+                      "contents": "01581c53-86ca-4a88-a192-ab1a2d2775e0",
+                      "tag": "LocationWithId"
+                    },
+                    "tag": "CanMoveTo"
+                  },
+                  {
+                    "contents": {
+                      "contents": {
+                        "contents": {
+                          "contents": [
+                            "ForMovement",
+                            {
+                              "contents": "01581c53-86ca-4a88-a192-ab1a2d2775e0",
+                              "tag": "LocationWithId"
+                            }
+                          ],
+                          "tag": "AccessibleTo"
+                        },
+                        "tag": "IncludeEmptySpace"
+                      },
+                      "tag": "IncludeEmptySpace"
+                    },
+                    "tag": "OnLocation"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        {
+                          "tag": "You"
+                        },
+                        {
+                          "contents": {
+                            "tag": "CannotMove"
+                          },
+                          "tag": "InvestigatorWithoutModifier"
+                        },
+                        {
+                          "contents": {
+                            "contents": "01581c53-86ca-4a88-a192-ab1a2d2775e0",
+                            "tag": "CannotEnter"
+                          },
+                          "tag": "InvestigatorWithoutModifier"
+                        }
+                      ],
+                      "tag": "InvestigatorMatches"
+                    },
+                    "tag": "InvestigatorExists"
+                  }
+                ],
+                "tag": "Criteria"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 104,
+              "limit": {
+                "tag": "NoLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "01581c53-86ca-4a88-a192-ab1a2d2775e0",
+                "tag": "LocationSource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "01581c53-86ca-4a88-a192-ab1a2d2775e0",
+                "tag": "LocationSource"
+              },
+              "target": null,
+              "tooltip": null,
+              "triggersSkillTest": false,
+              "type": {
+                "actions": {
+                  "contents": "Move",
+                  "tag": "SingleAction"
+                },
+                "cost": {
+                  "contents": [
+                    {
+                      "contents": 1,
+                      "tag": "ActionCost"
+                    },
+                    {
+                      "contents": {
+                        "contents": {
+                          "tag": "Free"
+                        },
+                        "tag": "CostToEnterUnrevealed"
+                      },
+                      "tag": "NonBlankedCost"
+                    }
+                  ],
+                  "tag": "Costs"
+                },
+                "skillTypes": null,
+                "tag": "ActionAbility"
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": {
+                  "tag": "You"
+                },
+                "tag": "DuringYourAction"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01005",
+            "messages": [],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01005",
+                  "tag": "DuringTurn"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "FastPlayerWindow"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "NonFast"
+                }
+              }
+            ]
+          },
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": true,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01155",
+              "criteria": {
+                "contents": [
+                  {
+                    "contents": {
+                      "contents": "40aca17e-b9f5-46cd-8f34-89284fa336b8",
+                      "tag": "LocationWithId"
+                    },
+                    "tag": "CanMoveTo"
+                  },
+                  {
+                    "contents": {
+                      "contents": {
+                        "contents": {
+                          "contents": [
+                            "ForMovement",
+                            {
+                              "contents": "40aca17e-b9f5-46cd-8f34-89284fa336b8",
+                              "tag": "LocationWithId"
+                            }
+                          ],
+                          "tag": "AccessibleTo"
+                        },
+                        "tag": "IncludeEmptySpace"
+                      },
+                      "tag": "IncludeEmptySpace"
+                    },
+                    "tag": "OnLocation"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        {
+                          "tag": "You"
+                        },
+                        {
+                          "contents": {
+                            "tag": "CannotMove"
+                          },
+                          "tag": "InvestigatorWithoutModifier"
+                        },
+                        {
+                          "contents": {
+                            "contents": "40aca17e-b9f5-46cd-8f34-89284fa336b8",
+                            "tag": "CannotEnter"
+                          },
+                          "tag": "InvestigatorWithoutModifier"
+                        }
+                      ],
+                      "tag": "InvestigatorMatches"
+                    },
+                    "tag": "InvestigatorExists"
+                  }
+                ],
+                "tag": "Criteria"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 104,
+              "limit": {
+                "tag": "NoLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "40aca17e-b9f5-46cd-8f34-89284fa336b8",
+                "tag": "LocationSource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "40aca17e-b9f5-46cd-8f34-89284fa336b8",
+                "tag": "LocationSource"
+              },
+              "target": null,
+              "tooltip": null,
+              "triggersSkillTest": false,
+              "type": {
+                "actions": {
+                  "contents": "Move",
+                  "tag": "SingleAction"
+                },
+                "cost": {
+                  "contents": [
+                    {
+                      "contents": 1,
+                      "tag": "ActionCost"
+                    },
+                    {
+                      "contents": {
+                        "contents": {
+                          "tag": "Free"
+                        },
+                        "tag": "CostToEnterUnrevealed"
+                      },
+                      "tag": "NonBlankedCost"
+                    }
+                  ],
+                  "tag": "Costs"
+                },
+                "skillTypes": null,
+                "tag": "ActionAbility"
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": {
+                  "tag": "You"
+                },
+                "tag": "DuringYourAction"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01005",
+            "messages": [],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01005",
+                  "tag": "DuringTurn"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "FastPlayerWindow"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "NonFast"
+                }
+              }
+            ]
+          },
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": true,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01152",
+              "criteria": {
+                "contents": [
+                  {
+                    "contents": {
+                      "contents": "594b1441-e2a2-4b50-a98c-1d7f173eb341",
+                      "tag": "LocationWithId"
+                    },
+                    "tag": "CanMoveTo"
+                  },
+                  {
+                    "contents": {
+                      "contents": {
+                        "contents": {
+                          "contents": [
+                            "ForMovement",
+                            {
+                              "contents": "594b1441-e2a2-4b50-a98c-1d7f173eb341",
+                              "tag": "LocationWithId"
+                            }
+                          ],
+                          "tag": "AccessibleTo"
+                        },
+                        "tag": "IncludeEmptySpace"
+                      },
+                      "tag": "IncludeEmptySpace"
+                    },
+                    "tag": "OnLocation"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        {
+                          "tag": "You"
+                        },
+                        {
+                          "contents": {
+                            "tag": "CannotMove"
+                          },
+                          "tag": "InvestigatorWithoutModifier"
+                        },
+                        {
+                          "contents": {
+                            "contents": "594b1441-e2a2-4b50-a98c-1d7f173eb341",
+                            "tag": "CannotEnter"
+                          },
+                          "tag": "InvestigatorWithoutModifier"
+                        }
+                      ],
+                      "tag": "InvestigatorMatches"
+                    },
+                    "tag": "InvestigatorExists"
+                  }
+                ],
+                "tag": "Criteria"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 104,
+              "limit": {
+                "tag": "NoLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "594b1441-e2a2-4b50-a98c-1d7f173eb341",
+                "tag": "LocationSource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "594b1441-e2a2-4b50-a98c-1d7f173eb341",
+                "tag": "LocationSource"
+              },
+              "target": null,
+              "tooltip": null,
+              "triggersSkillTest": false,
+              "type": {
+                "actions": {
+                  "contents": "Move",
+                  "tag": "SingleAction"
+                },
+                "cost": {
+                  "contents": [
+                    {
+                      "contents": 1,
+                      "tag": "ActionCost"
+                    },
+                    {
+                      "contents": {
+                        "contents": {
+                          "tag": "Free"
+                        },
+                        "tag": "CostToEnterUnrevealed"
+                      },
+                      "tag": "NonBlankedCost"
+                    }
+                  ],
+                  "tag": "Costs"
+                },
+                "skillTypes": null,
+                "tag": "ActionAbility"
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": {
+                  "tag": "You"
+                },
+                "tag": "DuringYourAction"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01005",
+            "messages": [],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01005",
+                  "tag": "DuringTurn"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "FastPlayerWindow"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "NonFast"
+                }
+              }
+            ]
+          },
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": true,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01151",
+              "criteria": {
+                "contents": [
+                  {
+                    "contents": {
+                      "contents": "8b806f52-fc77-4281-ac07-652df5531ca4",
+                      "tag": "LocationWithId"
+                    },
+                    "tag": "CanMoveTo"
+                  },
+                  {
+                    "contents": {
+                      "contents": {
+                        "contents": {
+                          "contents": [
+                            "ForMovement",
+                            {
+                              "contents": "8b806f52-fc77-4281-ac07-652df5531ca4",
+                              "tag": "LocationWithId"
+                            }
+                          ],
+                          "tag": "AccessibleTo"
+                        },
+                        "tag": "IncludeEmptySpace"
+                      },
+                      "tag": "IncludeEmptySpace"
+                    },
+                    "tag": "OnLocation"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        {
+                          "tag": "You"
+                        },
+                        {
+                          "contents": {
+                            "tag": "CannotMove"
+                          },
+                          "tag": "InvestigatorWithoutModifier"
+                        },
+                        {
+                          "contents": {
+                            "contents": "8b806f52-fc77-4281-ac07-652df5531ca4",
+                            "tag": "CannotEnter"
+                          },
+                          "tag": "InvestigatorWithoutModifier"
+                        }
+                      ],
+                      "tag": "InvestigatorMatches"
+                    },
+                    "tag": "InvestigatorExists"
+                  }
+                ],
+                "tag": "Criteria"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 104,
+              "limit": {
+                "tag": "NoLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "8b806f52-fc77-4281-ac07-652df5531ca4",
+                "tag": "LocationSource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "8b806f52-fc77-4281-ac07-652df5531ca4",
+                "tag": "LocationSource"
+              },
+              "target": null,
+              "tooltip": null,
+              "triggersSkillTest": false,
+              "type": {
+                "actions": {
+                  "contents": "Move",
+                  "tag": "SingleAction"
+                },
+                "cost": {
+                  "contents": [
+                    {
+                      "contents": 1,
+                      "tag": "ActionCost"
+                    },
+                    {
+                      "contents": {
+                        "contents": {
+                          "tag": "Free"
+                        },
+                        "tag": "CostToEnterUnrevealed"
+                      },
+                      "tag": "NonBlankedCost"
+                    }
+                  ],
+                  "tag": "Costs"
+                },
+                "skillTypes": null,
+                "tag": "ActionAbility"
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": {
+                  "tag": "You"
+                },
+                "tag": "DuringYourAction"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01005",
+            "messages": [],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01005",
+                  "tag": "DuringTurn"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "FastPlayerWindow"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "NonFast"
+                }
+              }
+            ]
+          },
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": true,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01149",
+              "criteria": {
+                "contents": [
+                  {
+                    "contents": {
+                      "contents": "d0886bf0-03b6-4596-bd66-d51d18b70dad",
+                      "tag": "LocationWithId"
+                    },
+                    "tag": "OnLocation"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        {
+                          "contents": "d0886bf0-03b6-4596-bd66-d51d18b70dad",
+                          "tag": "LocationWithId"
+                        },
+                        {
+                          "tag": "InvestigatableLocation"
+                        }
+                      ],
+                      "tag": "LocationMatchAll"
+                    },
+                    "tag": "LocationExists"
+                  }
+                ],
+                "tag": "Criteria"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 103,
+              "limit": {
+                "tag": "NoLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "d0886bf0-03b6-4596-bd66-d51d18b70dad",
+                "tag": "LocationSource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "d0886bf0-03b6-4596-bd66-d51d18b70dad",
+                "tag": "LocationSource"
+              },
+              "target": null,
+              "tooltip": null,
+              "triggersSkillTest": true,
+              "type": {
+                "actions": {
+                  "contents": "Investigate",
+                  "tag": "SingleAction"
+                },
+                "cost": {
+                  "contents": 1,
+                  "tag": "ActionCost"
+                },
+                "skillTypes": {
+                  "contents": "SkillIntellect",
+                  "tag": "AbilitySkill"
+                },
+                "tag": "ActionAbility"
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": {
+                  "tag": "You"
+                },
+                "tag": "DuringYourAction"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01005",
+            "messages": [],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01005",
+                  "tag": "DuringTurn"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "FastPlayerWindow"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "NonFast"
+                }
+              }
+            ]
+          },
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": false,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01149",
+              "criteria": {
+                "contents": {
+                  "contents": "d0886bf0-03b6-4596-bd66-d51d18b70dad",
+                  "tag": "LocationWithId"
+                },
+                "tag": "OnLocation"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 99,
+              "limit": {
+                "tag": "NoLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "d0886bf0-03b6-4596-bd66-d51d18b70dad",
+                "tag": "LocationSource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "d0886bf0-03b6-4596-bd66-d51d18b70dad",
+                "tag": "LocationSource"
+              },
+              "target": null,
+              "tooltip": "$nightOfTheZealot.theDevourerBelow.tooltips.mainPath.resign",
+              "triggersSkillTest": false,
+              "type": {
+                "actions": {
+                  "contents": "Resign",
+                  "tag": "SingleAction"
+                },
+                "cost": {
+                  "contents": 1,
+                  "tag": "ActionCost"
+                },
+                "skillTypes": null,
+                "tag": "ActionAbility"
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": {
+                  "tag": "You"
+                },
+                "tag": "DuringYourAction"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01005",
+            "messages": [],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01005",
+                  "tag": "DuringTurn"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "FastPlayerWindow"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "NonFast"
+                }
+              }
+            ]
+          },
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": true,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01160",
+              "criteria": {
+                "contents": [
+                  {
+                    "tag": "OnSameLocation"
+                  },
+                  {
+                    "contents": {
+                      "contents": {
+                        "contents": {
+                          "tag": "You"
+                        },
+                        "tag": "CanBeAttackedBy"
+                      },
+                      "tag": "ThisEnemy"
+                    },
+                    "tag": "EnemyCriteria"
+                  },
+                  {
+                    "contents": {
+                      "contents": [
+                        {
+                          "tag": "You"
+                        },
+                        {
+                          "contents": {
+                            "tag": "CannotAttack"
+                          },
+                          "tag": "InvestigatorWithoutModifier"
+                        }
+                      ],
+                      "tag": "InvestigatorMatches"
+                    },
+                    "tag": "InvestigatorExists"
+                  },
+                  {
+                    "contents": [
+                      {
+                        "contents": {
+                          "contents": {
+                            "contents": [
+                              {
+                                "contents": {
+                                  "contents": {
+                                    "tag": "Aloof"
+                                  },
+                                  "tag": "EnemyWithKeyword"
+                                },
+                                "tag": "NotEnemy"
+                              },
+                              {
+                                "contents": {
+                                  "tag": "Anyone"
+                                },
+                                "tag": "EnemyIsEngagedWith"
+                              }
+                            ],
+                            "tag": "EnemyOneOf"
+                          },
+                          "tag": "ThisEnemy"
+                        },
+                        "tag": "EnemyCriteria"
+                      },
+                      {
+                        "contents": {
+                          "contents": [
+                            {
+                              "tag": "You"
+                            },
+                            {
+                              "contents": {
+                                "tag": "IgnoreAloof"
+                              },
+                              "tag": "InvestigatorWithModifier"
+                            }
+                          ],
+                          "tag": "InvestigatorMatches"
+                        },
+                        "tag": "InvestigatorExists"
+                      }
+                    ],
+                    "tag": "AnyCriterion"
+                  }
+                ],
+                "tag": "Criteria"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 100,
+              "limit": {
+                "tag": "NoLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "529ba97d-3529-4fdd-b2f1-c78df6b2a2da",
+                "tag": "EnemySource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "529ba97d-3529-4fdd-b2f1-c78df6b2a2da",
+                "tag": "EnemySource"
+              },
+              "target": null,
+              "tooltip": null,
+              "triggersSkillTest": true,
+              "type": {
+                "actions": {
+                  "contents": "Fight",
+                  "tag": "SingleAction"
+                },
+                "cost": {
+                  "contents": 1,
+                  "tag": "ActionCost"
+                },
+                "skillTypes": {
+                  "contents": "SkillCombat",
+                  "tag": "AbilitySkill"
+                },
+                "tag": "ActionAbility"
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": {
+                  "tag": "You"
+                },
+                "tag": "DuringYourAction"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01005",
+            "messages": [],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01005",
+                  "tag": "DuringTurn"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "FastPlayerWindow"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "NonFast"
+                }
+              }
+            ]
+          },
+          {
+            "ability": {
+              "additionalCosts": [],
+              "basic": true,
+              "blocksIn": null,
+              "canBeCancelled": true,
+              "cardCode": "c01160",
+              "criteria": {
+                "contents": [
+                  {
+                    "tag": "OnSameLocation"
+                  },
+                  {
+                    "contents": {
+                      "contents": {
+                        "contents": [
+                          {
+                            "contents": {
+                              "tag": "You"
+                            },
+                            "tag": "EnemyIsEngagedWith"
+                          },
+                          {
+                            "tag": "EnemyWithEvade"
+                          },
+                          {
+                            "contents": {
+                              "tag": "CannotBeEvaded"
+                            },
+                            "tag": "EnemyWithoutModifier"
+                          }
+                        ],
+                        "tag": "EnemyMatchAll"
+                      },
+                      "tag": "ThisEnemy"
+                    },
+                    "tag": "EnemyCriteria"
+                  }
+                ],
+                "tag": "Criteria"
+              },
+              "delayAdditionalCosts": null,
+              "displayAs": null,
+              "doesNotProvokeAttacksOfOpportunity": null,
+              "evadeCriteriaOverride": null,
+              "fightCriteriaOverride": null,
+              "highlightFromWindow": false,
+              "ignoreAllCosts": false,
+              "index": 101,
+              "limit": {
+                "tag": "NoLimit"
+              },
+              "metadata": null,
+              "nonBlocking": false,
+              "requestor": {
+                "contents": "529ba97d-3529-4fdd-b2f1-c78df6b2a2da",
+                "tag": "EnemySource"
+              },
+              "skipForAll": false,
+              "source": {
+                "contents": "529ba97d-3529-4fdd-b2f1-c78df6b2a2da",
+                "tag": "EnemySource"
+              },
+              "target": null,
+              "tooltip": null,
+              "triggersSkillTest": true,
+              "type": {
+                "actions": {
+                  "contents": "Evade",
+                  "tag": "SingleAction"
+                },
+                "cost": {
+                  "contents": 1,
+                  "tag": "ActionCost"
+                },
+                "skillTypes": {
+                  "contents": "SkillAgility",
+                  "tag": "AbilitySkill"
+                },
+                "tag": "ActionAbility"
+              },
+              "wantsSkillTest": null,
+              "window": {
+                "contents": {
+                  "tag": "You"
+                },
+                "tag": "DuringYourAction"
+              }
+            },
+            "before": [],
+            "investigatorId": "c01005",
+            "messages": [],
+            "tag": "AbilityLabel",
+            "windows": [
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "contents": "c01005",
+                  "tag": "DuringTurn"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "FastPlayerWindow"
+                }
+              },
+              {
+                "windowBatchId": null,
+                "windowConditionTick": null,
+                "windowTiming": "When",
+                "windowType": {
+                  "tag": "NonFast"
+                }
+              }
+            ]
+          }
+        ],
+        "tag": "PlayerWindowChooseOne"
+      },
+      "source": {
+        "choiceIndex": 3,
+        "investigatorSlug": "wendy-adams",
+        "questionVersion": 26,
+        "rawQuestionTag": "PlayerWindowChooseOne",
+        "scenario": "c01142",
+        "traceLine": 117
+      }
+    },
+    {
+      "expectedTitle": "Suffer physical trauma",
+      "kind": "localizedLabel",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 2,
+        "choices": [
+          {
+            "kind": "localizedLabel",
+            "label": {
+              "kind": "embeddedI18n",
+              "text": "$label.sufferPhysicalTrauma"
+            },
+            "selectable": true,
+            "sourceIndex": 0
+          },
+          {
+            "kind": "localizedLabel",
+            "label": {
+              "kind": "embeddedI18n",
+              "text": "$label.sufferMentalTrauma"
+            },
+            "selectable": true,
+            "sourceIndex": 1
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "chooseOne",
+        "questionVersion": 60
+      },
+      "rawQuestion": {
+        "choices": [
+          {
+            "label": "$label.sufferPhysicalTrauma",
+            "messages": [
+              {
+                "contents": [
+                  "c01001",
+                  1,
+                  0
+                ],
+                "tag": "SufferTrauma"
+              }
+            ],
+            "tag": "Label"
+          },
+          {
+            "label": "$label.sufferMentalTrauma",
+            "messages": [
+              {
+                "contents": [
+                  "c01001",
+                  0,
+                  1
+                ],
+                "tag": "SufferTrauma"
+              }
+            ],
+            "tag": "Label"
+          }
+        ],
+        "tag": "ChooseOne"
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "roland-banks",
+        "questionVersion": 60,
+        "rawQuestionTag": "ChooseOne",
+        "scenario": "c01120",
+        "traceLine": 322
+      }
+    },
+    {
+      "expectedTitle": "Choose Heirloom of Hyperborea",
+      "kind": "chooseTarget",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 6,
+        "choices": [
+          {
+            "entity": {
+              "id": "22816a3f-6d54-4e49-bee9-a7c3a99e03e9",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 0
+          },
+          {
+            "entity": {
+              "id": "399714a6-dece-4523-8487-6024425d221f",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 1
+          },
+          {
+            "entity": {
+              "id": "afecf9b3-170c-4a5d-ae07-8a41db158868",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 2
+          },
+          {
+            "entity": {
+              "id": "ecbeafa0-dbde-4d1d-99e4-bd05ebe7d6bb",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 3
+          },
+          {
+            "entity": {
+              "id": "1f678bd1-3612-4b50-ab1d-e312c1e34ce7",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 4
+          },
+          {
+            "actorId": "c01004",
+            "kind": "startSkillTest",
+            "selectable": true,
+            "sourceIndex": 5
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "chooseOne",
+        "questionVersion": 786
+      },
+      "rawQuestion": {
+        "choices": [
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01012",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "22816a3f-6d54-4e49-bee9-a7c3a99e03e9",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01012",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestCommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "22816a3f-6d54-4e49-bee9-a7c3a99e03e9",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01089",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "399714a6-dece-4523-8487-6024425d221f",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01089",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestCommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "399714a6-dece-4523-8487-6024425d221f",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01063",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "afecf9b3-170c-4a5d-ae07-8a41db158868",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01063",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestUncommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "afecf9b3-170c-4a5d-ae07-8a41db158868",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01064",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "ecbeafa0-dbde-4d1d-99e4-bd05ebe7d6bb",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01064",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestUncommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "ecbeafa0-dbde-4d1d-99e4-bd05ebe7d6bb",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01093",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "1f678bd1-3612-4b50-ab1d-e312c1e34ce7",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01093",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestUncommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "1f678bd1-3612-4b50-ab1d-e312c1e34ce7",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "investigatorId": "c01004",
+            "tag": "StartSkillTestButton"
+          }
+        ],
+        "tag": "ChooseOne"
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "agnes-baker",
+        "questionVersion": 786,
+        "rawQuestionTag": "ChooseOne",
+        "scenario": "c01120",
+        "traceLine": 1625
+      }
+    }
+  ]
+}
