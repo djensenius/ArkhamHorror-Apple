@@ -17,15 +17,17 @@ extension GamesListView {
     }
 
     func reconcileOpenGameSurfaces() {
-        guard case let .loaded(games) = model.gameListState else { return }
-        let reconciled = OpenGameSurfaceReconciler.reconciled(
-            presentedGameID: presentedGameID,
-            liveGamePath: liveGamePath,
-            games: games,
+        OpenGameSurfaceReconciler.reconcileConfirmedDeletes(
+            presentedGameID: &presentedGameID,
+            liveGamePath: &liveGamePath,
             confirmedDeletedGameIDs: model.confirmedDeletedGameIDs
         )
-        presentedGameID = reconciled.presentedGameID
-        liveGamePath = reconciled.liveGamePath
+        guard case let .loaded(games) = model.gameListState else { return }
+        OpenGameSurfaceReconciler.reconcileLoadedListAbsence(
+            presentedGameID: &presentedGameID,
+            liveGamePath: &liveGamePath,
+            games: games
+        )
     }
 
     func deleteFailurePresentation(for gameID: GameID) -> GameRowActionFailurePresentation? {
@@ -143,22 +145,84 @@ struct OpenGameSurfaceReconciliation: Equatable {
 }
 
 enum OpenGameSurfaceReconciler {
+    static func reconciledConfirmedDeletes(
+        presentedGameID: GameID?,
+        liveGamePath: [GameID],
+        confirmedDeletedGameIDs: Set<GameID>
+    ) -> OpenGameSurfaceReconciliation {
+        let reconciledPresentedGameID = presentedGameID.flatMap { gameID in
+            confirmedDeletedGameIDs.contains(gameID) ? nil : gameID
+        }
+        let reconciledLiveGamePath = liveGamePath.filter {
+            !confirmedDeletedGameIDs.contains($0)
+        }
+        return OpenGameSurfaceReconciliation(
+            presentedGameID: reconciledPresentedGameID,
+            liveGamePath: reconciledLiveGamePath
+        )
+    }
+
+    static func reconcileConfirmedDeletes(
+        presentedGameID: inout GameID?,
+        liveGamePath: inout [GameID],
+        confirmedDeletedGameIDs: Set<GameID>
+    ) {
+        let result = reconciledConfirmedDeletes(
+            presentedGameID: presentedGameID,
+            liveGamePath: liveGamePath,
+            confirmedDeletedGameIDs: confirmedDeletedGameIDs
+        )
+        presentedGameID = result.presentedGameID
+        liveGamePath = result.liveGamePath
+    }
+
+    static func reconciledLoadedListAbsence(
+        presentedGameID: GameID?,
+        liveGamePath: [GameID],
+        games: GameList
+    ) -> OpenGameSurfaceReconciliation {
+        let shouldClosePresentedGame = presentedGameID.map {
+            isDefinitelyAbsent($0, from: games)
+        } ?? false
+        let reconciledPresentedGameID: GameID? = shouldClosePresentedGame ? nil : presentedGameID
+        let reconciledLiveGamePath = liveGamePath.filter {
+            !isDefinitelyAbsent($0, from: games)
+        }
+        return OpenGameSurfaceReconciliation(
+            presentedGameID: reconciledPresentedGameID,
+            liveGamePath: reconciledLiveGamePath
+        )
+    }
+
+    static func reconcileLoadedListAbsence(
+        presentedGameID: inout GameID?,
+        liveGamePath: inout [GameID],
+        games: GameList
+    ) {
+        let result = reconciledLoadedListAbsence(
+            presentedGameID: presentedGameID,
+            liveGamePath: liveGamePath,
+            games: games
+        )
+        presentedGameID = result.presentedGameID
+        liveGamePath = result.liveGamePath
+    }
+
     static func reconciled(
         presentedGameID: GameID?,
         liveGamePath: [GameID],
         games: GameList,
         confirmedDeletedGameIDs: Set<GameID>
     ) -> OpenGameSurfaceReconciliation {
-        let shouldClosePresentedGame = presentedGameID.map {
-            shouldClose($0, in: games, confirmedDeletedGameIDs: confirmedDeletedGameIDs)
-        } ?? false
-        let reconciledPresentedGameID: GameID? = shouldClosePresentedGame ? nil : presentedGameID
-        let reconciledLiveGamePath = liveGamePath.filter {
-            !shouldClose($0, in: games, confirmedDeletedGameIDs: confirmedDeletedGameIDs)
-        }
-        return OpenGameSurfaceReconciliation(
-            presentedGameID: reconciledPresentedGameID,
-            liveGamePath: reconciledLiveGamePath
+        let withoutConfirmedDeletes = reconciledConfirmedDeletes(
+            presentedGameID: presentedGameID,
+            liveGamePath: liveGamePath,
+            confirmedDeletedGameIDs: confirmedDeletedGameIDs
+        )
+        return reconciledLoadedListAbsence(
+            presentedGameID: withoutConfirmedDeletes.presentedGameID,
+            liveGamePath: withoutConfirmedDeletes.liveGamePath,
+            games: games
         )
     }
 
@@ -178,13 +242,9 @@ enum OpenGameSurfaceReconciler {
         liveGamePath = result.liveGamePath
     }
 
-    private static func shouldClose(
-        _ gameID: GameID,
-        in games: GameList,
-        confirmedDeletedGameIDs: Set<GameID>
-    ) -> Bool {
+    private static func isDefinitelyAbsent(_ gameID: GameID, from games: GameList) -> Bool {
         guard !games.containsGame(gameID) else { return false }
-        return confirmedDeletedGameIDs.contains(gameID) || games.hasNoFailedEntries
+        return games.hasNoFailedEntries
     }
 }
 

@@ -348,4 +348,19 @@ extension GamesListPresentationTests {
         #expect(presentedGameID == nil)
         #expect(liveGamePath == [remainingGameID])
     }
+
+    @Test("confirmed deletes close lobby sheets and live routes before list-state reconciliation")
+    func confirmedDeleteReconciliationDoesNotRequireLoadedList() {
+        let deletedGameID = GameID(UUID())
+        let remainingGameID = GameID(UUID())
+
+        let result = OpenGameSurfaceReconciler.reconciledConfirmedDeletes(
+            presentedGameID: deletedGameID,
+            liveGamePath: [remainingGameID, deletedGameID],
+            confirmedDeletedGameIDs: [deletedGameID]
+        )
+
+        #expect(result.presentedGameID == nil)
+        #expect(result.liveGamePath == [remainingGameID])
+    }
 }
