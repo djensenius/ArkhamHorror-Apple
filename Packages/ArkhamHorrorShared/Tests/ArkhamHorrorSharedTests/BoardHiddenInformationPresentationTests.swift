@@ -82,6 +82,15 @@ struct BoardHiddenInformationPresentationTests {
             activeInvestigatorPlayerID: fixture.otherPlayerID,
             isSolo: false
         ) == fixture.localPlayerID)
+        #expect(BoardPlayerAreaVisibility.shouldShowFullArea(
+            for: local,
+            fullPlayerAreaPlayerID: fixture.localPlayerID,
+            isSolo: false
+        ))
+        let fullAreaDeckBadge = BoardPlayerAreaVisibility.deckCountBadge(for: local)
+        #expect(fullAreaDeckBadge.count == local.deckCount)
+        #expect(fullAreaDeckBadge.value == "1")
+        #expect(fullAreaDeckBadge.accessibilityLabel == "Deck 1 card")
         #expect(!BoardPlayerAreaVisibility.shouldShowFullArea(
             for: other,
             fullPlayerAreaPlayerID: fixture.localPlayerID,

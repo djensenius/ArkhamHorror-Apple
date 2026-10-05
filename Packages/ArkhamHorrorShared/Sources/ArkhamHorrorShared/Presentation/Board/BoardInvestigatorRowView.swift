@@ -14,6 +14,18 @@ struct BoardHiddenHandBackPlaceholder: Sendable, Equatable, Identifiable {
     let accessibilityLabel = "Hidden hand card"
 }
 
+struct BoardDeckCountBadgeModel: Sendable, Equatable {
+    let count: Int
+
+    var value: String { "\(count)" }
+
+    var accessibilityLabel: String {
+        "Deck " + BoardDisplayFormatting.pluralized(
+            count, singular: "card", plural: "cards"
+        )
+    }
+}
+
 enum BoardPlayerAreaVisibility {
     static func shouldShowFullArea(
         for investigator: BoardInvestigatorNode,
@@ -55,6 +67,10 @@ enum BoardPlayerAreaVisibility {
             for: investigator, localPlayerID: localPlayerID, isSolo: isSolo
         ) else { return [] }
         return (0..<investigator.handCount).map(BoardHiddenHandBackPlaceholder.init(id:))
+    }
+
+    static func deckCountBadge(for investigator: BoardInvestigatorNode) -> BoardDeckCountBadgeModel {
+        BoardDeckCountBadgeModel(count: investigator.deckCount)
     }
 }
 
@@ -160,6 +176,7 @@ struct BoardInvestigatorRowView: View {
         if shouldShowFullArea(for: investigator) {
             BoardPlayerAreaView(
                 investigator: investigator,
+                deckCountBadge: BoardPlayerAreaVisibility.deckCountBadge(for: investigator),
                 handCards: BoardPlayerAreaVisibility.visibleHandCards(
                     for: investigator,
                     cardsByPlayer: handCardsByPlayer,
