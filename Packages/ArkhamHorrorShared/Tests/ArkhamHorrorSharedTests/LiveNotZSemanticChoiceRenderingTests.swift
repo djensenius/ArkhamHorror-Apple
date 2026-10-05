@@ -115,6 +115,62 @@ struct LiveNotZSemanticChoiceRenderingTests {
         )
     }
 
+    @Test("Hidden hand card entities do not reveal catalog names")
+    @MainActor
+    func hiddenHandCardEntitiesDoNotRevealCatalogNames() async throws {
+        let sample = try Self.heirloomTargetSample()
+        let prompt = try await Self.prompt(for: sample, labelModel: Self.productionLabelModel())
+        let projection = try Self.capturedProjection()
+        let entity = QuestionPresentation.Entity(
+            kind: .card,
+            id: "22816a3f-6d54-4e49-bee9-a7c3a99e03e9"
+        )
+
+        #expect(prompt.semanticEntityTitle(entity, in: projection) == "Heirloom of Hyperborea")
+        #expect(prompt.semanticEntityTitle(
+            entity,
+            in: projection,
+            revealsHandCardFaces: false
+        ) == nil)
+    }
+
+    @Test("AppModel passes the card catalog into basic choice presentation")
+    @MainActor
+    func appModelPassesCardCatalogIntoBasicChoicePresentation() async throws {
+        let sample = try Self.heirloomTargetSample()
+        let ownerID = BoardTestFixtures.playerID("000000000001")
+        let bound = try sample.questionPresentation.bind(
+            to: sample.rawQuestion,
+            expectedQuestionVersion: sample.source.questionVersion
+        )
+        let question = BasicChoiceParser.parseQuestion(sample.rawQuestion)
+        let payload = BasicChoiceQuestionPayload(
+            rawValue: sample.rawQuestion,
+            state: question,
+            presentation: bound
+        )
+        let projection = try Self.capturedProjection(questionPayload: payload)
+        let gameID = BoardTestFixtures.gameID()
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(
+                profiles: [.hosted],
+                selectedID: ServerProfile.hosted.id
+            ),
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+        model.cardCatalog = try Self.capturedCardCatalog()
+        model.liveGameStates[gameID] = LiveGameState.live(projection)
+        model.liveGameParticipantIdentities[gameID] = LiveGameParticipantIdentity.participant(ownerID)
+
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let choice = try #require(prompt.choices.first { $0.index == sample.source.choiceIndex })
+        #expect(prompt.resolvedChoiceLabel(for: choice, in: projection).title == sample.expectedTitle)
+    }
+
     @MainActor
     private static func prompt(
         for sample: RenderingSample,
@@ -171,7 +227,15 @@ struct LiveNotZSemanticChoiceRenderingTests {
         })
     }
 
-    private static func capturedProjection() throws -> BoardProjection {
+    private static func heirloomTargetSample() throws -> RenderingSample {
+        try #require(renderingSamples().first {
+            $0.expectedTitle == "Choose Heirloom of Hyperborea"
+        })
+    }
+
+    private static func capturedProjection(
+        questionPayload: BasicChoiceQuestionPayload? = nil
+    ) throws -> BoardProjection {
         let agnesID = BoardTestFixtures.investigatorID("c01004")
         let wendyID = BoardTestFixtures.investigatorID("c01005")
         let locationID = try semanticLocationID("01581c53-86ca-4a88-a192-ab1a2d2775e0")
@@ -207,7 +271,8 @@ struct LiveNotZSemanticChoiceRenderingTests {
                 ),
             ],
             playerOrder: [agnesID, wendyID],
-            cardValues: [heirloomID: heirloom]
+            cardValues: [heirloomID: heirloom],
+            questions: questionPayload.map { [agnesPlayerID: $0] } ?? [:]
         ))
     }
 

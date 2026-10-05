@@ -131,6 +131,7 @@ extension BoardTestFixtures {
         cardValues: [WireCardID: JSONValue] = [:],
         questionCount: Int = 0,
         questionPlayerIDs: [PlayerID] = [],
+        questions: [PlayerID: BasicChoiceQuestionPayload] = [:],
         playerCount: Int? = nil
     ) -> PublicGameSnapshot {
         var locationMap = UUIDKeyedMap<LocationIDTag, Location>()
@@ -180,7 +181,11 @@ extension BoardTestFixtures {
             focusedCards: [], highlightedCards: [], focusedTarotCards: [], foundCards: .null,
             focusedChaosTokens: [], activeCard: nil, removedFromPlay: [], gameState: gameState,
             inSetup: false, skillTestResults: nil,
-            question: basicChoiceQuestions(count: questionCount, playerIDs: questionPlayerIDs),
+            question: basicChoiceQuestions(
+                count: questionCount,
+                playerIDs: questionPlayerIDs,
+                extraQuestions: questions
+            ),
             questionPresentation: nil,
             cards: cards, totalDoom: totalDoom, totalClues: totalClues,
             scenarioSteps: 0, undoActionStep: nil, undoTurnStep: nil, undoPhaseStep: nil,
@@ -191,14 +196,18 @@ extension BoardTestFixtures {
 
     private static func basicChoiceQuestions(
         count: Int,
-        playerIDs: [PlayerID]
+        playerIDs: [PlayerID],
+        extraQuestions: [PlayerID: BasicChoiceQuestionPayload]
     ) -> UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload> {
         var map = UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>()
         let raw: JSONValue = .object([
             "tag": .string("FutureQuestion"),
             "choices": .array([]),
         ])
-        for playerID in playerIDs {
+        for (playerID, payload) in extraQuestions {
+            map[playerID] = payload
+        }
+        for playerID in playerIDs where extraQuestions[playerID] == nil {
             map[playerID] = BasicChoiceQuestionPayload(
                 rawValue: raw, state: .updateRequired(tag: "FutureQuestion")
             )

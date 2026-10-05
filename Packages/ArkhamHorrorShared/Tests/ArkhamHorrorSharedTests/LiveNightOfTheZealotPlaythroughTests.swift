@@ -203,7 +203,10 @@ struct LiveNightOfTheZealotPlaythroughTests {
             !model.isCardCatalogLoading
         }
         if let failure = model.cardCatalogFailure {
-            throw PlaythroughError.submissionFailed("card catalog failed: \(failure)")
+            throw PlaythroughError.cardCatalogUnavailable("card catalog failed: \(failure)")
+        }
+        guard model.cardCatalog != nil else {
+            throw PlaythroughError.cardCatalogUnavailable("card catalog finished without a snapshot")
         }
     }
 
@@ -1199,6 +1202,7 @@ private enum PlaythroughError: Error, CustomStringConvertible {
     case notSignedIn(String)
     case registrationDidNotStart
     case noSelectableChoice(version: Int, tag: String)
+    case cardCatalogUnavailable(String)
     case submissionFailed(String)
     case timedOut(String)
 
@@ -1208,6 +1212,7 @@ private enum PlaythroughError: Error, CustomStringConvertible {
         case let .notSignedIn(state): "expected signedIn, got \(state)"
         case .registrationDidNotStart: "registration did not start"
         case let .noSelectableChoice(version, tag): "no selectable choice at q\(version) / \(tag)"
+        case let .cardCatalogUnavailable(reason): "card catalog unavailable: \(reason)"
         case let .submissionFailed(reason): "submission failed: \(reason)"
         case let .timedOut(description): "timed out waiting for \(description)"
         }
