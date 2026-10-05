@@ -155,11 +155,14 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    func headerSubtitle(in projection: BoardProjection) -> String? {
+    func headerSubtitle(
+        in projection: BoardProjection,
+        revealsHandCardFaces: Bool = true
+    ) -> String? {
         guard let presentation = semanticPresentation?.presentation else { return nil }
         var parts: [String] = []
         if let source = presentation.questionSource?.entity.flatMap({
-            semanticEntityTitle($0, in: projection)
+            semanticEntityTitle($0, in: projection, revealsHandCardFaces: revealsHandCardFaces)
         }) {
             parts.append(source)
         }
@@ -367,8 +370,28 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    func displayTitle(for choice: BasicChoice, in projection: BoardProjection) -> String {
-        resolvedChoiceLabel(for: choice, in: projection).title
+    func revealsHandCardFaces(
+        in projection: BoardProjection,
+        localPlayerID: PlayerID?,
+        isSolo: Bool
+    ) -> Bool {
+        guard let investigator = projection.investigators.first(where: { $0.playerID == ownerID })
+        else { return isSolo || ownerID == localPlayerID }
+        return BoardPlayerAreaVisibility.revealsHandCardFaces(
+            for: investigator,
+            localPlayerID: localPlayerID,
+            isSolo: isSolo
+        )
+    }
+
+    func displayTitle(
+        for choice: BasicChoice,
+        in projection: BoardProjection,
+        revealsHandCardFaces: Bool = true
+    ) -> String {
+        resolvedChoiceLabel(
+            for: choice, in: projection, revealsHandCardFaces: revealsHandCardFaces
+        ).title
     }
 
     func systemImage(for choice: BasicChoice) -> String {
@@ -378,20 +401,28 @@ extension BasicChoicePromptPresentation {
         return semanticSystemImage(for: descriptor)
     }
 
-    func accessibilityLabel(for choice: BasicChoice, in projection: BoardProjection) -> String {
-        resolvedChoiceLabel(for: choice, in: projection).accessibilityLabel
+    func accessibilityLabel(
+        for choice: BasicChoice,
+        in projection: BoardProjection,
+        revealsHandCardFaces: Bool = true
+    ) -> String {
+        resolvedChoiceLabel(
+            for: choice, in: projection, revealsHandCardFaces: revealsHandCardFaces
+        ).accessibilityLabel
     }
 
     func resolvedChoiceLabel(
         for choice: BasicChoice,
-        in projection: BoardProjection
+        in projection: BoardProjection,
+        revealsHandCardFaces: Bool = true
     ) -> BasicChoiceResolvedChoiceLabel {
         guard let semanticPresentation else {
             let title = BoardDisplayFormatting.choiceDisplayTitle(
                 for: choice,
                 in: projection,
                 ownerID: ownerID,
-                labelResolution: choiceLabelResolutions[choice.index]
+                labelResolution: choiceLabelResolutions[choice.index],
+                revealsHandCardFaces: revealsHandCardFaces
             )
             return BasicChoiceResolvedChoiceLabel(
                 title: title,
@@ -416,7 +447,8 @@ extension BasicChoicePromptPresentation {
         var resolution = semanticChoiceLabel(
             for: descriptor,
             in: projection,
-            labelResolution: choiceLabelResolutions[choice.index]
+            labelResolution: choiceLabelResolutions[choice.index],
+            revealsHandCardFaces: revealsHandCardFaces
         )
         if let cost = descriptor.cost, descriptor.kind != .costLabel {
             let costSummary = semanticCostSummary(cost, in: projection)
@@ -553,17 +585,20 @@ extension BasicChoicePromptPresentation {
     private func semanticChoiceLabel(
         for descriptor: QuestionPresentation.Choice,
         in projection: BoardProjection,
-        labelResolution: BasicChoiceLabelResolution?
+        labelResolution: BasicChoiceLabelResolution?,
+        revealsHandCardFaces: Bool
     ) -> BasicChoiceResolvedChoiceLabel {
         let title = semanticTitle(
             for: descriptor,
             in: projection,
-            labelResolution: labelResolution
+            labelResolution: labelResolution,
+            revealsHandCardFaces: revealsHandCardFaces
         )
         let subtitle = semanticSubtitle(
             for: descriptor,
             in: projection,
-            labelResolution: labelResolution
+            labelResolution: labelResolution,
+            revealsHandCardFaces: revealsHandCardFaces
         )
         let accessibilityLabel = subtitle.map { "\(title), \($0)" } ?? title
         return BasicChoiceResolvedChoiceLabel(
@@ -578,7 +613,8 @@ extension BasicChoicePromptPresentation {
     private func semanticTitle(
         for descriptor: QuestionPresentation.Choice,
         in projection: BoardProjection,
-        labelResolution: BasicChoiceLabelResolution?
+        labelResolution: BasicChoiceLabelResolution?,
+        revealsHandCardFaces: Bool
     ) -> String {
         switch descriptor.kind {
         case .advanceAct:
@@ -597,31 +633,39 @@ extension BasicChoicePromptPresentation {
                 value: "Apply results"
             )
         case .assignDamage:
-            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
-                .map {
-                    semanticLocalized(
-                        "semantic.choice.title.assignDamage",
-                        value: "Assign damage to \($0)",
-                        arguments: [$0]
-                    )
-                }
-                ?? semanticLocalized(
-                    "semantic.choice.title.assignDamage.generic",
-                    value: "Assign damage"
+            descriptor.entity.flatMap {
+                semanticEntityTitle(
+                    $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
                 )
+            }
+            .map {
+                semanticLocalized(
+                    "semantic.choice.title.assignDamage",
+                    value: "Assign damage to \($0)",
+                    arguments: [$0]
+                )
+            }
+            ?? semanticLocalized(
+                "semantic.choice.title.assignDamage.generic",
+                value: "Assign damage"
+            )
         case .assignHorror:
-            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
-                .map {
-                    semanticLocalized(
-                        "semantic.choice.title.assignHorror",
-                        value: "Assign horror to \($0)",
-                        arguments: [$0]
-                    )
-                }
-                ?? semanticLocalized(
-                    "semantic.choice.title.assignHorror.generic",
-                    value: "Assign horror"
+            descriptor.entity.flatMap {
+                semanticEntityTitle(
+                    $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
                 )
+            }
+            .map {
+                semanticLocalized(
+                    "semantic.choice.title.assignHorror",
+                    value: "Assign horror to \($0)",
+                    arguments: [$0]
+                )
+            }
+            ?? semanticLocalized(
+                "semantic.choice.title.assignHorror.generic",
+                value: "Assign horror"
+            )
         case .auto:
             semanticTitleFromLabel(
                 descriptor,
@@ -630,7 +674,11 @@ extension BasicChoicePromptPresentation {
             )
         case .auxiliaryComponentLabel, .componentLabel:
             semanticComponentTitle(descriptor.component, in: projection)
-                ?? descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
+                ?? descriptor.entity.flatMap {
+                    semanticEntityTitle(
+                        $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
+                    )
+                }
                 ?? semanticLocalized("semantic.choice.title.component", value: "Component")
         case .cardPile:
             descriptor.cards.map { cards in
@@ -645,25 +693,29 @@ extension BasicChoicePromptPresentation {
         case .chaosTokenLabel:
             descriptor.face ?? semanticLocalized("semantic.choice.title.chaosToken", value: "Chaos token")
         case .chooseTarget:
-            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
-                .map {
-                    semanticLocalized(
-                        "semantic.choice.title.chooseEntity",
-                        value: "Choose \($0)",
-                        arguments: [$0]
-                    )
-                }
-                ?? descriptor.label.flatMap { _ in
-                    semanticTitleFromLabel(
-                        descriptor,
-                        labelResolution: labelResolution,
-                        fallback: nil
-                    )
-                }
-                ?? semanticLocalized(
-                    "semantic.choice.title.chooseTarget",
-                    value: "Choose target"
+            descriptor.entity.flatMap {
+                semanticEntityTitle(
+                    $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
                 )
+            }
+            .map {
+                semanticLocalized(
+                    "semantic.choice.title.chooseEntity",
+                    value: "Choose \($0)",
+                    arguments: [$0]
+                )
+            }
+            ?? descriptor.label.flatMap { _ in
+                semanticTitleFromLabel(
+                    descriptor,
+                    labelResolution: labelResolution,
+                    fallback: nil
+                )
+            }
+            ?? semanticLocalized(
+                "semantic.choice.title.chooseTarget",
+                value: "Choose target"
+            )
         case .connectionLabel:
             descriptor.connection.map(semanticConnectionTitle)
                 ?? semanticLocalized("semantic.choice.title.connection", value: "Connection")
@@ -677,7 +729,11 @@ extension BasicChoicePromptPresentation {
             )
         case .effectActionButton:
             descriptor.tooltip.flatMap(semanticInlineLabel)
-                ?? descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
+                ?? descriptor.entity.flatMap {
+                    semanticEntityTitle(
+                        $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
+                    )
+                }
                 ?? semanticLocalized("semantic.choice.title.effect", value: "Effect")
         case .drawEncounterCard:
             semanticLocalized(
@@ -690,7 +746,11 @@ extension BasicChoicePromptPresentation {
                 value: "End turn"
             )
         case .engage:
-            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }.map {
+            descriptor.entity.flatMap {
+                semanticEntityTitle(
+                    $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
+                )
+            }.map {
                 semanticLocalized(
                     "semantic.choice.title.engageEntity",
                     value: "Engage \($0)",
@@ -701,7 +761,11 @@ extension BasicChoicePromptPresentation {
                 value: "Engage"
             )
         case .evade:
-            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }.map {
+            descriptor.entity.flatMap {
+                semanticEntityTitle(
+                    $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
+                )
+            }.map {
                 semanticLocalized(
                     "semantic.choice.title.evadeEntity",
                     value: "Evade \($0)",
@@ -712,7 +776,11 @@ extension BasicChoicePromptPresentation {
                 value: "Evade"
             )
         case .fight:
-            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }.map {
+            descriptor.entity.flatMap {
+                semanticEntityTitle(
+                    $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
+                )
+            }.map {
                 semanticLocalized(
                     "semantic.choice.title.fightEntity",
                     value: "Fight \($0)",
@@ -736,7 +804,11 @@ extension BasicChoicePromptPresentation {
                 fallback: semanticLocalized("semantic.choice.title.invalid", value: "Unavailable action")
             )
         case .investigate:
-            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }.map {
+            descriptor.entity.flatMap {
+                semanticEntityTitle(
+                    $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
+                )
+            }.map {
                 semanticLocalized(
                     "semantic.choice.title.investigateLocation",
                     value: "Investigate \($0)",
@@ -760,18 +832,22 @@ extension BasicChoicePromptPresentation {
                 )
             )
         case .move:
-            descriptor.entity.flatMap { semanticEntityTitle($0, in: projection) }
-                .map {
-                    semanticLocalized(
-                        "semantic.choice.title.move",
-                        value: "Move to \($0)",
-                        arguments: [$0]
-                    )
-                }
-                ?? semanticLocalized(
-                    "semantic.choice.title.move.generic",
-                    value: "Move"
+            descriptor.entity.flatMap {
+                semanticEntityTitle(
+                    $0, in: projection, revealsHandCardFaces: revealsHandCardFaces
                 )
+            }
+            .map {
+                semanticLocalized(
+                    "semantic.choice.title.move",
+                    value: "Move to \($0)",
+                    arguments: [$0]
+                )
+            }
+            ?? semanticLocalized(
+                "semantic.choice.title.move.generic",
+                value: "Move"
+            )
         case .resolveForcedAbility:
             semanticForcedAbilitySourceTitle(for: descriptor, in: projection)
                 .map {
@@ -852,7 +928,8 @@ extension BasicChoicePromptPresentation {
     private func semanticSubtitle(
         for descriptor: QuestionPresentation.Choice,
         in projection: BoardProjection,
-        labelResolution: BasicChoiceLabelResolution?
+        labelResolution: BasicChoiceLabelResolution?,
+        revealsHandCardFaces: Bool
     ) -> String? {
         if descriptor.kind == .info {
             return semanticInfoSubtitle(for: descriptor)
@@ -867,7 +944,8 @@ extension BasicChoicePromptPresentation {
             let title = semanticTitle(
                 for: descriptor,
                 in: projection,
-                labelResolution: labelResolution
+                labelResolution: labelResolution,
+                revealsHandCardFaces: revealsHandCardFaces
             )
             if tooltip != title {
                 return tooltip

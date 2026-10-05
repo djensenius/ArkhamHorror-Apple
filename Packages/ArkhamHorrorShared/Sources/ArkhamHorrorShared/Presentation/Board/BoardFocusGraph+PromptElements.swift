@@ -271,7 +271,7 @@ extension BoardFocusGraphBuilder {
         projection: BoardProjection,
         choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]],
         fullPlayerAreaPlayerID: PlayerID?,
-        isSolo: Bool = true
+        isSolo: Bool = false
     ) -> [SemanticFocusID] {
         projection.investigators.flatMap { investigator in
             var ids = [BoardFocusID.investigator(investigator.id)]

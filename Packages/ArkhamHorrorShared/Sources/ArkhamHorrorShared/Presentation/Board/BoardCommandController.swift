@@ -61,7 +61,7 @@ final class BoardCommandController {
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
         localPlayerID: PlayerID? = nil,
-        isSolo: Bool = true,
+        isSolo: Bool = false,
         cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
@@ -857,7 +857,7 @@ extension BoardCommandController {
         promptOwnerID: PlayerID?,
         localPlayerID: PlayerID?,
         activeInvestigatorPlayerID: PlayerID?,
-        isSolo: Bool = true
+        isSolo: Bool = false
     ) -> PlayerID? {
         isSolo ? (promptOwnerID ?? localPlayerID ?? activeInvestigatorPlayerID) : localPlayerID
     }

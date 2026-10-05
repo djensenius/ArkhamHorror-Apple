@@ -113,7 +113,7 @@ enum BoardFocusGraphBuilder {
         amountDraft: [String: Int] = [:],
         exchangeAmount: Int = 0,
         fullPlayerAreaPlayerID: PlayerID? = nil,
-        isSolo: Bool = true,
+        isSolo: Bool = false,
         linkedChoiceMenuRequest: BoardLinkedChoiceMenuRequest? = nil
     ) -> FocusGraph {
         var nodes: [FocusNode] = []

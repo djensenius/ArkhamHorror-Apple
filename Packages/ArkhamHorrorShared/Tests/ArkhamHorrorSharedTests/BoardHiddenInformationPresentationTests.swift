@@ -1,4 +1,5 @@
 @testable import ArkhamHorrorShared
+import Foundation
 import Testing
 
 @Suite("BoardProjection — hidden multiplayer information")
@@ -34,6 +35,11 @@ struct BoardHiddenInformationPresentationTests {
             fixture: fixture
         )
         assertOnlyCountsSurvive(projection: projection, other: other, fixture: fixture)
+        try assertPromptGuardHidesOtherPlayerHandCardTitle(
+            bytes: ContractJSON.encode(fixture.envelope),
+            fixture: fixture
+        )
+        assertLiveDefaultsDoNotRevealWithoutModeOptIn(other: other)
     }
 
     private func assertResolvedButHidden(
@@ -100,8 +106,68 @@ struct BoardHiddenInformationPresentationTests {
                 isSolo: false
             ).compactMap { $0.cardCode?.rawValue }
         #expect(!renderedPlayerCardCodes.contains("c01016"))
-        #expect(!renderedPlayerCardCodes.contains("c01998"))
-        #expect(!renderedPlayerCardCodes.contains("c01999"))
+        let allProjectedPlayerCards = projection.orderedHandCardsByPlayer.values.flatMap(\.self)
+            + projection.inPlayCardsByPlayer.values.flatMap(\.self)
+        let projectedCardCodes = Set(allProjectedPlayerCards.compactMap { $0.cardCode?.rawValue })
+        let projectedCardIDs = Set(allProjectedPlayerCards.compactMap { $0.cardID?.codingKey.stringValue })
+        #expect(!projectedCardCodes.contains("c01998"))
+        #expect(!projectedCardCodes.contains("c01999"))
+        #expect(!projectedCardIDs.contains(fixture.otherDeckTopID.codingKey.stringValue))
+        #expect(!projectedCardIDs.contains(fixture.otherDeckBottomID.codingKey.stringValue))
+    }
+
+    private func assertPromptGuardHidesOtherPlayerHandCardTitle(
+        bytes: Data,
+        fixture: MultiplayerHiddenFixture
+    ) throws {
+        #expect(bytes.range(of: Data("Forbidden Knowledge".utf8)) != nil)
+        let decoded = try ContractJSON.decode(GetGameEnvelope.self, from: bytes)
+        let projection = BoardProjectionBuilder.makeProjection(from: decoded.game)
+        let payload = try #require(decoded.game.question[fixture.otherPlayerID])
+        let prompt = BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: decoded.game.id,
+                ownerID: fixture.otherPlayerID,
+                questionVersion: decoded.game.scenarioSteps,
+                rawQuestion: payload.rawValue,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: payload.state,
+            readOnlyReason: .spectator,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+        let choice = try #require(prompt.choices.first)
+        let revealsFaces = prompt.revealsHandCardFaces(
+            in: projection,
+            localPlayerID: nil,
+            isSolo: false
+        )
+        #expect(!revealsFaces)
+        let resolved = prompt.resolvedChoiceLabel(
+            for: choice,
+            in: projection,
+            revealsHandCardFaces: revealsFaces
+        )
+        #expect(resolved.title == "Replace hidden card")
+        #expect(!resolved.title.contains("Forbidden Knowledge"))
+        #expect(resolved.systemImage == "rectangle.portrait")
+    }
+
+    private func assertLiveDefaultsDoNotRevealWithoutModeOptIn(
+        other: BoardInvestigatorNode
+    ) {
+        #expect(!BoardPlayerAreaVisibility.shouldShowFullArea(
+            for: other,
+            fullPlayerAreaPlayerID: nil
+        ))
+        #expect(BoardCommandController.fullPlayerAreaPlayerID(
+            promptOwnerID: other.playerID,
+            localPlayerID: nil,
+            activeInvestigatorPlayerID: other.playerID
+        ) == nil)
     }
 
     private func multiplayerFixture() throws -> MultiplayerHiddenFixture {
@@ -117,10 +183,15 @@ struct BoardHiddenInformationPresentationTests {
             otherInvestigatorID: otherInvestigatorID,
             cards: cards
         )
+        let game = try addChooseHandCardQuestion(
+            to: snapshot,
+            ownerID: otherPlayerID,
+            cardID: cards.otherCardID
+        )
         let envelope = GetGameEnvelope(
             playerID: localPlayerID,
             multiplayerMode: .withFriends,
-            game: snapshot,
+            game: game,
             eventID: nil
         )
         return MultiplayerHiddenFixture(
@@ -128,7 +199,9 @@ struct BoardHiddenInformationPresentationTests {
             localPlayerID: localPlayerID,
             otherPlayerID: otherPlayerID,
             localInvestigatorID: localInvestigatorID,
-            otherInvestigatorID: otherInvestigatorID
+            otherInvestigatorID: otherInvestigatorID,
+            otherDeckTopID: cards.otherDeckTopID,
+            otherDeckBottomID: cards.otherDeckBottomID
         )
     }
 
@@ -140,6 +213,8 @@ struct BoardHiddenInformationPresentationTests {
         return MultiplayerHiddenCards(
             localCardID: localCardID,
             otherCardID: otherCardID,
+            otherDeckTopID: otherDeckTopID,
+            otherDeckBottomID: otherDeckBottomID,
             localHand: playerCard(id: localCardID, code: "c01020", title: "Machete"),
             otherHand: playerCard(
                 id: otherCardID, code: "c01016", title: "Forbidden Knowledge"
@@ -181,9 +256,46 @@ struct BoardHiddenInformationPresentationTests {
             cardValues: [
                 cards.localCardID: cards.localHand,
                 cards.otherCardID: cards.otherHand,
+                cards.otherDeckTopID: cards.otherDeckTop,
+                cards.otherDeckBottomID: cards.otherDeckBottom,
             ],
             playerCount: 2
         )
+    }
+
+    private func addChooseHandCardQuestion(
+        to snapshot: PublicGameSnapshot,
+        ownerID: PlayerID,
+        cardID: WireCardID
+    ) throws -> PublicGameSnapshot {
+        var value = try ContractJSON.decode(JSONValue.self, from: ContractJSON.encode(snapshot))
+        guard case var .object(root) = value else { throw TestFailure() }
+        root["question"] = .object([
+            ownerID.rawValue.uuidString.lowercased(): chooseHandCardQuestion(cardID: cardID),
+        ])
+        value = .object(root)
+        return try ContractJSON.decode(PublicGameSnapshot.self, from: ContractJSON.encode(value))
+    }
+
+    private func chooseHandCardQuestion(cardID: WireCardID) -> JSONValue {
+        .object([
+            "tag": .string("ChooseOne"),
+            "choices": .array([
+                .object([
+                    "tag": .string("TargetLabel"),
+                    "target": .object([
+                        "tag": .string("CardIdTarget"),
+                        "contents": .string(cardID.codingKey.stringValue),
+                    ]),
+                    "messages": .array([.object(["tag": .string("NoOp")])]),
+                ]),
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string("$label.doneWithMulligan"),
+                    "messages": .array([.object(["tag": .string("NoOp")])]),
+                ]),
+            ]),
+        ])
     }
 
     private func playerCard(id: WireCardID, code: String, title: String) -> JSONValue {
@@ -204,11 +316,15 @@ private struct MultiplayerHiddenFixture {
     let otherPlayerID: PlayerID
     let localInvestigatorID: InvestigatorID
     let otherInvestigatorID: InvestigatorID
+    let otherDeckTopID: WireCardID
+    let otherDeckBottomID: WireCardID
 }
 
 private struct MultiplayerHiddenCards {
     let localCardID: WireCardID
     let otherCardID: WireCardID
+    let otherDeckTopID: WireCardID
+    let otherDeckBottomID: WireCardID
     let localHand: JSONValue
     let otherHand: JSONValue
     let otherDeckTop: JSONValue

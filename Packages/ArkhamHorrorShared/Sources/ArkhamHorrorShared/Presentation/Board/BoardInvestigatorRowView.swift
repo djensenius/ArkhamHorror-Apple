@@ -12,7 +12,7 @@ enum BoardPlayerAreaVisibility {
     static func shouldShowFullArea(
         for investigator: BoardInvestigatorNode,
         fullPlayerAreaPlayerID: PlayerID?,
-        isSolo: Bool = true
+        isSolo: Bool = false
     ) -> Bool {
         if let fullPlayerAreaPlayerID {
             return investigator.playerID == fullPlayerAreaPlayerID

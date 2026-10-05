@@ -2,7 +2,8 @@ extension BasicChoicePromptPresentation {
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     func semanticEntityTitle(
         _ entity: QuestionPresentation.Entity,
-        in projection: BoardProjection
+        in projection: BoardProjection,
+        revealsHandCardFaces: Bool = true
     ) -> String? {
         switch entity.kind {
         case .act:
@@ -22,7 +23,7 @@ extension BasicChoicePromptPresentation {
                 $0.id == .asset(id)
             }?.displayName
         case .card:
-            guard let id = semanticWireCardID(entity.id) else { return nil }
+            guard revealsHandCardFaces, let id = semanticWireCardID(entity.id) else { return nil }
             return projection.handCardsByPlayer[ownerID]?[id]?.displayLabel
                 ?? projection.handCardsByPlayer.values.compactMap { $0[id]?.displayLabel }.first
         case .cardCode:
