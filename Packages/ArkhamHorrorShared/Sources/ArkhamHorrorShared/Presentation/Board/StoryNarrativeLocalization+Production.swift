@@ -126,16 +126,15 @@ extension StoryNarrativeLocalization {
         guard wireLabel.hasPrefix("$") else { return .failure(.unsupportedEntry) }
         let key = String(wireLabel.dropFirst())
         // Vue I18n resolves `$t(pluralKey)` without an explicit count through the singular
-        // branch. The server emits choice labels such as `$label.sufferPhysicalTrauma` in
-        // that form, so production choice-label resolution supplies the same implicit
-        // singular selector while still failing closed for missing keys and unsafe output.
-        let variables = JSONValue.object(["count": .number(.unsignedInteger(1))])
+        // branch. Match that plural-branch selection without binding `count` as text, so
+        // any unbound placeholders in the selected output still fail closed.
         switch resolveKey(
             key,
-            variables: variables,
+            variables: .object([:]),
             resolver: resolver,
             catalogUnavailability: catalogUnavailability,
-            imageFallback: false
+            imageFallback: false,
+            usesImplicitSingularPlural: true
         ) {
         case let .failure(reason):
             return .failure(reason)
@@ -420,7 +419,8 @@ extension StoryNarrativeLocalization {
         variables: JSONValue,
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason,
-        imageFallback: Bool = true
+        imageFallback: Bool = true,
+        usesImplicitSingularPlural: Bool = false
     ) -> Result<LocaleCatalogRenderedNodes, StoryUnavailableReason> {
         guard let resolver else {
             if let chrome = chromeVocabulary[key] {
@@ -430,11 +430,17 @@ extension StoryNarrativeLocalization {
             }
             return .failure(catalogUnavailability)
         }
-        let rendered = imageFallback
-            ? resolver.renderAllowingImageFallback(key: key, variables: variables)
-            : resolver.render(key: key, variables: variables).map {
+        let rendered = if imageFallback {
+            resolver.renderAllowingImageFallback(key: key, variables: variables)
+        } else if usesImplicitSingularPlural {
+            resolver.renderUsingImplicitSingularPlural(key: key, variables: variables).map {
                 LocaleCatalogRenderedNodes(nodes: $0, degradedReason: nil)
             }
+        } else {
+            resolver.render(key: key, variables: variables).map {
+                LocaleCatalogRenderedNodes(nodes: $0, degradedReason: nil)
+            }
+        }
         if case .failure(.missingKey) = rendered, let chrome = chromeVocabulary[key] {
             return .success(LocaleCatalogRenderedNodes(nodes: [.text(chrome)], degradedReason: nil))
         }

@@ -207,6 +207,39 @@ struct LocaleCatalogResolverTests {
         ) == .success("Suffer physical trauma"))
     }
 
+    @Test("Production choice labels do not bind implicit count text")
+    func productionChoiceLabelsDoNotBindImplicitCountText() {
+        let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.takeDamage": message([
+                .text("Take "),
+                .variable(name: "count", source: .named, isIcon: false),
+                .text(" damage"),
+            ]),
+            "label.variableSingular": .plural(
+                cases: [
+                    [
+                        .text("Take "),
+                        .variable(name: "count", source: .named, isIcon: false),
+                        .text(" damage"),
+                    ],
+                    [.text("Other")],
+                ],
+                variables: [.init(name: "count", source: .named, role: .text)]
+            ),
+        ]))
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.takeDamage",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.missingVariable))
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.variableSingular",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.missingVariable))
+    }
+
     @Test("Fallback parent links retain their supplying locale instead of restarting at selection")
     func fallbackParentLinkKeepsParentLocale() {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(

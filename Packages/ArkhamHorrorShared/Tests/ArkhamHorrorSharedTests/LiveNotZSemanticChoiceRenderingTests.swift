@@ -72,13 +72,13 @@ struct LiveNotZSemanticChoiceRenderingTests {
     @Test("Unresolved captured catalog labels remain visible but not pressable")
     @MainActor
     func unresolvedCapturedCatalogLabelsRemainUnpressable() async throws {
-        let sample = try #require(
-            Self.renderingSamples().first { $0.kind == "localizedLabel" }
-        )
+        let sample = try Self.traumaSample()
         let prompt = try await Self.prompt(
             for: sample,
-            labelModel: Self.productionLabelModel(),
-            choiceLabelResolutions: [0: .unavailable(.catalog(.notAdvertised))]
+            labelModel: Self.productionLabelModel(
+                entryKeys: ["continue"],
+                chunkEntries: Self.productionContinueOnlyChunkEntries
+            )
         )
         let projection = try Self.capturedProjection()
         let choice = try #require(prompt.choices.first { $0.index == sample.source.choiceIndex })
@@ -88,7 +88,30 @@ struct LiveNotZSemanticChoiceRenderingTests {
         #expect(!prompt.isChoiceActionable(choice, in: projection))
         #expect(
             prompt.accessibilityHint(for: choice, in: projection)
-                == "The text for this choice is unavailable from this server."
+                == "This server publishes no usable text for this choice."
+        )
+    }
+
+    @Test("Captured catalog labels with unbound variables remain unpressable")
+    @MainActor
+    func capturedCatalogLabelsWithUnboundVariablesRemainUnpressable() async throws {
+        let sample = try Self.traumaSample()
+        let prompt = try await Self.prompt(
+            for: sample,
+            labelModel: Self.productionLabelModel(
+                entryKeys: ["continue", "label.sufferPhysicalTrauma"],
+                chunkEntries: Self.productionUnboundCountLabelChunkEntries
+            )
+        )
+        let projection = try Self.capturedProjection()
+        let choice = try #require(prompt.choices.first { $0.index == sample.source.choiceIndex })
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Choice 1")
+        #expect(!prompt.isChoiceActionable(choice, in: projection))
+        #expect(
+            prompt.choiceLabelResolutions[choice.index]
+                == BasicChoiceLabelResolution.unavailable(.missingVariable)
         )
     }
 
@@ -140,6 +163,12 @@ struct LiveNotZSemanticChoiceRenderingTests {
             contentsOf: url
         ))
         return fixture.samples
+    }
+
+    private static func traumaSample() throws -> RenderingSample {
+        try #require(renderingSamples().first {
+            $0.expectedTitle == "Suffer physical trauma"
+        })
     }
 
     private static func capturedProjection() throws -> BoardProjection {
@@ -202,13 +231,16 @@ struct LiveNotZSemanticChoiceRenderingTests {
     }
 
     @MainActor
-    private static func productionLabelModel() async throws -> AppModel {
+    private static func productionLabelModel(
+        entryKeys: [String] = [
+            "continue", "label.sufferPhysicalTrauma", "label.sufferMentalTrauma",
+        ],
+        chunkEntries: String = productionLabelChunkEntries
+    ) async throws -> AppModel {
         let documents = try SyntheticLocaleCatalogDocuments.make(
             pack: "label",
-            entryKeys: [
-                "continue", "label.sufferPhysicalTrauma", "label.sufferMentalTrauma",
-            ],
-            chunkEntries: productionLabelChunkEntries
+            entryKeys: entryKeys,
+            chunkEntries: chunkEntries
         )
         let model = AppModel(
             profileStore: FakeServerProfileStore(
@@ -256,6 +288,35 @@ struct LiveNotZSemanticChoiceRenderingTests {
             {"type":"var","name":"count","source":"named","role":"text"},
             {"type":"text","value":" mental trauma"}
           ]
+        ],
+        "variables":[{"name":"count","source":"named","role":"text"}]
+      }
+    }
+    """#
+
+    private static let productionContinueOnlyChunkEntries = #"""
+    {
+      "continue": {
+        "form":"message",
+        "nodes":[{"type":"text","value":"Continue"}],
+        "variables":[]
+      }
+    }
+    """#
+
+    private static let productionUnboundCountLabelChunkEntries = #"""
+    {
+      "continue": {
+        "form":"message",
+        "nodes":[{"type":"text","value":"Continue"}],
+        "variables":[]
+      },
+      "label.sufferPhysicalTrauma": {
+        "form":"message",
+        "nodes":[
+          {"type":"text","value":"Take "},
+          {"type":"var","name":"count","source":"named","role":"text"},
+          {"type":"text","value":" damage"}
         ],
         "variables":[{"name":"count","source":"named","role":"text"}]
       }
