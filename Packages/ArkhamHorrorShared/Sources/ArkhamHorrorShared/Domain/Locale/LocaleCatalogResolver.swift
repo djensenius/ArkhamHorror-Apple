@@ -44,6 +44,24 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             visiting: [],
             budget: &budget,
             imageFallback: false,
+            usesImplicitSingularPlural: false,
+            degradedReason: &degradedReason
+        )
+    }
+
+    func renderUsingImplicitSingularPlural(
+        key: String, variables: JSONValue
+    ) -> Result<[StoryNode], StoryUnavailableReason> {
+        var budget = LocaleCatalogLimits.maxRenderedNodes
+        var degradedReason: StoryUnavailableReason?
+        return render(
+            key: key,
+            startingLocale: snapshot.identity.locale,
+            variables: variables,
+            visiting: [],
+            budget: &budget,
+            imageFallback: false,
+            usesImplicitSingularPlural: true,
             degradedReason: &degradedReason
         )
     }
@@ -60,6 +78,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             visiting: [],
             budget: &budget,
             imageFallback: true,
+            usesImplicitSingularPlural: false,
             degradedReason: &degradedReason
         ).map { LocaleCatalogRenderedNodes(nodes: $0, degradedReason: degradedReason) }
     }
@@ -72,6 +91,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         visiting: Set<LocaleCatalogResolutionKey>,
         budget: inout Int,
         imageFallback: Bool,
+        usesImplicitSingularPlural: Bool,
         degradedReason: inout StoryUnavailableReason?
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         guard visiting.count < LocaleCatalogLimits.maxLinkDepth else {
@@ -89,9 +109,19 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         case let .message(messageNodes, _):
             nodes = messageNodes
         case let .plural(cases, _):
-            switch LocaleCatalogPluralRules.select(
-                variables: variables, caseCount: cases.count, locale: located.locale
-            ) {
+            let usesImplicitSingular = usesImplicitSingularPlural
+                && Self.lacksPluralSelector(variables)
+            let selection = if usesImplicitSingular {
+                LocaleCatalogPluralRules.selectImplicitSingular(
+                    caseCount: cases.count,
+                    locale: located.locale
+                )
+            } else {
+                LocaleCatalogPluralRules.select(
+                    variables: variables, caseCount: cases.count, locale: located.locale
+                )
+            }
+            switch selection {
             case let .success(index):
                 guard cases.indices.contains(index) else {
                     return .failure(.unsupportedEntry)
@@ -114,6 +144,11 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             imageFallback: imageFallback,
             degradedReason: &degradedReason
         )
+    }
+
+    private static func lacksPluralSelector(_ variables: JSONValue) -> Bool {
+        guard case let .object(named) = variables else { return false }
+        return named["count"] == nil && named["n"] == nil
     }
 
     /// Looks up `key` from the locale that supplied its parent entry, not from the snapshot's
@@ -462,6 +497,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             visiting: visiting,
             budget: &budget,
             imageFallback: imageFallback,
+            usesImplicitSingularPlural: false,
             degradedReason: &degradedReason
         )
         guard let modifier else { return rendered }
