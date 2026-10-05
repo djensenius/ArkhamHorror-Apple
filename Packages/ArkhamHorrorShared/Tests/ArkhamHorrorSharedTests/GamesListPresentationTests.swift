@@ -17,13 +17,14 @@ import Testing
 @Suite("Games list/lobby presentation")
 struct GamesListPresentationTests {
     private func sampleGame(
+        id: GameID = GameID(UUID()),
         gameState: GameState = .active,
         investigators: [InvestigatorSummary] = [],
         multiplayerVariant: MultiplayerVariant = .solo,
         hasOpenSeats: Bool = false
     ) -> GameSummary {
         GameSummary(
-            id: GameID(UUID()), scenario: nil, campaign: nil, gameState: gameState,
+            id: id, scenario: nil, campaign: nil, gameState: gameState,
             name: "Sample", investigators: investigators, otherInvestigators: [],
             multiplayerVariant: multiplayerVariant, hasOpenSeats: hasOpenSeats
         )
@@ -247,5 +248,104 @@ struct GamesListPresentationTests {
             AccountAccessibilityID.liveGameEnterButton(for: first)
                 != AccountAccessibilityID.liveGameEnterButton(for: second)
         )
+    }
+}
+
+extension GamesListPresentationTests {
+    @Test("Delete failures produce row-local server message presentation")
+    func deleteFailurePresentationUsesServerMessageVerbatim() async throws {
+        let game = sampleGame()
+        let serverMessage = "Delete is disabled while this game is being updated."
+        let model = await model(gameListState: .loaded([.game(game)]))
+        model.gameLifecycleActionFailures[game.id] = GameLifecycleActionFailure(
+            action: .deleting,
+            error: .operationFailed(DeckOperationError(errorMsg: serverMessage))
+        )
+        let view = GamesListView(model: model)
+
+        let presentation = try #require(view.deleteFailurePresentation(for: game.id))
+        #expect(presentation.message == serverMessage)
+        #expect(
+            presentation.accessibilityIdentifier
+                == AccountAccessibilityID.gameActionFailureText(for: game.id.rawValue)
+        )
+        #expect(presentation.accessibilityLabel.contains(serverMessage))
+        _ = GameRowView(game: game, actionFailure: presentation).body
+    }
+
+    @Test("Only delete failures produce games-list row failure presentation")
+    func rowFailurePresentationIsScopedToDeleteFailures() async {
+        let game = sampleGame()
+        let model = await model(gameListState: .loaded([.game(game)]))
+        model.gameLifecycleActionFailures[game.id] = GameLifecycleActionFailure(
+            action: .joining,
+            error: .unexpectedStatus(409)
+        )
+        let view = GamesListView(model: model)
+
+        #expect(view.deleteFailurePresentation(for: game.id) == nil)
+    }
+
+    @Test("reconcileOpenGameSurfaces clears lobby sheet and live route after definite absence")
+    func reconcileOpenGameSurfacesClosesAbsentGame() {
+        let missingGameID = GameID(UUID())
+        let remainingGameID = GameID(UUID())
+        let games: GameList = [.game(sampleGame(id: remainingGameID))]
+        var presentedGameID: GameID? = missingGameID
+        var liveGamePath = [remainingGameID, missingGameID]
+
+        OpenGameSurfaceReconciler.reconcile(
+            presentedGameID: &presentedGameID,
+            liveGamePath: &liveGamePath,
+            games: games,
+            confirmedDeletedGameIDs: []
+        )
+
+        #expect(presentedGameID == nil)
+        #expect(liveGamePath == [remainingGameID])
+    }
+
+    @Test("reconcileOpenGameSurfaces keeps routes when absence is ambiguous")
+    func reconcileOpenGameSurfacesKeepsAmbiguousMissingGame() {
+        let missingGameID = GameID(UUID())
+        let remainingGameID = GameID(UUID())
+        let games: GameList = [
+            .game(sampleGame(id: remainingGameID)),
+            .failed(FailedGameEntry(error: "Could not decode a game.")),
+        ]
+        var presentedGameID: GameID? = missingGameID
+        var liveGamePath = [missingGameID]
+
+        OpenGameSurfaceReconciler.reconcile(
+            presentedGameID: &presentedGameID,
+            liveGamePath: &liveGamePath,
+            games: games,
+            confirmedDeletedGameIDs: []
+        )
+
+        #expect(presentedGameID == missingGameID)
+        #expect(liveGamePath == [missingGameID])
+    }
+
+    @Test("reconcileOpenGameSurfaces closes confirmed deletes even with failed list entries")
+    func reconcileOpenGameSurfacesClosesConfirmedDeleteWithFailedEntries() {
+        let deletedGameID = GameID(UUID())
+        let remainingGameID = GameID(UUID())
+        let games: GameList = [
+            .game(sampleGame(id: remainingGameID)),
+            .failed(FailedGameEntry(error: "Could not decode a game.")),
+        ]
+        var presentedGameID: GameID? = deletedGameID
+        var liveGamePath = [remainingGameID, deletedGameID]
+
+        OpenGameSurfaceReconciler.reconcile(
+            presentedGameID: &presentedGameID,
+            liveGamePath: &liveGamePath,
+            games: games,
+            confirmedDeletedGameIDs: [deletedGameID]
+        )
+
+        #expect(presentedGameID == nil)
+        #expect(liveGamePath == [remainingGameID])
     }
 }

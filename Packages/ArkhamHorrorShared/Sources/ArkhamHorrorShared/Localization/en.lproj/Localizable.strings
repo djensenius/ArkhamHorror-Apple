@@ -213,6 +213,7 @@
 "games.delete.action.accessibilityHint" = "Asks for confirmation before deleting this game.";
 "games.delete.action.accessibilityLabel" = "Delete game";
 "games.delete.confirmation.title" = "Are you sure you want to delete this game?";
+"games.delete.failure.accessibilityLabel" = "Delete failed: %@";
 "games.joinInvite.title" = "Join Game";
 "games.joinInvite.section" = "Invite";
 "games.joinInvite.placeholder" = "https://arkhamhorror.app/games/.../join";

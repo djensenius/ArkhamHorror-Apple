@@ -52,6 +52,7 @@ struct AppModelGameLifecycleActionTests {
 
         #expect(await service.lastDeletedGameID == gameID)
         #expect(model.gameLifecycleActions[gameID] == nil)
+        #expect(model.confirmedDeletedGameIDs.contains(gameID))
         #expect(model.gameListState == .loaded([]))
     }
 

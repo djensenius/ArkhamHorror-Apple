@@ -18,10 +18,33 @@ extension GamesListView {
 
     func reconcileOpenGameSurfaces() {
         guard case let .loaded(games) = model.gameListState else { return }
-        if let presentedGameID, !games.containsGame(presentedGameID) {
-            self.presentedGameID = nil
-        }
-        liveGamePath.removeAll { !games.containsGame($0) }
+        let reconciled = OpenGameSurfaceReconciler.reconciled(
+            presentedGameID: presentedGameID,
+            liveGamePath: liveGamePath,
+            games: games,
+            confirmedDeletedGameIDs: model.confirmedDeletedGameIDs
+        )
+        presentedGameID = reconciled.presentedGameID
+        liveGamePath = reconciled.liveGamePath
+    }
+
+    func deleteFailurePresentation(for gameID: GameID) -> GameRowActionFailurePresentation? {
+        guard
+            let failure = model.gameLifecycleActionFailures[gameID],
+            failure.action == .deleting
+        else { return nil }
+        let message = failure.error.message
+        return GameRowActionFailurePresentation(
+            message: message,
+            accessibilityLabel: gameLifecycleLocalizedFormat(
+                "games.delete.failure.accessibilityLabel",
+                "Delete failed: %@",
+                message
+            ),
+            accessibilityIdentifier: AccountAccessibilityID.gameActionFailureText(
+                for: gameID.rawValue
+            )
+        )
     }
 
     @ViewBuilder
@@ -34,15 +57,16 @@ extension GamesListView {
             // triggering delete then would silently supersede and cancel that other
             // action rather than confirming an explicit, intentional delete.
             let actionInFlight = model.gameLifecycleActions[summary.id] != nil
+            let deleteFailure = deleteFailurePresentation(for: summary.id)
             // `rowButton(for:)` already applies `liveGameEnterButton` to live-board
             // navigation rows; a later `.accessibilityIdentifier` on the same node
             // would silently override it, making that identifier unreachable, so only
             // lobby-sheet button rows are stamped with `gameRow` here.
             Group {
                 if summary.gameState.opensLiveGameView {
-                    rowButton(for: summary)
+                    rowButton(for: summary, actionFailure: deleteFailure)
                 } else {
-                    rowButton(for: summary)
+                    rowButton(for: summary, actionFailure: deleteFailure)
                         .accessibilityIdentifier(
                             AccountAccessibilityID.gameRow(for: summary.id.rawValue)
                         )
@@ -92,10 +116,13 @@ extension GamesListView {
     /// opening the lobby sheet so join/open-seat/deck-upgrade actions remain reachable;
     /// that sheet offers its own Enter Game link when a live deck prompt is needed.
     @ViewBuilder
-    private func rowButton(for summary: GameSummary) -> some View {
+    private func rowButton(
+        for summary: GameSummary,
+        actionFailure: GameRowActionFailurePresentation?
+    ) -> some View {
         if summary.gameState.opensLiveGameView {
             NavigationLink(value: summary.id) {
-                GameRowView(game: summary)
+                GameRowView(game: summary, actionFailure: actionFailure)
             }
             .accessibilityIdentifier(
                 AccountAccessibilityID.liveGameEnterButton(for: summary.id.rawValue)
@@ -104,15 +131,77 @@ extension GamesListView {
             Button {
                 presentedGameID = summary.id
             } label: {
-                GameRowView(game: summary)
+                GameRowView(game: summary, actionFailure: actionFailure)
             }
         }
+    }
+}
+
+struct OpenGameSurfaceReconciliation: Equatable {
+    let presentedGameID: GameID?
+    let liveGamePath: [GameID]
+}
+
+enum OpenGameSurfaceReconciler {
+    static func reconciled(
+        presentedGameID: GameID?,
+        liveGamePath: [GameID],
+        games: GameList,
+        confirmedDeletedGameIDs: Set<GameID>
+    ) -> OpenGameSurfaceReconciliation {
+        let shouldClosePresentedGame = presentedGameID.map {
+            shouldClose($0, in: games, confirmedDeletedGameIDs: confirmedDeletedGameIDs)
+        } ?? false
+        let reconciledPresentedGameID: GameID? = shouldClosePresentedGame ? nil : presentedGameID
+        let reconciledLiveGamePath = liveGamePath.filter {
+            !shouldClose($0, in: games, confirmedDeletedGameIDs: confirmedDeletedGameIDs)
+        }
+        return OpenGameSurfaceReconciliation(
+            presentedGameID: reconciledPresentedGameID,
+            liveGamePath: reconciledLiveGamePath
+        )
+    }
+
+    static func reconcile(
+        presentedGameID: inout GameID?,
+        liveGamePath: inout [GameID],
+        games: GameList,
+        confirmedDeletedGameIDs: Set<GameID>
+    ) {
+        let result = reconciled(
+            presentedGameID: presentedGameID,
+            liveGamePath: liveGamePath,
+            games: games,
+            confirmedDeletedGameIDs: confirmedDeletedGameIDs
+        )
+        presentedGameID = result.presentedGameID
+        liveGamePath = result.liveGamePath
+    }
+
+    private static func shouldClose(
+        _ gameID: GameID,
+        in games: GameList,
+        confirmedDeletedGameIDs: Set<GameID>
+    ) -> Bool {
+        guard !games.containsGame(gameID) else { return false }
+        return confirmedDeletedGameIDs.contains(gameID) || games.hasNoFailedEntries
     }
 }
 
 private extension [GameListEntry] {
     func containsGame(_ id: GameID) -> Bool {
         contains { $0.gameID == id }
+    }
+
+    var hasNoFailedEntries: Bool {
+        !contains { entry in
+            switch entry {
+            case .failed:
+                true
+            case .game:
+                false
+            }
+        }
     }
 }
 

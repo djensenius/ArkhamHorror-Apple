@@ -213,6 +213,7 @@
 "games.delete.action.accessibilityHint" = "Fragt vor dem Löschen dieses Spiels nach einer Bestätigung.";
 "games.delete.action.accessibilityLabel" = "Spiel löschen";
 "games.delete.confirmation.title" = "Möchtest du dieses Spiel wirklich löschen?";
+"games.delete.failure.accessibilityLabel" = "Löschen fehlgeschlagen: %@";
 "games.joinInvite.title" = "Spiel beitreten";
 "games.joinInvite.section" = "Einladung";
 "games.joinInvite.placeholder" = "https://arkhamhorror.app/games/.../join";

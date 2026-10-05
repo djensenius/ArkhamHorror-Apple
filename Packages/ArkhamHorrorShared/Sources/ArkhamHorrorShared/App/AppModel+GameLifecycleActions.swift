@@ -192,6 +192,7 @@ extension AppModel {
         await performGameAction(id, kind: .deleting, attempt: attempt) {
             try await self.gameLifecycleService.deleteGame(id, on: attempt.profile, token: token)
         } onSuccess: {
+            self.confirmedDeletedGameIDs.insert(id)
             self.refreshGames()
         }
     }
