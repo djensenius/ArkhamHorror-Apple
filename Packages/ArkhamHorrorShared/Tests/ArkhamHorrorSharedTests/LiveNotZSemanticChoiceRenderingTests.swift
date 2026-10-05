@@ -5,7 +5,8 @@ import Testing
 @Suite("Live NotZ semantic choice rendering")
 struct LiveNotZSemanticChoiceRenderingTests {
     @Test("Captured semantic choices render through the prompt presentation path")
-    func capturedSemanticChoicesRenderThroughPromptPresentationPath() throws {
+    @MainActor
+    func capturedSemanticChoicesRenderThroughPromptPresentationPath() async throws {
         let samples = try Self.renderingSamples()
         #expect(Set(samples.map(\.kind)) == [
             "advanceAgenda",
@@ -19,17 +20,20 @@ struct LiveNotZSemanticChoiceRenderingTests {
             "useAbility",
         ])
         let projection = try Self.capturedProjection()
+        let labelModel = try await Self.productionLabelModel()
 
         for sample in samples {
-            try Self.assertSampleRenders(sample, projection: projection)
+            try Self.assertSampleRenders(sample, projection: projection, labelModel: labelModel)
         }
     }
 
+    @MainActor
     private static func assertSampleRenders(
         _ sample: RenderingSample,
-        projection: BoardProjection
+        projection: BoardProjection,
+        labelModel: AppModel
     ) throws {
-        let prompt = try Self.prompt(for: sample)
+        let prompt = try Self.prompt(for: sample, labelModel: labelModel)
         let choice = try #require(
             prompt.choices.first { $0.index == sample.source.choiceIndex },
             "\(sample.kind) captured choice is present"
@@ -45,12 +49,6 @@ struct LiveNotZSemanticChoiceRenderingTests {
         #expect(
             prompt.isChoiceActionable(choice, in: projection),
             "\(sample.kind) captured choice is actionable"
-        )
-        #expect(
-            choice.title == "Update required",
-            Comment(rawValue:
-                "\(sample.kind) preserves the legacy raw-choice diagnostic that caused the "
-                    + "round-3 harness misclassification")
         )
         #expect(
             resolved.title == sample.expectedTitle,
@@ -72,12 +70,14 @@ struct LiveNotZSemanticChoiceRenderingTests {
     }
 
     @Test("Unresolved captured catalog labels remain visible but not pressable")
-    func unresolvedCapturedCatalogLabelsRemainUnpressable() throws {
+    @MainActor
+    func unresolvedCapturedCatalogLabelsRemainUnpressable() async throws {
         let sample = try #require(
             Self.renderingSamples().first { $0.kind == "localizedLabel" }
         )
-        let prompt = try Self.prompt(
+        let prompt = try await Self.prompt(
             for: sample,
+            labelModel: Self.productionLabelModel(),
             choiceLabelResolutions: [0: .unavailable(.catalog(.notAdvertised))]
         )
         let projection = try Self.capturedProjection()
@@ -92,8 +92,10 @@ struct LiveNotZSemanticChoiceRenderingTests {
         )
     }
 
+    @MainActor
     private static func prompt(
         for sample: RenderingSample,
+        labelModel: AppModel,
         choiceLabelResolutions overrideResolutions: [Int: BasicChoiceLabelResolution]? = nil
     ) throws -> BasicChoicePromptPresentation {
         let bound = try sample.questionPresentation.bind(
@@ -101,6 +103,11 @@ struct LiveNotZSemanticChoiceRenderingTests {
             expectedQuestionVersion: sample.source.questionVersion
         )
         let cardCatalog = try capturedCardCatalog()
+        let question = BasicChoiceParser.parseQuestion(sample.rawQuestion)
+        let labelResolutions = overrideResolutions ?? labelModel.choiceLabelResolutions(
+            for: question.supportedQuestion,
+            semanticPresentation: bound
+        )
         return BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
                 gameID: BoardTestFixtures.gameID(),
@@ -111,11 +118,11 @@ struct LiveNotZSemanticChoiceRenderingTests {
                 sessionAttemptID: nil,
                 connectionID: nil
             ),
-            question: BasicChoiceParser.parseQuestion(sample.rawQuestion),
+            question: question,
             semanticPresentation: bound,
             semanticLocaleIdentifier: "en",
             cardCatalog: cardCatalog,
-            choiceLabelResolutions: overrideResolutions ?? sample.choiceLabelResolutions,
+            choiceLabelResolutions: labelResolutions,
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
@@ -139,6 +146,16 @@ struct LiveNotZSemanticChoiceRenderingTests {
         let agnesID = BoardTestFixtures.investigatorID("c01004")
         let wendyID = BoardTestFixtures.investigatorID("c01005")
         let locationID = try semanticLocationID("01581c53-86ca-4a88-a192-ab1a2d2775e0")
+        let agnesPlayerID = BoardTestFixtures.playerID("000000000001")
+        let heirloomUUID = try #require(UUID(
+            uuidString: "22816a3f-6d54-4e49-bee9-a7c3a99e03e9"
+        ))
+        let heirloomID = WireCardID(heirloomUUID)
+        let heirloom = playerCard(
+            id: heirloomID,
+            code: "c01012",
+            title: "Card c01012"
+        )
         return BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             locations: [(
                 locationID,
@@ -151,7 +168,8 @@ struct LiveNotZSemanticChoiceRenderingTests {
                 agnesID: BoardTestFixtures.investigator(
                     id: agnesID,
                     name: CardName(title: "Captured investigator", subtitle: nil),
-                    playerID: BoardTestFixtures.playerID("000000000001")
+                    hand: [heirloom],
+                    playerID: agnesPlayerID
                 ),
                 wendyID: BoardTestFixtures.investigator(
                     id: wendyID,
@@ -159,15 +177,75 @@ struct LiveNotZSemanticChoiceRenderingTests {
                     playerID: BoardTestFixtures.playerID("000000000002")
                 ),
             ],
-            playerOrder: [agnesID, wendyID]
+            playerOrder: [agnesID, wendyID],
+            cardValues: [heirloomID: heirloom]
         ))
+    }
+
+    private static func playerCard(id: WireCardID, code: String, title: String) -> JSONValue {
+        .object([
+            "tag": .string("PlayerCard"),
+            "contents": .object([
+                "id": .string(id.codingKey.stringValue),
+                "cardCode": .string(code),
+                "name": .object(["title": .string(title)]),
+            ]),
+        ])
     }
 
     private static func capturedCardCatalog() throws -> CardCatalogSnapshot {
         try CardCatalogSnapshot(namesByCode: [
+            CardCode("c01012"): CardName(title: "Heirloom of Hyperborea", subtitle: nil),
             CardCode("c01013"): CardName(title: "Captured ability card", subtitle: nil),
             CardCode("c01164"): CardName(title: "Captured treachery", subtitle: nil),
         ])
+    }
+
+    @MainActor
+    private static func productionLabelModel() async throws -> AppModel {
+        let documents = try SyntheticLocaleCatalogDocuments.make(
+            pack: "label",
+            entryKeys: [
+                "continue", "label.sufferPhysicalTrauma", "label.sufferMentalTrauma",
+            ],
+            chunkEntries: #"""
+            {
+              "continue": {"form":"message","nodes":[{"type":"text","value":"Continue"}],"variables":[]},
+              "label.sufferPhysicalTrauma": {
+                "form":"plural",
+                "cases":[
+                  [{"type":"text","value":"Suffer physical trauma"}],
+                  [{"type":"text","value":"Suffer "},{"type":"var","name":"count","source":"named","role":"text"},{"type":"text","value":" physical trauma"}]
+                ],
+                "variables":[{"name":"count","source":"named","role":"text"}]
+              },
+              "label.sufferMentalTrauma": {
+                "form":"plural",
+                "cases":[
+                  [{"type":"text","value":"Suffer mental trauma"}],
+                  [{"type":"text","value":"Suffer "},{"type":"var","name":"count","source":"named","role":"text"},{"type":"text","value":" mental trauma"}]
+                ],
+                "variables":[{"name":"count","source":"named","role":"text"}]
+              }
+            }
+            """#
+        )
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(
+                profiles: [documents.profile], selectedID: documents.profile.id
+            ),
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        )
+        await model.flowTask?.value
+        model.localeCatalog = try await documents.loadSnapshot()
+        model.localeCatalogRequest = LocaleCatalogRequest(
+            profileID: model.selectedProfile.id,
+            advertisement: documents.advertisement
+        )
+        return model
     }
 
     private static func semanticLocationID(_ raw: String) throws -> LocationID {
@@ -199,13 +277,6 @@ private struct RenderingSample: Decodable, Sendable {
         case "useAbility": "bolt.circle.fill"
         default: "questionmark.square.dashed"
         }
-    }
-
-    var choiceLabelResolutions: [Int: BasicChoiceLabelResolution] {
-        Dictionary(uniqueKeysWithValues: questionPresentation.choices.compactMap { choice in
-            guard choice.label?.text == "$continue" else { return nil }
-            return (choice.sourceIndex, .resolved("Continue"))
-        })
     }
 }
 

@@ -184,6 +184,29 @@ struct LocaleCatalogResolverTests {
         ) == .failure(.catalog(.manifestDigestMismatch)))
     }
 
+    @Test("Production choice labels resolve plural catalog entries as singular labels")
+    func productionChoiceLabelsResolvePluralSingular() {
+        let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.sufferPhysicalTrauma": .plural(
+                cases: [
+                    [.text("Suffer physical trauma")],
+                    [
+                        .text("Suffer "),
+                        .variable(name: "count", source: .named, isIcon: false),
+                        .text(" physical trauma"),
+                    ],
+                ],
+                variables: [.init(name: "count", source: .named, role: .text)]
+            ),
+        ]))
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.sufferPhysicalTrauma",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .success("Suffer physical trauma"))
+    }
+
     @Test("Fallback parent links retain their supplying locale instead of restarting at selection")
     func fallbackParentLinkKeepsParentLocale() {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(

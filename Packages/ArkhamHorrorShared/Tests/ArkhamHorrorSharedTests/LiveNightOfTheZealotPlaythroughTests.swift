@@ -78,6 +78,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
             )
             try await prepareSignedInSession(model: model, investigator: investigator)
             try await waitForLocaleCatalogIfAdvertised(model)
+            try await loadCardCatalog(model)
 
             guard case let .signedIn(signedInProfile, _, _) = model.sessionState else {
                 throw PlaythroughError.notSignedIn(String(describing: model.sessionState))
@@ -193,6 +194,16 @@ struct LiveNightOfTheZealotPlaythroughTests {
         guard model.localeCatalogRequest != nil || model.isLocaleCatalogLoading else { return }
         try await waitUntil(timeout: 30, description: "locale catalog loads or fails") {
             !model.isLocaleCatalogLoading
+        }
+    }
+
+    private func loadCardCatalog(_ model: AppModel) async throws {
+        model.loadCardCatalogIfNeeded()
+        try await waitUntil(timeout: 60, description: "card catalog loads or fails") {
+            !model.isCardCatalogLoading
+        }
+        if let failure = model.cardCatalogFailure {
+            throw PlaythroughError.submissionFailed("card catalog failed: \(failure)")
         }
     }
 

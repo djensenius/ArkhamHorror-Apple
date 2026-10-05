@@ -124,17 +124,27 @@ extension StoryNarrativeLocalization {
         catalogUnavailability: StoryUnavailableReason
     ) -> Result<String, StoryUnavailableReason> {
         guard wireLabel.hasPrefix("$") else { return .failure(.unsupportedEntry) }
-        switch resolveProductionTitle(
-            wireLabel,
+        let key = String(wireLabel.dropFirst())
+        // Vue I18n resolves `$t(pluralKey)` without an explicit count through the singular
+        // branch. The server emits choice labels such as `$label.sufferPhysicalTrauma` in
+        // that form, so production choice-label resolution supplies the same implicit
+        // singular selector while still failing closed for missing keys and unsafe output.
+        let variables = JSONValue.object(["count": .number(.unsignedInteger(1))])
+        switch resolveKey(
+            key,
+            variables: variables,
             resolver: resolver,
             catalogUnavailability: catalogUnavailability,
-            fallsBackToServerKey: false
+            imageFallback: false
         ) {
         case let .failure(reason):
             return .failure(reason)
-        case let .success(label):
-            guard let label else { return .failure(.unsupportedEntry) }
-            let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        case let .success(rendered):
+            guard !rendered.nodes.contains(where: \.losesInstructionWhenFlattened) else {
+                return .failure(.unsupportedEntry)
+            }
+            let trimmed = rendered.nodes.map(\.plainText).joined()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
             return .success(trimmed)
         }

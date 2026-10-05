@@ -2860,6 +2860,415 @@
         "scenario": "c01142",
         "traceLine": 117
       }
+    },
+    {
+      "expectedTitle": "Suffer physical trauma",
+      "kind": "localizedLabel",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 2,
+        "choices": [
+          {
+            "kind": "localizedLabel",
+            "label": {
+              "kind": "embeddedI18n",
+              "text": "$label.sufferPhysicalTrauma"
+            },
+            "selectable": true,
+            "sourceIndex": 0
+          },
+          {
+            "kind": "localizedLabel",
+            "label": {
+              "kind": "embeddedI18n",
+              "text": "$label.sufferMentalTrauma"
+            },
+            "selectable": true,
+            "sourceIndex": 1
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "chooseOne",
+        "questionVersion": 60
+      },
+      "rawQuestion": {
+        "choices": [
+          {
+            "label": "$label.sufferPhysicalTrauma",
+            "messages": [
+              {
+                "contents": [
+                  "c01001",
+                  1,
+                  0
+                ],
+                "tag": "SufferTrauma"
+              }
+            ],
+            "tag": "Label"
+          },
+          {
+            "label": "$label.sufferMentalTrauma",
+            "messages": [
+              {
+                "contents": [
+                  "c01001",
+                  0,
+                  1
+                ],
+                "tag": "SufferTrauma"
+              }
+            ],
+            "tag": "Label"
+          }
+        ],
+        "tag": "ChooseOne"
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "roland-banks",
+        "questionVersion": 60,
+        "rawQuestionTag": "ChooseOne",
+        "scenario": "c01120",
+        "traceLine": 322
+      }
+    },
+    {
+      "expectedTitle": "Choose Heirloom of Hyperborea",
+      "kind": "chooseTarget",
+      "questionPresentation": {
+        "answer": {
+          "kind": "singleChoice",
+          "tag": "Answer"
+        },
+        "choiceCount": 6,
+        "choices": [
+          {
+            "entity": {
+              "id": "22816a3f-6d54-4e49-bee9-a7c3a99e03e9",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 0
+          },
+          {
+            "entity": {
+              "id": "399714a6-dece-4523-8487-6024425d221f",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 1
+          },
+          {
+            "entity": {
+              "id": "afecf9b3-170c-4a5d-ae07-8a41db158868",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 2
+          },
+          {
+            "entity": {
+              "id": "ecbeafa0-dbde-4d1d-99e4-bd05ebe7d6bb",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 3
+          },
+          {
+            "entity": {
+              "id": "1f678bd1-3612-4b50-ab1d-e312c1e34ce7",
+              "kind": "card"
+            },
+            "kind": "chooseTarget",
+            "selectable": true,
+            "sourceIndex": 4
+          },
+          {
+            "actorId": "c01004",
+            "kind": "startSkillTest",
+            "selectable": true,
+            "sourceIndex": 5
+          }
+        ],
+        "protocolVersion": 2,
+        "questionKind": "chooseOne",
+        "questionVersion": 786
+      },
+      "rawQuestion": {
+        "choices": [
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01012",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "22816a3f-6d54-4e49-bee9-a7c3a99e03e9",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01012",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestCommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "22816a3f-6d54-4e49-bee9-a7c3a99e03e9",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01089",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "399714a6-dece-4523-8487-6024425d221f",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01089",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestCommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "399714a6-dece-4523-8487-6024425d221f",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01063",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "afecf9b3-170c-4a5d-ae07-8a41db158868",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01063",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestUncommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "afecf9b3-170c-4a5d-ae07-8a41db158868",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01064",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "ecbeafa0-dbde-4d1d-99e4-bd05ebe7d6bb",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01064",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestUncommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "ecbeafa0-dbde-4d1d-99e4-bd05ebe7d6bb",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "messages": [
+              {
+                "contents": {
+                  "contents": [
+                    "c01004",
+                    {
+                      "contents": {
+                        "cardCode": "c01093",
+                        "chained": null,
+                        "customizations": [],
+                        "errata": null,
+                        "facedown": null,
+                        "id": "1f678bd1-3612-4b50-ab1d-e312c1e34ce7",
+                        "meta": null,
+                        "mutated": null,
+                        "originalCardCode": "c01093",
+                        "owner": "c01004",
+                        "tabooList": null
+                      },
+                      "tag": "PlayerCard"
+                    }
+                  ],
+                  "tag": "SkillTestUncommitCard_"
+                },
+                "tag": "SkillTestMessage"
+              },
+              {
+                "contents": {
+                  "contents": {
+                    "contents": [
+                      "91673b2a-15a6-425e-9163-6ae2b3bf4419",
+                      {
+                        "investigatorId": "c01004",
+                        "tag": "StartSkillTestButton"
+                      }
+                    ],
+                    "tag": "CommitToSkillTest_"
+                  },
+                  "tag": "SkillTestMessage"
+                },
+                "tag": "Do"
+              }
+            ],
+            "tag": "TargetLabel",
+            "target": {
+              "contents": "1f678bd1-3612-4b50-ab1d-e312c1e34ce7",
+              "tag": "CardIdTarget"
+            }
+          },
+          {
+            "investigatorId": "c01004",
+            "tag": "StartSkillTestButton"
+          }
+        ],
+        "tag": "ChooseOne"
+      },
+      "source": {
+        "choiceIndex": 0,
+        "investigatorSlug": "agnes-baker",
+        "questionVersion": 786,
+        "rawQuestionTag": "ChooseOne",
+        "scenario": "c01120",
+        "traceLine": 1625
+      }
     }
   ]
 }

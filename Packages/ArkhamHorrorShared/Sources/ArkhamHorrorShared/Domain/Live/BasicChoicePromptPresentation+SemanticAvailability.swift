@@ -23,8 +23,10 @@ extension BasicChoicePromptPresentation {
             }?.displayName
         case .card:
             guard let id = semanticWireCardID(entity.id) else { return nil }
-            return projection.handCardsByPlayer[ownerID]?[id]?.displayLabel
-                ?? projection.handCardsByPlayer.values.compactMap { $0[id]?.displayLabel }.first
+            let card = projection.handCardsByPlayer[ownerID]?[id]
+                ?? projection.handCardsByPlayer.values.compactMap { $0[id] }.first
+            guard let card else { return nil }
+            return cardCatalog?.displayName(for: card.cardCode) ?? card.displayLabel
         case .cardCode:
             guard let code = try? CardCode(entity.id) else { return nil }
             return cardCatalog?.displayName(for: code) ?? code.rawValue
