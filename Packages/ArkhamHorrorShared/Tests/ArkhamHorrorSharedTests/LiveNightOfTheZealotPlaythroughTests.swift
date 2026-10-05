@@ -9,6 +9,13 @@ import Testing
 /// paths against a real fork server.
 private let notzScenarioOrder = ["01104", "01120", "01142"]
 
+private func liveServerURLForPlaythrough() -> String? {
+    guard let rawURL = ProcessInfo.processInfo.environment["ARKHAM_LIVE_SERVER_URL"],
+          !rawURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return nil }
+    return rawURL
+}
+
 @MainActor
 @Suite("Live Night of the Zealot playthrough")
 struct LiveNightOfTheZealotPlaythroughTests {
@@ -18,11 +25,12 @@ struct LiveNightOfTheZealotPlaythroughTests {
         "/tmp/arkham-logs/playthrough-trace-\(investigator.traceSlug).jsonl"
     }
 
-    @Test("Env-gated solo NotZ playthroughs for every core investigator")
+    @Test(
+        "Env-gated solo NotZ playthroughs for every core investigator",
+        .enabled(if: liveServerURLForPlaythrough() != nil)
+    )
     func coreInvestigatorCampaigns() async throws {
-        guard let rawURL = ProcessInfo.processInfo.environment["ARKHAM_LIVE_SERVER_URL"],
-              !rawURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        let rawURL = try #require(liveServerURLForPlaythrough())
 
         let profile = try ServerProfile.custom(
             displayName: "Task 1.2.12 live server",
