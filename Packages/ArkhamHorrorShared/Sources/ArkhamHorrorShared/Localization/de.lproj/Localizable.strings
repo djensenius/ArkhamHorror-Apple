@@ -78,6 +78,7 @@
 "board.multiplayer.status.pending.many" = "Ausstehende Aufforderungen: %@";
 "board.multiplayer.status.local.ready" = "Deine Aufforderung ist bereit.";
 "board.multiplayer.status.waiting.players" = "Warten auf %@.";
+"board.multiplayer.status.waiting.spectator" = "Zuschauen. Warten auf %@.";
 "board.multiplayer.status.waiting.identityUnknown" = "Warten auf Spieleridentität.";
 "board.multiplayer.status.investigator.unknown" = "Unbekannter Ermittler";
 "board.multiplayer.status.turn.none" = "Kein Zug-Ermittler";
@@ -148,7 +149,7 @@
 "basicChoice.status.retry.transportFailure" = "Die Auswahl konnte nicht gesendet werden. Versuche es erneut.";
 "basicChoice.status.retry.serverRejected" = "Der Server hat diese Auswahl abgelehnt. Versuche es erneut.";
 "basicChoice.status.retry.outcomeUncertain" = "Das Ergebnis ist ungewiss. Prüfe die Aufforderung und versuche es dann manuell erneut.";
-"basicChoice.status.readOnly.spectator" = "Zuschauer können diese Aufforderung ansehen, aber nicht beantworten.";
+"basicChoice.status.readOnly.spectator" = "Zuschauer können die Aufforderung eines anderen Spielers weder ansehen noch beantworten.";
 "basicChoice.status.readOnly.anotherPlayer" = "Es wird darauf gewartet, dass ein anderer Spieler antwortet.";
 "basicChoice.status.readOnly.legacyServer" = "Aktualisiere den Server, bevor du diese Aufforderung beantwortest.";
 "basicChoice.status.readOnly.updateRequired" = "Diese Aufforderung erfordert eine neuere App-Version.";

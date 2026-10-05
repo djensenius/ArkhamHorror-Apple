@@ -163,6 +163,10 @@ struct LiveGameView: View {
         LiveGameMultiplayerPresentation.isSolo(model.liveGameMultiplayerModes[gameID])
     }
 
+    private var isLocalSpectator: Bool {
+        model.liveGameParticipantIdentities[gameID] == .spectator
+    }
+
     // swiftlint:disable:next function_body_length
     private func board(_ projection: BoardProjection) -> some View {
         let renderedPrompt = prompt
@@ -179,6 +183,7 @@ struct LiveGameView: View {
             prompt: renderedPrompt,
             localPlayerID: localParticipantPlayerID,
             isSolo: isSoloGame,
+            isLocalSpectator: isLocalSpectator,
             cardCatalog: model.cardCatalog,
             onChoice: { index in
                 guard let identity = renderedPrompt?.identity else { return }
