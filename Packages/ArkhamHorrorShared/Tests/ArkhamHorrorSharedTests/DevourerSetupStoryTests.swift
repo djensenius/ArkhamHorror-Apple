@@ -4,6 +4,7 @@ import Testing
 
 @MainActor
 @Suite("The Devourer Below setup story")
+// swiftlint:disable:next type_body_length
 struct DevourerSetupStoryTests {
     private static let fixtureName = "devourer-setup-read-agnes-q3"
     private static let fixtureSubdirectory = "Fixtures/LiveNightOfTheZealotPlaythrough"
@@ -13,7 +14,9 @@ struct DevourerSetupStoryTests {
         let sample = try Self.capturedSample()
         #expect(sample.traceLine == 769)
         #expect(sample.scenario == "c01142")
-        #expect(sample.statusMessage == "This server publishes no usable story text for this passage.")
+        #expect(
+            sample.statusMessage == "This server publishes no usable story text for this passage."
+        )
 
         let payload = try ContractJSON.decode(
             BasicChoiceQuestionPayload.self,
@@ -215,8 +218,18 @@ struct DevourerSetupStoryTests {
         "nodes": [
           {"type": "text", "value": "Gather synthetic encounter sets:"},
           {"type": "group", "styles": ["encounter-sets"], "children": [
-            {"type": "image", "role": "encounterSet", "assetPath": "encounter-sets/the-devourer-below.png", "styles": []},
-            {"type": "image", "role": "encounterSet", "assetPath": "encounter-sets/ancient-evils.png", "styles": []}
+            {
+              "type": "image",
+              "role": "encounterSet",
+              "assetPath": "encounter-sets/the-devourer-below.png",
+              "styles": []
+            },
+            {
+              "type": "image",
+              "role": "encounterSet",
+              "assetPath": "encounter-sets/ancient-evils.png",
+              "styles": []
+            }
           ]}
         ],
         "variables": []
@@ -236,7 +249,12 @@ struct DevourerSetupStoryTests {
         "nodes": [
           {"type": "text", "value": "Choose one synthetic set:"},
           {"type": "group", "styles": ["encounter-sets"], "children": [
-            {"type": "image", "role": "encounterSet", "assetPath": "encounter-sets/agents-of-yog.png", "styles": []}
+            {
+              "type": "image",
+              "role": "encounterSet",
+              "assetPath": "encounter-sets/agents-of-yog.png",
+              "styles": []
+            }
           ]}
         ],
         "variables": []
