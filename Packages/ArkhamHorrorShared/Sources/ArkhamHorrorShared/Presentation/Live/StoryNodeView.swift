@@ -530,20 +530,32 @@ private struct StoryEncounterSetIconView: View {
     }
 }
 
-private struct StoryCenteredWrappingRowLayout: Layout {
+struct StoryCenteredWrappingRowLayout: Layout {
     var horizontalSpacing: CGFloat
     var verticalSpacing: CGFloat
+
+    static func resolvedWidth(for proposal: ProposedViewSize, measuredWidth: CGFloat) -> CGFloat {
+        guard let proposedWidth = proposal.width, proposedWidth.isFinite else {
+            return measuredWidth
+        }
+        return proposedWidth
+    }
 
     func sizeThatFits(
         proposal: ProposedViewSize,
         subviews: Subviews,
         cache _: inout ()
     ) -> CGSize {
-        let availableWidth = proposal.width ?? .infinity
+        let availableWidth: CGFloat
+        if let proposedWidth = proposal.width, proposedWidth.isFinite {
+            availableWidth = proposedWidth
+        } else {
+            availableWidth = .infinity
+        }
         let rows = rows(in: availableWidth, subviews: subviews)
         let measuredWidth = rows.map(\.width).max() ?? 0
         return CGSize(
-            width: proposal.width ?? measuredWidth,
+            width: Self.resolvedWidth(for: proposal, measuredWidth: measuredWidth),
             height: rowsHeight(rows)
         )
     }
