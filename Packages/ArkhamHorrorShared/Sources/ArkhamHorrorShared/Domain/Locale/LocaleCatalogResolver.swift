@@ -109,9 +109,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         case let .message(messageNodes, _):
             nodes = messageNodes
         case let .plural(cases, _):
-            let selection = if usesImplicitSingularPlural,
-                               Self.lacksPluralSelector(variables)
-            {
+            let usesImplicitSingular = usesImplicitSingularPlural
+                && Self.lacksPluralSelector(variables)
+            let selection = if usesImplicitSingular {
                 LocaleCatalogPluralRules.selectImplicitSingular(
                     caseCount: cases.count,
                     locale: located.locale

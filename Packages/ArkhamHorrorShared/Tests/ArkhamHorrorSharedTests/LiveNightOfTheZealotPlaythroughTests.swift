@@ -206,7 +206,9 @@ struct LiveNightOfTheZealotPlaythroughTests {
             throw PlaythroughError.cardCatalogUnavailable("card catalog failed: \(failure)")
         }
         guard model.cardCatalog != nil else {
-            throw PlaythroughError.cardCatalogUnavailable("card catalog finished without a snapshot")
+            throw PlaythroughError.cardCatalogUnavailable(
+                "card catalog finished without a snapshot"
+            )
         }
     }
 

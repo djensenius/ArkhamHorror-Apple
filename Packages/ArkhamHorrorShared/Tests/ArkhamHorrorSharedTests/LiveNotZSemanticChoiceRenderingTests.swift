@@ -1,8 +1,10 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
 
 @Suite("Live NotZ semantic choice rendering")
+// swiftlint:disable:next type_body_length
 struct LiveNotZSemanticChoiceRenderingTests {
     @Test("Captured semantic choices render through the prompt presentation path")
     @MainActor
@@ -164,11 +166,15 @@ struct LiveNotZSemanticChoiceRenderingTests {
         await model.flowTask?.value
         model.cardCatalog = try Self.capturedCardCatalog()
         model.liveGameStates[gameID] = LiveGameState.live(projection)
-        model.liveGameParticipantIdentities[gameID] = LiveGameParticipantIdentity.participant(ownerID)
+        model.liveGameParticipantIdentities[gameID] = LiveGameParticipantIdentity.participant(
+            ownerID
+        )
 
         let prompt = try #require(model.basicChoicePresentation(for: gameID))
         let choice = try #require(prompt.choices.first { $0.index == sample.source.choiceIndex })
-        #expect(prompt.resolvedChoiceLabel(for: choice, in: projection).title == sample.expectedTitle)
+        #expect(
+            prompt.resolvedChoiceLabel(for: choice, in: projection).title == sample.expectedTitle
+        )
     }
 
     @MainActor
