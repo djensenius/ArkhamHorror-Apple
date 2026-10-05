@@ -267,8 +267,16 @@ private struct LivePlaythroughBot {
                 )
             }
 
-            guard let projection = try await waitForProjection() else {
-                continue
+            let projection: BoardProjection
+            do {
+                projection = try await waitForProjection()
+            } catch let error as PlaythroughError {
+                guard case .timedOut = error else { throw error }
+                return try recordRunTimedOut(
+                    reason: error.description,
+                    snapshot: envelope.game,
+                    scenarioOutcomes: scenarioOutcomes
+                )
             }
             guard let prompt = model.basicChoicePresentation(for: gameID) else {
                 try await Task.sleep(for: .milliseconds(200))
@@ -449,36 +457,49 @@ private struct LivePlaythroughBot {
             }
         }
         let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
+        let scenarioOutcomes = scenarioOutcomes(from: envelope.game)
+        return try recordRunTimedOut(
+            reason: "playthrough timed out before campaign end",
+            snapshot: envelope.game,
+            scenarioOutcomes: scenarioOutcomes
+        )
+    }
+
+    private func waitForProjection() async throws -> BoardProjection {
+        try await waitForValue(timeout: 20, description: "live projection") {
+            model.liveGameState(for: gameID).lastKnownProjection
+        }
+    }
+
+    private func recordRunTimedOut(
+        reason: String,
+        snapshot: PublicGameSnapshot,
+        scenarioOutcomes: [String: String]
+    ) throws -> BotOutcome {
         let prompt = model.basicChoicePresentation(for: gameID)
         let failure = PromptFailure(
             scenario: currentScenarioCode(
                 projection: model.liveGameState(for: gameID).lastKnownProjection,
-                snapshot: envelope.game
+                snapshot: snapshot
             ),
             investigator: investigator,
             questionVersion: prompt?.questionVersion ?? -1,
             rawQuestionTag: prompt.map {
                 describeRawQuestionTag($0.identity.rawQuestion)
             } ?? "none",
-            reason: "playthrough timed out before campaign end"
+            reason: reason
         )
         try trace.append(.runTimedOut(
             investigator: investigator,
             gameID: gameID,
             failure: failure,
-            scenarioOutcomes: scenarioOutcomes(from: envelope.game)
+            scenarioOutcomes: scenarioOutcomes
         ))
         return BotOutcome(
             reachedDevourerResolution: false,
-            scenarioOutcomes: scenarioOutcomes(from: envelope.game),
+            scenarioOutcomes: scenarioOutcomes,
             promptFailure: failure
         )
-    }
-
-    private func waitForProjection() async throws -> BoardProjection? {
-        try await waitForValue(timeout: 20, description: "live projection") {
-            model.liveGameState(for: gameID).lastKnownProjection
-        }
     }
 
     private func serverFeedbackSummary() -> TraceServerFeedback? {
@@ -1421,7 +1442,7 @@ private func waitForValue<T>(
     timeout: TimeInterval,
     description: String,
     producer: @escaping @MainActor () -> T?
-) async throws -> T? {
+) async throws -> T {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         if let value = producer() {
