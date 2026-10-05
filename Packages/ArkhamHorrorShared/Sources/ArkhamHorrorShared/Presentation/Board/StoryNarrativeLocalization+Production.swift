@@ -133,17 +133,15 @@ extension StoryNarrativeLocalization {
             return .failure(.unsupportedVariableValue)
         }
         // Vue I18n resolves `$t(pluralKey)` without an explicit count through the singular
-        // branch. Match that plural-branch selection without binding `count` as text, so
-        // any unbound placeholders in the selected output still fail closed. Once the server
-        // supplies typed variables (`count=i:1.0`, `name=s:"..."`), bind them exactly once
-        // through the catalog path and let the normal plural selector use the bound count.
+        // branch. Ask the resolver for that path; it only applies when `count`/`n` is absent,
+        // so named variables still bind normally and unbound placeholders still fail closed.
         switch resolveKey(
             invocation.key,
             variables: invocation.variables,
             resolver: resolver,
             catalogUnavailability: catalogUnavailability,
             imageFallback: false,
-            usesImplicitSingularPlural: invocation.variables == .object([:])
+            usesImplicitSingularPlural: true
         ) {
         case let .failure(reason):
             return .failure(reason)

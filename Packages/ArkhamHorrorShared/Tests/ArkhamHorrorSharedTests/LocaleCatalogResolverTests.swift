@@ -241,6 +241,40 @@ struct LocaleCatalogResolverTests {
         ) == .success("Suffer physical trauma"))
     }
 
+    @Test("Production choice plural labels bind named variables while using implicit singular")
+    func productionChoicePluralLabelsBindNamedVariablesWhileUsingImplicitSingular() {
+        let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.greetInvestigator": .plural(
+                cases: [
+                    [
+                        .text("Greet "),
+                        .variable(name: "name", source: .named, isIcon: false),
+                    ],
+                    [
+                        .text("Greet "),
+                        .variable(name: "count", source: .named, isIcon: false),
+                        .text(" investigators"),
+                    ],
+                ],
+                variables: [
+                    .init(name: "name", source: .named, role: .text),
+                    .init(name: "count", source: .named, role: .text),
+                ]
+            ),
+        ]))
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.greetInvestigator name=s:\"Alice\"",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .success("Greet Alice"))
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.greetInvestigator",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.missingVariable))
+    }
+
     @Test("Production choice labels do not bind implicit count text")
     func productionChoiceLabelsDoNotBindImplicitCountText() {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
