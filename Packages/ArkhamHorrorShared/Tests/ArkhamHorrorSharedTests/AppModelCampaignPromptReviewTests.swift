@@ -119,13 +119,13 @@ extension AppModelCampaignPromptTests {
         #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 1)
 
         model.liveGameParticipantIdentities[gameID] = .spectator
-        let spectatorPrompt = try #require(model.basicChoicePresentation(for: gameID))
-        #expect(spectatorPrompt.readOnlyReason == .spectator)
-        #expect(
-            spectatorPrompt.statusMessage
-                == "Spectators can view this prompt but cannot answer it."
-        )
-        #expect(!spectatorPrompt.canUseCampaignDeckPrompt)
+        #expect(model.basicChoicePresentation(for: gameID) == nil)
+        #expect(await model.continueCampaignWithoutUpgrading(
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: ownerPrompt.identity
+        ) == .failed("This deck prompt changed. Review the game and try again."))
+        #expect(await gameService.callOrder.filter { $0 == "chooseDeck" }.count == 1)
     }
 
     @Test("ContinueCampaign without CampaignStepAnswer remains update-required and cannot send")
@@ -1082,7 +1082,8 @@ extension AppModelCampaignPromptTests {
                 "Das Ergebnis ist ungewiss. "
                 + "Prüfe die Aufforderung und versuche es dann manuell erneut.")
             #expect(prompt(readOnlyReason: .spectator).statusMessage ==
-                "Zuschauer können diese Aufforderung ansehen, aber nicht beantworten.")
+                "Zuschauer können die Aufforderung eines anderen Spielers weder ansehen "
+                + "noch beantworten.")
             #expect(prompt(readOnlyReason: .anotherPlayer).statusMessage ==
                 "Es wird darauf gewartet, dass ein anderer Spieler antwortet.")
             #expect(prompt(readOnlyReason: .legacyServer).statusMessage ==

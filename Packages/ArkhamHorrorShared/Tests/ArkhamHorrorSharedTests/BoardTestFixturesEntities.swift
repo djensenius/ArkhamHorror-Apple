@@ -127,6 +127,7 @@ extension BoardTestFixtures {
         cardCount: Int = 0,
         cardValues: [WireCardID: JSONValue] = [:],
         questionCount: Int = 0,
+        questionPlayerIDs: [PlayerID] = [],
         playerCount: Int? = nil
     ) -> PublicGameSnapshot {
         var locationMap = UUIDKeyedMap<LocationIDTag, Location>()
@@ -176,7 +177,7 @@ extension BoardTestFixtures {
             focusedCards: [], highlightedCards: [], focusedTarotCards: [], foundCards: .null,
             focusedChaosTokens: [], activeCard: nil, removedFromPlay: [], gameState: gameState,
             inSetup: false, skillTestResults: nil,
-            question: basicChoiceQuestions(count: questionCount),
+            question: basicChoiceQuestions(count: questionCount, playerIDs: questionPlayerIDs),
             questionPresentation: nil,
             cards: cards, totalDoom: totalDoom, totalClues: totalClues,
             scenarioSteps: 0, undoActionStep: nil, undoTurnStep: nil, undoPhaseStep: nil,
@@ -186,14 +187,20 @@ extension BoardTestFixtures {
     }
 
     private static func basicChoiceQuestions(
-        count: Int
+        count: Int,
+        playerIDs: [PlayerID]
     ) -> UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload> {
         var map = UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>()
+        let raw: JSONValue = .object([
+            "tag": .string("FutureQuestion"),
+            "choices": .array([]),
+        ])
+        for playerID in playerIDs {
+            map[playerID] = BasicChoiceQuestionPayload(
+                rawValue: raw, state: .updateRequired(tag: "FutureQuestion")
+            )
+        }
         for _ in 0 ..< count {
-            let raw: JSONValue = .object([
-                "tag": .string("FutureQuestion"),
-                "choices": .array([]),
-            ])
             map[PlayerID(UUID())] = BasicChoiceQuestionPayload(
                 rawValue: raw, state: .updateRequired(tag: "FutureQuestion")
             )

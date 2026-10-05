@@ -275,11 +275,7 @@ extension AppModel {
         let selected: (PlayerID, BasicChoiceQuestionPayload)? = switch participantIdentity {
         case let .participant(playerID):
             projection.questions[playerID].map { (playerID, $0) }
-        case .spectator:
-            projection.questions
-                .min { $0.key.rawValue.uuidString < $1.key.rawValue.uuidString }
-                .map { ($0.key, $0.value) }
-        case .none:
+        case .spectator, .none:
             nil
         }
         guard let (ownerID, payload) = selected else { return nil }
