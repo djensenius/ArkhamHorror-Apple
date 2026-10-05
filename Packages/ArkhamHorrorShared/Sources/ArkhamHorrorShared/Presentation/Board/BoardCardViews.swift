@@ -4,27 +4,6 @@ extension EnvironmentValues {
     @Entry var boardCardCatalog: CardCatalogSnapshot?
 }
 
-struct BoardHiddenHandBackView: View {
-    let placeholder: BoardHiddenHandBackPlaceholder
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(.black.opacity(0.45))
-            .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(ArkhamTheme.accent.opacity(0.6), lineWidth: 1)
-            }
-            .overlay {
-                Image(systemName: "rectangle.portrait.fill")
-                    .font(.caption)
-                    .foregroundStyle(ArkhamTheme.bone.opacity(0.65))
-                    .accessibilityHidden(true)
-            }
-            .frame(width: 32, height: 44)
-            .accessibilityLabel(placeholder.accessibilityLabel)
-    }
-}
-
 struct BoardPlayerAreaView: View {
     let investigator: BoardInvestigatorNode
     let deckCountBadge: BoardDeckCountBadgeModel
