@@ -154,6 +154,9 @@
 "basicChoice.status.readOnly.updateRequired" = "This prompt requires a newer app version.";
 "basicChoice.status.readOnly.disconnected" = "Reconnect before answering this prompt.";
 
+"story.entryStatus.invalid" = "Invalid";
+"story.entryStatus.valid" = "Valid";
+
 "campaign.between.title" = "Between scenarios";
 "campaign.between.finishedScenario" = "%@ just finished";
 "campaign.between.noScenario" = "No active scenario";
