@@ -546,11 +546,10 @@ struct StoryCenteredWrappingRowLayout: Layout {
         subviews: Subviews,
         cache _: inout ()
     ) -> CGSize {
-        let availableWidth: CGFloat
-        if let proposedWidth = proposal.width, proposedWidth.isFinite {
-            availableWidth = proposedWidth
+        let availableWidth: CGFloat = if let proposedWidth = proposal.width, proposedWidth.isFinite {
+            proposedWidth
         } else {
-            availableWidth = .infinity
+            .infinity
         }
         let rows = rows(in: availableWidth, subviews: subviews)
         let measuredWidth = rows.map(\.width).max() ?? 0
