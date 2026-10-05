@@ -450,24 +450,31 @@ extension BasicChoicePromptPresentation {
             labelResolution: choiceLabelResolutions[choice.index],
             revealsHandCardFaces: revealsHandCardFaces
         )
-        if let cost = descriptor.cost, descriptor.kind != .costLabel {
-            let costSummary = semanticCostSummary(cost, in: projection)
-            resolution = BasicChoiceResolvedChoiceLabel(
-                title: semanticLocalized(
-                    "semantic.choice.title.withCost",
-                    value: "\(resolution.title) (\(costSummary))",
-                    arguments: [resolution.title, costSummary]
-                ),
-                subtitle: resolution.subtitle,
-                systemImage: resolution.systemImage,
-                accessibilityLabel: semanticLocalized(
-                    "semantic.choice.accessibility.withCost",
-                    value: "\(resolution.accessibilityLabel), cost: \(costSummary)",
-                    arguments: [resolution.accessibilityLabel, costSummary]
-                )
+        guard let cost = descriptor.cost, descriptor.kind != .costLabel else { return resolution }
+        return resolvedChoiceLabel(
+            resolution,
+            addingCost: semanticCostSummary(cost, in: projection)
+        )
+    }
+
+    private func resolvedChoiceLabel(
+        _ resolution: BasicChoiceResolvedChoiceLabel,
+        addingCost costSummary: String
+    ) -> BasicChoiceResolvedChoiceLabel {
+        BasicChoiceResolvedChoiceLabel(
+            title: semanticLocalized(
+                "semantic.choice.title.withCost",
+                value: "\(resolution.title) (\(costSummary))",
+                arguments: [resolution.title, costSummary]
+            ),
+            subtitle: resolution.subtitle,
+            systemImage: resolution.systemImage,
+            accessibilityLabel: semanticLocalized(
+                "semantic.choice.accessibility.withCost",
+                value: "\(resolution.accessibilityLabel), cost: \(costSummary)",
+                arguments: [resolution.accessibilityLabel, costSummary]
             )
-        }
-        return resolution
+        )
     }
 
     // swiftlint:disable:next cyclomatic_complexity
