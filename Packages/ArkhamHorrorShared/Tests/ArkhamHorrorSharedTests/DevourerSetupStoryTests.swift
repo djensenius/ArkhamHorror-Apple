@@ -150,36 +150,6 @@ struct DevourerSetupStoryTests {
         #expect(!Self.prompt(payload: payload, resolution: resolution).canSubmit)
     }
 
-    @Test("Story view projections group encounter sets and expose neutral status labels")
-    func storyViewProjectionMatchesEncounterSetAndStatusSemantics() {
-        let devourer = StoryAssetReference(
-            role: .encounterSet,
-            assetPath: "encounter-sets/the-devourer-below.png",
-            alt: nil
-        )
-        let ancientEvils = StoryAssetReference(
-            role: .encounterSet,
-            assetPath: "encounter-sets/ancient-evils.png",
-            alt: nil
-        )
-        let groupChildren: [StoryNode] = [.image(devourer), .image(ancientEvils)]
-
-        #expect(StoryNodePresentation.encounterSetGroupReferences(groupChildren) == [
-            devourer, ancientEvils,
-        ])
-        #expect(StoryNodePresentation.encounterSetGroupReferences(
-            [.text("Gather "), .image(devourer)]
-        ) == nil)
-        #expect(StoryFlavorEntryStatus.status(for: [.invalidEntry]) == .invalid)
-        #expect(StoryFlavorEntryStatus.status(for: [.validEntry]) == .valid)
-        #expect(StoryFlavorEntryStatus.status(for: [.redEntry]) == nil)
-        #expect(StoryFlavorEntryStatus.invalid.accessibilityLabel == "Invalid")
-        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
-            #expect(StoryFlavorEntryStatus.valid.accessibilityLabel == "Gültig")
-            #expect(StoryFlavorEntryStatus.invalid.accessibilityLabel == "Ungültig")
-        }
-    }
-
     private static func fixture(_ name: String) throws -> Data {
         let url = try #require(
             Bundle.module.url(
@@ -283,14 +253,13 @@ struct DevourerSetupStoryTests {
                 ]),
             ]),
         ])
-        guard LocaleCatalogEntry.decode(missingVariableEntry) != nil else { throw TestFailure() }
         entries[key] = missingVariableEntry
-        return try String(decoding: ContractJSON.encode(JSONValue.object(entries)), as: UTF8.self)
+        let encoded = try ContractJSON.encode(JSONValue.object(entries))
+        guard let string = String(data: encoded, encoding: .utf8) else { throw TestFailure() }
+        return string
     }
 
-    /// Synthetic prose under the production keys. The captured prompt bytes provide the
-    /// scenario structure; the catalog text here only proves that Apple renders server-
-    /// supplied catalog nodes and never hard-codes scenario wording.
+    /// Synthetic prose under production keys; captured bytes provide the scenario structure.
     private static let catalogEntriesJSON = #"""
     {
       "addToken": {

@@ -555,18 +555,18 @@ private struct StoryCenteredWrappingRowLayout: Layout {
         cache _: inout ()
     ) {
         let rows = rows(in: bounds.width, subviews: subviews)
-        var y = bounds.minY
+        var currentY = bounds.minY
         for row in rows {
-            var x = bounds.minX + max(0, (bounds.width - row.width) / 2)
+            var currentX = bounds.minX + max(0, (bounds.width - row.width) / 2)
             for item in row.items {
                 subviews[item.index].place(
-                    at: CGPoint(x: x, y: y + (row.height - item.size.height) / 2),
+                    at: CGPoint(x: currentX, y: currentY + (row.height - item.size.height) / 2),
                     anchor: .topLeading,
                     proposal: ProposedViewSize(item.size)
                 )
-                x += item.size.width + horizontalSpacing
+                currentX += item.size.width + horizontalSpacing
             }
-            y += row.height + verticalSpacing
+            currentY += row.height + verticalSpacing
         }
     }
 
