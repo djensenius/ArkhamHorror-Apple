@@ -17,7 +17,9 @@ struct BoardHiddenHandBackPlaceholder: Sendable, Equatable, Identifiable {
 struct BoardDeckCountBadgeModel: Sendable, Equatable {
     let count: Int
 
-    var value: String { "\(count)" }
+    var value: String {
+        "\(count)"
+    }
 
     var accessibilityLabel: String {
         "Deck " + BoardDisplayFormatting.pluralized(
@@ -66,7 +68,7 @@ enum BoardPlayerAreaVisibility {
         guard !revealsHandCardFaces(
             for: investigator, localPlayerID: localPlayerID, isSolo: isSolo
         ) else { return [] }
-        return (0..<investigator.handCount).map(BoardHiddenHandBackPlaceholder.init(id:))
+        return (0 ..< investigator.handCount).map(BoardHiddenHandBackPlaceholder.init(id:))
     }
 
     static func deckCountBadge(for investigator: BoardInvestigatorNode) -> BoardDeckCountBadgeModel {
