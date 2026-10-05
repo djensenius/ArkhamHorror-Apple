@@ -159,6 +159,10 @@ struct LiveGameView: View {
         return playerID
     }
 
+    private var isSoloGame: Bool {
+        LiveGameMultiplayerPresentation.isSolo(model.liveGameMultiplayerModes[gameID])
+    }
+
     private var isLocalSpectator: Bool {
         model.liveGameParticipantIdentities[gameID] == .spectator
     }
@@ -178,6 +182,7 @@ struct LiveGameView: View {
             projection: projection,
             prompt: renderedPrompt,
             localPlayerID: localParticipantPlayerID,
+            isSolo: isSoloGame,
             isLocalSpectator: isLocalSpectator,
             cardCatalog: model.cardCatalog,
             onChoice: { index in

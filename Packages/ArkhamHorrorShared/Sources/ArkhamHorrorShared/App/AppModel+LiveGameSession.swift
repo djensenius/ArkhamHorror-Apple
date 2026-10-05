@@ -339,6 +339,7 @@ extension AppModel {
             guard isCurrentLiveGameSession(attempt) else { return nil }
             liveGameParticipantIdentities[attempt.gameID] = envelope.playerID
                 .map(LiveGameParticipantIdentity.participant) ?? .spectator
+            liveGameMultiplayerModes[attempt.gameID] = envelope.multiplayerMode
             clearBasicChoiceServerFeedback(gameID: attempt.gameID)
             reconcileBasicChoice(
                 gameID: attempt.gameID, projection: projection, isRESTSnapshot: true
