@@ -8,6 +8,12 @@ enum BoardInvestigatorDisplayNames {
     }
 }
 
+struct BoardHiddenHandBackPlaceholder: Sendable, Equatable, Identifiable {
+    let id: Int
+    let cardID: BoardPlayerCardID? = nil
+    let accessibilityLabel = "Hidden hand card"
+}
+
 enum BoardPlayerAreaVisibility {
     static func shouldShowFullArea(
         for investigator: BoardInvestigatorNode,
@@ -38,6 +44,17 @@ enum BoardPlayerAreaVisibility {
             for: investigator, localPlayerID: localPlayerID, isSolo: isSolo
         ) else { return [] }
         return cardsByPlayer[investigator.playerID] ?? []
+    }
+
+    static func hiddenHandBackPlaceholders(
+        for investigator: BoardInvestigatorNode,
+        localPlayerID: PlayerID?,
+        isSolo: Bool
+    ) -> [BoardHiddenHandBackPlaceholder] {
+        guard !revealsHandCardFaces(
+            for: investigator, localPlayerID: localPlayerID, isSolo: isSolo
+        ) else { return [] }
+        return (0..<investigator.handCount).map(BoardHiddenHandBackPlaceholder.init(id:))
     }
 }
 
@@ -187,6 +204,7 @@ struct BoardInvestigatorRowView: View {
             Text("Hand \(handCount), deck \(deckCount), in play \(inPlayCount)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            hiddenHandBackStrip(for: investigator)
             if let enemies = engagedEnemiesByInvestigatorID[investigator.id], !enemies.isEmpty {
                 BoardEnemyPanelView(
                     title: "Engaged", enemies: enemies,
@@ -210,6 +228,28 @@ struct BoardInvestigatorRowView: View {
                     )
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func hiddenHandBackStrip(for investigator: BoardInvestigatorNode) -> some View {
+        let placeholders = BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
+            for: investigator,
+            localPlayerID: localPlayerID,
+            isSolo: isSolo
+        )
+        if !placeholders.isEmpty {
+            HStack(alignment: .top, spacing: 4) {
+                ForEach(placeholders) { placeholder in
+                    BoardHiddenHandBackView(placeholder: placeholder)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                "Hand " + BoardDisplayFormatting.pluralized(
+                    placeholders.count, singular: "hidden card", plural: "hidden cards"
+                )
+            )
         }
     }
 

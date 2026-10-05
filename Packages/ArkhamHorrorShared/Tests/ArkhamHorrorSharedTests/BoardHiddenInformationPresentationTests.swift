@@ -57,6 +57,19 @@ struct BoardHiddenInformationPresentationTests {
             localPlayerID: fixture.localPlayerID,
             isSolo: false
         ).isEmpty)
+        let hiddenHandBacks = BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
+            for: other,
+            localPlayerID: fixture.localPlayerID,
+            isSolo: false
+        )
+        #expect(hiddenHandBacks.count == other.handCount)
+        #expect(hiddenHandBacks.map(\.accessibilityLabel) == ["Hidden hand card"])
+        #expect(hiddenHandBacks.allSatisfy { $0.cardID == nil })
+        #expect(BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
+            for: local,
+            localPlayerID: fixture.localPlayerID,
+            isSolo: false
+        ).isEmpty)
         #expect(BoardPlayerAreaVisibility.visibleHandCards(
             for: local,
             cardsByPlayer: projection.orderedHandCardsByPlayer,
