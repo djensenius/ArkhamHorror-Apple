@@ -208,6 +208,10 @@
 "campaign.upgrade.done" = "Done";
 
 "common.cancel" = "Cancel";
+"games.delete.action" = "Delete";
+"games.delete.action.accessibilityHint" = "Asks for confirmation before deleting this game.";
+"games.delete.action.accessibilityLabel" = "Delete game";
+"games.delete.confirmation.title" = "Are you sure you want to delete this game?";
 "games.joinInvite.title" = "Join Game";
 "games.joinInvite.section" = "Invite";
 "games.joinInvite.placeholder" = "https://arkhamhorror.app/games/.../join";

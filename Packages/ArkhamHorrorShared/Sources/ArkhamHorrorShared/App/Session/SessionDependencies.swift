@@ -58,7 +58,7 @@ protocol GameLifecycleServicing: Sendable {
         _ request: CreateGameRequest, on profile: ServerProfile, token: String
     ) async throws -> GameLifecycleEnvelope
 
-    /// Deletes an owned game via `DELETE /arkham/games/:id`.
+    /// Deletes a game the account participates in via `DELETE /arkham/games/:id`.
     func deleteGame(_ id: GameID, on profile: ServerProfile, token: String) async throws
 
     /// Fetches the current authoritative full game snapshot via
