@@ -373,7 +373,7 @@ private struct LivePlaythroughBot {
 
             let submission = try selectedAnswer.answer.traceSubmission(prompt: prompt)
             do {
-                let submitResult = try await submit(selectedAnswer.answer, prompt: prompt)
+                let submitOutcome = try await submit(selectedAnswer.answer, prompt: prompt)
                 let advanced = try await waitForPromptAdvance(from: prompt.identity)
                 let feedback = serverFeedbackSummary()
                 if advanced {
@@ -386,8 +386,9 @@ private struct LivePlaythroughBot {
                         repeatCount: repeatCount,
                         selectedAnswer: selectedAnswer,
                         submission: submission,
-                        outcome: .submittedAndAdvanced(submitResult),
-                        serverFeedback: feedback
+                        outcome: .submittedAndAdvanced(submitOutcome.detail),
+                        serverFeedback: feedback,
+                        diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     repeatedQuestionShapes[repeatKey] = repeatCount + 1
                 } else {
@@ -565,7 +566,7 @@ private struct LivePlaythroughBot {
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func submit(
         _ answer: BotAnswer, prompt: BasicChoicePromptPresentation
-    ) async throws -> String {
+    ) async throws -> SubmissionOutcome {
         let result: BasicChoiceSubmitResult
         switch answer {
         case let .choice(index):
@@ -586,7 +587,7 @@ private struct LivePlaythroughBot {
                 DeckAnswer(deckId: deckID, playerId: prompt.identity.ownerID)
             )
             try await connection.send(bytes)
-            return "sent DeckAnswer over WebSocket"
+            return SubmissionOutcome(detail: "sent DeckAnswer over WebSocket")
         case let .skipDeckUpgrade(investigatorID):
             let deckResult = await model.continueCampaignWithoutUpgrading(
                 investigatorId: investigatorID,
@@ -595,14 +596,14 @@ private struct LivePlaythroughBot {
             )
             switch deckResult {
             case .submitted:
-                return "submitted deck-upgrade skip through AppModel"
+                return SubmissionOutcome(detail: "submitted deck-upgrade skip through AppModel")
             case let .failed(message):
                 throw PlaythroughError.submissionFailed(message)
             }
         }
         switch result {
         case .sentAwaitingSnapshot:
-            return "sentAwaitingSnapshot"
+            return SubmissionOutcome(detail: "sentAwaitingSnapshot")
         case .alreadyPending:
             throw PlaythroughError.submissionFailed("answer already pending")
         case .readOnly:
@@ -621,7 +622,7 @@ private struct LivePlaythroughBot {
 
     private func sendDiagnosticUnsupportedChoice(
         _ index: Int, prompt: BasicChoicePromptPresentation
-    ) async throws -> String {
+    ) async throws -> SubmissionOutcome {
         guard let connection = model.liveGameConnections[gameID]?.connection else {
             throw PlaythroughError.submissionFailed("diagnostic bypass socket was not connected")
         }
@@ -633,7 +634,10 @@ private struct LivePlaythroughBot {
             )
         )
         try await connection.send(bytes)
-        return "diagnostic bypass sent unsupported Answer over WebSocket"
+        return SubmissionOutcome(
+            detail: "diagnostic bypass sent unsupported Answer over WebSocket",
+            diagnosticBypass: true
+        )
     }
 
     private func waitForPromptAdvance(
@@ -734,6 +738,16 @@ private struct SelectedBotAnswer: Sendable {
     let answer: BotAnswer
     let note: String
     let chosenChoiceKind: String?
+}
+
+private struct SubmissionOutcome: Sendable {
+    let detail: String
+    let diagnosticBypass: Bool
+
+    init(detail: String, diagnosticBypass: Bool = false) {
+        self.detail = detail
+        self.diagnosticBypass = diagnosticBypass
+    }
 }
 
 private extension BotAnswer {
@@ -912,6 +926,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
     let submission: TraceSubmission?
     let outcome: TraceOutcome?
     let serverFeedback: TraceServerFeedback?
+    let diagnosticBypass: Bool
     let scenarioOutcomes: [String: String]?
 
     static func runStarted(
@@ -970,7 +985,8 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
         selectedAnswer: SelectedBotAnswer?,
         submission: TraceSubmission?,
         outcome: TraceOutcome,
-        serverFeedback: TraceServerFeedback?
+        serverFeedback: TraceServerFeedback?,
+        diagnosticBypass: Bool = false
     ) -> PlaythroughTraceRecord {
         base(
             event: "prompt",
@@ -983,6 +999,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
             submission: submission,
             outcome: outcome,
             serverFeedback: serverFeedback,
+            diagnosticBypass: diagnosticBypass,
             scenarioOutcomes: nil
         )
     }
@@ -998,6 +1015,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
         submission: TraceSubmission? = nil,
         outcome: TraceOutcome? = nil,
         serverFeedback: TraceServerFeedback? = nil,
+        diagnosticBypass: Bool = false,
         scenarioOutcomes: [String: String]?
     ) -> PlaythroughTraceRecord {
         PlaythroughTraceRecord(
@@ -1013,6 +1031,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
             submission: submission,
             outcome: outcome,
             serverFeedback: serverFeedback,
+            diagnosticBypass: diagnosticBypass,
             scenarioOutcomes: scenarioOutcomes
         )
     }
