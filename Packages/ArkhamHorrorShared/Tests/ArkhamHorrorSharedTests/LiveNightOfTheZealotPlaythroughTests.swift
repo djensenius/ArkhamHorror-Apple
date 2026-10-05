@@ -468,7 +468,6 @@ private struct LivePlaythroughBot {
         return TraceServerFeedback(source: source, message: message)
     }
 
-    // swiftlint:disable:next function_body_length
     private func selectAnswer(
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
@@ -588,9 +587,7 @@ private struct LivePlaythroughBot {
         }
     }
 
-    private func waitForPromptAdvance(
-        from identity: BasicChoicePromptIdentity
-    ) async throws -> Bool {
+    private func waitForPromptAdvance(from identity: BasicChoicePromptIdentity) async throws -> Bool {
         let deadline = Date().addingTimeInterval(30)
         while Date() < deadline {
             guard let current = model.basicChoicePresentation(for: gameID) else { return true }
@@ -689,7 +686,6 @@ private struct SelectedBotAnswer: Sendable {
 }
 
 private extension BotAnswer {
-    // swiftlint:disable:next function_body_length
     func traceSubmission(prompt: BasicChoicePromptPresentation) throws -> TraceSubmission {
         switch self {
         case let .choice(index):
@@ -911,7 +907,6 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
         )
     }
 
-    // swiftlint:disable:next function_parameter_count
     static func prompt(
         investigator: InvestigatorFixture,
         gameID: GameID,

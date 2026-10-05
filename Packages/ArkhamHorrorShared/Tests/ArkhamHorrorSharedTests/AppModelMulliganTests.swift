@@ -198,69 +198,6 @@ extension AppModelLiveGameTests {
         ])
     }
 
-    @Test("The done choice remains actionable when the live server has no catalog pointer")
-    // swiftlint:disable:next function_body_length
-    func mulliganDoneWithoutCatalogPointerIsActionable() throws {
-        let rawQuestion = try loadContractFixtureValue("question-mulligan")
-        let presentation = QuestionPresentation(
-            protocolVersion: QuestionPresentation.supportedProtocolVersion,
-            questionVersion: 2,
-            questionKind: .chooseOne,
-            choiceCount: 4,
-            choices: [
-                QuestionPresentation.Choice(
-                    sourceIndex: 0,
-                    kind: .localizedLabel,
-                    label: QuestionPresentation.Label(
-                        kind: .embeddedI18n,
-                        text: "$label.doneWithMulligan"
-                    )
-                ),
-                QuestionPresentation.Choice(sourceIndex: 1, kind: .chooseTarget),
-                QuestionPresentation.Choice(sourceIndex: 2, kind: .chooseTarget),
-                QuestionPresentation.Choice(sourceIndex: 3, kind: .chooseTarget),
-            ]
-        )
-        let binding = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 2)
-        let descriptor = try #require(binding.descriptor(forSourceIndex: 0))
-
-        #expect(binding.canActivateSemanticChoice(
-            descriptor,
-            labelResolution: .unavailable(.catalog(.notAdvertised))
-        ))
-
-        for label in [
-            "$nightOfTheZealot.theGathering.label.whatsGoingOn.horror",
-            "$nightOfTheZealot.theGathering.label.whatsGoingOn.discard",
-        ] {
-            let consequencePresentation = QuestionPresentation(
-                protocolVersion: QuestionPresentation.supportedProtocolVersion,
-                questionVersion: 2,
-                questionKind: .chooseOne,
-                choiceCount: 2,
-                choices: [
-                    QuestionPresentation.Choice(
-                        sourceIndex: 0,
-                        kind: .localizedLabel,
-                        label: QuestionPresentation.Label(kind: .embeddedI18n, text: label)
-                    ),
-                    QuestionPresentation.Choice(sourceIndex: 1, kind: .chooseTarget),
-                ]
-            )
-            let consequenceBinding = BoundQuestionPresentation(
-                presentation: consequencePresentation,
-                rawChoices: [.null, .null]
-            )
-            let consequenceDescriptor = try #require(
-                consequenceBinding.descriptor(forSourceIndex: 0)
-            )
-            #expect(consequenceBinding.canActivateSemanticChoice(
-                consequenceDescriptor,
-                labelResolution: .unavailable(.catalog(.notAdvertised))
-            ))
-        }
-    }
-
     @Test("A card choice preserves its source index and duplicate submission sends once")
     func mulliganCardChoiceSendsOnce() async throws {
         let documents = try mulliganCatalogDocuments()

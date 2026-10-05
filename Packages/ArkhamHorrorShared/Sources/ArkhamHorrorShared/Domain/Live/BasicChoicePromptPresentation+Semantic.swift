@@ -85,23 +85,10 @@ extension BoundQuestionPresentation {
         guard case .singleChoice = presentation.answer,
               presentation.supportsCurrentGenericChoiceList,
               descriptor.selectable,
-              labelResolution?.unavailableReason == nil || descriptor.hasBuiltInFallbackLabel
+              labelResolution?.unavailableReason == nil
         else { return false }
         return true
     }
-}
-
-private extension QuestionPresentation.Choice {
-    var hasBuiltInFallbackLabel: Bool {
-        guard kind == .localizedLabel, let text = label?.text else { return false }
-        return Self.builtInFallbackLabels.contains(text)
-    }
-
-    static let builtInFallbackLabels: Set<String> = [
-        "$label.doneWithMulligan",
-        "$nightOfTheZealot.theGathering.label.whatsGoingOn.horror",
-        "$nightOfTheZealot.theGathering.label.whatsGoingOn.discard",
-    ]
 }
 
 extension BasicChoicePromptPresentation {
