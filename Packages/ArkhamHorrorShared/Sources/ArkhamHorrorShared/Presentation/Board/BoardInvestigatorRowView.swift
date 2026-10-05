@@ -8,9 +8,9 @@ enum BoardInvestigatorDisplayNames {
     }
 }
 
+/// Hidden hand backs carry only a synthetic position, never a backend card identity.
 struct BoardHiddenHandBackPlaceholder: Sendable, Equatable, Identifiable {
     let id: Int
-    let cardID: BoardPlayerCardID? = nil
     let accessibilityLabel = "Hidden hand card"
 }
 
