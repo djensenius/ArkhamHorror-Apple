@@ -31,6 +31,16 @@ enum StoryNodePresentation {
         nodes.map(\.plainText).joined()
     }
 
+    static func encounterSetGroupReferences(_ children: [StoryNode]) -> [StoryAssetReference]? {
+        let references = children.compactMap { child -> StoryAssetReference? in
+            guard case let .image(reference) = child, reference.role == .encounterSet else {
+                return nil
+            }
+            return reference
+        }
+        return references.count == children.count && !references.isEmpty ? references : nil
+    }
+
     static func isInline(_ node: StoryNode) -> Bool {
         switch node {
         case .text, .lineBreak, .icon:
@@ -114,9 +124,62 @@ private struct ModifiedResolvedStoryEntryView: View {
     let entry: ResolvedStoryEntry
     var cardCatalog: CardCatalogSnapshot?
 
+    private var status: StoryFlavorEntryStatus? {
+        StoryFlavorEntryStatus.status(for: modifiers)
+    }
+
     var body: some View {
-        ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
-            .modifier(StoryFlavorTextModifier(modifiers: modifiers))
+        if let status {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: status.systemImage)
+                    .foregroundStyle(status.markerColor)
+                    .accessibilityLabel(status.accessibilityLabel)
+                ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
+                    .modifier(StoryFlavorTextModifier(modifiers: modifiers))
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
+                .modifier(StoryFlavorTextModifier(modifiers: modifiers))
+        }
+    }
+}
+
+enum StoryFlavorEntryStatus: Equatable {
+    case valid
+    case invalid
+
+    var systemImage: String {
+        switch self {
+        case .valid: "checkmark.circle.fill"
+        case .invalid: "xmark.circle.fill"
+        }
+    }
+
+    var markerColor: Color {
+        switch self {
+        case .valid: .green
+        case .invalid: .secondary
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .valid:
+            CampaignPromptLocalization.localized("story.entryStatus.valid", "Valid")
+        case .invalid:
+            CampaignPromptLocalization.localized("story.entryStatus.invalid", "Invalid")
+        }
+    }
+
+    static func status(for modifiers: [FlavorTextModifier]) -> StoryFlavorEntryStatus? {
+        if modifiers.contains(.invalidEntry) {
+            return .invalid
+        }
+        if modifiers.contains(.validEntry) {
+            return .valid
+        }
+        return nil
     }
 }
 
@@ -148,7 +211,7 @@ private struct StoryFlavorTextModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .foregroundStyle(foregroundStyle)
+            .modifier(StoryOptionalForegroundStyleModifier(foregroundStyle: foregroundStyle))
             .font(font)
             .multilineTextAlignment(alignment)
             .frame(maxWidth: .infinity, alignment: frameAlignment)
@@ -157,11 +220,14 @@ private struct StoryFlavorTextModifier: ViewModifier {
             .overlay(border)
     }
 
-    private var foregroundStyle: Color {
-        if modifiers.contains(.redEntry) || modifiers.contains(.invalidEntry) {
+    private var foregroundStyle: Color? {
+        if modifiers.contains(.invalidEntry) {
+            return .secondary
+        }
+        if modifiers.contains(.redEntry) {
             return .red
         }
-        if modifiers.contains(.greenEntry) || modifiers.contains(.validEntry) {
+        if modifiers.contains(.greenEntry) {
             return .green
         }
         if modifiers.contains(.blueEntry) {
@@ -170,7 +236,7 @@ private struct StoryFlavorTextModifier: ViewModifier {
         if modifiers.contains(.hauntedEntry) {
             return .purple
         }
-        return .primary
+        return nil
     }
 
     private var font: Font? {
@@ -224,6 +290,18 @@ private struct StoryFlavorTextModifier: ViewModifier {
         if modifiers.contains(.borderedEntry) || modifiers.contains(.codexEntry) {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(ArkhamTheme.accent.opacity(0.7), lineWidth: 1)
+        }
+    }
+}
+
+private struct StoryOptionalForegroundStyleModifier: ViewModifier {
+    let foregroundStyle: Color?
+
+    func body(content: Content) -> some View {
+        if let foregroundStyle {
+            content.foregroundStyle(foregroundStyle)
+        } else {
+            content
         }
     }
 }
@@ -344,8 +422,14 @@ private struct StoryNodeView: View {
         switch node {
         case .text, .lineBreak, .icon:
             StoryInlineTextView(nodes: [node])
-        case let .paragraph(children), let .group(children):
+        case let .paragraph(children):
             StoryNodeChildrenView(children: children)
+        case let .group(children):
+            if let references = StoryNodePresentation.encounterSetGroupReferences(children) {
+                StoryEncounterSetGroupView(references: references)
+            } else {
+                StoryNodeChildrenView(children: children)
+            }
         case let .heading(level, children):
             StoryNodeChildrenView(children: children)
                 .font(StoryHeadingPresentation.font(for: level))
@@ -409,6 +493,139 @@ private struct StoryNodeView: View {
         let label = StoryNodePresentation.accessibilityLabel(for: children)
         return label.isEmpty ? "Card \(code)" : label
     }
+}
+
+private struct StoryEncounterSetGroupView: View {
+    let references: [StoryAssetReference]
+
+    var body: some View {
+        StoryCenteredWrappingRowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
+            ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
+                StoryEncounterSetIconView(reference: reference)
+                    .accessibilityLabel(reference.accessibleDescription)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(references.map(\.accessibleDescription).joined(separator: ", "))
+    }
+}
+
+private struct StoryEncounterSetIconView: View {
+    let reference: StoryAssetReference
+    @Environment(\.storyAssetCache) private var cacheService
+
+    var body: some View {
+        if reference.assetKey != nil, cacheService != nil {
+            StoryAssetImageView(reference: reference)
+                .frame(width: 40, height: 40)
+        } else {
+            StoryAssetImageView(reference: reference)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(minWidth: 120, maxWidth: 180)
+        }
+    }
+}
+
+struct StoryCenteredWrappingRowLayout: Layout {
+    var horizontalSpacing: CGFloat
+    var verticalSpacing: CGFloat
+
+    static func resolvedWidth(for proposal: ProposedViewSize, measuredWidth: CGFloat) -> CGFloat {
+        guard let proposedWidth = proposal.width, proposedWidth.isFinite else {
+            return measuredWidth
+        }
+        return proposedWidth
+    }
+
+    private static func availableWidth(for proposal: ProposedViewSize) -> CGFloat {
+        guard let proposedWidth = proposal.width, proposedWidth.isFinite else {
+            return .infinity
+        }
+        return proposedWidth
+    }
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache _: inout ()
+    ) -> CGSize {
+        let rows = rows(in: Self.availableWidth(for: proposal), subviews: subviews)
+        let measuredWidth = rows.map(\.width).max() ?? 0
+        return CGSize(
+            width: Self.resolvedWidth(for: proposal, measuredWidth: measuredWidth),
+            height: rowsHeight(rows)
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal _: ProposedViewSize,
+        subviews: Subviews,
+        cache _: inout ()
+    ) {
+        let rows = rows(in: bounds.width, subviews: subviews)
+        var currentY = bounds.minY
+        for row in rows {
+            var currentX = bounds.minX + max(0, (bounds.width - row.width) / 2)
+            for item in row.items {
+                subviews[item.index].place(
+                    at: CGPoint(x: currentX, y: currentY + (row.height - item.size.height) / 2),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(item.size)
+                )
+                currentX += item.size.width + horizontalSpacing
+            }
+            currentY += row.height + verticalSpacing
+        }
+    }
+
+    private func rows(in availableWidth: CGFloat, subviews: Subviews) -> [StoryWrappingRow] {
+        guard !subviews.isEmpty else { return [] }
+        var rows: [StoryWrappingRow] = []
+        var current = StoryWrappingRow(items: [], width: 0, height: 0)
+        let canWrap = availableWidth.isFinite && availableWidth > 0
+
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let item = StoryWrappingRowItem(index: index, size: size)
+            let nextWidth = current.items.isEmpty
+                ? size.width
+                : current.width + horizontalSpacing + size.width
+            if canWrap, !current.items.isEmpty, nextWidth > availableWidth {
+                rows.append(current)
+                current = StoryWrappingRow(items: [item], width: size.width, height: size.height)
+            } else {
+                current.items.append(item)
+                current.width = nextWidth
+                current.height = max(current.height, size.height)
+            }
+        }
+        if !current.items.isEmpty {
+            rows.append(current)
+        }
+        return rows
+    }
+
+    private func rowsHeight(_ rows: [StoryWrappingRow]) -> CGFloat {
+        guard !rows.isEmpty else { return 0 }
+        let contentHeight = rows.map(\.height).reduce(0, +)
+        return contentHeight + verticalSpacing * CGFloat(rows.count - 1)
+    }
+}
+
+private struct StoryWrappingRow {
+    var items: [StoryWrappingRowItem]
+    var width: CGFloat
+    var height: CGFloat
+}
+
+private struct StoryWrappingRowItem {
+    let index: Int
+    let size: CGSize
 }
 
 private enum StoryHeadingPresentation {
