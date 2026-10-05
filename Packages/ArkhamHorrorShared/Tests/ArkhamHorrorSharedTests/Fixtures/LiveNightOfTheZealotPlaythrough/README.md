@@ -4,7 +4,7 @@ This env-gated harness is for Backlog `task-1.2.12` automated verification. It i
 
 ## Local catalog-backed server setup used for round 3
 
-1. In the fork worktree (`/Users/david/Developer/ArkhamHorror/ArkhamHorror-task-1.2.12-server`), install frontend dependencies once:
+1. In a fork worktree with the task-1.2.12 server branch checked out, install frontend dependencies once:
    ```sh
    npm --prefix frontend ci --ignore-scripts
    ```
