@@ -137,6 +137,7 @@ extension AppModel {
         liveGameViewers = [:]
         liveGameStates = [:]
         liveGameParticipantIdentities = [:]
+        liveGameMultiplayerModes = [:]
         basicChoiceActions = [:]
         for submission in campaignDeckSubmissions.values {
             submission.task?.cancel()

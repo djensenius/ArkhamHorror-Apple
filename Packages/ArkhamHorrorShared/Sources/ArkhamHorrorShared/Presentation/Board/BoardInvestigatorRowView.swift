@@ -11,12 +11,33 @@ enum BoardInvestigatorDisplayNames {
 enum BoardPlayerAreaVisibility {
     static func shouldShowFullArea(
         for investigator: BoardInvestigatorNode,
-        fullPlayerAreaPlayerID: PlayerID?
+        fullPlayerAreaPlayerID: PlayerID?,
+        isSolo: Bool = true
     ) -> Bool {
         if let fullPlayerAreaPlayerID {
             return investigator.playerID == fullPlayerAreaPlayerID
         }
-        return investigator.isActiveInvestigator
+        return isSolo && investigator.isActiveInvestigator
+    }
+
+    static func revealsHandCardFaces(
+        for investigator: BoardInvestigatorNode,
+        localPlayerID: PlayerID?,
+        isSolo: Bool
+    ) -> Bool {
+        isSolo || investigator.playerID == localPlayerID
+    }
+
+    static func visibleHandCards(
+        for investigator: BoardInvestigatorNode,
+        cardsByPlayer: [PlayerID: [BoardPlayerCardNode]],
+        localPlayerID: PlayerID?,
+        isSolo: Bool
+    ) -> [BoardPlayerCardNode] {
+        guard revealsHandCardFaces(
+            for: investigator, localPlayerID: localPlayerID, isSolo: isSolo
+        ) else { return [] }
+        return cardsByPlayer[investigator.playerID] ?? []
     }
 }
 
@@ -30,6 +51,8 @@ struct BoardInvestigatorRowView: View {
     let engagedEnemiesByInvestigatorID: [InvestigatorID: [BoardEnemyNode]]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let fullPlayerAreaPlayerID: PlayerID?
+    let localPlayerID: PlayerID?
+    let isSolo: Bool
     let otherInvestigatorCount: Int
     let killedInvestigatorCount: Int
     let focusedID: SemanticFocusID?
@@ -120,7 +143,12 @@ struct BoardInvestigatorRowView: View {
         if shouldShowFullArea(for: investigator) {
             BoardPlayerAreaView(
                 investigator: investigator,
-                handCards: handCardsByPlayer[investigator.playerID] ?? [],
+                handCards: BoardPlayerAreaVisibility.visibleHandCards(
+                    for: investigator,
+                    cardsByPlayer: handCardsByPlayer,
+                    localPlayerID: localPlayerID,
+                    isSolo: isSolo
+                ),
                 inPlayCards: inPlayCardsByPlayer[investigator.playerID] ?? [],
                 threatTreacheries: threatTreacheriesByPlayer[investigator.playerID] ?? [],
                 engagedEnemies: engagedEnemiesByInvestigatorID[investigator.id] ?? [],
@@ -141,20 +169,22 @@ struct BoardInvestigatorRowView: View {
     }
 
     private func shouldShowFullArea(for investigator: BoardInvestigatorNode) -> Bool {
-        // Fixture/gallery boards and spectator sessions may have no local participant
-        // identity; in that case keep the previous active-investigator fallback so one
-        // full player area remains visible instead of collapsing every hand/play area.
+        // Fixture/gallery boards and solo spectator sessions may have no local participant
+        // identity; in that case keep the active-investigator fallback so one solo hand
+        // remains visible. With-friends spectators get compact count-only rows instead.
         BoardPlayerAreaVisibility.shouldShowFullArea(
             for: investigator,
-            fullPlayerAreaPlayerID: fullPlayerAreaPlayerID
+            fullPlayerAreaPlayerID: fullPlayerAreaPlayerID,
+            isSolo: isSolo
         )
     }
 
     private func compactPlayerArea(_ investigator: BoardInvestigatorNode) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            let handCount = handCardsByPlayer[investigator.playerID]?.count ?? 0
+            let handCount = investigator.handCount
+            let deckCount = investigator.deckCount
             let inPlayCount = inPlayCardsByPlayer[investigator.playerID]?.count ?? 0
-            Text("Hand \(handCount), in play \(inPlayCount)")
+            Text("Hand \(handCount), deck \(deckCount), in play \(inPlayCount)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             if let enemies = engagedEnemiesByInvestigatorID[investigator.id], !enemies.isEmpty {

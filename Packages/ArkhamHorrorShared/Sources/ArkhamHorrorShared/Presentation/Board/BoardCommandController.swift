@@ -20,6 +20,7 @@ final class BoardCommandController {
     private(set) var projection: BoardProjection
     private(set) var prompt: BasicChoicePromptPresentation?
     private(set) var localPlayerID: PlayerID?
+    private(set) var isSolo: Bool
     private var cardCatalog: CardCatalogSnapshot?
     private(set) var layout: BoardLayout
     private(set) var coordinator: FocusCoordinator
@@ -60,6 +61,7 @@ final class BoardCommandController {
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
         localPlayerID: PlayerID? = nil,
+        isSolo: Bool = true,
         cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
@@ -71,6 +73,7 @@ final class BoardCommandController {
         self.projection = projection
         self.prompt = prompt
         self.localPlayerID = localPlayerID
+        self.isSolo = isSolo
         self.cardCatalog = cardCatalog
         self.onChoice = onChoice
         self.onAmounts = onAmounts
@@ -94,8 +97,9 @@ final class BoardCommandController {
             amountDraft: initialAmountDraft,
             exchangeAmount: 0,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
-                in: projection, prompt: prompt, localPlayerID: localPlayerID
-            )
+                in: projection, prompt: prompt, localPlayerID: localPlayerID, isSolo: isSolo
+            ),
+            isSolo: isSolo
         )
         coordinator = FocusCoordinator(graph: graph, initialFocus: graph.order.first)
     }
@@ -107,13 +111,15 @@ final class BoardCommandController {
     private static func fullPlayerAreaPlayerID(
         in projection: BoardProjection,
         prompt: BasicChoicePromptPresentation?,
-        localPlayerID: PlayerID?
+        localPlayerID: PlayerID?,
+        isSolo: Bool
     ) -> PlayerID? {
         let activePlayerID = projection.investigators.first(where: \.isActiveInvestigator)?.playerID
         return Self.fullPlayerAreaPlayerID(
             promptOwnerID: prompt?.ownerID,
             localPlayerID: localPlayerID,
-            activeInvestigatorPlayerID: activePlayerID
+            activeInvestigatorPlayerID: activePlayerID,
+            isSolo: isSolo
         )
     }
 
@@ -144,8 +150,9 @@ final class BoardCommandController {
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
-                in: newProjection, prompt: newPrompt, localPlayerID: localPlayerID
-            )
+                in: newProjection, prompt: newPrompt, localPlayerID: localPlayerID, isSolo: isSolo
+            ),
+            isSolo: isSolo
         )
         coordinator.applySnapshot(newGraph)
     }
@@ -165,8 +172,9 @@ final class BoardCommandController {
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
-                in: projection, prompt: newPrompt, localPlayerID: localPlayerID
-            )
+                in: projection, prompt: newPrompt, localPlayerID: localPlayerID, isSolo: isSolo
+            ),
+            isSolo: isSolo
         )
         coordinator.applySnapshot(graph)
     }
@@ -530,8 +538,9 @@ final class BoardCommandController {
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
-                in: projection, prompt: prompt, localPlayerID: localPlayerID
+                in: projection, prompt: prompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
+            isSolo: isSolo,
             linkedChoiceMenuRequest: linkedChoiceMenuRequest
         )
         coordinator.applySnapshot(graph)
@@ -838,12 +847,19 @@ extension BoardCommandController {
         refreshFocusGraphForPromptControls()
     }
 
+    func updateIsSolo(_ isSolo: Bool) {
+        guard self.isSolo != isSolo else { return }
+        self.isSolo = isSolo
+        refreshFocusGraphForPromptControls()
+    }
+
     nonisolated static func fullPlayerAreaPlayerID(
         promptOwnerID: PlayerID?,
         localPlayerID: PlayerID?,
-        activeInvestigatorPlayerID: PlayerID?
+        activeInvestigatorPlayerID: PlayerID?,
+        isSolo: Bool = true
     ) -> PlayerID? {
-        promptOwnerID ?? localPlayerID ?? activeInvestigatorPlayerID
+        isSolo ? (promptOwnerID ?? localPlayerID ?? activeInvestigatorPlayerID) : localPlayerID
     }
 
     var fullPlayerAreaPlayerID: PlayerID? {
@@ -851,7 +867,8 @@ extension BoardCommandController {
         return Self.fullPlayerAreaPlayerID(
             promptOwnerID: prompt?.ownerID,
             localPlayerID: localPlayerID,
-            activeInvestigatorPlayerID: activePlayerID
+            activeInvestigatorPlayerID: activePlayerID,
+            isSolo: isSolo
         )
     }
 
