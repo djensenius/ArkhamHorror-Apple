@@ -121,7 +121,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 token: token,
                 gameID: gameID,
                 investigator: investigator,
-                deckID: deck.id,
+                deck: deck,
                 trace: trace,
                 diagnosticBypassUnsupported: Self.diagnosticBypassUnsupported
             )
@@ -237,7 +237,7 @@ private struct LivePlaythroughBot {
     let token: String
     let gameID: GameID
     let investigator: InvestigatorFixture
-    let deckID: DeckID
+    let deck: Deck
     let trace: PlaythroughTraceRecorder
     let diagnosticBypassUnsupported: Bool
 
@@ -499,7 +499,7 @@ private struct LivePlaythroughBot {
     ) throws -> SelectedBotAnswer {
         if isInitialChooseDeckPrompt(prompt) {
             return SelectedBotAnswer(
-                answer: .savedDeck(deckID), note: "starter deck", chosenChoiceKind: nil
+                answer: .savedDeck(deck), note: "starter deck", chosenChoiceKind: nil
             )
         }
         if prompt.isChooseUpgradeDeckPrompt {
@@ -579,15 +579,13 @@ private struct LivePlaythroughBot {
             result = await model.submitExchangeAmountsAnswer(prompt.identity, amount: amount)
         case let .continueCampaign(step):
             result = await model.submitContinueCampaignAnswer(prompt.identity, step: step)
-        case let .savedDeck(deckID):
-            guard let connection = model.liveGameConnections[gameID]?.connection else {
-                throw PlaythroughError.submissionFailed("deck answer socket was not connected")
+        case let .savedDeck(deck):
+            guard await model.chooseDeckForLivePrompt(deck, in: gameID) else {
+                throw PlaythroughError.submissionFailed("live deck choice was not accepted")
             }
-            let bytes = try ContractJSON.encode(
-                DeckAnswer(deckId: deckID, playerId: prompt.identity.ownerID)
+            return SubmissionOutcome(
+                detail: "submitted DeckAnswer through AppModel chooseDeckForLivePrompt"
             )
-            try await connection.send(bytes)
-            return SubmissionOutcome(detail: "sent DeckAnswer over WebSocket")
         case let .skipDeckUpgrade(investigatorID):
             let deckResult = await model.continueCampaignWithoutUpgrading(
                 investigatorId: investigatorID,
@@ -730,7 +728,7 @@ private enum BotAnswer: Sendable {
     case paymentAmounts([String: Int])
     case exchangeAmount(Int)
     case continueCampaign(JSONValue)
-    case savedDeck(DeckID)
+    case savedDeck(Deck)
     case skipDeckUpgrade(investigatorID: String)
 }
 
@@ -803,10 +801,10 @@ private extension BotAnswer {
                 kind: "CampaignStepAnswer",
                 payload: CampaignStepAnswer(contents: step)
             )
-        case let .savedDeck(deckID):
+        case let .savedDeck(deck):
             return try TraceSubmission(
                 kind: "DeckAnswer",
-                payload: DeckAnswer(deckId: deckID, playerId: prompt.identity.ownerID)
+                payload: DeckAnswer(deckId: deck.id, playerId: prompt.identity.ownerID)
             )
         case let .skipDeckUpgrade(investigatorID):
             return TraceSubmission(
