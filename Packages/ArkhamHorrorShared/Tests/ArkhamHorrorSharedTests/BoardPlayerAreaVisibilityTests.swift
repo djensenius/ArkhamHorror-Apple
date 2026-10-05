@@ -30,7 +30,8 @@ struct BoardPlayerAreaVisibilityTests {
         #expect(BoardCommandController.fullPlayerAreaPlayerID(
             promptOwnerID: promptPlayerID,
             localPlayerID: localPlayerID,
-            activeInvestigatorPlayerID: playerID
+            activeInvestigatorPlayerID: playerID,
+            isSolo: true
         ) == promptPlayerID)
         #expect(BoardCommandController.fullPlayerAreaPlayerID(
             promptOwnerID: nil,
@@ -40,7 +41,8 @@ struct BoardPlayerAreaVisibilityTests {
         #expect(BoardCommandController.fullPlayerAreaPlayerID(
             promptOwnerID: nil,
             localPlayerID: nil,
-            activeInvestigatorPlayerID: playerID
+            activeInvestigatorPlayerID: playerID,
+            isSolo: true
         ) == playerID)
         #expect(BoardPlayerAreaVisibility.shouldShowFullArea(
             for: prompt,
@@ -56,7 +58,8 @@ struct BoardPlayerAreaVisibilityTests {
         ))
         #expect(BoardPlayerAreaVisibility.shouldShowFullArea(
             for: active,
-            fullPlayerAreaPlayerID: nil
+            fullPlayerAreaPlayerID: nil,
+            isSolo: true
         ))
         #expect(!BoardPlayerAreaVisibility.shouldShowFullArea(
             for: local,
