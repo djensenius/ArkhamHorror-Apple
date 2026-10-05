@@ -208,6 +208,7 @@ extension BoardView {
         controller.updateRetryHandler(onRetryChoice)
         controller.updateCatalogRetryHandler(onCatalogRetry)
         controller.updateLocalPlayerID(localPlayerID)
+        controller.updateIsSolo(isSolo)
         controller.updateIsLocalSpectator(isLocalSpectator)
         controller.updateCardCatalog(cardCatalog)
     }

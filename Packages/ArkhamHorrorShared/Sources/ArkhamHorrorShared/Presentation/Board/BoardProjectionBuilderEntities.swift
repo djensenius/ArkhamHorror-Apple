@@ -279,6 +279,8 @@ extension BoardProjectionBuilder {
             isActingPlayer: investigator.playerID == serverStatus.activePlayerID,
             isTurnPlayer: investigator.id == serverStatus.turnPlayerInvestigatorID,
             isLeadInvestigator: investigator.id == serverStatus.leadInvestigatorID,
+            handCount: investigator.hand.count,
+            deckCount: investigator.deckSize,
             isMultiplayer: serverStatus.isMultiplayer,
             hasPendingPrompt: serverStatus.pendingPromptPlayerIDs.contains(investigator.playerID),
             engagedEnemyCount: investigator.engagedEnemies.count,

@@ -142,6 +142,8 @@ struct BoardCompactLayoutView: View {
                 .engagedEnemiesByInvestigatorID,
             choiceLinks: choiceLinks,
             fullPlayerAreaPlayerID: controller.fullPlayerAreaPlayerID,
+            localPlayerID: controller.localPlayerID,
+            isSolo: controller.isSolo,
             otherInvestigatorCount: controller.projection.otherInvestigatorCount,
             killedInvestigatorCount: controller.projection.killedInvestigatorCount,
             focusedID: controller.coordinator.currentFocus,

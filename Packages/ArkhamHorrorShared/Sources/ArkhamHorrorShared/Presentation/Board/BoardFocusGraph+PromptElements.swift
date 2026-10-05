@@ -270,13 +270,15 @@ extension BoardFocusGraphBuilder {
     static func investigatorFocusIDs(
         projection: BoardProjection,
         choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]],
-        fullPlayerAreaPlayerID: PlayerID?
+        fullPlayerAreaPlayerID: PlayerID?,
+        isSolo: Bool = false
     ) -> [SemanticFocusID] {
         projection.investigators.flatMap { investigator in
             var ids = [BoardFocusID.investigator(investigator.id)]
             let showsFullArea = BoardPlayerAreaVisibility.shouldShowFullArea(
                 for: investigator,
-                fullPlayerAreaPlayerID: fullPlayerAreaPlayerID
+                fullPlayerAreaPlayerID: fullPlayerAreaPlayerID,
+                isSolo: isSolo
             )
             if showsFullArea {
                 ids += promptElementIDs(
