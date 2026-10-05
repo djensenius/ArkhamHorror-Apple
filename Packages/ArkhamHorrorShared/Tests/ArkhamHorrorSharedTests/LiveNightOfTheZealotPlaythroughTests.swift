@@ -664,16 +664,29 @@ private struct LivePlaythroughBot {
         from identity: BasicChoicePromptIdentity
     ) async throws -> Bool {
         let deadline = Date().addingTimeInterval(30)
+        var nextServerStateCheck = Date()
         while Date() < deadline {
             guard let current = model.basicChoicePresentation(for: gameID) else { return true }
             if current.identity.promptKey != identity.promptKey {
                 return true
             }
-            let state = model.liveGameState(for: gameID)
-            if state.lastKnownProjection?.counters.gameStateSummary == "Completed" {
-                return true
+            if Date() >= nextServerStateCheck {
+                nextServerStateCheck = Date().addingTimeInterval(1)
+                if await serverSnapshotIsOver() {
+                    return true
+                }
             }
             try await Task.sleep(for: .milliseconds(100))
+        }
+        return false
+    }
+
+    private func serverSnapshotIsOver() async -> Bool {
+        guard let envelope = try? await lifecycle.getGame(gameID, on: profile, token: token) else {
+            return false
+        }
+        if case .over = envelope.game.gameState {
+            return true
         }
         return false
     }
