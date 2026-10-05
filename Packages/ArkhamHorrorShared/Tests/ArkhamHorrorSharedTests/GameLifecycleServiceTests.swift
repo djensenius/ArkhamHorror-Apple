@@ -157,6 +157,59 @@ struct GameLifecycleServiceTests {
                 == "https://arkhamhorror.app/api/v1/arkham/games/"
                 + "00000000-0000-0000-0000-000000000042"
         )
+        #expect(request?.url?.path == "/api/v1/arkham/games/00000000-0000-0000-0000-000000000042")
+        #expect(request?.value(forHTTPHeaderField: "Authorization") == "Token \(token)")
+        #expect(request?.value(forHTTPHeaderField: "Accept") == "application/json")
+        #expect(request?.httpShouldHandleCookies == false)
+        #expect(request?.httpBody == nil)
+    }
+
+    /// Defensive coverage: governed OpenAPI currently documents only 200 and 401 for
+    /// DELETE /arkham/games/{gameId}, but these bodies match Yesod/lifecycle error
+    /// shapes used elsewhere and keep any future server-authored delete message
+    /// visible verbatim instead of falling back to a generic status error.
+    @Test("deleteGame surfaces a server-authored error message body verbatim")
+    func deleteGameSurfacesServerErrorMessageBody() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)")
+        let errorBody = Data(
+            #"{"message":"Delete is disabled while this game is being updated."}"#.utf8
+        )
+        let transport = GameLifecycleRecordingTransport(
+            data: errorBody, response: httpResponse(403, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+
+        await #expect(throws: GameLifecycleError.operationFailed(DeckOperationError(
+            errorMsg: "Delete is disabled while this game is being updated."
+        ))) {
+            try await service.deleteGame(gameID, on: profile, token: token)
+        }
+        let request = await transport.capturedRequest
+        #expect(request?.httpMethod == "DELETE")
+        #expect(request?.url?.path == "/api/v1/arkham/games/00000000-0000-0000-0000-000000000042")
+        #expect(request?.value(forHTTPHeaderField: "Authorization") == "Token \(token)")
+        #expect(request?.httpBody == nil)
+    }
+
+    @Test("deleteGame surfaces server validation error-body bytes")
+    func deleteGameSurfacesServerValidationErrorBody() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)")
+        let errorBody = Data(
+            #"{"errors":["The game could not be deleted.","Refresh and try again."]}"#.utf8
+        )
+        let transport = GameLifecycleRecordingTransport(
+            data: errorBody, response: httpResponse(400, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+
+        await #expect(throws: GameLifecycleError.operationFailed(DeckOperationError(
+            errorMsg: "The game could not be deleted.\nRefresh and try again."
+        ))) {
+            try await service.deleteGame(gameID, on: profile, token: token)
+        }
+        let request = await transport.capturedRequest
+        #expect(request?.httpMethod == "DELETE")
+        #expect(request?.url?.path == "/api/v1/arkham/games/00000000-0000-0000-0000-000000000042")
         #expect(request?.value(forHTTPHeaderField: "Authorization") == "Token \(token)")
         #expect(request?.httpBody == nil)
     }
@@ -250,4 +303,24 @@ struct GameLifecycleServiceTests {
 /// the `openSeats` key this file needs.
 private struct GameLifecycleOpenSeatsFixture: Decodable {
     let openSeats: OpenSeats
+}
+
+extension GameLifecycleServiceTests {
+    @Test("deleteGame maps documented 401 responses to session expiry")
+    func deleteGameMapsUnauthorizedToSessionExpired() async throws {
+        let url = profile.endpointURL(path: "/arkham/games/\(gameID.description)")
+        let transport = GameLifecycleRecordingTransport(
+            data: emptyBody(), response: httpResponse(401, url: url)
+        )
+        let service = GameLifecycleService(transport: transport)
+
+        await #expect(throws: GameLifecycleError.sessionExpired) {
+            try await service.deleteGame(gameID, on: profile, token: token)
+        }
+        let request = await transport.capturedRequest
+        #expect(request?.httpMethod == "DELETE")
+        #expect(request?.url?.path == "/api/v1/arkham/games/00000000-0000-0000-0000-000000000042")
+        #expect(request?.value(forHTTPHeaderField: "Authorization") == "Token \(token)")
+        #expect(request?.httpBody == nil)
+    }
 }

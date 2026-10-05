@@ -10,12 +10,27 @@ struct AccountShellView: View {
     let profile: ServerProfile
     let compatibility: ServerCompatibility
     let user: CurrentUser
+    @Binding private var liveGamePath: [GameID]
+
+    init(
+        model: AppModel,
+        profile: ServerProfile,
+        compatibility: ServerCompatibility,
+        user: CurrentUser,
+        liveGamePath: Binding<[GameID]> = .constant([])
+    ) {
+        self.model = model
+        self.profile = profile
+        self.compatibility = compatibility
+        self.user = user
+        _liveGamePath = liveGamePath
+    }
 
     @State private var isPresentingAccountDetail = false
     @State private var isPresentingDecks = false
 
     var body: some View {
-        GamesListView(model: model)
+        GamesListView(model: model, liveGamePath: $liveGamePath)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
