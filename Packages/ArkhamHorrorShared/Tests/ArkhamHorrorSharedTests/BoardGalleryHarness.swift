@@ -50,9 +50,9 @@ struct BoardGalleryView: View {
 
     var body: some View {
         TabView {
-            BoardView(projection: restProjection)
+            BoardView(projection: restProjection, isSolo: true)
                 .tabItem { Text("REST fixture") }
-            BoardView(projection: webSocketProjection)
+            BoardView(projection: webSocketProjection, isSolo: true)
                 .tabItem { Text("WebSocket fixture") }
         }
     }
@@ -100,15 +100,15 @@ struct BoardGalleryHarnessTests {
         let rest = try BoardGalleryHarness.restProjection()
         let webSocket = try BoardGalleryHarness.webSocketProjection()
         #expect(rest == webSocket)
-        _ = BoardView(projection: rest)
-        _ = BoardView(projection: webSocket)
+        _ = BoardView(projection: rest, isSolo: true)
+        _ = BoardView(projection: webSocket, isSolo: true)
     }
 
     @Test("Two independent BoardCommandController instances never share focus/zoom state")
     func independentControllersDoNotShareMutableState() throws {
         let rest = try BoardGalleryHarness.restProjection()
-        let first = BoardCommandController(projection: rest)
-        let second = BoardCommandController(projection: rest)
+        let first = BoardCommandController(projection: rest, isSolo: true)
+        let second = BoardCommandController(projection: rest, isSolo: true)
         first.handle(.command(.zoomIn))
         first.handle(.command(.cycleZone(.next)))
         #expect(first.zoomScale != second.zoomScale)

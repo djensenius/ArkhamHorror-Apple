@@ -8,15 +8,97 @@ enum BoardInvestigatorDisplayNames {
     }
 }
 
+/// Hidden hand backs carry only a synthetic position, never a backend card identity.
+struct BoardHiddenHandBackPlaceholder: Sendable, Equatable, Identifiable {
+    let id: Int
+    let accessibilityLabel = "Hidden hand card"
+}
+
+struct BoardDeckCountBadgeModel: Sendable, Equatable {
+    let count: Int
+
+    var value: String {
+        "\(count)"
+    }
+
+    var accessibilityLabel: String {
+        "Deck " + BoardDisplayFormatting.pluralized(
+            count, singular: "card", plural: "cards"
+        )
+    }
+}
+
 enum BoardPlayerAreaVisibility {
     static func shouldShowFullArea(
         for investigator: BoardInvestigatorNode,
-        fullPlayerAreaPlayerID: PlayerID?
+        fullPlayerAreaPlayerID: PlayerID?,
+        isSolo: Bool = false
     ) -> Bool {
         if let fullPlayerAreaPlayerID {
             return investigator.playerID == fullPlayerAreaPlayerID
         }
-        return investigator.isActiveInvestigator
+        return isSolo && investigator.isActiveInvestigator
+    }
+
+    static func revealsHandCardFaces(
+        for investigator: BoardInvestigatorNode,
+        localPlayerID: PlayerID?,
+        isSolo: Bool
+    ) -> Bool {
+        isSolo || investigator.playerID == localPlayerID
+    }
+
+    static func visibleHandCards(
+        for investigator: BoardInvestigatorNode,
+        cardsByPlayer: [PlayerID: [BoardPlayerCardNode]],
+        localPlayerID: PlayerID?,
+        isSolo: Bool
+    ) -> [BoardPlayerCardNode] {
+        guard revealsHandCardFaces(
+            for: investigator, localPlayerID: localPlayerID, isSolo: isSolo
+        ) else { return [] }
+        return cardsByPlayer[investigator.playerID] ?? []
+    }
+
+    static func hiddenHandBackPlaceholders(
+        for investigator: BoardInvestigatorNode,
+        localPlayerID: PlayerID?,
+        isSolo: Bool
+    ) -> [BoardHiddenHandBackPlaceholder] {
+        guard !revealsHandCardFaces(
+            for: investigator, localPlayerID: localPlayerID, isSolo: isSolo
+        ) else { return [] }
+        return (0 ..< investigator.handCount).map(BoardHiddenHandBackPlaceholder.init(id:))
+    }
+
+    static func deckCountBadge(
+        for investigator: BoardInvestigatorNode
+    ) -> BoardDeckCountBadgeModel {
+        BoardDeckCountBadgeModel(count: investigator.deckCount)
+    }
+}
+
+struct BoardHiddenHandBackView: View {
+    let placeholder: BoardHiddenHandBackPlaceholder
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(.black.opacity(0.45))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(ArkhamTheme.accent.opacity(0.6), lineWidth: 1)
+            }
+            .overlay {
+                Image(systemName: "rectangle.portrait.fill")
+                    .font(.caption)
+                    .foregroundStyle(ArkhamTheme.bone.opacity(0.65))
+                    .accessibilityHidden(true)
+            }
+            .frame(
+                width: BoardInvestigatorTileLayout.hiddenHandBackSize.width,
+                height: BoardInvestigatorTileLayout.hiddenHandBackSize.height
+            )
+            .accessibilityLabel(placeholder.accessibilityLabel)
     }
 }
 
@@ -30,6 +112,8 @@ struct BoardInvestigatorRowView: View {
     let engagedEnemiesByInvestigatorID: [InvestigatorID: [BoardEnemyNode]]
     let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     let fullPlayerAreaPlayerID: PlayerID?
+    let localPlayerID: PlayerID?
+    let isSolo: Bool
     let otherInvestigatorCount: Int
     let killedInvestigatorCount: Int
     let focusedID: SemanticFocusID?
@@ -95,7 +179,7 @@ struct BoardInvestigatorRowView: View {
             }
             investigatorPlayerArea(investigator)
         }
-        .frame(width: 272, alignment: .top)
+        .frame(width: BoardInvestigatorTileLayout.width, alignment: .top)
         .accessibilityElement(children: .contain)
     }
 
@@ -120,7 +204,13 @@ struct BoardInvestigatorRowView: View {
         if shouldShowFullArea(for: investigator) {
             BoardPlayerAreaView(
                 investigator: investigator,
-                handCards: handCardsByPlayer[investigator.playerID] ?? [],
+                deckCountBadge: BoardPlayerAreaVisibility.deckCountBadge(for: investigator),
+                handCards: BoardPlayerAreaVisibility.visibleHandCards(
+                    for: investigator,
+                    cardsByPlayer: handCardsByPlayer,
+                    localPlayerID: localPlayerID,
+                    isSolo: isSolo
+                ),
                 inPlayCards: inPlayCardsByPlayer[investigator.playerID] ?? [],
                 threatTreacheries: threatTreacheriesByPlayer[investigator.playerID] ?? [],
                 engagedEnemies: engagedEnemiesByInvestigatorID[investigator.id] ?? [],
@@ -141,22 +231,25 @@ struct BoardInvestigatorRowView: View {
     }
 
     private func shouldShowFullArea(for investigator: BoardInvestigatorNode) -> Bool {
-        // Fixture/gallery boards and spectator sessions may have no local participant
-        // identity; in that case keep the previous active-investigator fallback so one
-        // full player area remains visible instead of collapsing every hand/play area.
+        // Fixture/gallery boards and solo spectator sessions may have no local participant
+        // identity; in that case keep the active-investigator fallback so one solo hand
+        // remains visible. With-friends spectators get compact count-only rows instead.
         BoardPlayerAreaVisibility.shouldShowFullArea(
             for: investigator,
-            fullPlayerAreaPlayerID: fullPlayerAreaPlayerID
+            fullPlayerAreaPlayerID: fullPlayerAreaPlayerID,
+            isSolo: isSolo
         )
     }
 
     private func compactPlayerArea(_ investigator: BoardInvestigatorNode) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            let handCount = handCardsByPlayer[investigator.playerID]?.count ?? 0
+            let handCount = investigator.handCount
+            let deckCount = investigator.deckCount
             let inPlayCount = inPlayCardsByPlayer[investigator.playerID]?.count ?? 0
-            Text("Hand \(handCount), in play \(inPlayCount)")
+            Text("Hand \(handCount), deck \(deckCount), in play \(inPlayCount)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            hiddenHandBackStrip(for: investigator)
             if let enemies = engagedEnemiesByInvestigatorID[investigator.id], !enemies.isEmpty {
                 BoardEnemyPanelView(
                     title: "Engaged", enemies: enemies,
@@ -180,6 +273,30 @@ struct BoardInvestigatorRowView: View {
                     )
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func hiddenHandBackStrip(for investigator: BoardInvestigatorNode) -> some View {
+        let placeholders = BoardPlayerAreaVisibility.hiddenHandBackPlaceholders(
+            for: investigator,
+            localPlayerID: localPlayerID,
+            isSolo: isSolo
+        )
+        if !placeholders.isEmpty {
+            let layout = BoardHiddenHandBackFanLayout.make(handCount: placeholders.count)
+            HStack(alignment: .top, spacing: layout.spacing) {
+                ForEach(placeholders) { placeholder in
+                    BoardHiddenHandBackView(placeholder: placeholder)
+                }
+            }
+            .frame(width: layout.totalWidth, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                "Hand " + BoardDisplayFormatting.pluralized(
+                    placeholders.count, singular: "hidden card", plural: "hidden cards"
+                )
+            )
         }
     }
 

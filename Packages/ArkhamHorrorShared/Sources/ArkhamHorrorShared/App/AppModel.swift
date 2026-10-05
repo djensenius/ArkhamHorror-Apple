@@ -316,6 +316,8 @@ final class AppModel {
     @ObservationIgnored var liveGameSessions: [GameID: LiveGameSessionHandle] = [:]
     /// REST-authoritative participant identity retained across socket snapshots/reconnects.
     var liveGameParticipantIdentities: [GameID: LiveGameParticipantIdentity] = [:]
+    /// REST-authoritative multiplayer mode retained across socket snapshots/reconnects.
+    var liveGameMultiplayerModes: [GameID: MultiplayerVariant] = [:]
     /// The currently usable socket, scoped to its exact session attempt and connection.
     @ObservationIgnored var liveGameConnections: [GameID: LiveGameConnectionHandle] = [:]
     /// Process-global answer authority: at most one claimed answer per game.

@@ -144,6 +144,12 @@ struct BoardInvestigatorNode: Sendable, Equatable, Identifiable {
     let isActingPlayer: Bool
     let isTurnPlayer: Bool
     let isLeadInvestigator: Bool
+    /// Number of card-union entries currently in the investigator's hand. This is a
+    /// count only; individual hidden card identities stay behind presentation gates.
+    let handCount: Int
+    /// Server-published player deck count, matching the web deck-size badge without
+    /// carrying ordered deck card identities into board presentation.
+    let deckCount: Int
     /// True only when the server's `playerOrder` names more than one investigator.
     let isMultiplayer: Bool
     /// True when the server's per-player `question` map contains this investigator's
