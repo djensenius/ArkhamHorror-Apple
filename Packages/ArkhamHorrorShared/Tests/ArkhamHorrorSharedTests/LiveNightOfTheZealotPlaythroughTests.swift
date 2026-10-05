@@ -114,7 +114,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 gameID: gameID,
                 investigator: investigator,
                 deckID: deck.id,
-                trace: trace
+                trace: trace,
+                diagnosticBypassUnsupported: Self.diagnosticBypassUnsupported
             )
             let outcome = try await bot.driveUntilCampaignOver()
             scenarioOutcomes = outcome.scenarioOutcomes
@@ -173,6 +174,13 @@ struct LiveNightOfTheZealotPlaythroughTests {
         }
     }
 
+    private static var diagnosticBypassUnsupported: Bool {
+        let rawValue = ProcessInfo.processInfo
+            .environment["ARKHAM_LIVE_DIAGNOSTIC_BYPASS_UNSUPPORTED"]?
+            .lowercased()
+        return rawValue == "1" || rawValue == "true" || rawValue == "yes"
+    }
+
     private func waitForLocaleCatalogIfAdvertised(_ model: AppModel) async throws {
         guard model.localeCatalogRequest != nil || model.isLocaleCatalogLoading else { return }
         try await waitUntil(timeout: 30, description: "locale catalog loads or fails") {
@@ -223,6 +231,7 @@ private struct LivePlaythroughBot {
     let investigator: InvestigatorFixture
     let deckID: DeckID
     let trace: PlaythroughTraceRecorder
+    let diagnosticBypassUnsupported: Bool
 
     // swiftlint:disable:next function_body_length
     func driveUntilCampaignOver() async throws -> BotOutcome {
@@ -260,7 +269,10 @@ private struct LivePlaythroughBot {
             let scenario = currentScenarioCode(projection: projection, snapshot: envelope.game)
             let repeatKey = coverageRepeatKey(scenario: scenario, prompt: prompt)
             let repeatCount = repeatedQuestionShapes[repeatKey, default: 0]
-            guard prompt.isRenderableQuestion || isInitialChooseDeckPrompt(prompt) else {
+            let cannotRender = !prompt.isRenderableQuestion
+                && !isInitialChooseDeckPrompt(prompt)
+                && !canDiagnosticBypassUnsupported(prompt)
+            if cannotRender {
                 let failure = PromptFailure(
                     scenario: scenario,
                     investigator: investigator,
@@ -286,9 +298,11 @@ private struct LivePlaythroughBot {
                     promptFailure: failure
                 )
             }
-            guard prompt.canSubmit || prompt.isChooseUpgradeDeckPrompt
-                || isInitialChooseDeckPrompt(prompt)
-            else {
+            let cannotAnswer = !prompt.canSubmit
+                && !prompt.isChooseUpgradeDeckPrompt
+                && !isInitialChooseDeckPrompt(prompt)
+                && !canDiagnosticBypassUnsupported(prompt)
+            if cannotAnswer {
                 let failure = PromptFailure(
                     scenario: scenario,
                     investigator: investigator,
@@ -468,6 +482,7 @@ private struct LivePlaythroughBot {
         return TraceServerFeedback(source: source, message: message)
     }
 
+    // swiftlint:disable:next function_body_length
     private func selectAnswer(
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
@@ -533,7 +548,13 @@ private struct LivePlaythroughBot {
         )
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
+    private func canDiagnosticBypassUnsupported(_ prompt: BasicChoicePromptPresentation) -> Bool {
+        guard diagnosticBypassUnsupported else { return false }
+        return prompt.identity.questionPresentation?.choices
+            .contains { $0.selectable } == true
+    }
+
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func submit(
         _ answer: BotAnswer, prompt: BasicChoicePromptPresentation
     ) async throws -> String {
@@ -577,17 +598,42 @@ private struct LivePlaythroughBot {
         case .alreadyPending:
             throw PlaythroughError.submissionFailed("answer already pending")
         case .readOnly:
-            throw PlaythroughError.submissionFailed("prompt became read-only")
+            guard diagnosticBypassUnsupported, case let .choice(index) = answer else {
+                throw PlaythroughError.submissionFailed("prompt became read-only")
+            }
+            return try await sendDiagnosticUnsupportedChoice(index, prompt: prompt)
         case .retryableFailure:
             throw PlaythroughError.submissionFailed("retryable answer failure")
         case .staleQuestion:
             throw PlaythroughError.submissionFailed("stale question")
         case .unsupportedChoice:
-            throw PlaythroughError.submissionFailed("unsupported choice")
+            guard diagnosticBypassUnsupported, case let .choice(index) = answer else {
+                throw PlaythroughError.submissionFailed("unsupported choice")
+            }
+            return try await sendDiagnosticUnsupportedChoice(index, prompt: prompt)
         }
     }
 
-    private func waitForPromptAdvance(from identity: BasicChoicePromptIdentity) async throws -> Bool {
+    private func sendDiagnosticUnsupportedChoice(
+        _ index: Int, prompt: BasicChoicePromptPresentation
+    ) async throws -> String {
+        guard let connection = model.liveGameConnections[gameID]?.connection else {
+            throw PlaythroughError.submissionFailed("diagnostic bypass socket was not connected")
+        }
+        let bytes = try ContractJSON.encode(
+            BasicChoiceAnswer(
+                choice: index,
+                playerID: prompt.identity.ownerID,
+                questionVersion: prompt.identity.questionVersion
+            )
+        )
+        try await connection.send(bytes)
+        return "diagnostic bypass sent unsupported Answer over WebSocket"
+    }
+
+    private func waitForPromptAdvance(
+        from identity: BasicChoicePromptIdentity
+    ) async throws -> Bool {
         let deadline = Date().addingTimeInterval(30)
         while Date() < deadline {
             guard let current = model.basicChoicePresentation(for: gameID) else { return true }
@@ -686,6 +732,7 @@ private struct SelectedBotAnswer: Sendable {
 }
 
 private extension BotAnswer {
+    // swiftlint:disable:next function_body_length
     func traceSubmission(prompt: BasicChoicePromptPresentation) throws -> TraceSubmission {
         switch self {
         case let .choice(index):
@@ -907,6 +954,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
         )
     }
 
+    // swiftlint:disable:next function_parameter_count
     static func prompt(
         investigator: InvestigatorFixture,
         gameID: GameID,
