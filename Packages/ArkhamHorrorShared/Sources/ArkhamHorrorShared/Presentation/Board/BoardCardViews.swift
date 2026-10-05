@@ -6,6 +6,7 @@ extension EnvironmentValues {
 
 struct BoardPlayerAreaView: View {
     let investigator: BoardInvestigatorNode
+    let deckCountBadge: BoardDeckCountBadgeModel
     let handCards: [BoardPlayerCardNode]
     let inPlayCards: [BoardPlayerCardNode]
     let threatTreacheries: [BoardThreatTreacheryNode]
@@ -19,6 +20,7 @@ struct BoardPlayerAreaView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            deckCountView
             if !handCards.isEmpty {
                 cardStrip(title: "Hand", cards: handCards)
             }
@@ -49,6 +51,23 @@ struct BoardPlayerAreaView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(investigator.displayName) player area")
+    }
+
+    private var deckCountView: some View {
+        HStack(spacing: 4) {
+            Text("Deck")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+            Image(systemName: "rectangle.stack.fill")
+                .font(.caption2)
+                .foregroundStyle(ArkhamTheme.accent)
+                .accessibilityHidden(true)
+            Text(deckCountBadge.value)
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(ArkhamTheme.bone)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(deckCountBadge.accessibilityLabel)
     }
 
     private func cardStrip(title: String, cards: [BoardPlayerCardNode]) -> some View {

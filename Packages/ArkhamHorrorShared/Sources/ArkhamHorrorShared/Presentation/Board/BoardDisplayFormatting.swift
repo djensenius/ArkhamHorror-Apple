@@ -34,7 +34,8 @@ enum BoardDisplayFormatting {
         for choice: BasicChoice,
         in projection: BoardProjection,
         ownerID: PlayerID? = nil,
-        labelResolution: BasicChoiceLabelResolution? = nil
+        labelResolution: BasicChoiceLabelResolution? = nil,
+        revealsHandCardFaces: Bool = true
     ) -> String {
         switch choice.content {
         case let .chooseLocation(locationID, _):
@@ -43,6 +44,9 @@ enum BoardDisplayFormatting {
             }
             return "Unavailable location (choice \(choice.index + 1))"
         case let .chooseHandCard(cardID, purpose, _):
+            guard revealsHandCardFaces else {
+                return "\(purpose.actionTitle) hidden card"
+            }
             if let ownerID, let card = projection.handCardsByPlayer[ownerID]?[cardID] {
                 return "\(purpose.actionTitle) \(card.displayLabel)"
             }

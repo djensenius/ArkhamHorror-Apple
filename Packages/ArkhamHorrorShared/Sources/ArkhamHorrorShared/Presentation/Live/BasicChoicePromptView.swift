@@ -13,6 +13,14 @@ struct BasicChoicePromptView: View {
         presentation.isStoryPrompt
     }
 
+    private var revealsPromptOwnerHandCardFaces: Bool {
+        presentation.revealsHandCardFaces(
+            in: controller.projection,
+            localPlayerID: controller.localPlayerID,
+            isSolo: controller.isSolo
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -22,7 +30,10 @@ struct BasicChoicePromptView: View {
                         systemImage: isStoryPrompt ? "book.closed.fill" : "questionmark.circle.fill"
                     )
                     .font(.headline)
-                    if let subtitle = presentation.headerSubtitle(in: controller.projection) {
+                    if let subtitle = presentation.headerSubtitle(
+                        in: controller.projection,
+                        revealsHandCardFaces: revealsPromptOwnerHandCardFaces
+                    ) {
                         Text(subtitle)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -250,7 +261,8 @@ struct BasicChoicePromptView: View {
         let focusID = BoardFocusID.promptChoice(choice.index)
         let resolved = presentation.resolvedChoiceLabel(
             for: choice,
-            in: controller.projection
+            in: controller.projection,
+            revealsHandCardFaces: revealsPromptOwnerHandCardFaces
         )
         let title = resolved.title
         let isActionable = presentation.isChoiceActionable(
@@ -305,7 +317,11 @@ struct BasicChoicePromptView: View {
     /// A choice's semantic title, or its legacy raw fallback title when the semantic
     /// envelope is absent, resolved against the current authoritative board projection.
     private func displayTitle(for choice: BasicChoice) -> String {
-        presentation.displayTitle(for: choice, in: controller.projection)
+        presentation.displayTitle(
+            for: choice,
+            in: controller.projection,
+            revealsHandCardFaces: revealsPromptOwnerHandCardFaces
+        )
     }
 
     private func accessibilityHint(for choice: BasicChoice) -> String {

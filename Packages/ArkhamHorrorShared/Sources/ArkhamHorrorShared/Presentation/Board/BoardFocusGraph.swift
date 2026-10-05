@@ -113,6 +113,7 @@ enum BoardFocusGraphBuilder {
         amountDraft: [String: Int] = [:],
         exchangeAmount: Int = 0,
         fullPlayerAreaPlayerID: PlayerID? = nil,
+        isSolo: Bool = false,
         linkedChoiceMenuRequest: BoardLinkedChoiceMenuRequest? = nil
     ) -> FocusGraph {
         var nodes: [FocusNode] = []
@@ -162,7 +163,8 @@ enum BoardFocusGraphBuilder {
         let investigatorChain = investigatorFocusIDs(
             projection: projection,
             choiceLinks: choiceLinks,
-            fullPlayerAreaPlayerID: fullPlayerAreaPlayerID
+            fullPlayerAreaPlayerID: fullPlayerAreaPlayerID,
+            isSolo: isSolo
         )
         appendHorizontalChain(
             investigatorChain, zone: BoardFocusZone.investigators,

@@ -17,6 +17,7 @@ struct BoardView: View {
     let projection: BoardProjection
     let prompt: BasicChoicePromptPresentation?
     let localPlayerID: PlayerID?
+    let isSolo: Bool
     let isLocalSpectator: Bool
     let cardCatalog: CardCatalogSnapshot?
     let onChoice: (Int) -> Void
@@ -44,6 +45,7 @@ struct BoardView: View {
         projection: BoardProjection,
         prompt: BasicChoicePromptPresentation? = nil,
         localPlayerID: PlayerID? = nil,
+        isSolo: Bool = false,
         isLocalSpectator: Bool = false,
         cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
@@ -56,6 +58,7 @@ struct BoardView: View {
         self.projection = projection
         self.prompt = prompt
         self.localPlayerID = localPlayerID
+        self.isSolo = isSolo
         self.isLocalSpectator = isLocalSpectator
         self.cardCatalog = cardCatalog
         self.onChoice = onChoice
@@ -89,6 +92,7 @@ struct BoardView: View {
                     projection: projection,
                     prompt: prompt,
                     localPlayerID: localPlayerID,
+                    isSolo: isSolo,
                     isLocalSpectator: isLocalSpectator,
                     cardCatalog: cardCatalog,
                     onChoice: onChoice,
@@ -131,6 +135,9 @@ struct BoardView: View {
         }
         .onChange(of: localPlayerID) { _, newValue in
             controller?.updateLocalPlayerID(newValue)
+        }
+        .onChange(of: isSolo) { _, newValue in
+            controller?.updateIsSolo(newValue)
         }
         .onChange(of: isLocalSpectator) { _, newValue in
             controller?.updateIsLocalSpectator(newValue)
@@ -333,6 +340,8 @@ struct BoardRegularLayoutView: View {
                         .engagedEnemiesByInvestigatorID,
                     choiceLinks: choiceLinks,
                     fullPlayerAreaPlayerID: controller.fullPlayerAreaPlayerID,
+                    localPlayerID: controller.localPlayerID,
+                    isSolo: controller.isSolo,
                     otherInvestigatorCount: controller.projection.otherInvestigatorCount,
                     killedInvestigatorCount: controller.projection.killedInvestigatorCount,
                     focusedID: controller.coordinator.currentFocus,
@@ -365,35 +374,5 @@ struct BoardRegularLayoutView: View {
                 BoardZoomControlsView(controller: controller)
             }
         }
-    }
-}
-
-/// A small on-screen zoom control cluster for touch/pointer platforms. These buttons mutate
-/// camera zoom directly so they never inherit prompt-specific keyboard +/- amount behavior.
-struct BoardZoomControlsView: View {
-    let controller: BoardCommandController
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Button {
-                controller.zoomOut()
-            } label: {
-                Image(systemName: "minus.magnifyingglass")
-            }
-            .accessibilityLabel(Text("Zoom out"))
-            Button {
-                controller.handle(.command(.resetCamera))
-            } label: {
-                Image(systemName: "arrow.counterclockwise")
-            }
-            .accessibilityLabel(Text("Reset view"))
-            Button {
-                controller.zoomIn()
-            } label: {
-                Image(systemName: "plus.magnifyingglass")
-            }
-            .accessibilityLabel(Text("Zoom in"))
-        }
-        .buttonStyle(.bordered)
     }
 }
