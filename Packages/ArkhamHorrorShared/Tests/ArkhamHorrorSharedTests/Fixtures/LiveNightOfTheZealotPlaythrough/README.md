@@ -32,4 +32,6 @@ The Apple app then sees `GET http://127.0.0.1:3000/api/v1/capabilities`, resolve
 
 Set `ARKHAM_LIVE_DIAGNOSTIC_BYPASS_UNSUPPORTED=1` only when the goal is to finish a campaign and catalogue native rendering gaps. The harness still tries the production `AppModel.submitBasicChoice` path first. If the app refuses a server-selectable choice as `unsupportedChoice`, the harness records that prompt/choice in the JSONL trace and sends the same `Answer` payload directly over the already-open live WebSocket so the server can continue.
 
+The bypass is deliberately limited to the `.unsupportedChoice` result. It never answers `.readOnly` prompts, including update-required/binding-drift prompts, legacy-server prompts, another-player prompts, or disconnected prompts; those remain harness failures so safety fences stay visible.
+
 This is intentionally test-only and does not make unsupported UI pressable in the app. Use traces generated with this flag to create rendering/catalog/server follow-up tasks.

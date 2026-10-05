@@ -557,7 +557,7 @@ private struct LivePlaythroughBot {
     }
 
     private func canDiagnosticBypassUnsupported(_ prompt: BasicChoicePromptPresentation) -> Bool {
-        guard diagnosticBypassUnsupported else { return false }
+        guard diagnosticBypassUnsupported, prompt.readOnlyReason == nil else { return false }
         return prompt.identity.questionPresentation?.choices
             .contains { $0.selectable } == true
     }
@@ -606,10 +606,7 @@ private struct LivePlaythroughBot {
         case .alreadyPending:
             throw PlaythroughError.submissionFailed("answer already pending")
         case .readOnly:
-            guard diagnosticBypassUnsupported, case let .choice(index) = answer else {
-                throw PlaythroughError.submissionFailed("prompt became read-only")
-            }
-            return try await sendDiagnosticUnsupportedChoice(index, prompt: prompt)
+            throw PlaythroughError.submissionFailed("prompt became read-only")
         case .retryableFailure:
             throw PlaythroughError.submissionFailed("retryable answer failure")
         case .staleQuestion:
