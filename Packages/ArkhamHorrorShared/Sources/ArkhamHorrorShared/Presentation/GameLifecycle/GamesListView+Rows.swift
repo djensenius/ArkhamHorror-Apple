@@ -30,6 +30,10 @@ extension GamesListView {
         )
     }
 
+    func isDeleteConfirmationDisabled(for gameID: GameID) -> Bool {
+        model.gameLifecycleActions[gameID] != nil
+    }
+
     func deleteFailurePresentation(for gameID: GameID) -> GameRowActionFailurePresentation? {
         guard
             let failure = model.gameLifecycleActionFailures[gameID],

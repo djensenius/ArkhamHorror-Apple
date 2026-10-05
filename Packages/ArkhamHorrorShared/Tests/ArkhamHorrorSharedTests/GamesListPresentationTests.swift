@@ -93,6 +93,17 @@ struct GamesListPresentationTests {
         _ = view.body
     }
 
+    @Test("Final delete confirmation disables while that game has an action in flight")
+    func deleteConfirmationDisabledWhenActionInFlight() async {
+        let game = sampleGame()
+        let model = await model(gameListState: .loaded([.game(game)]))
+        let view = GamesListView(model: model)
+
+        #expect(!view.isDeleteConfirmationDisabled(for: game.id))
+        model.gameLifecycleActions[game.id] = .joining
+        #expect(view.isDeleteConfirmationDisabled(for: game.id))
+    }
+
     @Test("GamesListView's body evaluates for .failed with no previous content without crashing")
     func gamesListViewFailedNoPrevious() async {
         let model = await model(gameListState: .failed(.transportFailure("x"), previous: nil))

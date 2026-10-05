@@ -102,6 +102,7 @@ struct GamesListView: View {
                     )
                 )
                 .accessibilityIdentifier(AccountAccessibilityID.gameDeleteConfirmButton)
+                .disabled(isDeleteConfirmationDisabled(for: id))
                 Button(gameLifecycleLocalized("common.cancel", "Cancel"), role: .cancel) {
                     pendingDeletion = nil
                 }
