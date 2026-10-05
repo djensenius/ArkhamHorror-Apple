@@ -31,6 +31,7 @@ public struct RootView: View {
     private static let productionModel = AppModel(assetCacheFactory: { .production() })
 
     @State private var model: AppModel
+    @State private var liveGamePath: [GameID] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init() {
@@ -55,7 +56,7 @@ public struct RootView: View {
         let route = AccountRoute(sessionState: model.sessionState, profiles: model.profiles)
         ZStack {
             ArkhamTheme.backgroundGradient.ignoresSafeArea()
-            NavigationStack {
+            NavigationStack(path: $liveGamePath) {
                 content(for: route)
                     .navigationTitle("Arkham Horror")
                 #if os(iOS) || os(visionOS)
@@ -64,6 +65,12 @@ public struct RootView: View {
             }
         }
         .environment(\.storyAssetCache, model.assetCacheService)
+        .onChange(of: route) { _, newRoute in
+            if case .account = newRoute {
+                return
+            }
+            liveGamePath = []
+        }
         .animation(reduceMotion ? nil : .default, value: route)
     }
 
@@ -86,7 +93,11 @@ public struct RootView: View {
             ServerIssueView(model: model, kind: .credentialCleanupRegistryCorrupted(failure))
         case let .account(profile, compatibility, user):
             AccountShellView(
-                model: model, profile: profile, compatibility: compatibility, user: user
+                model: model,
+                profile: profile,
+                compatibility: compatibility,
+                user: user,
+                liveGamePath: $liveGamePath
             )
         }
     }

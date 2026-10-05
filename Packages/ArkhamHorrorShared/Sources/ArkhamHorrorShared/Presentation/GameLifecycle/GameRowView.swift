@@ -5,29 +5,42 @@ import SwiftUI
 /// indicator. Never renders a raw identifier or JSON fragment.
 struct GameRowView: View {
     let game: GameSummary
+    let actionFailure: GameRowActionFailurePresentation?
+
+    init(game: GameSummary, actionFailure: GameRowActionFailurePresentation? = nil) {
+        self.game = game
+        self.actionFailure = actionFailure
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(game.displayName)
-                    .font(.headline)
-                    .foregroundStyle(ArkhamTheme.bone)
-                Text(game.displaySubtitle)
-                    .font(.caption)
-                    .foregroundStyle(ArkhamTheme.bone.opacity(0.6))
-                Text(game.gameState.statusText)
-                    .font(.caption)
-                    .foregroundStyle(ArkhamTheme.accent)
-                if !game.investigators.isEmpty {
-                    investigatorRow
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(game.displayName)
+                        .font(.headline)
+                        .foregroundStyle(ArkhamTheme.bone)
+                    Text(game.displaySubtitle)
+                        .font(.caption)
+                        .foregroundStyle(ArkhamTheme.bone.opacity(0.6))
+                    Text(game.gameState.statusText)
+                        .font(.caption)
+                        .foregroundStyle(ArkhamTheme.accent)
+                    if !game.investigators.isEmpty {
+                        investigatorRow
+                    }
+                }
+                Spacer()
+                if game.hasOpenSeats {
+                    Label("Open Seat", systemImage: "person.badge.plus")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(ArkhamTheme.accent)
+                        .accessibilityLabel("This game has an open seat")
                 }
             }
-            Spacer()
-            if game.hasOpenSeats {
-                Label("Open Seat", systemImage: "person.badge.plus")
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(ArkhamTheme.accent)
-                    .accessibilityLabel("This game has an open seat")
+            if let actionFailure {
+                ArkhamFailureText(message: actionFailure.message)
+                    .accessibilityLabel(actionFailure.accessibilityLabel)
+                    .accessibilityIdentifier(actionFailure.accessibilityIdentifier)
             }
         }
         .contentShape(Rectangle())
@@ -43,6 +56,12 @@ struct GameRowView: View {
             }
         }
     }
+}
+
+struct GameRowActionFailurePresentation: Equatable {
+    let message: String
+    let accessibilityLabel: String
+    let accessibilityIdentifier: String
 }
 
 #Preview("Game row") {

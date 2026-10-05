@@ -255,6 +255,11 @@ final class AppModel {
     /// The most recent per-game action failure, keyed by ``GameID``, cleared at the
     /// start of that game's next action.
     var gameLifecycleActionFailures: [GameID: GameLifecycleActionFailure] = [:]
+    /// Games whose deletion completed successfully in the current signed-in session,
+    /// used to close open lobby/live surfaces for that exact game even when the next
+    /// list refresh contains unrelated undecodable rows and therefore cannot prove
+    /// every missing identifier is definitely absent.
+    var confirmedDeletedGameIDs: Set<GameID> = []
     /// The most recently loaded open-seat list per game, populated by
     /// ``loadOpenSeats(for:)``.
     var gameOpenSeats: [GameID: OpenSeats] = [:]

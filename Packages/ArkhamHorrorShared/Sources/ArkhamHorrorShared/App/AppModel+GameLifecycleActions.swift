@@ -177,7 +177,7 @@ extension AppModel {
 
     // MARK: - Delete
 
-    /// Deletes an owned game and refreshes the games list on success.
+    /// Deletes a participating game and refreshes the games list on success.
     func deleteGame(_ id: GameID) {
         guard let attempt = beginGameAction(id, kind: .deleting) else { return }
         gameLifecycleActionTasks[id] = Task { [weak self] in
@@ -192,6 +192,7 @@ extension AppModel {
         await performGameAction(id, kind: .deleting, attempt: attempt) {
             try await self.gameLifecycleService.deleteGame(id, on: attempt.profile, token: token)
         } onSuccess: {
+            self.confirmedDeletedGameIDs.insert(id)
             self.refreshGames()
         }
     }

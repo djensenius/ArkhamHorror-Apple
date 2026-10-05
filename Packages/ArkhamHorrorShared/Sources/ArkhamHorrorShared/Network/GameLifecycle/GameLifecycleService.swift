@@ -86,7 +86,7 @@ struct GameLifecycleService: Sendable {
     func deleteGame(_ id: GameID, on profile: ServerProfile, token: String) async throws {
         let url = try gameURL(id, on: profile)
         let request = makeRequest(url: url, method: "DELETE", token: token)
-        try await performNoContent(request)
+        try await performNoContent(request, badRequest: .lifecycleOperation)
     }
 
     /// Fetches the current authoritative full game snapshot for `id`: the same
