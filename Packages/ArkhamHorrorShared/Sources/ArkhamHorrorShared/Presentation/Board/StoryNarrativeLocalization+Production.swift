@@ -438,13 +438,13 @@ extension StoryNarrativeLocalization {
         resolver: LocaleCatalogResolver?
     ) -> String? {
         switch reason {
-        case .missingKey:
+        case .missingKey, .unsupportedEntry:
             readableServerFallback(key: key, variables: variables)
         case .catalog where resolver == nil:
             readableServerFallback(key: key, variables: variables)
         case .loading where resolver == nil:
             nil
-        case .imagePipelineUnavailable, .imageSourceLoading, .unsupportedEntry, .linkCycle,
+        case .imagePipelineUnavailable, .imageSourceLoading, .linkCycle,
              .missingVariable, .unsupportedVariableValue, .tooComplex, .catalog, .loading:
             nil
         }
@@ -457,11 +457,12 @@ extension StoryNarrativeLocalization {
         switch reason {
         case .missingKey:
             nil
+        case .unsupportedEntry:
+            reason
         case let .catalog(failure) where resolver == nil:
             failure.isRetryable ? reason : nil
         case .catalog, .loading, .imagePipelineUnavailable, .imageSourceLoading,
-             .unsupportedEntry, .linkCycle, .missingVariable, .unsupportedVariableValue,
-             .tooComplex:
+             .linkCycle, .missingVariable, .unsupportedVariableValue, .tooComplex:
             nil
         }
     }

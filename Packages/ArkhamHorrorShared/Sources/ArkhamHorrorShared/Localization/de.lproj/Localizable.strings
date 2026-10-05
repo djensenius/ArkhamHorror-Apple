@@ -155,6 +155,9 @@
 "basicChoice.status.readOnly.updateRequired" = "Diese Aufforderung erfordert eine neuere App-Version.";
 "basicChoice.status.readOnly.disconnected" = "Stelle die Verbindung wieder her, bevor du diese Aufforderung beantwortest.";
 
+"story.entryStatus.invalid" = "Ungültig";
+"story.entryStatus.valid" = "Gültig";
+
 "campaign.between.title" = "Zwischen Szenarien";
 "campaign.between.finishedScenario" = "%@ wurde gerade abgeschlossen";
 "campaign.between.noScenario" = "Kein aktives Szenario";
