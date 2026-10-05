@@ -208,27 +208,7 @@ struct LiveNotZSemanticChoiceRenderingTests {
             entryKeys: [
                 "continue", "label.sufferPhysicalTrauma", "label.sufferMentalTrauma",
             ],
-            chunkEntries: #"""
-            {
-              "continue": {"form":"message","nodes":[{"type":"text","value":"Continue"}],"variables":[]},
-              "label.sufferPhysicalTrauma": {
-                "form":"plural",
-                "cases":[
-                  [{"type":"text","value":"Suffer physical trauma"}],
-                  [{"type":"text","value":"Suffer "},{"type":"var","name":"count","source":"named","role":"text"},{"type":"text","value":" physical trauma"}]
-                ],
-                "variables":[{"name":"count","source":"named","role":"text"}]
-              },
-              "label.sufferMentalTrauma": {
-                "form":"plural",
-                "cases":[
-                  [{"type":"text","value":"Suffer mental trauma"}],
-                  [{"type":"text","value":"Suffer "},{"type":"var","name":"count","source":"named","role":"text"},{"type":"text","value":" mental trauma"}]
-                ],
-                "variables":[{"name":"count","source":"named","role":"text"}]
-              }
-            }
-            """#
+            chunkEntries: productionLabelChunkEntries
         )
         let model = AppModel(
             profileStore: FakeServerProfileStore(
@@ -247,6 +227,40 @@ struct LiveNotZSemanticChoiceRenderingTests {
         )
         return model
     }
+
+    private static let productionLabelChunkEntries = #"""
+    {
+      "continue": {
+        "form":"message",
+        "nodes":[{"type":"text","value":"Continue"}],
+        "variables":[]
+      },
+      "label.sufferPhysicalTrauma": {
+        "form":"plural",
+        "cases":[
+          [{"type":"text","value":"Suffer physical trauma"}],
+          [
+            {"type":"text","value":"Suffer "},
+            {"type":"var","name":"count","source":"named","role":"text"},
+            {"type":"text","value":" physical trauma"}
+          ]
+        ],
+        "variables":[{"name":"count","source":"named","role":"text"}]
+      },
+      "label.sufferMentalTrauma": {
+        "form":"plural",
+        "cases":[
+          [{"type":"text","value":"Suffer mental trauma"}],
+          [
+            {"type":"text","value":"Suffer "},
+            {"type":"var","name":"count","source":"named","role":"text"},
+            {"type":"text","value":" mental trauma"}
+          ]
+        ],
+        "variables":[{"name":"count","source":"named","role":"text"}]
+      }
+    }
+    """#
 
     private static func semanticLocationID(_ raw: String) throws -> LocationID {
         try #require(LocationID(codingKey: AnyCodingKey(stringValue: raw)))
