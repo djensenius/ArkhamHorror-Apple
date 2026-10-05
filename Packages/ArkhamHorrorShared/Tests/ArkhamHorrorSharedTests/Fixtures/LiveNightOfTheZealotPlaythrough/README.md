@@ -21,7 +21,7 @@ This env-gated harness is for Backlog `task-1.2.12` automated verification. It i
    - `ARKHAM_LOCALE_CATALOG_DEFAULT_LOCALE` = manifest `defaultLocale`
    - `ARKHAM_LOCALE_CATALOG_LOCALES` = comma-joined manifest locale list
    - `ARKHAM_LOCALE_CATALOG_MANIFEST_SHA256` = SHA-256 of the exact manifest bytes
-4. Run the fork backend with those six variables, Postgres, and the usual local API settings. In round 3 the backend listened on `127.0.0.1:3002`.
+4. Run the fork backend with those six variables, Postgres 14, and the usual local API settings. In round 3 the backend listened on `127.0.0.1:3002`.
 5. Put a same-origin local proxy in front of it on `127.0.0.1:3000`:
    - `/locale-catalog/**` is served from `frontend/public/locale-catalog` with `Content-Type: application/json` and `X-Content-Type-Options: nosniff`.
    - all other HTTP requests and WebSocket upgrades are proxied to `127.0.0.1:3002`.
