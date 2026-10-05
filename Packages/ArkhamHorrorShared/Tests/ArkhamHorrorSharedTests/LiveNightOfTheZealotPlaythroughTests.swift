@@ -867,13 +867,20 @@ private struct TraceSelectedAnswer: Encodable, Sendable {
 
 private struct TraceAppChoice: Encodable, Sendable {
     let index: Int
+    /// The title rendered by `BasicChoicePromptView` through
+    /// `BasicChoicePromptPresentation.resolvedChoiceLabel`, not the legacy raw parser title.
     let title: String
+    let legacyRawTitle: String
     let contentKind: String
     let isSupported: Bool
     let isDisplayed: Bool
     let isActionable: Bool
     let semanticKind: String?
     let semanticSelectable: Bool?
+    let systemImage: String
+    let accessibilityLabel: String
+    let accessibilityHint: String
+    let rendersUpdateRequired: Bool
     let rawValue: JSONValue
 }
 
@@ -1306,15 +1313,23 @@ private func traceAppChoices(
         let descriptor = prompt.identity.questionPresentation?.choices.first {
             $0.sourceIndex == choice.index
         }
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+        let accessibilityHint = prompt.accessibilityHint(for: choice, in: projection)
         return TraceAppChoice(
             index: choice.index,
-            title: choice.title,
+            title: resolved.title,
+            legacyRawTitle: choice.title,
             contentKind: choiceContentKind(choice.content),
             isSupported: choice.isSupported,
             isDisplayed: displayed.contains(choice.index),
             isActionable: prompt.isChoiceActionable(choice, in: projection),
             semanticKind: descriptor?.kind.rawValue,
             semanticSelectable: descriptor?.selectable,
+            systemImage: resolved.systemImage,
+            accessibilityLabel: resolved.accessibilityLabel,
+            accessibilityHint: accessibilityHint,
+            rendersUpdateRequired: !prompt.isRenderableQuestion
+                || resolved.title == "Update required",
             rawValue: choice.rawValue
         )
     }
