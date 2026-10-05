@@ -287,6 +287,60 @@ struct GamesListPresentationTests {
 }
 
 extension GamesListPresentationTests {
+    @Test("Final delete confirmation action does not supersede an in-flight game action")
+    func deleteConfirmationActionGuardsWhenActionInFlight() async {
+        let game = sampleGame()
+        let model = await model(gameListState: .loaded([.game(game)]))
+        model.gameLifecycleActions[game.id] = .joining
+        let view = GamesListView(model: model)
+
+        view.confirmDeletion(of: game.id)
+
+        #expect(model.gameLifecycleActions[game.id] == .joining)
+        #expect(model.gameLifecycleActionTasks[game.id] == nil)
+    }
+
+    @Test("Confirmed-deleted games are hidden from preserved and loaded visible rows")
+    func confirmedDeletedRowsAreHiddenFromVisibleRows() async throws {
+        let deleted = sampleGame()
+        let remaining = sampleGame()
+        let failed = FailedGameEntry(error: "Could not decode a game.")
+        let staleList: GameList = [.game(deleted), .failed(failed), .game(remaining)]
+        let refreshedList: GameList = [.failed(failed), .game(remaining)]
+        let expectedVisibleRows: GameList = [.failed(failed), .game(remaining)]
+
+        let states: [GameListLoadState] = [
+            .loading(previous: staleList),
+            .failed(.unexpectedStatus(500), previous: staleList),
+            .loaded(refreshedList),
+        ]
+
+        for state in states {
+            let model = await model(gameListState: state)
+            model.confirmedDeletedGameIDs = [deleted.id]
+            let view = GamesListView(model: model)
+            let rows = try #require(visibleEntries(from: state, in: view))
+
+            #expect(rows == expectedVisibleRows)
+        }
+    }
+
+    private func visibleEntries(
+        from state: GameListLoadState,
+        in view: GamesListView
+    ) -> GameList? {
+        switch state {
+        case .idle:
+            nil
+        case let .loading(previous):
+            previous.map { view.visibleRows(for: $0).map(\.entry) }
+        case let .loaded(games):
+            view.visibleRows(for: games).map(\.entry)
+        case let .failed(_, previous):
+            previous.map { view.visibleRows(for: $0).map(\.entry) }
+        }
+    }
+
     @Test("Delete failures produce row-local server message presentation")
     func deleteFailurePresentationUsesServerMessageVerbatim() async throws {
         let game = sampleGame()

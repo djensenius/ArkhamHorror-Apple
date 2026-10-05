@@ -16,6 +16,13 @@ extension GamesListView {
         }
     }
 
+    func visibleRows(for games: GameList) -> [IdentifiedGameListEntry] {
+        identifiedRows(for: games).filter { row in
+            guard let gameID = row.entry.gameID else { return true }
+            return !model.confirmedDeletedGameIDs.contains(gameID)
+        }
+    }
+
     func reconcileOpenGameSurfaces() {
         OpenGameSurfaceReconciler.reconcile(
             presentedGameID: &presentedGameID,
@@ -27,6 +34,12 @@ extension GamesListView {
 
     func isDeleteConfirmationDisabled(for gameID: GameID) -> Bool {
         model.gameLifecycleActions[gameID] != nil
+    }
+
+    func confirmDeletion(of gameID: GameID) {
+        guard !isDeleteConfirmationDisabled(for: gameID) else { return }
+        model.deleteGame(gameID)
+        pendingDeletion = nil
     }
 
     func deleteFailurePresentation(for gameID: GameID) -> GameRowActionFailurePresentation? {
@@ -161,20 +174,6 @@ enum OpenGameSurfaceReconciler {
         )
     }
 
-    static func reconcileConfirmedDeletes(
-        presentedGameID: inout GameID?,
-        liveGamePath: inout [GameID],
-        confirmedDeletedGameIDs: Set<GameID>
-    ) {
-        let result = reconciledConfirmedDeletes(
-            presentedGameID: presentedGameID,
-            liveGamePath: liveGamePath,
-            confirmedDeletedGameIDs: confirmedDeletedGameIDs
-        )
-        presentedGameID = result.presentedGameID
-        liveGamePath = result.liveGamePath
-    }
-
     static func reconciledLoadedListAbsence(
         presentedGameID: GameID?,
         liveGamePath: [GameID],
@@ -191,20 +190,6 @@ enum OpenGameSurfaceReconciler {
             presentedGameID: reconciledPresentedGameID,
             liveGamePath: reconciledLiveGamePath
         )
-    }
-
-    static func reconcileLoadedListAbsence(
-        presentedGameID: inout GameID?,
-        liveGamePath: inout [GameID],
-        games: GameList
-    ) {
-        let result = reconciledLoadedListAbsence(
-            presentedGameID: presentedGameID,
-            liveGamePath: liveGamePath,
-            games: games
-        )
-        presentedGameID = result.presentedGameID
-        liveGamePath = result.liveGamePath
     }
 
     static func reconciled(

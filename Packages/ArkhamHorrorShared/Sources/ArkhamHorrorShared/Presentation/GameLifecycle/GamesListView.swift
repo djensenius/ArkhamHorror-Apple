@@ -95,8 +95,7 @@ struct GamesListView: View {
                     gameLifecycleLocalized("games.delete.action", "Delete"),
                     role: .destructive
                 ) {
-                    model.deleteGame(id)
-                    pendingDeletion = nil
+                    confirmDeletion(of: id)
                 }
                 .accessibilityLabel(
                     gameLifecycleLocalized(
@@ -218,7 +217,7 @@ struct GamesListView: View {
                 }
             }
             Section {
-                ForEach(identifiedRows(for: games)) { row in
+                ForEach(visibleRows(for: games)) { row in
                     self.row(for: row.entry)
                 }
             }
