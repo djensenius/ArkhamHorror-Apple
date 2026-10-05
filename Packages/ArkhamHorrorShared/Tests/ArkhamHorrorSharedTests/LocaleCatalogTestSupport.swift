@@ -15,6 +15,7 @@ struct SyntheticLocaleCatalogDocuments {
         declaredChunkBytes: Int? = nil,
         pack: String = "story",
         entryKeys: [String] = ["story.body"],
+        unsupportedKeys: Int = 0,
         chunkEntries: String = """
         {"story.body":{"form":"message","nodes":[{"type":"text","value":"Synthetic body"}],\
         "variables":[]}}
@@ -46,10 +47,12 @@ struct SyntheticLocaleCatalogDocuments {
             "defaultLocale":"en","languageResolution":[{"tag":"en","locale":"en"}],\
             "locales":[{"locale":"en","fallback":null,"chunks":[{"pack":"\(pack)",\
             "path":"/locale-catalog/c/\(chunkDigest).json","bytes":\(expectedChunkBytes),\
-            "sha256":"\(chunkDigest)","keys":\(entryKeys.count),"unsupportedKeys":0}],\
+            "sha256":"\(chunkDigest)","keys":\(entryKeys.count),\
+            "unsupportedKeys":\(unsupportedKeys)}],\
             "keys":\(entryKeys.count),\
             "bytes":\(expectedChunkBytes)}],"totals":{"locales":1,"chunks":1,\
-            "bytes":\(expectedChunkBytes),"keys":\(entryKeys.count),"unsupportedKeys":0},\
+            "bytes":\(expectedChunkBytes),"keys":\(entryKeys.count),\
+            "unsupportedKeys":\(unsupportedKeys)},\
             "backend":{"artifactPath":"fixtures/synthetic.json","artifactSha256":"\(hex)",\
             "sourceSha256":"\(hex)","emittedKeys":\(entryKeys.count),\
             "requiredKeys":\(entryKeys.count),\

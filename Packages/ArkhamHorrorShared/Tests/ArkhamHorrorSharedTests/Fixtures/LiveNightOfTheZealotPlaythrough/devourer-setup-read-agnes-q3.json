@@ -1,0 +1,334 @@
+{
+  "investigatorSlug": "agnes-baker",
+  "traceLine": 769,
+  "scenario": "c01142",
+  "questionVersion": 3,
+  "rawQuestionTag": "Read",
+  "statusMessage": "This server publishes no usable story text for this passage.",
+  "rawQuestion": {
+    "flavorText": {
+      "body": [
+        {
+          "list": [
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.gatherSets",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.placeLocations",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.setOutOfPlay",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.randomSet",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.instructions",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": [
+                {
+                  "entry": {
+                    "entry": {
+                      "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.zeroNames",
+                      "tag": "I18nEntry",
+                      "variables": {}
+                    },
+                    "modifiers": [
+                      "InvalidEntry"
+                    ],
+                    "tag": "ModifyEntry"
+                  },
+                  "nested": []
+                },
+                {
+                  "entry": {
+                    "entry": {
+                      "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.oneOrTwoNames",
+                      "tag": "I18nEntry",
+                      "variables": {}
+                    },
+                    "modifiers": [
+                      "InvalidEntry"
+                    ],
+                    "tag": "ModifyEntry"
+                  },
+                  "nested": []
+                },
+                {
+                  "entry": {
+                    "entry": {
+                      "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.threeOrFourNames",
+                      "tag": "I18nEntry",
+                      "variables": {}
+                    },
+                    "modifiers": [
+                      "InvalidEntry"
+                    ],
+                    "tag": "ModifyEntry"
+                  },
+                  "nested": []
+                },
+                {
+                  "entry": {
+                    "entry": {
+                      "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.fiveOrSixNames",
+                      "tag": "I18nEntry",
+                      "variables": {}
+                    },
+                    "modifiers": [
+                      "ValidEntry"
+                    ],
+                    "tag": "ModifyEntry"
+                  },
+                  "nested": []
+                }
+              ]
+            },
+            {
+              "entry": {
+                "key": "addToken",
+                "tag": "I18nEntry",
+                "variables": {
+                  "token": "elderThing"
+                }
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "entry": {
+                  "key": "nightOfTheZealot.theDevourerBelow.setup.pastMidnight",
+                  "tag": "I18nEntry",
+                  "variables": {}
+                },
+                "modifiers": [
+                  "InvalidEntry"
+                ],
+                "tag": "ModifyEntry"
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "entry": {
+                  "key": "nightOfTheZealot.theDevourerBelow.setup.ghoulPriest",
+                  "tag": "I18nEntry",
+                  "variables": {}
+                },
+                "modifiers": [
+                  "ValidEntry"
+                ],
+                "tag": "ModifyEntry"
+              },
+              "nested": []
+            }
+          ],
+          "tag": "ListEntry"
+        }
+      ],
+      "title": "$setup"
+    },
+    "readCards": null,
+    "readChoices": {
+      "contents": [
+        {
+          "label": "$continue",
+          "messages": [],
+          "tag": "Label"
+        }
+      ],
+      "tag": "BasicReadChoices"
+    },
+    "tag": "Read"
+  },
+  "questionPresentation": {
+    "answer": {
+      "kind": "singleChoice",
+      "tag": "Answer"
+    },
+    "choiceCount": 1,
+    "choices": [
+      {
+        "kind": "localizedLabel",
+        "label": {
+          "kind": "embeddedI18n",
+          "text": "$continue"
+        },
+        "selectable": true,
+        "sourceIndex": 0
+      }
+    ],
+    "flavorText": {
+      "body": [
+        {
+          "list": [
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.gatherSets",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.placeLocations",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.setOutOfPlay",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.randomSet",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.instructions",
+                "tag": "I18nEntry",
+                "variables": {}
+              },
+              "nested": [
+                {
+                  "entry": {
+                    "entry": {
+                      "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.zeroNames",
+                      "tag": "I18nEntry",
+                      "variables": {}
+                    },
+                    "modifiers": [
+                      "InvalidEntry"
+                    ],
+                    "tag": "ModifyEntry"
+                  },
+                  "nested": []
+                },
+                {
+                  "entry": {
+                    "entry": {
+                      "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.oneOrTwoNames",
+                      "tag": "I18nEntry",
+                      "variables": {}
+                    },
+                    "modifiers": [
+                      "InvalidEntry"
+                    ],
+                    "tag": "ModifyEntry"
+                  },
+                  "nested": []
+                },
+                {
+                  "entry": {
+                    "entry": {
+                      "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.threeOrFourNames",
+                      "tag": "I18nEntry",
+                      "variables": {}
+                    },
+                    "modifiers": [
+                      "InvalidEntry"
+                    ],
+                    "tag": "ModifyEntry"
+                  },
+                  "nested": []
+                },
+                {
+                  "entry": {
+                    "entry": {
+                      "key": "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.fiveOrSixNames",
+                      "tag": "I18nEntry",
+                      "variables": {}
+                    },
+                    "modifiers": [
+                      "ValidEntry"
+                    ],
+                    "tag": "ModifyEntry"
+                  },
+                  "nested": []
+                }
+              ]
+            },
+            {
+              "entry": {
+                "key": "addToken",
+                "tag": "I18nEntry",
+                "variables": {
+                  "token": "elderThing"
+                }
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "entry": {
+                  "key": "nightOfTheZealot.theDevourerBelow.setup.pastMidnight",
+                  "tag": "I18nEntry",
+                  "variables": {}
+                },
+                "modifiers": [
+                  "InvalidEntry"
+                ],
+                "tag": "ModifyEntry"
+              },
+              "nested": []
+            },
+            {
+              "entry": {
+                "entry": {
+                  "key": "nightOfTheZealot.theDevourerBelow.setup.ghoulPriest",
+                  "tag": "I18nEntry",
+                  "variables": {}
+                },
+                "modifiers": [
+                  "ValidEntry"
+                ],
+                "tag": "ModifyEntry"
+              },
+              "nested": []
+            }
+          ],
+          "tag": "ListEntry"
+        }
+      ],
+      "title": "$setup"
+    },
+    "protocolVersion": 2,
+    "questionKind": "read",
+    "questionVersion": 3,
+    "readChoiceKind": "basic"
+  }
+}
