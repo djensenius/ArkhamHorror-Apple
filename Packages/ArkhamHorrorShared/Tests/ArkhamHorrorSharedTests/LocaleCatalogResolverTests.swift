@@ -185,6 +185,39 @@ struct LocaleCatalogResolverTests {
         ) == .failure(.catalog(.manifestDigestMismatch)))
     }
 
+    @Test("Production choice labels reject unterminated quoted variables")
+    func productionChoiceLabelsRejectUnterminatedQuotedVariables() {
+        let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.greet": message([
+                .text("Hello "),
+                .variable(name: "name", source: .named, isIcon: false),
+            ]),
+        ]))
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.greet name=s:\"Alice\"junk\"",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.unsupportedVariableValue))
+    }
+
+    @Test("Production choice labels reject variable names outside catalog grammar")
+    func productionChoiceLabelsRejectVariableNamesOutsideCatalogGrammar() {
+        let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.greet": message([
+                .text("Hello "),
+                .variable(name: "name", source: .named, isIcon: false),
+            ]),
+        ]))
+        let overlongName = String(repeating: "a", count: 65)
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.greet name=s:\"Alice\" \(overlongName)=s:\"ignored\"",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.unsupportedVariableValue))
+    }
+
     @Test("Production choice labels resolve plural catalog entries as singular labels")
     func productionChoiceLabelsResolvePluralSingular() {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
@@ -206,6 +239,40 @@ struct LocaleCatalogResolverTests {
             resolver: resolver,
             catalogUnavailability: .catalog(.transportFailure)
         ) == .success("Suffer physical trauma"))
+    }
+
+    @Test("Production choice plural labels bind named variables while using implicit singular")
+    func productionChoicePluralLabelsBindNamedVariablesWhileUsingImplicitSingular() {
+        let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "label.greetInvestigator": .plural(
+                cases: [
+                    [
+                        .text("Greet "),
+                        .variable(name: "name", source: .named, isIcon: false),
+                    ],
+                    [
+                        .text("Greet "),
+                        .variable(name: "count", source: .named, isIcon: false),
+                        .text(" investigators"),
+                    ],
+                ],
+                variables: [
+                    .init(name: "name", source: .named, role: .text),
+                    .init(name: "count", source: .named, role: .text),
+                ]
+            ),
+        ]))
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.greetInvestigator name=s:\"Alice\"",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .success("Greet Alice"))
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.greetInvestigator",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.missingVariable))
     }
 
     @Test("Production choice labels do not bind implicit count text")

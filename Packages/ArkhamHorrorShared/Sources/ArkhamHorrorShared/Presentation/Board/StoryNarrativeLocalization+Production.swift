@@ -21,6 +21,11 @@ struct ProductionListItemResolution {
     let degradedReason: StoryUnavailableReason?
 }
 
+private struct ProductionChoiceLabelInvocation {
+    let key: String
+    let variables: JSONValue
+}
+
 // MARK: - Production catalog resolution
 
 extension StoryNarrativeLocalization {
@@ -124,13 +129,15 @@ extension StoryNarrativeLocalization {
         catalogUnavailability: StoryUnavailableReason
     ) -> Result<String, StoryUnavailableReason> {
         guard wireLabel.hasPrefix("$") else { return .failure(.unsupportedEntry) }
-        let key = String(wireLabel.dropFirst())
+        guard let invocation = parseProductionChoiceLabel(wireLabel) else {
+            return .failure(.unsupportedVariableValue)
+        }
         // Vue I18n resolves `$t(pluralKey)` without an explicit count through the singular
-        // branch. Match that plural-branch selection without binding `count` as text, so
-        // any unbound placeholders in the selected output still fail closed.
+        // branch. Ask the resolver for that path; it only applies when `count`/`n` is absent,
+        // so named variables still bind normally and unbound placeholders still fail closed.
         switch resolveKey(
-            key,
-            variables: .object([:]),
+            invocation.key,
+            variables: invocation.variables,
             resolver: resolver,
             catalogUnavailability: catalogUnavailability,
             imageFallback: false,
@@ -147,6 +154,113 @@ extension StoryNarrativeLocalization {
             guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
             return .success(trimmed)
         }
+    }
+
+    private static func parseProductionChoiceLabel(
+        _ wireLabel: String
+    ) -> ProductionChoiceLabelInvocation? {
+        var input = wireLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard input.hasPrefix("$") else { return nil }
+        input = String(input.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return nil }
+        let parts = splitChoiceLabelKeyAndParameters(input)
+        guard LocaleCatalogGrammar.isMessageKey(parts.key) else { return nil }
+        guard let variables = parseChoiceLabelVariables(parts.parameters) else { return nil }
+        return ProductionChoiceLabelInvocation(key: parts.key, variables: .object(variables))
+    }
+
+    private static func splitChoiceLabelKeyAndParameters(
+        _ input: String
+    ) -> (key: String, parameters: String) {
+        guard let spaceIndex = input.firstIndex(of: " ") else { return (input, "") }
+        let key = String(input[..<spaceIndex])
+        let parameters = input[input.index(after: spaceIndex)...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (key, parameters)
+    }
+
+    private static func parseChoiceLabelVariables(
+        _ parameters: String
+    ) -> [String: JSONValue]? {
+        guard !parameters.isEmpty else { return [:] }
+        var variables: [String: JSONValue] = [:]
+        guard let tokens = tokenizeChoiceLabelParameters(parameters) else { return nil }
+        for token in tokens {
+            guard let separator = token.firstIndex(of: "=") else { return nil }
+            let name = String(token[..<separator])
+            let encodedValue = token[token.index(after: separator)...]
+            guard LocaleCatalogGrammar.isVariableName(name),
+                  variables[name] == nil
+            else { return nil }
+            guard let value = parseChoiceLabelVariableValue(encodedValue) else { return nil }
+            variables[name] = value
+        }
+        return variables
+    }
+
+    private static func tokenizeChoiceLabelParameters(_ parameters: String) -> [String]? {
+        var tokens: [String] = []
+        var current = ""
+        var quote: Character?
+        var escaped = false
+        for character in parameters {
+            if let activeQuote = quote {
+                if character != "\\" {
+                    current.append(character)
+                }
+                if character == activeQuote, !escaped {
+                    quote = nil
+                }
+                if character == "\\", !escaped {
+                    escaped = true
+                } else {
+                    escaped = false
+                }
+            } else if character == " " {
+                if !current.isEmpty {
+                    tokens.append(current)
+                    current.removeAll(keepingCapacity: true)
+                }
+            } else {
+                current.append(character)
+                if character == "\"" || character == "'" {
+                    quote = character
+                }
+            }
+        }
+        guard quote == nil else { return nil }
+        if !current.isEmpty {
+            tokens.append(current)
+        }
+        return tokens
+    }
+
+    private static func parseChoiceLabelVariableValue(
+        _ encodedValue: some StringProtocol
+    ) -> JSONValue? {
+        if encodedValue.hasPrefix("i:") {
+            let raw = String(encodedValue.dropFirst(2))
+            guard let number = parseChoiceLabelInteger(raw) else { return nil }
+            return .number(number)
+        }
+        if encodedValue.hasPrefix("s:") {
+            let raw = String(encodedValue.dropFirst(2))
+            guard raw.count >= 2,
+                  let first = raw.first,
+                  first == "\"" || first == "'",
+                  raw.last == first
+            else { return nil }
+            return .string(String(raw.dropFirst().dropLast()))
+        }
+        return nil
+    }
+
+    private static func parseChoiceLabelInteger(_ raw: String) -> JSONNumber? {
+        guard let parsed = try? JSONNumber(exactDecimalLiteral: raw),
+              let magnitude = parsed.wholeNumberMagnitude
+        else { return nil }
+        let sign: JSONNumber.Sign = parsed.sign == .minus && magnitude != "0" ? .minus : .plus
+        return try? JSONNumber(sign: sign, coefficient: magnitude, exponent: .zero)
     }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
