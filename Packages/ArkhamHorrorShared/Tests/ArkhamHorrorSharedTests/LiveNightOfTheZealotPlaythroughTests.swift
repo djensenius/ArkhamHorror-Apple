@@ -584,7 +584,7 @@ private struct LivePlaythroughBot {
             .contains { $0.selectable } == true
     }
 
-    // swiftlint:disable:next function_body_length cyclomatic_complexity
+    // swiftlint:disable:next cyclomatic_complexity
     private func submit(
         _ answer: BotAnswer, prompt: BasicChoicePromptPresentation
     ) async throws -> SubmissionOutcome {
