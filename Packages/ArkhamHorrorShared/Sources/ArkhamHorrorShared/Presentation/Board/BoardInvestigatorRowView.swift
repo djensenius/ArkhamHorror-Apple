@@ -14,6 +14,49 @@ struct BoardHiddenHandBackPlaceholder: Sendable, Equatable, Identifiable {
     let accessibilityLabel = "Hidden hand card"
 }
 
+struct BoardHiddenHandBackFanLayout: Sendable, Equatable {
+    let spacing: CGFloat
+    let totalWidth: CGFloat
+
+    static func make(
+        handCount: Int,
+        availableWidth: CGFloat = BoardInvestigatorTileLayout.width,
+        cardWidth: CGFloat = BoardInvestigatorTileLayout.hiddenHandBackSize.width,
+        preferredSpacing: CGFloat = BoardInvestigatorTileLayout.hiddenHandBackSpacing
+    ) -> BoardHiddenHandBackFanLayout {
+        guard handCount > 0 else {
+            return BoardHiddenHandBackFanLayout(spacing: preferredSpacing, totalWidth: 0)
+        }
+        guard handCount > 1 else {
+            return BoardHiddenHandBackFanLayout(
+                spacing: preferredSpacing,
+                totalWidth: min(cardWidth, availableWidth)
+            )
+        }
+
+        let gaps = CGFloat(handCount - 1)
+        let preferredWidth = cardWidth * CGFloat(handCount) + preferredSpacing * gaps
+        guard preferredWidth > availableWidth else {
+            return BoardHiddenHandBackFanLayout(
+                spacing: preferredSpacing,
+                totalWidth: preferredWidth
+            )
+        }
+
+        let overlappedSpacing = (availableWidth - cardWidth * CGFloat(handCount)) / gaps
+        return BoardHiddenHandBackFanLayout(
+            spacing: overlappedSpacing,
+            totalWidth: availableWidth
+        )
+    }
+}
+
+enum BoardInvestigatorTileLayout {
+    static let width: CGFloat = 272
+    static let hiddenHandBackSize = CGSize(width: 32, height: 44)
+    static let hiddenHandBackSpacing: CGFloat = 4
+}
+
 struct BoardDeckCountBadgeModel: Sendable, Equatable {
     let count: Int
 
@@ -94,7 +137,10 @@ struct BoardHiddenHandBackView: View {
                     .foregroundStyle(ArkhamTheme.bone.opacity(0.65))
                     .accessibilityHidden(true)
             }
-            .frame(width: 32, height: 44)
+            .frame(
+                width: BoardInvestigatorTileLayout.hiddenHandBackSize.width,
+                height: BoardInvestigatorTileLayout.hiddenHandBackSize.height
+            )
             .accessibilityLabel(placeholder.accessibilityLabel)
     }
 }
@@ -176,7 +222,7 @@ struct BoardInvestigatorRowView: View {
             }
             investigatorPlayerArea(investigator)
         }
-        .frame(width: 272, alignment: .top)
+        .frame(width: BoardInvestigatorTileLayout.width, alignment: .top)
         .accessibilityElement(children: .contain)
     }
 
@@ -281,11 +327,13 @@ struct BoardInvestigatorRowView: View {
             isSolo: isSolo
         )
         if !placeholders.isEmpty {
-            HStack(alignment: .top, spacing: 4) {
+            let layout = BoardHiddenHandBackFanLayout.make(handCount: placeholders.count)
+            HStack(alignment: .top, spacing: layout.spacing) {
                 ForEach(placeholders) { placeholder in
                     BoardHiddenHandBackView(placeholder: placeholder)
                 }
             }
+            .frame(width: layout.totalWidth, alignment: .leading)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(
                 "Hand " + BoardDisplayFormatting.pluralized(

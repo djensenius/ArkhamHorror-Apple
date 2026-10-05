@@ -42,6 +42,27 @@ struct BoardHiddenInformationPresentationTests {
         assertLiveDefaultsDoNotRevealWithoutModeOptIn(other: other)
     }
 
+    @Test("Hidden hand fan layout stays inside the investigator tile")
+    func hiddenHandFanLayoutStaysInsideTile() {
+        let tileWidth: CGFloat = 272
+        let cases: [(handCount: Int, expectedWidth: CGFloat, spacingIsNegative: Bool)] = [
+            (0, 0, false),
+            (3, 104, false),
+            (8, tileWidth, false),
+            (12, tileWidth, true),
+        ]
+
+        for testCase in cases {
+            let layout = BoardHiddenHandBackFanLayout.make(
+                handCount: testCase.handCount,
+                availableWidth: tileWidth
+            )
+            #expect(layout.totalWidth <= tileWidth)
+            #expect(layout.totalWidth == testCase.expectedWidth)
+            #expect((layout.spacing < 0) == testCase.spacingIsNegative)
+        }
+    }
+
     private func assertResolvedButHidden(
         projection: BoardProjection,
         local: BoardInvestigatorNode,
