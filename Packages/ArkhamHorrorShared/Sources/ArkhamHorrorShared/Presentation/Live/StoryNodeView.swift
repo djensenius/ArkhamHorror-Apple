@@ -114,9 +114,68 @@ private struct ModifiedResolvedStoryEntryView: View {
     let entry: ResolvedStoryEntry
     var cardCatalog: CardCatalogSnapshot?
 
+    private var status: StoryFlavorEntryStatus? {
+        if modifiers.contains(.invalidEntry) {
+            return .invalid
+        }
+        if modifiers.contains(.validEntry) {
+            return .valid
+        }
+        return nil
+    }
+
+    private var stylingModifiers: [FlavorTextModifier] {
+        modifiers.filter { $0 != .invalidEntry && $0 != .validEntry }
+    }
+
     var body: some View {
-        ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
-            .modifier(StoryFlavorTextModifier(modifiers: modifiers))
+        if let status {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: status.systemImage)
+                    .foregroundStyle(status.markerColor)
+                    .accessibilityLabel(status.accessibilityPrefix)
+                ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
+                    .modifier(StoryFlavorTextModifier(modifiers: stylingModifiers))
+                    .foregroundStyle(status.foregroundStyle)
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
+                .modifier(StoryFlavorTextModifier(modifiers: stylingModifiers))
+        }
+    }
+}
+
+private enum StoryFlavorEntryStatus {
+    case valid
+    case invalid
+
+    var systemImage: String {
+        switch self {
+        case .valid: "checkmark.circle.fill"
+        case .invalid: "xmark.circle.fill"
+        }
+    }
+
+    var markerColor: Color {
+        switch self {
+        case .valid: .green
+        case .invalid: .secondary
+        }
+    }
+
+    var foregroundStyle: Color {
+        switch self {
+        case .valid: .primary
+        case .invalid: .secondary
+        }
+    }
+
+    var accessibilityPrefix: String {
+        switch self {
+        case .valid: "Valid setup entry"
+        case .invalid: "Invalid setup entry"
+        }
     }
 }
 
@@ -344,8 +403,14 @@ private struct StoryNodeView: View {
         switch node {
         case .text, .lineBreak, .icon:
             StoryInlineTextView(nodes: [node])
-        case let .paragraph(children), let .group(children):
+        case let .paragraph(children):
             StoryNodeChildrenView(children: children)
+        case let .group(children):
+            if let references = Self.encounterSetGroupReferences(children) {
+                StoryEncounterSetGroupView(references: references)
+            } else {
+                StoryNodeChildrenView(children: children)
+            }
         case let .heading(level, children):
             StoryNodeChildrenView(children: children)
                 .font(StoryHeadingPresentation.font(for: level))
@@ -405,9 +470,37 @@ private struct StoryNodeView: View {
         }
     }
 
+    private static func encounterSetGroupReferences(
+        _ children: [StoryNode]
+    ) -> [StoryAssetReference]? {
+        let references = children.compactMap { child -> StoryAssetReference? in
+            guard case let .image(reference) = child, reference.role == .encounterSet else {
+                return nil
+            }
+            return reference
+        }
+        return references.count == children.count && !references.isEmpty ? references : nil
+    }
+
     private func cardReferenceLabel(code: String, children: [StoryNode]) -> String {
         let label = StoryNodePresentation.accessibilityLabel(for: children)
         return label.isEmpty ? "Card \(code)" : label
+    }
+}
+
+private struct StoryEncounterSetGroupView: View {
+    let references: [StoryAssetReference]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
+                StoryAssetImageView(reference: reference)
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel(reference.accessibleDescription)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(references.map(\.accessibleDescription).joined(separator: ", "))
     }
 }
 
