@@ -66,6 +66,42 @@ struct GameModeFixtureTests {
         #expect(scenario.chaosBag.chaosTokens.isEmpty)
     }
 
+    @Test("A Return to campaign scenario log accepts tagged entries")
+    func returnToScenarioLogAcceptsTaggedEntries() throws {
+        var root = try #require(
+            JSONSerialization.jsonObject(with: fixtureData(named: "mode-campaign-scenario"))
+                as? [String: Any]
+        )
+        var scenario = try #require(root["That"] as? [String: Any])
+        scenario["log"] = [[
+            "tag": "Cheated",
+            "contents": [
+                "unLabel": "c01001",
+                "getLabel": ["title": "Roland Banks", "subtitle": "The Fed"],
+            ],
+        ]]
+        root["That"] = scenario
+        let bytes = try JSONSerialization.data(withJSONObject: root)
+
+        let mode = try ContractJSON.decode(GameMode.self, from: bytes)
+        guard case let .campaignAndScenario(_, decodedScenario) = mode else {
+            Issue.record("Expected .campaignAndScenario")
+            return
+        }
+        #expect(decodedScenario.log == [
+            .object([
+                "tag": .string("Cheated"),
+                "contents": .object([
+                    "unLabel": .string("c01001"),
+                    "getLabel": .object([
+                        "title": .string("Roland Banks"),
+                        "subtitle": .string("The Fed"),
+                    ]),
+                ]),
+            ]),
+        ])
+    }
+
     @Test("A mode object with neither This nor That fails with a typed decode error")
     func neitherThisNorThatFails() throws {
         let bytes = Data(#"{"Neither": true}"#.utf8)

@@ -103,6 +103,25 @@ extension AppModel {
         return result
     }
 
+    func upgradeCampaignDeck(
+        using deck: Deck,
+        investigatorId rawInvestigatorId: String,
+        in gameID: GameID,
+        promptIdentity: BasicChoicePromptIdentity
+    ) async -> CampaignDeckUpgradeSubmissionResult {
+        let deckURL = deck.url
+        let deckList = DeckListInput(deck.playableList, urlOverride: deckURL)
+        return await submitCampaignDeckSource(
+            deckURL: deckURL,
+            deckList: deckList,
+            rawInvestigatorId: rawInvestigatorId,
+            in: gameID,
+            promptIdentity: promptIdentity,
+            signInErrorKey: "campaign.error.signInUpgrade",
+            signInErrorFallback: "Sign in again to upgrade this deck."
+        )
+    }
+
     // swiftlint:disable:next function_body_length
     func continueCampaignWithoutUpgrading(
         investigatorId rawInvestigatorId: String,
@@ -227,6 +246,86 @@ extension AppModel {
                 promptIdentity: promptIdentity
             )
         )
+    }
+
+    // swiftlint:disable:next function_body_length function_parameter_count
+    private func submitCampaignDeckSource(
+        deckURL: String?,
+        deckList: DeckListInput?,
+        rawInvestigatorId: String,
+        in gameID: GameID,
+        promptIdentity: BasicChoicePromptIdentity,
+        signInErrorKey: String,
+        signInErrorFallback: String
+    ) async -> CampaignDeckUpgradeSubmissionResult {
+        let profile: ServerProfile
+        guard case let .signedIn(signedInProfile, _, _) = sessionState else {
+            return .failed(campaignPromptLocalized(signInErrorKey, signInErrorFallback))
+        }
+        profile = signedInProfile
+
+        guard let investigatorId = try? InvestigatorCode(rawInvestigatorId) else {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.invalidInvestigator",
+                "This investigator could not be sent safely."
+            ))
+        }
+        let attemptID: UUID
+        switch beginCampaignDeckSubmission(
+            promptIdentity: promptIdentity,
+            investigatorId: investigatorId,
+            in: gameID
+        ) {
+        case let .started(value):
+            attemptID = value
+        case let .failed(failure):
+            return failure
+        }
+
+        let task = Task<CampaignDeckUpgradeSubmissionResult, Never> { @MainActor in
+            guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
+            let context: DeckRequestContext
+            do {
+                context = try await self.currentDeckRequestContext(for: profile)
+            } catch is CancellationError {
+                return campaignDeckSubmissionCancelledFailure()
+            } catch {
+                return .failed(campaignPromptLocalized(
+                    "campaign.error.sessionExpiredDecks",
+                    "Your session expired. Sign in again to manage decks."
+                ))
+            }
+            guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
+            return await self.submitCampaignDeck(
+                deckURL: deckURL,
+                deckList: deckList,
+                investigatorId: investigatorId,
+                gameID: gameID,
+                context: CampaignDeckSubmissionContext(
+                    profile: profile,
+                    deckContext: context,
+                    promptIdentity: promptIdentity
+                )
+            )
+        }
+        campaignDeckSubmissions[gameID] = CampaignDeckSubmissionAttempt(
+            attemptID: attemptID,
+            promptIdentity: promptIdentity,
+            phase: .submitting,
+            task: task
+        )
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        finishCampaignDeckSubmission(
+            gameID: gameID,
+            attemptID: attemptID,
+            promptIdentity: promptIdentity,
+            result: result
+        )
+        return result
     }
 
     private func performCampaignDeckSkip(

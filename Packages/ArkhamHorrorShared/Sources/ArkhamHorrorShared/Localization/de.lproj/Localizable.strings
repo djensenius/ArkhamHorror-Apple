@@ -203,6 +203,14 @@
 "campaign.upgrade.deckLink" = "Deck-Link";
 "campaign.upgrade.deckPlaceholder" = "ArkhamDB- oder arkham.build-Deck-Link";
 "campaign.upgrade.submit" = "Verbesserung senden";
+"campaign.upgrade.replacementRequired" = "Dieser Ermittler wurde getötet oder in den Wahnsinn getrieben. Wähle ein Ersatzermittler-Deck, um fortzufahren.";
+"campaign.upgrade.submitReplacement" = "Ersatz senden";
+"campaign.upgrade.savedDecks" = "Gespeicherte Decks";
+"campaign.upgrade.loadingDecks" = "Gespeicherte Decks werden geladen …";
+"campaign.upgrade.retryDecks" = "Gespeicherte Decks erneut laden";
+"campaign.upgrade.noSavedDecks" = "Es sind keine gespeicherten Decks verfügbar.";
+"campaign.upgrade.checkingDeck" = "Server-Unterstützung wird geprüft …";
+"campaign.upgrade.validDeck" = "Der Server kann die Hauptkarten dieses Decks spielen.";
 "campaign.upgrade.skip" = "Ohne Verbesserung fortsetzen";
 "campaign.upgrade.skipConfirmationCancel" = "Abbrechen";
 "campaign.upgrade.skipConfirmationConfirm" = "Ohne Verbesserung fortsetzen";

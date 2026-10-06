@@ -143,7 +143,13 @@ extension Investigator: Codable {
         form = try container.decode(JSONValue.self, forKey: .form)
         formMeta = try container.decode(JSONValue.self, forKey: .formMeta)
         hand = try container.decode([JSONValue].self, forKey: .hand)
-        handSize = try container.decode(Int.self, forKey: .handSize)
+        handSize = try Self.decodeConnectionData(
+            Int.self,
+            from: container,
+            forKey: .handSize,
+            missingDefault: 0,
+            codingPath: path
+        )
         health = try container.decode(Int.self, forKey: .health)
         horrorHealed = try container.decode(Int.self, forKey: .horrorHealed)
         id = try container.decode(InvestigatorID.self, forKey: .id)
@@ -171,7 +177,13 @@ extension Investigator: Codable {
         remainingActions = try container.decode(Int.self, forKey: .remainingActions)
         resigned = try container.decode(Bool.self, forKey: .resigned)
         sanity = try container.decode(Int.self, forKey: .sanity)
-        scarletKeys = try container.decode([CardCode].self, forKey: .scarletKeys)
+        scarletKeys = try Self.decodeConnectionData(
+            [CardCode].self,
+            from: container,
+            forKey: .scarletKeys,
+            missingDefault: [],
+            codingPath: path
+        )
         sealedChaosTokens = try container.decode([ChaosToken].self, forKey: .sealedChaosTokens)
         seals = try container.decode([JSONValue].self, forKey: .seals)
         search = try decodeRequiredNullable(
@@ -200,6 +212,28 @@ extension Investigator: Codable {
         )
         willpower = try container.decode(Int.self, forKey: .willpower)
         experiencePoints = try container.decode(Int.self, forKey: .experiencePoints)
+    }
+
+    private static func decodeConnectionData<T: Decodable>(
+        _: T.Type,
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys,
+        missingDefault defaultValue: T,
+        codingPath: [any CodingKey]
+    ) throws -> T {
+        if allowsMissingConnectionData(at: codingPath) {
+            return try container.decodeIfPresent(T.self, forKey: key) ?? defaultValue
+        }
+        return try container.decode(T.self, forKey: key)
+    }
+
+    private static func allowsMissingConnectionData(at codingPath: [any CodingKey]) -> Bool {
+        let offBoardCollections = Set([
+            "killedInvestigators",
+            "otherInvestigators",
+            "retiredInvestigators",
+        ])
+        return codingPath.contains { offBoardCollections.contains($0.stringValue) }
     }
 
     // swiftlint:disable:next function_body_length
