@@ -405,6 +405,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
     }
 
     @Test("Campaign outcome helpers preserve step order and resolution mappings")
+    // swiftlint:disable:next function_body_length
     func campaignOutcomeHelpersPreserveStepOrderAndResolutionMappings() {
         let completedSteps: JSONValue = .array([
             .object([
@@ -460,7 +461,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
         let outcomes = campaignScenarioOutcomes(from: campaign)
         #expect(outcomes["c01104"] == "resolution \(jsonString(.string("NoResolution")))")
         #expect(outcomes["c81001"] == "resolution \(jsonString(.string("StandaloneResolution")))")
-        #expect(outcomes["c02062"] == "resolution \(jsonString(.array([.string("R1"), .string("R2")])))")
+        let arrayResolution = jsonString(.array([.string("R1"), .string("R2")]))
+        #expect(outcomes["c02062"] == "resolution \(arrayResolution)")
         #expect(outcomes["c99999"] == "resolution \(jsonString(.string("UnmatchedResolution")))")
     }
 
@@ -1953,8 +1955,7 @@ private func standaloneScenarioResolution(in value: JSONValue) -> JSONValue? {
         }
         if let resolutions = object["resolutions"]?.objectValue,
            resolutions.count == 1,
-           let resolution = resolutions.values.first
-        {
+           let resolution = resolutions.values.first {
             return resolution
         }
         return nil
