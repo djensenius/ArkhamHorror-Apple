@@ -281,6 +281,16 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(configuration.achievementsEnabled == false)
     }
 
+    @Test("Non-terminal campaign outcomes do not claim server completion")
+    func nonTerminalCampaignOutcomesDoNotClaimGameOver() {
+        let campaign: JSONValue = .object([
+            "completedSteps": .array([]),
+            "resolutions": .object([:]),
+        ])
+
+        #expect(campaignScenarioOutcomes(from: campaign).isEmpty)
+    }
+
     @Test(
         "Env-gated solo live playthroughs",
         .enabled(if: liveServerURLForPlaythrough() != nil)
@@ -582,8 +592,9 @@ private struct LivePlaythroughBot {
         try trace.append(.runStarted(investigator: investigator, gameID: gameID))
         while Date().timeIntervalSince(startedAt) < timeout {
             let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
-            let scenarioOutcomes = terminalScenarioOutcomes(from: envelope.game)
+            let scenarioOutcomes = scenarioOutcomes(from: envelope.game)
             if envelope.game.gameState == .over {
+                let scenarioOutcomes = terminalScenarioOutcomes(from: envelope.game)
                 try trace.append(.runFinished(
                     investigator: investigator,
                     gameID: gameID,
