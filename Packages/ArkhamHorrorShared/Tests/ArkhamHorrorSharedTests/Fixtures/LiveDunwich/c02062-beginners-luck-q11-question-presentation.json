@@ -1,0 +1,332 @@
+{
+  "answer": {
+    "kind": "singleChoice",
+    "tag": "Answer"
+  },
+  "choiceCount": 16,
+  "choices": [
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 0,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "PlusOne",
+          "chaosTokenId": "3f872769-734b-4c40-9cad-c5d1bd8dacd8",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 1,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Zero",
+          "chaosTokenId": "ff3871fd-03de-4bfa-ab45-681ddcf5cdd0",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 2,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Zero",
+          "chaosTokenId": "2e69496e-fae7-46fe-ba4d-93aab903058d",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 3,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusOne",
+          "chaosTokenId": "09cb4dee-9175-4efe-81e8-e3083de00503",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 4,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Zero",
+          "chaosTokenId": "32e39c11-4a0a-46ad-bc18-c7c7d77f960d",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 5,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Tablet",
+          "chaosTokenId": "eb25d021-8530-44fe-ade8-42cfd5d5eced",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 6,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Skull",
+          "chaosTokenId": "2736c09d-90fb-450c-b52a-ddfe22bd8cbd",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 7,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "AutoFail",
+          "chaosTokenId": "f89de636-744c-4380-8f20-c527bd2f53e6",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 8,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusOne",
+          "chaosTokenId": "53ffa8d9-23e8-4927-add4-f4cea851afdf",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 9,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "PlusOne",
+          "chaosTokenId": "5393a2b8-a776-4927-8b12-1f5ddd4a78e6",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 10,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "ElderSign",
+          "chaosTokenId": "65651837-09f1-4eef-b30d-aeab4f9839fb",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 11,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusTwo",
+          "chaosTokenId": "8a2e57e0-78c2-413c-aeb9-944f8f3a3fae",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 12,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Skull",
+          "chaosTokenId": "08b81957-d92e-45c7-a1a9-d189af2ff6d4",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 13,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Cultist",
+          "chaosTokenId": "63c0a458-0a11-4ab5-b1ef-2aa7143dfd9b",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 14,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusTwo",
+          "chaosTokenId": "c57276e1-b7ef-45f1-a0f0-d8b3e476402c",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    },
+    {
+      "kind": "opaque",
+      "label": {
+        "kind": "embeddedI18n",
+        "text": "$choice.opaque"
+      },
+      "selectable": true,
+      "sourceIndex": 15,
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusOne",
+          "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      },
+      "uiTag": "TargetLabel"
+    }
+  ],
+  "protocolVersion": 2,
+  "questionKind": "chooseOne",
+  "questionVersion": 11
+}
