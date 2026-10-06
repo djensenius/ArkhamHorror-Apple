@@ -1097,7 +1097,7 @@ private struct LivePlaythroughBot {
         }
         if prompt.isChooseUpgradeDeckPrompt {
             return SelectedBotAnswer(
-                answer: .skipDeckUpgrade(investigatorID: investigator.code),
+                answer: .skipDeckUpgrade(investigatorID: "c\(investigator.code)"),
                 note: "continue without upgrading",
                 chosenChoiceKind: nil
             )
