@@ -589,6 +589,68 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(investigatorID == "c01002")
     }
 
+    @Test("Live harness treats same-version prompt-key changes as progress")
+    func promptAdvanceUsesFullPromptKeyAtSameVersion() {
+        let rawQuestion: JSONValue = .object(["tag": .string("ChooseOne")])
+        let original = Self.prompt(
+            questionVersion: 7,
+            rawQuestion: rawQuestion,
+            questionPresentation: Self.semanticPresentation(choiceKind: .gainResource)
+        )
+        let samePrompt = Self.prompt(
+            questionVersion: 7,
+            rawQuestion: rawQuestion,
+            questionPresentation: Self.semanticPresentation(choiceKind: .gainResource)
+        )
+        let changedPrompt = Self.prompt(
+            questionVersion: 7,
+            rawQuestion: rawQuestion,
+            questionPresentation: Self.semanticPresentation(choiceKind: .drawCard)
+        )
+
+        #expect(!basicChoicePromptAdvanced(from: original.identity, to: samePrompt))
+        #expect(basicChoicePromptAdvanced(from: original.identity, to: changedPrompt))
+    }
+
+    @Test("Live harness resets skill-test preparation bounds between tests")
+    func skillTestPreparationCounterResetsBetweenSeparateSkillTests() throws {
+        let prompt = try Self.skillTestPreparationPrompt(questionVersion: 11)
+        let selectableIndexes = [0, 1]
+        let loopKey = "c01104:00000000-0000-0000-0000-000000000800:startSkillTestPreparation"
+        var counter = SkillTestPreparationLoopCounter()
+
+        #expect(counter.count(for: loopKey) == 0)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            selectableIndexes: selectableIndexes,
+            repeatCount: 0,
+            skillTestPreparationCount: counter.count(for: loopKey)
+        ) == 0)
+        for _ in 0 ..< 3 {
+            counter.recordAdvanced(for: loopKey)
+        }
+        #expect(counter.count(for: loopKey) == 3)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            selectableIndexes: selectableIndexes,
+            repeatCount: 0,
+            skillTestPreparationCount: counter.count(for: loopKey)
+        ) == 1)
+
+        #expect(counter.count(for: nil) == 0)
+        #expect(counter.count(for: loopKey) == 0)
+        for _ in 0 ..< 3 {
+            counter.recordAdvanced(for: loopKey)
+        }
+        #expect(counter.count(for: loopKey) == 3)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            selectableIndexes: selectableIndexes,
+            repeatCount: 0,
+            skillTestPreparationCount: counter.count(for: loopKey)
+        ) == 1)
+    }
+
     @Test("Live harness rejects unknown investigators and ultimatum values")
     func unknownInvestigatorAndUltimatumAreConfigurationErrors() {
         #expect(throws: LiveHarnessConfigurationError.unknownInvestigator("99999")) {
@@ -661,6 +723,62 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 ]),
             ]),
         ])
+    }
+
+    private static func prompt(
+        questionVersion: Int,
+        rawQuestion: JSONValue,
+        questionState: BasicChoiceQuestionState = .updateRequired(tag: nil),
+        questionPresentation: QuestionPresentation? = nil
+    ) -> BasicChoicePromptPresentation {
+        BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: questionVersion,
+                rawQuestion: rawQuestion,
+                questionPresentation: questionPresentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: questionState,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private static func semanticPresentation(
+        choiceKind: QuestionPresentation.ChoiceKind
+    ) -> QuestionPresentation {
+        QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: 7,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [QuestionPresentation.Choice(sourceIndex: 0, kind: choiceKind)]
+        )
+    }
+
+    private static func skillTestPreparationPrompt(
+        questionVersion: Int
+    ) throws -> BasicChoicePromptPresentation {
+        let rawQuestion: JSONValue = .object([
+            "tag": .string("ChooseOne"),
+            "choices": .array([
+                .object(["tag": .string("UnknownPreparationChoice")]),
+                .object([
+                    "tag": .string("StartSkillTestButton"),
+                    "investigatorId": .string("c01001"),
+                ]),
+            ]),
+        ])
+        return prompt(
+            questionVersion: questionVersion,
+            rawQuestion: rawQuestion,
+            questionState: BasicChoiceParser.parseQuestion(rawQuestion)
+        )
     }
 
     @Test("Campaign outcome helpers preserve step order and resolution mappings")
@@ -1074,7 +1192,7 @@ private struct LivePlaythroughBot {
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     func driveUntilServerCompletion() async throws -> BotOutcome {
         var repeatedQuestionShapes: [String: Int] = [:]
-        var startSkillTestPreparationCounts: [String: Int] = [:]
+        var skillTestPreparationCounter = SkillTestPreparationLoopCounter()
         let startedAt = Date()
         let timeout = ProcessInfo.processInfo.environment["ARKHAM_LIVE_PLAYTHROUGH_TIMEOUT"]
             .flatMap(TimeInterval.init) ?? 900
@@ -1109,6 +1227,7 @@ private struct LivePlaythroughBot {
                 )
             }
             guard let prompt = model.basicChoicePresentation(for: gameID) else {
+                _ = skillTestPreparationCounter.count(for: nil)
                 try await Task.sleep(for: .milliseconds(200))
                 continue
             }
@@ -1120,9 +1239,9 @@ private struct LivePlaythroughBot {
                 scenario: scenario,
                 prompt: prompt
             )
-            let skillTestPreparationCount = skillTestPreparationKey.map {
-                startSkillTestPreparationCounts[$0, default: 0]
-            } ?? 0
+            let skillTestPreparationCount = skillTestPreparationCounter.count(
+                for: skillTestPreparationKey
+            )
             let cannotRender = !prompt.isRenderableQuestion
                 && !isInitialChooseDeckPrompt(prompt)
                 && !prompt.isChooseUpgradeDeckPrompt
@@ -1251,10 +1370,7 @@ private struct LivePlaythroughBot {
                         diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     repeatedQuestionShapes[repeatKey] = repeatCount + 1
-                    if let skillTestPreparationKey {
-                        startSkillTestPreparationCounts[skillTestPreparationKey] =
-                            skillTestPreparationCount + 1
-                    }
+                    skillTestPreparationCounter.recordAdvanced(for: skillTestPreparationKey)
                 } else {
                     let reason = [
                         "same prompt remained after the bot answered it",
@@ -1441,36 +1557,6 @@ private struct LivePlaythroughBot {
         )
     }
 
-    private func preferredSelectableIndex(
-        in prompt: BasicChoicePromptPresentation,
-        selectableIndexes: [Int],
-        repeatCount: Int,
-        skillTestPreparationCount: Int
-    ) -> Int {
-        if let skipIndex = prompt.identity.questionPresentation?.choices.first(where: {
-            $0.selectable && $0.kind == .skipTriggers && selectableIndexes.contains($0.sourceIndex)
-        })?.sourceIndex {
-            return skipIndex
-        }
-        // Skill-test preparation offers legal commit/uncommit choices that can reorder the
-        // same hand indefinitely. After a few legal prep actions, choose the server's
-        // explicit start control; fail-closed behavior is preserved because the choice must
-        // still be selectable in the current prompt.
-        if skillTestPreparationCount >= 3 {
-            let startSkillTestIndex = prompt.choices.first(where: {
-                if case .startSkillTest = $0.content {
-                    selectableIndexes.contains($0.index)
-                } else {
-                    false
-                }
-            })?.index
-            if let startSkillTestIndex {
-                return startSkillTestIndex
-            }
-        }
-        return selectableIndexes[repeatCount % selectableIndexes.count]
-    }
-
     private func canDiagnosticBypassUnsupported(_ prompt: BasicChoicePromptPresentation) -> Bool {
         guard diagnosticBypassUnsupported, prompt.readOnlyReason == nil else { return false }
         return prompt.identity.questionPresentation?.choices
@@ -1606,7 +1692,7 @@ private struct LivePlaythroughBot {
         var ignoredServerSnapshotFailure = false
         while Date() < deadline {
             guard let current = model.basicChoicePresentation(for: gameID) else { return true }
-            if current.identity.questionVersion != identity.questionVersion {
+            if basicChoicePromptAdvanced(from: identity, to: current) {
                 return true
             }
             if modelSeatInvestigatorChanged(
@@ -1920,6 +2006,31 @@ private struct ReplacementFollowUp: Sendable, Equatable {
 
     var detail: String {
         "server advanced after replacement to \(investigatorID)"
+    }
+}
+
+private struct SkillTestPreparationLoopCounter: Sendable {
+    private var activeKey: String?
+    private var counts: [String: Int] = [:]
+
+    mutating func count(for currentKey: String?) -> Int {
+        updateActiveKey(currentKey)
+        guard let currentKey else { return 0 }
+        return counts[currentKey, default: 0]
+    }
+
+    mutating func recordAdvanced(for currentKey: String?) {
+        updateActiveKey(currentKey)
+        guard let currentKey else { return }
+        counts[currentKey, default: 0] += 1
+    }
+
+    private mutating func updateActiveKey(_ currentKey: String?) {
+        guard activeKey != currentKey else { return }
+        if let activeKey {
+            counts.removeValue(forKey: activeKey)
+        }
+        activeKey = currentKey
     }
 }
 
@@ -2541,6 +2652,13 @@ private func describeRawQuestionTag(_ value: JSONValue) -> String {
     return value.kindDescription
 }
 
+private func basicChoicePromptAdvanced(
+    from identity: BasicChoicePromptIdentity,
+    to current: BasicChoicePromptPresentation
+) -> Bool {
+    current.identity.promptKey != identity.promptKey
+}
+
 private func coverageRepeatKey(
     scenario: String, prompt: BasicChoicePromptPresentation
 ) -> String {
@@ -2552,6 +2670,36 @@ private func coverageRepeatKey(
         jsonString(prompt.identity.rawQuestion),
         jsonString(presentation),
     ].joined(separator: ":")
+}
+
+private func preferredSelectableIndex(
+    in prompt: BasicChoicePromptPresentation,
+    selectableIndexes: [Int],
+    repeatCount: Int,
+    skillTestPreparationCount: Int
+) -> Int {
+    if let skipIndex = prompt.identity.questionPresentation?.choices.first(where: {
+        $0.selectable && $0.kind == .skipTriggers && selectableIndexes.contains($0.sourceIndex)
+    })?.sourceIndex {
+        return skipIndex
+    }
+    // Skill-test preparation offers legal commit/uncommit choices that can reorder the
+    // same hand indefinitely. After a few legal prep actions, choose the server's
+    // explicit start control; fail-closed behavior is preserved because the choice must
+    // still be selectable in the current prompt.
+    if skillTestPreparationCount >= 3 {
+        let startSkillTestIndex = prompt.choices.first(where: {
+            if case .startSkillTest = $0.content {
+                selectableIndexes.contains($0.index)
+            } else {
+                false
+            }
+        })?.index
+        if let startSkillTestIndex {
+            return startSkillTestIndex
+        }
+    }
+    return selectableIndexes[repeatCount % selectableIndexes.count]
 }
 
 private func skillTestPreparationLoopKey(
