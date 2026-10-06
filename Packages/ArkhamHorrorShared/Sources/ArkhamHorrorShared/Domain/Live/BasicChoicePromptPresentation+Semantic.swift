@@ -85,9 +85,17 @@ extension BoundQuestionPresentation {
         guard case .singleChoice = presentation.answer,
               presentation.supportsCurrentGenericChoiceList,
               descriptor.selectable,
-              labelResolution?.unavailableReason == nil
+              Self.hasResolvedRequiredLabel(descriptor, labelResolution: labelResolution)
         else { return false }
         return true
+    }
+
+    private static func hasResolvedRequiredLabel(
+        _ descriptor: QuestionPresentation.Choice,
+        labelResolution: BasicChoiceLabelResolution?
+    ) -> Bool {
+        guard descriptor.label?.text.hasPrefix("$") == true else { return true }
+        return labelResolution?.isResolved == true
     }
 }
 
@@ -444,7 +452,7 @@ extension BasicChoicePromptPresentation {
                 accessibilityLabel: title
             )
         }
-        var resolution = semanticChoiceLabel(
+        let resolution = semanticChoiceLabel(
             for: descriptor,
             in: projection,
             labelResolution: choiceLabelResolutions[choice.index],
@@ -869,12 +877,20 @@ extension BasicChoicePromptPresentation {
                     value: "Resolve forced ability"
                 )
         case .opaque:
-            descriptor.uiTag
-                ?? semanticLocalized(
-                    "semantic.choice.title.genericIndexed",
-                    value: "Choice \(descriptor.sourceIndex + 1)",
-                    arguments: [Int64(descriptor.sourceIndex + 1)]
+            if descriptor.label != nil {
+                semanticTitleFromLabel(
+                    descriptor,
+                    labelResolution: labelResolution,
+                    fallback: nil
                 )
+            } else {
+                descriptor.uiTag
+                    ?? semanticLocalized(
+                        "semantic.choice.title.genericIndexed",
+                        value: "Choice \(descriptor.sourceIndex + 1)",
+                        arguments: [Int64(descriptor.sourceIndex + 1)]
+                    )
+            }
         case .skillLabel:
             semanticSkillLabelTitle(descriptor, labelResolution: labelResolution)
         case .skipTriggers:

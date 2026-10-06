@@ -1,0 +1,1413 @@
+{
+  "choices": [
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "PlusOne"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "PlusOne",
+              "chaosTokenId": "3f872769-734b-4c40-9cad-c5d1bd8dacd8",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "PlusOne",
+          "chaosTokenId": "3f872769-734b-4c40-9cad-c5d1bd8dacd8",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "Zero"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "Zero",
+              "chaosTokenId": "ff3871fd-03de-4bfa-ab45-681ddcf5cdd0",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Zero",
+          "chaosTokenId": "ff3871fd-03de-4bfa-ab45-681ddcf5cdd0",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "Zero"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "Zero",
+              "chaosTokenId": "2e69496e-fae7-46fe-ba4d-93aab903058d",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Zero",
+          "chaosTokenId": "2e69496e-fae7-46fe-ba4d-93aab903058d",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "MinusOne"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "09cb4dee-9175-4efe-81e8-e3083de00503",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusOne",
+          "chaosTokenId": "09cb4dee-9175-4efe-81e8-e3083de00503",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "Zero"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "Zero",
+              "chaosTokenId": "32e39c11-4a0a-46ad-bc18-c7c7d77f960d",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Zero",
+          "chaosTokenId": "32e39c11-4a0a-46ad-bc18-c7c7d77f960d",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "Tablet"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "Tablet",
+              "chaosTokenId": "eb25d021-8530-44fe-ade8-42cfd5d5eced",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Tablet",
+          "chaosTokenId": "eb25d021-8530-44fe-ade8-42cfd5d5eced",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "Skull"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "Skull",
+              "chaosTokenId": "2736c09d-90fb-450c-b52a-ddfe22bd8cbd",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Skull",
+          "chaosTokenId": "2736c09d-90fb-450c-b52a-ddfe22bd8cbd",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "AutoFail"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "AutoFail",
+              "chaosTokenId": "f89de636-744c-4380-8f20-c527bd2f53e6",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "AutoFail",
+          "chaosTokenId": "f89de636-744c-4380-8f20-c527bd2f53e6",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "MinusOne"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "53ffa8d9-23e8-4927-add4-f4cea851afdf",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusOne",
+          "chaosTokenId": "53ffa8d9-23e8-4927-add4-f4cea851afdf",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "PlusOne"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "PlusOne",
+              "chaosTokenId": "5393a2b8-a776-4927-8b12-1f5ddd4a78e6",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "PlusOne",
+          "chaosTokenId": "5393a2b8-a776-4927-8b12-1f5ddd4a78e6",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "ElderSign"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "ElderSign",
+              "chaosTokenId": "65651837-09f1-4eef-b30d-aeab4f9839fb",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "ElderSign",
+          "chaosTokenId": "65651837-09f1-4eef-b30d-aeab4f9839fb",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "MinusTwo"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusTwo",
+              "chaosTokenId": "8a2e57e0-78c2-413c-aeb9-944f8f3a3fae",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusTwo",
+          "chaosTokenId": "8a2e57e0-78c2-413c-aeb9-944f8f3a3fae",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "Skull"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "Skull",
+              "chaosTokenId": "08b81957-d92e-45c7-a1a9-d189af2ff6d4",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Skull",
+          "chaosTokenId": "08b81957-d92e-45c7-a1a9-d189af2ff6d4",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "Cultist"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "Cultist",
+              "chaosTokenId": "63c0a458-0a11-4ab5-b1ef-2aa7143dfd9b",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "Cultist",
+          "chaosTokenId": "63c0a458-0a11-4ab5-b1ef-2aa7143dfd9b",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "MinusTwo"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusTwo",
+              "chaosTokenId": "c57276e1-b7ef-45f1-a0f0-d8b3e476402c",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusTwo",
+          "chaosTokenId": "c57276e1-b7ef-45f1-a0f0-d8b3e476402c",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    },
+    {
+      "messages": [
+        {
+          "contents": [
+            {
+              "contents": [
+                {
+                  "activeDuringSetup": false,
+                  "card": {
+                    "contents": {
+                      "addedPeril": false,
+                      "cardCode": "c02066",
+                      "facedown": null,
+                      "id": "1758f10d-f55e-442f-8dd0-0a9e4a753135",
+                      "isFlipped": false,
+                      "originalCardCode": "c02066",
+                      "owner": null
+                    },
+                    "tag": "EncounterCard"
+                  },
+                  "source": {
+                    "contents": [
+                      {
+                        "contents": "c02066",
+                        "tag": "ActSource"
+                      },
+                      1
+                    ],
+                    "tag": "AbilitySource"
+                  },
+                  "type": {
+                    "contents": [
+                      "MinusOne"
+                    ],
+                    "tag": "ChaosTokenFaceModifier"
+                  }
+                }
+              ],
+              "tag": "EffectModifiers"
+            },
+            {
+              "contents": [
+                {
+                  "contents": "c02066",
+                  "tag": "ActSource"
+                },
+                1
+              ],
+              "tag": "AbilitySource"
+            },
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": "c01001",
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "CreateChaosTokenEffect"
+        },
+        {
+          "tag": "UnfocusChaosTokens"
+        },
+        {
+          "contents": [
+            {
+              "chaosTokenCancelled": false,
+              "chaosTokenFace": "MinusOne",
+              "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+              "chaosTokenRevealedBy": null,
+              "chaosTokenSealed": false
+            }
+          ],
+          "tag": "FocusChaosTokens"
+        }
+      ],
+      "tag": "TargetLabel",
+      "target": {
+        "contents": {
+          "chaosTokenCancelled": false,
+          "chaosTokenFace": "MinusOne",
+          "chaosTokenId": "9091687e-c59e-4e1d-890f-33970eabc1e9",
+          "chaosTokenRevealedBy": null,
+          "chaosTokenSealed": false
+        },
+        "tag": "ChaosTokenTarget"
+      }
+    }
+  ],
+  "tag": "ChooseOne"
+}
