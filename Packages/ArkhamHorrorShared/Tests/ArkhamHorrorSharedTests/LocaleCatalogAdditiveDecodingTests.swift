@@ -110,10 +110,8 @@ struct LocaleCatalogAdditiveDecodingTests {
         let invalidRoles = ["", String(repeating: "a", count: 65), "future.icon"]
         for rawRole in invalidRoles {
             #expect(
-                try Self.validateSingleEntry(
-                    Self.unknownRoleEntry(rawRole: rawRole),
-                    expectedUnsupportedKeys: 1
-                ) == .failure(.malformedChunk)
+                try Self.validateSingleEntry(Self.unknownRoleEntry(rawRole: rawRole))
+                    == .failure(.malformedChunk)
             )
         }
     }
@@ -125,10 +123,7 @@ struct LocaleCatalogAdditiveDecodingTests {
 
     @Test("Valid unknown variable role still degrades only its entry")
     func validUnknownVariableRoleStillDegradesOnlyEntry() throws {
-        let result = try Self.validateSingleEntry(
-            Self.unknownRoleEntry(rawRole: "futureIcon"),
-            expectedUnsupportedKeys: 1
-        )
+        let result = try Self.validateSingleEntry(Self.unknownRoleEntry(rawRole: "futureIcon"))
         guard case let .success(chunk) = result else {
             Issue.record("Expected a valid unknown role to degrade the entry")
             return
@@ -355,8 +350,7 @@ struct LocaleCatalogAdditiveDecodingTests {
     }
 
     private static func validateSingleEntry(
-        _ entry: String,
-        expectedUnsupportedKeys: Int = 0
+        _ entry: String
     ) throws -> Result<LocaleCatalogChunk, LocaleCatalogFailure> {
         let chunk = """
         {"schemaVersion":"1.0.0","locale":"en","fallback":null,"pack":"story","entries":{
@@ -371,7 +365,7 @@ struct LocaleCatalogAdditiveDecodingTests {
             expectedFallback: nil,
             expectedPack: "story",
             expectedKeys: 1,
-            expectedUnsupportedKeys: expectedUnsupportedKeys
+            expectedUnsupportedKeys: 0
         )
     }
 
