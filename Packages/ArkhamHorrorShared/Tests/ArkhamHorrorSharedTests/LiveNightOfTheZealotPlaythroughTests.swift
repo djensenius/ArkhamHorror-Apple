@@ -917,6 +917,7 @@ private struct LivePlaythroughBot {
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     func driveUntilServerCompletion() async throws -> BotOutcome {
         var repeatedQuestionShapes: [String: Int] = [:]
+        var startSkillTestPreparationCounts: [String: Int] = [:]
         let startedAt = Date()
         let timeout = ProcessInfo.processInfo.environment["ARKHAM_LIVE_PLAYTHROUGH_TIMEOUT"]
             .flatMap(TimeInterval.init) ?? 900
@@ -958,6 +959,13 @@ private struct LivePlaythroughBot {
             try await captureReplacementPromptIfRequested(prompt: prompt, projection: projection)
             let repeatKey = coverageRepeatKey(scenario: scenario, prompt: prompt)
             let repeatCount = repeatedQuestionShapes[repeatKey, default: 0]
+            let skillTestPreparationKey = skillTestPreparationLoopKey(
+                scenario: scenario,
+                prompt: prompt
+            )
+            let skillTestPreparationCount = skillTestPreparationKey.map {
+                startSkillTestPreparationCounts[$0, default: 0]
+            } ?? 0
             let cannotRender = !prompt.isRenderableQuestion
                 && !isInitialChooseDeckPrompt(prompt)
                 && !prompt.isChooseUpgradeDeckPrompt
@@ -1024,7 +1032,8 @@ private struct LivePlaythroughBot {
                 selectedAnswer = try selectAnswer(
                     prompt: prompt,
                     projection: projection,
-                    repeatCount: repeatCount
+                    repeatCount: repeatCount,
+                    skillTestPreparationCount: skillTestPreparationCount
                 )
             } catch let error as PlaythroughError {
                 let failure = PromptFailure(
@@ -1085,6 +1094,10 @@ private struct LivePlaythroughBot {
                         diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     repeatedQuestionShapes[repeatKey] = repeatCount + 1
+                    if let skillTestPreparationKey {
+                        startSkillTestPreparationCounts[skillTestPreparationKey] =
+                            skillTestPreparationCount + 1
+                    }
                 } else {
                     let reason = [
                         "same prompt remained after the bot answered it",
@@ -1203,7 +1216,8 @@ private struct LivePlaythroughBot {
     private func selectAnswer(
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
-        repeatCount: Int
+        repeatCount: Int,
+        skillTestPreparationCount: Int
     ) throws -> SelectedBotAnswer {
         if isInitialChooseDeckPrompt(prompt) {
             return SelectedBotAnswer(
@@ -1268,7 +1282,8 @@ private struct LivePlaythroughBot {
         let selectedIndex = preferredSelectableIndex(
             in: prompt,
             selectableIndexes: selectableIndexes,
-            repeatCount: repeatCount
+            repeatCount: repeatCount,
+            skillTestPreparationCount: skillTestPreparationCount
         )
         let chosenChoiceKind = prompt.identity.questionPresentation?.choices.first {
             $0.sourceIndex == selectedIndex
@@ -1305,12 +1320,27 @@ private struct LivePlaythroughBot {
     private func preferredSelectableIndex(
         in prompt: BasicChoicePromptPresentation,
         selectableIndexes: [Int],
-        repeatCount: Int
+        repeatCount: Int,
+        skillTestPreparationCount: Int
     ) -> Int {
         if let skipIndex = prompt.identity.questionPresentation?.choices.first(where: {
             $0.selectable && $0.kind == .skipTriggers && selectableIndexes.contains($0.sourceIndex)
         })?.sourceIndex {
             return skipIndex
+        }
+        // Skill-test preparation offers legal commit/uncommit choices that can reorder the
+        // same hand indefinitely. After a few legal prep actions, choose the server's
+        // explicit start control; fail-closed behavior is preserved because the choice must
+        // still be selectable in the current prompt.
+        if skillTestPreparationCount >= 3,
+           let startSkillTestIndex = prompt.choices.first(where: {
+               if case .startSkillTest = $0.content {
+                   selectableIndexes.contains($0.index)
+               } else {
+                   false
+               }
+           })?.index {
+            return startSkillTestIndex
         }
         return selectableIndexes[repeatCount % selectableIndexes.count]
     }
@@ -2392,6 +2422,23 @@ private func coverageRepeatKey(
         scenario,
         jsonString(prompt.identity.rawQuestion),
         jsonString(presentation),
+    ].joined(separator: ":")
+}
+
+private func skillTestPreparationLoopKey(
+    scenario: String, prompt: BasicChoicePromptPresentation
+) -> String? {
+    guard prompt.choices.contains(where: {
+        if case .startSkillTest = $0.content {
+            true
+        } else {
+            false
+        }
+    }) else { return nil }
+    return [
+        scenario,
+        prompt.identity.ownerID.rawValue.uuidString.lowercased(),
+        "startSkillTestPreparation",
     ].joined(separator: ":")
 }
 
