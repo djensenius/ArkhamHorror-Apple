@@ -955,6 +955,7 @@ private struct LivePlaythroughBot {
                 continue
             }
             let scenario = currentScenarioCode(projection: projection, snapshot: envelope.game)
+            try await captureReplacementPromptIfRequested(prompt: prompt, projection: projection)
             let repeatKey = coverageRepeatKey(scenario: scenario, prompt: prompt)
             let repeatCount = repeatedQuestionShapes[repeatKey, default: 0]
             let cannotRender = !prompt.isRenderableQuestion
@@ -1054,8 +1055,19 @@ private struct LivePlaythroughBot {
 
             let submission = try selectedAnswer.answer.traceSubmission(prompt: prompt)
             do {
+                let seatInvestigatorBeforeReplacement: SeatInvestigatorIdentity? = if case .replacementDeck = selectedAnswer.answer {
+                    seatInvestigatorIdentity(
+                        for: prompt.identity.ownerID,
+                        in: projection
+                    )
+                } else {
+                    nil
+                }
                 let submitOutcome = try await submit(selectedAnswer.answer, prompt: prompt)
-                let advanced = try await waitForPromptAdvance(from: prompt.identity)
+                let advanced = try await waitForPromptAdvance(
+                    from: prompt.identity,
+                    acceptingSeatInvestigatorChangeFrom: seatInvestigatorBeforeReplacement
+                )
                 let feedback = serverFeedbackSummary()
                 if advanced {
                     try trace.append(.prompt(
@@ -1340,8 +1352,25 @@ private struct LivePlaythroughBot {
             )
             switch deckResult {
             case .submitted:
+                let followUp = try await waitForReplacementFollowUp(
+                    afterReplacing: originalInvestigatorID,
+                    ownerID: prompt.identity.ownerID
+                )
+                if followUp.requiresUpgradeSkip {
+                    try await lifecycle.chooseDeck(
+                        ChooseDeckRequest(
+                            investigatorId: InvestigatorCode(followUp.investigatorID),
+                            deckUrl: nil,
+                            deckList: nil
+                        ),
+                        in: gameID,
+                        on: profile,
+                        token: token
+                    )
+                }
                 return SubmissionOutcome(
-                    detail: "submitted replacement deck through AppModel"
+                    detail: "submitted replacement deck through AppModel; "
+                        + followUp.detail
                 )
             case let .failed(message):
                 throw PlaythroughError.submissionFailed(message)
@@ -1398,19 +1427,60 @@ private struct LivePlaythroughBot {
         )
     }
 
+    private func waitForReplacementFollowUp(
+        afterReplacing originalInvestigatorID: String,
+        ownerID: PlayerID
+    ) async throws -> ReplacementFollowUp {
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
+            let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+            if let currentInvestigator = projection.investigators.first(where: {
+                $0.playerID == ownerID
+            }),
+                currentInvestigator.id.rawValue.rawValue != originalInvestigatorID
+            {
+                try await captureReplacementFollowUpIfRequested()
+                let questionTag = projection.questions[ownerID]?.rawValue.objectValue?["tag"]?
+                    .stringValue
+                return ReplacementFollowUp(
+                    investigatorID: currentInvestigator.id.rawValue.rawValue,
+                    requiresUpgradeSkip: questionTag == "ChooseUpgradeDeck"
+                )
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw PlaythroughError.timedOut("replacement follow-up prompt")
+    }
+
     private func waitForPromptAdvance(
-        from identity: BasicChoicePromptIdentity
+        from identity: BasicChoicePromptIdentity,
+        acceptingSeatInvestigatorChangeFrom previousSeatInvestigator: SeatInvestigatorIdentity? = nil
     ) async throws -> Bool {
         let deadline = Date().addingTimeInterval(30)
         var nextServerStateCheck = Date()
         while Date() < deadline {
             guard let current = model.basicChoicePresentation(for: gameID) else { return true }
-            if current.identity.promptKey != identity.promptKey {
+            if current.identity.questionVersion != identity.questionVersion {
+                return true
+            }
+            if let previousSeatInvestigator,
+               current.identity.ownerID == previousSeatInvestigator.ownerID,
+               let projection = model.liveGameState(for: gameID).lastKnownProjection,
+               let currentSeatInvestigator = seatInvestigatorIdentity(
+                   for: previousSeatInvestigator.ownerID,
+                   in: projection
+               ),
+               currentSeatInvestigator.investigatorID != previousSeatInvestigator.investigatorID
+            {
                 return true
             }
             if Date() >= nextServerStateCheck {
                 nextServerStateCheck = Date().addingTimeInterval(1)
-                if await serverSnapshotIsOver() {
+                if try await serverSnapshotShowsProgress(
+                    from: identity,
+                    acceptingSeatInvestigatorChangeFrom: previousSeatInvestigator
+                ) {
                     return true
                 }
             }
@@ -1419,11 +1489,105 @@ private struct LivePlaythroughBot {
         return false
     }
 
-    private func serverSnapshotIsOver() async -> Bool {
-        guard let envelope = try? await lifecycle.getGame(gameID, on: profile, token: token) else {
-            return false
+    private func seatInvestigatorIdentity(
+        for ownerID: PlayerID,
+        in projection: BoardProjection
+    ) -> SeatInvestigatorIdentity? {
+        guard let investigator = projection.investigators.first(where: { $0.playerID == ownerID })
+        else { return nil }
+        return SeatInvestigatorIdentity(ownerID: ownerID, investigatorID: investigator.id)
+    }
+
+    private func captureReplacementPromptIfRequested(
+        prompt: BasicChoicePromptPresentation,
+        projection: BoardProjection
+    ) async throws {
+        guard prompt.isChooseUpgradeDeckPrompt,
+              let directory = ProcessInfo.processInfo.environment[
+                  "ARKHAM_LIVE_CAPTURE_REPLACEMENT_PROMPTS_DIR"
+              ]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !directory.isEmpty,
+              let currentInvestigator = projection.investigators.first(where: {
+                  $0.playerID == prompt.identity.ownerID
+              })
+        else { return }
+        let context = CampaignUpgradeDeckContext.make(
+            investigator: currentInvestigator,
+            campaignSummary: projection.campaignSummary
+        )
+        let originalInvestigatorID = "c\(investigator.code)"
+        let fileName: String
+        if context.requiresReplacement {
+            fileName = "campaign-replacement-choose-upgrade-deck.json"
+        } else if currentInvestigator.id.rawValue.rawValue != originalInvestigatorID,
+                  context.allowsSkip
+        {
+            fileName = "campaign-replacement-follow-up-choose-upgrade-deck.json"
+        } else {
+            return
         }
+        let url = URL(fileURLWithPath: directory).appending(path: fileName)
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try await currentGameResponseData()
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func captureReplacementFollowUpIfRequested() async throws {
+        guard let directory = ProcessInfo.processInfo.environment[
+            "ARKHAM_LIVE_CAPTURE_REPLACEMENT_PROMPTS_DIR"
+        ]?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !directory.isEmpty
+        else { return }
+        let url = URL(fileURLWithPath: directory)
+            .appending(path: "campaign-replacement-follow-up-choose-upgrade-deck.json")
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try await currentGameResponseData()
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func currentGameResponseData() async throws -> Data {
+        let path = "/arkham/games/\(gameID.rawValue.uuidString.lowercased())"
+        let url = profile.endpointURL(path: path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Token \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200
+        else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw PlaythroughError.submissionFailed(
+                "replacement fixture capture GET returned HTTP \(status)"
+            )
+        }
+        return data
+    }
+
+    private func serverSnapshotShowsProgress(
+        from _: BasicChoicePromptIdentity,
+        acceptingSeatInvestigatorChangeFrom previousSeatInvestigator: SeatInvestigatorIdentity?
+    ) async throws -> Bool {
+        let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
         if case .over = envelope.game.gameState {
+            return true
+        }
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+        if let previousSeatInvestigator,
+           let currentSeatInvestigator = seatInvestigatorIdentity(
+               for: previousSeatInvestigator.ownerID,
+               in: projection
+           ),
+           currentSeatInvestigator.investigatorID != previousSeatInvestigator.investigatorID
+        {
             return true
         }
         return false
@@ -1587,6 +1751,24 @@ private struct BotOutcome {
     let reachedServerCompletion: Bool
     let scenarioOutcomes: [String: String]
     let promptFailure: PromptFailure?
+}
+
+private struct SeatInvestigatorIdentity: Sendable, Equatable {
+    let ownerID: PlayerID
+    let investigatorID: InvestigatorID
+}
+
+private struct ReplacementFollowUp: Sendable, Equatable {
+    let investigatorID: String
+    let requiresUpgradeSkip: Bool
+
+    var detail: String {
+        if requiresUpgradeSkip {
+            "skipped follow-up upgrade for \(investigatorID)"
+        } else {
+            "server advanced after replacement to \(investigatorID)"
+        }
+    }
 }
 
 private struct PromptFailure: Sendable, Equatable {
