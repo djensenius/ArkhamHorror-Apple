@@ -52,12 +52,55 @@ private enum PlaythroughTarget: Sendable, Equatable {
     }
 }
 
+private let returnToCampaignBaseIDs = [
+    "50": "01",
+    "51": "02",
+    "52": "03",
+    "53": "04",
+    "54": "05",
+]
+
+private let officialCampaignIDs = Set([
+    "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13",
+])
+
+private func defaultStrictAsIfAt(for target: PlaythroughTarget) -> Bool {
+    switch target {
+    case let .campaign(id):
+        return webCampaignChapter(forCampaignID: id) == 2
+    case let .standaloneScenario(id):
+        guard let campaignID = campaignIDForStandaloneScenario(id) else { return false }
+        return webCampaignChapter(forCampaignID: campaignID) == 2
+    }
+}
+
+private func webCampaignChapter(forCampaignID campaignID: String) -> Int {
+    let baseCampaignID = returnToCampaignBaseIDs[campaignID] ?? campaignID
+    guard !baseCampaignID.hasPrefix(":"), officialCampaignIDs.contains(baseCampaignID) else {
+        return 1
+    }
+    // Matches the fork frontend's NewCampaign.vue watcher and data.ts campaignChapter:
+    // explicit campaign catalog chapters would win there; official campaign ids >= 11
+    // default to Chapter 2, and earlier/unknown/homebrew ids default to Chapter 1.
+    return baseCampaignID >= "11" ? 2 : 1
+}
+
+private func campaignIDForStandaloneScenario(_ scenarioID: String) -> String? {
+    let normalizedID = scenarioID.hasPrefix("c") ? String(scenarioID.dropFirst()) : scenarioID
+    guard normalizedID.count >= 2 else { return nil }
+    let prefix = String(normalizedID.prefix(2))
+    if let returnToBaseCampaignID = returnToCampaignBaseIDs[prefix] {
+        return returnToBaseCampaignID
+    }
+    return officialCampaignIDs.contains(prefix) ? prefix : nil
+}
+
 private struct LivePlaythroughConfiguration: Sendable, Equatable {
     let target: PlaythroughTarget
     let difficulty: RequestDifficulty
     let campaignVariants: [String]
     let includeTarotReadings: Bool
-    let strictAsIfAt: Bool?
+    let strictAsIfAt: Bool
     let ultimatumsAndBoons: [UltimatumOrBoon]
     let achievementsEnabled: Bool
     let investigators: [InvestigatorFixture]
@@ -69,12 +112,11 @@ private struct LivePlaythroughConfiguration: Sendable, Equatable {
     }
 
     var strictAsIfAtField: OptionalField<Bool> {
-        strictAsIfAt.map(OptionalField.value) ?? .absent
+        .value(strictAsIfAt)
     }
 
     var asIfRulingField: OptionalField<AsIfRuling> {
-        guard let strictAsIfAt else { return .absent }
-        return .value(strictAsIfAt ? .chapter2 : .chapter1)
+        .value(strictAsIfAt ? .chapter2 : .chapter1)
     }
 
     var ultimatumsAndBoonsField: OptionalField<[UltimatumOrBoon]> {
@@ -108,7 +150,7 @@ private struct LivePlaythroughConfiguration: Sendable, Equatable {
         let strictAsIfAt = try parseOptionalBool(
             trimmedValue("ARKHAM_LIVE_STRICT_AS_IF_AT", in: environment),
             name: "ARKHAM_LIVE_STRICT_AS_IF_AT"
-        )
+        ) ?? defaultStrictAsIfAt(for: target)
         let achievements = try parseOptionalBool(
             trimmedValue("ARKHAM_LIVE_ACHIEVEMENTS_ENABLED", in: environment),
             name: "ARKHAM_LIVE_ACHIEVEMENTS_ENABLED"
@@ -265,6 +307,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(configuration.target == .campaign(id: "01"))
         #expect(configuration.difficulty == .easy)
         #expect(configuration.investigators.map(\.code) == InvestigatorFixture.core.map(\.code))
+        #expect(configuration.strictAsIfAtField == .value(false))
+        #expect(configuration.asIfRulingField == .value(.chapter1))
         #expect(configuration.achievementsEnabled == true)
     }
 
@@ -278,7 +322,50 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(configuration.target == .standaloneScenario(id: "50001"))
         #expect(configuration.difficulty == .standard)
         #expect(configuration.investigators.map(\.code) == ["01001"])
+        #expect(configuration.strictAsIfAtField == .value(false))
+        #expect(configuration.asIfRulingField == .value(.chapter1))
         #expect(configuration.achievementsEnabled == false)
+    }
+
+    @Test("Live harness maps web variants and as-if ruling fields")
+    func campaignVariantsAndAsIfRulingMapToWebFields() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([
+            "ARKHAM_LIVE_CAMPAIGN_ID": "11",
+            "ARKHAM_LIVE_CAMPAIGN_VARIANT": "alpha, beta",
+            "ARKHAM_LIVE_CAMPAIGN_VARIANTS": "gamma",
+            "ARKHAM_LIVE_STRICT_AS_IF_AT": "false",
+        ])
+
+        #expect(configuration.options == [
+            .campaignVariant("alpha"),
+            .campaignVariant("beta"),
+            .campaignVariant("gamma"),
+        ])
+        #expect(configuration.strictAsIfAtField == .value(false))
+        #expect(configuration.asIfRulingField == .value(.chapter1))
+    }
+
+    @Test("Return To campaigns inherit the web base-campaign as-if chapter")
+    func returnToCampaignUsesBaseCampaignChapter() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([
+            "ARKHAM_LIVE_CAMPAIGN_ID": "50",
+        ])
+
+        #expect(configuration.target == .campaign(id: "50"))
+        #expect(configuration.strictAsIfAtField == .value(false))
+        #expect(configuration.asIfRulingField == .value(.chapter1))
+    }
+
+    @Test("Chapter 2 standalone scenarios inherit their web campaign chapter")
+    func chapter2StandaloneScenarioUsesCampaignChapter() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([
+            "ARKHAM_LIVE_SCENARIO_ID": "11501",
+            "ARKHAM_LIVE_INVESTIGATOR_CODES": "01001",
+        ])
+
+        #expect(configuration.target == .standaloneScenario(id: "11501"))
+        #expect(configuration.strictAsIfAtField == .value(true))
+        #expect(configuration.asIfRulingField == .value(.chapter2))
     }
 
     @Test("Non-terminal campaign outcomes do not claim server completion")

@@ -2,15 +2,15 @@
 
 This env-gated harness is for live no-bypass playthrough verification. It is not part of normal CI and normal `mise run test` skips the live run unless `ARKHAM_LIVE_SERVER_URL` is set. The non-live configuration tests still run normally.
 
-The harness defaults to the original Night of the Zealot behavior: campaign `01`, Easy difficulty, and all five core investigators. It now also accepts a different campaign id or a standalone scenario id through environment variables and writes target-named summaries/traces.
+The harness defaults to the original Night of the Zealot target: campaign `01`, Easy difficulty, all five core investigators, web-parity achievements enabled, and web-parity Chapter 1 `strictAsIfAt=false` / `asIfRuling=chapter1`. It now also accepts a different campaign id or a standalone scenario id through environment variables and writes target-named summaries/traces.
 
 ## Source parity with the web create flow
 
 The harness creates games through the Apple `AppModel.createGame` path, which posts the same `CreateGameRequest` shape the web uses. Read-only references in the fork frontend:
 
 - `frontend/src/arkham/api.ts` `newGame(...)` posts `deckIds`, `playerCount`, `campaignId`, `scenarioId`, `difficulty`, `campaignName`, `multiplayerVariant`, `includeTarotReadings`, `options`, `strictAsIfAt`, `asIfRuling`, `ultimatumsAndBoons`, and `achievementsEnabled` to `arkham/games`.
-- `frontend/src/arkham/views/NewCampaign.vue` selects either `campaignId` or `scenarioId`, swaps Return To ids where the frontend catalog exposes them, passes campaign variant options as `{ tag: 'CampaignVariant', contents: <key> }`, and disables achievements for standalone scenarios.
-- Campaign ids come from `frontend/src/arkham/data/campaigns.json`; standalone and side-story ids come from `frontend/src/arkham/data/scenarios.ts` / `side-stories.json` data imported by the create view.
+- `frontend/src/arkham/views/NewCampaign.vue` selects either `campaignId` or `scenarioId`, swaps Return To ids where the frontend catalog exposes them, passes campaign variant options as `{ tag: 'CampaignVariant', contents: <key> }`, computes `strictAsIfAt` from `campaignChapter(...)` of the selected base campaign before swapping Return To ids (around lines 270, 377, and 397), and disables achievements for standalone scenarios.
+- Campaign ids come from `frontend/src/arkham/data/campaigns.json`; standalone and side-story ids come from `frontend/src/arkham/data/scenarios.ts` / `side-stories.json` data imported by the create view. `frontend/src/arkham/data.ts` `campaignChapter(...)` treats official base campaign ids `11` and later as Chapter 2, earlier official campaigns and homebrew ids as Chapter 1; `frontend/src/arkham/api.ts` converts `strictAsIfAt` into the wire `asIfRuling` field.
 - The web considers a game finished when `game.gameState.tag === 'IsOver'` (`Home.vue`, `Game.vue`, and replay/admin views). The harness uses the same server state instead of any scenario-id-specific terminal check.
 
 ## Environment variables
@@ -21,7 +21,7 @@ Required to run the live harness:
 
 Target selection:
 
-- `ARKHAM_LIVE_CAMPAIGN_ID` — campaign id to start. Defaults to `01` when no standalone scenario is set.
+- `ARKHAM_LIVE_CAMPAIGN_ID` — campaign id to start. Defaults to `01` when no standalone scenario is set. To run a Return To campaign, pass the Return To id the web sends (for example `50` for Return to Night of the Zealot); the harness still computes the default chapter/as-if ruling from that Return To id's base campaign, matching the web.
 - `ARKHAM_LIVE_SCENARIO_ID` — standalone scenario id to start. Set either this or `ARKHAM_LIVE_CAMPAIGN_ID`, not both.
 - `ARKHAM_LIVE_DIFFICULTY` — `Easy`, `Standard`, `Hard`, or `Expert`; defaults to `Easy`.
 - `ARKHAM_LIVE_INVESTIGATOR_CODES` — comma-separated core investigator card codes. Defaults to all five core investigators for campaign `01`, otherwise Roland (`01001`).
@@ -29,7 +29,7 @@ Target selection:
 Supported web-shaped create options:
 
 - `ARKHAM_LIVE_CAMPAIGN_VARIANT` / `ARKHAM_LIVE_CAMPAIGN_VARIANTS` — comma-separated variant keys encoded as `CampaignVariant` options, for campaigns where the server supports them.
-- `ARKHAM_LIVE_STRICT_AS_IF_AT` — `true`/`false`; when present the harness also sends the matching web `asIfRuling` value (`chapter2` for true, `chapter1` for false).
+- `ARKHAM_LIVE_STRICT_AS_IF_AT` — `true`/`false`; when omitted the harness computes the same default the web does from the selected base campaign chapter (Return To ids map back to their base campaign; standalone campaign scenarios use their catalog campaign id). The harness always sends both `strictAsIfAt` and the matching web `asIfRuling` value (`chapter2` for true, `chapter1` for false). An explicit value overrides the computed default.
 - `ARKHAM_LIVE_ULTIMATUMS_AND_BOONS` — comma-separated known ultimatum/boon tags.
 - `ARKHAM_LIVE_INCLUDE_TAROT_READINGS` — `true`/`false`; defaults to `false`.
 - `ARKHAM_LIVE_ACHIEVEMENTS_ENABLED` — `true`/`false`; defaults to web parity (`true` for campaigns, `false` for standalone scenarios).
@@ -40,7 +40,7 @@ Diagnostics/output:
 - `ARKHAM_LIVE_RESULT_PATH` — markdown summary path. Defaults to `/tmp/arkham-logs/playthrough-results-<target>.md`; the Night of the Zealot default also writes the legacy `/tmp/arkham-logs/playthrough-results.md`.
 - `ARKHAM_LIVE_DIAGNOSTIC_BYPASS_UNSUPPORTED=1` — opt-in diagnostic bypass described below.
 
-Trace files are written as `/tmp/arkham-logs/playthrough-trace-<target>-<investigator>.jsonl`.
+Trace files are written as `/tmp/arkham-logs/playthrough-trace-<target>-<investigator>.jsonl`; for example the default NotZ trace path is now `/tmp/arkham-logs/playthrough-trace-campaign-01-<investigator>.jsonl`.
 
 ## Completion and failure behavior
 
