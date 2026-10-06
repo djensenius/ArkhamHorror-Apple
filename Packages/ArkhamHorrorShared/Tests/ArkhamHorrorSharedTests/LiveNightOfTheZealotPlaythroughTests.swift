@@ -378,6 +378,19 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(campaignScenarioOutcomes(from: campaign).isEmpty)
     }
 
+    @Test("Standalone resolution helper reads exposed scenario snapshot fields")
+    func standaloneResolutionHelperReadsExposedSnapshotFields() {
+        let exposed: [JSONValue] = [
+            .object(["unrelated": .string("ignored")]),
+            .array([
+                .object(["scenarioResolution": .string("Resolution1")]),
+            ]),
+        ]
+
+        #expect(standaloneScenarioResolution(in: exposed) == .string("Resolution1"))
+        #expect(standaloneScenarioResolution(in: [.object([:])]) == nil)
+    }
+
     @Test(
         "Env-gated solo live playthroughs",
         .enabled(if: liveServerURLForPlaythrough() != nil)
@@ -1166,8 +1179,10 @@ private struct LivePlaythroughBot {
         switch snapshot.mode {
         case .campaignOnly:
             outcomes["campaign"] = "gameState IsOver"
-        case let .campaignAndScenario(_, scenario), let .scenarioOnly(scenario):
+        case let .campaignAndScenario(_, scenario):
             outcomes[scenario.id.rawValue] = "gameState IsOver"
+        case let .scenarioOnly(scenario):
+            outcomes[scenario.id.rawValue] = standaloneScenarioOutcome(from: scenario)
         }
         return outcomes
     }
@@ -1811,6 +1826,47 @@ private func campaignStepScenarioID(_ step: JSONValue?) -> String? {
         return contents
     }
     return nil
+}
+
+private func standaloneScenarioOutcome(from scenario: Scenario) -> String {
+    if let resolution = standaloneScenarioResolution(from: scenario) {
+        return "resolution \(jsonString(resolution))"
+    }
+    return "gameState IsOver"
+}
+
+private func standaloneScenarioResolution(from scenario: Scenario) -> JSONValue? {
+    standaloneScenarioResolution(in: [
+        scenario.meta,
+        scenario.xpBreakdown,
+        .array(scenario.resolvedStories),
+    ])
+}
+
+private func standaloneScenarioResolution(in values: [JSONValue]) -> JSONValue? {
+    values.lazy.compactMap(standaloneScenarioResolution(in:)).first
+}
+
+private func standaloneScenarioResolution(in value: JSONValue) -> JSONValue? {
+    switch value {
+    case let .object(object):
+        for key in ["resolution", "scenarioResolution", "standaloneResolution"] {
+            if let resolution = object[key], resolution != .null {
+                return resolution
+            }
+        }
+        if let resolutions = object["resolutions"]?.objectValue,
+           resolutions.count == 1,
+           let resolution = resolutions.values.first
+        {
+            return resolution
+        }
+        return nil
+    case let .array(values):
+        return standaloneScenarioResolution(in: values)
+    case .null, .bool, .number, .string:
+        return nil
+    }
 }
 
 private func resolutionEntry(

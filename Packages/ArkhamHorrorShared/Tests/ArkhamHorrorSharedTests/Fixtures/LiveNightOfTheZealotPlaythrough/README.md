@@ -44,7 +44,7 @@ Trace files are written as `/tmp/arkham-logs/playthrough-trace-<target>-<investi
 
 ## Completion and failure behavior
 
-The harness polls the server snapshot and passes only when `PublicGame.gameState` is `IsOver`, matching the web finished-game state. It records campaign resolutions from the server campaign object by reading `completedSteps` and `resolutions`; there are no hard-coded Night of the Zealot scenario ids. Standalone scenarios record the terminal scenario id when the server reports `IsOver`.
+The harness polls the server snapshot and passes only when `PublicGame.gameState` is `IsOver`, matching the web finished-game state. A `passed` row means no prompt blocked the run and the server reported the game over; it does not mean the investigators won. It records campaign resolutions from the server campaign object by reading `completedSteps` and `resolutions`; there are no hard-coded Night of the Zealot scenario ids. Standalone scenarios record a recognized resolution when the decoded server scenario snapshot exposes one through broad fields such as `meta`, `xpBreakdown`, or `resolvedStories`; otherwise they can only record the terminal scenario id with `gameState IsOver`.
 
 The harness still fails on any prompt the Apple app cannot render or cannot submit. Unresolved `$` labels and unsupported semantic choices remain unpressable unless the diagnostic bypass is explicitly enabled.
 
