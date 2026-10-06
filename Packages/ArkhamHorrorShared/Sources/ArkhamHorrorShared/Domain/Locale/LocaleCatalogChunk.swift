@@ -404,6 +404,7 @@ extension LocaleCatalogEntry {
               case let .string(rawSource)? = object["source"],
               let source = LocaleCatalogVariable.Source(rawValue: rawSource),
               case let .string(rawRole)? = object["role"],
+              LocaleCatalogGrammar.isVariableRole(rawRole),
               rawRole != LocaleCatalogVariable.Role.presentation.rawValue,
               LocaleCatalogVariable.Role(rawValue: rawRole) == nil
         else { return nil }
@@ -434,7 +435,8 @@ extension LocaleCatalogEntry {
                   LocaleCatalogGrammar.isVariableName(name),
                   case let .string(rawSource)? = object["source"],
                   let source = LocaleCatalogVariable.Source(rawValue: rawSource),
-                  case let .string(rawRole)? = object["role"]
+                  case let .string(rawRole)? = object["role"],
+                  LocaleCatalogGrammar.isVariableRole(rawRole)
             else { return .malformed }
             guard let role = LocaleCatalogVariable.Role(rawValue: rawRole) else {
                 unknownRoleVariables.append(UnknownVariableRoleDeclaration(

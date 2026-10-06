@@ -105,9 +105,38 @@ struct LocaleCatalogAdditiveDecodingTests {
         }
     }
 
+    @Test("Invalid unknown variable role grammar fails the whole chunk")
+    func invalidUnknownVariableRoleGrammarFailsChunk() throws {
+        let invalidRoles = ["", String(repeating: "a", count: 65), "future.icon"]
+        for rawRole in invalidRoles {
+            #expect(
+                try Self.validateSingleEntry(
+                    Self.unknownRoleEntry(rawRole: rawRole),
+                    expectedUnsupportedKeys: 1
+                ) == .failure(.malformedChunk)
+            )
+        }
+    }
+
     @Test("Valid control entry validates successfully")
     func validControlEntryValidatesSuccessfully() throws {
         #expect(try Self.validateSingleEntry(Self.validControlEntry).isSuccess)
+    }
+
+    @Test("Valid unknown variable role still degrades only its entry")
+    func validUnknownVariableRoleStillDegradesOnlyEntry() throws {
+        let result = try Self.validateSingleEntry(
+            Self.unknownRoleEntry(rawRole: "futureIcon"),
+            expectedUnsupportedKeys: 1
+        )
+        guard case let .success(chunk) = result else {
+            Issue.record("Expected a valid unknown role to degrade the entry")
+            return
+        }
+        #expect(
+            chunk.entries["story.entry"]
+                == .unsupported(reason: "client-unsupported-additive-field")
+        )
     }
 
     @Test("Manifest unknownVariableTypes accepts iconVariable roles")
@@ -313,8 +342,21 @@ struct LocaleCatalogAdditiveDecodingTests {
     }
     """#
 
+    private static func unknownRoleEntry(rawRole: String) -> String {
+        #"""
+        {
+          "form": "message",
+          "nodes": [
+            {"type": "var", "name": "token", "source": "named", "role": "\#(rawRole)"}
+          ],
+          "variables": [{"name": "token", "source": "named", "role": "\#(rawRole)"}]
+        }
+        """#
+    }
+
     private static func validateSingleEntry(
-        _ entry: String
+        _ entry: String,
+        expectedUnsupportedKeys: Int = 0
     ) throws -> Result<LocaleCatalogChunk, LocaleCatalogFailure> {
         let chunk = """
         {"schemaVersion":"1.0.0","locale":"en","fallback":null,"pack":"story","entries":{
@@ -329,7 +371,7 @@ struct LocaleCatalogAdditiveDecodingTests {
             expectedFallback: nil,
             expectedPack: "story",
             expectedKeys: 1,
-            expectedUnsupportedKeys: 0
+            expectedUnsupportedKeys: expectedUnsupportedKeys
         )
     }
 
