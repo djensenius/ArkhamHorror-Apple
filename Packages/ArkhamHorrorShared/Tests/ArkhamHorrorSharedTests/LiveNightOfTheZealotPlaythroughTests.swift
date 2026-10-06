@@ -1332,16 +1332,17 @@ private struct LivePlaythroughBot {
         // same hand indefinitely. After a few legal prep actions, choose the server's
         // explicit start control; fail-closed behavior is preserved because the choice must
         // still be selectable in the current prompt.
-        if skillTestPreparationCount >= 3,
-           let startSkillTestIndex = prompt.choices.first(where: {
-               if case .startSkillTest = $0.content {
-                   selectableIndexes.contains($0.index)
-               } else {
-                   false
-               }
-           })?.index
-        {
-            return startSkillTestIndex
+        if skillTestPreparationCount >= 3 {
+            let startSkillTestIndex = prompt.choices.first(where: {
+                if case .startSkillTest = $0.content {
+                    selectableIndexes.contains($0.index)
+                } else {
+                    false
+                }
+            })?.index
+            if let startSkillTestIndex {
+                return startSkillTestIndex
+            }
         }
         return selectableIndexes[repeatCount % selectableIndexes.count]
     }
