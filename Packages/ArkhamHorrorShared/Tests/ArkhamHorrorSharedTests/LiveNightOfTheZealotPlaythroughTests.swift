@@ -466,14 +466,26 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(outcomes["c99999"] == "resolution \(jsonString(.string("UnmatchedResolution")))")
     }
 
-    @Test("Non-terminal campaign outcomes do not claim server completion")
-    func nonTerminalCampaignOutcomesDoNotClaimGameOver() {
-        let campaign: JSONValue = .object([
-            "completedSteps": .array([]),
-            "resolutions": .object([:]),
-        ])
+    @Test("Scenario-only outcome helpers distinguish non-terminal from terminal")
+    func scenarioOnlyOutcomeHelpersDistinguishTerminalFallback() throws {
+        let scenarioOnlyMode = try liveHarnessScenarioOnlyMode()
+        let scenarioID = try scenarioID(in: scenarioOnlyMode)
 
-        #expect(campaignScenarioOutcomes(from: campaign).isEmpty)
+        #expect(scenarioOutcomes(from: scenarioOnlyMode) == [:])
+        #expect(terminalScenarioOutcomes(from: scenarioOnlyMode) == [
+            scenarioID: "gameState IsOver",
+        ])
+    }
+
+    @Test("Campaign-scenario outcome helpers distinguish non-terminal from terminal")
+    func campaignScenarioOutcomeHelpersDistinguishTerminalFallback() throws {
+        let mode = try liveHarnessGameModeFixture(named: "mode-campaign-scenario")
+        let scenarioID = try scenarioID(in: mode)
+
+        #expect(scenarioOutcomes(from: mode) == [:])
+        #expect(terminalScenarioOutcomes(from: mode) == [
+            scenarioID: "gameState IsOver",
+        ])
     }
 
     @Test("Standalone resolution helper reads exposed scenario snapshot fields")
@@ -1262,29 +1274,6 @@ private struct LivePlaythroughBot {
         }
     }
 
-    private func scenarioOutcomes(from snapshot: PublicGameSnapshot) -> [String: String] {
-        switch snapshot.mode {
-        case let .campaignOnly(campaign), let .campaignAndScenario(campaign, _):
-            campaignScenarioOutcomes(from: campaign)
-        case .scenarioOnly:
-            [:]
-        }
-    }
-
-    private func terminalScenarioOutcomes(from snapshot: PublicGameSnapshot) -> [String: String] {
-        var outcomes = scenarioOutcomes(from: snapshot)
-        guard outcomes.isEmpty else { return outcomes }
-        switch snapshot.mode {
-        case .campaignOnly:
-            outcomes["campaign"] = "gameState IsOver"
-        case let .campaignAndScenario(_, scenario):
-            outcomes[scenario.id.rawValue] = "gameState IsOver"
-        case let .scenarioOnly(scenario):
-            outcomes[scenario.id.rawValue] = standaloneScenarioOutcome(from: scenario)
-        }
-        return outcomes
-    }
-
     private func isInitialChooseDeckPrompt(_ prompt: BasicChoicePromptPresentation) -> Bool {
         prompt.identity.rawQuestion == .object(["tag": .string("ChooseDeck")])
     }
@@ -1863,6 +1852,38 @@ private extension BasicChoicePromptIdentity {
     }
 }
 
+private enum LiveHarnessFixtureError: Error, Equatable {
+    case missingContractFixture(String)
+    case expectedCampaignAndScenario
+    case expectedScenario
+}
+
+private func liveHarnessGameModeFixture(named name: String) throws -> GameMode {
+    guard let url = Bundle.module.url(
+        forResource: name,
+        withExtension: "json",
+        subdirectory: "Fixtures/Contract"
+    ) else { throw LiveHarnessFixtureError.missingContractFixture(name) }
+    return try ContractJSON.decode(GameMode.self, from: Data(contentsOf: url))
+}
+
+private func liveHarnessScenarioOnlyMode() throws -> GameMode {
+    let mode = try liveHarnessGameModeFixture(named: "mode-campaign-scenario")
+    guard case let .campaignAndScenario(_, scenario) = mode else {
+        throw LiveHarnessFixtureError.expectedCampaignAndScenario
+    }
+    return .scenarioOnly(scenario)
+}
+
+private func scenarioID(in mode: GameMode) throws -> String {
+    switch mode {
+    case let .scenarioOnly(scenario), let .campaignAndScenario(_, scenario):
+        scenario.id.rawValue
+    case .campaignOnly:
+        throw LiveHarnessFixtureError.expectedScenario
+    }
+}
+
 private func currentScenarioCode(
     projection: BoardProjection?,
     snapshot: PublicGameSnapshot
@@ -1878,6 +1899,35 @@ private func currentScenarioCode(
             ?? campaign.objectValue?["id"]?.stringValue
             ?? "campaign"
     }
+}
+
+private func scenarioOutcomes(from snapshot: PublicGameSnapshot) -> [String: String] {
+    scenarioOutcomes(from: snapshot.mode)
+}
+
+private func scenarioOutcomes(from mode: GameMode) -> [String: String] {
+    switch mode {
+    case let .campaignOnly(campaign), let .campaignAndScenario(campaign, _):
+        campaignScenarioOutcomes(from: campaign)
+    case .scenarioOnly:
+        [:]
+    }
+}
+
+private func terminalScenarioOutcomes(from snapshot: PublicGameSnapshot) -> [String: String] {
+    terminalScenarioOutcomes(from: snapshot.mode)
+}
+
+private func terminalScenarioOutcomes(from mode: GameMode) -> [String: String] {
+    var outcomes = scenarioOutcomes(from: mode)
+    guard outcomes.isEmpty else { return outcomes }
+    switch mode {
+    case .campaignOnly:
+        outcomes["campaign"] = "gameState IsOver"
+    case let .campaignAndScenario(_, scenario), let .scenarioOnly(scenario):
+        outcomes[scenario.id.rawValue] = standaloneScenarioOutcome(from: scenario)
+    }
+    return outcomes
 }
 
 private func campaignScenarioOutcomes(from campaign: JSONValue) -> [String: String] {
