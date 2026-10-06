@@ -722,7 +722,13 @@ struct LiveNightOfTheZealotPlaythroughTests {
         configuration: LivePlaythroughConfiguration,
         note: String
     ) throws {
-        try FileManager.default.createDirectory(
+        let fileManager = FileManager.default
+        let resultDirectory = URL(fileURLWithPath: configuration.resultPath)
+            .deletingLastPathComponent()
+        try fileManager.createDirectory(
+            at: resultDirectory, withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
             atPath: "/tmp/arkham-logs", withIntermediateDirectories: true
         )
         let scenarioColumns = scenarioOutcomeColumns(in: results)
@@ -851,6 +857,7 @@ private struct LivePlaythroughBot {
             let repeatCount = repeatedQuestionShapes[repeatKey, default: 0]
             let cannotRender = !prompt.isRenderableQuestion
                 && !isInitialChooseDeckPrompt(prompt)
+                && !prompt.isChooseUpgradeDeckPrompt
                 && !canDiagnosticBypassUnsupported(prompt)
             if cannotRender {
                 let failure = PromptFailure(
@@ -1090,7 +1097,7 @@ private struct LivePlaythroughBot {
         }
         if prompt.isChooseUpgradeDeckPrompt {
             return SelectedBotAnswer(
-                answer: .skipDeckUpgrade(investigatorID: investigator.code),
+                answer: .skipDeckUpgrade(investigatorID: "c\(investigator.code)"),
                 note: "continue without upgrading",
                 chosenChoiceKind: nil
             )
@@ -1132,7 +1139,11 @@ private struct LivePlaythroughBot {
                 tag: describeRawQuestionTag(prompt.identity.rawQuestion)
             )
         }
-        let selectedIndex = selectableIndexes[repeatCount % selectableIndexes.count]
+        let selectedIndex = preferredSelectableIndex(
+            in: prompt,
+            selectableIndexes: selectableIndexes,
+            repeatCount: repeatCount
+        )
         let chosenChoiceKind = prompt.identity.questionPresentation?.choices.first {
             $0.sourceIndex == selectedIndex
         }?.kind.rawValue
@@ -1141,6 +1152,19 @@ private struct LivePlaythroughBot {
             note: "selectable choice \(selectedIndex)",
             chosenChoiceKind: chosenChoiceKind
         )
+    }
+
+    private func preferredSelectableIndex(
+        in prompt: BasicChoicePromptPresentation,
+        selectableIndexes: [Int],
+        repeatCount: Int
+    ) -> Int {
+        if let skipIndex = prompt.identity.questionPresentation?.choices.first(where: {
+            $0.selectable && $0.kind == .skipTriggers && selectableIndexes.contains($0.sourceIndex)
+        })?.sourceIndex {
+            return skipIndex
+        }
+        return selectableIndexes[repeatCount % selectableIndexes.count]
     }
 
     private func canDiagnosticBypassUnsupported(_ prompt: BasicChoicePromptPresentation) -> Bool {
