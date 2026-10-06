@@ -312,6 +312,78 @@ private func eligibleCoreReplacementDeck(
     return nil
 }
 
+private func campaignDeckUpgradeBotSelection(
+    promptOwnerID: PlayerID,
+    projection: BoardProjection,
+    replacementDecksByCode: [String: Deck]
+) throws -> SelectedBotAnswer {
+    let currentInvestigator = try promptOwnerInvestigator(
+        promptOwnerID: promptOwnerID,
+        projection: projection
+    )
+    let currentInvestigatorID = currentInvestigator.id.rawValue.rawValue
+    if let replacementDeck = try replacementDeckIfRequired(
+        for: currentInvestigator,
+        in: projection,
+        replacementDecksByCode: replacementDecksByCode
+    ) {
+        return SelectedBotAnswer(
+            answer: .replacementDeck(
+                originalInvestigatorID: currentInvestigatorID,
+                deck: replacementDeck
+            ),
+            note: "replace killed or insane investigator with "
+                + replacementDeck.investigatorName,
+            chosenChoiceKind: nil
+        )
+    }
+    return SelectedBotAnswer(
+        answer: .skipDeckUpgrade(investigatorID: currentInvestigatorID),
+        note: "continue without upgrading",
+        chosenChoiceKind: nil
+    )
+}
+
+private func promptOwnerInvestigator(
+    promptOwnerID: PlayerID,
+    projection: BoardProjection
+) throws -> BoardInvestigatorNode {
+    guard let currentInvestigator = projection.investigators.first(where: {
+        $0.playerID == promptOwnerID
+    }) else {
+        throw PlaythroughError.noPromptOwnerInvestigator(promptOwnerID)
+    }
+    return currentInvestigator
+}
+
+private func replacementDeckIfRequired(
+    for currentInvestigator: BoardInvestigatorNode,
+    in projection: BoardProjection,
+    replacementDecksByCode: [String: Deck]
+) throws -> Deck? {
+    let currentInvestigatorID = currentInvestigator.id.rawValue.rawValue
+    let context = CampaignUpgradeDeckContext.make(
+        investigator: currentInvestigator,
+        campaignSummary: projection.campaignSummary
+    )
+    guard context.requiresReplacement else { return nil }
+    let takenInvestigatorIDs = Set(projection.investigators.map(\.id.rawValue.rawValue))
+    let originalInvestigatorCode = investigatorCode(from: currentInvestigatorID)
+    if let deck = eligibleCoreReplacementDeck(
+        originalInvestigatorCode: originalInvestigatorCode,
+        killedOrInsaneInvestigatorIDs: context.killedOrInsaneInvestigatorIDs,
+        takenInvestigatorIDs: takenInvestigatorIDs,
+        replacementDecksByCode: replacementDecksByCode
+    ) {
+        return deck
+    }
+    throw PlaythroughError.noEligibleReplacementInvestigator(currentInvestigatorID)
+}
+
+private func investigatorCode(from investigatorID: String) -> String {
+    investigatorID.hasPrefix("c") ? String(investigatorID.dropFirst()) : investigatorID
+}
+
 @MainActor
 @Suite("Live campaign playthrough")
 // swiftlint:disable:next type_body_length
@@ -467,6 +539,56 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(selected == nil)
     }
 
+    @Test("Live harness submits replacements for the prompt owner's current investigator")
+    func deckUpgradeReplacementUsesCurrentSeatInvestigator() throws {
+        let ownerID = PlayerID(UUID())
+        let currentInvestigatorID = try InvestigatorID(CardCode("c01002"))
+        let projection = try Self.campaignDeckUpgradeProjection(
+            ownerID: ownerID,
+            currentInvestigatorID: currentInvestigatorID,
+            killedOrInsaneInvestigatorIDs: ["c01002"]
+        )
+        let decks = try Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
+            try ($0.code, Self.deckFixture(for: $0))
+        })
+
+        let selected = try campaignDeckUpgradeBotSelection(
+            promptOwnerID: ownerID,
+            projection: projection,
+            replacementDecksByCode: decks
+        )
+
+        guard case let .replacementDeck(originalInvestigatorID, deck) = selected.answer else {
+            Issue.record("Expected a replacement deck selection")
+            return
+        }
+        #expect(originalInvestigatorID == "c01002")
+        #expect(deck.playableList.investigatorCode.rawValue == "c01001")
+    }
+
+    @Test("Live harness skips upgrades with the prompt owner's current investigator")
+    func deckUpgradeSkipUsesCurrentSeatInvestigator() throws {
+        let ownerID = PlayerID(UUID())
+        let currentInvestigatorID = try InvestigatorID(CardCode("c01002"))
+        let projection = try Self.campaignDeckUpgradeProjection(
+            ownerID: ownerID,
+            currentInvestigatorID: currentInvestigatorID,
+            killedOrInsaneInvestigatorIDs: ["c01001"]
+        )
+
+        let selected = try campaignDeckUpgradeBotSelection(
+            promptOwnerID: ownerID,
+            projection: projection,
+            replacementDecksByCode: [:]
+        )
+
+        guard case let .skipDeckUpgrade(investigatorID) = selected.answer else {
+            Issue.record("Expected a deck-upgrade skip")
+            return
+        }
+        #expect(investigatorID == "c01002")
+    }
+
     @Test("Live harness rejects unknown investigators and ultimatum values")
     func unknownInvestigatorAndUltimatumAreConfigurationErrors() {
         #expect(throws: LiveHarnessConfigurationError.unknownInvestigator("99999")) {
@@ -504,6 +626,41 @@ struct LiveNightOfTheZealotPlaythroughTests {
             investigatorName: investigator.name,
             list: deckList
         )
+    }
+
+    private static func campaignDeckUpgradeProjection(
+        ownerID: PlayerID,
+        currentInvestigatorID: InvestigatorID,
+        killedOrInsaneInvestigatorIDs: [String]
+    ) throws -> BoardProjection {
+        let currentInvestigator = BoardTestFixtures.investigator(
+            id: currentInvestigatorID,
+            playerID: ownerID
+        )
+        let snapshot = BoardTestFixtures.snapshot(
+            mode: .campaignOnly(campaignLogFixture(killedOrInsaneInvestigatorIDs)),
+            investigators: [currentInvestigatorID: currentInvestigator],
+            playerOrder: [currentInvestigatorID],
+            activeInvestigatorID: currentInvestigatorID,
+            leadInvestigatorID: currentInvestigatorID
+        )
+        return BoardProjectionBuilder.makeProjection(from: snapshot)
+    }
+
+    private static func campaignLogFixture(_ killedOrInsaneInvestigatorIDs: [String]) -> JSONValue {
+        .object([
+            "log": .object([
+                "recorded": .array([]),
+                "crossedOut": .array([]),
+                "recordedCounts": .array([]),
+                "recordedSets": .array([
+                    .array([
+                        .object(["tag": .string("KilledInvestigators")]),
+                        .array(killedOrInsaneInvestigatorIDs.map { .string($0) }),
+                    ]),
+                ]),
+            ]),
+        ])
     }
 
     @Test("Campaign outcome helpers preserve step order and resolution mappings")
@@ -1225,21 +1382,10 @@ private struct LivePlaythroughBot {
             )
         }
         if prompt.isChooseUpgradeDeckPrompt {
-            if let replacementDeck = try replacementDeckIfRequired(in: projection) {
-                return SelectedBotAnswer(
-                    answer: .replacementDeck(
-                        originalInvestigatorID: "c\(investigator.code)",
-                        deck: replacementDeck
-                    ),
-                    note: "replace killed or insane investigator with "
-                        + replacementDeck.investigatorName,
-                    chosenChoiceKind: nil
-                )
-            }
-            return SelectedBotAnswer(
-                answer: .skipDeckUpgrade(investigatorID: "c\(investigator.code)"),
-                note: "continue without upgrading",
-                chosenChoiceKind: nil
+            return try campaignDeckUpgradeBotSelection(
+                promptOwnerID: prompt.identity.ownerID,
+                projection: projection,
+                replacementDecksByCode: replacementDecksByCode
             )
         }
         if let continuation = projection.campaignContinuation, isContinueCampaignPrompt(prompt) {
@@ -1293,28 +1439,6 @@ private struct LivePlaythroughBot {
             note: "selectable choice \(selectedIndex)",
             chosenChoiceKind: chosenChoiceKind
         )
-    }
-
-    private func replacementDeckIfRequired(in projection: BoardProjection) throws -> Deck? {
-        let originalInvestigatorID = "c\(investigator.code)"
-        guard let currentInvestigator = projection.investigators.first(where: {
-            $0.id.rawValue.rawValue == originalInvestigatorID
-        }) else { return nil }
-        let context = CampaignUpgradeDeckContext.make(
-            investigator: currentInvestigator,
-            campaignSummary: projection.campaignSummary
-        )
-        guard context.requiresReplacement else { return nil }
-        let takenInvestigatorIDs = Set(projection.investigators.map(\.id.rawValue.rawValue))
-        if let deck = eligibleCoreReplacementDeck(
-            originalInvestigatorCode: investigator.code,
-            killedOrInsaneInvestigatorIDs: context.killedOrInsaneInvestigatorIDs,
-            takenInvestigatorIDs: takenInvestigatorIDs,
-            replacementDecksByCode: replacementDecksByCode
-        ) {
-            return deck
-        }
-        throw PlaythroughError.noEligibleReplacementInvestigator(originalInvestigatorID)
     }
 
     private func preferredSelectableIndex(
@@ -2137,6 +2261,7 @@ private enum PlaythroughError: Error, CustomStringConvertible {
     case cardCatalogUnavailable(String)
     case submissionFailed(String)
     case noEligibleReplacementInvestigator(String)
+    case noPromptOwnerInvestigator(PlayerID)
     case timedOut(String)
 
     var description: String {
@@ -2149,6 +2274,8 @@ private enum PlaythroughError: Error, CustomStringConvertible {
         case let .submissionFailed(reason): "submission failed: \(reason)"
         case let .noEligibleReplacementInvestigator(investigatorID):
             "no eligible core replacement investigator for \(investigatorID)"
+        case let .noPromptOwnerInvestigator(playerID):
+            "no current investigator for prompt owner \(playerID.rawValue.uuidString)"
         case let .timedOut(description): "timed out waiting for \(description)"
         }
     }

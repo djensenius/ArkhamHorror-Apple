@@ -21,6 +21,12 @@ struct CampaignUpgradeDeckContext: Sendable, Equatable {
     }
 }
 
+private enum CampaignDeckUpgradeSubmissionSource: Sendable, Equatable {
+    case deckURL
+    case savedDeck
+    case skip
+}
+
 struct BetweenScenariosView: View {
     let model: AppModel
     let gameID: GameID
@@ -474,10 +480,14 @@ struct CampaignUpgradeDeckSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var deckURL = ""
-    @State private var isSubmitting = false
+    @State private var submissionSource: CampaignDeckUpgradeSubmissionSource?
     @State private var failure: String?
     @State private var isSkipConfirmationPresented = false
     @State private var submissionTask: Task<Void, Never>?
+
+    private var isSubmitting: Bool {
+        submissionSource != nil
+    }
 
     private var isAwaitingSnapshot: Bool {
         model.isCampaignDeckSubmissionAwaitingSnapshot(for: promptIdentity)
@@ -555,7 +565,7 @@ struct CampaignUpgradeDeckSheet: View {
                                     "campaign.upgrade.submit", "Submit upgrade"
                                 )
                             )
-                            if isSubmitting {
+                            if submissionSource == .deckURL {
                                 Spacer()
                                 ProgressView().controlSize(.small)
                             }
@@ -580,7 +590,7 @@ struct CampaignUpgradeDeckSheet: View {
                                 Text(campaignLocalized(
                                     "campaign.upgrade.skip", "Continue without upgrading"
                                 ))
-                                if isSubmitting {
+                                if submissionSource == .skip {
                                     Spacer()
                                     ProgressView().controlSize(.small)
                                 }
@@ -656,9 +666,11 @@ struct CampaignUpgradeDeckSheet: View {
             }
         }
     }
+}
 
+private extension CampaignUpgradeDeckSheet {
     @ViewBuilder
-    private var savedDeckSection: some View {
+    var savedDeckSection: some View {
         if case let .signedIn(profile, _, _) = model.sessionState {
             CampaignSavedDeckSelectionSection(
                 model: model,
@@ -675,23 +687,23 @@ struct CampaignUpgradeDeckSheet: View {
         }
     }
 
-    private func beginSavedDeckSubmission() -> Bool {
+    func beginSavedDeckSubmission() -> Bool {
         guard !isSubmitting, !isAwaitingSnapshot else { return false }
         submissionTask?.cancel()
-        isSubmitting = true
+        submissionSource = .savedDeck
         failure = nil
         return true
     }
 
-    private func trackSavedDeckSubmission(_ task: Task<Void, Never>) {
+    func trackSavedDeckSubmission(_ task: Task<Void, Never>) {
         submissionTask = task
     }
 
-    private func submitUpgrade() {
-        guard !isAwaitingSnapshot else { return }
+    func submitUpgrade() {
+        guard !isSubmitting, !isAwaitingSnapshot else { return }
         submissionTask?.cancel()
         submissionTask = Task { @MainActor in
-            isSubmitting = true
+            submissionSource = .deckURL
             failure = nil
             let result = await model.upgradeCampaignDeck(
                 from: deckURL,
@@ -704,11 +716,11 @@ struct CampaignUpgradeDeckSheet: View {
         }
     }
 
-    private func continueWithoutUpgrading() {
-        guard !isAwaitingSnapshot else { return }
+    func continueWithoutUpgrading() {
+        guard !isSubmitting, !isAwaitingSnapshot else { return }
         submissionTask?.cancel()
         submissionTask = Task { @MainActor in
-            isSubmitting = true
+            submissionSource = .skip
             failure = nil
             let result = await model.continueCampaignWithoutUpgrading(
                 investigatorId: investigator.id.rawValue.rawValue,
@@ -720,9 +732,9 @@ struct CampaignUpgradeDeckSheet: View {
         }
     }
 
-    private func finish(_ result: CampaignDeckUpgradeSubmissionResult) {
+    func finish(_ result: CampaignDeckUpgradeSubmissionResult) {
         submissionTask = nil
-        isSubmitting = false
+        submissionSource = nil
         switch result {
         case .submitted:
             dismiss()
