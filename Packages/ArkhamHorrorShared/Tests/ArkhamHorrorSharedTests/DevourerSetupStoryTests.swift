@@ -41,6 +41,7 @@ struct DevourerSetupStoryTests {
     }
 
     @Test("Captured setup renders catalog entries and preserves web-style entry modifiers")
+    // swiftlint:disable:next function_body_length
     func capturedSetupRendersFromCatalogWithIconVariable() async throws {
         let sample = try Self.capturedSample()
         let payload = try ContractJSON.decode(

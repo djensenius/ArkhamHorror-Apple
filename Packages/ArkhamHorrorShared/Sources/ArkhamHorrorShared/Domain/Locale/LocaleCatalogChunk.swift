@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 
 /// One locale/pack slice of the catalog (`frontend/schemas/locale-catalog/v1/chunk.schema.json`),

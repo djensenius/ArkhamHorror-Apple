@@ -89,8 +89,8 @@ struct LocaleCatalogAdditiveDecodingTests {
         let cases = [
             Self.undeclaredVariableEntry,
             Self.presentationVariableNodeEntry,
-            Self.futureRoleWithMalformedSiblingDeclarationEntry,
-            Self.futureRoleWithMalformedLinkedVariablesEntry,
+            Self.malformedSiblingDeclEntry,
+            Self.malformedLinkedVariablesEntry,
         ]
         for entry in cases {
             #expect(Self.validateSingleEntry(entry) == .failure(.malformedChunk))
@@ -116,8 +116,10 @@ struct LocaleCatalogAdditiveDecodingTests {
         let documents = try SyntheticLocaleCatalogDocuments.make()
         let manifestText = try #require(String(data: documents.manifestBytes, encoding: .utf8))
         let diagnostics = [
-            #""unknownVariableTypes":[{"key":"label.future","variable":"token","role":7,"type":"x"}]"#,
-            #""unknownVariableTypes":[{"key":"label.future","variable":"token","role":"text","type":"x","extra":true}]"#,
+            #""unknownVariableTypes":[{"key":"label.future","variable":"token","#
+                + #""role":7,"type":"x"}]"#,
+            #""unknownVariableTypes":[{"key":"label.future","variable":"token","#
+                + #""role":"text","type":"x","extra":true}]"#,
         ]
         for diagnostic in diagnostics {
             let manifest = manifestText.replacingOccurrences(
@@ -219,7 +221,7 @@ struct LocaleCatalogAdditiveDecodingTests {
     }
     """#
 
-    private static let futureRoleWithMalformedSiblingDeclarationEntry = #"""
+    private static let malformedSiblingDeclEntry = #"""
     {
       "form": "message",
       "nodes": [{"type": "text", "value": "Future"}],
@@ -230,7 +232,7 @@ struct LocaleCatalogAdditiveDecodingTests {
     }
     """#
 
-    private static let futureRoleWithMalformedLinkedVariablesEntry = #"""
+    private static let malformedLinkedVariablesEntry = #"""
     {
       "form": "message",
       "nodes": [{"type": "text", "value": "Future"}],
