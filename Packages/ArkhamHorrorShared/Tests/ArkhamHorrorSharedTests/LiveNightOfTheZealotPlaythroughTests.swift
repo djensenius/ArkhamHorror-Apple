@@ -722,7 +722,13 @@ struct LiveNightOfTheZealotPlaythroughTests {
         configuration: LivePlaythroughConfiguration,
         note: String
     ) throws {
-        try FileManager.default.createDirectory(
+        let fileManager = FileManager.default
+        let resultDirectory = URL(fileURLWithPath: configuration.resultPath)
+            .deletingLastPathComponent()
+        try fileManager.createDirectory(
+            at: resultDirectory, withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
             atPath: "/tmp/arkham-logs", withIntermediateDirectories: true
         )
         let scenarioColumns = scenarioOutcomeColumns(in: results)
