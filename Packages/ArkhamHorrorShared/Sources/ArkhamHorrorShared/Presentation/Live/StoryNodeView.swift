@@ -393,7 +393,7 @@ private enum StoryInlineTextRenderer {
                 "\(Image(systemName: "seal.fill")) \(StoryNode.spokenIconLabel(name))"
             )
         case let .semanticIcon(icon):
-            Text("\(Image(systemName: icon.systemImage)) \(icon.accessibilityLabel)")
+            Text(Image(systemName: icon.systemImage))
         case let .cardReference(_, children):
             text(for: children).map {
                 Text(
