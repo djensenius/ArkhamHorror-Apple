@@ -506,32 +506,27 @@ struct AppModelCampaignPromptTests {
         #expect(summary.killedOrInsaneInvestigatorIDs == ["c01001"])
     }
 
-    @Test("Server-captured replacement follow-up has a living investigator that can skip")
-    func capturedReplacementFollowUpAllowsLivingInvestigatorToSkip() throws {
-        let preReplacementEnvelope = try campaignPromptFixtureEnvelope(
-            named: "campaign-replacement-choose-upgrade-deck"
+    @Test("Server-captured replacement follow-up ContinueCampaign projects living investigator")
+    func capturedReplacementFollowUpContinueCampaignAllowsLivingInvestigatorToSkip() throws {
+        let envelope = try campaignPromptFixtureEnvelope(
+            named: "campaign-replacement-follow-up-continue-campaign"
         )
-        let preReplacementProjection = BoardProjectionBuilder.makeProjection(
-            from: preReplacementEnvelope.game
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+        let investigator = try #require(projection.investigators.first)
+        let context = CampaignUpgradeDeckContext.make(
+            investigator: investigator,
+            campaignSummary: projection.campaignSummary
         )
-        let summary = try #require(preReplacementProjection.campaignSummary)
-        let livingInvestigatorID = try InvestigatorID(CardCode("c01002"))
-        let context = CampaignUpgradeDeckContext(
-            requiresReplacement: summary.requiresReplacement(for: livingInvestigatorID),
-            killedOrInsaneInvestigatorIDs: summary.killedOrInsaneInvestigatorIDs
-        )
-        let followUp = try campaignPromptFixtureValue(
-            named: "campaign-replacement-follow-up-choose-upgrade-deck"
-        )
-        let game = try #require(followUp.objectValue?["game"]?.objectValue)
-        let investigators = try #require(game["investigators"]?.objectValue)
-        let question = try #require(game["question"]?.objectValue?.values.first?.objectValue)
 
-        #expect(Set(investigators.keys) == ["c01002"])
-        #expect(summary.killedOrInsaneInvestigatorIDs == ["c01001"])
+        #expect(Set(envelope.game.investigators.keys.map(\.rawValue.rawValue)) == ["c01002"])
+        #expect(envelope.game.killedInvestigators[try InvestigatorID(CardCode("c01001"))] != nil)
+        #expect(projection.campaignSummary?.killedOrInsaneInvestigatorIDs == ["c01001"])
+        #expect(investigator.id.rawValue.rawValue == "c01002")
         #expect(!context.requiresReplacement)
         #expect(context.allowsSkip)
-        #expect(question["tag"] == .string("ContinueCampaign"))
+        #expect(projection.questions.values.first?.rawValue == .object([
+            "tag": .string("ContinueCampaign"),
+        ]))
     }
 
     func campaignPromptFixtureEnvelope(named name: String) throws -> GetGameEnvelope {
@@ -541,15 +536,6 @@ struct AppModelCampaignPromptTests {
             subdirectory: "Fixtures/CampaignPrompt"
         ))
         return try ContractJSON.decode(GetGameEnvelope.self, from: Data(contentsOf: url))
-    }
-
-    func campaignPromptFixtureValue(named name: String) throws -> JSONValue {
-        let url = try #require(Bundle.module.url(
-            forResource: name,
-            withExtension: "json",
-            subdirectory: "Fixtures/CampaignPrompt"
-        ))
-        return try ContractJSON.decode(JSONValue.self, from: Data(contentsOf: url))
     }
 
     @Test("Saved replacement deck PUTs old seat id with the replacement deck list")
