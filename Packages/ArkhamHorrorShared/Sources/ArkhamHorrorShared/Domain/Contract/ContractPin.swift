@@ -26,12 +26,13 @@ struct ContractPin: Sendable {
 extension ContractPin {
     /// The canonical pin compiled into this client build.
     ///
-    /// Contract revision `0.1.50` publishes locale-catalog icon variables and raises the
-    /// native client floor to `0.1.50`.
+    /// Contract revision `0.1.50` publishes locale-catalog icon variables. The app still
+    /// only requires server revision `0.1.48`, which introduced `AnswerRejected`; older
+    /// deployed servers simply do not send the additive icon-variable catalog entries.
     static let current = ContractPin(
         backendCommit: "fb98627745958231f2839d1747f024d21b5839d7",
         supportedSchemaRevision: .literal(major: 0, minor: 1, patch: 50),
-        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 50),
+        minimumServerSchemaRevision: .literal(major: 0, minor: 1, patch: 48),
         expectedApiBasePath: "/api/v1",
         sourceNativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 50)
     )
