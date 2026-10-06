@@ -1339,7 +1339,8 @@ private struct LivePlaythroughBot {
                } else {
                    false
                }
-           })?.index {
+           })?.index
+        {
             return startSkillTestIndex
         }
         return selectableIndexes[repeatCount % selectableIndexes.count]

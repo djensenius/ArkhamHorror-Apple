@@ -519,7 +519,7 @@ struct AppModelCampaignPromptTests {
         )
 
         #expect(Set(envelope.game.investigators.keys.map(\.rawValue.rawValue)) == ["c01002"])
-        #expect(envelope.game.killedInvestigators[try InvestigatorID(CardCode("c01001"))] != nil)
+        #expect(try envelope.game.killedInvestigators[InvestigatorID(CardCode("c01001"))] != nil)
         #expect(projection.campaignSummary?.killedOrInsaneInvestigatorIDs == ["c01001"])
         #expect(investigator.id.rawValue.rawValue == "c01002")
         #expect(!context.requiresReplacement)
