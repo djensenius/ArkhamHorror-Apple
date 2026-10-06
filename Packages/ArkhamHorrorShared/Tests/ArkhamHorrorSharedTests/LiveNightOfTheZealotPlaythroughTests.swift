@@ -293,6 +293,97 @@ private func slugComponent(_ value: String) -> String {
     }.joined().lowercased()
 }
 
+private func eligibleCoreReplacementDeck(
+    originalInvestigatorCode: String,
+    killedOrInsaneInvestigatorIDs: Set<String>,
+    takenInvestigatorIDs: Set<String>,
+    replacementDecksByCode: [String: Deck]
+) -> Deck? {
+    let originalInvestigatorID = "c\(originalInvestigatorCode)"
+    for fixture in InvestigatorFixture.core {
+        let candidateID = "c\(fixture.code)"
+        guard candidateID != originalInvestigatorID,
+              !takenInvestigatorIDs.contains(candidateID),
+              !killedOrInsaneInvestigatorIDs.contains(candidateID),
+              let deck = replacementDecksByCode[fixture.code]
+        else { continue }
+        return deck
+    }
+    return nil
+}
+
+private func campaignDeckUpgradeBotSelection(
+    promptOwnerID: PlayerID,
+    projection: BoardProjection,
+    replacementDecksByCode: [String: Deck]
+) throws -> SelectedBotAnswer {
+    let currentInvestigator = try promptOwnerInvestigator(
+        promptOwnerID: promptOwnerID,
+        projection: projection
+    )
+    let currentInvestigatorID = currentInvestigator.id.rawValue.rawValue
+    if let replacementDeck = try replacementDeckIfRequired(
+        for: currentInvestigator,
+        in: projection,
+        replacementDecksByCode: replacementDecksByCode
+    ) {
+        return SelectedBotAnswer(
+            answer: .replacementDeck(
+                originalInvestigatorID: currentInvestigatorID,
+                deck: replacementDeck
+            ),
+            note: "replace killed or insane investigator with "
+                + replacementDeck.investigatorName,
+            chosenChoiceKind: nil
+        )
+    }
+    return SelectedBotAnswer(
+        answer: .skipDeckUpgrade(investigatorID: currentInvestigatorID),
+        note: "continue without upgrading",
+        chosenChoiceKind: nil
+    )
+}
+
+private func promptOwnerInvestigator(
+    promptOwnerID: PlayerID,
+    projection: BoardProjection
+) throws -> BoardInvestigatorNode {
+    guard let currentInvestigator = projection.investigators.first(where: {
+        $0.playerID == promptOwnerID
+    }) else {
+        throw PlaythroughError.noPromptOwnerInvestigator(promptOwnerID)
+    }
+    return currentInvestigator
+}
+
+private func replacementDeckIfRequired(
+    for currentInvestigator: BoardInvestigatorNode,
+    in projection: BoardProjection,
+    replacementDecksByCode: [String: Deck]
+) throws -> Deck? {
+    let currentInvestigatorID = currentInvestigator.id.rawValue.rawValue
+    let context = CampaignUpgradeDeckContext.make(
+        investigator: currentInvestigator,
+        campaignSummary: projection.campaignSummary
+    )
+    guard context.requiresReplacement else { return nil }
+    let takenInvestigatorIDs = Set(projection.investigators.map(\.id.rawValue.rawValue))
+    let originalInvestigatorCode = investigatorCode(from: currentInvestigatorID)
+    if let deck = eligibleCoreReplacementDeck(
+        originalInvestigatorCode: originalInvestigatorCode,
+        killedOrInsaneInvestigatorIDs: context.killedOrInsaneInvestigatorIDs,
+        takenInvestigatorIDs: takenInvestigatorIDs,
+        replacementDecksByCode: replacementDecksByCode
+    ) {
+        return deck
+    }
+    throw PlaythroughError.noEligibleReplacementInvestigator(currentInvestigatorID)
+}
+
+private func investigatorCode(from investigatorID: String) -> String {
+    investigatorID.hasPrefix("c") ? String(investigatorID.dropFirst()) : investigatorID
+}
+
 @MainActor
 @Suite("Live campaign playthrough")
 // swiftlint:disable:next type_body_length
@@ -415,6 +506,151 @@ struct LiveNightOfTheZealotPlaythroughTests {
         }
     }
 
+    @Test("Live harness chooses first untaken non-killed core replacement deck")
+    func replacementDeckSelectionSkipsTakenKilledAndInsaneInvestigators() throws {
+        let decks = try Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
+            try ($0.code, Self.deckFixture(for: $0))
+        })
+
+        let selected = eligibleCoreReplacementDeck(
+            originalInvestigatorCode: "01001",
+            killedOrInsaneInvestigatorIDs: ["c01001", "c01002"],
+            takenInvestigatorIDs: ["c01001", "c01003"],
+            replacementDecksByCode: decks
+        )
+
+        #expect(selected?.playableList.investigatorCode.rawValue == "c01004")
+    }
+
+    @Test("Live harness reports when no core replacement deck is eligible")
+    func replacementDeckSelectionReturnsNilWhenNoCoreInvestigatorIsEligible() throws {
+        let decks = try Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
+            try ($0.code, Self.deckFixture(for: $0))
+        })
+        let unavailable = Set(InvestigatorFixture.core.map { "c\($0.code)" })
+
+        let selected = eligibleCoreReplacementDeck(
+            originalInvestigatorCode: "01001",
+            killedOrInsaneInvestigatorIDs: unavailable,
+            takenInvestigatorIDs: [],
+            replacementDecksByCode: decks
+        )
+
+        #expect(selected == nil)
+    }
+
+    @Test("Live harness submits replacements for the prompt owner's current investigator")
+    func deckUpgradeReplacementUsesCurrentSeatInvestigator() throws {
+        let ownerID = PlayerID(UUID())
+        let currentInvestigatorID = try InvestigatorID(CardCode("c01002"))
+        let projection = try Self.campaignDeckUpgradeProjection(
+            ownerID: ownerID,
+            currentInvestigatorID: currentInvestigatorID,
+            killedOrInsaneInvestigatorIDs: ["c01002"]
+        )
+        let decks = try Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
+            try ($0.code, Self.deckFixture(for: $0))
+        })
+
+        let selected = try campaignDeckUpgradeBotSelection(
+            promptOwnerID: ownerID,
+            projection: projection,
+            replacementDecksByCode: decks
+        )
+
+        guard case let .replacementDeck(originalInvestigatorID, deck) = selected.answer else {
+            Issue.record("Expected a replacement deck selection")
+            return
+        }
+        #expect(originalInvestigatorID == "c01002")
+        #expect(deck.playableList.investigatorCode.rawValue == "c01001")
+    }
+
+    @Test("Live harness skips upgrades with the prompt owner's current investigator")
+    func deckUpgradeSkipUsesCurrentSeatInvestigator() throws {
+        let ownerID = PlayerID(UUID())
+        let currentInvestigatorID = try InvestigatorID(CardCode("c01002"))
+        let projection = try Self.campaignDeckUpgradeProjection(
+            ownerID: ownerID,
+            currentInvestigatorID: currentInvestigatorID,
+            killedOrInsaneInvestigatorIDs: ["c01001"]
+        )
+
+        let selected = try campaignDeckUpgradeBotSelection(
+            promptOwnerID: ownerID,
+            projection: projection,
+            replacementDecksByCode: [:]
+        )
+
+        guard case let .skipDeckUpgrade(investigatorID) = selected.answer else {
+            Issue.record("Expected a deck-upgrade skip")
+            return
+        }
+        #expect(investigatorID == "c01002")
+    }
+
+    @Test("Live harness treats same-version prompt-key changes as progress")
+    func promptAdvanceUsesFullPromptKeyAtSameVersion() {
+        let rawQuestion: JSONValue = .object(["tag": .string("ChooseOne")])
+        let original = Self.prompt(
+            questionVersion: 7,
+            rawQuestion: rawQuestion,
+            questionPresentation: Self.semanticPresentation(choiceKind: .gainResource)
+        )
+        let samePrompt = Self.prompt(
+            questionVersion: 7,
+            rawQuestion: rawQuestion,
+            questionPresentation: Self.semanticPresentation(choiceKind: .gainResource)
+        )
+        let changedPrompt = Self.prompt(
+            questionVersion: 7,
+            rawQuestion: rawQuestion,
+            questionPresentation: Self.semanticPresentation(choiceKind: .drawCard)
+        )
+
+        #expect(!basicChoicePromptAdvanced(from: original.identity, to: samePrompt))
+        #expect(basicChoicePromptAdvanced(from: original.identity, to: changedPrompt))
+    }
+
+    @Test("Live harness resets skill-test preparation bounds between tests")
+    func skillTestPreparationCounterResetsBetweenSeparateSkillTests() throws {
+        let prompt = try Self.skillTestPreparationPrompt(questionVersion: 11)
+        let selectableIndexes = [0, 1]
+        let loopKey = "c01104:00000000-0000-0000-0000-000000000800:startSkillTestPreparation"
+        var counter = SkillTestPreparationLoopCounter()
+
+        #expect(counter.count(for: loopKey) == 0)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            selectableIndexes: selectableIndexes,
+            repeatCount: 0,
+            skillTestPreparationCount: counter.count(for: loopKey)
+        ) == 0)
+        for _ in 0 ..< 3 {
+            counter.recordAdvanced(for: loopKey)
+        }
+        #expect(counter.count(for: loopKey) == 3)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            selectableIndexes: selectableIndexes,
+            repeatCount: 0,
+            skillTestPreparationCount: counter.count(for: loopKey)
+        ) == 1)
+
+        #expect(counter.count(for: nil) == 0)
+        #expect(counter.count(for: loopKey) == 0)
+        for _ in 0 ..< 3 {
+            counter.recordAdvanced(for: loopKey)
+        }
+        #expect(counter.count(for: loopKey) == 3)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            selectableIndexes: selectableIndexes,
+            repeatCount: 0,
+            skillTestPreparationCount: counter.count(for: loopKey)
+        ) == 1)
+    }
+
     @Test("Live harness rejects unknown investigators and ultimatum values")
     func unknownInvestigatorAndUltimatumAreConfigurationErrors() {
         #expect(throws: LiveHarnessConfigurationError.unknownInvestigator("99999")) {
@@ -427,6 +663,122 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 "ARKHAM_LIVE_ULTIMATUMS_AND_BOONS": "BoonOfHades, Bogus",
             ])
         }
+    }
+
+    private static func deckFixture(for investigator: InvestigatorFixture) throws -> Deck {
+        let slots = try Dictionary(uniqueKeysWithValues: investigator.deckSlots.map {
+            try (CardCode("c\($0.key)"), $0.value)
+        })
+        let deckList = try DeckList(
+            slots: CardQuantityMap(slots),
+            sideSlots: CardQuantityMap([:]),
+            investigatorCode: CardCode("c\(investigator.code)"),
+            investigatorName: investigator.name,
+            meta: nil,
+            tabooId: nil,
+            url: nil,
+            id: investigator.code,
+            name: "\(investigator.name) replacement"
+        )
+        return Deck(
+            id: DeckID(UUID()),
+            userId: 1,
+            url: nil,
+            name: "\(investigator.name) replacement",
+            investigatorName: investigator.name,
+            list: deckList
+        )
+    }
+
+    private static func campaignDeckUpgradeProjection(
+        ownerID: PlayerID,
+        currentInvestigatorID: InvestigatorID,
+        killedOrInsaneInvestigatorIDs: [String]
+    ) throws -> BoardProjection {
+        let currentInvestigator = BoardTestFixtures.investigator(
+            id: currentInvestigatorID,
+            playerID: ownerID
+        )
+        let snapshot = BoardTestFixtures.snapshot(
+            mode: .campaignOnly(campaignLogFixture(killedOrInsaneInvestigatorIDs)),
+            investigators: [currentInvestigatorID: currentInvestigator],
+            playerOrder: [currentInvestigatorID],
+            activeInvestigatorID: currentInvestigatorID,
+            leadInvestigatorID: currentInvestigatorID
+        )
+        return BoardProjectionBuilder.makeProjection(from: snapshot)
+    }
+
+    private static func campaignLogFixture(_ killedOrInsaneInvestigatorIDs: [String]) -> JSONValue {
+        .object([
+            "log": .object([
+                "recorded": .array([]),
+                "crossedOut": .array([]),
+                "recordedCounts": .array([]),
+                "recordedSets": .array([
+                    .array([
+                        .object(["tag": .string("KilledInvestigators")]),
+                        .array(killedOrInsaneInvestigatorIDs.map { .string($0) }),
+                    ]),
+                ]),
+            ]),
+        ])
+    }
+
+    private static func prompt(
+        questionVersion: Int,
+        rawQuestion: JSONValue,
+        questionState: BasicChoiceQuestionState = .updateRequired(tag: nil),
+        questionPresentation: QuestionPresentation? = nil
+    ) -> BasicChoicePromptPresentation {
+        BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: questionVersion,
+                rawQuestion: rawQuestion,
+                questionPresentation: questionPresentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: questionState,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private static func semanticPresentation(
+        choiceKind: QuestionPresentation.ChoiceKind
+    ) -> QuestionPresentation {
+        QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: 7,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [QuestionPresentation.Choice(sourceIndex: 0, kind: choiceKind)]
+        )
+    }
+
+    private static func skillTestPreparationPrompt(
+        questionVersion: Int
+    ) throws -> BasicChoicePromptPresentation {
+        let rawQuestion: JSONValue = .object([
+            "tag": .string("ChooseOne"),
+            "choices": .array([
+                .object(["tag": .string("UnknownPreparationChoice")]),
+                .object([
+                    "tag": .string("StartSkillTestButton"),
+                    "investigatorId": .string("c01001"),
+                ]),
+            ]),
+        ])
+        return prompt(
+            questionVersion: questionVersion,
+            rawQuestion: rawQuestion,
+            questionState: BasicChoiceParser.parseQuestion(rawQuestion)
+        )
     }
 
     @Test("Campaign outcome helpers preserve step order and resolution mappings")
@@ -594,6 +946,12 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 on: signedInProfile,
                 token: token
             )
+            let replacementDecksByCode = try await createReplacementDecks(
+                excluding: investigator,
+                deckService: deckService,
+                profile: signedInProfile,
+                token: token
+            )
             let campaignOrScenario = try configuration.campaignOrScenario()
             let gameID = try await model.createGame(
                 CreateGameRequest(
@@ -627,6 +985,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 gameID: gameID,
                 investigator: investigator,
                 deck: deck,
+                replacementDecksByCode: replacementDecksByCode,
                 trace: trace,
                 diagnosticBypassUnsupported: Self.diagnosticBypassUnsupported
             )
@@ -660,6 +1019,23 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 finalGameID: nil
             )
         }
+    }
+
+    private func createReplacementDecks(
+        excluding investigator: InvestigatorFixture,
+        deckService: DeckService,
+        profile: ServerProfile,
+        token: String
+    ) async throws -> [String: Deck] {
+        var decks: [String: Deck] = [:]
+        for fixture in InvestigatorFixture.core where fixture.code != investigator.code {
+            decks[fixture.code] = try await deckService.createDeck(
+                fixture.createDeckRequest,
+                on: profile,
+                token: token
+            )
+        }
+        return decks
     }
 
     private func prepareSignedInSession(
@@ -809,12 +1185,14 @@ private struct LivePlaythroughBot {
     let gameID: GameID
     let investigator: InvestigatorFixture
     let deck: Deck
+    let replacementDecksByCode: [String: Deck]
     let trace: PlaythroughTraceRecorder
     let diagnosticBypassUnsupported: Bool
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     func driveUntilServerCompletion() async throws -> BotOutcome {
         var repeatedQuestionShapes: [String: Int] = [:]
+        var skillTestPreparationCounter = SkillTestPreparationLoopCounter()
         let startedAt = Date()
         let timeout = ProcessInfo.processInfo.environment["ARKHAM_LIVE_PLAYTHROUGH_TIMEOUT"]
             .flatMap(TimeInterval.init) ?? 900
@@ -849,12 +1227,21 @@ private struct LivePlaythroughBot {
                 )
             }
             guard let prompt = model.basicChoicePresentation(for: gameID) else {
+                _ = skillTestPreparationCounter.count(for: nil)
                 try await Task.sleep(for: .milliseconds(200))
                 continue
             }
             let scenario = currentScenarioCode(projection: projection, snapshot: envelope.game)
+            try await captureReplacementPromptIfRequested(prompt: prompt, projection: projection)
             let repeatKey = coverageRepeatKey(scenario: scenario, prompt: prompt)
             let repeatCount = repeatedQuestionShapes[repeatKey, default: 0]
+            let skillTestPreparationKey = skillTestPreparationLoopKey(
+                scenario: scenario,
+                prompt: prompt
+            )
+            let skillTestPreparationCount = skillTestPreparationCounter.count(
+                for: skillTestPreparationKey
+            )
             let cannotRender = !prompt.isRenderableQuestion
                 && !isInitialChooseDeckPrompt(prompt)
                 && !prompt.isChooseUpgradeDeckPrompt
@@ -921,7 +1308,8 @@ private struct LivePlaythroughBot {
                 selectedAnswer = try selectAnswer(
                     prompt: prompt,
                     projection: projection,
-                    repeatCount: repeatCount
+                    repeatCount: repeatCount,
+                    skillTestPreparationCount: skillTestPreparationCount
                 )
             } catch let error as PlaythroughError {
                 let failure = PromptFailure(
@@ -952,8 +1340,20 @@ private struct LivePlaythroughBot {
 
             let submission = try selectedAnswer.answer.traceSubmission(prompt: prompt)
             do {
+                let seatInvestigatorBeforeReplacement: SeatInvestigatorIdentity? =
+                    if case .replacementDeck = selectedAnswer.answer {
+                        seatInvestigatorIdentity(
+                            for: prompt.identity.ownerID,
+                            in: projection
+                        )
+                    } else {
+                        nil
+                    }
                 let submitOutcome = try await submit(selectedAnswer.answer, prompt: prompt)
-                let advanced = try await waitForPromptAdvance(from: prompt.identity)
+                let advanced = try await waitForPromptAdvance(
+                    from: prompt.identity,
+                    acceptingSeatInvestigatorChangeFrom: seatInvestigatorBeforeReplacement
+                )
                 let feedback = serverFeedbackSummary()
                 if advanced {
                     try trace.append(.prompt(
@@ -970,6 +1370,7 @@ private struct LivePlaythroughBot {
                         diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     repeatedQuestionShapes[repeatKey] = repeatCount + 1
+                    skillTestPreparationCounter.recordAdvanced(for: skillTestPreparationKey)
                 } else {
                     let reason = [
                         "same prompt remained after the bot answered it",
@@ -1088,7 +1489,8 @@ private struct LivePlaythroughBot {
     private func selectAnswer(
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
-        repeatCount: Int
+        repeatCount: Int,
+        skillTestPreparationCount: Int
     ) throws -> SelectedBotAnswer {
         if isInitialChooseDeckPrompt(prompt) {
             return SelectedBotAnswer(
@@ -1096,10 +1498,10 @@ private struct LivePlaythroughBot {
             )
         }
         if prompt.isChooseUpgradeDeckPrompt {
-            return SelectedBotAnswer(
-                answer: .skipDeckUpgrade(investigatorID: "c\(investigator.code)"),
-                note: "continue without upgrading",
-                chosenChoiceKind: nil
+            return try campaignDeckUpgradeBotSelection(
+                promptOwnerID: prompt.identity.ownerID,
+                projection: projection,
+                replacementDecksByCode: replacementDecksByCode
             )
         }
         if let continuation = projection.campaignContinuation, isContinueCampaignPrompt(prompt) {
@@ -1142,7 +1544,8 @@ private struct LivePlaythroughBot {
         let selectedIndex = preferredSelectableIndex(
             in: prompt,
             selectableIndexes: selectableIndexes,
-            repeatCount: repeatCount
+            repeatCount: repeatCount,
+            skillTestPreparationCount: skillTestPreparationCount
         )
         let chosenChoiceKind = prompt.identity.questionPresentation?.choices.first {
             $0.sourceIndex == selectedIndex
@@ -1154,26 +1557,13 @@ private struct LivePlaythroughBot {
         )
     }
 
-    private func preferredSelectableIndex(
-        in prompt: BasicChoicePromptPresentation,
-        selectableIndexes: [Int],
-        repeatCount: Int
-    ) -> Int {
-        if let skipIndex = prompt.identity.questionPresentation?.choices.first(where: {
-            $0.selectable && $0.kind == .skipTriggers && selectableIndexes.contains($0.sourceIndex)
-        })?.sourceIndex {
-            return skipIndex
-        }
-        return selectableIndexes[repeatCount % selectableIndexes.count]
-    }
-
     private func canDiagnosticBypassUnsupported(_ prompt: BasicChoicePromptPresentation) -> Bool {
         guard diagnosticBypassUnsupported, prompt.readOnlyReason == nil else { return false }
         return prompt.identity.questionPresentation?.choices
             .contains { $0.selectable } == true
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     private func submit(
         _ answer: BotAnswer, prompt: BasicChoicePromptPresentation
     ) async throws -> SubmissionOutcome {
@@ -1196,6 +1586,26 @@ private struct LivePlaythroughBot {
             return SubmissionOutcome(
                 detail: "submitted DeckAnswer through AppModel chooseDeckForLivePrompt"
             )
+        case let .replacementDeck(originalInvestigatorID, deck):
+            let deckResult = await model.upgradeCampaignDeck(
+                using: deck,
+                investigatorId: originalInvestigatorID,
+                in: gameID,
+                promptIdentity: prompt.identity
+            )
+            switch deckResult {
+            case .submitted:
+                let followUp = try await waitForReplacementFollowUp(
+                    afterReplacing: originalInvestigatorID,
+                    ownerID: prompt.identity.ownerID
+                )
+                return SubmissionOutcome(
+                    detail: "submitted replacement deck through AppModel; "
+                        + followUp.detail
+                )
+            case let .failed(message):
+                throw PlaythroughError.submissionFailed(message)
+            }
         case let .skipDeckUpgrade(investigatorID):
             let deckResult = await model.continueCampaignWithoutUpgrading(
                 investigatorId: investigatorID,
@@ -1248,20 +1658,61 @@ private struct LivePlaythroughBot {
         )
     }
 
+    private func waitForReplacementFollowUp(
+        afterReplacing originalInvestigatorID: String,
+        ownerID: PlayerID
+    ) async throws -> ReplacementFollowUp {
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
+            let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+            guard let currentInvestigator = projection.investigators.first(where: {
+                $0.playerID == ownerID
+            }) else {
+                try await Task.sleep(for: .milliseconds(100))
+                continue
+            }
+            guard currentInvestigator.id.rawValue.rawValue != originalInvestigatorID else {
+                try await Task.sleep(for: .milliseconds(100))
+                continue
+            }
+            try await captureReplacementFollowUpIfRequested()
+            return ReplacementFollowUp(investigatorID: currentInvestigator.id.rawValue.rawValue)
+        }
+        throw PlaythroughError.timedOut("replacement follow-up prompt")
+    }
+
     private func waitForPromptAdvance(
-        from identity: BasicChoicePromptIdentity
+        from identity: BasicChoicePromptIdentity,
+        acceptingSeatInvestigatorChangeFrom previousSeatInvestigator: SeatInvestigatorIdentity?
+            = nil
     ) async throws -> Bool {
         let deadline = Date().addingTimeInterval(30)
         var nextServerStateCheck = Date()
+        var ignoredServerSnapshotFailure = false
         while Date() < deadline {
             guard let current = model.basicChoicePresentation(for: gameID) else { return true }
-            if current.identity.promptKey != identity.promptKey {
+            if basicChoicePromptAdvanced(from: identity, to: current) {
+                return true
+            }
+            if modelSeatInvestigatorChanged(
+                from: previousSeatInvestigator,
+                currentOwnerID: current.identity.ownerID
+            ) {
                 return true
             }
             if Date() >= nextServerStateCheck {
                 nextServerStateCheck = Date().addingTimeInterval(1)
-                if await serverSnapshotIsOver() {
-                    return true
+                do {
+                    if try await serverSnapshotShowsProgress(
+                        from: identity,
+                        acceptingSeatInvestigatorChangeFrom: previousSeatInvestigator
+                    ) {
+                        return true
+                    }
+                } catch {
+                    guard !ignoredServerSnapshotFailure else { throw error }
+                    ignoredServerSnapshotFailure = true
                 }
             }
             try await Task.sleep(for: .milliseconds(100))
@@ -1269,14 +1720,120 @@ private struct LivePlaythroughBot {
         return false
     }
 
-    private func serverSnapshotIsOver() async -> Bool {
-        guard let envelope = try? await lifecycle.getGame(gameID, on: profile, token: token) else {
-            return false
+    private func modelSeatInvestigatorChanged(
+        from previousSeatInvestigator: SeatInvestigatorIdentity?,
+        currentOwnerID: PlayerID
+    ) -> Bool {
+        guard let previousSeatInvestigator,
+              currentOwnerID == previousSeatInvestigator.ownerID,
+              let projection = model.liveGameState(for: gameID).lastKnownProjection,
+              let currentSeatInvestigator = seatInvestigatorIdentity(
+                  for: previousSeatInvestigator.ownerID,
+                  in: projection
+              )
+        else { return false }
+        return currentSeatInvestigator.investigatorID != previousSeatInvestigator.investigatorID
+    }
+
+    private func seatInvestigatorIdentity(
+        for ownerID: PlayerID,
+        in projection: BoardProjection
+    ) -> SeatInvestigatorIdentity? {
+        guard let investigator = projection.investigators.first(where: { $0.playerID == ownerID })
+        else { return nil }
+        return SeatInvestigatorIdentity(ownerID: ownerID, investigatorID: investigator.id)
+    }
+
+    private func captureReplacementPromptIfRequested(
+        prompt: BasicChoicePromptPresentation,
+        projection: BoardProjection
+    ) async throws {
+        guard prompt.isChooseUpgradeDeckPrompt,
+              let directory = ProcessInfo.processInfo.environment[
+                  "ARKHAM_LIVE_CAPTURE_REPLACEMENT_PROMPTS_DIR"
+              ]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !directory.isEmpty,
+              let currentInvestigator = projection.investigators.first(where: {
+                  $0.playerID == prompt.identity.ownerID
+              })
+        else { return }
+        let context = CampaignUpgradeDeckContext.make(
+            investigator: currentInvestigator,
+            campaignSummary: projection.campaignSummary
+        )
+        let originalInvestigatorID = "c\(investigator.code)"
+        let isReplacementFollowUp = currentInvestigator.id.rawValue.rawValue
+            != originalInvestigatorID && context.allowsSkip
+        let fileName: String
+        if context.requiresReplacement {
+            fileName = "campaign-replacement-choose-upgrade-deck.json"
+        } else if isReplacementFollowUp {
+            fileName = "campaign-replacement-follow-up-continue-campaign.json"
+        } else {
+            return
         }
+        let url = URL(fileURLWithPath: directory).appending(path: fileName)
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try await currentGameResponseData()
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func captureReplacementFollowUpIfRequested() async throws {
+        guard let directory = ProcessInfo.processInfo.environment[
+            "ARKHAM_LIVE_CAPTURE_REPLACEMENT_PROMPTS_DIR"
+        ]?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !directory.isEmpty
+        else { return }
+        let url = URL(fileURLWithPath: directory)
+            .appending(path: "campaign-replacement-follow-up-continue-campaign.json")
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try await currentGameResponseData()
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func currentGameResponseData() async throws -> Data {
+        let path = "/arkham/games/\(gameID.rawValue.uuidString.lowercased())"
+        let url = profile.endpointURL(path: path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Token \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200
+        else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw PlaythroughError.submissionFailed(
+                "replacement fixture capture GET returned HTTP \(status)"
+            )
+        }
+        return data
+    }
+
+    private func serverSnapshotShowsProgress(
+        from _: BasicChoicePromptIdentity,
+        acceptingSeatInvestigatorChangeFrom previousSeatInvestigator: SeatInvestigatorIdentity?
+    ) async throws -> Bool {
+        let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
         if case .over = envelope.game.gameState {
             return true
         }
-        return false
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+        guard let previousSeatInvestigator,
+              let currentSeatInvestigator = seatInvestigatorIdentity(
+                  for: previousSeatInvestigator.ownerID,
+                  in: projection
+              )
+        else { return false }
+        return currentSeatInvestigator.investigatorID != previousSeatInvestigator.investigatorID
     }
 
     private func minimumAmounts(for prompt: BasicChoiceAmountPrompt) -> [String: Int] {
@@ -1335,6 +1892,7 @@ private enum BotAnswer: Sendable {
     case exchangeAmount(Int)
     case continueCampaign(JSONValue)
     case savedDeck(Deck)
+    case replacementDeck(originalInvestigatorID: String, deck: Deck)
     case skipDeckUpgrade(investigatorID: String)
 }
 
@@ -1412,6 +1970,17 @@ private extension BotAnswer {
                 kind: "DeckAnswer",
                 payload: DeckAnswer(deckId: deck.id, playerId: prompt.identity.ownerID)
             )
+        case let .replacementDeck(originalInvestigatorID, deck):
+            return TraceSubmission(
+                kind: "ReplacementDeck",
+                encodedPayload: .object([
+                    "investigatorId": .string(originalInvestigatorID),
+                    "deckUrl": deck.url.map(JSONValue.string) ?? .null,
+                    "deckListInvestigatorCode": .string(
+                        deck.playableList.investigatorCode.rawValue
+                    ),
+                ])
+            )
         case let .skipDeckUpgrade(investigatorID):
             return TraceSubmission(
                 kind: "SkipDeckUpgrade",
@@ -1425,6 +1994,44 @@ private struct BotOutcome {
     let reachedServerCompletion: Bool
     let scenarioOutcomes: [String: String]
     let promptFailure: PromptFailure?
+}
+
+private struct SeatInvestigatorIdentity: Sendable, Equatable {
+    let ownerID: PlayerID
+    let investigatorID: InvestigatorID
+}
+
+private struct ReplacementFollowUp: Sendable, Equatable {
+    let investigatorID: String
+
+    var detail: String {
+        "server advanced after replacement to \(investigatorID)"
+    }
+}
+
+private struct SkillTestPreparationLoopCounter: Sendable {
+    private var activeKey: String?
+    private var counts: [String: Int] = [:]
+
+    mutating func count(for currentKey: String?) -> Int {
+        updateActiveKey(currentKey)
+        guard let currentKey else { return 0 }
+        return counts[currentKey, default: 0]
+    }
+
+    mutating func recordAdvanced(for currentKey: String?) {
+        updateActiveKey(currentKey)
+        guard let currentKey else { return }
+        counts[currentKey, default: 0] += 1
+    }
+
+    private mutating func updateActiveKey(_ currentKey: String?) {
+        guard activeKey != currentKey else { return }
+        if let activeKey {
+            counts.removeValue(forKey: activeKey)
+        }
+        activeKey = currentKey
+    }
 }
 
 private struct PromptFailure: Sendable, Equatable {
@@ -1673,6 +2280,9 @@ private extension TraceSelectedAnswer {
         case .savedDeck:
             answerKind = "DeckAnswer"
             choiceIndex = nil
+        case .replacementDeck:
+            answerKind = "ReplacementDeck"
+            choiceIndex = nil
         case .skipDeckUpgrade:
             answerKind = "SkipDeckUpgrade"
             choiceIndex = nil
@@ -1761,6 +2371,8 @@ private enum PlaythroughError: Error, CustomStringConvertible {
     case noSelectableChoice(version: Int, tag: String)
     case cardCatalogUnavailable(String)
     case submissionFailed(String)
+    case noEligibleReplacementInvestigator(String)
+    case noPromptOwnerInvestigator(PlayerID)
     case timedOut(String)
 
     var description: String {
@@ -1771,6 +2383,10 @@ private enum PlaythroughError: Error, CustomStringConvertible {
         case let .noSelectableChoice(version, tag): "no selectable choice at q\(version) / \(tag)"
         case let .cardCatalogUnavailable(reason): "card catalog unavailable: \(reason)"
         case let .submissionFailed(reason): "submission failed: \(reason)"
+        case let .noEligibleReplacementInvestigator(investigatorID):
+            "no eligible core replacement investigator for \(investigatorID)"
+        case let .noPromptOwnerInvestigator(playerID):
+            "no current investigator for prompt owner \(playerID.rawValue.uuidString)"
         case let .timedOut(description): "timed out waiting for \(description)"
         }
     }
@@ -2036,6 +2652,13 @@ private func describeRawQuestionTag(_ value: JSONValue) -> String {
     return value.kindDescription
 }
 
+private func basicChoicePromptAdvanced(
+    from identity: BasicChoicePromptIdentity,
+    to current: BasicChoicePromptPresentation
+) -> Bool {
+    current.identity.promptKey != identity.promptKey
+}
+
 private func coverageRepeatKey(
     scenario: String, prompt: BasicChoicePromptPresentation
 ) -> String {
@@ -2046,6 +2669,53 @@ private func coverageRepeatKey(
         scenario,
         jsonString(prompt.identity.rawQuestion),
         jsonString(presentation),
+    ].joined(separator: ":")
+}
+
+private func preferredSelectableIndex(
+    in prompt: BasicChoicePromptPresentation,
+    selectableIndexes: [Int],
+    repeatCount: Int,
+    skillTestPreparationCount: Int
+) -> Int {
+    if let skipIndex = prompt.identity.questionPresentation?.choices.first(where: {
+        $0.selectable && $0.kind == .skipTriggers && selectableIndexes.contains($0.sourceIndex)
+    })?.sourceIndex {
+        return skipIndex
+    }
+    // Skill-test preparation offers legal commit/uncommit choices that can reorder the
+    // same hand indefinitely. After a few legal prep actions, choose the server's
+    // explicit start control; fail-closed behavior is preserved because the choice must
+    // still be selectable in the current prompt.
+    if skillTestPreparationCount >= 3 {
+        let startSkillTestIndex = prompt.choices.first(where: {
+            if case .startSkillTest = $0.content {
+                selectableIndexes.contains($0.index)
+            } else {
+                false
+            }
+        })?.index
+        if let startSkillTestIndex {
+            return startSkillTestIndex
+        }
+    }
+    return selectableIndexes[repeatCount % selectableIndexes.count]
+}
+
+private func skillTestPreparationLoopKey(
+    scenario: String, prompt: BasicChoicePromptPresentation
+) -> String? {
+    guard prompt.choices.contains(where: {
+        if case .startSkillTest = $0.content {
+            true
+        } else {
+            false
+        }
+    }) else { return nil }
+    return [
+        scenario,
+        prompt.identity.ownerID.rawValue.uuidString.lowercased(),
+        "startSkillTestPreparation",
     ].joined(separator: ":")
 }
 

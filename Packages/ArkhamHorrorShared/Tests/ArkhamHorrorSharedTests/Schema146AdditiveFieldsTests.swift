@@ -120,6 +120,41 @@ struct Schema146AdditiveFieldsTests {
             Issue.record("Expected scenario-only fixture")
         }
     }
+
+    @Test("in-play investigators still require connection-scoped fields")
+    func inPlayInvestigatorMissingConnectionFieldsFailsToDecode() throws {
+        for field in ["handSize", "scarletKeys"] {
+            let value = try schema146ApplyingRemove(
+                "/game/investigators/c01001/\(field)",
+                to: schema146FixtureValue("get-game")
+            )
+            #expect(throws: (any Error).self) {
+                _ = try ContractJSON.decode(GetGameEnvelope.self, from: ContractJSON.encode(value))
+            }
+        }
+    }
+
+    @Test("off-board investigators tolerate missing connection-scoped fields")
+    func offBoardInvestigatorsDecodeWithoutConnectionFields() throws {
+        for collection in ["otherInvestigators", "retiredInvestigators"] {
+            let value = try schema146GetGameWithOffBoardInvestigatorMissingConnectionFields(
+                collection: collection
+            )
+            let envelope = try ContractJSON.decode(
+                GetGameEnvelope.self,
+                from: ContractJSON.encode(value)
+            )
+            let investigatorID = try InvestigatorID(CardCode("c01002"))
+            let investigator = if collection == "otherInvestigators" {
+                envelope.game.otherInvestigators[investigatorID]
+            } else {
+                envelope.game.retiredInvestigators?[investigatorID]
+            }
+            let decoded = try #require(investigator)
+            #expect(decoded.handSize == 0)
+            #expect(decoded.scarletKeys.isEmpty)
+        }
+    }
 }
 
 private let schema146PresentationAbilityJSON =
@@ -283,6 +318,25 @@ private func schema146ApplyingRemove(_ pointer: String, to value: JSONValue) thr
         replacement: nil,
         to: value
     )
+}
+
+private func schema146GetGameWithOffBoardInvestigatorMissingConnectionFields(
+    collection: String
+) throws -> JSONValue {
+    var value = try schema146FixtureValue("get-game")
+    guard case var .object(root) = value,
+          case var .object(game)? = root["game"],
+          case let .object(investigators)? = game["investigators"],
+          case var .object(investigator)? = investigators["c01001"]
+    else { throw TestFailure() }
+
+    investigator["id"] = .string("c01002")
+    investigator["cardCode"] = .string("c01002")
+    game[collection] = .object(["c01002": .object(investigator)])
+    root["game"] = .object(game)
+    value = .object(root)
+    value = try schema146ApplyingRemove("/game/\(collection)/c01002/handSize", to: value)
+    return try schema146ApplyingRemove("/game/\(collection)/c01002/scarletKeys", to: value)
 }
 
 private func schema146FixtureValue(_ name: String) throws -> JSONValue {

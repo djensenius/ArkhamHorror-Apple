@@ -13,6 +13,14 @@ struct BoardCampaignSummary: Sendable, Equatable {
     var isEmpty: Bool {
         resolutions.isEmpty && log.isEmpty && investigators.isEmpty
     }
+
+    var killedOrInsaneInvestigatorIDs: Set<String> {
+        log.killedOrInsaneInvestigatorIDs
+    }
+
+    func requiresReplacement(for investigatorID: InvestigatorID) -> Bool {
+        killedOrInsaneInvestigatorIDs.contains(investigatorID.rawValue.rawValue)
+    }
 }
 
 struct BoardCampaignResolutionSummary: Sendable, Equatable {
@@ -49,6 +57,18 @@ struct BoardCampaignLogSummary: Sendable, Equatable {
 
     var isEmpty: Bool {
         entries.isEmpty && counts.isEmpty && recordedSets.isEmpty
+    }
+
+    var killedOrInsaneInvestigatorIDs: Set<String> {
+        var ids = Set<String>()
+        for set in recordedSets where set.isKilledOrInsaneInvestigatorSet {
+            for value in set.values {
+                if let id = value.value.stringValue {
+                    ids.insert(id)
+                }
+            }
+        }
+        return ids
     }
 }
 
@@ -88,6 +108,11 @@ struct BoardCampaignLogRecordedSet: Sendable, Equatable, Identifiable {
     let id: String
     let key: JSONValue
     let values: [BoardCampaignLogRecordedValue]
+
+    var isKilledOrInsaneInvestigatorSet: Bool {
+        guard let tag = key.objectValue?["tag"]?.stringValue else { return false }
+        return tag == "KilledInvestigators" || tag == "DrivenInsaneInvestigators"
+    }
 
     func title(context: BoardCampaignSummaryDisplayContext = .system) -> String {
         BoardCampaignSummaryFormatting.logKeyTitle(key, context: context)

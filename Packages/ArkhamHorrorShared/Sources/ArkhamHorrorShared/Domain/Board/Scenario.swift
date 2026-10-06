@@ -69,7 +69,8 @@ struct Scenario: Sendable {
     let keys: [JSONValue]
     /// The scenario's fixed grid-topology reference art, one string per row.
     let locationLayout: [String]
-    let log: [String]
+    /// Scenario-specific bookkeeping log entries. Broad tagged union, out of scope.
+    let log: [JSONValue]
     /// Free-form scenario metadata.
     let meta: JSONValue
     let name: CardName
@@ -216,7 +217,7 @@ extension Scenario: Codable {
         isSideStory = try container.decode(Bool.self, forKey: .isSideStory)
         keys = try container.decode([JSONValue].self, forKey: .keys)
         locationLayout = try container.decode([String].self, forKey: .locationLayout)
-        log = try container.decode([String].self, forKey: .log)
+        log = try container.decode([JSONValue].self, forKey: .log)
         meta = try container.decode(JSONValue.self, forKey: .meta)
         name = try container.decode(CardName.self, forKey: .name)
         noRemainingInvestigatorsHandler = try container.decode(
