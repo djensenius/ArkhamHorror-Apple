@@ -3,11 +3,10 @@
 import Foundation
 import Testing
 
-/// Env-gated live-server smoke coverage for task-1.2.12. It is intentionally absent
-/// from normal CI unless `ARKHAM_LIVE_SERVER_URL` is set; when enabled it drives the
-/// production `AppModel` authentication, lifecycle, REST snapshot and WebSocket answer
-/// paths against a real fork server.
-private let notzScenarioOrder = ["01104", "01120", "01142"]
+// Env-gated live-server smoke coverage. It is intentionally absent from normal CI
+// unless `ARKHAM_LIVE_SERVER_URL` is set; when enabled it drives the production
+// `AppModel` authentication, lifecycle, REST snapshot and WebSocket answer paths
+// against a real fork server.
 
 private func liveServerURLForPlaythrough() -> String? {
     guard let rawURL = ProcessInfo.processInfo.environment["ARKHAM_LIVE_SERVER_URL"],
@@ -16,39 +15,309 @@ private func liveServerURLForPlaythrough() -> String? {
     return rawURL
 }
 
-@MainActor
-@Suite("Live Night of the Zealot playthrough")
-struct LiveNightOfTheZealotPlaythroughTests {
-    private static let resultPath = "/tmp/arkham-logs/playthrough-results.md"
+private enum PlaythroughTarget: Sendable, Equatable {
+    case campaign(id: String)
+    case standaloneScenario(id: String)
 
-    private static func tracePath(for investigator: InvestigatorFixture) -> String {
-        "/tmp/arkham-logs/playthrough-trace-\(investigator.traceSlug).jsonl"
+    var displayName: String {
+        switch self {
+        case let .campaign(id): "Campaign \(id)"
+        case let .standaloneScenario(id): "Standalone scenario \(id)"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case let .campaign(id): "campaignId=\(id), scenarioId=null"
+        case let .standaloneScenario(id): "campaignId=null, scenarioId=\(id)"
+        }
+    }
+
+    var slug: String {
+        switch self {
+        case let .campaign(id): "campaign-\(slugComponent(id))"
+        case let .standaloneScenario(id): "scenario-\(slugComponent(id))"
+        }
+    }
+
+    var isNightOfTheZealotCampaign: Bool {
+        self == .campaign(id: "01")
+    }
+
+    var defaultAchievementsEnabled: Bool {
+        switch self {
+        case .campaign: true
+        case .standaloneScenario: false
+        }
+    }
+}
+
+private struct LivePlaythroughConfiguration: Sendable, Equatable {
+    let target: PlaythroughTarget
+    let difficulty: RequestDifficulty
+    let campaignVariants: [String]
+    let includeTarotReadings: Bool
+    let strictAsIfAt: Bool?
+    let ultimatumsAndBoons: [UltimatumOrBoon]
+    let achievementsEnabled: Bool
+    let investigators: [InvestigatorFixture]
+    let resultPath: String
+    let shouldWriteLegacyNightOfTheZealotSummary: Bool
+
+    var options: [CampaignOption] {
+        campaignVariants.map(CampaignOption.campaignVariant)
+    }
+
+    var strictAsIfAtField: OptionalField<Bool> {
+        strictAsIfAt.map(OptionalField.value) ?? .absent
+    }
+
+    var asIfRulingField: OptionalField<AsIfRuling> {
+        guard let strictAsIfAt else { return .absent }
+        return .value(strictAsIfAt ? .chapter2 : .chapter1)
+    }
+
+    var ultimatumsAndBoonsField: OptionalField<[UltimatumOrBoon]> {
+        ultimatumsAndBoons.isEmpty ? .absent : .value(ultimatumsAndBoons)
+    }
+
+    static func fromEnvironment(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws -> LivePlaythroughConfiguration {
+        let explicitCampaignID = trimmedValue("ARKHAM_LIVE_CAMPAIGN_ID", in: environment)
+        let standaloneScenarioID = trimmedValue("ARKHAM_LIVE_SCENARIO_ID", in: environment)
+        if explicitCampaignID != nil, standaloneScenarioID != nil {
+            throw LiveHarnessConfigurationError.bothCampaignAndScenario
+        }
+        let target: PlaythroughTarget = if let standaloneScenarioID {
+            .standaloneScenario(id: standaloneScenarioID)
+        } else {
+            .campaign(id: explicitCampaignID ?? "01")
+        }
+        let difficulty = try parseDifficulty(
+            trimmedValue("ARKHAM_LIVE_DIFFICULTY", in: environment) ?? "Easy"
+        )
+        let investigators = try parseInvestigators(
+            trimmedValue("ARKHAM_LIVE_INVESTIGATOR_CODES", in: environment),
+            target: target
+        )
+        let resultPath = trimmedValue("ARKHAM_LIVE_RESULT_PATH", in: environment)
+            ?? "/tmp/arkham-logs/playthrough-results-\(target.slug).md"
+        let shouldWriteLegacy = target.isNightOfTheZealotCampaign
+            && trimmedValue("ARKHAM_LIVE_RESULT_PATH", in: environment) == nil
+        let strictAsIfAt = try parseOptionalBool(
+            trimmedValue("ARKHAM_LIVE_STRICT_AS_IF_AT", in: environment),
+            name: "ARKHAM_LIVE_STRICT_AS_IF_AT"
+        )
+        let achievements = try parseOptionalBool(
+            trimmedValue("ARKHAM_LIVE_ACHIEVEMENTS_ENABLED", in: environment),
+            name: "ARKHAM_LIVE_ACHIEVEMENTS_ENABLED"
+        ) ?? target.defaultAchievementsEnabled
+        let includeTarotReadings = try parseOptionalBool(
+            trimmedValue("ARKHAM_LIVE_INCLUDE_TAROT_READINGS", in: environment),
+            name: "ARKHAM_LIVE_INCLUDE_TAROT_READINGS"
+        ) ?? false
+        let ultimatumsAndBoons = try parseUltimatumsAndBoons(in: environment)
+        return LivePlaythroughConfiguration(
+            target: target,
+            difficulty: difficulty,
+            campaignVariants: campaignVariantValues(in: environment),
+            includeTarotReadings: includeTarotReadings,
+            strictAsIfAt: strictAsIfAt,
+            ultimatumsAndBoons: ultimatumsAndBoons,
+            achievementsEnabled: achievements,
+            investigators: investigators,
+            resultPath: resultPath,
+            shouldWriteLegacyNightOfTheZealotSummary: shouldWriteLegacy
+        )
+    }
+
+    func campaignOrScenario() throws -> CampaignOrScenario {
+        switch target {
+        case let .campaign(id):
+            try CampaignOrScenario(campaignId: id, scenarioId: nil)
+        case let .standaloneScenario(id):
+            try CampaignOrScenario(campaignId: nil, scenarioId: id)
+        }
+    }
+
+    func gameName(for investigator: InvestigatorFixture) -> String {
+        "Task 1.20.1 — \(target.displayName) — \(investigator.name)"
+    }
+}
+
+private enum LiveHarnessConfigurationError: Error, CustomStringConvertible, Equatable {
+    case bothCampaignAndScenario
+    case unknownDifficulty(String)
+    case unknownInvestigator(String)
+    case unknownUltimatumOrBoon(String)
+    case invalidBoolean(name: String, value: String)
+
+    var description: String {
+        switch self {
+        case .bothCampaignAndScenario:
+            "set either ARKHAM_LIVE_CAMPAIGN_ID or ARKHAM_LIVE_SCENARIO_ID, not both"
+        case let .unknownDifficulty(value):
+            "unknown ARKHAM_LIVE_DIFFICULTY '\(value)'"
+        case let .unknownInvestigator(value):
+            "unknown ARKHAM_LIVE_INVESTIGATOR_CODES entry '\(value)'"
+        case let .unknownUltimatumOrBoon(value):
+            "unknown ARKHAM_LIVE_ULTIMATUMS_AND_BOONS entry '\(value)'"
+        case let .invalidBoolean(name, value):
+            "\(name) must be one of true/false/1/0/yes/no, got '\(value)'"
+        }
+    }
+}
+
+private func trimmedValue(_ key: String, in environment: [String: String]) -> String? {
+    guard let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty
+    else { return nil }
+    return value
+}
+
+private func parseDifficulty(_ value: String) throws -> RequestDifficulty {
+    let normalized = value.lowercased()
+    guard let difficulty = RequestDifficulty.allCases.first(where: {
+        $0.rawValue.lowercased() == normalized
+    }) else { throw LiveHarnessConfigurationError.unknownDifficulty(value) }
+    return difficulty
+}
+
+private func parseInvestigators(
+    _ value: String?, target: PlaythroughTarget
+) throws -> [InvestigatorFixture] {
+    guard let value else {
+        return target.isNightOfTheZealotCampaign
+            ? InvestigatorFixture.core
+            : [InvestigatorFixture.core[0]]
+    }
+    let requestedCodes = commaSeparatedValues(value)
+    let fixturesByCode = Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
+        ($0.code, $0)
+    })
+    return try requestedCodes.map { code in
+        guard let fixture = fixturesByCode[code] else {
+            throw LiveHarnessConfigurationError.unknownInvestigator(code)
+        }
+        return fixture
+    }
+}
+
+private func campaignVariantValues(in environment: [String: String]) -> [String] {
+    let singular = trimmedValue("ARKHAM_LIVE_CAMPAIGN_VARIANT", in: environment)
+        .map(commaSeparatedValues) ?? []
+    let plural = trimmedValue("ARKHAM_LIVE_CAMPAIGN_VARIANTS", in: environment)
+        .map(commaSeparatedValues) ?? []
+    return singular + plural
+}
+
+private func parseUltimatumsAndBoons(
+    in environment: [String: String]
+) throws -> [UltimatumOrBoon] {
+    let values = trimmedValue("ARKHAM_LIVE_ULTIMATUMS_AND_BOONS", in: environment)
+        .map(commaSeparatedValues) ?? []
+    return try values.map { value in
+        guard let tag = UltimatumOrBoon(rawValue: value) else {
+            throw LiveHarnessConfigurationError.unknownUltimatumOrBoon(value)
+        }
+        return tag
+    }
+}
+
+private func parseOptionalBool(_ value: String?, name: String) throws -> Bool? {
+    guard let value else { return nil }
+    switch value.lowercased() {
+    case "1", "true", "yes": return true
+    case "0", "false", "no": return false
+    default: throw LiveHarnessConfigurationError.invalidBoolean(name: name, value: value)
+    }
+}
+
+private func commaSeparatedValues(_ rawValue: String) -> [String] {
+    rawValue.split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+}
+
+private func slugComponent(_ value: String) -> String {
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+    return value.unicodeScalars.map { scalar in
+        allowed.contains(scalar) ? String(scalar) : "-"
+    }.joined().lowercased()
+}
+
+@MainActor
+@Suite("Live campaign playthrough")
+// swiftlint:disable:next type_body_length
+struct LiveNightOfTheZealotPlaythroughTests {
+    private static func tracePath(
+        for investigator: InvestigatorFixture,
+        configuration: LivePlaythroughConfiguration
+    ) -> String {
+        "/tmp/arkham-logs/playthrough-trace-\(configuration.target.slug)-"
+            + "\(investigator.traceSlug).jsonl"
+    }
+
+    @Test("Live harness defaults to Night of the Zealot for every core investigator")
+    func defaultConfigurationPreservesNightOfTheZealotRun() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([:])
+        #expect(configuration.target == .campaign(id: "01"))
+        #expect(configuration.difficulty == .easy)
+        #expect(configuration.investigators.map(\.code) == InvestigatorFixture.core.map(\.code))
+        #expect(configuration.achievementsEnabled == true)
+    }
+
+    @Test("Live harness accepts a standalone scenario target")
+    func standaloneScenarioConfiguration() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([
+            "ARKHAM_LIVE_SCENARIO_ID": "50001",
+            "ARKHAM_LIVE_DIFFICULTY": "Standard",
+            "ARKHAM_LIVE_INVESTIGATOR_CODES": "01001",
+        ])
+        #expect(configuration.target == .standaloneScenario(id: "50001"))
+        #expect(configuration.difficulty == .standard)
+        #expect(configuration.investigators.map(\.code) == ["01001"])
+        #expect(configuration.achievementsEnabled == false)
     }
 
     @Test(
-        "Env-gated solo NotZ playthroughs for every core investigator",
+        "Env-gated solo live playthroughs",
         .enabled(if: liveServerURLForPlaythrough() != nil)
     )
-    func coreInvestigatorCampaigns() async throws {
+    func configuredLivePlaythroughs() async throws {
         let rawURL = try #require(liveServerURLForPlaythrough())
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment()
 
         let profile = try ServerProfile.custom(
-            displayName: "Task 1.2.12 live server",
+            displayName: "Task 1.20.1 live server",
             rawURL: rawURL
         )
         var results: [PlaythroughResult] = []
         try writeResults(
             results,
-            note: "Started live playthroughs against \(profile.endpointSummary)."
+            configuration: configuration,
+            note: "Started \(configuration.target.displayName) live playthroughs "
+                + "against \(profile.endpointSummary)."
         )
 
-        for investigator in InvestigatorFixture.core {
-            let result = await runInvestigator(investigator, on: profile)
+        for investigator in configuration.investigators {
+            let result = await runInvestigator(
+                investigator, on: profile, configuration: configuration
+            )
             results.append(result)
-            try writeResults(results, note: "Recorded \(investigator.name).")
+            try writeResults(
+                results,
+                configuration: configuration,
+                note: "Recorded \(investigator.name)."
+            )
         }
 
-        try writeResults(results, note: "Finished live playthrough run.")
+        try writeResults(
+            results,
+            configuration: configuration,
+            note: "Finished live playthrough run."
+        )
         for result in results {
             switch result.status {
             case .passed:
@@ -64,7 +333,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
     // swiftlint:disable:next function_body_length
     private func runInvestigator(
         _ investigator: InvestigatorFixture,
-        on profile: ServerProfile
+        on profile: ServerProfile,
+        configuration: LivePlaythroughConfiguration
     ) async -> PlaythroughResult {
         var scenarioOutcomes: [String: String] = [:]
         var promptFailure: PromptFailure?
@@ -91,29 +361,30 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 on: signedInProfile,
                 token: token
             )
+            let campaignOrScenario = try configuration.campaignOrScenario()
             let gameID = try await model.createGame(
                 CreateGameRequest(
                     deckIds: [deck.id],
                     playerCount: 1,
-                    campaignOrScenario: CampaignOrScenario(
-                        campaignId: "01", scenarioId: nil
-                    ),
-                    difficulty: .easy,
-                    campaignName: "Task 1.2.12 — \(investigator.name)",
+                    campaignOrScenario: campaignOrScenario,
+                    difficulty: configuration.difficulty,
+                    campaignName: configuration.gameName(for: investigator),
                     multiplayerVariant: .solo,
-                    includeTarotReadings: false,
-                    options: [],
-                    strictAsIfAt: .absent,
-                    asIfRuling: .absent,
-                    ultimatumsAndBoons: .absent,
-                    achievementsEnabled: .value(false)
+                    includeTarotReadings: configuration.includeTarotReadings,
+                    options: configuration.options,
+                    strictAsIfAt: configuration.strictAsIfAtField,
+                    asIfRuling: configuration.asIfRulingField,
+                    ultimatumsAndBoons: configuration.ultimatumsAndBoonsField,
+                    achievementsEnabled: .value(configuration.achievementsEnabled)
                 )
             )
 
             let subscription = model.subscribeToLiveGame(gameID)
             defer { model.unsubscribeFromLiveGame(subscription) }
 
-            let trace = PlaythroughTraceRecorder(path: Self.tracePath(for: investigator))
+            let trace = PlaythroughTraceRecorder(
+                path: Self.tracePath(for: investigator, configuration: configuration)
+            )
             try trace.reset()
             let bot = LivePlaythroughBot(
                 model: model,
@@ -126,10 +397,10 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 trace: trace,
                 diagnosticBypassUnsupported: Self.diagnosticBypassUnsupported
             )
-            let outcome = try await bot.driveUntilCampaignOver()
+            let outcome = try await bot.driveUntilServerCompletion()
             scenarioOutcomes = outcome.scenarioOutcomes
             promptFailure = outcome.promptFailure
-            if outcome.reachedDevourerResolution {
+            if outcome.reachedServerCompletion {
                 return PlaythroughResult(
                     investigator: investigator,
                     status: .passed,
@@ -139,7 +410,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 )
             }
             let reason = promptFailure?.description
-                ?? "campaign stopped without IsOver and a 01142 resolution"
+                ?? "playthrough stopped without server gameState IsOver"
             return PlaythroughResult(
                 investigator: investigator,
                 status: .failed(reason),
@@ -168,9 +439,9 @@ struct LiveNightOfTheZealotPlaythroughTests {
         }
         let suffix = UUID().uuidString.lowercased()
         let details = RegistrationDetails(
-            email: "task-1-2-12-\(investigator.code)-\(suffix)@example.test",
-            username: "task-1-2-12-\(investigator.code)-\(suffix.prefix(8))",
-            password: "task-1-2-12-password"
+            email: "task-1-20-1-\(investigator.code)-\(suffix)@example.test",
+            username: "task-1-20-1-\(investigator.code)-\(suffix.prefix(8))",
+            password: "task-1-20-1-password"
         )
         guard model.register(details) != nil else {
             throw PlaythroughError.registrationDidNotStart
@@ -212,35 +483,80 @@ struct LiveNightOfTheZealotPlaythroughTests {
         }
     }
 
-    private func writeResults(_ results: [PlaythroughResult], note: String) throws {
+    // swiftlint:disable:next function_body_length
+    private func writeResults(
+        _ results: [PlaythroughResult],
+        configuration: LivePlaythroughConfiguration,
+        note: String
+    ) throws {
         try FileManager.default.createDirectory(
             atPath: "/tmp/arkham-logs", withIntermediateDirectories: true
         )
+        let scenarioColumns = scenarioOutcomeColumns(in: results)
+        let variantsSummary = configuration.campaignVariants.isEmpty
+            ? "none"
+            : configuration.campaignVariants.joined(separator: ", ")
         var lines: [String] = [
-            "# Night of the Zealot live playthrough results",
+            "# \(configuration.target.displayName) live playthrough results",
             "",
             "\(note)",
             "",
-            "| Investigator | Status | 01104 | 01120 | 01142 | Failing prompt | Game |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
+            "Target: \(configuration.target.summary)",
+            "Difficulty: \(configuration.difficulty.rawValue)",
+            "Campaign variants: \(variantsSummary)",
+            "Diagnostic bypass: \(Self.diagnosticBypassUnsupported ? "enabled" : "disabled")",
+            "",
+            resultHeader(for: scenarioColumns),
+            resultSeparator(for: scenarioColumns),
         ]
         for result in results {
             let failure = result.promptFailure?.markdownSummary ?? "—"
             let game = result.finalGameID ?? "—"
+            let cells = scenarioColumns.map { key in
+                result.scenarioOutcomes[key]?.replacingOccurrences(of: "|", with: "\\|")
+                    ?? "not observed"
+            }
             lines.append(
-                "| \(result.investigator.name) (\(result.investigator.code))"
-                    + " | \(result.status.tableText)"
-                    + " | \(result.scenarioOutcomes["01104"] ?? "not observed")"
-                    + " | \(result.scenarioOutcomes["01120"] ?? "not observed")"
-                    + " | \(result.scenarioOutcomes["01142"] ?? "not observed")"
-                    + " | \(failure) | \(game) |"
+                ([
+                    "\(result.investigator.name) (\(result.investigator.code))",
+                    result.status.tableText,
+                ] + cells + [failure, game])
+                    .joined(separator: " | ")
+                    .withMarkdownTablePipes()
             )
         }
         lines.append("")
+        lines.append("Trace files: /tmp/arkham-logs/playthrough-trace-"
+            + "\(configuration.target.slug)-<investigator>.jsonl")
         lines.append("Generated: \(Date())")
-        try lines.joined(separator: "\n").write(
-            toFile: Self.resultPath, atomically: true, encoding: .utf8
+        let body = lines.joined(separator: "\n")
+        try body.write(
+            toFile: configuration.resultPath, atomically: true, encoding: .utf8
         )
+        if configuration.shouldWriteLegacyNightOfTheZealotSummary {
+            try body.write(
+                toFile: "/tmp/arkham-logs/playthrough-results.md",
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+    }
+
+    private func scenarioOutcomeColumns(in results: [PlaythroughResult]) -> [String] {
+        Array(Set(results.flatMap(\.scenarioOutcomes.keys))).sorted()
+    }
+
+    private func resultHeader(for scenarioColumns: [String]) -> String {
+        (["Investigator", "Status"] + scenarioColumns.map { "Scenario \($0)" }
+            + ["Failing prompt", "Game"])
+            .joined(separator: " | ")
+            .withMarkdownTablePipes()
+    }
+
+    private func resultSeparator(for scenarioColumns: [String]) -> String {
+        Array(repeating: "---", count: scenarioColumns.count + 4)
+            .joined(separator: " | ")
+            .withMarkdownTablePipes()
     }
 }
 
@@ -258,7 +574,7 @@ private struct LivePlaythroughBot {
     let diagnosticBypassUnsupported: Bool
 
     // swiftlint:disable:next function_body_length
-    func driveUntilCampaignOver() async throws -> BotOutcome {
+    func driveUntilServerCompletion() async throws -> BotOutcome {
         var repeatedQuestionShapes: [String: Int] = [:]
         let startedAt = Date()
         let timeout = ProcessInfo.processInfo.environment["ARKHAM_LIVE_PLAYTHROUGH_TIMEOUT"]
@@ -266,18 +582,16 @@ private struct LivePlaythroughBot {
         try trace.append(.runStarted(investigator: investigator, gameID: gameID))
         while Date().timeIntervalSince(startedAt) < timeout {
             let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
-            let scenarioOutcomes = scenarioOutcomes(from: envelope.game)
+            let scenarioOutcomes = terminalScenarioOutcomes(from: envelope.game)
             if envelope.game.gameState == .over {
                 try trace.append(.runFinished(
                     investigator: investigator,
                     gameID: gameID,
-                    reachedDevourerResolution: scenarioOutcomes["01142"]?
-                        .hasPrefix("resolution") == true,
+                    reachedServerCompletion: true,
                     scenarioOutcomes: scenarioOutcomes
                 ))
                 return BotOutcome(
-                    reachedDevourerResolution: scenarioOutcomes["01142"]?
-                        .hasPrefix("resolution") == true,
+                    reachedServerCompletion: true,
                     scenarioOutcomes: scenarioOutcomes,
                     promptFailure: nil
                 )
@@ -325,7 +639,7 @@ private struct LivePlaythroughBot {
                     serverFeedback: serverFeedbackSummary()
                 ))
                 return BotOutcome(
-                    reachedDevourerResolution: false,
+                    reachedServerCompletion: false,
                     scenarioOutcomes: scenarioOutcomes,
                     promptFailure: failure
                 )
@@ -355,7 +669,7 @@ private struct LivePlaythroughBot {
                     serverFeedback: serverFeedbackSummary()
                 ))
                 return BotOutcome(
-                    reachedDevourerResolution: false,
+                    reachedServerCompletion: false,
                     scenarioOutcomes: scenarioOutcomes,
                     promptFailure: failure
                 )
@@ -389,7 +703,7 @@ private struct LivePlaythroughBot {
                     serverFeedback: serverFeedbackSummary()
                 ))
                 return BotOutcome(
-                    reachedDevourerResolution: false,
+                    reachedServerCompletion: false,
                     scenarioOutcomes: scenarioOutcomes,
                     promptFailure: failure
                 )
@@ -441,7 +755,7 @@ private struct LivePlaythroughBot {
                         diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     return BotOutcome(
-                        reachedDevourerResolution: false,
+                        reachedServerCompletion: false,
                         scenarioOutcomes: scenarioOutcomes,
                         promptFailure: failure
                     )
@@ -467,7 +781,7 @@ private struct LivePlaythroughBot {
                     serverFeedback: serverFeedbackSummary()
                 ))
                 return BotOutcome(
-                    reachedDevourerResolution: false,
+                    reachedServerCompletion: false,
                     scenarioOutcomes: scenarioOutcomes,
                     promptFailure: failure
                 )
@@ -476,7 +790,7 @@ private struct LivePlaythroughBot {
         let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
         let scenarioOutcomes = scenarioOutcomes(from: envelope.game)
         return try recordRunTimedOut(
-            reason: "playthrough timed out before campaign end",
+            reason: "playthrough timed out before server gameState IsOver",
             snapshot: envelope.game,
             scenarioOutcomes: scenarioOutcomes
         )
@@ -513,7 +827,7 @@ private struct LivePlaythroughBot {
             scenarioOutcomes: scenarioOutcomes
         ))
         return BotOutcome(
-            reachedDevourerResolution: false,
+            reachedServerCompletion: false,
             scenarioOutcomes: scenarioOutcomes,
             promptFailure: failure
         )
@@ -740,18 +1054,22 @@ private struct LivePlaythroughBot {
     }
 
     private func scenarioOutcomes(from snapshot: PublicGameSnapshot) -> [String: String] {
-        let campaign: JSONValue? = switch snapshot.mode {
-        case let .campaignOnly(value), let .campaignAndScenario(value, _): value
-        case .scenarioOnly: nil
+        switch snapshot.mode {
+        case let .campaignOnly(campaign), let .campaignAndScenario(campaign, _):
+            campaignScenarioOutcomes(from: campaign)
+        case .scenarioOnly:
+            [:]
         }
-        let resolutions = campaign?.objectValue?["resolutions"]?.objectValue ?? [:]
-        var outcomes: [String: String] = [:]
-        for code in notzScenarioOrder {
-            if let resolution = resolutions[code] ?? resolutions["c\(code)"] {
-                outcomes[code] = "resolution \(jsonString(resolution))"
-            } else {
-                outcomes[code] = "not recorded"
-            }
+    }
+
+    private func terminalScenarioOutcomes(from snapshot: PublicGameSnapshot) -> [String: String] {
+        var outcomes = scenarioOutcomes(from: snapshot)
+        guard outcomes.isEmpty else { return outcomes }
+        switch snapshot.mode {
+        case .campaignOnly:
+            outcomes["campaign"] = "gameState IsOver"
+        case let .campaignAndScenario(_, scenario), let .scenarioOnly(scenario):
+            outcomes[scenario.id.rawValue] = "gameState IsOver"
         }
         return outcomes
     }
@@ -867,7 +1185,7 @@ private extension BotAnswer {
 }
 
 private struct BotOutcome {
-    let reachedDevourerResolution: Bool
+    let reachedServerCompletion: Bool
     let scenarioOutcomes: [String: String]
     let promptFailure: PromptFailure?
 }
@@ -1001,7 +1319,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
     static func runFinished(
         investigator: InvestigatorFixture,
         gameID: GameID,
-        reachedDevourerResolution: Bool,
+        reachedServerCompletion: Bool,
         scenarioOutcomes: [String: String]
     ) -> PlaythroughTraceRecord {
         base(
@@ -1009,7 +1327,7 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
             investigator: investigator,
             gameID: gameID,
             outcome: TraceOutcome(
-                kind: reachedDevourerResolution ? "passed" : "failed",
+                kind: reachedServerCompletion ? "passed" : "failed",
                 detail: "gameState IsOver"
             ),
             scenarioOutcomes: scenarioOutcomes
@@ -1285,8 +1603,8 @@ private struct InvestigatorFixture: Sendable, Equatable {
             fatalError("Core investigator code fixture must be non-empty")
         }
         return CreateDeckRequest(
-            deckId: "task-1.2.12-\(code)-\(UUID().uuidString.lowercased())",
-            deckName: "\(name) task-1.2.12 starter",
+            deckId: "task-1.20.1-\(code)-\(UUID().uuidString.lowercased())",
+            deckName: "\(name) task-1.20.1 starter",
             deckUrl: nil,
             deckList: DeckListInput(
                 slots: CardQuantityMapInput(deckSlots),
@@ -1296,8 +1614,8 @@ private struct InvestigatorFixture: Sendable, Equatable {
                 meta: nil,
                 tabooId: nil,
                 url: nil,
-                id: .string("task-1.2.12-\(code)"),
-                name: "\(name) task-1.2.12 starter"
+                id: .string("task-1.20.1-\(code)"),
+                name: "\(name) task-1.20.1 starter"
             )
         )
     }
@@ -1338,16 +1656,78 @@ private func currentScenarioCode(
     projection: BoardProjection?,
     snapshot: PublicGameSnapshot
 ) -> String {
-    if let reference = projection?.scenario?.reference, notzScenarioOrder.contains(reference) {
+    if let reference = projection?.scenario?.reference {
         return reference
     }
     switch snapshot.mode {
     case let .scenarioOnly(scenario), let .campaignAndScenario(_, scenario):
         return scenario.id.rawValue
     case let .campaignOnly(campaign):
-        return campaign.objectValue?["step"]?.objectValue?["contents"]?.stringValue
+        return campaignStepScenarioID(campaign.objectValue?["step"])
+            ?? campaign.objectValue?["id"]?.stringValue
             ?? "campaign"
     }
+}
+
+private func campaignScenarioOutcomes(from campaign: JSONValue) -> [String: String] {
+    guard let object = campaign.objectValue else { return [:] }
+    let resolutions = object["resolutions"]?.objectValue ?? [:]
+    var outcomes: [String: String] = [:]
+    var consumedResolutionKeys = Set<String>()
+    for scenarioID in campaignStepScenarioIDs(in: object["completedSteps"]) {
+        if let entry = resolutionEntry(for: scenarioID, in: resolutions) {
+            outcomes[scenarioID] = "resolution \(jsonString(entry.value))"
+            consumedResolutionKeys.insert(entry.key)
+        } else {
+            outcomes[scenarioID] = "completed without recorded resolution"
+        }
+    }
+    for key in resolutions.keys.sorted() where !consumedResolutionKeys.contains(key) {
+        if let value = resolutions[key] {
+            outcomes[key] = "resolution \(jsonString(value))"
+        }
+    }
+    return outcomes
+}
+
+private func campaignStepScenarioIDs(in completedSteps: JSONValue?) -> [String] {
+    guard let steps = completedSteps?.arrayValue else { return [] }
+    // The server prepends completed campaign steps; reverse to report oldest -> newest.
+    return steps.reversed().compactMap(campaignStepScenarioID)
+}
+
+private func campaignStepScenarioID(_ step: JSONValue?) -> String? {
+    guard let object = step?.objectValue,
+          let tag = object["tag"]?.stringValue,
+          [
+              "ScenarioStep",
+              "ScenarioStepWithOptions",
+              "StandaloneScenarioStep",
+              "StandaloneScenarioStepWithOptions",
+          ].contains(tag)
+    else { return nil }
+    if let contents = object["contents"]?.stringValue {
+        return contents
+    }
+    if let contents = object["contents"]?.arrayValue?.first?.stringValue {
+        return contents
+    }
+    return nil
+}
+
+private func resolutionEntry(
+    for scenarioID: String,
+    in resolutions: [String: JSONValue]
+) -> (key: String, value: JSONValue)? {
+    let candidates = scenarioID.hasPrefix("c")
+        ? [scenarioID, String(scenarioID.dropFirst())]
+        : [scenarioID, "c\(scenarioID)"]
+    for candidate in candidates {
+        if let value = resolutions[candidate] {
+            return (key: candidate, value: value)
+        }
+    }
+    return nil
 }
 
 private func describeRawQuestionTag(_ value: JSONValue) -> String {
@@ -1473,6 +1853,12 @@ private func jsonString(_ value: JSONValue) -> String {
           let string = String(data: data, encoding: .utf8)
     else { return value.kindDescription }
     return string
+}
+
+private extension String {
+    func withMarkdownTablePipes() -> String {
+        "| \(self) |"
+    }
 }
 
 @MainActor
