@@ -190,6 +190,7 @@ private struct LivePlaythroughConfiguration: Sendable, Equatable {
 
 private enum LiveHarnessConfigurationError: Error, CustomStringConvertible, Equatable {
     case bothCampaignAndScenario
+    case noInvestigatorCodes
     case unknownDifficulty(String)
     case unknownInvestigator(String)
     case unknownUltimatumOrBoon(String)
@@ -199,6 +200,8 @@ private enum LiveHarnessConfigurationError: Error, CustomStringConvertible, Equa
         switch self {
         case .bothCampaignAndScenario:
             "set either ARKHAM_LIVE_CAMPAIGN_ID or ARKHAM_LIVE_SCENARIO_ID, not both"
+        case .noInvestigatorCodes:
+            "ARKHAM_LIVE_INVESTIGATOR_CODES must include at least one investigator code"
         case let .unknownDifficulty(value):
             "unknown ARKHAM_LIVE_DIFFICULTY '\(value)'"
         case let .unknownInvestigator(value):
@@ -235,6 +238,7 @@ private func parseInvestigators(
             : [InvestigatorFixture.core[0]]
     }
     let requestedCodes = commaSeparatedValues(value)
+    guard !requestedCodes.isEmpty else { throw LiveHarnessConfigurationError.noInvestigatorCodes }
     let fixturesByCode = Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
         ($0.code, $0)
     })
@@ -402,6 +406,15 @@ struct LiveNightOfTheZealotPlaythroughTests {
         }
     }
 
+    @Test("Live harness rejects empty explicit investigator lists")
+    func emptyExplicitInvestigatorListIsConfigurationError() {
+        #expect(throws: LiveHarnessConfigurationError.noInvestigatorCodes) {
+            _ = try LivePlaythroughConfiguration.fromEnvironment([
+                "ARKHAM_LIVE_INVESTIGATOR_CODES": ", , ",
+            ])
+        }
+    }
+
     @Test("Live harness rejects unknown investigators and ultimatum values")
     func unknownInvestigatorAndUltimatumAreConfigurationErrors() {
         #expect(throws: LiveHarnessConfigurationError.unknownInvestigator("99999")) {
@@ -537,6 +550,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
             configuration: configuration,
             note: "Finished live playthrough run."
         )
+        #expect(!results.isEmpty)
         for result in results {
             switch result.status {
             case .passed:
