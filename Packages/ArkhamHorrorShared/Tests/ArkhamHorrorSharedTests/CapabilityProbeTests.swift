@@ -62,10 +62,10 @@ struct CapabilityProbeTests {
     func compatibleCapabilitiesForwarded() async throws {
         let json = """
         {
-            "schemaRevision": "0.1.48",
+            "schemaRevision": "0.1.50",
             "status": "baseline-incomplete",
             "apiBasePath": "/api/v1",
-            "nativeClientMinimumRevision": "0.1.0",
+            "nativeClientMinimumRevision": "0.1.50",
             "capabilities": ["websockets.authorization-header"]
         }
         """
