@@ -1953,9 +1953,8 @@ private func standaloneScenarioResolution(in value: JSONValue) -> JSONValue? {
                 return resolution
             }
         }
-        if let resolutions = object["resolutions"]?.objectValue,
-           resolutions.count == 1,
-           let resolution = resolutions.values.first {
+        let resolutions = object["resolutions"]?.objectValue
+        if resolutions?.count == 1, let resolution = resolutions?.values.first {
             return resolution
         }
         return nil
