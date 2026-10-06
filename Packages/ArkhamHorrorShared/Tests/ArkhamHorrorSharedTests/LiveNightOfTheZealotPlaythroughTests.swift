@@ -293,6 +293,25 @@ private func slugComponent(_ value: String) -> String {
     }.joined().lowercased()
 }
 
+private func eligibleCoreReplacementDeck(
+    originalInvestigatorCode: String,
+    killedOrInsaneInvestigatorIDs: Set<String>,
+    takenInvestigatorIDs: Set<String>,
+    replacementDecksByCode: [String: Deck]
+) -> Deck? {
+    let originalInvestigatorID = "c\(originalInvestigatorCode)"
+    for fixture in InvestigatorFixture.core {
+        let candidateID = "c\(fixture.code)"
+        guard candidateID != originalInvestigatorID,
+              !takenInvestigatorIDs.contains(candidateID),
+              !killedOrInsaneInvestigatorIDs.contains(candidateID),
+              let deck = replacementDecksByCode[fixture.code]
+        else { continue }
+        return deck
+    }
+    return nil
+}
+
 @MainActor
 @Suite("Live campaign playthrough")
 // swiftlint:disable:next type_body_length
@@ -415,6 +434,39 @@ struct LiveNightOfTheZealotPlaythroughTests {
         }
     }
 
+    @Test("Live harness chooses first untaken non-killed core replacement deck")
+    func replacementDeckSelectionSkipsTakenKilledAndInsaneInvestigators() throws {
+        let decks = try Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
+            try ($0.code, Self.deckFixture(for: $0))
+        })
+
+        let selected = eligibleCoreReplacementDeck(
+            originalInvestigatorCode: "01001",
+            killedOrInsaneInvestigatorIDs: ["c01001", "c01002"],
+            takenInvestigatorIDs: ["c01001", "c01003"],
+            replacementDecksByCode: decks
+        )
+
+        #expect(selected?.playableList.investigatorCode.rawValue == "c01004")
+    }
+
+    @Test("Live harness reports when no core replacement deck is eligible")
+    func replacementDeckSelectionReturnsNilWhenNoCoreInvestigatorIsEligible() throws {
+        let decks = try Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
+            try ($0.code, Self.deckFixture(for: $0))
+        })
+        let unavailable = Set(InvestigatorFixture.core.map { "c\($0.code)" })
+
+        let selected = eligibleCoreReplacementDeck(
+            originalInvestigatorCode: "01001",
+            killedOrInsaneInvestigatorIDs: unavailable,
+            takenInvestigatorIDs: [],
+            replacementDecksByCode: decks
+        )
+
+        #expect(selected == nil)
+    }
+
     @Test("Live harness rejects unknown investigators and ultimatum values")
     func unknownInvestigatorAndUltimatumAreConfigurationErrors() {
         #expect(throws: LiveHarnessConfigurationError.unknownInvestigator("99999")) {
@@ -427,6 +479,31 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 "ARKHAM_LIVE_ULTIMATUMS_AND_BOONS": "BoonOfHades, Bogus",
             ])
         }
+    }
+
+    private static func deckFixture(for investigator: InvestigatorFixture) throws -> Deck {
+        let slots = try Dictionary(uniqueKeysWithValues: investigator.deckSlots.map {
+            try (CardCode("c\($0.key)"), $0.value)
+        })
+        let deckList = try DeckList(
+            slots: CardQuantityMap(slots),
+            sideSlots: CardQuantityMap([:]),
+            investigatorCode: CardCode("c\(investigator.code)"),
+            investigatorName: investigator.name,
+            meta: nil,
+            tabooId: nil,
+            url: nil,
+            id: investigator.code,
+            name: "\(investigator.name) replacement"
+        )
+        return Deck(
+            id: DeckID(UUID()),
+            userId: 1,
+            url: nil,
+            name: "\(investigator.name) replacement",
+            investigatorName: investigator.name,
+            list: deckList
+        )
     }
 
     @Test("Campaign outcome helpers preserve step order and resolution mappings")
@@ -594,6 +671,12 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 on: signedInProfile,
                 token: token
             )
+            let replacementDecksByCode = try await createReplacementDecks(
+                excluding: investigator,
+                deckService: deckService,
+                profile: signedInProfile,
+                token: token
+            )
             let campaignOrScenario = try configuration.campaignOrScenario()
             let gameID = try await model.createGame(
                 CreateGameRequest(
@@ -627,6 +710,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 gameID: gameID,
                 investigator: investigator,
                 deck: deck,
+                replacementDecksByCode: replacementDecksByCode,
                 trace: trace,
                 diagnosticBypassUnsupported: Self.diagnosticBypassUnsupported
             )
@@ -660,6 +744,23 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 finalGameID: nil
             )
         }
+    }
+
+    private func createReplacementDecks(
+        excluding investigator: InvestigatorFixture,
+        deckService: DeckService,
+        profile: ServerProfile,
+        token: String
+    ) async throws -> [String: Deck] {
+        var decks: [String: Deck] = [:]
+        for fixture in InvestigatorFixture.core where fixture.code != investigator.code {
+            decks[fixture.code] = try await deckService.createDeck(
+                fixture.createDeckRequest,
+                on: profile,
+                token: token
+            )
+        }
+        return decks
     }
 
     private func prepareSignedInSession(
@@ -809,6 +910,7 @@ private struct LivePlaythroughBot {
     let gameID: GameID
     let investigator: InvestigatorFixture
     let deck: Deck
+    let replacementDecksByCode: [String: Deck]
     let trace: PlaythroughTraceRecorder
     let diagnosticBypassUnsupported: Bool
 
@@ -1096,6 +1198,17 @@ private struct LivePlaythroughBot {
             )
         }
         if prompt.isChooseUpgradeDeckPrompt {
+            if let replacementDeck = try replacementDeckIfRequired(in: projection) {
+                return SelectedBotAnswer(
+                    answer: .replacementDeck(
+                        originalInvestigatorID: "c\(investigator.code)",
+                        deck: replacementDeck
+                    ),
+                    note: "replace killed or insane investigator with "
+                        + replacementDeck.investigatorName,
+                    chosenChoiceKind: nil
+                )
+            }
             return SelectedBotAnswer(
                 answer: .skipDeckUpgrade(investigatorID: "c\(investigator.code)"),
                 note: "continue without upgrading",
@@ -1154,6 +1267,28 @@ private struct LivePlaythroughBot {
         )
     }
 
+    private func replacementDeckIfRequired(in projection: BoardProjection) throws -> Deck? {
+        let originalInvestigatorID = "c\(investigator.code)"
+        guard let currentInvestigator = projection.investigators.first(where: {
+            $0.id.rawValue.rawValue == originalInvestigatorID
+        }) else { return nil }
+        let context = CampaignUpgradeDeckContext.make(
+            investigator: currentInvestigator,
+            campaignSummary: projection.campaignSummary
+        )
+        guard context.requiresReplacement else { return nil }
+        let takenInvestigatorIDs = Set(projection.investigators.map(\.id.rawValue.rawValue))
+        if let deck = eligibleCoreReplacementDeck(
+            originalInvestigatorCode: investigator.code,
+            killedOrInsaneInvestigatorIDs: context.killedOrInsaneInvestigatorIDs,
+            takenInvestigatorIDs: takenInvestigatorIDs,
+            replacementDecksByCode: replacementDecksByCode
+        ) {
+            return deck
+        }
+        throw PlaythroughError.noEligibleReplacementInvestigator(originalInvestigatorID)
+    }
+
     private func preferredSelectableIndex(
         in prompt: BasicChoicePromptPresentation,
         selectableIndexes: [Int],
@@ -1173,7 +1308,7 @@ private struct LivePlaythroughBot {
             .contains { $0.selectable } == true
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     private func submit(
         _ answer: BotAnswer, prompt: BasicChoicePromptPresentation
     ) async throws -> SubmissionOutcome {
@@ -1196,6 +1331,21 @@ private struct LivePlaythroughBot {
             return SubmissionOutcome(
                 detail: "submitted DeckAnswer through AppModel chooseDeckForLivePrompt"
             )
+        case let .replacementDeck(originalInvestigatorID, deck):
+            let deckResult = await model.upgradeCampaignDeck(
+                using: deck,
+                investigatorId: originalInvestigatorID,
+                in: gameID,
+                promptIdentity: prompt.identity
+            )
+            switch deckResult {
+            case .submitted:
+                return SubmissionOutcome(
+                    detail: "submitted replacement deck through AppModel"
+                )
+            case let .failed(message):
+                throw PlaythroughError.submissionFailed(message)
+            }
         case let .skipDeckUpgrade(investigatorID):
             let deckResult = await model.continueCampaignWithoutUpgrading(
                 investigatorId: investigatorID,
@@ -1335,6 +1485,7 @@ private enum BotAnswer: Sendable {
     case exchangeAmount(Int)
     case continueCampaign(JSONValue)
     case savedDeck(Deck)
+    case replacementDeck(originalInvestigatorID: String, deck: Deck)
     case skipDeckUpgrade(investigatorID: String)
 }
 
@@ -1411,6 +1562,17 @@ private extension BotAnswer {
             return try TraceSubmission(
                 kind: "DeckAnswer",
                 payload: DeckAnswer(deckId: deck.id, playerId: prompt.identity.ownerID)
+            )
+        case let .replacementDeck(originalInvestigatorID, deck):
+            return TraceSubmission(
+                kind: "ReplacementDeck",
+                encodedPayload: .object([
+                    "investigatorId": .string(originalInvestigatorID),
+                    "deckUrl": deck.url.map(JSONValue.string) ?? .null,
+                    "deckListInvestigatorCode": .string(
+                        deck.playableList.investigatorCode.rawValue
+                    ),
+                ])
             )
         case let .skipDeckUpgrade(investigatorID):
             return TraceSubmission(
@@ -1673,6 +1835,9 @@ private extension TraceSelectedAnswer {
         case .savedDeck:
             answerKind = "DeckAnswer"
             choiceIndex = nil
+        case .replacementDeck:
+            answerKind = "ReplacementDeck"
+            choiceIndex = nil
         case .skipDeckUpgrade:
             answerKind = "SkipDeckUpgrade"
             choiceIndex = nil
@@ -1761,6 +1926,7 @@ private enum PlaythroughError: Error, CustomStringConvertible {
     case noSelectableChoice(version: Int, tag: String)
     case cardCatalogUnavailable(String)
     case submissionFailed(String)
+    case noEligibleReplacementInvestigator(String)
     case timedOut(String)
 
     var description: String {
@@ -1771,6 +1937,8 @@ private enum PlaythroughError: Error, CustomStringConvertible {
         case let .noSelectableChoice(version, tag): "no selectable choice at q\(version) / \(tag)"
         case let .cardCatalogUnavailable(reason): "card catalog unavailable: \(reason)"
         case let .submissionFailed(reason): "submission failed: \(reason)"
+        case let .noEligibleReplacementInvestigator(investigatorID):
+            "no eligible core replacement investigator for \(investigatorID)"
         case let .timedOut(description): "timed out waiting for \(description)"
         }
     }

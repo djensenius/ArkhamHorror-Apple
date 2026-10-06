@@ -1,6 +1,26 @@
 // swiftlint:disable file_length
 import SwiftUI
 
+struct CampaignUpgradeDeckContext: Sendable, Equatable {
+    let requiresReplacement: Bool
+    let killedOrInsaneInvestigatorIDs: Set<String>
+
+    var allowsSkip: Bool {
+        !requiresReplacement
+    }
+
+    static func make(
+        investigator: BoardInvestigatorNode,
+        campaignSummary: BoardCampaignSummary?
+    ) -> CampaignUpgradeDeckContext {
+        let killedOrInsaneIDs = campaignSummary?.killedOrInsaneInvestigatorIDs ?? []
+        return CampaignUpgradeDeckContext(
+            requiresReplacement: killedOrInsaneIDs.contains(investigator.id.rawValue.rawValue),
+            killedOrInsaneInvestigatorIDs: killedOrInsaneIDs
+        )
+    }
+}
+
 struct BetweenScenariosView: View {
     let model: AppModel
     let gameID: GameID
@@ -43,6 +63,14 @@ struct BetweenScenariosView: View {
         )
     }
 
+    private var deckUpgradeContext: CampaignUpgradeDeckContext? {
+        guard let localInvestigator else { return nil }
+        return CampaignUpgradeDeckContext.make(
+            investigator: localInvestigator,
+            campaignSummary: campaignSummary
+        )
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             Spacer(minLength: 0)
@@ -66,12 +94,13 @@ struct BetweenScenariosView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccountAccessibilityID.campaignBetweenScenariosView)
         .sheet(isPresented: $isUpgradeSheetPresented) {
-            if let investigator = localInvestigator {
+            if let investigator = localInvestigator, let deckUpgradeContext {
                 CampaignUpgradeDeckSheet(
                     model: model,
                     gameID: gameID,
                     promptIdentity: prompt.identity,
-                    investigator: investigator
+                    investigator: investigator,
+                    context: deckUpgradeContext
                 )
             }
         }
@@ -441,6 +470,7 @@ struct CampaignUpgradeDeckSheet: View {
     let gameID: GameID
     let promptIdentity: BasicChoicePromptIdentity
     let investigator: BoardInvestigatorNode
+    let context: CampaignUpgradeDeckContext
 
     @Environment(\.dismiss) private var dismiss
     @State private var deckURL = ""
@@ -480,6 +510,20 @@ struct CampaignUpgradeDeckSheet: View {
                         )
                     )
                 }
+                if context.requiresReplacement {
+                    Section {
+                        Text(campaignLocalized(
+                            "campaign.upgrade.replacementRequired",
+                            "This investigator was killed or driven insane. Choose a replacement "
+                                + "investigator deck to continue."
+                        ))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
+                savedDeckSection
+
                 Section(campaignLocalized("campaign.upgrade.deckLink", "Deck link")) {
                     TextField(
                         campaignLocalized(
@@ -501,9 +545,14 @@ struct CampaignUpgradeDeckSheet: View {
                         submitUpgrade()
                     } label: {
                         HStack {
-                            Text(campaignLocalized(
-                                "campaign.upgrade.submit", "Submit upgrade"
-                            ))
+                            Text(context.requiresReplacement
+                                ? campaignLocalized(
+                                    "campaign.upgrade.submitReplacement", "Submit replacement"
+                                )
+                                : campaignLocalized(
+                                    "campaign.upgrade.submit", "Submit upgrade"
+                                )
+                            )
                             if isSubmitting {
                                 Spacer()
                                 ProgressView().controlSize(.small)
@@ -520,24 +569,26 @@ struct CampaignUpgradeDeckSheet: View {
                     )
                 }
 
-                Section {
-                    Button(role: .cancel) {
-                        isSkipConfirmationPresented = true
-                    } label: {
-                        HStack {
-                            Text(campaignLocalized(
-                                "campaign.upgrade.skip", "Continue without upgrading"
-                            ))
-                            if isSubmitting {
-                                Spacer()
-                                ProgressView().controlSize(.small)
+                if context.allowsSkip {
+                    Section {
+                        Button(role: .cancel) {
+                            isSkipConfirmationPresented = true
+                        } label: {
+                            HStack {
+                                Text(campaignLocalized(
+                                    "campaign.upgrade.skip", "Continue without upgrading"
+                                ))
+                                if isSubmitting {
+                                    Spacer()
+                                    ProgressView().controlSize(.small)
+                                }
                             }
                         }
+                        .disabled(isSubmitting || isAwaitingSnapshot)
+                        .accessibilityIdentifier(
+                            AccountAccessibilityID.campaignUpgradeDeckSkipButton
+                        )
                     }
-                    .disabled(isSubmitting || isAwaitingSnapshot)
-                    .accessibilityIdentifier(
-                        AccountAccessibilityID.campaignUpgradeDeckSkipButton
-                    )
                 }
 
                 if isAwaitingSnapshot {
@@ -604,6 +655,31 @@ struct CampaignUpgradeDeckSheet: View {
         }
     }
 
+    @ViewBuilder
+    private var savedDeckSection: some View {
+        if case let .signedIn(profile, _, _) = model.sessionState {
+            CampaignSavedDeckSelectionSection(
+                model: model,
+                profile: profile,
+                gameID: gameID,
+                promptIdentity: promptIdentity,
+                investigator: investigator,
+                isSubmitting: isSubmitting,
+                isAwaitingSnapshot: isAwaitingSnapshot,
+                onBeginSubmit: beginSavedDeckSubmission,
+                onFinishSubmit: finish
+            )
+        }
+    }
+
+    private func beginSavedDeckSubmission() -> Bool {
+        guard !isSubmitting, !isAwaitingSnapshot else { return false }
+        submissionTask?.cancel()
+        isSubmitting = true
+        failure = nil
+        return true
+    }
+
     private func submitUpgrade() {
         guard !isAwaitingSnapshot else { return }
         submissionTask?.cancel()
@@ -645,6 +721,158 @@ struct CampaignUpgradeDeckSheet: View {
             dismiss()
         case let .failed(message):
             failure = message
+        }
+    }
+}
+
+private struct CampaignSavedDeckSelectionSection: View {
+    let model: AppModel
+    let profile: ServerProfile
+    let gameID: GameID
+    let promptIdentity: BasicChoicePromptIdentity
+    let investigator: BoardInvestigatorNode
+    let isSubmitting: Bool
+    let isAwaitingSnapshot: Bool
+    let onBeginSubmit: () -> Bool
+    let onFinishSubmit: (CampaignDeckUpgradeSubmissionResult) -> Void
+
+    @State private var viewModel: LobbyDeckSelectionViewModel
+
+    init(
+        model: AppModel,
+        profile: ServerProfile,
+        gameID: GameID,
+        promptIdentity: BasicChoicePromptIdentity,
+        investigator: BoardInvestigatorNode,
+        isSubmitting: Bool,
+        isAwaitingSnapshot: Bool,
+        onBeginSubmit: @escaping () -> Bool,
+        onFinishSubmit: @escaping (CampaignDeckUpgradeSubmissionResult) -> Void
+    ) {
+        self.model = model
+        self.profile = profile
+        self.gameID = gameID
+        self.promptIdentity = promptIdentity
+        self.investigator = investigator
+        self.isSubmitting = isSubmitting
+        self.isAwaitingSnapshot = isAwaitingSnapshot
+        self.onBeginSubmit = onBeginSubmit
+        self.onFinishSubmit = onFinishSubmit
+        _viewModel = State(
+            initialValue: LobbyDeckSelectionViewModel(
+                profile: profile,
+                deckService: model.deckService,
+                tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
+                sessionExpiredHandler: { context in
+                    await model.handleDeckSessionExpired(profile: profile, context: context)
+                }
+            )
+        )
+    }
+
+    var body: some View {
+        Section(campaignLocalized("campaign.upgrade.savedDecks", "Saved decks")) {
+            switch viewModel.loadState {
+            case .idle, .loading:
+                HStack {
+                    Text(campaignLocalized("campaign.upgrade.loadingDecks", "Loading saved decks…"))
+                    Spacer()
+                    ProgressView().controlSize(.small)
+                }
+            case let .failed(message):
+                ArkhamFailureText(message: message)
+                Button(campaignLocalized("campaign.upgrade.retryDecks", "Retry saved decks")) {
+                    Task { await viewModel.reload() }
+                }
+            case let .loaded(decks):
+                if decks.isEmpty {
+                    Text(campaignLocalized(
+                        "campaign.upgrade.noSavedDecks",
+                        "No saved decks are available."
+                    ))
+                    .foregroundStyle(.secondary)
+                } else {
+                    ForEach(decks, id: \.id) { deck in
+                        deckButton(deck)
+                    }
+                }
+            }
+        }
+        .task {
+            await viewModel.load()
+        }
+    }
+
+    @ViewBuilder
+    private func deckButton(_ deck: Deck) -> some View {
+        let state = viewModel.validationState(for: deck)
+        Button {
+            submit(deck)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "rectangle.stack.fill")
+                    .foregroundStyle(ArkhamTheme.accent)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(deck.name)
+                        .font(.headline)
+                    Text(deck.investigatorName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    validationText(for: state, deck: deck)
+                }
+                Spacer()
+                if isSubmitting || state == .pending {
+                    ProgressView().controlSize(.small)
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .disabled(isSubmitting || isAwaitingSnapshot || state != .valid)
+        .accessibilityIdentifier(AccountAccessibilityID.lobbyDeckButton(
+            for: gameID.rawValue,
+            deckID: deck.id.rawValue
+        ))
+    }
+
+    @ViewBuilder
+    private func validationText(
+        for state: LobbyDeckSelectionViewModel.ValidationState,
+        deck: Deck
+    ) -> some View {
+        switch state {
+        case .pending:
+            Text(campaignLocalized("campaign.upgrade.checkingDeck", "Checking server support…"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .valid:
+            Text(campaignLocalized(
+                "campaign.upgrade.validDeck", "Server can play this deck's main cards."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        case let .invalid(message), let .failed(message):
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .accessibilityIdentifier(AccountAccessibilityID.lobbyDeckValidationText(
+                    for: gameID.rawValue,
+                    deckID: deck.id.rawValue
+                ))
+        }
+    }
+
+    private func submit(_ deck: Deck) {
+        guard onBeginSubmit() else { return }
+        Task { @MainActor in
+            let result = await model.upgradeCampaignDeck(
+                using: deck,
+                investigatorId: investigator.id.rawValue.rawValue,
+                in: gameID,
+                promptIdentity: promptIdentity
+            )
+            guard !Task.isCancelled else { return }
+            onFinishSubmit(result)
         }
     }
 }

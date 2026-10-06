@@ -203,6 +203,27 @@ struct AppModelCampaignPromptTests {
         ).normalizedDeckList
     }
 
+    func deckListFixture(
+        investigatorCode: String,
+        investigatorName: String,
+        deckURL: String? = nil,
+        deckName: String? = nil
+    ) throws -> DeckList {
+        var deckList = try deckListFixture()
+        deckList = try DeckList(
+            slots: deckList.slots,
+            sideSlots: deckList.sideSlots,
+            investigatorCode: CardCode(investigatorCode),
+            investigatorName: investigatorName,
+            meta: deckList.meta,
+            tabooId: deckList.tabooId,
+            url: deckURL,
+            id: deckList.id,
+            name: deckName ?? deckList.name
+        )
+        return deckList
+    }
+
     func continuationProjection(
         ownerID: PlayerID,
         mode: GameMode,
@@ -434,6 +455,133 @@ struct AppModelCampaignPromptTests {
             snapshotText = try replacingFirst(needle, with: replacement, in: snapshotText)
         }
         return try ContractJSON.decode(GetGameEnvelope.self, from: Data(snapshotText.utf8))
+    }
+
+    @Test("Captured replacement ChooseUpgradeDeck bytes require a replacement and hide skip")
+    func capturedReplacementChooseUpgradeDeckRequiresReplacementAndHidesSkip() throws {
+        let url = try #require(Bundle.module.url(
+            forResource: "campaign-replacement-choose-upgrade-deck",
+            withExtension: "json",
+            subdirectory: "Fixtures/CampaignPrompt"
+        ))
+        let envelope = try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: Data(contentsOf: url)
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
+        let investigator = try #require(projection.investigators.first)
+        let context = CampaignUpgradeDeckContext.make(
+            investigator: investigator,
+            campaignSummary: projection.campaignSummary
+        )
+
+        #expect(projection.campaignSummary?.killedOrInsaneInvestigatorIDs == ["c01001"])
+        #expect(context.requiresReplacement)
+        #expect(!context.allowsSkip)
+        #expect(projection.questions.values.first?.rawValue == .object([
+            "tag": .string("ChooseUpgradeDeck"),
+        ]))
+    }
+
+    @Test("Saved replacement deck PUTs old seat id with the replacement deck list")
+    func savedReplacementDeckSubmitsOldSeatAndReplacementDeckList() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        try installPrompt(
+            chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let replacementList = try deckListFixture(
+            investigatorCode: "c01002",
+            investigatorName: "Daisy Walker",
+            deckURL: "https://server.example/decks/daisy",
+            deckName: "Daisy replacement"
+        )
+        let replacementDeck = Deck(
+            id: DeckID(UUID()),
+            userId: 1,
+            url: "https://server.example/decks/daisy",
+            name: "Daisy replacement",
+            investigatorName: "Daisy Walker",
+            list: replacementList
+        )
+        await gameService.enqueueChooseDeckResult(.success(()))
+
+        let result = await model.upgradeCampaignDeck(
+            using: replacementDeck,
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        )
+
+        #expect(result == .submitted)
+        let request = try #require(await gameService.lastChooseDeckRequest)
+        #expect(request.investigatorId.rawValue == "c01001")
+        #expect(request.deckUrl == "https://server.example/decks/daisy")
+        #expect(request.deckList == DeckListInput(
+            replacementList,
+            urlOverride: "https://server.example/decks/daisy"
+        ))
+        #expect(request.deckList?.investigatorCode.rawValue == "c01002")
+    }
+
+    @Test("Saved replacement deck surfaces server-authored rejection messages")
+    func savedReplacementDeckSurfacesServerRejection() async throws {
+        let gameService = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(gameService: gameService)
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        try installPrompt(
+            chooseUpgradeDeckProjection(
+                ownerID: ownerID,
+                mode: campaignMode(canUpgradeDecks: true)
+            ),
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: FakeGameSocketConnection()
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let replacementList = try deckListFixture(
+            investigatorCode: "c01002",
+            investigatorName: "Daisy Walker"
+        )
+        let replacementDeck = Deck(
+            id: DeckID(UUID()),
+            userId: 1,
+            url: nil,
+            name: "Daisy replacement",
+            investigatorName: "Daisy Walker",
+            list: replacementList
+        )
+        let message = "That investigator was killed or driven insane and must be replaced"
+        await gameService.enqueueChooseDeckResult(.failure(
+            GameLifecycleError.operationFailed(DeckOperationError(errorMsg: message))
+        ))
+
+        let result = await model.upgradeCampaignDeck(
+            using: replacementDeck,
+            investigatorId: "c01001",
+            in: gameID,
+            promptIdentity: prompt.identity
+        )
+
+        #expect(result == .failed(message))
+        let request = try #require(await gameService.lastChooseDeckRequest)
+        #expect(request.investigatorId.rawValue == "c01001")
     }
 
     @Test("Continue without upgrading PUTs a nil deck source to the game deck endpoint")
