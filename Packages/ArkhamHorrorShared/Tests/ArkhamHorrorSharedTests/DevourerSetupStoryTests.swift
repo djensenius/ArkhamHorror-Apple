@@ -94,6 +94,13 @@ struct DevourerSetupStoryTests {
             .semanticIcon(.chaosToken(.elderThing)),
             .text(" to the chaos bag."),
         ]))
+        #expect(try resolver.render(
+            key: "label.test",
+            variables: .object(["skill": .string("willpower"), "count": Self.number("3")])
+        ) == .success([
+            .text("Test "), .semanticIcon(.skill(.willpower)), .text(" ("), .text("3"),
+            .text(")"),
+        ]))
         let prompt = Self.prompt(payload: payload, resolution: resolution)
         #expect(prompt.canSubmit)
         #expect(prompt.statusMessage == nil)
@@ -374,6 +381,10 @@ struct DevourerSetupStoryTests {
       }
     }
     """#
+
+    private static func number(_ text: String) throws -> JSONValue {
+        try .number(JSONNumber(exactDecimalLiteral: text))
+    }
 
     private static func prompt(
         payload: BasicChoiceQuestionPayload,
