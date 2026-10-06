@@ -189,66 +189,15 @@ extension LocaleCatalogEntry {
         case malformed
     }
 
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
     static func decode(_ value: JSONValue) -> DecodeResult {
         guard case let .object(object) = value, case let .string(form)? = object["form"] else {
             return .malformed
         }
         switch form {
         case "message":
-            guard Set(object.keys).isSubset(of: ["form", "nodes", "variables", "linkedVariables"]),
-                  object["nodes"] != nil, object["variables"] != nil
-            else { return .malformed }
-            let variableResult = decodeVariables(object["variables"])
-            let linkedResult = decodeOptionalVariables(object["linkedVariables"])
-            guard case let .success(variables) = variableResult,
-                  case let .success(linked) = linkedResult,
-                  variablesAreConsistent(variables + linked)
-            else {
-                let isAdditive = variableResult.isUnsupportedAdditiveField
-                    || linkedResult.isUnsupportedAdditiveField
-                return isAdditive ? .unsupportedAdditiveField : .malformed
-            }
-            guard let nodes = LocaleCatalogNode.decodeList(object["nodes"], depth: 0) else {
-                return containsUnsupportedVariableNodeRole(object["nodes"])
-                    ? .unsupportedAdditiveField
-                    : .malformed
-            }
-            guard LocaleCatalogNode.referencesOnlyDeclaredVariables(
-                nodes, declarations: variables + linked
-            ) else { return .unsupportedAdditiveField }
-            return .success(.message(nodes: nodes, variables: variables + linked))
+            return decodeMessage(object)
         case "plural":
-            guard Set(object.keys).isSubset(of: ["form", "cases", "variables", "linkedVariables"]),
-                  object["cases"] != nil, object["variables"] != nil,
-                  case let .array(rawCases)? = object["cases"], !rawCases.isEmpty
-            else { return .malformed }
-            let variableResult = decodeVariables(object["variables"])
-            let linkedResult = decodeOptionalVariables(object["linkedVariables"])
-            guard case let .success(variables) = variableResult,
-                  case let .success(linked) = linkedResult,
-                  variablesAreConsistent(variables + linked)
-            else {
-                let isAdditive = variableResult.isUnsupportedAdditiveField
-                    || linkedResult.isUnsupportedAdditiveField
-                return isAdditive ? .unsupportedAdditiveField : .malformed
-            }
-            var cases: [[LocaleCatalogNode]] = []
-            cases.reserveCapacity(rawCases.count)
-            for rawCase in rawCases {
-                guard let nodes = LocaleCatalogNode.decodeList(rawCase, depth: 0) else {
-                    return containsUnsupportedVariableNodeRole(rawCase)
-                        ? .unsupportedAdditiveField
-                        : .malformed
-                }
-                guard LocaleCatalogNode.referencesOnlyDeclaredVariables(
-                    nodes, declarations: variables + linked
-                ) else {
-                    return .unsupportedAdditiveField
-                }
-                cases.append(nodes)
-            }
-            return .success(.plural(cases: cases, variables: variables + linked))
+            return decodePlural(object)
         case "unsupported":
             guard Set(object.keys) == ["form", "reason", "detail"],
                   case let .string(reason)? = object["reason"],
@@ -262,6 +211,50 @@ extension LocaleCatalogEntry {
         }
     }
 
+    private static func decodeMessage(_ object: [String: JSONValue]) -> DecodeResult {
+        guard Set(object.keys).isSubset(of: ["form", "nodes", "variables", "linkedVariables"]),
+              object["nodes"] != nil, object["variables"] != nil
+        else { return .malformed }
+        guard let declarations = decodeDeclarations(
+            variables: object["variables"], linkedVariables: object["linkedVariables"]
+        ) else { return .malformed }
+        let nodeResult = decodeNodesForEntry(object["nodes"])
+        guard case let .success(nodes, nodeHasAdditiveRole) = nodeResult else { return .malformed }
+        guard LocaleCatalogNode.referencesOnlyDeclaredVariables(
+            nodes, declarations: declarations.variables
+        ) else { return .malformed }
+        guard !declarations.hasAdditiveRole, !nodeHasAdditiveRole else {
+            return .unsupportedAdditiveField
+        }
+        return .success(.message(nodes: nodes, variables: declarations.variables))
+    }
+
+    private static func decodePlural(_ object: [String: JSONValue]) -> DecodeResult {
+        guard Set(object.keys).isSubset(of: ["form", "cases", "variables", "linkedVariables"]),
+              object["cases"] != nil, object["variables"] != nil,
+              case let .array(rawCases)? = object["cases"], !rawCases.isEmpty
+        else { return .malformed }
+        guard let declarations = decodeDeclarations(
+            variables: object["variables"], linkedVariables: object["linkedVariables"]
+        ) else { return .malformed }
+        var cases: [[LocaleCatalogNode]] = []
+        var hasAdditiveRole = declarations.hasAdditiveRole
+        cases.reserveCapacity(rawCases.count)
+        for rawCase in rawCases {
+            let nodeResult = decodeNodesForEntry(rawCase)
+            guard case let .success(nodes, nodeHasAdditiveRole) = nodeResult else {
+                return .malformed
+            }
+            guard LocaleCatalogNode.referencesOnlyDeclaredVariables(
+                nodes, declarations: declarations.variables
+            ) else { return .malformed }
+            hasAdditiveRole = hasAdditiveRole || nodeHasAdditiveRole
+            cases.append(nodes)
+        }
+        guard !hasAdditiveRole else { return .unsupportedAdditiveField }
+        return .success(.plural(cases: cases, variables: declarations.variables))
+    }
+
     /// The chunk schema's closed `reason` enum. An unknown reason is a schema violation, not
     /// a new kind of unavailability to tolerate.
     static let unsupportedReasons: Set<String> = [
@@ -273,38 +266,103 @@ extension LocaleCatalogEntry {
         "link-cycle", "unusable-variable-type",
     ]
 
-    private static func containsUnsupportedVariableNodeRole(_ value: JSONValue?) -> Bool {
-        guard let value else { return false }
-        switch value {
-        case let .array(elements):
-            return elements.contains { containsUnsupportedVariableNodeRole($0) }
-        case let .object(object):
-            guard object["type"] != .string("var") else {
-                guard case let .string(rawRole)? = object["role"] else { return false }
-                let role = LocaleCatalogVariable.Role(rawValue: rawRole)
-                return role == nil || role == .presentation
-            }
-            return object.values.contains { containsUnsupportedVariableNodeRole($0) }
-        case .string, .number, .bool, .null:
-            return false
-        }
+    private struct Declarations {
+        let variables: [LocaleCatalogVariable]
+        let hasAdditiveRole: Bool
+    }
+
+    private enum NodeListDecodeResult {
+        case success(nodes: [LocaleCatalogNode], hasAdditiveRole: Bool)
+        case malformed
     }
 
     private enum VariableDecodeResult {
-        case success([LocaleCatalogVariable])
-        case unsupportedAdditiveField
+        case success(variables: [LocaleCatalogVariable], hasAdditiveRole: Bool)
         case malformed
+    }
 
-        var isUnsupportedAdditiveField: Bool {
-            if case .unsupportedAdditiveField = self {
-                return true
+    private static func decodeDeclarations(
+        variables rawVariables: JSONValue?, linkedVariables rawLinkedVariables: JSONValue?
+    ) -> Declarations? {
+        let variableResult = decodeVariables(rawVariables)
+        let linkedResult = decodeOptionalVariables(rawLinkedVariables)
+        guard case let .success(variables, variablesHaveAdditiveRole) = variableResult,
+              case let .success(linked, linkedHaveAdditiveRole) = linkedResult,
+              variablesAreConsistent(variables + linked)
+        else { return nil }
+        return Declarations(
+            variables: variables + linked,
+            hasAdditiveRole: variablesHaveAdditiveRole || linkedHaveAdditiveRole
+        )
+    }
+
+    private static func decodeNodesForEntry(_ value: JSONValue?) -> NodeListDecodeResult {
+        if let nodes = LocaleCatalogNode.decodeList(value, depth: 0) {
+            return .success(nodes: nodes, hasAdditiveRole: false)
+        }
+        guard let transformed = replacingAdditiveVariableRoleNodes(in: value),
+              let nodes = LocaleCatalogNode.decodeList(transformed, depth: 0)
+        else { return .malformed }
+        return .success(nodes: nodes, hasAdditiveRole: true)
+    }
+
+    private static func replacingAdditiveVariableRoleNodes(in value: JSONValue?) -> JSONValue? {
+        guard let value else { return nil }
+        var foundAdditiveRole = false
+        guard let transformed = replacingAdditiveVariableRoleNodes(
+            in: value, foundAdditiveRole: &foundAdditiveRole
+        ), foundAdditiveRole
+        else { return nil }
+        return transformed
+    }
+
+    private static func replacingAdditiveVariableRoleNodes(
+        in value: JSONValue,
+        foundAdditiveRole: inout Bool
+    ) -> JSONValue? {
+        switch value {
+        case let .array(elements):
+            let transformed = elements.compactMap {
+                replacingAdditiveVariableRoleNodes(in: $0, foundAdditiveRole: &foundAdditiveRole)
             }
-            return false
+            return transformed.count == elements.count ? .array(transformed) : nil
+        case let .object(object):
+            if let replacement = additiveVariableRoleReplacement(for: object) {
+                foundAdditiveRole = true
+                return replacement
+            }
+            var transformed: [String: JSONValue] = [:]
+            transformed.reserveCapacity(object.count)
+            for (key, child) in object {
+                guard let replaced = replacingAdditiveVariableRoleNodes(
+                    in: child, foundAdditiveRole: &foundAdditiveRole
+                ) else { return nil }
+                transformed[key] = replaced
+            }
+            return .object(transformed)
+        case .string, .number, .bool, .null:
+            return value
         }
     }
 
+    private static func additiveVariableRoleReplacement(
+        for object: [String: JSONValue]
+    ) -> JSONValue? {
+        guard object["type"] == .string("var") else { return nil }
+        guard Set(object.keys) == ["type", "name", "source", "role"],
+              case let .string(name)? = object["name"],
+              LocaleCatalogGrammar.isVariableName(name),
+              case let .string(rawSource)? = object["source"],
+              LocaleCatalogVariable.Source(rawValue: rawSource) != nil,
+              case let .string(rawRole)? = object["role"],
+              rawRole != LocaleCatalogVariable.Role.presentation.rawValue,
+              LocaleCatalogVariable.Role(rawValue: rawRole) == nil
+        else { return nil }
+        return .object(["type": .string("text"), "value": .string("")])
+    }
+
     private static func decodeOptionalVariables(_ value: JSONValue?) -> VariableDecodeResult {
-        guard let value else { return .success([]) }
+        guard let value else { return .success(variables: [], hasAdditiveRole: false) }
         return decodeVariables(value)
     }
 
@@ -313,6 +371,7 @@ extension LocaleCatalogEntry {
               elements.count <= LocaleCatalogLimits.maxVariablesPerEntry
         else { return .malformed }
         var variables: [LocaleCatalogVariable] = []
+        var hasAdditiveRole = false
         variables.reserveCapacity(elements.count)
         for element in elements {
             guard case let .object(object) = element,
@@ -324,13 +383,14 @@ extension LocaleCatalogEntry {
                   case let .string(rawRole)? = object["role"]
             else { return .malformed }
             guard let role = LocaleCatalogVariable.Role(rawValue: rawRole) else {
-                return .unsupportedAdditiveField
+                hasAdditiveRole = true
+                continue
             }
             variables.append(
                 LocaleCatalogVariable(name: name, source: source, role: role)
             )
         }
-        return .success(variables)
+        return .success(variables: variables, hasAdditiveRole: hasAdditiveRole)
     }
 
     private static func variablesAreConsistent(_ variables: [LocaleCatalogVariable]) -> Bool {
