@@ -129,7 +129,7 @@ struct LocaleCatalogResolverTests {
 
         let variableResolver = LocaleCatalogResolver(snapshot: snapshot(english: [
             "story.body": message([
-                .variable(name: "name", source: .named, isIcon: false),
+                .variable(name: "name", source: .named, role: .text),
             ]),
         ]))
         #expect(variableResolver.render(
@@ -190,7 +190,7 @@ struct LocaleCatalogResolverTests {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
             "label.greet": message([
                 .text("Hello "),
-                .variable(name: "name", source: .named, isIcon: false),
+                .variable(name: "name", source: .named, role: .text),
             ]),
         ]))
 
@@ -206,7 +206,7 @@ struct LocaleCatalogResolverTests {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
             "label.greet": message([
                 .text("Hello "),
-                .variable(name: "name", source: .named, isIcon: false),
+                .variable(name: "name", source: .named, role: .text),
             ]),
         ]))
         let overlongName = String(repeating: "a", count: 65)
@@ -226,7 +226,7 @@ struct LocaleCatalogResolverTests {
                     [.text("Suffer physical trauma")],
                     [
                         .text("Suffer "),
-                        .variable(name: "count", source: .named, isIcon: false),
+                        .variable(name: "count", source: .named, role: .text),
                         .text(" physical trauma"),
                     ],
                 ],
@@ -248,11 +248,11 @@ struct LocaleCatalogResolverTests {
                 cases: [
                     [
                         .text("Greet "),
-                        .variable(name: "name", source: .named, isIcon: false),
+                        .variable(name: "name", source: .named, role: .text),
                     ],
                     [
                         .text("Greet "),
-                        .variable(name: "count", source: .named, isIcon: false),
+                        .variable(name: "count", source: .named, role: .text),
                         .text(" investigators"),
                     ],
                 ],
@@ -280,14 +280,14 @@ struct LocaleCatalogResolverTests {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
             "label.takeDamage": message([
                 .text("Take "),
-                .variable(name: "count", source: .named, isIcon: false),
+                .variable(name: "count", source: .named, role: .text),
                 .text(" damage"),
             ]),
             "label.variableSingular": .plural(
                 cases: [
                     [
                         .text("Take "),
-                        .variable(name: "count", source: .named, isIcon: false),
+                        .variable(name: "count", source: .named, role: .text),
                         .text(" damage"),
                     ],
                     [.text("Other")],

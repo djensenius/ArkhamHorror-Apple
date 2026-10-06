@@ -33,9 +33,12 @@ struct LocaleCatalogVariable: Sendable, Equatable, Hashable {
     enum Role: String, Sendable, Equatable, Hashable {
         /// Substituted verbatim.
         case text
-        /// Production `replaceIcons()` renders this name as an icon glyph; the catalog
+        /// Production `replaceIcons()` renders this node's name as an icon glyph; the catalog
         /// preserves the placeholder instead of rendering it.
         case icon
+        /// The backend-supplied variable value is a proven icon name. Clients that do not
+        /// implement that icon vocabulary must treat only this entry as unavailable.
+        case iconVariable
         /// The name only ever reaches a `class`/`style`/`data-*` attribute, so a client with
         /// no value for it loses styling, never an instruction.
         case presentation
@@ -51,9 +54,13 @@ struct LocaleCatalogVariable: Sendable, Equatable, Hashable {
 indirect enum LocaleCatalogNode: Sendable, Equatable {
     /// Literal text; entities are already decoded.
     case text(String)
-    /// A typed placeholder. `role` is `text` or `icon` here — a `presentation` variable never
-    /// reaches a text position, only an attribute.
-    case variable(name: String, source: LocaleCatalogVariable.Source, isIcon: Bool)
+    /// A typed placeholder. `role` is `text`, `icon`, or `iconVariable` here — a
+    /// `presentation` variable never reaches a text position, only an attribute.
+    case variable(
+        name: String,
+        source: LocaleCatalogVariable.Source,
+        role: LocaleCatalogVariable.Role
+    )
     /// A vue-i18n linked message (`@:key` / `@:{var}`), resolved by the client against this
     /// locale and then the fallback locale.
     case linked(target: LocaleCatalogLinkTarget, modifier: LocaleCatalogLinkModifier?)
@@ -139,13 +146,20 @@ extension LocaleCatalogChunk {
         var entries: [String: LocaleCatalogEntry] = [:]
         entries.reserveCapacity(rawEntries.count)
         for (key, rawEntry) in rawEntries {
-            guard LocaleCatalogGrammar.isMessageKey(key),
-                  let entry = LocaleCatalogEntry.decode(rawEntry)
-            else { return .failure(.malformedChunk) }
-            entries[key] = entry
+            guard LocaleCatalogGrammar.isMessageKey(key) else {
+                return .failure(.malformedChunk)
+            }
+            switch LocaleCatalogEntry.decode(rawEntry) {
+            case let .success(entry):
+                entries[key] = entry
+            case .unsupportedAdditiveField:
+                entries[key] = .unsupported(reason: "client-unsupported-additive-field")
+            case .malformed:
+                return .failure(.malformedChunk)
+            }
         }
         let unsupportedKeys = entries.values.reduce(into: 0) { count, entry in
-            if case .unsupported = entry {
+            if entry.countsAsManifestUnsupported {
                 count += 1
             }
         }
@@ -164,54 +178,87 @@ extension LocaleCatalogChunk {
 }
 
 extension LocaleCatalogEntry {
-    static func decode(_ value: JSONValue) -> LocaleCatalogEntry? {
+    var countsAsManifestUnsupported: Bool {
+        guard case let .unsupported(reason) = self else { return false }
+        return Self.unsupportedReasons.contains(reason)
+    }
+
+    enum DecodeResult {
+        case success(LocaleCatalogEntry)
+        case unsupportedAdditiveField
+        case malformed
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    static func decode(_ value: JSONValue) -> DecodeResult {
         guard case let .object(object) = value, case let .string(form)? = object["form"] else {
-            return nil
+            return .malformed
         }
         switch form {
         case "message":
             guard Set(object.keys).isSubset(of: ["form", "nodes", "variables", "linkedVariables"]),
-                  object["nodes"] != nil, object["variables"] != nil,
-                  let nodes = LocaleCatalogNode.decodeList(object["nodes"], depth: 0),
-                  let variables = decodeVariables(object["variables"]),
-                  let linked = decodeOptionalVariables(object["linkedVariables"]),
-                  variablesAreConsistent(variables + linked),
-                  LocaleCatalogNode.referencesOnlyDeclaredVariables(
-                      nodes, declarations: variables + linked
-                  )
-            else { return nil }
-            return .message(nodes: nodes, variables: variables + linked)
+                  object["nodes"] != nil, object["variables"] != nil
+            else { return .malformed }
+            let variableResult = decodeVariables(object["variables"])
+            let linkedResult = decodeOptionalVariables(object["linkedVariables"])
+            guard case let .success(variables) = variableResult,
+                  case let .success(linked) = linkedResult,
+                  variablesAreConsistent(variables + linked)
+            else {
+                let isAdditive = variableResult.isUnsupportedAdditiveField
+                    || linkedResult.isUnsupportedAdditiveField
+                return isAdditive ? .unsupportedAdditiveField : .malformed
+            }
+            guard let nodes = LocaleCatalogNode.decodeList(object["nodes"], depth: 0) else {
+                return containsUnsupportedVariableNodeRole(object["nodes"])
+                    ? .unsupportedAdditiveField
+                    : .malformed
+            }
+            guard LocaleCatalogNode.referencesOnlyDeclaredVariables(
+                nodes, declarations: variables + linked
+            ) else { return .unsupportedAdditiveField }
+            return .success(.message(nodes: nodes, variables: variables + linked))
         case "plural":
             guard Set(object.keys).isSubset(of: ["form", "cases", "variables", "linkedVariables"]),
                   object["cases"] != nil, object["variables"] != nil,
-                  case let .array(rawCases)? = object["cases"], !rawCases.isEmpty,
-                  let variables = decodeVariables(object["variables"]),
-                  let linked = decodeOptionalVariables(object["linkedVariables"]),
+                  case let .array(rawCases)? = object["cases"], !rawCases.isEmpty
+            else { return .malformed }
+            let variableResult = decodeVariables(object["variables"])
+            let linkedResult = decodeOptionalVariables(object["linkedVariables"])
+            guard case let .success(variables) = variableResult,
+                  case let .success(linked) = linkedResult,
                   variablesAreConsistent(variables + linked)
-            else { return nil }
+            else {
+                let isAdditive = variableResult.isUnsupportedAdditiveField
+                    || linkedResult.isUnsupportedAdditiveField
+                return isAdditive ? .unsupportedAdditiveField : .malformed
+            }
             var cases: [[LocaleCatalogNode]] = []
             cases.reserveCapacity(rawCases.count)
             for rawCase in rawCases {
-                guard let nodes = LocaleCatalogNode.decodeList(rawCase, depth: 0),
-                      LocaleCatalogNode.referencesOnlyDeclaredVariables(
-                          nodes, declarations: variables + linked
-                      )
-                else {
-                    return nil
+                guard let nodes = LocaleCatalogNode.decodeList(rawCase, depth: 0) else {
+                    return containsUnsupportedVariableNodeRole(rawCase)
+                        ? .unsupportedAdditiveField
+                        : .malformed
+                }
+                guard LocaleCatalogNode.referencesOnlyDeclaredVariables(
+                    nodes, declarations: variables + linked
+                ) else {
+                    return .unsupportedAdditiveField
                 }
                 cases.append(nodes)
             }
-            return .plural(cases: cases, variables: variables + linked)
+            return .success(.plural(cases: cases, variables: variables + linked))
         case "unsupported":
             guard Set(object.keys) == ["form", "reason", "detail"],
                   case let .string(reason)? = object["reason"],
                   Self.unsupportedReasons.contains(reason),
                   case let .string(detail)? = object["detail"],
                   detail.count <= 120
-            else { return nil }
-            return .unsupported(reason: reason)
+            else { return .malformed }
+            return .success(.unsupported(reason: reason))
         default:
-            return nil
+            return .malformed
         }
     }
 
@@ -226,15 +273,45 @@ extension LocaleCatalogEntry {
         "link-cycle", "unusable-variable-type",
     ]
 
-    private static func decodeOptionalVariables(_ value: JSONValue?) -> [LocaleCatalogVariable]? {
-        guard let value else { return [] }
+    private static func containsUnsupportedVariableNodeRole(_ value: JSONValue?) -> Bool {
+        guard let value else { return false }
+        switch value {
+        case let .array(elements):
+            return elements.contains { containsUnsupportedVariableNodeRole($0) }
+        case let .object(object):
+            guard object["type"] != .string("var") else {
+                guard case let .string(rawRole)? = object["role"] else { return false }
+                let role = LocaleCatalogVariable.Role(rawValue: rawRole)
+                return role == nil || role == .presentation
+            }
+            return object.values.contains { containsUnsupportedVariableNodeRole($0) }
+        case .string, .number, .bool, .null:
+            return false
+        }
+    }
+
+    private enum VariableDecodeResult {
+        case success([LocaleCatalogVariable])
+        case unsupportedAdditiveField
+        case malformed
+
+        var isUnsupportedAdditiveField: Bool {
+            if case .unsupportedAdditiveField = self {
+                return true
+            }
+            return false
+        }
+    }
+
+    private static func decodeOptionalVariables(_ value: JSONValue?) -> VariableDecodeResult {
+        guard let value else { return .success([]) }
         return decodeVariables(value)
     }
 
-    private static func decodeVariables(_ value: JSONValue?) -> [LocaleCatalogVariable]? {
+    private static func decodeVariables(_ value: JSONValue?) -> VariableDecodeResult {
         guard case let .array(elements)? = value,
               elements.count <= LocaleCatalogLimits.maxVariablesPerEntry
-        else { return nil }
+        else { return .malformed }
         var variables: [LocaleCatalogVariable] = []
         variables.reserveCapacity(elements.count)
         for element in elements {
@@ -244,14 +321,16 @@ extension LocaleCatalogEntry {
                   LocaleCatalogGrammar.isVariableName(name),
                   case let .string(rawSource)? = object["source"],
                   let source = LocaleCatalogVariable.Source(rawValue: rawSource),
-                  case let .string(rawRole)? = object["role"],
-                  let role = LocaleCatalogVariable.Role(rawValue: rawRole)
-            else { return nil }
+                  case let .string(rawRole)? = object["role"]
+            else { return .malformed }
+            guard let role = LocaleCatalogVariable.Role(rawValue: rawRole) else {
+                return .unsupportedAdditiveField
+            }
             variables.append(
                 LocaleCatalogVariable(name: name, source: source, role: role)
             )
         }
-        return variables
+        return .success(variables)
     }
 
     private static func variablesAreConsistent(_ variables: [LocaleCatalogVariable]) -> Bool {

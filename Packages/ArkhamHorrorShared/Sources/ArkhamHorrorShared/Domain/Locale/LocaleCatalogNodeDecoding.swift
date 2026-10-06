@@ -72,10 +72,11 @@ extension LocaleCatalogNode {
               LocaleCatalogGrammar.isVariableName(name),
               case let .string(rawSource)? = object["source"],
               let source = LocaleCatalogVariable.Source(rawValue: rawSource),
-              case let .string(role)? = object["role"],
-              role == "text" || role == "icon"
+              case let .string(rawRole)? = object["role"],
+              let role = LocaleCatalogVariable.Role(rawValue: rawRole),
+              role != .presentation
         else { return nil }
-        return .variable(name: name, source: source, isIcon: role == "icon")
+        return .variable(name: name, source: source, role: role)
     }
 
     private static func decodeLinked(_ object: [String: JSONValue]) -> LocaleCatalogNode? {
@@ -425,10 +426,9 @@ extension LocaleCatalogNode {
         switch node {
         case .text, .lineBreak, .rule, .image:
             true
-        case let .variable(name, source, isIcon):
+        case let .variable(name, source, role):
             declarations.contains {
-                $0.name == name && $0.source == source
-                    && $0.role == (isIcon ? .icon : .text)
+                $0.name == name && $0.source == source && $0.role == role
             }
         case let .linked(target, _):
             switch target {
