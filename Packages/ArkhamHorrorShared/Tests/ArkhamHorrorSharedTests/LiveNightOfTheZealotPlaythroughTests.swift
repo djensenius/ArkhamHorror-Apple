@@ -815,18 +815,18 @@ private struct LivePlaythroughBot {
         try trace.append(.runStarted(investigator: investigator, gameID: gameID))
         while Date().timeIntervalSince(startedAt) < timeout {
             let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
-            let scenarioOutcomes = scenarioOutcomes(from: envelope.game)
+            let currentOutcomes = scenarioOutcomes(from: envelope.game)
             if envelope.game.gameState == .over {
-                let scenarioOutcomes = terminalScenarioOutcomes(from: envelope.game)
+                let currentOutcomes = terminalScenarioOutcomes(from: envelope.game)
                 try trace.append(.runFinished(
                     investigator: investigator,
                     gameID: gameID,
                     reachedServerCompletion: true,
-                    scenarioOutcomes: scenarioOutcomes
+                    scenarioOutcomes: currentOutcomes
                 ))
                 return BotOutcome(
                     reachedServerCompletion: true,
-                    scenarioOutcomes: scenarioOutcomes,
+                    scenarioOutcomes: currentOutcomes,
                     promptFailure: nil
                 )
             }
@@ -839,7 +839,7 @@ private struct LivePlaythroughBot {
                 return try recordRunTimedOut(
                     reason: error.description,
                     snapshot: envelope.game,
-                    scenarioOutcomes: scenarioOutcomes
+                    scenarioOutcomes: currentOutcomes
                 )
             }
             guard let prompt = model.basicChoicePresentation(for: gameID) else {
@@ -874,7 +874,7 @@ private struct LivePlaythroughBot {
                 ))
                 return BotOutcome(
                     reachedServerCompletion: false,
-                    scenarioOutcomes: scenarioOutcomes,
+                    scenarioOutcomes: currentOutcomes,
                     promptFailure: failure
                 )
             }
@@ -904,7 +904,7 @@ private struct LivePlaythroughBot {
                 ))
                 return BotOutcome(
                     reachedServerCompletion: false,
-                    scenarioOutcomes: scenarioOutcomes,
+                    scenarioOutcomes: currentOutcomes,
                     promptFailure: failure
                 )
             }
@@ -938,7 +938,7 @@ private struct LivePlaythroughBot {
                 ))
                 return BotOutcome(
                     reachedServerCompletion: false,
-                    scenarioOutcomes: scenarioOutcomes,
+                    scenarioOutcomes: currentOutcomes,
                     promptFailure: failure
                 )
             }
@@ -990,7 +990,7 @@ private struct LivePlaythroughBot {
                     ))
                     return BotOutcome(
                         reachedServerCompletion: false,
-                        scenarioOutcomes: scenarioOutcomes,
+                        scenarioOutcomes: currentOutcomes,
                         promptFailure: failure
                     )
                 }
@@ -1016,17 +1016,17 @@ private struct LivePlaythroughBot {
                 ))
                 return BotOutcome(
                     reachedServerCompletion: false,
-                    scenarioOutcomes: scenarioOutcomes,
+                    scenarioOutcomes: currentOutcomes,
                     promptFailure: failure
                 )
             }
         }
         let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
-        let scenarioOutcomes = scenarioOutcomes(from: envelope.game)
+        let currentOutcomes = scenarioOutcomes(from: envelope.game)
         return try recordRunTimedOut(
             reason: "playthrough timed out before server gameState IsOver",
             snapshot: envelope.game,
-            scenarioOutcomes: scenarioOutcomes
+            scenarioOutcomes: currentOutcomes
         )
     }
 
