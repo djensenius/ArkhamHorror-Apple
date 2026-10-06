@@ -1357,18 +1357,6 @@ private struct LivePlaythroughBot {
                     afterReplacing: originalInvestigatorID,
                     ownerID: prompt.identity.ownerID
                 )
-                if followUp.requiresUpgradeSkip {
-                    try await lifecycle.chooseDeck(
-                        ChooseDeckRequest(
-                            investigatorId: InvestigatorCode(followUp.investigatorID),
-                            deckUrl: nil,
-                            deckList: nil
-                        ),
-                        in: gameID,
-                        on: profile,
-                        token: token
-                    )
-                }
                 return SubmissionOutcome(
                     detail: "submitted replacement deck through AppModel; "
                         + followUp.detail
@@ -1447,13 +1435,7 @@ private struct LivePlaythroughBot {
                 continue
             }
             try await captureReplacementFollowUpIfRequested()
-            let questionTag = projection.questions[ownerID]?.rawValue.objectValue?["tag"]?
-                .stringValue
-            return ReplacementFollowUp(
-                investigatorID: currentInvestigator.id.rawValue.rawValue,
-                requiresUpgradeSkip: questionTag == "ChooseUpgradeDeck"
-            )
-            try await Task.sleep(for: .milliseconds(100))
+            return ReplacementFollowUp(investigatorID: currentInvestigator.id.rawValue.rawValue)
         }
         throw PlaythroughError.timedOut("replacement follow-up prompt")
     }
@@ -1465,6 +1447,7 @@ private struct LivePlaythroughBot {
     ) async throws -> Bool {
         let deadline = Date().addingTimeInterval(30)
         var nextServerStateCheck = Date()
+        var ignoredServerSnapshotFailure = false
         while Date() < deadline {
             guard let current = model.basicChoicePresentation(for: gameID) else { return true }
             if current.identity.questionVersion != identity.questionVersion {
@@ -1478,11 +1461,16 @@ private struct LivePlaythroughBot {
             }
             if Date() >= nextServerStateCheck {
                 nextServerStateCheck = Date().addingTimeInterval(1)
-                if try await serverSnapshotShowsProgress(
-                    from: identity,
-                    acceptingSeatInvestigatorChangeFrom: previousSeatInvestigator
-                ) {
-                    return true
+                do {
+                    if try await serverSnapshotShowsProgress(
+                        from: identity,
+                        acceptingSeatInvestigatorChangeFrom: previousSeatInvestigator
+                    ) {
+                        return true
+                    }
+                } catch {
+                    guard !ignoredServerSnapshotFailure else { throw error }
+                    ignoredServerSnapshotFailure = true
                 }
             }
             try await Task.sleep(for: .milliseconds(100))
@@ -1538,7 +1526,7 @@ private struct LivePlaythroughBot {
         if context.requiresReplacement {
             fileName = "campaign-replacement-choose-upgrade-deck.json"
         } else if isReplacementFollowUp {
-            fileName = "campaign-replacement-follow-up-choose-upgrade-deck.json"
+            fileName = "campaign-replacement-follow-up-continue-campaign.json"
         } else {
             return
         }
@@ -1559,7 +1547,7 @@ private struct LivePlaythroughBot {
             !directory.isEmpty
         else { return }
         let url = URL(fileURLWithPath: directory)
-            .appending(path: "campaign-replacement-follow-up-choose-upgrade-deck.json")
+            .appending(path: "campaign-replacement-follow-up-continue-campaign.json")
         guard !FileManager.default.fileExists(atPath: url.path) else { return }
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -1773,14 +1761,9 @@ private struct SeatInvestigatorIdentity: Sendable, Equatable {
 
 private struct ReplacementFollowUp: Sendable, Equatable {
     let investigatorID: String
-    let requiresUpgradeSkip: Bool
 
     var detail: String {
-        if requiresUpgradeSkip {
-            "skipped follow-up upgrade for \(investigatorID)"
-        } else {
-            "server advanced after replacement to \(investigatorID)"
-        }
+        "server advanced after replacement to \(investigatorID)"
     }
 }
 
