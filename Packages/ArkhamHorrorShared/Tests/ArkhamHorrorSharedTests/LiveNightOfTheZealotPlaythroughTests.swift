@@ -970,26 +970,9 @@ private struct LivePlaythroughBot {
                         diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     repeatedQuestionShapes[repeatKey] = repeatCount + 1
-                } else if repeatCount + 1 < retryLimit(for: prompt) {
-                    try trace.append(.prompt(
-                        investigator: investigator,
-                        gameID: gameID,
-                        scenario: scenario,
-                        prompt: prompt,
-                        projection: projection,
-                        repeatCount: repeatCount,
-                        selectedAnswer: selectedAnswer,
-                        submission: submission,
-                        outcome: .submittedAndAdvanced(
-                            "same prompt remained; trying next web-selectable choice"
-                        ),
-                        serverFeedback: feedback,
-                        diagnosticBypass: submitOutcome.diagnosticBypass
-                    ))
-                    repeatedQuestionShapes[repeatKey] = repeatCount + 1
                 } else {
                     let reason = [
-                        "same prompt remained after all web-selectable choices were tried",
+                        "same prompt remained after the bot answered it",
                         feedback?.description,
                     ].compactMap(\.self).joined(separator: "; ")
                     let failure = PromptFailure(
@@ -1101,13 +1084,6 @@ private struct LivePlaythroughBot {
         return TraceServerFeedback(source: source, message: message)
     }
 
-    private func retryLimit(for prompt: BasicChoicePromptPresentation) -> Int {
-        let semanticSelectableCount = prompt.identity.questionPresentation?.choices
-            .filter(\.selectable)
-            .count ?? 0
-        return max(1, semanticSelectableCount, prompt.choices.count)
-    }
-
     // swiftlint:disable:next function_body_length
     private func selectAnswer(
         prompt: BasicChoicePromptPresentation,
@@ -1163,7 +1139,11 @@ private struct LivePlaythroughBot {
                 tag: describeRawQuestionTag(prompt.identity.rawQuestion)
             )
         }
-        let selectedIndex = selectableIndexes[repeatCount % selectableIndexes.count]
+        let selectedIndex = preferredSelectableIndex(
+            in: prompt,
+            selectableIndexes: selectableIndexes,
+            repeatCount: repeatCount
+        )
         let chosenChoiceKind = prompt.identity.questionPresentation?.choices.first {
             $0.sourceIndex == selectedIndex
         }?.kind.rawValue
@@ -1172,6 +1152,19 @@ private struct LivePlaythroughBot {
             note: "selectable choice \(selectedIndex)",
             chosenChoiceKind: chosenChoiceKind
         )
+    }
+
+    private func preferredSelectableIndex(
+        in prompt: BasicChoicePromptPresentation,
+        selectableIndexes: [Int],
+        repeatCount: Int
+    ) -> Int {
+        if let skipIndex = prompt.identity.questionPresentation?.choices.first(where: {
+            $0.selectable && $0.kind == .skipTriggers && selectableIndexes.contains($0.sourceIndex)
+        })?.sourceIndex {
+            return skipIndex
+        }
+        return selectableIndexes[repeatCount % selectableIndexes.count]
     }
 
     private func canDiagnosticBypassUnsupported(_ prompt: BasicChoicePromptPresentation) -> Bool {
