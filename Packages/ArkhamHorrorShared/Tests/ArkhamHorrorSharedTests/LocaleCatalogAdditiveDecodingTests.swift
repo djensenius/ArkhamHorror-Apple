@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 @Suite("Locale catalog additive decoding")
+// swiftlint:disable:next type_body_length
 struct LocaleCatalogAdditiveDecodingTests {
     @Test("Icon variables render closed chaos token and skill values")
     func iconVariablesRenderClosedValues() async throws {
@@ -70,7 +71,7 @@ struct LocaleCatalogAdditiveDecodingTests {
     @Test("Unknown entry variable roles fail only that entry")
     func unknownVariableRoleFailsPerEntry() async throws {
         let documents = try SyntheticLocaleCatalogDocuments.make(
-            entryKeys: ["story.ok", "story.future"],
+            entryKeys: ["story.ok", "story.future", "story.futureLink"],
             chunkEntries: Self.futureRoleChunkEntries
         )
         let snapshot = try await documents.loadSnapshot()
@@ -82,19 +83,31 @@ struct LocaleCatalogAdditiveDecodingTests {
         #expect(resolver.render(
             key: "story.future", variables: .object(["value": .string("skull")])
         ) == .failure(.unsupportedEntry))
+        #expect(resolver.render(
+            key: "story.futureLink", variables: .object(["target": .string("story.ok")])
+        ) == .failure(.unsupportedEntry))
     }
 
     @Test("Malformed entry structure still fails the whole chunk")
-    func malformedEntryStructureStillFailsChunk() {
+    func malformedEntryStructureStillFailsChunk() throws {
         let cases = [
             Self.undeclaredVariableEntry,
             Self.presentationVariableNodeEntry,
             Self.malformedSiblingDeclEntry,
             Self.malformedLinkedVariablesEntry,
+            Self.undeclaredUnknownRoleNodeEntry,
+            Self.mismatchedUnknownRoleNodeEntry,
+            Self.duplicateUnknownAndTextDeclEntry,
+            Self.unknownRoleWithMalformedSiblingNodeEntry,
         ]
         for entry in cases {
-            #expect(Self.validateSingleEntry(entry) == .failure(.malformedChunk))
+            #expect(try Self.validateSingleEntry(entry) == .failure(.malformedChunk))
         }
+    }
+
+    @Test("Valid control entry validates successfully")
+    func validControlEntryValidatesSuccessfully() throws {
+        #expect(try Self.validateSingleEntry(Self.validControlEntry).isSuccess)
     }
 
     @Test("Manifest unknownVariableTypes accepts iconVariable roles")
@@ -201,7 +214,28 @@ struct LocaleCatalogAdditiveDecodingTests {
         "variables": [
           {"name": "value", "source": "named", "role": "futureIcon"}
         ]
+      },
+      "story.futureLink": {
+        "form": "message",
+        "nodes": [
+          {
+            "type":"linked",
+            "target":{"kind":"variable","name":"target","source":"named"},
+            "modifier":null
+          }
+        ],
+        "variables": [
+          {"name": "target", "source": "named", "role": "futureLink"}
+        ]
       }
+    }
+    """#
+
+    private static let validControlEntry = #"""
+    {
+      "form": "message",
+      "nodes": [{"type": "text", "value": "Valid"}],
+      "variables": []
     }
     """#
 
@@ -241,16 +275,54 @@ struct LocaleCatalogAdditiveDecodingTests {
     }
     """#
 
+    private static let undeclaredUnknownRoleNodeEntry = #"""
+    {
+      "form": "message",
+      "nodes": [{"type": "var", "name": "ghost", "source": "named", "role": "futureIcon"}],
+      "variables": []
+    }
+    """#
+
+    private static let mismatchedUnknownRoleNodeEntry = #"""
+    {
+      "form": "message",
+      "nodes": [{"type": "var", "name": "token", "source": "named", "role": "futureIcon"}],
+      "variables": [{"name": "token", "source": "named", "role": "futureOther"}]
+    }
+    """#
+
+    private static let duplicateUnknownAndTextDeclEntry = #"""
+    {
+      "form": "message",
+      "nodes": [{"type": "text", "value": "Duplicate"}],
+      "variables": [
+        {"name": "token", "source": "named", "role": "futureIcon"},
+        {"name": "token", "source": "named", "role": "text"}
+      ]
+    }
+    """#
+
+    private static let unknownRoleWithMalformedSiblingNodeEntry = #"""
+    {
+      "form": "message",
+      "nodes": [
+        {"type": "var", "name": "token", "source": "named", "role": "futureIcon"},
+        {"type": "break", "extra": true}
+      ],
+      "variables": [{"name": "token", "source": "named", "role": "futureIcon"}]
+    }
+    """#
+
     private static func validateSingleEntry(
         _ entry: String
-    ) -> Result<LocaleCatalogChunk, LocaleCatalogFailure> {
+    ) throws -> Result<LocaleCatalogChunk, LocaleCatalogFailure> {
         let chunk = """
         {"schemaVersion":"1.0.0","locale":"en","fallback":null,"pack":"story","entries":{
         "story.entry":\(entry)
         }}
         """
-        let value = try? LosslessJSONParser.parse(Data(chunk.utf8))
-        guard let value else { return .failure(.malformedChunk) }
+        let parsed = try Optional(LosslessJSONParser.parse(Data(chunk.utf8)))
+        let value = try #require(parsed)
         return LocaleCatalogChunk.validate(
             value,
             expectedLocale: "en",
