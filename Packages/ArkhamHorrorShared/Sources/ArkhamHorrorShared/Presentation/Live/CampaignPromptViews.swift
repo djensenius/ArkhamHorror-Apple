@@ -522,7 +522,9 @@ struct CampaignUpgradeDeckSheet: View {
                     }
                 }
 
-                savedDeckSection
+                if context.requiresReplacement {
+                    savedDeckSection
+                }
 
                 Section(campaignLocalized("campaign.upgrade.deckLink", "Deck link")) {
                     TextField(
@@ -667,6 +669,7 @@ struct CampaignUpgradeDeckSheet: View {
                 isSubmitting: isSubmitting,
                 isAwaitingSnapshot: isAwaitingSnapshot,
                 onBeginSubmit: beginSavedDeckSubmission,
+                onTrackSubmissionTask: trackSavedDeckSubmission,
                 onFinishSubmit: finish
             )
         }
@@ -678,6 +681,10 @@ struct CampaignUpgradeDeckSheet: View {
         isSubmitting = true
         failure = nil
         return true
+    }
+
+    private func trackSavedDeckSubmission(_ task: Task<Void, Never>) {
+        submissionTask = task
     }
 
     private func submitUpgrade() {
@@ -734,9 +741,11 @@ private struct CampaignSavedDeckSelectionSection: View {
     let isSubmitting: Bool
     let isAwaitingSnapshot: Bool
     let onBeginSubmit: () -> Bool
+    let onTrackSubmissionTask: (Task<Void, Never>) -> Void
     let onFinishSubmit: (CampaignDeckUpgradeSubmissionResult) -> Void
 
     @State private var viewModel: LobbyDeckSelectionViewModel
+    @State private var submittingDeckID: DeckID?
 
     init(
         model: AppModel,
@@ -747,6 +756,7 @@ private struct CampaignSavedDeckSelectionSection: View {
         isSubmitting: Bool,
         isAwaitingSnapshot: Bool,
         onBeginSubmit: @escaping () -> Bool,
+        onTrackSubmissionTask: @escaping (Task<Void, Never>) -> Void,
         onFinishSubmit: @escaping (CampaignDeckUpgradeSubmissionResult) -> Void
     ) {
         self.model = model
@@ -757,6 +767,7 @@ private struct CampaignSavedDeckSelectionSection: View {
         self.isSubmitting = isSubmitting
         self.isAwaitingSnapshot = isAwaitingSnapshot
         self.onBeginSubmit = onBeginSubmit
+        self.onTrackSubmissionTask = onTrackSubmissionTask
         self.onFinishSubmit = onFinishSubmit
         _viewModel = State(
             initialValue: LobbyDeckSelectionViewModel(
@@ -822,14 +833,14 @@ private struct CampaignSavedDeckSelectionSection: View {
                     validationText(for: state, deck: deck)
                 }
                 Spacer()
-                if isSubmitting || state == .pending {
+                if submittingDeckID == deck.id {
                     ProgressView().controlSize(.small)
                 }
             }
         }
         .buttonStyle(.borderless)
         .disabled(isSubmitting || isAwaitingSnapshot || state != .valid)
-        .accessibilityIdentifier(AccountAccessibilityID.lobbyDeckButton(
+        .accessibilityIdentifier(AccountAccessibilityID.campaignUpgradeSavedDeckButton(
             for: gameID.rawValue,
             deckID: deck.id.rawValue
         ))
@@ -855,7 +866,7 @@ private struct CampaignSavedDeckSelectionSection: View {
             Text(message)
                 .font(.caption)
                 .foregroundStyle(.red)
-                .accessibilityIdentifier(AccountAccessibilityID.lobbyDeckValidationText(
+                .accessibilityIdentifier(AccountAccessibilityID.campaignUpgradeSavedDeckValidationText(
                     for: gameID.rawValue,
                     deckID: deck.id.rawValue
                 ))
@@ -864,7 +875,8 @@ private struct CampaignSavedDeckSelectionSection: View {
 
     private func submit(_ deck: Deck) {
         guard onBeginSubmit() else { return }
-        Task { @MainActor in
+        submittingDeckID = deck.id
+        let task = Task { @MainActor in
             let result = await model.upgradeCampaignDeck(
                 using: deck,
                 investigatorId: investigator.id.rawValue.rawValue,
@@ -872,8 +884,10 @@ private struct CampaignSavedDeckSelectionSection: View {
                 promptIdentity: promptIdentity
             )
             guard !Task.isCancelled else { return }
+            submittingDeckID = nil
             onFinishSubmit(result)
         }
+        onTrackSubmissionTask(task)
     }
 }
 

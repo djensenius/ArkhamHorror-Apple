@@ -221,6 +221,18 @@ enum AccountAccessibilityID {
     static let campaignUpgradeDeckSkipButton = "account.games.live.campaign.upgradeDeck.skip"
     static let campaignPromptFailureText = "account.games.live.campaign.failure"
 
+    static func campaignUpgradeSavedDeckButton(for gameID: UUID, deckID: UUID) -> String {
+        "account.games.live.campaign.upgradeDeck.savedDeck.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func campaignUpgradeSavedDeckValidationText(
+        for gameID: UUID,
+        deckID: UUID
+    ) -> String {
+        "account.games.live.campaign.upgradeDeck.savedDeck.validation."
+            + "\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
     /// A per-game "enter the live board" navigation identifier, distinct for every
     /// active game row/lobby.
     static func liveGameEnterButton(for gameID: UUID) -> String {
