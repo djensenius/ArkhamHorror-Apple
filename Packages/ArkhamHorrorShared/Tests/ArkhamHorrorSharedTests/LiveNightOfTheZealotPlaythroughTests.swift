@@ -368,6 +368,18 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(configuration.asIfRulingField == .value(.chapter2))
     }
 
+    @Test("Return To standalone scenarios inherit the web base-campaign chapter")
+    func returnToStandaloneScenarioUsesBaseCampaignChapter() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([
+            "ARKHAM_LIVE_SCENARIO_ID": "50011",
+            "ARKHAM_LIVE_INVESTIGATOR_CODES": "01001",
+        ])
+
+        #expect(configuration.target == .standaloneScenario(id: "50011"))
+        #expect(configuration.strictAsIfAtField == .value(false))
+        #expect(configuration.asIfRulingField == .value(.chapter1))
+    }
+
     @Test("Live harness rejects mutually exclusive target settings")
     func campaignAndScenarioBothSetIsConfigurationError() {
         #expect(throws: LiveHarnessConfigurationError.bothCampaignAndScenario) {
@@ -486,19 +498,6 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(terminalScenarioOutcomes(from: mode) == [
             scenarioID: "gameState IsOver",
         ])
-    }
-
-    @Test("Standalone resolution helper reads exposed scenario snapshot fields")
-    func standaloneResolutionHelperReadsExposedSnapshotFields() {
-        let exposed: [JSONValue] = [
-            .object(["unrelated": .string("ignored")]),
-            .array([
-                .object(["scenarioResolution": .string("Resolution1")]),
-            ]),
-        ]
-
-        #expect(standaloneScenarioResolution(in: exposed) == .string("Resolution1"))
-        #expect(standaloneScenarioResolution(in: [.object([:])]) == nil)
     }
 
     @Test(
@@ -1925,7 +1924,7 @@ private func terminalScenarioOutcomes(from mode: GameMode) -> [String: String] {
     case .campaignOnly:
         outcomes["campaign"] = "gameState IsOver"
     case let .campaignAndScenario(_, scenario), let .scenarioOnly(scenario):
-        outcomes[scenario.id.rawValue] = standaloneScenarioOutcome(from: scenario)
+        outcomes[scenario.id.rawValue] = "gameState IsOver"
     }
     return outcomes
 }
@@ -1974,45 +1973,6 @@ private func campaignStepScenarioID(_ step: JSONValue?) -> String? {
         return contents
     }
     return nil
-}
-
-private func standaloneScenarioOutcome(from scenario: Scenario) -> String {
-    if let resolution = standaloneScenarioResolution(from: scenario) {
-        return "resolution \(jsonString(resolution))"
-    }
-    return "gameState IsOver"
-}
-
-private func standaloneScenarioResolution(from scenario: Scenario) -> JSONValue? {
-    standaloneScenarioResolution(in: [
-        scenario.meta,
-        scenario.xpBreakdown,
-        .array(scenario.resolvedStories),
-    ])
-}
-
-private func standaloneScenarioResolution(in values: [JSONValue]) -> JSONValue? {
-    values.lazy.compactMap(standaloneScenarioResolution(in:)).first
-}
-
-private func standaloneScenarioResolution(in value: JSONValue) -> JSONValue? {
-    switch value {
-    case let .object(object):
-        for key in ["resolution", "scenarioResolution", "standaloneResolution"] {
-            if let resolution = object[key], resolution != .null {
-                return resolution
-            }
-        }
-        let resolutions = object["resolutions"]?.objectValue
-        if resolutions?.count == 1, let resolution = resolutions?.values.first {
-            return resolution
-        }
-        return nil
-    case let .array(values):
-        return standaloneScenarioResolution(in: values)
-    case .null, .bool, .number, .string:
-        return nil
-    }
 }
 
 private func resolutionEntry(
