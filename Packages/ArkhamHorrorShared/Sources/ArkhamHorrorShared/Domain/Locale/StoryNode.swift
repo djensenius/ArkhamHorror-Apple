@@ -22,6 +22,10 @@ indirect enum StoryNode: Sendable, Equatable {
     /// raw `{name}` placeholder and never as an arbitrary URL, so the native presentation can
     /// choose its own glyph and spoken label.
     case icon(String)
+    /// A catalog variable whose value is a typed icon name proven by the backend extractor.
+    /// Only the closed token/skill values this client knows become this node; unknown future
+    /// values fail the whole entry closed instead of showing raw enum text.
+    case semanticIcon(StoryIcon)
     /// Text naming a card. `code` is the catalog's own card code, kept verbatim so the native
     /// card-art path can use the identifier this deployment publishes.
     case cardReference(code: String, children: [StoryNode])
@@ -123,6 +127,7 @@ extension StoryNode {
         case let .list(_, items): items.map { $0.map(\.plainText).joined() }.joined(separator: " ")
         case .lineBreak: " "
         case let .icon(name): StoryNode.spokenIconLabel(name)
+        case let .semanticIcon(icon): icon.accessibilityLabel
         case let .image(reference): reference.accessibleDescription
         case .rule, .table: ""
         }
@@ -136,7 +141,7 @@ extension StoryNode {
     /// a lossy string.
     var losesInstructionWhenFlattened: Bool {
         switch self {
-        case .text, .lineBreak, .icon: false
+        case .text, .lineBreak, .icon, .semanticIcon: false
         case .rule, .image, .table, .list: true
         case let .paragraph(children), let .group(children):
             children.contains { $0.losesInstructionWhenFlattened }
@@ -152,5 +157,90 @@ extension StoryNode {
     /// never invented prose.
     static func spokenIconLabel(_ name: String) -> String {
         BoardDisplayFormatting.humanizeTag(name).lowercased()
+    }
+}
+
+/// Typed icon-variable values from the locale catalog. The app has no localized catalog for
+/// token or skill *names* today; accessibility labels are therefore derived mechanically from
+/// the backend enum values, matching the board's existing `humanizeTag` token labels rather
+/// than hard-coding display prose.
+enum StoryIcon: Sendable, Equatable, Hashable {
+    case chaosToken(ChaosTokenArtFace)
+    case skill(StorySkillIcon)
+
+    static func iconVariableValue(_ value: String) -> StoryIcon? {
+        if let chaosToken = ChaosTokenArtFace.iconVariableValue(value) {
+            return .chaosToken(chaosToken)
+        }
+        if let skill = StorySkillIcon(rawValue: value) {
+            return .skill(skill)
+        }
+        return nil
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case let .chaosToken(face):
+            StoryNode.spokenIconLabel(face.catalogIconName)
+        case let .skill(skill):
+            StoryNode.spokenIconLabel(skill.rawValue)
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .chaosToken:
+            "circle.hexagongrid.fill"
+        case let .skill(skill):
+            skill.systemImage
+        }
+    }
+}
+
+private extension ChaosTokenArtFace {
+    // swiftlint:disable:next cyclomatic_complexity
+    static func iconVariableValue(_ value: String) -> ChaosTokenArtFace? {
+        switch value {
+        case "skull": .skull
+        case "cultist": .cultist
+        case "tablet": .tablet
+        case "elderThing": .elderThing
+        case "autoFail": .autoFail
+        case "elderSign": .elderSign
+        case "curse": .curse
+        case "bless": .bless
+        case "frost": .frost
+        case "blood": .blood
+        default: nil
+        }
+    }
+
+    var catalogIconName: String {
+        switch self {
+        case .elderThing: "elderThing"
+        case .autoFail: "autoFail"
+        case .elderSign: "elderSign"
+        case .skull, .cultist, .tablet, .curse, .bless, .frost, .blood:
+            rawValue
+        case .plusOne, .zero, .minusOne, .minusTwo, .minusThree, .minusFour, .minusFive,
+             .minusSix, .minusSeven, .minusEight, .blank:
+            rawValue
+        }
+    }
+}
+
+enum StorySkillIcon: String, Sendable, Equatable, Hashable {
+    case willpower
+    case intellect
+    case combat
+    case agility
+
+    var systemImage: String {
+        switch self {
+        case .willpower: "brain.head.profile"
+        case .intellect: "magnifyingglass"
+        case .combat: "burst.fill"
+        case .agility: "figure.run"
+        }
     }
 }

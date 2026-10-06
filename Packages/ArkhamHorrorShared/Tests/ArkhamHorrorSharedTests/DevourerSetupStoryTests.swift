@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -40,7 +41,8 @@ struct DevourerSetupStoryTests {
     }
 
     @Test("Captured setup renders catalog entries and preserves web-style entry modifiers")
-    func capturedSetupRendersFromCatalogWithUnsupportedEntryFallback() async throws {
+    // swiftlint:disable:next function_body_length
+    func capturedSetupRendersFromCatalogWithIconVariable() async throws {
         let sample = try Self.capturedSample()
         let payload = try ContractJSON.decode(
             BasicChoiceQuestionPayload.self,
@@ -55,7 +57,7 @@ struct DevourerSetupStoryTests {
         )
         let resolved = try #require(resolution.story)
         #expect(resolved.title == "Setup")
-        #expect(resolved.degradedReason == .unsupportedEntry)
+        #expect(resolved.degradedReason == nil)
 
         guard case let .list(items)? = resolved.body.first else {
             Issue.record("Expected the captured setup passage to stay a list")
@@ -88,7 +90,18 @@ struct DevourerSetupStoryTests {
         #expect(validModifiers == [.validEntry])
         #expect(validEntry == .nodes([.text("Add synthetic doom for five or six names.")]))
 
-        #expect(items[5].entry == .text("addToken (token: elderThing)"))
+        #expect(items[5].entry == .nodes([
+            .text("Add synthetic "),
+            .semanticIcon(.chaosToken(.elderThing)),
+            .text(" to the chaos bag."),
+        ]))
+        #expect(try resolver.render(
+            key: "label.test",
+            variables: .object(["skill": .string("willpower"), "count": Self.number("3")])
+        ) == .success([
+            .text("Test "), .semanticIcon(.skill(.willpower)), .text(" ("), .text("3"),
+            .text(")"),
+        ]))
         let prompt = Self.prompt(payload: payload, resolution: resolution)
         #expect(prompt.canSubmit)
         #expect(prompt.statusMessage == nil)
@@ -210,6 +223,7 @@ struct DevourerSetupStoryTests {
     ) throws -> SyntheticLocaleCatalogDocuments {
         let entries = [
             "addToken",
+            "label.test",
             "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.fiveOrSixNames",
             "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.instructions",
             "nightOfTheZealot.theDevourerBelow.setup.cultistsWhoGotAway.oneOrTwoNames",
@@ -224,7 +238,7 @@ struct DevourerSetupStoryTests {
         ]
         return try SyntheticLocaleCatalogDocuments.make(
             entryKeys: entries,
-            unsupportedKeys: 1,
+            unsupportedKeys: 0,
             chunkEntries: chunkEntries
         )
     }
@@ -263,9 +277,27 @@ struct DevourerSetupStoryTests {
     private static let catalogEntriesJSON = #"""
     {
       "addToken": {
-        "form": "unsupported",
-        "reason": "unusable-variable-type",
-        "detail": "token is unknown for a text slot"
+        "form": "message",
+        "nodes": [
+          {"type": "text", "value": "Add synthetic "},
+          {"type": "var", "name": "token", "source": "named", "role": "iconVariable"},
+          {"type": "text", "value": " to the chaos bag."}
+        ],
+        "variables": [{"name": "token", "source": "named", "role": "iconVariable"}]
+      },
+      "label.test": {
+        "form": "message",
+        "nodes": [
+          {"type": "text", "value": "Test "},
+          {"type": "var", "name": "skill", "source": "named", "role": "iconVariable"},
+          {"type": "text", "value": " ("},
+          {"type": "var", "name": "count", "source": "named", "role": "text"},
+          {"type": "text", "value": ")"}
+        ],
+        "variables": [
+          {"name": "skill", "source": "named", "role": "iconVariable"},
+          {"name": "count", "source": "named", "role": "text"}
+        ]
       },
       "nightOfTheZealot.theDevourerBelow.setup.gatherSets": {
         "form": "message",
@@ -350,6 +382,10 @@ struct DevourerSetupStoryTests {
       }
     }
     """#
+
+    private static func number(_ text: String) throws -> JSONValue {
+        try .number(JSONNumber(exactDecimalLiteral: text))
+    }
 
     private static func prompt(
         payload: BasicChoiceQuestionPayload,

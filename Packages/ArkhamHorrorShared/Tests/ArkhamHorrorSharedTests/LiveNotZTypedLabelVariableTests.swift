@@ -27,6 +27,42 @@ struct LiveNotZTypedLabelVariableTests {
         }
     }
 
+    @Test("Icon variable choice labels resolve through the production label path")
+    @MainActor
+    func iconVariableChoiceLabelResolvesAndStaysPressable() async throws {
+        let fixture = try Self.fixture().replacingChoiceLabel(
+            at: 0,
+            with: "$label.test skill=s:\"willpower\" count=i:3.0"
+        )
+        let labelModel = try await Self.productionLabelModel()
+        let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let choice = try #require(prompt.choices.first { $0.index == 0 })
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Test willpower (3)")
+        #expect(prompt.isChoiceActionable(choice, in: projection))
+        #expect(prompt.choiceLabelResolutions[0] == .resolved("Test willpower (3)"))
+    }
+
+    @Test("Bad icon variable values leave choice labels unresolved and unpressable")
+    @MainActor
+    func badIconVariableChoiceLabelValueRemainsUnresolved() async throws {
+        let fixture = try Self.fixture().replacingChoiceLabel(
+            at: 0,
+            with: "$label.test skill=s:\"wild\" count=i:3.0"
+        )
+        let labelModel = try await Self.productionLabelModel()
+        let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let choice = try #require(prompt.choices.first { $0.index == 0 })
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Choice 1")
+        #expect(!prompt.isChoiceActionable(choice, in: projection))
+        #expect(prompt.choiceLabelResolutions[0] == .unavailable(.unsupportedVariableValue))
+    }
+
     @Test("Malformed typed label variables remain unresolved and unpressable")
     @MainActor
     func malformedTypedLabelVariableRemainsUnresolved() async throws {
@@ -94,6 +130,7 @@ struct LiveNotZTypedLabelVariableTests {
             entryKeys: [
                 "label.discardCardsFromHand",
                 "label.takeDamageAndHorror",
+                "label.test",
             ],
             chunkEntries: Self.productionLabelChunkEntries
         )
@@ -150,6 +187,20 @@ struct LiveNotZTypedLabelVariableTests {
         "variables":[
           {"name":"damage","source":"named","role":"text"},
           {"name":"horror","source":"named","role":"text"}
+        ]
+      },
+      "label.test": {
+        "form":"message",
+        "nodes":[
+          {"type":"text","value":"Test "},
+          {"type":"var","name":"skill","source":"named","role":"iconVariable"},
+          {"type":"text","value":" ("},
+          {"type":"var","name":"count","source":"named","role":"text"},
+          {"type":"text","value":")"}
+        ],
+        "variables":[
+          {"name":"skill","source":"named","role":"iconVariable"},
+          {"name":"count","source":"named","role":"text"}
         ]
       }
     }

@@ -209,8 +209,8 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         switch node {
         case let .text(text):
             .success([.text(text)])
-        case let .variable(name, _, isIcon):
-            renderVariable(name: name, isIcon: isIcon, variables: variables)
+        case let .variable(name, _, role):
+            renderVariable(name: name, role: role, variables: variables)
         case let .linked(target, modifier):
             renderLink(
                 target: target,
@@ -451,14 +451,42 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
 
     private func renderVariable(
         name: String,
-        isIcon: Bool,
+        role: LocaleCatalogVariable.Role,
+        variables: JSONValue
+    ) -> Result<[StoryNode], StoryUnavailableReason> {
+        if role == .icon {
+            return renderLiteralIconVariable(name: name, variables: variables)
+        }
+        guard case let .object(object) = variables,
+              let value = object[name]
+        else {
+            return .failure(.missingVariable)
+        }
+        guard let text = Self.losslessText(value) else {
+            return .failure(.unsupportedVariableValue)
+        }
+        switch role {
+        case .text:
+            return .success([.text(text)])
+        case .iconVariable:
+            guard let icon = StoryIcon.iconVariableValue(text) else {
+                return .failure(.unsupportedVariableValue)
+            }
+            return .success([.semanticIcon(icon)])
+        case .icon, .presentation:
+            return .failure(.unsupportedEntry)
+        }
+    }
+
+    private func renderLiteralIconVariable(
+        name: String,
         variables: JSONValue
     ) -> Result<[StoryNode], StoryUnavailableReason> {
         guard case let .object(object) = variables else {
-            return isIcon ? .success([.icon(name)]) : .failure(.missingVariable)
+            return .success([.icon(name)])
         }
         guard let value = object[name] else {
-            return isIcon ? .success([.icon(name)]) : .failure(.missingVariable)
+            return .success([.icon(name)])
         }
         guard let text = Self.losslessText(value) else {
             return .failure(.unsupportedVariableValue)
@@ -540,7 +568,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             .emphasis(style, children.map { transformText($0, transform) })
         case let .list(ordered, items):
             .list(ordered: ordered, items: items.map { $0.map { transformText($0, transform) } })
-        case .lineBreak, .rule, .image, .icon:
+        case .lineBreak, .rule, .image, .icon, .semanticIcon:
             node
         case let .cardReference(code, children):
             .cardReference(code: code, children: children.map { transformText($0, transform) })
