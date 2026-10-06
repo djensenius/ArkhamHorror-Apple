@@ -222,7 +222,8 @@ enum AccountAccessibilityID {
     static let campaignPromptFailureText = "account.games.live.campaign.failure"
 
     static func campaignUpgradeSavedDeckButton(for gameID: UUID, deckID: UUID) -> String {
-        "account.games.live.campaign.upgradeDeck.savedDeck.\(gameID.uuidString).\(deckID.uuidString)"
+        "account.games.live.campaign.upgradeDeck.savedDeck."
+            + "\(gameID.uuidString).\(deckID.uuidString)"
     }
 
     static func campaignUpgradeSavedDeckValidationText(

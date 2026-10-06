@@ -914,7 +914,7 @@ private struct LivePlaythroughBot {
     let trace: PlaythroughTraceRecorder
     let diagnosticBypassUnsupported: Bool
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     func driveUntilServerCompletion() async throws -> BotOutcome {
         var repeatedQuestionShapes: [String: Int] = [:]
         let startedAt = Date()
@@ -1055,14 +1055,15 @@ private struct LivePlaythroughBot {
 
             let submission = try selectedAnswer.answer.traceSubmission(prompt: prompt)
             do {
-                let seatInvestigatorBeforeReplacement: SeatInvestigatorIdentity? = if case .replacementDeck = selectedAnswer.answer {
-                    seatInvestigatorIdentity(
-                        for: prompt.identity.ownerID,
-                        in: projection
-                    )
-                } else {
-                    nil
-                }
+                let seatInvestigatorBeforeReplacement: SeatInvestigatorIdentity? =
+                    if case .replacementDeck = selectedAnswer.answer {
+                        seatInvestigatorIdentity(
+                            for: prompt.identity.ownerID,
+                            in: projection
+                        )
+                    } else {
+                        nil
+                    }
                 let submitOutcome = try await submit(selectedAnswer.answer, prompt: prompt)
                 let advanced = try await waitForPromptAdvance(
                     from: prompt.identity,
@@ -1435,19 +1436,23 @@ private struct LivePlaythroughBot {
         while Date() < deadline {
             let envelope = try await lifecycle.getGame(gameID, on: profile, token: token)
             let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
-            if let currentInvestigator = projection.investigators.first(where: {
+            guard let currentInvestigator = projection.investigators.first(where: {
                 $0.playerID == ownerID
-            }),
-                currentInvestigator.id.rawValue.rawValue != originalInvestigatorID
-            {
-                try await captureReplacementFollowUpIfRequested()
-                let questionTag = projection.questions[ownerID]?.rawValue.objectValue?["tag"]?
-                    .stringValue
-                return ReplacementFollowUp(
-                    investigatorID: currentInvestigator.id.rawValue.rawValue,
-                    requiresUpgradeSkip: questionTag == "ChooseUpgradeDeck"
-                )
+            }) else {
+                try await Task.sleep(for: .milliseconds(100))
+                continue
             }
+            guard currentInvestigator.id.rawValue.rawValue != originalInvestigatorID else {
+                try await Task.sleep(for: .milliseconds(100))
+                continue
+            }
+            try await captureReplacementFollowUpIfRequested()
+            let questionTag = projection.questions[ownerID]?.rawValue.objectValue?["tag"]?
+                .stringValue
+            return ReplacementFollowUp(
+                investigatorID: currentInvestigator.id.rawValue.rawValue,
+                requiresUpgradeSkip: questionTag == "ChooseUpgradeDeck"
+            )
             try await Task.sleep(for: .milliseconds(100))
         }
         throw PlaythroughError.timedOut("replacement follow-up prompt")
@@ -1455,7 +1460,8 @@ private struct LivePlaythroughBot {
 
     private func waitForPromptAdvance(
         from identity: BasicChoicePromptIdentity,
-        acceptingSeatInvestigatorChangeFrom previousSeatInvestigator: SeatInvestigatorIdentity? = nil
+        acceptingSeatInvestigatorChangeFrom previousSeatInvestigator: SeatInvestigatorIdentity?
+            = nil
     ) async throws -> Bool {
         let deadline = Date().addingTimeInterval(30)
         var nextServerStateCheck = Date()
@@ -1464,15 +1470,10 @@ private struct LivePlaythroughBot {
             if current.identity.questionVersion != identity.questionVersion {
                 return true
             }
-            if let previousSeatInvestigator,
-               current.identity.ownerID == previousSeatInvestigator.ownerID,
-               let projection = model.liveGameState(for: gameID).lastKnownProjection,
-               let currentSeatInvestigator = seatInvestigatorIdentity(
-                   for: previousSeatInvestigator.ownerID,
-                   in: projection
-               ),
-               currentSeatInvestigator.investigatorID != previousSeatInvestigator.investigatorID
-            {
+            if modelSeatInvestigatorChanged(
+                from: previousSeatInvestigator,
+                currentOwnerID: current.identity.ownerID
+            ) {
                 return true
             }
             if Date() >= nextServerStateCheck {
@@ -1487,6 +1488,21 @@ private struct LivePlaythroughBot {
             try await Task.sleep(for: .milliseconds(100))
         }
         return false
+    }
+
+    private func modelSeatInvestigatorChanged(
+        from previousSeatInvestigator: SeatInvestigatorIdentity?,
+        currentOwnerID: PlayerID
+    ) -> Bool {
+        guard let previousSeatInvestigator,
+              currentOwnerID == previousSeatInvestigator.ownerID,
+              let projection = model.liveGameState(for: gameID).lastKnownProjection,
+              let currentSeatInvestigator = seatInvestigatorIdentity(
+                  for: previousSeatInvestigator.ownerID,
+                  in: projection
+              )
+        else { return false }
+        return currentSeatInvestigator.investigatorID != previousSeatInvestigator.investigatorID
     }
 
     private func seatInvestigatorIdentity(
@@ -1516,12 +1532,12 @@ private struct LivePlaythroughBot {
             campaignSummary: projection.campaignSummary
         )
         let originalInvestigatorID = "c\(investigator.code)"
+        let isReplacementFollowUp = currentInvestigator.id.rawValue.rawValue
+            != originalInvestigatorID && context.allowsSkip
         let fileName: String
         if context.requiresReplacement {
             fileName = "campaign-replacement-choose-upgrade-deck.json"
-        } else if currentInvestigator.id.rawValue.rawValue != originalInvestigatorID,
-                  context.allowsSkip
-        {
+        } else if isReplacementFollowUp {
             fileName = "campaign-replacement-follow-up-choose-upgrade-deck.json"
         } else {
             return
@@ -1581,16 +1597,13 @@ private struct LivePlaythroughBot {
             return true
         }
         let projection = BoardProjectionBuilder.makeProjection(from: envelope.game)
-        if let previousSeatInvestigator,
-           let currentSeatInvestigator = seatInvestigatorIdentity(
-               for: previousSeatInvestigator.ownerID,
-               in: projection
-           ),
-           currentSeatInvestigator.investigatorID != previousSeatInvestigator.investigatorID
-        {
-            return true
-        }
-        return false
+        guard let previousSeatInvestigator,
+              let currentSeatInvestigator = seatInvestigatorIdentity(
+                  for: previousSeatInvestigator.ownerID,
+                  in: projection
+              )
+        else { return false }
+        return currentSeatInvestigator.investigatorID != previousSeatInvestigator.investigatorID
     }
 
     private func minimumAmounts(for prompt: BasicChoiceAmountPrompt) -> [String: Int] {

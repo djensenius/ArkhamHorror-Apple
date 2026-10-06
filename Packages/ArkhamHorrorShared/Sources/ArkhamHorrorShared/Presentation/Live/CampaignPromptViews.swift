@@ -866,10 +866,12 @@ private struct CampaignSavedDeckSelectionSection: View {
             Text(message)
                 .font(.caption)
                 .foregroundStyle(.red)
-                .accessibilityIdentifier(AccountAccessibilityID.campaignUpgradeSavedDeckValidationText(
-                    for: gameID.rawValue,
-                    deckID: deck.id.rawValue
-                ))
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.campaignUpgradeSavedDeckValidationText(
+                        for: gameID.rawValue,
+                        deckID: deck.id.rawValue
+                    )
+                )
         }
     }
 
