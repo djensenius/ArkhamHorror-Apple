@@ -368,6 +368,102 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(configuration.asIfRulingField == .value(.chapter2))
     }
 
+    @Test("Live harness rejects mutually exclusive target settings")
+    func campaignAndScenarioBothSetIsConfigurationError() {
+        #expect(throws: LiveHarnessConfigurationError.bothCampaignAndScenario) {
+            _ = try LivePlaythroughConfiguration.fromEnvironment([
+                "ARKHAM_LIVE_CAMPAIGN_ID": "01",
+                "ARKHAM_LIVE_SCENARIO_ID": "01104",
+            ])
+        }
+    }
+
+    @Test("Live harness rejects invalid boolean settings")
+    func invalidBooleanIsConfigurationError() {
+        #expect(throws: LiveHarnessConfigurationError.invalidBoolean(
+            name: "ARKHAM_LIVE_STRICT_AS_IF_AT",
+            value: "sometimes"
+        )) {
+            _ = try LivePlaythroughConfiguration.fromEnvironment([
+                "ARKHAM_LIVE_STRICT_AS_IF_AT": "sometimes",
+            ])
+        }
+    }
+
+    @Test("Live harness rejects unknown investigators and ultimatum values")
+    func unknownInvestigatorAndUltimatumAreConfigurationErrors() {
+        #expect(throws: LiveHarnessConfigurationError.unknownInvestigator("99999")) {
+            _ = try LivePlaythroughConfiguration.fromEnvironment([
+                "ARKHAM_LIVE_INVESTIGATOR_CODES": "99999",
+            ])
+        }
+        #expect(throws: LiveHarnessConfigurationError.unknownUltimatumOrBoon("Bogus")) {
+            _ = try LivePlaythroughConfiguration.fromEnvironment([
+                "ARKHAM_LIVE_ULTIMATUMS_AND_BOONS": "BoonOfHades, Bogus",
+            ])
+        }
+    }
+
+    @Test("Campaign outcome helpers preserve step order and resolution mappings")
+    func campaignOutcomeHelpersPreserveStepOrderAndResolutionMappings() {
+        let completedSteps: JSONValue = .array([
+            .object([
+                "tag": .string("ScenarioStep"),
+                "contents": .string("c02062"),
+            ]),
+            .object([
+                "tag": .string("InterludeStep"),
+                "contents": .string("ignored"),
+            ]),
+            .object([
+                "tag": .string("StandaloneScenarioStep"),
+                "contents": .array([
+                    .string("c81001"),
+                    .object(["mode": .string("standalone")]),
+                ]),
+            ]),
+            .object([
+                "tag": .string("ScenarioStepWithOptions"),
+                "contents": .array([
+                    .string("c01104"),
+                    .object(["difficulty": .string("Easy")]),
+                ]),
+            ]),
+        ])
+        let resolutions: [String: JSONValue] = [
+            "01104": .string("NoResolution"),
+            "c81001": .string("StandaloneResolution"),
+            "c02062": .array([.string("R1"), .string("R2")]),
+            "c99999": .string("UnmatchedResolution"),
+        ]
+        let campaign: JSONValue = .object([
+            "completedSteps": completedSteps,
+            "resolutions": .object(resolutions),
+        ])
+
+        #expect(campaignStepScenarioIDs(in: completedSteps) == [
+            "c01104",
+            "c81001",
+            "c02062",
+        ])
+        #expect(campaignStepScenarioID(.object([
+            "tag": .string("StandaloneScenarioStep"),
+            "contents": .array([.string("c81001"), .object([:])]),
+        ])) == "c81001")
+        let strippedPrefixEntry = resolutionEntry(for: "c01104", in: resolutions)
+        #expect(strippedPrefixEntry?.key == "01104")
+        #expect(strippedPrefixEntry?.value == .string("NoResolution"))
+        let addedPrefixEntry = resolutionEntry(for: "02062", in: resolutions)
+        #expect(addedPrefixEntry?.key == "c02062")
+        #expect(addedPrefixEntry?.value == .array([.string("R1"), .string("R2")]))
+
+        let outcomes = campaignScenarioOutcomes(from: campaign)
+        #expect(outcomes["c01104"] == "resolution \(jsonString(.string("NoResolution")))")
+        #expect(outcomes["c81001"] == "resolution \(jsonString(.string("StandaloneResolution")))")
+        #expect(outcomes["c02062"] == "resolution \(jsonString(.array([.string("R1"), .string("R2")])))")
+        #expect(outcomes["c99999"] == "resolution \(jsonString(.string("UnmatchedResolution")))")
+    }
+
     @Test("Non-terminal campaign outcomes do not claim server completion")
     func nonTerminalCampaignOutcomesDoNotClaimGameOver() {
         let campaign: JSONValue = .object([
