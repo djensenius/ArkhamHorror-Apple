@@ -724,9 +724,23 @@ struct NightOfTheZealotCoverageReplayTests {
             if case let .string(key)? = object["key"] {
                 insertLocalizationKey(key, into: &keys)
             }
+            collectChooseAmountsLabelKeys(from: object, into: &keys)
             for value in object.values {
                 collectLocalizationKeys(from: value, into: &keys)
             }
+        }
+    }
+
+    private func collectChooseAmountsLabelKeys(
+        from object: [String: JSONValue],
+        into keys: inout Set<String>
+    ) {
+        guard case let .array(choices)? = object["amountChoices"] else { return }
+        for choice in choices {
+            guard let label = choice.objectValue?["label"]?.stringValue,
+                  label.hasPrefix("$")
+            else { continue }
+            keys.insert("choice.\(label.dropFirst())")
         }
     }
 

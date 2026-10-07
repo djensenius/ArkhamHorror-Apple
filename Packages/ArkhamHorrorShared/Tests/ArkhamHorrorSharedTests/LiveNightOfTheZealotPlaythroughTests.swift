@@ -404,6 +404,10 @@ private struct CapturedLivePromptFixture: Decodable {
     let questionPresentation: QuestionPresentation
 }
 
+private struct LiveHarnessPreferredLanguages: PreferredLanguagesProviding {
+    let preferredLanguages: [String]
+}
+
 @MainActor
 @Suite("Live campaign playthrough")
 // swiftlint:disable:next type_body_length
@@ -651,15 +655,42 @@ struct LiveNightOfTheZealotPlaythroughTests {
     }
 
     @Test("Return Forgotten Age supply-point amount prompt resolves its row label")
-    func returnForgottenAgeSupplyPointAmountPromptIsAnswerable() throws {
+    func returnForgottenAgeSupplyPointAmountPromptIsAnswerable() async throws {
+        let title = "Catalog supply points"
+        let model = try await Self.appModelWithCatalog(entries: [
+            "choice.supplyPoints": title,
+        ])
         let fixture = try Self.capturedForgottenAgePrompt(
             named: "return-forgotten-age-supply-points-choose-amounts-q147"
         )
-        let prompt = try Self.promptWithResolvedAmountLabels(from: fixture)
+        let prompt = try Self.promptFromFixture(fixture, model: model)
         let amountPrompt = try #require(prompt.amountPrompt(in: Self.strategyProjection()))
+        let amountChoice = try #require(fixture.questionPresentation.amountChoices?.first)
 
+        #expect(prompt.promptLabelResolutions[
+            "amountChoice.\(amountChoice.choiceID)"
+        ] == .resolved(title))
         #expect(prompt.canSubmit)
-        #expect(amountPrompt.visibleRows.map(\.title) == ["Supply Points to Gain"])
+        #expect(amountPrompt.visibleRows.map(\.title) == [title])
+    }
+
+    @Test("ChooseAmounts row labels use the web choice namespace only")
+    func amountRowLabelsUseWebChoiceNamespaceOnly() async throws {
+        let model = try await Self.appModelWithCatalog(entries: [
+            "x": "Plain x",
+            "choice.x": "Choice x",
+            "choice.foo.bar": "Choice dotted",
+            "choice.supplyPoints": "Choice supply points",
+        ])
+
+        try Self.assertPlainLabelDoesNotUseChoiceNamespace(model: model)
+        let amountResolutions = model.promptLabelResolutions(
+            for: Self.amountNamespacePresentation()
+        )
+        #expect(amountResolutions["label"] == .resolved("Plain x"))
+        #expect(amountResolutions["amountChoice.x-row"] == .resolved("Choice x"))
+        #expect(amountResolutions["amountChoice.dotted-row"] == .resolved("Choice dotted"))
+        #expect(amountResolutions["amountChoice.missing-row"] == .unavailable(.missingKey))
     }
 
     @Test("Live harness treats same-version prompt-key changes as progress")
@@ -1309,14 +1340,14 @@ struct LiveNightOfTheZealotPlaythroughTests {
         )
     }
 
-    private static func promptWithResolvedAmountLabels(
-        from fixture: CapturedLivePromptFixture
+    private static func promptFromFixture(
+        _ fixture: CapturedLivePromptFixture,
+        model: AppModel
     ) throws -> BasicChoicePromptPresentation {
         let bound = try fixture.questionPresentation.bind(
             to: fixture.rawQuestion,
             expectedQuestionVersion: fixture.questionVersion
         )
-        let amountChoice = try #require(fixture.questionPresentation.amountChoices?.first)
         return BasicChoicePromptPresentation(
             identity: BasicChoicePromptIdentity(
                 gameID: BoardTestFixtures.gameID(),
@@ -1329,14 +1360,121 @@ struct LiveNightOfTheZealotPlaythroughTests {
             ),
             question: .updateRequired(tag: "ChooseAmounts"),
             semanticPresentation: bound,
-            promptLabelResolutions: [
-                "amountChoice.\(amountChoice.choiceID)": .resolved("Supply Points to Gain"),
-                "label": .resolved("Gain supply points"),
-            ],
+            promptLabelResolutions: model.promptLabelResolutions(
+                for: fixture.questionPresentation
+            ),
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
             serverFeedback: nil
+        )
+    }
+
+    private static func appModelWithCatalog(
+        entries: [String: String]
+    ) async throws -> AppModel {
+        let documents = try SyntheticLocaleCatalogDocuments.make(
+            pack: "choice",
+            entryKeys: entries.keys.sorted(),
+            chunkEntries: localeCatalogChunkEntries(entries)
+        )
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(
+                profiles: [documents.profile], selectedID: documents.profile.id
+            ),
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.compatible(
+                capabilities: [LocaleCatalogLimits.capabilityIdentifier],
+                localeCatalog: documents.advertisement
+            ))),
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            localeCatalogLoader: documents.loader(),
+            preferredLanguagesProvider: LiveHarnessPreferredLanguages(preferredLanguages: ["en"])
+        )
+        await model.flowTask?.value
+        await model.localeCatalogTask?.value
+        return model
+    }
+
+    private static func localeCatalogChunkEntries(
+        _ entries: [String: String]
+    ) throws -> String {
+        let pairs = try entries.keys.sorted().map { key in
+            try "\(jsonLiteral(key)):\(messageEntryJSON(text: entries[key] ?? ""))"
+        }
+        return "{\(pairs.joined(separator: ","))}"
+    }
+
+    private static func messageEntryJSON(text: String) throws -> String {
+        try "{\"form\":\"message\",\"nodes\":[{\"type\":\"text\",\"value\":"
+            + jsonLiteral(text) + "}],\"variables\":[]}"
+    }
+
+    private static func jsonLiteral(_ value: String) throws -> String {
+        let data = try JSONEncoder().encode(value)
+        return try #require(String(data: data, encoding: .utf8))
+    }
+
+    private static func assertPlainLabelDoesNotUseChoiceNamespace(
+        model: AppModel
+    ) throws {
+        let rawQuestion = Self.rawLabelQuestion("$supplyPoints")
+        let presentation = QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: 1,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .localizedLabel,
+                label: QuestionPresentation.Label(
+                    kind: .embeddedI18n,
+                    text: "$supplyPoints"
+                )
+            )]
+        )
+        let bound = try presentation.bind(to: rawQuestion, expectedQuestionVersion: 1)
+        #expect(model.choiceLabelResolutions(
+            for: nil,
+            semanticPresentation: bound
+        )[0] == .unavailable(.missingKey))
+    }
+
+    private static func rawLabelQuestion(_ label: String) -> JSONValue {
+        .object([
+            "tag": .string("ChooseOne"),
+            "choices": .array([
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string(label),
+                    "messages": .array([]),
+                ]),
+            ]),
+        ])
+    }
+
+    private static func amountNamespacePresentation() -> QuestionPresentation {
+        QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: 2,
+            questionKind: .chooseAmounts,
+            choiceCount: 0,
+            choices: [],
+            answer: .amounts,
+            label: QuestionPresentation.Label(kind: .embeddedI18n, text: "$x"),
+            target: .max(3),
+            amountChoices: [
+                QuestionPresentation.AmountChoice(
+                    choiceID: "x-row", label: "$x", minBound: 0, maxBound: 1
+                ),
+                QuestionPresentation.AmountChoice(
+                    choiceID: "dotted-row", label: "$foo.bar", minBound: 0, maxBound: 1
+                ),
+                QuestionPresentation.AmountChoice(
+                    choiceID: "missing-row", label: "$missing", minBound: 0, maxBound: 1
+                ),
+            ]
         )
     }
 
