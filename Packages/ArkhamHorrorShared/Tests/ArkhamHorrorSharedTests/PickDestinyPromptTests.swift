@@ -6,6 +6,7 @@ private struct PickDestinyPreferredLanguages: PreferredLanguagesProviding {
     let preferredLanguages: [String]
 }
 
+// swiftlint:disable file_length
 @MainActor
 @Suite("Pick Destiny prompt")
 // swiftlint:disable:next type_body_length
@@ -220,7 +221,7 @@ struct PickDestinyPromptTests {
         #expect(await connection.sentData.isEmpty)
     }
 
-    @Test("AppModel send fence rejects Pick Destiny when the semantic envelope changes the raw sequence")
+    @Test("Mismatched Pick Destiny envelope is unsendable")
     func appModelRejectsMismatchedSemanticPickDestinyBeforeSend() async throws {
         let model = await GameLifecycleTestModel.makeSignedIn(
             gameService: ScriptedGameLifecycleService()
@@ -466,3 +467,5 @@ struct PickDestinyPromptTests {
         )
     }
 }
+
+// swiftlint:enable file_length
