@@ -78,6 +78,7 @@ struct StoryIconVariableValueTests {
             #expect(icon?.accessibilityLabel == expected.accessibilityLabel)
         }
         #expect(StoryIcon.iconVariableValue("elderthing") == nil)
+        #expect(StoryIcon.iconVariableValue("wildMinus") == nil)
         #expect(StoryIcon.iconVariableValue("sealF") == nil)
     }
 }
