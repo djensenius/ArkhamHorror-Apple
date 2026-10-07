@@ -1,0 +1,133 @@
+{
+  "questionPresentation": {
+    "answer": {
+      "kind": "pickDestiny",
+      "tag": "PickDestinyAnswer"
+    },
+    "choiceCount": 0,
+    "choices": [],
+    "drawings": [
+      {
+        "scenario": "theWitchingHour",
+        "tarot": {
+          "arcana": "TemperanceXIV",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "atDeath'sDoorstep",
+        "tarot": {
+          "arcana": "JusticeXI",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "theSecretName",
+        "tarot": {
+          "arcana": "TheHermitIX",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "theWagesOfSin",
+        "tarot": {
+          "arcana": "TheHangedManXII",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "forTheGreaterGood",
+        "tarot": {
+          "arcana": "TheHierophantV",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "unionAndDisillusion",
+        "tarot": {
+          "arcana": "TheLoversVI",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "inTheClutchesOfChaos",
+        "tarot": {
+          "arcana": "TheChariotVII",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "beforeTheBlackThrone",
+        "tarot": {
+          "arcana": "WheelOfFortuneX",
+          "facing": "Upright"
+        }
+      }
+    ],
+    "protocolVersion": 2,
+    "questionKind": "pickDestiny",
+    "questionVersion": 4
+  },
+  "questionVersion": 4,
+  "rawQuestion": {
+    "drawings": [
+      {
+        "scenario": "theWitchingHour",
+        "tarot": {
+          "arcana": "TemperanceXIV",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "atDeath'sDoorstep",
+        "tarot": {
+          "arcana": "JusticeXI",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "theSecretName",
+        "tarot": {
+          "arcana": "TheHermitIX",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "theWagesOfSin",
+        "tarot": {
+          "arcana": "TheHangedManXII",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "forTheGreaterGood",
+        "tarot": {
+          "arcana": "TheHierophantV",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "unionAndDisillusion",
+        "tarot": {
+          "arcana": "TheLoversVI",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "inTheClutchesOfChaos",
+        "tarot": {
+          "arcana": "TheChariotVII",
+          "facing": "Upright"
+        }
+      },
+      {
+        "scenario": "beforeTheBlackThrone",
+        "tarot": {
+          "arcana": "WheelOfFortuneX",
+          "facing": "Upright"
+        }
+      }
+    ],
+    "tag": "PickDestiny"
+  }
+}

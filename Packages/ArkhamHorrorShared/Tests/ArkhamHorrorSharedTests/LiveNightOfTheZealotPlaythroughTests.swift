@@ -307,6 +307,26 @@ private func slugComponent(_ value: String) -> String {
     }.joined().lowercased()
 }
 
+private func pickDestinyBotSelection(
+    _ drawings: [QuestionPresentation.DestinyDrawing]
+) -> [QuestionPresentation.DestinyDrawing] {
+    let requiredReversed = (drawings.count + 1) / 2
+    var reversedCount = drawings.filter { $0.tarot.facing == .reversed }.count
+    return drawings.map { drawing in
+        guard reversedCount < requiredReversed,
+              drawing.tarot.facing != .reversed
+        else { return drawing }
+        reversedCount += 1
+        return QuestionPresentation.DestinyDrawing(
+            scenario: drawing.scenario,
+            tarot: QuestionPresentation.TarotCard(
+                facing: .reversed,
+                arcana: drawing.tarot.arcana
+            )
+        )
+    }
+}
+
 private func eligibleCoreReplacementDeck(
     originalInvestigatorCode: String,
     killedOrInsaneInvestigatorIDs: Set<String>,
@@ -652,6 +672,29 @@ struct LiveNightOfTheZealotPlaythroughTests {
 
         #expect(Self.selectedBotIndex(in: initialPrompt) == 1)
         #expect(Self.selectedBotIndex(in: resupplyPrompt) == 1)
+    }
+
+    @Test("Return Circle Undone destiny prompt is answerable")
+    func returnCircleUndonePickDestinyPromptIsAnswerable() throws {
+        let fixture = try Self.capturedCircleUndonePrompt(
+            named: "return-circle-undone-pick-destiny-q4"
+        )
+        let prompt = try Self.promptFromFixture(fixture, model: AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: FakeTokenStore(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore()
+        ))
+        let drawings = try #require(prompt.pickDestinyDrawings)
+        let selected = pickDestinyBotSelection(drawings)
+        let payload = try ContractJSON.encode(PickDestinyAnswer(contents: selected))
+        let decoded = try ContractJSON.decode(PickDestinyAnswer.self, from: payload)
+
+        #expect(prompt.isRenderableQuestion)
+        #expect(prompt.canSubmit)
+        #expect(drawings.map(\.scenario) == selected.map(\.scenario))
+        #expect(drawings.map(\.tarot.arcana) == selected.map(\.tarot.arcana))
+        #expect(selected.filter { $0.tarot.facing == .reversed }.count == 4)
+        #expect(decoded.contents == selected)
     }
 
     @Test("Return Forgotten Age supply-point amount prompt resolves its row label")
@@ -1333,6 +1376,20 @@ struct LiveNightOfTheZealotPlaythroughTests {
             forResource: name,
             withExtension: "json",
             subdirectory: "Fixtures/LiveForgottenAgePlaythrough"
+        ))
+        return try ContractJSON.decode(
+            CapturedLivePromptFixture.self,
+            from: Data(contentsOf: url)
+        )
+    }
+
+    private static func capturedCircleUndonePrompt(
+        named name: String
+    ) throws -> CapturedLivePromptFixture {
+        let url = try #require(Bundle.module.url(
+            forResource: name,
+            withExtension: "json",
+            subdirectory: "Fixtures/LiveCircleUndonePlaythrough"
         ))
         return try ContractJSON.decode(
             CapturedLivePromptFixture.self,
@@ -2433,6 +2490,13 @@ private struct LivePlaythroughBot {
                 answer: .exchangeAmount(0), note: "exchange 0", chosenChoiceKind: nil
             )
         }
+        if let drawings = prompt.pickDestinyDrawings {
+            return SelectedBotAnswer(
+                answer: .pickDestiny(pickDestinyBotSelection(drawings)),
+                note: "reverse half of the published tarot drawing",
+                chosenChoiceKind: nil
+            )
+        }
         let selectableIndexes = prompt.identity.questionPresentation?.choices.compactMap {
             $0.selectable ? $0.sourceIndex : nil
         } ?? []
@@ -2485,6 +2549,8 @@ private struct LivePlaythroughBot {
             result = await model.submitExchangeAmountsAnswer(prompt.identity, amount: amount)
         case let .continueCampaign(step):
             result = await model.submitContinueCampaignAnswer(prompt.identity, step: step)
+        case let .pickDestiny(drawings):
+            result = await model.submitPickDestinyAnswer(prompt.identity, drawings: drawings)
         case let .savedDeck(deck):
             guard await model.chooseDeckForLivePrompt(deck, in: gameID) else {
                 throw PlaythroughError.submissionFailed("live deck choice was not accepted")
@@ -2797,6 +2863,7 @@ private enum BotAnswer: Sendable {
     case paymentAmounts([String: Int])
     case exchangeAmount(Int)
     case continueCampaign(JSONValue)
+    case pickDestiny([QuestionPresentation.DestinyDrawing])
     case savedDeck(Deck)
     case replacementDeck(originalInvestigatorID: String, deck: Deck)
     case skipDeckUpgrade(investigatorID: String)
@@ -2842,6 +2909,7 @@ private extension BotAnswer {
         case .paymentAmounts: "PaymentAmountsAnswer"
         case .exchangeAmount: "ExchangeAmountsAnswer"
         case .continueCampaign: "CampaignStepAnswer"
+        case .pickDestiny: "PickDestinyAnswer"
         case .savedDeck: "DeckAnswer"
         case .replacementDeck: "ReplacementDeck"
         case .skipDeckUpgrade: "SkipDeckUpgrade"
@@ -2899,6 +2967,11 @@ private extension BotAnswer {
             return try TraceSubmission(
                 kind: "CampaignStepAnswer",
                 payload: CampaignStepAnswer(contents: step)
+            )
+        case let .pickDestiny(drawings):
+            return try TraceSubmission(
+                kind: "PickDestinyAnswer",
+                payload: PickDestinyAnswer(contents: drawings)
             )
         case let .savedDeck(deck):
             return try TraceSubmission(
@@ -3416,6 +3489,9 @@ private extension TraceSelectedAnswer {
             choiceIndex = nil
         case .continueCampaign:
             answerKind = "CampaignStepAnswer"
+            choiceIndex = nil
+        case .pickDestiny:
+            answerKind = "PickDestinyAnswer"
             choiceIndex = nil
         case .savedDeck:
             answerKind = "DeckAnswer"

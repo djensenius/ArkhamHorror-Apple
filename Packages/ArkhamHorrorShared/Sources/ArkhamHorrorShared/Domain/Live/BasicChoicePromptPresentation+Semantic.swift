@@ -22,12 +22,13 @@ extension QuestionPresentation {
         case exchange
         case deck
         case campaignSettings
+        case pickDestiny
         case continuation
         case deferred
 
         var isRenderableInCurrentClient: Bool {
             switch self {
-            case .singleChoice, .amounts, .payment, .exchange, .continuation:
+            case .singleChoice, .amounts, .payment, .exchange, .pickDestiny, .continuation:
                 true
             case .multiSelect, .deck, .campaignSettings, .deferred:
                 false
@@ -52,8 +53,9 @@ extension QuestionPresentation {
             .deck
         case let .continueCampaign(tags):
             tags.contains("CampaignStepAnswer") ? .continuation : .deferred
-        case .standaloneSettings, .campaignSettings,
-             .pickDestiny, .campaignSpecific, .scenarioSpecific:
+        case .pickDestiny:
+            .pickDestiny
+        case .standaloneSettings, .campaignSettings, .campaignSpecific, .scenarioSpecific:
             .campaignSettings
         }
     }
@@ -73,6 +75,8 @@ extension BoundQuestionPresentation {
             rawChoices.isEmpty
         case .multiSelect, .deck, .campaignSettings, .deferred:
             false
+        case .pickDestiny:
+            presentation.questionKind == .pickDestiny && presentation.drawings?.isEmpty == false
         }
     }
 }
@@ -208,7 +212,11 @@ extension BasicChoicePromptPresentation {
                     || rawQuestion.wrapsQuestion(
                         tag: "QuestionLabel", innerTag: "ContinueCampaign"
                     ))
-        case .deck, .standaloneSettings, .campaignSettings, .pickDestiny,
+        case .pickDestiny:
+            presentation.questionKind == .pickDestiny
+                && rawQuestion.hasTag("PickDestiny")
+                && presentation.drawings?.isEmpty == false
+        case .deck, .standaloneSettings, .campaignSettings,
              .campaignSpecific, .scenarioSpecific:
             false
         }

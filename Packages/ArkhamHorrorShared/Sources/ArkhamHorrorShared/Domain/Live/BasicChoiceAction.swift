@@ -440,6 +440,7 @@ enum BasicChoiceSubmission: Sendable, Equatable {
     case paymentAmounts([String: Int])
     case exchangeAmount(Int)
     case continueCampaign(JSONValue)
+    case pickDestiny([QuestionPresentation.DestinyDrawing])
     case deck(DeckID)
 
     var choiceIndex: Int? {

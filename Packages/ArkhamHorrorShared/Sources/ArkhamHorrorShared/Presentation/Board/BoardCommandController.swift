@@ -49,6 +49,7 @@ final class BoardCommandController {
     private var onAmounts: ([String: Int]) -> Void
     private var onPaymentAmounts: ([String: Int]) -> Void
     private var onExchangeAmount: (Int) -> Void
+    private var onPickDestiny: ([QuestionPresentation.DestinyDrawing]) -> Void
     private var onRetry: () -> Void
     private var onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
     private(set) var amountDraft: [String: Int] = [:]
@@ -69,6 +70,7 @@ final class BoardCommandController {
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
         onPaymentAmounts: @escaping ([String: Int]) -> Void = { _ in },
         onExchangeAmount: @escaping (Int) -> Void = { _ in },
+        onPickDestiny: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void = { _ in },
         onRetry: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
@@ -82,6 +84,7 @@ final class BoardCommandController {
         self.onAmounts = onAmounts
         self.onPaymentAmounts = onPaymentAmounts
         self.onExchangeAmount = onExchangeAmount
+        self.onPickDestiny = onPickDestiny
         self.onRetry = onRetry
         self.onCatalogRetry = onCatalogRetry
         let layout = BoardLayoutBuilder.makeLayout(
@@ -503,6 +506,15 @@ final class BoardCommandController {
     }
 
     @discardableResult
+    func activatePickDestinySubmit(_ drawings: [QuestionPresentation.DestinyDrawing]) -> Bool {
+        guard prompt?.canSubmit == true,
+              prompt?.semanticPresentation?.presentation.questionKind == .pickDestiny
+        else { return false }
+        onPickDestiny(drawings)
+        return true
+    }
+
+    @discardableResult
     func activatePromptRetry() -> Bool {
         guard prompt?.canRetry == true else { return false }
         onRetry()
@@ -827,6 +839,12 @@ extension BoardCommandController {
 
     func updateExchangeAmountHandler(_ handler: @escaping (Int) -> Void) {
         onExchangeAmount = handler
+    }
+
+    func updatePickDestinyHandler(
+        _ handler: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void
+    ) {
+        onPickDestiny = handler
     }
 
     func updateRetryHandler(_ handler: @escaping () -> Void) {

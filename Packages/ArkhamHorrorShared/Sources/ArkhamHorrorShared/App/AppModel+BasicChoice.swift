@@ -179,6 +179,13 @@ extension AppModel {
         await sendBasicChoice(identity, submission: .continueCampaign(step), isRetry: false)
     }
 
+    func submitPickDestinyAnswer(
+        _ identity: BasicChoicePromptIdentity,
+        drawings: [QuestionPresentation.DestinyDrawing]
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .pickDestiny(drawings), isRetry: false)
+    }
+
     func retryBasicChoice(_ identity: BasicChoicePromptIdentity) async -> BasicChoiceSubmitResult {
         guard let record = basicChoiceActions[identity.gameID],
               record.identity == identity,
@@ -382,6 +389,8 @@ extension AppModel {
             ))
         case let .continueCampaign(step):
             return try ContractJSON.encode(CampaignStepAnswer(contents: step))
+        case let .pickDestiny(drawings):
+            return try ContractJSON.encode(PickDestinyAnswer(contents: drawings))
         case let .deck(deckID):
             return try ContractJSON.encode(DeckAnswer(
                 deckId: deckID,
@@ -591,14 +600,14 @@ private extension BasicChoiceSubmission {
         switch self {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign:
             true
-        case .deck:
+        case .pickDestiny, .deck:
             false
         }
     }
 
     var acceptsUnversionedRejection: Bool {
         switch self {
-        case .exchangeAmount, .continueCampaign, .deck:
+        case .exchangeAmount, .continueCampaign, .pickDestiny, .deck:
             true
         case .singleChoice, .amounts, .paymentAmounts:
             false
@@ -631,6 +640,8 @@ private extension BasicChoicePromptPresentation {
             return exchangePrompt(in: projection) != nil
         case let .continueCampaign(step):
             return supportsContinueCampaignSubmission(step, in: projection)
+        case .pickDestiny:
+            return true
         case .deck:
             return true
         }

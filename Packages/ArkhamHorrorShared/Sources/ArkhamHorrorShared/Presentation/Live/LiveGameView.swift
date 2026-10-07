@@ -201,6 +201,10 @@ struct LiveGameView: View {
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.submitExchangeAmountsAnswer(identity, amount: amount) }
             },
+            onPickDestiny: { drawings in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitPickDestinyAnswer(identity, drawings: drawings) }
+            },
             onRetryChoice: {
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.retryBasicChoice(identity) }
