@@ -8,6 +8,7 @@ private struct PickDestinyPreferredLanguages: PreferredLanguagesProviding {
 
 @MainActor
 @Suite("Pick Destiny prompt")
+// swiftlint:disable:next type_body_length
 struct PickDestinyPromptTests {
     @Test("Locale catalog resolves title, instructions, done, tarot and scoped destiny names")
     func localeCatalogResolutionUsesWebKeyOrder() async throws {
@@ -112,7 +113,11 @@ struct PickDestinyPromptTests {
                 ]),
             ]),
         ]))
-        #expect(wire == "{\"contents\":[{\"scenario\":\"theWitchingHour\",\"tarot\":{\"arcana\":\"TemperanceXIV\",\"facing\":\"Reversed\"}},{\"scenario\":\"atDeath'sDoorstep\",\"tarot\":{\"arcana\":\"JusticeXI\",\"facing\":\"Upright\"}}],\"tag\":\"PickDestinyAnswer\"}")
+        let expectedWire = "{\"contents\":[{\"scenario\":\"theWitchingHour\","
+            + "\"tarot\":{\"arcana\":\"TemperanceXIV\",\"facing\":\"Reversed\"}},"
+            + "{\"scenario\":\"atDeath'sDoorstep\",\"tarot\":{\"arcana\":\"JusticeXI\","
+            + "\"facing\":\"Upright\"}}],\"tag\":\"PickDestinyAnswer\"}"
+        #expect(wire == expectedWire)
     }
 
     @Test("Odd Pick Destiny counts round the required reversed cards up")

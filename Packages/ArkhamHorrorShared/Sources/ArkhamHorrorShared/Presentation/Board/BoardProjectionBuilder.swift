@@ -123,6 +123,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
         }
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private static func campaignI18nScope(from campaign: JSONValue) -> String? {
         guard let campaignID = campaign.objectValue?["id"]?.stringValue else { return nil }
         let normalizedID = String(campaignID.drop(while: { $0 == "0" }))

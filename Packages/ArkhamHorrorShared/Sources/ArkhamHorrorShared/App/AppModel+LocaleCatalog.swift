@@ -399,6 +399,7 @@ extension AppModel {
         return result
     }
 
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     func pickDestinyPromptPresentation(
         for presentation: QuestionPresentation?,
         campaignScope: String?
