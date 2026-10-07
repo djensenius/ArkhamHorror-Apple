@@ -414,7 +414,7 @@ extension AppModel {
             (presentation.amountChoices ?? []).map { choice in
                 (
                     key: "amountChoice.\(choice.choiceID)",
-                    wireLabel: choice.label
+                    wireLabel: webChooseAmountsLabelKey(choice.label)
                 )
             }
         let paymentLabels: [(key: String, label: QuestionPresentation.Label)] =
@@ -451,6 +451,11 @@ extension AppModel {
             }
         }
         return labelResolutions(labels)
+    }
+
+    private func webChooseAmountsLabelKey(_ label: String) -> String {
+        guard label.hasPrefix("$") else { return label }
+        return "$choice.\(label.dropFirst())"
     }
 
     private func labelResolutions<Key: Hashable>(

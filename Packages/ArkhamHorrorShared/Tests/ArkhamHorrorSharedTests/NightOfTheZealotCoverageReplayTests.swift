@@ -64,6 +64,22 @@ struct NightOfTheZealotCoverageReplayTests {
         try await runMultiplayer(recordings: recordings)
     }
 
+    @Test("Parameterized amount row labels catalog the bare choice key")
+    func parameterizedAmountRowLabelsCatalogBareChoiceKey() {
+        var keys = Set<String>()
+        collectLocalizationKeys(
+            from: .object([
+                "amountChoices": .array([
+                    .object(["label": .string("$damage count=i:1")]),
+                ]),
+            ]),
+            into: &keys
+        )
+
+        #expect(keys.contains("choice.damage"))
+        #expect(!keys.contains("choice.damage count=i:1"))
+    }
+
     @Test("Multiplayer reconnect restores participant prompt and fences in-flight answer")
     // swiftlint:disable:next function_body_length
     func multiplayerReconnectRestoresParticipantPromptAndFencesInFlightAnswer() async throws {
@@ -724,9 +740,26 @@ struct NightOfTheZealotCoverageReplayTests {
             if case let .string(key)? = object["key"] {
                 insertLocalizationKey(key, into: &keys)
             }
+            collectChooseAmountsLabelKeys(from: object, into: &keys)
             for value in object.values {
                 collectLocalizationKeys(from: value, into: &keys)
             }
+        }
+    }
+
+    private func collectChooseAmountsLabelKeys(
+        from object: [String: JSONValue],
+        into keys: inout Set<String>
+    ) {
+        guard case let .array(choices)? = object["amountChoices"] else { return }
+        for choice in choices {
+            guard let label = choice.objectValue?["label"]?.stringValue,
+                  label.hasPrefix("$"),
+                  let key = StoryNarrativeLocalization.productionChoiceLabelCatalogKey(
+                      "$choice.\(label.dropFirst())"
+                  )
+            else { continue }
+            keys.insert(key)
         }
     }
 

@@ -156,6 +156,10 @@ extension StoryNarrativeLocalization {
         }
     }
 
+    static func productionChoiceLabelCatalogKey(_ wireLabel: String) -> String? {
+        parseProductionChoiceLabel(wireLabel)?.key
+    }
+
     private static func parseProductionChoiceLabel(
         _ wireLabel: String
     ) -> ProductionChoiceLabelInvocation? {

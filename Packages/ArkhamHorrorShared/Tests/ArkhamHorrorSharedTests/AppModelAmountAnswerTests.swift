@@ -2119,9 +2119,9 @@ extension AppModelLiveGameTests {
 
     private func amountLabelCatalogDocuments() throws -> SyntheticLocaleCatalogDocuments {
         try SyntheticLocaleCatalogDocuments.make(
-            entryKeys: ["clues"],
+            entryKeys: ["choice.clues"],
             chunkEntries: """
-            {"clues":{"form":"message","nodes":[{"type":"text","value":"Localized clue"}],\
+            {"choice.clues":{"form":"message","nodes":[{"type":"text","value":"Localized clue"}],\
             "variables":[]}}
             """
         )
