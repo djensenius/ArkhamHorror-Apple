@@ -745,17 +745,16 @@ struct LiveNightOfTheZealotPlaythroughTests {
                     canBeCancelled: true
                 )
             ),
-            QuestionPresentation.Choice(sourceIndex: 1, kind: .endTurn),
-            QuestionPresentation.Choice(sourceIndex: 2, kind: .gainResource),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .opaque),
         ])
 
         #expect(preferredSelectableIndex(
             in: prompt,
             projection: projection,
-            selectableIndexes: [0, 1, 2],
+            selectableIndexes: [0, 1],
             repeatCount: 0,
             skillTestPreparationCount: 0
-        ) == 2)
+        ) == 1)
     }
 
     @Test("Live bot strategy is seedable for equal-ranked choices")
@@ -915,7 +914,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
                     canBeCancelled: true
                 )
             ),
-            QuestionPresentation.Choice(sourceIndex: 1, kind: .investigate),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .advanceAgenda),
         ])
 
         #expect(preferredSelectableIndex(
@@ -925,6 +924,28 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: 0
         ) == 0)
+    }
+
+    @Test("Live bot tracking clears successful fights before later failed tests")
+    func botFightTrackingDoesNotCarrySuccessIntoLaterFailure() {
+        let enemyID = BoardTestFixtures.enemyID("000000000904").codingKey.stringValue
+        var pendingFightEnemyID: String? = enemyID
+        var failedFightEnemyIDs: Set<String> = []
+
+        updatePendingFightOutcome(
+            skillTest: Self.skillTestProjection(succeeded: true),
+            pendingFightEnemyID: &pendingFightEnemyID,
+            failedFightEnemyIDs: &failedFightEnemyIDs
+        )
+        #expect(pendingFightEnemyID == nil)
+        #expect(failedFightEnemyIDs.isEmpty)
+
+        updatePendingFightOutcome(
+            skillTest: Self.skillTestProjection(succeeded: false),
+            pendingFightEnemyID: &pendingFightEnemyID,
+            failedFightEnemyIDs: &failedFightEnemyIDs
+        )
+        #expect(failedFightEnemyIDs.isEmpty)
     }
 
     @Test("Live bot strategy plays assets and commits before starting tests")
@@ -966,6 +987,113 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: 1
         ) == 1)
+    }
+
+    @Test("Live trace prompt encoding includes board progress diagnostics")
+    // swiftlint:disable:next function_body_length
+    func tracePromptEncodingIncludesBoardProgressDiagnostics() throws {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        let ownerID = BoardTestFixtures.playerID()
+        let actID = BoardTestFixtures.actID("c01108")
+        let agendaID = BoardTestFixtures.agendaID("c01109")
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            investigators: [
+                investigatorID: BoardTestFixtures.investigator(
+                    id: investigatorID,
+                    health: 7,
+                    sanity: 6,
+                    remainingActions: 1,
+                    tokens: [
+                        TokenCount(token: "Damage", count: 2),
+                        TokenCount(token: "Horror", count: 1),
+                        TokenCount(token: "Clue", count: 3),
+                        TokenCount(token: "Resource", count: 4),
+                    ],
+                    playerID: ownerID
+                ),
+            ],
+            acts: [
+                actID: BoardTestFixtures.act(
+                    id: actID,
+                    sequence: ActSequence(step: 2, side: .sideB),
+                    flipped: true,
+                    advanceCost: RuntimeCost(tag: "GroupClueCost", contents: nil),
+                    tokens: [TokenCount(token: "Clue", count: 4)]
+                ),
+            ],
+            agendas: [
+                agendaID: BoardTestFixtures.agenda(
+                    id: agendaID,
+                    sequence: AgendaSequence(side: .sideB, step: 3),
+                    doom: 2,
+                    doomThreshold: .staticValue(6),
+                    flipped: false
+                ),
+            ],
+            playerOrder: [investigatorID],
+            activeInvestigatorID: investigatorID,
+            leadInvestigatorID: investigatorID
+        ))
+        let prompt = Self.prompt(
+            questionVersion: 42,
+            rawQuestion: .object([
+                "tag": .string("ChooseOne"),
+                "choices": .array([]),
+            ])
+        )
+        let record = PlaythroughTraceRecord.prompt(
+            investigator: InvestigatorFixture.core[0],
+            gameID: BoardTestFixtures.gameID(),
+            scenario: "The Gathering",
+            prompt: prompt,
+            projection: projection,
+            repeatCount: 0,
+            selectedAnswer: nil,
+            submission: nil,
+            outcome: .submittedAndAdvanced("test"),
+            serverFeedback: nil
+        )
+        let encoded = try ContractJSON.decode(
+            JSONValue.self,
+            from: ContractJSON.encode(record)
+        )
+
+        guard case let .object(root) = encoded,
+              case let .object(promptPayload)? = root["prompt"],
+              case let .object(investigatorStatus)? = promptPayload["investigatorStatus"],
+              case let .array(actProgress)? = promptPayload["actProgress"],
+              case let .object(act)? = actProgress.first,
+              case let .array(agendaProgress)? = promptPayload["agendaProgress"],
+              case let .object(agenda)? = agendaProgress.first
+        else {
+            Issue.record("Expected encoded prompt diagnostics")
+            return
+        }
+
+        #expect(investigatorStatus["investigatorID"] == .string("c01001"))
+        #expect(investigatorStatus["damage"] == .number(.integer(2)))
+        #expect(investigatorStatus["horror"] == .number(.integer(1)))
+        #expect(investigatorStatus["clues"] == .number(.integer(3)))
+        #expect(investigatorStatus["resources"] == .number(.integer(4)))
+        #expect(investigatorStatus["health"] == .number(.integer(7)))
+        #expect(investigatorStatus["sanity"] == .number(.integer(6)))
+        #expect(investigatorStatus["remainingActions"] == .number(.integer(1)))
+        #expect(investigatorStatus["defeated"] == .bool(false))
+        #expect(investigatorStatus["resigned"] == .bool(false))
+
+        #expect(act["id"] == .string("c01108"))
+        #expect(act["cardCode"] == .string("c01108"))
+        #expect(act["sequence"] == .string("2B"))
+        #expect(act["flipped"] == .bool(true))
+        #expect(act["advanceCostSummary"] == .string("Group Clue Cost"))
+        #expect(act["clues"] == .number(.integer(4)))
+
+        #expect(agenda["id"] == .string("c01109"))
+        #expect(agenda["cardCode"] == .string("c01109"))
+        #expect(agenda["sequence"] == .string("3B"))
+        #expect(agenda["doom"] == .number(.integer(2)))
+        #expect(agenda["doomThresholdSummary"] == .string("6"))
+        #expect(agenda["flipped"] == .bool(false))
     }
 
     @Test("Live coverage report summarizes resolutions, prompts and selections")
@@ -1196,6 +1324,21 @@ struct LiveNightOfTheZealotPlaythroughTests {
             rawQuestion: rawQuestion,
             questionState: BasicChoiceParser.parseQuestion(rawQuestion)
         )
+    }
+
+    private static func skillTestProjection(succeeded: Bool) -> BoardSkillTestProjection {
+        .available(BoardSkillTestSummary(
+            investigatorID: BoardTestFixtures.investigatorID("c01001"),
+            step: .applyResults,
+            modifiedSkillValue: succeeded ? 3 : 1,
+            modifiedDifficulty: 2,
+            verdict: BoardSkillTestVerdict(
+                succeeded: succeeded,
+                amount: 1,
+                automatic: false
+            ),
+            result: nil
+        ))
     }
 
     @Test("Campaign outcome helpers preserve step order and resolution mappings")
@@ -1685,13 +1828,11 @@ private struct LivePlaythroughBot {
             let projection: BoardProjection
             do {
                 projection = try await waitForProjection()
-                if let failedEnemyID = pendingFightEnemyID {
-                    let fightFailed = projection.skillTest.flatMap(\.failed) == true
-                    if fightFailed {
-                        failedFightEnemyIDs.insert(failedEnemyID)
-                        pendingFightEnemyID = nil
-                    }
-                }
+                updatePendingFightOutcome(
+                    skillTest: projection.skillTest,
+                    pendingFightEnemyID: &pendingFightEnemyID,
+                    failedFightEnemyIDs: &failedFightEnemyIDs
+                )
             } catch let error as PlaythroughError {
                 guard case .timedOut = error else { throw error }
                 return try recordRunTimedOut(
@@ -3489,6 +3630,20 @@ private extension BoardSkillTestProjection {
         }
         return nil
     }
+}
+
+private func updatePendingFightOutcome(
+    skillTest: BoardSkillTestProjection?,
+    pendingFightEnemyID: inout String?,
+    failedFightEnemyIDs: inout Set<String>
+) {
+    guard let foughtEnemyID = pendingFightEnemyID,
+          let fightFailed = skillTest.flatMap(\.failed)
+    else { return }
+    if fightFailed {
+        failedFightEnemyIDs.insert(foughtEnemyID)
+    }
+    pendingFightEnemyID = nil
 }
 
 // swiftlint:disable:next type_body_length
