@@ -666,7 +666,9 @@ extension BasicChoicePromptPresentation {
               ),
               let publishedDrawings = presentation.drawings,
               !publishedDrawings.isEmpty,
-              let rawDrawings = PickDestinySelectionRules.publishedDrawings(in: identity.rawQuestion),
+              let rawDrawings = PickDestinySelectionRules.publishedDrawings(
+                  in: identity.rawQuestion
+              ),
               !rawDrawings.isEmpty,
               PickDestinySelectionRules.matchesPublishedSequence(
                   publishedDrawings,
