@@ -106,6 +106,7 @@ private extension JSONValue {
     func wrapsExactQuestion(tag expectedTag: String, innerTag expectedInnerTag: String) -> Bool {
         guard case let .object(object) = self,
               object["tag"] == .string(expectedTag),
+              JSONValue.hasValidQuestionLabelWrapperFields(object),
               object["question"] == .object(["tag": .string(expectedInnerTag)])
         else { return false }
         return true

@@ -154,9 +154,9 @@ enum QuestionPresentationRawQuestionDeriver {
                 tag: tag,
                 keys: ["tag", "label", "card", "question"],
                 validate: {
-                    guard case .string = $0["label"],
-                          $0["card"] == .null || Self.isString($0["card"])
-                    else { throw invalid("Malformed QuestionLabel wrapper") }
+                    guard JSONValue.hasValidQuestionLabelWrapperFields($0) else {
+                        throw invalid("Malformed QuestionLabel wrapper")
+                    }
                 }
             )
         case "PayCostQuestion":
@@ -376,11 +376,6 @@ enum QuestionPresentationRawQuestionDeriver {
         return try? LosslessJSONPrimitive.integer(value, codingPath: [])
     }
 
-    private static func isString(_ value: JSONValue?) -> Bool {
-        guard case .string = value else { return false }
-        return true
-    }
-
     private static func tag(of object: [String: JSONValue]) -> String {
         guard case let .string(tag)? = object["tag"] else { return "untagged" }
         return tag
@@ -392,6 +387,20 @@ enum QuestionPresentationRawQuestionDeriver {
 
     private static func invalid(_ description: String) -> QuestionPresentationBindingError {
         .invalidRawQuestion(description)
+    }
+}
+
+extension JSONValue {
+    static func hasValidQuestionLabelWrapperFields(_ object: [String: JSONValue]) -> Bool {
+        guard case .string = object["label"],
+              object["card"] == .null || object["card"]?.isStringLiteral == true
+        else { return false }
+        return true
+    }
+
+    private var isStringLiteral: Bool {
+        guard case .string = self else { return false }
+        return true
     }
 }
 

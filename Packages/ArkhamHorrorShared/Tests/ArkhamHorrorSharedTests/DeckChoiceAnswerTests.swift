@@ -114,6 +114,31 @@ struct DeckChoiceAnswerTests {
         ])))
     }
 
+    @Test("Live ChooseDeck recognition rejects malformed QuestionLabel wrappers")
+    func liveChooseDeckRecognitionRejectsMalformedQuestionLabelWrappers() {
+        func wrapper(
+            label: JSONValue? = .string("$theDreamEaters.question.chooseDeckForPartA"),
+            card: JSONValue? = .null
+        ) -> JSONValue {
+            var object: [String: JSONValue] = [
+                "question": .object(["tag": .string("ChooseDeck")]),
+                "tag": .string("QuestionLabel"),
+            ]
+            if let label {
+                object["label"] = label
+            }
+            if let card {
+                object["card"] = card
+            }
+            return .object(object)
+        }
+
+        #expect(LiveChooseDeckQuestion.matches(wrapper()))
+        #expect(!LiveChooseDeckQuestion.matches(wrapper(label: nil)))
+        #expect(!LiveChooseDeckQuestion.matches(wrapper(label: .array([]))))
+        #expect(!LiveChooseDeckQuestion.matches(wrapper(card: .array([]))))
+    }
+
     @Test("Captured Dream-Eaters labeled ChooseDeck bytes bind to the deck presentation")
     func dreamEatersQuestionLabelChooseDeckFixtureBinds() throws {
         let rawBytes = try loadFixture("question-dream-eaters-part-a-choose-deck")
