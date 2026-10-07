@@ -15,7 +15,7 @@ struct LiveInnsmouthUnresolvedLabelBotTests {
         #expect(
             Self.productionCatalogChunkPath
                 == "frontend/public/locale-catalog/c/"
-                    + Self.productionCatalogChunkSHA256 + ".json"
+                + Self.productionCatalogChunkSHA256 + ".json"
         )
         #expect(Self.productionCatalogChunkSHA256.count == 64)
         #expect(prompt.displayOrderedChoices().map(\.index) == [0, 1])
@@ -119,7 +119,7 @@ struct LiveInnsmouthUnresolvedLabelBotTests {
     private static let productionCatalogChunkSHA256 =
         "5a9eda19b1ab3c96e74d4fda925d9b413cd900e4837076c4098170682a1c9ec3"
 
-    // Synthetic two-entry catalog chunk extracted from the English production chunk above.
+    /// Synthetic two-entry catalog chunk extracted from the English production chunk above.
     private static let syntheticInnsmouthLabelChunkEntries = #"""
     {
       "theInnsmouthConspiracy.thePitOfDespair.label.placeKeyOnTheAmalgam": {

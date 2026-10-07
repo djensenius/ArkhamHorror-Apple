@@ -1705,7 +1705,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
         diagnosticBypassUnsupported: Bool
     ) throws -> LivePlaythroughBot {
         let investigator = InvestigatorFixture.core[0]
-        return LivePlaythroughBot(
+        return try LivePlaythroughBot(
             model: AppModel(
                 profileStore: FakeServerProfileStore(),
                 tokenStore: FakeTokenStore(),
@@ -1716,7 +1716,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
             token: "test-token",
             gameID: BoardTestFixtures.gameID(),
             investigator: investigator,
-            deck: try deckFixture(for: investigator),
+            deck: deckFixture(for: investigator),
             replacementDecksByCode: [:],
             trace: PlaythroughTraceRecorder(path: "/tmp/arkham-test-live-bot-trace.jsonl"),
             diagnosticBypassUnsupported: diagnosticBypassUnsupported,
