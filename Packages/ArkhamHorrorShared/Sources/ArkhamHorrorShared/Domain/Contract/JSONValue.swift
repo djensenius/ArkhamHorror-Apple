@@ -18,6 +18,18 @@ indirect enum JSONValue: Sendable {
 extension JSONValue: Equatable, Hashable {}
 
 extension JSONValue {
+    static func hasValidQuestionLabelWrapperFields(_ object: [String: JSONValue]) -> Bool {
+        guard case .string = object["label"],
+              object["card"] == .null || object["card"]?.isStringLiteral == true
+        else { return false }
+        return true
+    }
+
+    private var isStringLiteral: Bool {
+        guard case .string = self else { return false }
+        return true
+    }
+
     /// A shallow, `O(1)` description of this node's kind (and immediate size for the two
     /// container cases) — deliberately never recurses into `array`/`object` children.
     ///

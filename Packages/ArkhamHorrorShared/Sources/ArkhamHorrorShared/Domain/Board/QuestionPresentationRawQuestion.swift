@@ -390,18 +390,4 @@ enum QuestionPresentationRawQuestionDeriver {
     }
 }
 
-extension JSONValue {
-    static func hasValidQuestionLabelWrapperFields(_ object: [String: JSONValue]) -> Bool {
-        guard case .string = object["label"],
-              object["card"] == .null || object["card"]?.isStringLiteral == true
-        else { return false }
-        return true
-    }
-
-    private var isStringLiteral: Bool {
-        guard case .string = self else { return false }
-        return true
-    }
-}
-
 // swiftlint:enable type_body_length cyclomatic_complexity function_body_length line_length

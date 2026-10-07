@@ -296,7 +296,7 @@ extension AppModelLiveChooseDeckTests {
         #expect(prompt.liveChooseDeckPickerHeading == "Choose Deck For Part A")
     }
 
-    @Test("Live deck picker heading uses German semantic locale when the QuestionLabel is unresolved")
+    @Test("Live deck picker heading uses German semantic fallback")
     func liveDeckPickerHeadingUsesGermanSemanticLocaleWhenQuestionLabelIsUnresolved() throws {
         let gameID = GameID(UUID())
         let ownerID = try PlayerID(#require(
