@@ -310,17 +310,22 @@ private func slugComponent(_ value: String) -> String {
 private func pickDestinyBotSelection(
     _ drawings: [QuestionPresentation.DestinyDrawing]
 ) -> [QuestionPresentation.DestinyDrawing] {
-    let requiredReversed = (drawings.count + 1) / 2
-    var reversedCount = drawings.filter { $0.tarot.facing == .reversed }.count
+    let requiredReversed = PickDestinySelectionRules.requiredReversedCount(
+        for: drawings.count
+    )
+    var reversedCount = 0
     return drawings.map { drawing in
-        guard reversedCount < requiredReversed,
-              drawing.tarot.facing != .reversed
-        else { return drawing }
-        reversedCount += 1
+        let targetFacing: QuestionPresentation.TarotCard.Facing = reversedCount < requiredReversed
+            ? .reversed
+            : .upright
+        if targetFacing == .reversed {
+            reversedCount += 1
+        }
+        guard drawing.tarot.facing != targetFacing else { return drawing }
         return QuestionPresentation.DestinyDrawing(
             scenario: drawing.scenario,
             tarot: QuestionPresentation.TarotCard(
-                facing: .reversed,
+                facing: targetFacing,
                 arcana: drawing.tarot.arcana
             )
         )
@@ -695,6 +700,22 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(drawings.map(\.tarot.arcana) == selected.map(\.tarot.arcana))
         #expect(selected.filter { $0.tarot.facing == .reversed }.count == 4)
         #expect(decoded.contents == selected)
+    }
+
+    @Test("Pick Destiny bot selection flips cards back to the exact reversed target")
+    func pickDestinyBotSelectionSetsExactReversedCount() {
+        let drawings = [
+            Self.destinyDrawing(scenario: "one", arcana: "TemperanceXIV", facing: .reversed),
+            Self.destinyDrawing(scenario: "two", arcana: "JusticeXI", facing: .reversed),
+            Self.destinyDrawing(scenario: "three", arcana: "TheHermitIX", facing: .reversed),
+            Self.destinyDrawing(scenario: "four", arcana: "TheHangedManXII", facing: .upright),
+        ]
+
+        let selected = pickDestinyBotSelection(drawings)
+
+        #expect(selected.filter { $0.tarot.facing == .reversed }.count == 2)
+        #expect(selected.map(\.scenario) == drawings.map(\.scenario))
+        #expect(selected.map(\.tarot.arcana) == drawings.map(\.tarot.arcana))
     }
 
     @Test("Return Forgotten Age supply-point amount prompt resolves its row label")
@@ -1380,6 +1401,17 @@ struct LiveNightOfTheZealotPlaythroughTests {
         return try ContractJSON.decode(
             CapturedLivePromptFixture.self,
             from: Data(contentsOf: url)
+        )
+    }
+
+    private static func destinyDrawing(
+        scenario: String,
+        arcana: String,
+        facing: QuestionPresentation.TarotCard.Facing
+    ) -> QuestionPresentation.DestinyDrawing {
+        QuestionPresentation.DestinyDrawing(
+            scenario: .string(scenario),
+            tarot: QuestionPresentation.TarotCard(facing: facing, arcana: arcana)
         )
     }
 
