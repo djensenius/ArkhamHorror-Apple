@@ -507,8 +507,9 @@ final class BoardCommandController {
 
     @discardableResult
     func activatePickDestinySubmit(_ drawings: [QuestionPresentation.DestinyDrawing]) -> Bool {
-        guard prompt?.canSubmit == true,
-              prompt?.semanticPresentation?.presentation.questionKind == .pickDestiny
+        guard let prompt,
+              prompt.canSubmit,
+              prompt.supportsPickDestinySubmission(drawings)
         else { return false }
         onPickDestiny(drawings)
         return true

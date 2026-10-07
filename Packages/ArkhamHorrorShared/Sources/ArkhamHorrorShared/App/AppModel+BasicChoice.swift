@@ -604,9 +604,10 @@ extension AppModel {
 private extension BasicChoiceSubmission {
     var needsClientActionabilityCheck: Bool {
         switch self {
-        case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign:
+        case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign,
+             .pickDestiny:
             true
-        case .pickDestiny, .deck:
+        case .deck:
             false
         }
     }
@@ -621,7 +622,7 @@ private extension BasicChoiceSubmission {
     }
 }
 
-private extension BasicChoicePromptPresentation {
+extension BasicChoicePromptPresentation {
     func isSubmissionSupported(
         _ submission: BasicChoiceSubmission,
         in projection: BoardProjection
@@ -646,11 +647,27 @@ private extension BasicChoicePromptPresentation {
             return exchangePrompt(in: projection) != nil
         case let .continueCampaign(step):
             return supportsContinueCampaignSubmission(step, in: projection)
-        case .pickDestiny:
-            return true
+        case let .pickDestiny(drawings):
+            return supportsPickDestinySubmission(drawings)
         case .deck:
             return true
         }
+    }
+
+    func supportsPickDestinySubmission(
+        _ drawings: [QuestionPresentation.DestinyDrawing]
+    ) -> Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              presentation.questionKind == .pickDestiny,
+              case .pickDestiny = presentation.answer,
+              Self.supportsSemanticPrompt(
+                  rawQuestion: identity.rawQuestion,
+                  presentation: presentation
+              ),
+              let publishedDrawings = presentation.drawings,
+              !publishedDrawings.isEmpty
+        else { return false }
+        return PickDestinySelectionRules.canSubmit(drawings, published: publishedDrawings)
     }
 
     func supportsContinueCampaignSubmission(
