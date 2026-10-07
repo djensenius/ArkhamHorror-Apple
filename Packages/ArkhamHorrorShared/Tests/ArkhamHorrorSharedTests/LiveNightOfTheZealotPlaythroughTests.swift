@@ -1114,7 +1114,9 @@ struct LiveNightOfTheZealotPlaythroughTests {
 
         #expect(prompt.choices.map(\.index) == [0, 1, 2])
         #expect(prompt.displayOrderedChoices().map(\.index) == [1, 2, 0])
-        #expect(liveHarnessSelectableChoiceIndexes(prompt: prompt, projection: projection) == [1, 2, 0])
+        #expect(
+            liveHarnessSelectableChoiceIndexes(prompt: prompt, projection: projection) == [1, 2, 0]
+        )
         let selected = try Self.liveBot(diagnosticBypassUnsupported: false).selectAnswerForTesting(
             prompt: prompt,
             projection: projection,
