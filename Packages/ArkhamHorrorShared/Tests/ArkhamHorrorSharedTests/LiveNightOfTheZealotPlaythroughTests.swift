@@ -1066,6 +1066,34 @@ struct LiveNightOfTheZealotPlaythroughTests {
         ) == 1)
     }
 
+    @Test("Live bot answer selection call site uses actionable choices")
+    @MainActor
+    func selectAnswerCallSiteFiltersUnresolvedLabelsBeforeStrategy() throws {
+        let prompt = try Self.semanticChoicePrompt(
+            questionVersion: 82,
+            choices: [
+                QuestionPresentation.Choice(
+                    sourceIndex: 0,
+                    kind: .advanceAct,
+                    label: QuestionPresentation.Label(kind: .embeddedI18n, text: "$blocked")
+                ),
+                QuestionPresentation.Choice(sourceIndex: 1, kind: .gainResource),
+            ]
+        )
+        let projection = Self.strategyProjection()
+
+        #expect(liveHarnessSelectableChoiceIndexes(prompt: prompt, projection: projection) == [1])
+        let selected = try Self.liveBot(diagnosticBypassUnsupported: false).selectAnswerForTesting(
+            prompt: prompt,
+            projection: projection,
+            repeatCount: 0,
+            skillTestPreparationCount: 0,
+            failedFightEnemyIDs: []
+        )
+        #expect(Self.selectedChoiceIndex(in: selected) == 1)
+        #expect(selected.chosenChoiceKind == QuestionPresentation.ChoiceKind.gainResource.rawValue)
+    }
+
     @Test("Diagnostic bypass falls back to semantic selectable choices only when enabled")
     @MainActor
     func diagnosticBypassUsesSemanticSelectableFallbackOnlyWhenEnabled() throws {
