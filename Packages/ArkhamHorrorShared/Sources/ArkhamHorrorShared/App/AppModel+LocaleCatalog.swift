@@ -399,6 +399,93 @@ extension AppModel {
         return result
     }
 
+    func pickDestinyPromptPresentation(
+        for presentation: QuestionPresentation?,
+        campaignScope: String?
+    ) -> PickDestinyPromptResolution? {
+        guard let presentation,
+              presentation.questionKind == .pickDestiny,
+              case .pickDestiny = presentation.answer,
+              let drawings = presentation.drawings,
+              !drawings.isEmpty
+        else { return nil }
+
+        guard let resolver = localeCatalogResolver else {
+            return .unavailable(localeCatalogUnavailability ?? .catalog(.notAdvertised))
+        }
+
+        func renderedText(for key: String) -> Result<String, StoryUnavailableReason> {
+            resolver.render(key: key, variables: .object([:])).flatMap { nodes in
+                let text = nodes.map(\.plainText).joined()
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return text.isEmpty ? .failure(.unsupportedEntry) : .success(text)
+            }
+        }
+
+        func requiredText(_ key: String) -> Result<String, StoryUnavailableReason> {
+            renderedText(for: key)
+        }
+
+        func destinyText(for scenario: JSONValue) -> Result<String, StoryUnavailableReason> {
+            guard case let .string(scenarioKey) = scenario else {
+                return .failure(.unsupportedEntry)
+            }
+            let globalKey = "destiny.\(scenarioKey)"
+            guard let campaignScope else { return renderedText(for: globalKey) }
+            switch renderedText(for: "\(campaignScope).\(globalKey)") {
+            case let .success(text):
+                return .success(text)
+            case .failure(.missingKey):
+                return renderedText(for: globalKey)
+            case let .failure(reason):
+                return .failure(reason)
+            }
+        }
+
+        let title: String
+        let instructions: String
+        let doneLabel: String
+        switch requiredText("pickDestiny.title") {
+        case let .success(value): title = value
+        case let .failure(reason): return .unavailable(reason)
+        }
+        switch requiredText("pickDestiny.instructions") {
+        case let .success(value): instructions = value
+        case let .failure(reason): return .unavailable(reason)
+        }
+        switch requiredText("label.done") {
+        case let .success(value): doneLabel = value
+        case let .failure(reason): return .unavailable(reason)
+        }
+
+        var rows: [PickDestinyPromptPresentation.Row] = []
+        rows.reserveCapacity(drawings.count)
+        for drawing in drawings {
+            let scenarioTitle: String
+            let tarotTitle: String
+            switch destinyText(for: drawing.scenario) {
+            case let .success(value): scenarioTitle = value
+            case let .failure(reason): return .unavailable(reason)
+            }
+            switch requiredText("tarot.\(drawing.tarot.arcana)") {
+            case let .success(value): tarotTitle = value
+            case let .failure(reason): return .unavailable(reason)
+            }
+            rows.append(PickDestinyPromptPresentation.Row(
+                scenarioTitle: scenarioTitle,
+                tarotTitle: tarotTitle
+            ))
+        }
+
+        return .resolved(PickDestinyPromptPresentation(
+            title: title,
+            instructions: instructions,
+            doneLabel: doneLabel,
+            drawings: drawings,
+            rows: rows
+        ))
+    }
+
     func promptLabelResolutions(
         for presentation: QuestionPresentation?
     ) -> [String: BasicChoiceLabelResolution] {

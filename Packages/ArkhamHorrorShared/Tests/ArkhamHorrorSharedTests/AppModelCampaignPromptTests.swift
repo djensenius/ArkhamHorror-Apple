@@ -103,6 +103,7 @@ func campaignPromptProjection(
     BoardProjection(
         gameName: base.gameName,
         hasCampaignContext: base.hasCampaignContext,
+        campaignI18nScope: base.campaignI18nScope,
         scenario: base.scenario,
         campaignContinuation: base.campaignContinuation,
         campaignSummary: base.campaignSummary,

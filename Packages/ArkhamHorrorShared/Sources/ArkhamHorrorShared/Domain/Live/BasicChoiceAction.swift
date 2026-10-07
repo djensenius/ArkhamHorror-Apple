@@ -165,6 +165,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     let choiceLabelResolutions: [Int: BasicChoiceLabelResolution]
     let choiceFlavorResolutions: [Int: StoryResolution]
     let promptLabelResolutions: [String: BasicChoiceLabelResolution]
+    let pickDestinyPrompt: PickDestinyPromptResolution?
     let readOnlyReason: BasicChoiceReadOnlyReason?
     let actionPhase: BasicChoiceActionPhase?
     let actionChoiceIndex: Int?
@@ -181,6 +182,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         choiceLabelResolutions: [Int: BasicChoiceLabelResolution]? = nil,
         choiceFlavorResolutions: [Int: StoryResolution] = [:],
         promptLabelResolutions: [String: BasicChoiceLabelResolution] = [:],
+        pickDestinyPrompt: PickDestinyPromptResolution? = nil,
         readOnlyReason: BasicChoiceReadOnlyReason?,
         actionPhase: BasicChoiceActionPhase?,
         actionChoiceIndex: Int?,
@@ -220,6 +222,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         }
         self.choiceFlavorResolutions = choiceFlavorResolutions
         self.promptLabelResolutions = promptLabelResolutions
+        self.pickDestinyPrompt = pickDestinyPrompt
         self.readOnlyReason = readOnlyReason
         self.actionPhase = actionPhase
         self.actionChoiceIndex = actionChoiceIndex

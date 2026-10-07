@@ -64,10 +64,15 @@ extension AppModel {
         let promptLabelResolutions = promptLabelResolutions(
             for: payload.presentation?.presentation
         )
+        let pickDestinyPrompt = pickDestinyPromptPresentation(
+            for: payload.presentation?.presentation,
+            campaignScope: projection.campaignI18nScope
+        )
         let localizationReasons = [storyResolution?.unavailableReason].compactMap(\.self)
             + labelResolutions.values.compactMap(\.unavailableReason)
             + choiceFlavorResolutions.values.compactMap(\.unavailableReason)
             + promptLabelResolutions.values.compactMap(\.unavailableReason)
+            + [pickDestinyPrompt?.unavailableReason].compactMap(\.self)
         return BasicChoicePromptPresentation(
             identity: promptIdentity,
             question: payload.state,
@@ -78,6 +83,7 @@ extension AppModel {
             choiceLabelResolutions: labelResolutions,
             choiceFlavorResolutions: choiceFlavorResolutions,
             promptLabelResolutions: promptLabelResolutions,
+            pickDestinyPrompt: pickDestinyPrompt,
             readOnlyReason: readOnlyReason,
             actionPhase: phase,
             actionChoiceIndex: isSamePrompt ? record?.choiceIndex : nil,

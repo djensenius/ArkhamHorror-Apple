@@ -52,12 +52,20 @@ struct BasicChoicePromptView: View {
             if !presentation.isRenderableQuestion {
                 Label("Update required", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-            } else if let destinyDrawings = presentation.pickDestinyDrawings {
-                PickDestinyPromptView(
-                    drawings: destinyDrawings,
-                    canSubmit: presentation.canSubmit,
-                    onSubmit: { controller.activatePickDestinySubmit($0) }
-                )
+            } else if let pickDestinyPrompt = presentation.pickDestinyPrompt {
+                switch pickDestinyPrompt {
+                case let .resolved(prompt):
+                    PickDestinyPromptView(
+                        prompt: prompt,
+                        canSubmit: presentation.canSubmit,
+                        onSubmit: { controller.activatePickDestinySubmit($0) }
+                    )
+                    .id(presentation.identity)
+                case let .unavailable(reason):
+                    Label(reason.announcement, systemImage: "text.badge.xmark")
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("liveGame.prompt.pickDestiny.catalogUnavailable")
+                }
             } else if let amountPrompt = presentation.amountPrompt(in: controller.projection) {
                 amountAllocationPrompt(amountPrompt)
             } else if let exchangePrompt = presentation.exchangePrompt(in: controller.projection) {
