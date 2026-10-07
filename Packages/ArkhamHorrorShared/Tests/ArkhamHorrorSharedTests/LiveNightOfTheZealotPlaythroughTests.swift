@@ -3491,6 +3491,7 @@ private extension BoardSkillTestProjection {
     }
 }
 
+// swiftlint:disable:next type_body_length
 private struct BotStrategyContext {
     let prompt: BasicChoicePromptPresentation
     let projection: BoardProjection
