@@ -1,5 +1,7 @@
 import Foundation
 
+// swiftlint:disable file_length
+
 /// The stable ``SemanticFocusZone``s this board declares. Every zone name is a fixed
 /// string literal, never derived from live entity data, so a snapshot replacement can
 /// never accidentally rename a zone.
@@ -61,6 +63,12 @@ enum BoardFocusID {
     static let promptExchangeDecrease: SemanticFocusID = "board.prompt.exchange.decrease"
     static let promptExchangeIncrease: SemanticFocusID = "board.prompt.exchange.increase"
     static let promptExchangeSubmit: SemanticFocusID = "board.prompt.exchange.submit"
+
+    static func promptPickDestinyRow(_ index: Int) -> SemanticFocusID {
+        .init(rawValue: "board.prompt.pickDestiny.row.\(index)")
+    }
+
+    static let promptPickDestinySubmit: SemanticFocusID = "board.prompt.pickDestiny.submit"
 
     static func act(_ id: ActID) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.act.\(id.description)")
@@ -245,6 +253,10 @@ enum BoardFocusGraphBuilder {
         }
         if let exchangePrompt = prompt.exchangePrompt(in: projection) {
             return exchangePromptFocusIDs(exchangePrompt, exchangeAmount: exchangeAmount)
+        }
+        if let pickDestinyPrompt = prompt.pickDestinyPrompt?.presentation {
+            return pickDestinyPrompt.rows.indices.map(BoardFocusID.promptPickDestinyRow)
+                + [BoardFocusID.promptPickDestinySubmit]
         }
         return prompt.displayOrderedChoices()
             .filter { prompt.isChoiceActionable($0, in: projection) }

@@ -22,12 +22,13 @@ extension QuestionPresentation {
         case exchange
         case deck
         case campaignSettings
+        case pickDestiny
         case continuation
         case deferred
 
         var isRenderableInCurrentClient: Bool {
             switch self {
-            case .singleChoice, .amounts, .payment, .exchange, .continuation:
+            case .singleChoice, .amounts, .payment, .exchange, .pickDestiny, .continuation:
                 true
             case .multiSelect, .deck, .campaignSettings, .deferred:
                 false
@@ -52,8 +53,9 @@ extension QuestionPresentation {
             .deck
         case let .continueCampaign(tags):
             tags.contains("CampaignStepAnswer") ? .continuation : .deferred
-        case .standaloneSettings, .campaignSettings,
-             .pickDestiny, .campaignSpecific, .scenarioSpecific:
+        case .pickDestiny:
+            .pickDestiny
+        case .standaloneSettings, .campaignSettings, .campaignSpecific, .scenarioSpecific:
             .campaignSettings
         }
     }
@@ -73,6 +75,8 @@ extension BoundQuestionPresentation {
             rawChoices.isEmpty
         case .multiSelect, .deck, .campaignSettings, .deferred:
             false
+        case .pickDestiny:
+            presentation.questionKind == .pickDestiny && presentation.drawings?.isEmpty == false
         }
     }
 }
@@ -201,16 +205,27 @@ extension BasicChoicePromptPresentation {
     ) -> Bool {
         switch presentation.answer {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmounts:
-            true
+            return true
         case .continueCampaign:
-            presentation.questionKind == .continueCampaign
+            return presentation.questionKind == .continueCampaign
                 && (rawQuestion.hasTag("ContinueCampaign")
                     || rawQuestion.wrapsQuestion(
                         tag: "QuestionLabel", innerTag: "ContinueCampaign"
                     ))
-        case .deck, .standaloneSettings, .campaignSettings, .pickDestiny,
+        case .pickDestiny:
+            guard presentation.questionKind == .pickDestiny,
+                  let publishedDrawings = presentation.drawings,
+                  !publishedDrawings.isEmpty,
+                  let rawDrawings = PickDestinySelectionRules.publishedDrawings(in: rawQuestion),
+                  !rawDrawings.isEmpty
+            else { return false }
+            return PickDestinySelectionRules.matchesPublishedSequence(
+                publishedDrawings,
+                published: rawDrawings
+            )
+        case .deck, .standaloneSettings, .campaignSettings,
              .campaignSpecific, .scenarioSpecific:
-            false
+            return false
         }
     }
 

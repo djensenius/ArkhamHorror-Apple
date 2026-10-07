@@ -49,10 +49,12 @@ final class BoardCommandController {
     private var onAmounts: ([String: Int]) -> Void
     private var onPaymentAmounts: ([String: Int]) -> Void
     private var onExchangeAmount: (Int) -> Void
+    private var onPickDestiny: ([QuestionPresentation.DestinyDrawing]) -> Void
     private var onRetry: () -> Void
     private var onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
     private(set) var amountDraft: [String: Int] = [:]
     private(set) var exchangeAmount: Int = 0
+    private(set) var pickDestinyDrawings: [QuestionPresentation.DestinyDrawing] = []
     private var promptInputKey: BasicChoicePromptKey?
 
     static let zoomRange: ClosedRange<CGFloat> = 0.5 ... 3
@@ -69,6 +71,7 @@ final class BoardCommandController {
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
         onPaymentAmounts: @escaping ([String: Int]) -> Void = { _ in },
         onExchangeAmount: @escaping (Int) -> Void = { _ in },
+        onPickDestiny: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void = { _ in },
         onRetry: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
@@ -82,6 +85,7 @@ final class BoardCommandController {
         self.onAmounts = onAmounts
         self.onPaymentAmounts = onPaymentAmounts
         self.onExchangeAmount = onExchangeAmount
+        self.onPickDestiny = onPickDestiny
         self.onRetry = onRetry
         self.onCatalogRetry = onCatalogRetry
         let layout = BoardLayoutBuilder.makeLayout(
@@ -92,6 +96,7 @@ final class BoardCommandController {
         let initialAmountDraft = prompt?.amountPrompt(in: projection)?.initialAmounts ?? [:]
         amountDraft = initialAmountDraft
         exchangeAmount = 0
+        pickDestinyDrawings = prompt?.pickDestinyDrawings ?? []
         promptInputKey = prompt?.identity.promptKey
         let graph = BoardFocusGraphBuilder.makeGraph(
             projection: projection,
@@ -299,6 +304,9 @@ final class BoardCommandController {
         if activateFocusedAmountControl(primary: true) {
             return true
         }
+        if activateFocusedPickDestinyControl() {
+            return true
+        }
         if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
             return activatePromptCatalogRetry()
         }
@@ -413,6 +421,10 @@ final class BoardCommandController {
             coordinator.syncExternalFocus(entry)
             return true
         }
+        if prompt?.pickDestinyPrompt?.presentation != nil, let entry = promptEntry {
+            coordinator.syncExternalFocus(entry)
+            return true
+        }
         guard prompt?.canSubmit == true,
               let choice = prompt?.displayOrderedChoices().first(where: {
                   prompt?.isChoiceActionable($0, in: projection) == true
@@ -464,6 +476,12 @@ final class BoardCommandController {
         exchangeAmount
     }
 
+    func pickDestinyDrawings(
+        for _: BasicChoicePromptPresentation
+    ) -> [QuestionPresentation.DestinyDrawing] {
+        pickDestinyDrawings
+    }
+
     @discardableResult
     func adjustExchangeAmount(delta: Int) -> Bool {
         guard let prompt,
@@ -503,6 +521,42 @@ final class BoardCommandController {
     }
 
     @discardableResult
+    func togglePickDestinyDrawing(at index: Int) -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              prompt.pickDestinyPrompt?.presentation != nil,
+              pickDestinyDrawings.indices.contains(index)
+        else { return false }
+        let drawing = pickDestinyDrawings[index]
+        let nextFacing: QuestionPresentation.TarotCard.Facing = drawing.tarot.facing == .upright
+            ? .reversed
+            : .upright
+        pickDestinyDrawings[index] = QuestionPresentation.DestinyDrawing(
+            scenario: drawing.scenario,
+            tarot: QuestionPresentation.TarotCard(
+                facing: nextFacing,
+                arcana: drawing.tarot.arcana
+            )
+        )
+        return true
+    }
+
+    @discardableResult
+    func activatePickDestinySubmit() -> Bool {
+        activatePickDestinySubmit(pickDestinyDrawings)
+    }
+
+    @discardableResult
+    func activatePickDestinySubmit(_ drawings: [QuestionPresentation.DestinyDrawing]) -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              prompt.supportsPickDestinySubmission(drawings)
+        else { return false }
+        onPickDestiny(drawings)
+        return true
+    }
+
+    @discardableResult
     func activatePromptRetry() -> Bool {
         guard prompt?.canRetry == true else { return false }
         onRetry()
@@ -523,6 +577,7 @@ final class BoardCommandController {
         guard let prompt else {
             amountDraft = [:]
             exchangeAmount = 0
+            pickDestinyDrawings = []
             return
         }
         if let amountPrompt = prompt.amountPrompt(in: projection) {
@@ -531,6 +586,7 @@ final class BoardCommandController {
             amountDraft = [:]
         }
         exchangeAmount = 0
+        pickDestinyDrawings = prompt.pickDestinyDrawings ?? []
     }
 
     private func refreshFocusGraphForPromptControls() {
@@ -571,6 +627,15 @@ final class BoardCommandController {
             return primary ? activateExchangeSubmit() : false
         }
         return false
+    }
+
+    private func activateFocusedPickDestinyControl() -> Bool {
+        guard let focus = coordinator.currentFocus else { return false }
+        if focus == BoardFocusID.promptPickDestinySubmit {
+            return activatePickDestinySubmit()
+        }
+        guard let rowIndex = pickDestinyRowIndex(for: focus) else { return false }
+        return togglePickDestinyDrawing(at: rowIndex)
     }
 
     private func adjustFocusedAmountControl(direction: FocusDirection) -> Bool {
@@ -627,6 +692,13 @@ final class BoardCommandController {
         prompt?.choices.first {
             BoardFocusID.promptChoice($0.index) == coordinator.currentFocus
         }?.index
+    }
+
+    private func pickDestinyRowIndex(for focusID: SemanticFocusID) -> Int? {
+        let raw = focusID.rawValue
+        let prefix = "board.prompt.pickDestiny.row."
+        guard raw.hasPrefix(prefix) else { return nil }
+        return Int(raw.dropFirst(prefix.count))
     }
 
     private func activateFocusedPromptElementOrDeferMenu() -> Bool? {
@@ -827,6 +899,12 @@ extension BoardCommandController {
 
     func updateExchangeAmountHandler(_ handler: @escaping (Int) -> Void) {
         onExchangeAmount = handler
+    }
+
+    func updatePickDestinyHandler(
+        _ handler: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void
+    ) {
+        onPickDestiny = handler
     }
 
     func updateRetryHandler(_ handler: @escaping () -> Void) {

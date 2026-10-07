@@ -52,6 +52,26 @@ struct BasicChoicePromptView: View {
             if !presentation.isRenderableQuestion {
                 Label("Update required", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
+            } else if let pickDestinyPrompt = presentation.pickDestinyPrompt {
+                switch pickDestinyPrompt {
+                case let .resolved(prompt):
+                    PickDestinyPromptView(
+                        prompt: prompt,
+                        drawings: controller.pickDestinyDrawings(for: presentation),
+                        canSubmit: presentation.canSubmit,
+                        controller: controller,
+                        focusBinding: focusBinding,
+                        isCompact: isCompact
+                    )
+                    .id(presentation.identity)
+                case let .unavailable(reason):
+                    Label(
+                        pickDestinyUnavailableAnnouncement(for: reason),
+                        systemImage: "text.badge.xmark"
+                    )
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("liveGame.prompt.pickDestiny.catalogUnavailable")
+                }
             } else if let amountPrompt = presentation.amountPrompt(in: controller.projection) {
                 amountAllocationPrompt(amountPrompt)
             } else if let exchangePrompt = presentation.exchangePrompt(in: controller.projection) {
@@ -116,6 +136,20 @@ struct BasicChoicePromptView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(isStoryPrompt ? "Active story prompt" : "Active choice prompt")
         .accessibilityIdentifier("liveGame.prompt")
+    }
+
+    private func pickDestinyUnavailableAnnouncement(for reason: StoryUnavailableReason) -> String {
+        switch reason {
+        case .loading:
+            pickDestinyLocalized("pickDestiny.names.loading", "Loading tarot names…")
+        case .catalog, .imagePipelineUnavailable, .imageSourceLoading, .missingKey,
+             .unsupportedEntry, .linkCycle, .missingVariable, .unsupportedVariableValue,
+             .tooComplex:
+            pickDestinyLocalized(
+                "pickDestiny.names.unavailable",
+                "The tarot names for this reading are not currently available."
+            )
+        }
     }
 
     @ViewBuilder

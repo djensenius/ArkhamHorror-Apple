@@ -64,10 +64,15 @@ extension AppModel {
         let promptLabelResolutions = promptLabelResolutions(
             for: payload.presentation?.presentation
         )
+        let pickDestinyPrompt = pickDestinyPromptPresentation(
+            for: payload.presentation?.presentation,
+            campaignScope: projection.campaignI18nScope
+        )
         let localizationReasons = [storyResolution?.unavailableReason].compactMap(\.self)
             + labelResolutions.values.compactMap(\.unavailableReason)
             + choiceFlavorResolutions.values.compactMap(\.unavailableReason)
             + promptLabelResolutions.values.compactMap(\.unavailableReason)
+            + [pickDestinyPrompt?.unavailableReason].compactMap(\.self)
         return BasicChoicePromptPresentation(
             identity: promptIdentity,
             question: payload.state,
@@ -78,6 +83,7 @@ extension AppModel {
             choiceLabelResolutions: labelResolutions,
             choiceFlavorResolutions: choiceFlavorResolutions,
             promptLabelResolutions: promptLabelResolutions,
+            pickDestinyPrompt: pickDestinyPrompt,
             readOnlyReason: readOnlyReason,
             actionPhase: phase,
             actionChoiceIndex: isSamePrompt ? record?.choiceIndex : nil,
@@ -177,6 +183,13 @@ extension AppModel {
         _ identity: BasicChoicePromptIdentity, step: JSONValue
     ) async -> BasicChoiceSubmitResult {
         await sendBasicChoice(identity, submission: .continueCampaign(step), isRetry: false)
+    }
+
+    func submitPickDestinyAnswer(
+        _ identity: BasicChoicePromptIdentity,
+        drawings: [QuestionPresentation.DestinyDrawing]
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .pickDestiny(drawings), isRetry: false)
     }
 
     func retryBasicChoice(_ identity: BasicChoicePromptIdentity) async -> BasicChoiceSubmitResult {
@@ -382,6 +395,8 @@ extension AppModel {
             ))
         case let .continueCampaign(step):
             return try ContractJSON.encode(CampaignStepAnswer(contents: step))
+        case let .pickDestiny(drawings):
+            return try ContractJSON.encode(PickDestinyAnswer(contents: drawings))
         case let .deck(deckID):
             return try ContractJSON.encode(DeckAnswer(
                 deckId: deckID,
@@ -589,7 +604,8 @@ extension AppModel {
 private extension BasicChoiceSubmission {
     var needsClientActionabilityCheck: Bool {
         switch self {
-        case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign:
+        case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign,
+             .pickDestiny:
             true
         case .deck:
             false
@@ -598,7 +614,7 @@ private extension BasicChoiceSubmission {
 
     var acceptsUnversionedRejection: Bool {
         switch self {
-        case .exchangeAmount, .continueCampaign, .deck:
+        case .exchangeAmount, .continueCampaign, .pickDestiny, .deck:
             true
         case .singleChoice, .amounts, .paymentAmounts:
             false
@@ -606,7 +622,7 @@ private extension BasicChoiceSubmission {
     }
 }
 
-private extension BasicChoicePromptPresentation {
+extension BasicChoicePromptPresentation {
     func isSubmissionSupported(
         _ submission: BasicChoiceSubmission,
         in projection: BoardProjection
@@ -631,9 +647,35 @@ private extension BasicChoicePromptPresentation {
             return exchangePrompt(in: projection) != nil
         case let .continueCampaign(step):
             return supportsContinueCampaignSubmission(step, in: projection)
+        case let .pickDestiny(drawings):
+            return supportsPickDestinySubmission(drawings)
         case .deck:
             return true
         }
+    }
+
+    func supportsPickDestinySubmission(
+        _ drawings: [QuestionPresentation.DestinyDrawing]
+    ) -> Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              presentation.questionKind == .pickDestiny,
+              case .pickDestiny = presentation.answer,
+              Self.supportsSemanticPrompt(
+                  rawQuestion: identity.rawQuestion,
+                  presentation: presentation
+              ),
+              let publishedDrawings = presentation.drawings,
+              !publishedDrawings.isEmpty,
+              let rawDrawings = PickDestinySelectionRules.publishedDrawings(
+                  in: identity.rawQuestion
+              ),
+              !rawDrawings.isEmpty,
+              PickDestinySelectionRules.matchesPublishedSequence(
+                  publishedDrawings,
+                  published: rawDrawings
+              )
+        else { return false }
+        return PickDestinySelectionRules.canSubmit(drawings, published: rawDrawings)
     }
 
     func supportsContinueCampaignSubmission(

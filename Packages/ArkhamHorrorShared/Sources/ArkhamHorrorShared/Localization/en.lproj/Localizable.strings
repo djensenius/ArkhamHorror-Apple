@@ -54,6 +54,16 @@
 "amountPrompt.token.damage" = "damage";
 "amountPrompt.token.horror" = "horror";
 
+"pickDestiny.facing.upright" = "Upright";
+"pickDestiny.facing.reversed" = "Reversed";
+"pickDestiny.progress" = "%1$lld of %2$lld reversed";
+"pickDestiny.row.flip.hint" = "Activating flips this tarot card.";
+"pickDestiny.submit.hint" = "Submits this tarot reading.";
+"pickDestiny.submit.disabled.count" = "Reverse exactly %1$lld of %2$lld cards before submitting. %3$lld of %4$lld reversed.";
+"pickDestiny.submit.disabled.readOnly" = "This reading cannot be submitted right now.";
+"pickDestiny.names.loading" = "Loading tarot names…";
+"pickDestiny.names.unavailable" = "The tarot names for this reading are not currently available.";
+
 "board.linkedChoiceMenu.title" = "Choose prompt action";
 "board.linkedChoiceMenu.cancelHint" = "Press Back or Secondary Action to cancel.";
 "board.linkedChoice.activateHint" = "Activates %@";

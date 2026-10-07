@@ -24,6 +24,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
         return BoardProjection(
             gameName: safeGameName(snapshot),
             hasCampaignContext: scenarioContext.hasCampaignContext,
+            campaignI18nScope: scenarioContext.campaign.flatMap(campaignI18nScope),
             scenario: scenarioContext.scenario,
             campaignContinuation: scenarioContext.campaignContinuation,
             campaignSummary: BoardCampaignSummaryBuilder.makeSummary(
@@ -120,6 +121,38 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
                 campaignContinuation: campaignContinuation
             )
         }
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity
+    private static func campaignI18nScope(from campaign: JSONValue) -> String? {
+        guard let campaignID = campaign.objectValue?["id"]?.stringValue else { return nil }
+        let normalizedID = String(campaignID.drop(while: { $0 == "0" }))
+        return switch normalizedID {
+        case "1": "nightOfTheZealot"
+        case "2": "theDunwichLegacy"
+        case "3": "thePathToCarcosa"
+        case "4": "theForgottenAge"
+        case "5": "theCircleUndone"
+        case "6": "theDreamEaters"
+        case "7": "theInnsmouthConspiracy"
+        case "8": "edgeOfTheEarth"
+        case "9": "theScarletKeys"
+        case "10": "theFeastOfHemlockVale"
+        case "11": "theDrownedCity"
+        case "12": "brethrenOfAsh"
+        case "13": "childrenOfBlood"
+        case "83": "standalone.guardiansOfTheAbyss"
+        default:
+            campaignID.hasPrefix(":") ? homebrewCampaignScope(campaignID) : nil
+        }
+    }
+
+    private static func homebrewCampaignScope(_ campaignID: String) -> String {
+        let parts = campaignID.drop(while: { $0 == ":" }).split(separator: "-")
+        guard let first = parts.first else { return "" }
+        return String(first) + parts.dropFirst().map { part in
+            part.prefix(1).uppercased() + String(part.dropFirst())
+        }.joined()
     }
 
     private static func makeCampaignContinuation(

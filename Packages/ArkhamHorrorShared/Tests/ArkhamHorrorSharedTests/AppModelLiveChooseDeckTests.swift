@@ -41,6 +41,7 @@ struct AppModelLiveChooseDeckTests {
         return BoardProjection(
             gameName: projection.gameName,
             hasCampaignContext: projection.hasCampaignContext,
+            campaignI18nScope: projection.campaignI18nScope,
             scenario: projection.scenario,
             campaignContinuation: projection.campaignContinuation,
             campaignSummary: projection.campaignSummary,

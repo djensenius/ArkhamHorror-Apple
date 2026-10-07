@@ -348,6 +348,7 @@ struct BoardProjection: Sendable, Equatable {
     /// whether `scenario` is also present. Used to render an explicit "campaign summary
     /// requires a future update" placeholder rather than silently omitting it.
     let hasCampaignContext: Bool
+    let campaignI18nScope: String?
     let scenario: BoardScenarioSummary?
     let campaignContinuation: CampaignContinuationContext?
     let campaignSummary: BoardCampaignSummary?

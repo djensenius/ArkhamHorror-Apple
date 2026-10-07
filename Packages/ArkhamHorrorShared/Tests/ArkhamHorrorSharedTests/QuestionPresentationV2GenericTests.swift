@@ -1361,8 +1361,9 @@ struct QuestionPresentationV2GenericTests {
             .deck
         case let .continueCampaign(tags):
             tags.contains("CampaignStepAnswer") ? .continuation : .deferred
-        case .standaloneSettings, .campaignSettings, .pickDestiny,
-             .campaignSpecific, .scenarioSpecific:
+        case .pickDestiny:
+            .pickDestiny
+        case .standaloneSettings, .campaignSettings, .campaignSpecific, .scenarioSpecific:
             .campaignSettings
         }
     }
