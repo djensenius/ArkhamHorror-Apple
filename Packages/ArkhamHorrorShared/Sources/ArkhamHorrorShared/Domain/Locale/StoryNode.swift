@@ -160,13 +160,14 @@ extension StoryNode {
     }
 }
 
-/// Typed icon-variable values from the locale catalog. The app has no localized catalog for
-/// token or skill *names* today; accessibility labels are therefore derived mechanically from
-/// the backend enum values, matching the board's existing `humanizeTag` token labels rather
-/// than hard-coding display prose.
+/// Typed icon-variable values from the locale catalog. The pinned catalog has no localized
+/// token, skill, or seal *names* today; accessibility labels are therefore derived
+/// mechanically from the backend enum values, matching the board's existing `humanizeTag`
+/// token labels rather than hard-coding display prose.
 enum StoryIcon: Sendable, Equatable, Hashable {
     case chaosToken(ChaosTokenArtFace)
     case skill(StorySkillIcon)
+    case seal(StorySealIcon)
 
     static func iconVariableValue(_ value: String) -> StoryIcon? {
         if let chaosToken = ChaosTokenArtFace.iconVariableValue(value) {
@@ -174,6 +175,9 @@ enum StoryIcon: Sendable, Equatable, Hashable {
         }
         if let skill = StorySkillIcon(rawValue: value) {
             return .skill(skill)
+        }
+        if let seal = StorySealIcon(rawValue: value) {
+            return .seal(seal)
         }
         return nil
     }
@@ -184,6 +188,8 @@ enum StoryIcon: Sendable, Equatable, Hashable {
             StoryNode.spokenIconLabel(face.catalogIconName)
         case let .skill(skill):
             StoryNode.spokenIconLabel(skill.rawValue)
+        case let .seal(seal):
+            StoryNode.spokenIconLabel(seal.rawValue)
         }
     }
 
@@ -193,6 +199,8 @@ enum StoryIcon: Sendable, Equatable, Hashable {
             "circle.hexagongrid.fill"
         case let .skill(skill):
             skill.systemImage
+        case let .seal(seal):
+            seal.systemImage
         }
     }
 }
@@ -234,6 +242,7 @@ enum StorySkillIcon: String, Sendable, Equatable, Hashable {
     case intellect
     case combat
     case agility
+    case wild
 
     var systemImage: String {
         switch self {
@@ -241,6 +250,28 @@ enum StorySkillIcon: String, Sendable, Equatable, Hashable {
         case .intellect: "magnifyingglass"
         case .combat: "burst.fill"
         case .agility: "figure.run"
+        // Mirrors the web's `wild` -> `wild-icon` mapping in `frontend/src/arkham/icons.ts`.
+        case .wild: "star.fill"
+        }
+    }
+}
+
+enum StorySealIcon: String, Sendable, Equatable, Hashable {
+    case sealA
+    case sealB
+    case sealC
+    case sealD
+    case sealE
+
+    var systemImage: String {
+        switch self {
+        // Mirrors the web's `sealA`...`sealE` -> `seal-a-icon`...`seal-e-icon` mapping
+        // in `frontend/src/arkham/icons.ts`, using the app's SF Symbols inline-glyph path.
+        case .sealA: "a.circle.fill"
+        case .sealB: "b.circle.fill"
+        case .sealC: "c.circle.fill"
+        case .sealD: "d.circle.fill"
+        case .sealE: "e.circle.fill"
         }
     }
 }

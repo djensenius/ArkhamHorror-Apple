@@ -25,6 +25,17 @@ struct LocaleCatalogAdditiveDecodingTests {
             .text("Test "), .semanticIcon(.skill(.combat)), .text(" ("), .text("3"), .text(")"),
         ]))
         #expect(try resolver.render(
+            key: "label.test",
+            variables: .object(["skill": .string("wild"), "count": Self.number("2")])
+        ) == .success([
+            .text("Test "), .semanticIcon(.skill(.wild)), .text(" ("), .text("2"), .text(")"),
+        ]))
+        #expect(resolver.render(
+            key: "addToken", variables: .object(["token": .string("sealC")])
+        ) == .success([
+            .text("Add 1 "), .semanticIcon(.seal(.sealC)), .text(" chaos token."),
+        ]))
+        #expect(try resolver.render(
             key: "label.pluralTokens",
             variables: .object(["count": Self.number("2"), "token": .string("skull")])
         ) == .success([
@@ -41,7 +52,7 @@ struct LocaleCatalogAdditiveDecodingTests {
         ) == .success([.icon("skull")]))
     }
 
-    @Test("Icon variables accept exactly the governed token and skill tables")
+    @Test("Icon variables accept exactly the governed token, skill, and seal tables")
     func iconVariableValueTable() {
         let tokenCases: [(String, StoryIcon)] = [
             ("skull", .chaosToken(.skull)),
@@ -55,17 +66,30 @@ struct LocaleCatalogAdditiveDecodingTests {
             ("frost", .chaosToken(.frost)),
             ("blood", .chaosToken(.blood)),
         ]
-        let skillCases: [(String, StoryIcon)] = [
-            ("willpower", .skill(.willpower)),
-            ("intellect", .skill(.intellect)),
-            ("combat", .skill(.combat)),
-            ("agility", .skill(.agility)),
+        let skillCases: [(String, StoryIcon, String, String)] = [
+            ("willpower", .skill(.willpower), "brain.head.profile", "willpower"),
+            ("intellect", .skill(.intellect), "magnifyingglass", "intellect"),
+            ("combat", .skill(.combat), "burst.fill", "combat"),
+            ("agility", .skill(.agility), "figure.run", "agility"),
+            ("wild", .skill(.wild), "star.fill", "wild"),
         ]
-        for (raw, icon) in tokenCases + skillCases {
+        let sealCases: [(String, StoryIcon, String, String)] = [
+            ("sealA", .seal(.sealA), "a.circle.fill", "seal a"),
+            ("sealB", .seal(.sealB), "b.circle.fill", "seal b"),
+            ("sealC", .seal(.sealC), "c.circle.fill", "seal c"),
+            ("sealD", .seal(.sealD), "d.circle.fill", "seal d"),
+            ("sealE", .seal(.sealE), "e.circle.fill", "seal e"),
+        ]
+        for (raw, icon) in tokenCases {
             #expect(StoryIcon.iconVariableValue(raw) == icon)
         }
+        for (raw, icon, systemImage, accessibilityLabel) in skillCases + sealCases {
+            #expect(StoryIcon.iconVariableValue(raw) == icon)
+            #expect(icon.systemImage == systemImage)
+            #expect(icon.accessibilityLabel == accessibilityLabel)
+        }
         #expect(StoryIcon.iconVariableValue("elderthing") == nil)
-        #expect(StoryIcon.iconVariableValue("wild") == nil)
+        #expect(StoryIcon.iconVariableValue("sealF") == nil)
     }
 
     @Test("Unknown entry variable roles fail only that entry")
