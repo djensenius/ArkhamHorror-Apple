@@ -64,6 +64,22 @@ struct NightOfTheZealotCoverageReplayTests {
         try await runMultiplayer(recordings: recordings)
     }
 
+    @Test("Parameterized amount row labels catalog the bare choice key")
+    func parameterizedAmountRowLabelsCatalogBareChoiceKey() {
+        var keys = Set<String>()
+        collectLocalizationKeys(
+            from: .object([
+                "amountChoices": .array([
+                    .object(["label": .string("$damage count=i:1")]),
+                ]),
+            ]),
+            into: &keys
+        )
+
+        #expect(keys.contains("choice.damage"))
+        #expect(!keys.contains("choice.damage count=i:1"))
+    }
+
     @Test("Multiplayer reconnect restores participant prompt and fences in-flight answer")
     // swiftlint:disable:next function_body_length
     func multiplayerReconnectRestoresParticipantPromptAndFencesInFlightAnswer() async throws {
@@ -738,9 +754,12 @@ struct NightOfTheZealotCoverageReplayTests {
         guard case let .array(choices)? = object["amountChoices"] else { return }
         for choice in choices {
             guard let label = choice.objectValue?["label"]?.stringValue,
-                  label.hasPrefix("$")
+                  label.hasPrefix("$"),
+                  let key = StoryNarrativeLocalization.productionChoiceLabelCatalogKey(
+                      "$choice.\(label.dropFirst())"
+                  )
             else { continue }
-            keys.insert("choice.\(label.dropFirst())")
+            keys.insert(key)
         }
     }
 
