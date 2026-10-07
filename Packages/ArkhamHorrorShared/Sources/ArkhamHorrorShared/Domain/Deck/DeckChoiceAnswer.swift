@@ -85,18 +85,20 @@ enum LiveChooseDeckQuestion {
 
 extension BasicChoicePromptPresentation {
     static func liveChooseDeckGenericHeading(localeIdentifier: String? = nil) -> String {
-        let locale = localeIdentifier.map(Locale.init(identifier:)) ?? .current
-        return String(
-            localized: "liveChooseDeck.heading.generic",
-            defaultValue: "Choose a Deck",
-            bundle: .module,
-            locale: locale
+        semanticLocalized(
+            "liveChooseDeck.heading.generic",
+            value: "Choose a Deck",
+            localeIdentifier: localeIdentifier
         )
     }
 
     var liveChooseDeckPickerHeading: String {
         promptLabelResolutions["questionLabel"]?.title
-            ?? Self.liveChooseDeckGenericHeading(localeIdentifier: semanticLocaleIdentifier)
+            ?? liveChooseDeckGenericHeading()
+    }
+
+    private func liveChooseDeckGenericHeading() -> String {
+        semanticLocalized("liveChooseDeck.heading.generic", value: "Choose a Deck")
     }
 }
 

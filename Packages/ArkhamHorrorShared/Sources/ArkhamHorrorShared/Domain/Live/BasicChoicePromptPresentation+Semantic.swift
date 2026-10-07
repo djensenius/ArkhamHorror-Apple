@@ -1303,8 +1303,22 @@ extension BasicChoicePromptPresentation {
         value: String.LocalizationValue,
         arguments: [CVarArg] = []
     ) -> String {
-        let locale = semanticLocaleIdentifier.map(Locale.init(identifier:)) ?? .current
-        guard let bundle = semanticLocalizationBundle else {
+        Self.semanticLocalized(
+            key,
+            value: value,
+            localeIdentifier: semanticLocaleIdentifier,
+            arguments: arguments
+        )
+    }
+
+    static func semanticLocalized(
+        _ key: StaticString,
+        value: String.LocalizationValue,
+        localeIdentifier: String?,
+        arguments: [CVarArg] = []
+    ) -> String {
+        let locale = localeIdentifier.map(Locale.init(identifier:)) ?? .current
+        guard let bundle = semanticLocalizationBundle(localeIdentifier: localeIdentifier) else {
             return String(
                 localized: key,
                 defaultValue: value,
@@ -1340,10 +1354,10 @@ extension BasicChoicePromptPresentation {
         return String(format: format, locale: locale, arguments: arguments)
     }
 
-    private var semanticLocalizationBundle: Bundle? {
-        guard let semanticLocaleIdentifier else { return nil }
-        var candidates = [semanticLocaleIdentifier]
-        if let language = semanticLocaleIdentifier.split(separator: "-").first {
+    private static func semanticLocalizationBundle(localeIdentifier: String?) -> Bundle? {
+        guard let localeIdentifier else { return nil }
+        var candidates = [localeIdentifier]
+        if let language = localeIdentifier.split(separator: "-").first {
             candidates.append(String(language))
         }
         candidates.append("en")

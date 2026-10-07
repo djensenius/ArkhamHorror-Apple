@@ -296,6 +296,34 @@ extension AppModelLiveChooseDeckTests {
         #expect(prompt.liveChooseDeckPickerHeading == "Choose Deck For Part A")
     }
 
+    @Test("Live deck picker heading uses German semantic locale when the QuestionLabel is unresolved")
+    func liveDeckPickerHeadingUsesGermanSemanticLocaleWhenQuestionLabelIsUnresolved() throws {
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let rawQuestion = JSONValue.object(["tag": .string("ChooseDeck")])
+        let prompt = BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: gameID,
+                ownerID: ownerID,
+                questionVersion: 10,
+                rawQuestion: rawQuestion,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: .updateRequired(tag: "ChooseDeck"),
+            semanticLocaleIdentifier: "de",
+            promptLabelResolutions: ["questionLabel": .unavailable(.missingKey)],
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+
+        #expect(prompt.liveChooseDeckPickerHeading == "Deck wählen")
+    }
+
     @Test("Live deck picker heading falls back when the QuestionLabel is unresolved")
     func liveDeckPickerHeadingFallsBackWhenQuestionLabelIsUnresolved() async throws {
         let service = ScriptedGameLifecycleService()
