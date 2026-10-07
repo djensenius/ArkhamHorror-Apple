@@ -27,12 +27,12 @@ struct LiveNotZTypedLabelVariableTests {
         }
     }
 
-    @Test("Icon variable choice labels resolve through the production label path")
+    @Test("Wild skill icon choice labels resolve through the production discard label path")
     @MainActor
-    func iconVariableChoiceLabelResolvesAndStaysPressable() async throws {
+    func wildSkillIconChoiceLabelResolvesAndStaysPressable() async throws {
         let fixture = try Self.fixture().replacingChoiceLabel(
             at: 0,
-            with: "$label.test skill=s:\"willpower\" count=i:3.0"
+            with: "$label.discardCardsWithMatchingIcons count=i:2 skillIcon=s:\"wild\""
         )
         let labelModel = try await Self.productionLabelModel()
         let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
@@ -40,17 +40,38 @@ struct LiveNotZTypedLabelVariableTests {
         let choice = try #require(prompt.choices.first { $0.index == 0 })
         let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
 
-        #expect(resolved.title == "Test willpower (3)")
+        #expect(resolved.title == "Discard 2 cards with wild icons")
         #expect(prompt.isChoiceActionable(choice, in: projection))
-        #expect(prompt.choiceLabelResolutions[0] == .resolved("Test willpower (3)"))
+        #expect(prompt.choiceLabelResolutions[0] == .resolved("Discard 2 cards with wild icons"))
     }
 
-    @Test("Bad icon variable values leave choice labels unresolved and unpressable")
+    @Test("Seal icon choice labels resolve through the production label path")
     @MainActor
-    func badIconVariableChoiceLabelValueRemainsUnresolved() async throws {
+    func sealIconChoiceLabelResolvesAndStaysPressable() async throws {
         let fixture = try Self.fixture().replacingChoiceLabel(
             at: 0,
-            with: "$label.test skill=s:\"wild\" count=i:3.0"
+            with: "$label.chooseInvestigatorToTakeSeal seal=s:\"sealE\""
+        )
+        let labelModel = try await Self.productionLabelModel()
+        let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let choice = try #require(prompt.choices.first { $0.index == 0 })
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Choose an investigator to take seal e")
+        #expect(prompt.isChoiceActionable(choice, in: projection))
+        #expect(
+            prompt.choiceLabelResolutions[0]
+                == .resolved("Choose an investigator to take seal e")
+        )
+    }
+
+    @Test("Out-of-enum icon variable values leave choice labels unresolved and unpressable")
+    @MainActor
+    func outOfEnumIconVariableChoiceLabelValueRemainsUnresolved() async throws {
+        let fixture = try Self.fixture().replacingChoiceLabel(
+            at: 0,
+            with: "$label.chooseInvestigatorToTakeSeal seal=s:\"sealF\""
         )
         let labelModel = try await Self.productionLabelModel()
         let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
@@ -128,7 +149,9 @@ struct LiveNotZTypedLabelVariableTests {
         let documents = try SyntheticLocaleCatalogDocuments.make(
             pack: "label",
             entryKeys: [
+                "label.chooseInvestigatorToTakeSeal",
                 "label.discardCardsFromHand",
+                "label.discardCardsWithMatchingIcons",
                 "label.takeDamageAndHorror",
                 "label.test",
             ],
@@ -174,6 +197,35 @@ struct LiveNotZTypedLabelVariableTests {
           ]
         ],
         "variables":[{"name":"count","source":"named","role":"text"}]
+      },
+      "label.discardCardsWithMatchingIcons": {
+        "form":"plural",
+        "cases":[
+          [
+            {"type":"text","value":"Discard 1 card with "},
+            {"type":"var","name":"skillIcon","source":"named","role":"iconVariable"},
+            {"type":"text","value":" icon"}
+          ],
+          [
+            {"type":"text","value":"Discard "},
+            {"type":"var","name":"count","source":"named","role":"text"},
+            {"type":"text","value":" cards with "},
+            {"type":"var","name":"skillIcon","source":"named","role":"iconVariable"},
+            {"type":"text","value":" icons"}
+          ]
+        ],
+        "variables":[
+          {"name":"count","source":"named","role":"text"},
+          {"name":"skillIcon","source":"named","role":"iconVariable"}
+        ]
+      },
+      "label.chooseInvestigatorToTakeSeal": {
+        "form":"message",
+        "nodes":[
+          {"type":"text","value":"Choose an investigator to take "},
+          {"type":"var","name":"seal","source":"named","role":"iconVariable"}
+        ],
+        "variables":[{"name":"seal","source":"named","role":"iconVariable"}]
       },
       "label.takeDamageAndHorror": {
         "form":"message",

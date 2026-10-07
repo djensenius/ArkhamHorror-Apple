@@ -68,11 +68,11 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "8b3d31d49dd46f21d9837fe141656bec1d644917dd9d30e05b97ef6b4ef528a8"
+            sha256Hex: "be4863ce7fa5b234d72647d6f6b74abce5725962e9cb052a063e8a5eaee5b3a0"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities-locale-catalog",
-            sha256Hex: "ebb0edf7e215633fdaff4bbedffb3a6e162f6ef53930d01c6563b511917a9c32"
+            sha256Hex: "c98482cdf63e4a7933715a5a13192581afed1d8421300a5476181a99ca59bd77"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities.schema",
@@ -120,7 +120,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "4782dceff200a797e1d8dbcdfe6a76be32cde1f42331dd83e18088362b54e633"
+            sha256Hex: "36cf90115ac951c17f986c6e0d0e9d7d075b5c3dab8914001aff85aa348350ca"
         ),
         VendoredFixtureDigest(
             fileName: "mode-campaign-only",
@@ -432,7 +432,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "196b16175b39700f86ea9194075599daef101d597bcfded06573bdd409cfcb53"
+            sha256Hex: "557c031387c22314bd7c98b6200293b3ba3e6d746b6842687eb04829f5820144"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",

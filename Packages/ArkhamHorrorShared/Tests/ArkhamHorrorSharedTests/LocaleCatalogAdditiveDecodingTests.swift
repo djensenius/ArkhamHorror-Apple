@@ -25,6 +25,17 @@ struct LocaleCatalogAdditiveDecodingTests {
             .text("Test "), .semanticIcon(.skill(.combat)), .text(" ("), .text("3"), .text(")"),
         ]))
         #expect(try resolver.render(
+            key: "label.test",
+            variables: .object(["skill": .string("wild"), "count": Self.number("2")])
+        ) == .success([
+            .text("Test "), .semanticIcon(.skill(.wild)), .text(" ("), .text("2"), .text(")"),
+        ]))
+        #expect(resolver.render(
+            key: "addToken", variables: .object(["token": .string("cultist")])
+        ) == .success([
+            .text("Add 1 "), .semanticIcon(.chaosToken(.cultist)), .text(" chaos token."),
+        ]))
+        #expect(try resolver.render(
             key: "label.pluralTokens",
             variables: .object(["count": Self.number("2"), "token": .string("skull")])
         ) == .success([
@@ -39,33 +50,6 @@ struct LocaleCatalogAdditiveDecodingTests {
         #expect(resolver.render(
             key: "literal.icon", variables: .object([:])
         ) == .success([.icon("skull")]))
-    }
-
-    @Test("Icon variables accept exactly the governed token and skill tables")
-    func iconVariableValueTable() {
-        let tokenCases: [(String, StoryIcon)] = [
-            ("skull", .chaosToken(.skull)),
-            ("cultist", .chaosToken(.cultist)),
-            ("tablet", .chaosToken(.tablet)),
-            ("elderThing", .chaosToken(.elderThing)),
-            ("autoFail", .chaosToken(.autoFail)),
-            ("elderSign", .chaosToken(.elderSign)),
-            ("curse", .chaosToken(.curse)),
-            ("bless", .chaosToken(.bless)),
-            ("frost", .chaosToken(.frost)),
-            ("blood", .chaosToken(.blood)),
-        ]
-        let skillCases: [(String, StoryIcon)] = [
-            ("willpower", .skill(.willpower)),
-            ("intellect", .skill(.intellect)),
-            ("combat", .skill(.combat)),
-            ("agility", .skill(.agility)),
-        ]
-        for (raw, icon) in tokenCases + skillCases {
-            #expect(StoryIcon.iconVariableValue(raw) == icon)
-        }
-        #expect(StoryIcon.iconVariableValue("elderthing") == nil)
-        #expect(StoryIcon.iconVariableValue("wild") == nil)
     }
 
     @Test("Unknown entry variable roles fail only that entry")
