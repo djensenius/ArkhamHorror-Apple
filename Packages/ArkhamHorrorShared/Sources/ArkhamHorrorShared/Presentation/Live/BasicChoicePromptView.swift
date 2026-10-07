@@ -60,7 +60,8 @@ struct BasicChoicePromptView: View {
                         drawings: controller.pickDestinyDrawings(for: presentation),
                         canSubmit: presentation.canSubmit,
                         controller: controller,
-                        focusBinding: focusBinding
+                        focusBinding: focusBinding,
+                        isCompact: isCompact
                     )
                     .id(presentation.identity)
                 case let .unavailable(reason):

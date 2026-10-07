@@ -224,6 +224,32 @@ struct PickDestinyPromptTests {
         #expect(submitted == [selected])
     }
 
+    @Test("Pick Destiny keeps the card list scrollable and footer controls outside it")
+    func pickDestinyViewStructureKeepsFooterControlsReachable() throws {
+        let source = try pickDestinyPromptViewSource()
+        let scroll = try #require(source.range(of: "ScrollView(.vertical)")?.lowerBound)
+        let rowID = try #require(
+            source.range(of: ".id(BoardFocusID.promptPickDestinyRow(index))")?.lowerBound
+        )
+        let cardListID = try #require(
+            source.range(of: "\"liveGame.prompt.pickDestiny.cards\"")?.lowerBound
+        )
+        let progressID = try #require(
+            source.range(of: "\"liveGame.prompt.pickDestiny.progress\"")?.lowerBound
+        )
+        let doneID = try #require(
+            source.range(of: "\"liveGame.prompt.pickDestiny.done\"")?.lowerBound
+        )
+
+        #expect(scroll < rowID)
+        #expect(rowID < cardListID)
+        #expect(cardListID < progressID)
+        #expect(progressID < doneID)
+        #expect(source.contains(".frame(maxHeight: cardListMaxHeight)"))
+        #expect(source.contains(".onChange(of: focusBinding.wrappedValue)"))
+        #expect(source.contains("proxy.scrollTo(focusedID, anchor: .center)"))
+    }
+
     @Test("AppModel send fence rejects illegal Pick Destiny answers before transport")
     func appModelRejectsIllegalPickDestinyBeforeSend() async throws {
         let model = await GameLifecycleTestModel.makeSignedIn(
@@ -325,6 +351,16 @@ struct PickDestinyPromptTests {
     ) throws -> String {
         let bundle = try moduleBundle(locale: locale)
         return NSLocalizedString(key, bundle: bundle, value: fallback, comment: "")
+    }
+
+    private func pickDestinyPromptViewSource() throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Sources/ArkhamHorrorShared/Presentation/Live")
+            .appending(path: "PickDestinyPromptView.swift")
+        return try String(contentsOf: url, encoding: .utf8)
     }
 
     private func moduleBundle(locale: String) throws -> Bundle {

@@ -6,19 +6,22 @@ struct PickDestinyPromptView: View {
     private let canSubmit: Bool
     private let controller: BoardCommandController
     private let focusBinding: FocusState<SemanticFocusID?>.Binding
+    private let isCompact: Bool
 
     init(
         prompt: PickDestinyPromptPresentation,
         drawings: [QuestionPresentation.DestinyDrawing],
         canSubmit: Bool,
         controller: BoardCommandController,
-        focusBinding: FocusState<SemanticFocusID?>.Binding
+        focusBinding: FocusState<SemanticFocusID?>.Binding,
+        isCompact: Bool
     ) {
         self.prompt = prompt
         self.drawings = drawings
         self.canSubmit = canSubmit
         self.controller = controller
         self.focusBinding = focusBinding
+        self.isCompact = isCompact
     }
 
     private var requiredReversedCount: Int {
@@ -35,6 +38,10 @@ struct PickDestinyPromptView: View {
 
     private var isSubmitEnabled: Bool {
         canSubmit && hasRequiredReversedCount
+    }
+
+    private var cardListMaxHeight: CGFloat {
+        isCompact ? 240 : 420
     }
 
     private var progressText: String {
@@ -71,9 +78,22 @@ struct PickDestinyPromptView: View {
             Text(prompt.instructions)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            LazyVStack(alignment: .leading, spacing: 8) {
-                ForEach(drawings.indices, id: \.self) { index in
-                    drawingRow(index: index)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(drawings.indices, id: \.self) { index in
+                            drawingRow(index: index)
+                                .id(BoardFocusID.promptPickDestinyRow(index))
+                        }
+                    }
+                }
+                .frame(maxHeight: cardListMaxHeight)
+                .accessibilityIdentifier("liveGame.prompt.pickDestiny.cards")
+                .onAppear {
+                    scrollToFocusedRow(focusBinding.wrappedValue, proxy: proxy)
+                }
+                .onChange(of: focusBinding.wrappedValue) { _, newValue in
+                    scrollToFocusedRow(newValue, proxy: proxy)
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -108,6 +128,20 @@ struct PickDestinyPromptView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("liveGame.prompt.pickDestiny")
+    }
+
+    private func scrollToFocusedRow(
+        _ focusedID: SemanticFocusID?,
+        proxy: ScrollViewProxy
+    ) {
+        guard let focusedID,
+              drawings.indices.contains(where: {
+                  BoardFocusID.promptPickDestinyRow($0) == focusedID
+              })
+        else { return }
+        withAnimation {
+            proxy.scrollTo(focusedID, anchor: .center)
+        }
     }
 
     private func drawingRow(index: Int) -> some View {
