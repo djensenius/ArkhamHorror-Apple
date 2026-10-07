@@ -77,5 +77,16 @@ struct DeckListAnswer: Sendable, Equatable, Codable {
 enum LiveChooseDeckQuestion {
     static func matches(_ value: JSONValue) -> Bool {
         value == .object(["tag": .string("ChooseDeck")])
+            || value.wrapsExactQuestion(tag: "QuestionLabel", innerTag: "ChooseDeck")
+    }
+}
+
+private extension JSONValue {
+    func wrapsExactQuestion(tag expectedTag: String, innerTag expectedInnerTag: String) -> Bool {
+        guard case let .object(object) = self,
+              object["tag"] == .string(expectedTag),
+              object["question"] == .object(["tag": .string(expectedInnerTag)])
+        else { return false }
+        return true
     }
 }

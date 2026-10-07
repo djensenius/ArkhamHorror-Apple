@@ -18,6 +18,17 @@ struct AppModelLiveChooseDeckTests {
         return try ContractJSON.decode(DeckFixture.self, from: Data(contentsOf: url)).deck
     }
 
+    private func dreamEatersPartAChooseDeckQuestion() throws -> JSONValue {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: "question-dream-eaters-part-a-choose-deck",
+                withExtension: "json",
+                subdirectory: "Fixtures/Contract"
+            )
+        )
+        return try ContractJSON.decode(JSONValue.self, from: Data(contentsOf: url))
+    }
+
     private func makeSignedInModel(service: ScriptedGameLifecycleService) async -> AppModel {
         let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
         model.sessionState = .signedIn(
@@ -121,6 +132,34 @@ struct AppModelLiveChooseDeckTests {
             "deckId": .string(deck.id.rawValue.uuidString.lowercased()),
             "playerId": .string(ownerID.rawValue.uuidString.lowercased()),
         ]))
+    }
+
+    @Test("DeckAnswer is sent for a QuestionLabel-wrapped live ChooseDeck prompt")
+    func sendsDeckAnswerForLabeledDreamEatersChooseDeckPrompt() async throws {
+        let service = ScriptedGameLifecycleService()
+        let model = await makeSignedInModel(service: service)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let deck = try sampleDeck()
+        let rawQuestion = try dreamEatersPartAChooseDeckQuestion()
+        await connection.enqueueSendResult(.success(()))
+        installLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            participant: .participant(ownerID),
+            rawQuestion: rawQuestion,
+            connection: connection
+        )
+
+        #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
+
+        let sent = try #require(await connection.sentData.first)
+        let decoded = try ContractJSON.decode(DeckAnswer.self, from: sent)
+        #expect(decoded == DeckAnswer(deckId: deck.id, playerId: ownerID))
     }
 
     @Test("DeckAnswer is refused for spectators, other players, and wrong question shapes")

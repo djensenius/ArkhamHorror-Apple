@@ -59,13 +59,42 @@ struct DeckChoiceAnswerTests {
         #expect(answer.deckList.name == "Contract deck")
     }
 
-    @Test("Live ChooseDeck recognition accepts only the exact nullary question shape")
-    func liveChooseDeckRecognitionIsExact() {
+    @Test("Live ChooseDeck recognition accepts exact nullary and labeled deck prompts")
+    func liveChooseDeckRecognitionAcceptsLabeledDeckPrompts() throws {
+        let dreamEatersRaw = try ContractJSON.decode(
+            JSONValue.self,
+            from: loadFixture("question-dream-eaters-part-a-choose-deck")
+        )
+
         #expect(LiveChooseDeckQuestion.matches(.object(["tag": .string("ChooseDeck")])))
+        #expect(LiveChooseDeckQuestion.matches(dreamEatersRaw))
         #expect(!LiveChooseDeckQuestion.matches(.object([
             "tag": .string("ChooseDeck"),
             "extra": .null,
         ])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "question": .object([
+                "tag": .string("ChooseDeck"),
+                "extra": .null,
+            ]),
+            "tag": .string("QuestionLabel"),
+        ])))
         #expect(!LiveChooseDeckQuestion.matches(.object(["tag": .string("ChooseJoinDeck")])))
+    }
+
+    @Test("Captured Dream-Eaters labeled ChooseDeck bytes bind to the deck presentation")
+    func dreamEatersQuestionLabelChooseDeckFixtureBinds() throws {
+        let rawBytes = try loadFixture("question-dream-eaters-part-a-choose-deck")
+        let presentationBytes = try loadFixture(
+            "question-presentation-dream-eaters-part-a-choose-deck"
+        )
+        let raw = try ContractJSON.decode(JSONValue.self, from: rawBytes)
+        let presentation = try ContractJSON.decode(QuestionPresentation.self, from: presentationBytes)
+        let binding = try presentation.bind(to: raw, expectedQuestionVersion: 10)
+
+        #expect(LiveChooseDeckQuestion.matches(raw))
+        #expect(binding.presentation.questionKind == .chooseDeck)
+        #expect(binding.presentation.answer == .deck(tags: ["DeckAnswer"]))
+        #expect(binding.rawChoices.isEmpty)
     }
 }
