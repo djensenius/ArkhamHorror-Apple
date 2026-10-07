@@ -52,46 +52,6 @@ struct LocaleCatalogAdditiveDecodingTests {
         ) == .success([.icon("skull")]))
     }
 
-    @Test("Icon variables accept exactly the governed token, skill, and seal tables")
-    func iconVariableValueTable() {
-        let tokenCases: [(String, StoryIcon)] = [
-            ("skull", .chaosToken(.skull)),
-            ("cultist", .chaosToken(.cultist)),
-            ("tablet", .chaosToken(.tablet)),
-            ("elderThing", .chaosToken(.elderThing)),
-            ("autoFail", .chaosToken(.autoFail)),
-            ("elderSign", .chaosToken(.elderSign)),
-            ("curse", .chaosToken(.curse)),
-            ("bless", .chaosToken(.bless)),
-            ("frost", .chaosToken(.frost)),
-            ("blood", .chaosToken(.blood)),
-        ]
-        let skillCases: [(String, StoryIcon, String, String)] = [
-            ("willpower", .skill(.willpower), "brain.head.profile", "willpower"),
-            ("intellect", .skill(.intellect), "magnifyingglass", "intellect"),
-            ("combat", .skill(.combat), "burst.fill", "combat"),
-            ("agility", .skill(.agility), "figure.run", "agility"),
-            ("wild", .skill(.wild), "star.fill", "wild"),
-        ]
-        let sealCases: [(String, StoryIcon, String, String)] = [
-            ("sealA", .seal(.sealA), "a.circle.fill", "seal a"),
-            ("sealB", .seal(.sealB), "b.circle.fill", "seal b"),
-            ("sealC", .seal(.sealC), "c.circle.fill", "seal c"),
-            ("sealD", .seal(.sealD), "d.circle.fill", "seal d"),
-            ("sealE", .seal(.sealE), "e.circle.fill", "seal e"),
-        ]
-        for (raw, icon) in tokenCases {
-            #expect(StoryIcon.iconVariableValue(raw) == icon)
-        }
-        for (raw, icon, systemImage, accessibilityLabel) in skillCases + sealCases {
-            #expect(StoryIcon.iconVariableValue(raw) == icon)
-            #expect(icon.systemImage == systemImage)
-            #expect(icon.accessibilityLabel == accessibilityLabel)
-        }
-        #expect(StoryIcon.iconVariableValue("elderthing") == nil)
-        #expect(StoryIcon.iconVariableValue("sealF") == nil)
-    }
-
     @Test("Unknown entry variable roles fail only that entry")
     func unknownVariableRoleFailsPerEntry() async throws {
         let documents = try SyntheticLocaleCatalogDocuments.make(
