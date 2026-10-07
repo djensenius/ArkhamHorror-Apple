@@ -2753,6 +2753,37 @@ private struct TraceSelectedAnswer: Encodable, Sendable {
     let choiceIndex: Int?
 }
 
+private struct TraceInvestigatorStatus: Encodable, Sendable {
+    let investigatorID: String
+    let damage: Int
+    let horror: Int
+    let clues: Int
+    let resources: Int
+    let health: Int
+    let sanity: Int
+    let remainingActions: Int
+    let defeated: Bool
+    let resigned: Bool
+}
+
+private struct TraceActProgress: Encodable, Sendable {
+    let id: String
+    let cardCode: String
+    let sequence: String
+    let flipped: Bool
+    let advanceCostSummary: String?
+    let clues: Int
+}
+
+private struct TraceAgendaProgress: Encodable, Sendable {
+    let id: String
+    let cardCode: String
+    let sequence: String
+    let doom: Int
+    let doomThresholdSummary: String?
+    let flipped: Bool
+}
+
 private struct TraceAppChoice: Encodable, Sendable {
     let index: Int
     /// The title rendered by `BasicChoicePromptView` through
@@ -2784,6 +2815,9 @@ private struct TracePromptState: Encodable, Sendable {
     let serverSelectableIndexes: [Int]
     let appDisplayOrderedChoiceIndexes: [Int]
     let appChoices: [TraceAppChoice]
+    let investigatorStatus: TraceInvestigatorStatus?
+    let actProgress: [TraceActProgress]
+    let agendaProgress: [TraceAgendaProgress]
     let isRenderableQuestion: Bool
     let canSubmit: Bool
     let statusMessage: String?
@@ -2915,6 +2949,47 @@ private struct PlaythroughTraceRecord: Encodable, Sendable {
     }
 }
 
+private extension TraceInvestigatorStatus {
+    init(_ investigator: BoardInvestigatorNode) {
+        investigatorID = investigator.id.rawValue.rawValue
+        damage = traceTokenCount("Damage", in: investigator.tokenCounts)
+        horror = traceTokenCount("Horror", in: investigator.tokenCounts)
+        clues = traceTokenCount("Clue", in: investigator.tokenCounts)
+        resources = traceTokenCount("Resource", in: investigator.tokenCounts)
+        health = investigator.health
+        sanity = investigator.sanity
+        remainingActions = investigator.remainingActions
+        defeated = investigator.defeated
+        resigned = investigator.resigned
+    }
+}
+
+private extension TraceActProgress {
+    init(_ act: BoardActNode) {
+        id = act.id.rawValue.rawValue
+        cardCode = act.cardCode.rawValue
+        sequence = "\(act.sequence.step)\(act.sequence.side.rawValue)"
+        flipped = act.flipped
+        advanceCostSummary = act.advanceCostSummary
+        clues = traceTokenCount("Clue", in: act.tokenCounts)
+    }
+}
+
+private extension TraceAgendaProgress {
+    init(_ agenda: BoardAgendaNode) {
+        id = agenda.id.rawValue.rawValue
+        cardCode = agenda.cardCode.rawValue
+        sequence = "\(agenda.sequence.step)\(agenda.sequence.side.rawValue)"
+        doom = agenda.doom
+        doomThresholdSummary = agenda.doomThresholdSummary
+        flipped = agenda.flipped
+    }
+}
+
+private func traceTokenCount(_ token: String, in tokens: [BoardTokenSummary]) -> Int {
+    tokens.first { $0.token == token }?.count ?? 0
+}
+
 private extension TraceSelectedAnswer {
     init(_ answer: SelectedBotAnswer) {
         note = answer.note
@@ -2961,6 +3036,11 @@ private extension TracePromptState {
         serverSelectableIndexes = serverChoices.compactMap { $0.selectable ? $0.sourceIndex : nil }
         appDisplayOrderedChoiceIndexes = displayChoices.map(\.index)
         appChoices = traceAppChoices(prompt: prompt, projection: projection)
+        investigatorStatus = projection.investigators.first {
+            $0.playerID == prompt.identity.ownerID
+        }.map(TraceInvestigatorStatus.init)
+        actProgress = projection.acts.map(TraceActProgress.init)
+        agendaProgress = projection.agendas.map(TraceAgendaProgress.init)
         isRenderableQuestion = prompt.isRenderableQuestion
         canSubmit = prompt.canSubmit
         statusMessage = prompt.statusMessage
