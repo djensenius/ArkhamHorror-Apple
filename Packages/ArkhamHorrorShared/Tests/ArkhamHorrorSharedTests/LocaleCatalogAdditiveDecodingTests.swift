@@ -31,9 +31,9 @@ struct LocaleCatalogAdditiveDecodingTests {
             .text("Test "), .semanticIcon(.skill(.wild)), .text(" ("), .text("2"), .text(")"),
         ]))
         #expect(resolver.render(
-            key: "addToken", variables: .object(["token": .string("sealC")])
+            key: "addToken", variables: .object(["token": .string("cultist")])
         ) == .success([
-            .text("Add 1 "), .semanticIcon(.seal(.sealC)), .text(" chaos token."),
+            .text("Add 1 "), .semanticIcon(.chaosToken(.cultist)), .text(" chaos token."),
         ]))
         #expect(try resolver.render(
             key: "label.pluralTokens",
