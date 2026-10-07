@@ -132,28 +132,37 @@ extension StoryNarrativeLocalization {
         guard let invocation = parseProductionChoiceLabel(wireLabel) else {
             return .failure(.unsupportedVariableValue)
         }
-        // Vue I18n resolves `$t(pluralKey)` without an explicit count through the singular
-        // branch. Ask the resolver for that path; it only applies when `count`/`n` is absent,
-        // so named variables still bind normally and unbound placeholders still fail closed.
-        switch resolveKey(
-            invocation.key,
-            variables: invocation.variables,
-            resolver: resolver,
-            catalogUnavailability: catalogUnavailability,
-            imageFallback: false,
-            usesImplicitSingularPlural: true
-        ) {
-        case let .failure(reason):
-            return .failure(reason)
-        case let .success(rendered):
-            guard !rendered.nodes.contains(where: \.losesInstructionWhenFlattened) else {
-                return .failure(.unsupportedEntry)
+        for key in productionChoiceLabelCandidateKeys(invocation.key) {
+            // Vue I18n resolves `$t(pluralKey)` without an explicit count through the singular
+            // branch. Ask the resolver for that path; it only applies when `count`/`n` is absent,
+            // so named variables still bind normally and unbound placeholders still fail closed.
+            switch resolveKey(
+                key,
+                variables: invocation.variables,
+                resolver: resolver,
+                catalogUnavailability: catalogUnavailability,
+                imageFallback: false,
+                usesImplicitSingularPlural: true
+            ) {
+            case .failure(.missingKey) where key == invocation.key:
+                continue
+            case let .failure(reason):
+                return .failure(reason)
+            case let .success(rendered):
+                guard !rendered.nodes.contains(where: \.losesInstructionWhenFlattened) else {
+                    return .failure(.unsupportedEntry)
+                }
+                let trimmed = rendered.nodes.map(\.plainText).joined()
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
+                return .success(trimmed)
             }
-            let trimmed = rendered.nodes.map(\.plainText).joined()
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
-            return .success(trimmed)
         }
+        return .failure(.missingKey)
+    }
+
+    private static func productionChoiceLabelCandidateKeys(_ key: String) -> [String] {
+        key.contains(".") ? [key] : [key, "choice.\(key)"]
     }
 
     private static func parseProductionChoiceLabel(

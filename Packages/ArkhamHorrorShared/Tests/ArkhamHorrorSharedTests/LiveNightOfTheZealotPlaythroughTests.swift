@@ -314,7 +314,7 @@ private func eligibleCoreReplacementDeck(
     replacementDecksByCode: [String: Deck]
 ) -> Deck? {
     let originalInvestigatorID = "c\(originalInvestigatorCode)"
-    for fixture in InvestigatorFixture.core {
+    for fixture in InvestigatorFixture.replacementPool {
         let candidateID = "c\(fixture.code)"
         guard candidateID != originalInvestigatorID,
               !takenInvestigatorIDs.contains(candidateID),
@@ -396,6 +396,12 @@ private func replacementDeckIfRequired(
 
 private func investigatorCode(from investigatorID: String) -> String {
     investigatorID.hasPrefix("c") ? String(investigatorID.dropFirst()) : investigatorID
+}
+
+private struct CapturedLivePromptFixture: Decodable {
+    let questionVersion: Int
+    let rawQuestion: JSONValue
+    let questionPresentation: QuestionPresentation
 }
 
 @MainActor
@@ -601,6 +607,59 @@ struct LiveNightOfTheZealotPlaythroughTests {
             return
         }
         #expect(investigatorID == "c01002")
+    }
+
+    @Test("Live harness uses non-core support replacements after the core pool")
+    func deckUpgradeUsesSupportReplacementWhenCorePoolIsExhausted() throws {
+        let ownerID = PlayerID(UUID())
+        let currentInvestigatorID = try InvestigatorID(CardCode("c01005"))
+        let unavailable = InvestigatorFixture.core.map { "c\($0.code)" }
+        let projection = try Self.campaignDeckUpgradeProjection(
+            ownerID: ownerID,
+            currentInvestigatorID: currentInvestigatorID,
+            killedOrInsaneInvestigatorIDs: unavailable
+        )
+        let decks = try Dictionary(uniqueKeysWithValues: InvestigatorFixture.replacementPool.map {
+            try ($0.code, Self.deckFixture(for: $0))
+        })
+
+        let selected = try campaignDeckUpgradeBotSelection(
+            promptOwnerID: ownerID,
+            projection: projection,
+            replacementDecksByCode: decks
+        )
+
+        guard case let .replacementDeck(originalInvestigatorID, deck) = selected.answer else {
+            Issue.record("Expected a non-core replacement deck selection")
+            return
+        }
+        #expect(originalInvestigatorID == "c01005")
+        #expect(deck.playableList.investigatorCode.rawValue == "c02001")
+    }
+
+    @Test("Live bot chooses Forgotten Age supplies before Done")
+    func botStrategyChoosesForgottenAgeSuppliesBeforeDone() throws {
+        let initialPrompt = try Self.capturedForgottenAgeSupplyPrompt(
+            named: "forgotten-age-pick-supplies-initial-q5"
+        )
+        let resupplyPrompt = try Self.capturedForgottenAgeSupplyPrompt(
+            named: "forgotten-age-pick-supplies-resupply-q122"
+        )
+
+        #expect(Self.selectedBotIndex(in: initialPrompt) == 1)
+        #expect(Self.selectedBotIndex(in: resupplyPrompt) == 1)
+    }
+
+    @Test("Return Forgotten Age supply-point amount prompt resolves its row label")
+    func returnForgottenAgeSupplyPointAmountPromptIsAnswerable() throws {
+        let fixture = try Self.capturedForgottenAgePrompt(
+            named: "return-forgotten-age-supply-points-choose-amounts-q147"
+        )
+        let prompt = try Self.promptWithResolvedAmountLabels(from: fixture)
+        let amountPrompt = try #require(prompt.amountPrompt(in: Self.strategyProjection()))
+
+        #expect(prompt.canSubmit)
+        #expect(amountPrompt.visibleRows.map(\.title) == ["Supply Points to Gain"])
     }
 
     @Test("Live harness treats same-version prompt-key changes as progress")
@@ -1225,6 +1284,75 @@ struct LiveNightOfTheZealotPlaythroughTests {
         )
     }
 
+    private static func capturedForgottenAgeSupplyPrompt(
+        named name: String
+    ) throws -> BasicChoicePromptPresentation {
+        let fixture = try capturedForgottenAgePrompt(named: name)
+        return prompt(
+            questionVersion: fixture.questionVersion,
+            rawQuestion: fixture.rawQuestion,
+            questionPresentation: fixture.questionPresentation
+        )
+    }
+
+    private static func capturedForgottenAgePrompt(
+        named name: String
+    ) throws -> CapturedLivePromptFixture {
+        let url = try #require(Bundle.module.url(
+            forResource: name,
+            withExtension: "json",
+            subdirectory: "Fixtures/LiveForgottenAgePlaythrough"
+        ))
+        return try ContractJSON.decode(
+            CapturedLivePromptFixture.self,
+            from: Data(contentsOf: url)
+        )
+    }
+
+    private static func promptWithResolvedAmountLabels(
+        from fixture: CapturedLivePromptFixture
+    ) throws -> BasicChoicePromptPresentation {
+        let bound = try fixture.questionPresentation.bind(
+            to: fixture.rawQuestion,
+            expectedQuestionVersion: fixture.questionVersion
+        )
+        let amountChoice = try #require(fixture.questionPresentation.amountChoices?.first)
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: fixture.questionVersion,
+                rawQuestion: fixture.rawQuestion,
+                questionPresentation: fixture.questionPresentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: .updateRequired(tag: "ChooseAmounts"),
+            semanticPresentation: bound,
+            promptLabelResolutions: [
+                "amountChoice.\(amountChoice.choiceID)": .resolved("Supply Points to Gain"),
+                "label": .resolved("Gain supply points"),
+            ],
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private static func selectedBotIndex(in prompt: BasicChoicePromptPresentation) -> Int {
+        let selectableIndexes = prompt.identity.questionPresentation?.choices.compactMap {
+            $0.selectable ? $0.sourceIndex : nil
+        } ?? []
+        return preferredSelectableIndex(
+            in: prompt,
+            projection: strategyProjection(),
+            selectableIndexes: selectableIndexes,
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        )
+    }
+
     private static func semanticPresentation(
         choiceKind: QuestionPresentation.ChoiceKind
     ) -> QuestionPresentation {
@@ -1594,7 +1722,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
         token: String
     ) async throws -> [String: Deck] {
         var decks: [String: Deck] = [:]
-        for fixture in InvestigatorFixture.core where fixture.code != investigator.code {
+        for fixture in InvestigatorFixture.replacementPool where fixture.code != investigator.code {
             decks[fixture.code] = try await deckService.createDeck(
                 fixture.createDeckRequest,
                 on: profile,
@@ -3264,7 +3392,7 @@ private enum PlaythroughError: Error, CustomStringConvertible {
         case let .cardCatalogUnavailable(reason): "card catalog unavailable: \(reason)"
         case let .submissionFailed(reason): "submission failed: \(reason)"
         case let .noEligibleReplacementInvestigator(investigatorID):
-            "no eligible core replacement investigator for \(investigatorID)"
+            "no eligible replacement investigator for \(investigatorID)"
         case let .noPromptOwnerInvestigator(playerID):
             "no current investigator for prompt owner \(playerID.rawValue.uuidString)"
         case let .timedOut(description): "timed out waiting for \(description)"
@@ -3312,6 +3440,36 @@ private struct InvestigatorFixture: Sendable, Equatable {
             secondCopies: ["01048", "01049"]
         ),
     ]
+
+    static let replacementSupport: [InvestigatorFixture] = [
+        InvestigatorFixture(
+            code: "02001", name: "Zoey Samaras", weakness: "02007",
+            requiredCards: ["02006"], ordinaryCards: guardian0 + neutralCore,
+            secondCopies: ["01017", "01020"]
+        ),
+        InvestigatorFixture(
+            code: "02002", name: "Rex Murphy", weakness: "02009",
+            requiredCards: ["02008"], ordinaryCards: seeker0 + neutralCore,
+            secondCopies: ["01031", "01033"]
+        ),
+        InvestigatorFixture(
+            code: "02003", name: "Jenny Barnes", weakness: "02011",
+            requiredCards: ["02010"], ordinaryCards: rogue0 + neutralCore,
+            secondCopies: ["01047", "01048"]
+        ),
+        InvestigatorFixture(
+            code: "02004", name: "Jim Culver", weakness: "02013",
+            requiredCards: ["02012"], ordinaryCards: mystic0 + neutralCore,
+            secondCopies: ["01059", "01060"]
+        ),
+        InvestigatorFixture(
+            code: "02005", name: "\"Ashcan\" Pete", weakness: "02015",
+            requiredCards: ["02014"], ordinaryCards: survivor0 + neutralCore,
+            secondCopies: ["01072", "01073"]
+        ),
+    ]
+
+    static let replacementPool = core + replacementSupport
 
     var deckSlots: [String: Int] {
         var slots: [String: Int] = [:]
@@ -3565,17 +3723,12 @@ private func preferredSelectableIndex(
     // scored from server-published kinds/entities/abilities only, then equal-score ties
     // rotate by repeat count plus `ARKHAM_LIVE_BOT_SEED`. It never fabricates an answer;
     // the returned index is always one of the server-offered selectable source indices.
-    if skillTestPreparationCount >= 3 {
-        let startSkillTestIndex = prompt.choices.first(where: {
-            if case .startSkillTest = $0.content {
-                selectableIndexes.contains($0.index)
-            } else {
-                false
-            }
-        })?.index
-        if let startSkillTestIndex {
-            return startSkillTestIndex
-        }
+    if let startSkillTestIndex = forcedStartSkillTestIndex(
+        in: prompt,
+        selectableIndexes: selectableIndexes,
+        skillTestPreparationCount: skillTestPreparationCount
+    ) {
+        return startSkillTestIndex
     }
     guard let presentation = prompt.identity.questionPresentation else {
         return selectableIndexes[seededOffset(
@@ -3583,6 +3736,12 @@ private func preferredSelectableIndex(
             seed: seed,
             count: selectableIndexes.count
         )]
+    }
+    if let pickSupplyIndex = preferredPickSupplyIndex(
+        in: prompt,
+        selectableIndexes: selectableIndexes
+    ) {
+        return pickSupplyIndex
     }
     let selectableChoices = presentation.choices.filter {
         $0.selectable && selectableIndexes.contains($0.sourceIndex)
@@ -3612,6 +3771,46 @@ private func preferredSelectableIndex(
     let bestScore = ranked.map(\.score).max() ?? 0
     let best = ranked.filter { $0.score == bestScore }.map(\.sourceIndex).sorted()
     return best[seededOffset(repeatCount: repeatCount, seed: seed, count: best.count)]
+}
+
+private func forcedStartSkillTestIndex(
+    in prompt: BasicChoicePromptPresentation,
+    selectableIndexes: [Int],
+    skillTestPreparationCount: Int
+) -> Int? {
+    guard skillTestPreparationCount >= 3 else { return nil }
+    return prompt.choices.first(where: {
+        if case .startSkillTest = $0.content {
+            selectableIndexes.contains($0.index)
+        } else {
+            false
+        }
+    })?.index
+}
+
+private func preferredPickSupplyIndex(
+    in prompt: BasicChoicePromptPresentation,
+    selectableIndexes: [Int]
+) -> Int? {
+    guard prompt.identity.rawQuestion.objectValue?["tag"]?.stringValue == "PickSupplies",
+          let rawChoices = prompt.identity.rawQuestion.objectValue?["choices"]?.arrayValue
+    else { return nil }
+    return selectableIndexes.sorted().first { index in
+        rawChoices.indices.contains(index) && containsPickSupplyMessage(rawChoices[index])
+    }
+}
+
+private func containsPickSupplyMessage(_ value: JSONValue) -> Bool {
+    if value.objectValue?["tag"]?.stringValue == "PickSupply" {
+        return true
+    }
+    if let object = value.objectValue {
+        return object.values.contains(where: containsPickSupplyMessage)
+    }
+    if let array = value.arrayValue {
+        return array.contains(where: containsPickSupplyMessage)
+    }
+    return false
 }
 
 private struct BotChoiceRank: Sendable, Equatable {

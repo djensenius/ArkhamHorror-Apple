@@ -185,6 +185,24 @@ struct LocaleCatalogResolverTests {
         ) == .failure(.catalog(.manifestDigestMismatch)))
     }
 
+    @Test("Production choice labels resolve bare choice vocabulary keys")
+    func productionChoiceLabelsResolveBareChoiceVocabularyKeys() {
+        let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
+            "choice.supplyPoints": message([.text("Supply Points to Gain")]),
+        ]))
+
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$supplyPoints",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .success("Supply Points to Gain"))
+        #expect(StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            "$label.doneWithMulligan",
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure)
+        ) == .failure(.missingKey))
+    }
+
     @Test("Production choice labels reject unterminated quoted variables")
     func productionChoiceLabelsRejectUnterminatedQuotedVariables() {
         let resolver = LocaleCatalogResolver(snapshot: snapshot(english: [
