@@ -23,7 +23,7 @@ struct AppModelLiveChooseDeckTests {
             Bundle.module.url(
                 forResource: "question-dream-eaters-part-a-choose-deck",
                 withExtension: "json",
-                subdirectory: "Fixtures/Contract"
+                subdirectory: "Fixtures/LiveDreamEatersPlaythrough"
             )
         )
         return try ContractJSON.decode(JSONValue.self, from: Data(contentsOf: url))

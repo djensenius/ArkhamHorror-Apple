@@ -5,12 +5,15 @@ import Testing
 @Suite("Deck choice answers")
 struct DeckChoiceAnswerTests {
     private func loadFixture(_ name: String) throws -> Data {
-        let bundled = Bundle.module.url(
+        if let bundled = Bundle.module.url(
             forResource: name,
             withExtension: "json",
             subdirectory: "Fixtures/Contract"
-        )
-        if let bundled {
+        ) ?? Bundle.module.url(
+            forResource: name,
+            withExtension: "json",
+            subdirectory: "Fixtures/LiveDreamEatersPlaythrough"
+        ) {
             return try Data(contentsOf: bundled)
         }
         switch name {
