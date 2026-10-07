@@ -3597,7 +3597,9 @@ private struct BotStrategyContext {
     }
 
     private var promptOffersStartSkillTest: Bool {
-        prompt.identity.questionPresentation?.choices.contains { $0.kind == .startSkillTest } == true
+        prompt.identity.questionPresentation?.choices.contains {
+            $0.kind == .startSkillTest
+        } == true
     }
 
     private func fightScore(_ choice: QuestionPresentation.Choice) -> Int {
