@@ -730,6 +730,34 @@ struct LiveNightOfTheZealotPlaythroughTests {
         ) == 4)
     }
 
+    @Test("Live bot strategy penalizes resign even without objectives")
+    func botStrategyPenalizesResignUnconditionally() {
+        let projection = Self.strategyProjection()
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .useAbility,
+                ability: QuestionPresentation.Ability(
+                    cardCode: "c02048",
+                    index: 99,
+                    type: .action,
+                    actions: [.activate, .resign],
+                    canBeCancelled: true
+                )
+            ),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .endTurn),
+            QuestionPresentation.Choice(sourceIndex: 2, kind: .gainResource),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: projection,
+            selectableIndexes: [0, 1, 2],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 2)
+    }
+
     @Test("Live bot strategy is seedable for equal-ranked choices")
     func botStrategyUsesSeedForTies() {
         let projection = Self.strategyProjection()
@@ -744,8 +772,200 @@ struct LiveNightOfTheZealotPlaythroughTests {
             selectableIndexes: [8, 9],
             repeatCount: 0,
             skillTestPreparationCount: 0,
+            seed: 0
+        ) == 8)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: projection,
+            selectableIndexes: [8, 9],
+            repeatCount: 0,
+            skillTestPreparationCount: 0,
             seed: 1
         ) == 9)
+    }
+
+    @Test("Live bot strategy distinguishes clue-bearing and empty investigations")
+    func botStrategyInvestigatesOnlyWhenCluesArePresent() {
+        let blankLocationID = BoardTestFixtures.locationID("000000000902")
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(sourceIndex: 3, kind: .investigate),
+            QuestionPresentation.Choice(
+                sourceIndex: 4,
+                kind: .chooseTarget,
+                entity: QuestionPresentation.Entity(
+                    kind: .location,
+                    id: blankLocationID.codingKey.stringValue
+                )
+            ),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(currentLocationClues: 0),
+            selectableIndexes: [3, 4],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 4)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(currentLocationClues: 2),
+            selectableIndexes: [3, 4],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 3)
+    }
+
+    @Test("Live bot strategy scores enemy actions by engagement and failed fights")
+    func botStrategyScoresFightAndEvadeByEnemyState() {
+        let enemyID = BoardTestFixtures.enemyID("000000000904")
+        let enemyEntity = QuestionPresentation.Entity(
+            kind: .enemy,
+            id: enemyID.codingKey.stringValue
+        )
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(sourceIndex: 5, kind: .fight, entity: enemyEntity),
+            QuestionPresentation.Choice(sourceIndex: 6, kind: .evade, entity: enemyEntity),
+            QuestionPresentation.Choice(sourceIndex: 7, kind: .gainResource),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(),
+            selectableIndexes: [5, 6, 7],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 7)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(engagedEnemyID: enemyID),
+            selectableIndexes: [5, 6, 7],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 5)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(engagedEnemyID: enemyID),
+            selectableIndexes: [5, 6, 7],
+            repeatCount: 0,
+            skillTestPreparationCount: 0,
+            failedFightEnemyIDs: [enemyID.codingKey.stringValue]
+        ) == 6)
+    }
+
+    @Test("Live bot strategy prefers asset soak for lethal damage")
+    func botStrategyPrefersAssetSoakForLethalDamage() {
+        let investigatorEntity = QuestionPresentation.Entity(kind: .investigator, id: "c01001")
+        let assetEntity = QuestionPresentation.Entity(
+            kind: .asset,
+            id: BoardTestFixtures.assetID("000000000905").codingKey.stringValue
+        )
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .assignDamage,
+                entity: investigatorEntity
+            ),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .assignDamage, entity: assetEntity),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(investigatorTokens: [
+                TokenCount(token: "Damage", count: 8),
+            ]),
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 1)
+    }
+
+    @Test("Live bot strategy ignores non-selectable objective choices")
+    func botStrategyNeverReturnsNonSelectableIndex() {
+        let projection = Self.strategyProjection()
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(sourceIndex: 0, kind: .advanceAct, selectable: false),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .endTurn),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: projection,
+            selectableIndexes: [1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 1)
+    }
+
+    @Test("Live bot strategy favors payable act objectives")
+    func botStrategyFavorsPayableActObjectives() {
+        let projection = Self.strategyProjection(
+            currentLocationClues: 2,
+            investigatorTokens: [TokenCount(token: "Clue", count: 2)],
+            actAdvanceCost: RuntimeCost(tag: "GroupClueCost", contents: nil)
+        )
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .useAbility,
+                ability: QuestionPresentation.Ability(
+                    cardCode: "c01108",
+                    index: 1,
+                    type: .objective,
+                    actions: [.activate],
+                    canBeCancelled: true
+                )
+            ),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .investigate),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: projection,
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 0)
+    }
+
+    @Test("Live bot strategy plays assets and commits before starting tests")
+    func botStrategyPlaysAssetsAndCommitsBeforeStartingTests() {
+        let cardEntity = QuestionPresentation.Entity(
+            kind: .card,
+            id: BoardTestFixtures.cardID("000000000906").codingKey.stringValue
+        )
+        let playPrompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(sourceIndex: 0, kind: .chooseTarget, entity: cardEntity),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .gainResource),
+            QuestionPresentation.Choice(sourceIndex: 2, kind: .investigate),
+        ])
+        let commitPrompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(sourceIndex: 0, kind: .chooseTarget, entity: cardEntity),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .startSkillTest),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: playPrompt,
+            projection: Self.strategyProjection(investigatorTokens: [
+                TokenCount(token: "Resource", count: 3),
+            ]),
+            selectableIndexes: [0, 1, 2],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 0)
+        #expect(preferredSelectableIndex(
+            in: commitPrompt,
+            projection: Self.strategyProjection(),
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 0)
+        #expect(preferredSelectableIndex(
+            in: commitPrompt,
+            projection: Self.strategyProjection(),
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 1
+        ) == 1)
     }
 
     @Test("Live coverage report summarizes resolutions, prompts and selections")
@@ -907,24 +1127,39 @@ struct LiveNightOfTheZealotPlaythroughTests {
         )
     }
 
-    private static func strategyProjection() -> BoardProjection {
+    private static func strategyProjection(
+        currentLocationClues: Int = 0,
+        currentLocationRevealed: Bool = true,
+        investigatorTokens: [TokenCount] = [],
+        engagedEnemyID: EnemyID? = nil,
+        actAdvanceCost: RuntimeCost? = nil
+    ) -> BoardProjection {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
         let currentLocationID = BoardTestFixtures.locationID("000000000901")
         let blankLocationID = BoardTestFixtures.locationID("000000000902")
         let clueLocationID = BoardTestFixtures.locationID("000000000903")
+        let actID = BoardTestFixtures.actID("c01108")
         let investigator = BoardTestFixtures.investigator(
             id: investigatorID,
+            engagedEnemies: engagedEnemyID.map { [$0] } ?? [],
+            tokens: investigatorTokens,
             playerID: BoardTestFixtures.playerID()
         )
+        let currentTokens = currentLocationClues > 0
+            ? [TokenCount(token: "Clue", count: currentLocationClues)]
+            : []
         return BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             locations: [
                 (currentLocationID, .ordinary(BoardTestFixtures.ordinaryLocation(
                     id: currentLocationID,
+                    revealed: currentLocationRevealed,
+                    tokens: currentTokens,
                     connectedLocations: [blankLocationID, clueLocationID],
                     investigators: [investigatorID]
                 ))),
                 (blankLocationID, .ordinary(BoardTestFixtures.ordinaryLocation(
                     id: blankLocationID,
+                    revealed: false,
                     connectedLocations: [currentLocationID]
                 ))),
                 (clueLocationID, .ordinary(BoardTestFixtures.ordinaryLocation(
@@ -934,6 +1169,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 ))),
             ],
             investigators: [investigatorID: investigator],
+            acts: [actID: BoardTestFixtures.act(id: actID, advanceCost: actAdvanceCost)],
             playerOrder: [investigatorID],
             activeInvestigatorID: investigatorID,
             leadInvestigatorID: investigatorID
@@ -1419,6 +1655,8 @@ private struct LivePlaythroughBot {
         var repeatedQuestionShapes: [String: Int] = [:]
         var skillTestPreparationCounter = SkillTestPreparationLoopCounter()
         var coverage = PlaythroughCoverageAccumulator()
+        var pendingFightEnemyID: String?
+        var failedFightEnemyIDs: Set<String> = []
         let startedAt = Date()
         let timeout = ProcessInfo.processInfo.environment["ARKHAM_LIVE_PLAYTHROUGH_TIMEOUT"]
             .flatMap(TimeInterval.init) ?? 900
@@ -1445,6 +1683,13 @@ private struct LivePlaythroughBot {
             let projection: BoardProjection
             do {
                 projection = try await waitForProjection()
+                if let failedEnemyID = pendingFightEnemyID {
+                    let fightFailed = projection.skillTest.flatMap(\.failed) == true
+                    if fightFailed {
+                        failedFightEnemyIDs.insert(failedEnemyID)
+                        pendingFightEnemyID = nil
+                    }
+                }
             } catch let error as PlaythroughError {
                 guard case .timedOut = error else { throw error }
                 return try recordRunTimedOut(
@@ -1540,7 +1785,8 @@ private struct LivePlaythroughBot {
                     prompt: prompt,
                     projection: projection,
                     repeatCount: repeatCount,
-                    skillTestPreparationCount: skillTestPreparationCount
+                    skillTestPreparationCount: skillTestPreparationCount,
+                    failedFightEnemyIDs: failedFightEnemyIDs
                 )
             } catch let error as PlaythroughError {
                 let failure = PromptFailure(
@@ -1571,6 +1817,13 @@ private struct LivePlaythroughBot {
             }
 
             coverage.recordSelection(scenario: scenario, answer: selectedAnswer)
+            let selectedFight = selectedAnswer.chosenChoiceKind
+                == QuestionPresentation.ChoiceKind.fight.rawValue
+            let selectedEnemy = selectedAnswer.chosenEntityKind
+                == QuestionPresentation.EntityKind.enemy.rawValue
+            if selectedFight, selectedEnemy {
+                pendingFightEnemyID = selectedAnswer.chosenEntityID
+            }
             let submission = try selectedAnswer.answer.traceSubmission(prompt: prompt)
             do {
                 let seatInvestigatorBeforeReplacement: SeatInvestigatorIdentity? =
@@ -1728,7 +1981,8 @@ private struct LivePlaythroughBot {
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
         repeatCount: Int,
-        skillTestPreparationCount: Int
+        skillTestPreparationCount: Int,
+        failedFightEnemyIDs: Set<String>
     ) throws -> SelectedBotAnswer {
         if isInitialChooseDeckPrompt(prompt) {
             return SelectedBotAnswer(
@@ -1785,15 +2039,18 @@ private struct LivePlaythroughBot {
             selectableIndexes: selectableIndexes,
             repeatCount: repeatCount,
             skillTestPreparationCount: skillTestPreparationCount,
-            seed: strategySeed
+            seed: strategySeed,
+            failedFightEnemyIDs: failedFightEnemyIDs
         )
-        let chosenChoiceKind = prompt.identity.questionPresentation?.choices.first {
+        let chosenChoice = prompt.identity.questionPresentation?.choices.first {
             $0.sourceIndex == selectedIndex
-        }?.kind.rawValue
+        }
         return SelectedBotAnswer(
             answer: .choice(selectedIndex),
             note: "selectable choice \(selectedIndex)",
-            chosenChoiceKind: chosenChoiceKind
+            chosenChoiceKind: chosenChoice?.kind.rawValue,
+            chosenEntityKind: chosenChoice?.entity?.kind.rawValue,
+            chosenEntityID: chosenChoice?.entity?.id
         )
     }
 
@@ -2140,6 +2397,22 @@ private struct SelectedBotAnswer: Sendable {
     let answer: BotAnswer
     let note: String
     let chosenChoiceKind: String?
+    let chosenEntityKind: String?
+    let chosenEntityID: String?
+
+    init(
+        answer: BotAnswer,
+        note: String,
+        chosenChoiceKind: String?,
+        chosenEntityKind: String? = nil,
+        chosenEntityID: String? = nil
+    ) {
+        self.answer = answer
+        self.note = note
+        self.chosenChoiceKind = chosenChoiceKind
+        self.chosenEntityKind = chosenEntityKind
+        self.chosenEntityID = chosenEntityID
+    }
 }
 
 private struct SubmissionOutcome: Sendable {
@@ -3059,7 +3332,8 @@ private func preferredSelectableIndex(
     selectableIndexes: [Int],
     repeatCount: Int,
     skillTestPreparationCount: Int,
-    seed: UInt64 = 0
+    seed: UInt64 = 0,
+    failedFightEnemyIDs: Set<String> = []
 ) -> Int {
     // The live harness strategy is deterministic and seedable: semantic v2 choices are
     // scored from server-published kinds/entities/abilities only, then equal-score ties
@@ -3094,7 +3368,12 @@ private func preferredSelectableIndex(
             count: selectableIndexes.count
         )]
     }
-    let context = BotStrategyContext(prompt: prompt, projection: projection)
+    let context = BotStrategyContext(
+        prompt: prompt,
+        projection: projection,
+        skillTestPreparationCount: skillTestPreparationCount,
+        failedFightEnemyIDs: failedFightEnemyIDs
+    )
     let objectiveAvailable = selectableChoices.contains { choice in
         context.isObjectiveProgress(choice)
     }
@@ -3114,9 +3393,24 @@ private struct BotChoiceRank: Sendable, Equatable {
     let score: Int
 }
 
+private extension BoardSkillTestProjection {
+    var failed: Bool? {
+        guard case let .available(summary) = self else { return nil }
+        if let verdict = summary.verdict {
+            return !verdict.succeeded
+        }
+        if let result = summary.result {
+            return !result.succeeded
+        }
+        return nil
+    }
+}
+
 private struct BotStrategyContext {
     let prompt: BasicChoicePromptPresentation
     let projection: BoardProjection
+    let skillTestPreparationCount: Int
+    let failedFightEnemyIDs: Set<String>
 
     private var actingInvestigator: BoardInvestigatorNode? {
         projection.investigators.first { $0.playerID == prompt.identity.ownerID }
@@ -3142,19 +3436,19 @@ private struct BotStrategyContext {
     }
 
     // swiftlint:disable:next cyclomatic_complexity
-    func score(_ choice: QuestionPresentation.Choice, objectiveAvailable: Bool) -> Int {
+    func score(_ choice: QuestionPresentation.Choice, objectiveAvailable _: Bool) -> Int {
         var score = 0
         switch choice.kind {
         case .advanceAct:
-            score = 10000
+            score = canPayActAdvanceCost ? 11000 : 10000
         case .advanceAgenda:
             score = 9800
         case .investigate:
-            score = currentLocation?.clueCount ?? 0 > 0 ? 9400 : 7200
+            score = currentLocation?.clueCount ?? 0 > 0 ? 9400 : 6200
         case .fight:
-            score = engagedEnemyCount > 0 ? 9100 : 6500
+            score = fightScore(choice)
         case .evade:
-            score = engagedEnemyCount > 0 ? 8800 : 6300
+            score = evadeScore(choice)
         case .move:
             score = moveScore(choice)
         case .chooseTarget:
@@ -3184,7 +3478,7 @@ private struct BotStrategyContext {
         default:
             score = 1000
         }
-        if isResign(choice), objectiveAvailable {
+        if isResign(choice) {
             score -= 9000
         }
         if choice.completesSelection == true {
@@ -3199,19 +3493,57 @@ private struct BotStrategyContext {
             ?? actingInvestigator?.engagedEnemyCount ?? 0
     }
 
+    private var investigatorClues: Int {
+        tokenCount("Clue", in: actingInvestigator?.tokenCounts ?? [])
+    }
+
+    private var investigatorResources: Int {
+        tokenCount("Resource", in: actingInvestigator?.tokenCounts ?? [])
+    }
+
+    private var canPayActAdvanceCost: Bool {
+        projection.acts.contains { act in
+            guard !act.flipped,
+                  let cost = act.advanceCostSummary?.lowercased(),
+                  cost.contains("clue")
+            else { return false }
+            return investigatorClues > 0
+        }
+    }
+
+    private var promptOffersStartSkillTest: Bool {
+        prompt.identity.questionPresentation?.choices.contains { $0.kind == .startSkillTest } == true
+    }
+
+    private func fightScore(_ choice: QuestionPresentation.Choice) -> Int {
+        guard engagedEnemyCount > 0 else { return 3400 }
+        if let enemyID = choice.entity?.id, failedFightEnemyIDs.contains(enemyID) {
+            return 5000
+        }
+        return 9100
+    }
+
+    private func evadeScore(_ choice: QuestionPresentation.Choice) -> Int {
+        guard engagedEnemyCount > 0 else { return 3300 }
+        if let enemyID = choice.entity?.id, failedFightEnemyIDs.contains(enemyID) {
+            return 9300
+        }
+        return 8800
+    }
+
     private func abilityScore(_ choice: QuestionPresentation.Choice) -> Int {
         guard let ability = choice.ability else { return 4500 }
         if ability.type == .objective {
-            return 9600
+            return canPayActAdvanceCost ? 10600 : 9600
         }
         if ability.actions.contains(.investigate) {
-            return currentLocation?.clueCount ?? 0 > 0 ? 9200 : 7000
+            return currentLocation?.clueCount ?? 0 > 0 ? 9200 : 6000
         }
         if ability.actions.contains(.fight) {
-            return engagedEnemyCount > 0 ? 9000 : 6400
+            return fightScore(choice) - 100
         }
         if ability.actions.contains(.evade) {
-            return engagedEnemyCount > 0 ? 8700 : 6200
+            return evadeScore(choice) - 100
         }
         if ability.actions.contains(.move) {
             return moveScore(choice)
@@ -3223,6 +3555,15 @@ private struct BotStrategyContext {
     }
 
     private func chooseTargetScore(_ choice: QuestionPresentation.Choice) -> Int {
+        if choice.entity?.kind == .card {
+            if promptOffersStartSkillTest, skillTestPreparationCount == 0 {
+                return 7900
+            }
+            if actingInvestigator?.remainingActions ?? 0 >= 2, investigatorResources > 0 {
+                return 8300
+            }
+            return 3900
+        }
         guard choice.entity?.kind == .location else { return 3000 }
         return moveScore(choice)
     }
@@ -3230,11 +3571,14 @@ private struct BotStrategyContext {
     private func moveScore(_ choice: QuestionPresentation.Choice) -> Int {
         guard let targetLocation = location(for: choice.entity) else { return 6000 }
         if targetLocation.clueCount > 0 {
-            return 8600
+            return 9000
+        }
+        if !targetLocation.revealed {
+            return 8800
         }
         guard let current = currentLocation else { return 6000 }
-        let currentDistance = distanceFromClosestClueLocation(to: current.id)
-        let targetDistance = distanceFromClosestClueLocation(to: targetLocation.id)
+        let currentDistance = distanceFromClosestPotentialClueLocation(to: current.id)
+        let targetDistance = distanceFromClosestPotentialClueLocation(to: targetLocation.id)
         let targetIsCloserToClues = targetDistance.map {
             currentDistance == nil || $0 < (currentDistance ?? .max)
         } ?? false
@@ -3247,15 +3591,15 @@ private struct BotStrategyContext {
     private func survivabilityScore(
         _ choice: QuestionPresentation.Choice, damage: Int, horror: Int
     ) -> Int {
+        let actingWouldBeDefeated = wouldDefeatActingInvestigator(damage: damage, horror: horror)
+        if choice.entity?.kind == .asset {
+            return actingWouldBeDefeated ? 9000 : 7200
+        }
         guard let investigator = investigator(for: choice.entity ?? choice.actorEntity) else {
             return 6800
         }
-        let remainingHealth = investigator.health
-            - investigator.assignedHealthDamage
-            - investigator.physicalTrauma
-        let remainingSanity = investigator.sanity
-            - investigator.assignedSanityDamage
-            - investigator.mentalTrauma
+        let remainingHealth = remainingHealth(for: investigator)
+        let remainingSanity = remainingSanity(for: investigator)
         if damage > 0, remainingHealth - damage <= 0 {
             return 1200
         }
@@ -3263,6 +3607,30 @@ private struct BotStrategyContext {
             return 1200
         }
         return 7600 + max(0, remainingHealth - damage) + max(0, remainingSanity - horror)
+    }
+
+    private func wouldDefeatActingInvestigator(damage: Int, horror: Int) -> Bool {
+        guard let investigator = actingInvestigator else { return false }
+        return (damage > 0 && remainingHealth(for: investigator) - damage <= 0)
+            || (horror > 0 && remainingSanity(for: investigator) - horror <= 0)
+    }
+
+    private func remainingHealth(for investigator: BoardInvestigatorNode) -> Int {
+        investigator.health
+            - investigator.physicalTrauma
+            - investigator.assignedHealthDamage
+            - tokenCount("Damage", in: investigator.tokenCounts)
+    }
+
+    private func remainingSanity(for investigator: BoardInvestigatorNode) -> Int {
+        investigator.sanity
+            - investigator.mentalTrauma
+            - investigator.assignedSanityDamage
+            - tokenCount("Horror", in: investigator.tokenCounts)
+    }
+
+    private func tokenCount(_ token: String, in tokens: [BoardTokenSummary]) -> Int {
+        tokens.first { $0.token == token }?.count ?? 0
     }
 
     private func isResign(_ choice: QuestionPresentation.Choice) -> Bool {
@@ -3284,14 +3652,16 @@ private struct BotStrategyContext {
     }
 
     private func investigator(for entity: QuestionPresentation.Entity?) -> BoardInvestigatorNode? {
-        guard entity?.kind == .investigator, let id = entity?.id.lowercased() else {
-            return actingInvestigator
-        }
+        guard let entity else { return actingInvestigator }
+        guard entity.kind == .investigator else { return nil }
+        let id = entity.id.lowercased()
         return projection.investigators.first { $0.id.rawValue.rawValue == id }
     }
 
-    private func distanceFromClosestClueLocation(to destination: LocationID) -> Int? {
-        let clueLocationIDs = Set(projection.locations.filter { $0.clueCount > 0 }.map(\.id))
+    private func distanceFromClosestPotentialClueLocation(to destination: LocationID) -> Int? {
+        let clueLocationIDs = Set(projection.locations.filter {
+            $0.clueCount > 0 || !$0.revealed
+        }.map(\.id))
         guard !clueLocationIDs.isEmpty else { return nil }
         if clueLocationIDs.contains(destination) {
             return 0
