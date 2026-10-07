@@ -12,6 +12,12 @@ struct LiveInnsmouthUnresolvedLabelBotTests {
         let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
 
+        #expect(
+            Self.productionCatalogChunkPath
+                == "frontend/public/locale-catalog/c/"
+                    + Self.productionCatalogChunkSHA256 + ".json"
+        )
+        #expect(Self.productionCatalogChunkSHA256.count == 64)
         #expect(prompt.displayOrderedChoices().map(\.index) == [0, 1])
         #expect(prompt.choiceLabelResolutions[0] == .unavailable(.unsupportedEntry))
         #expect(prompt.choiceLabelResolutions[1] == .resolved("The Amalgam attacks you"))
@@ -76,7 +82,7 @@ struct LiveInnsmouthUnresolvedLabelBotTests {
                 "theInnsmouthConspiracy.thePitOfDespair.label.theAmalgamAttacksYou",
             ],
             unsupportedKeys: 1,
-            chunkEntries: Self.productionLabelChunkEntries
+            chunkEntries: Self.syntheticInnsmouthLabelChunkEntries
         )
         let model = AppModel(
             profileStore: FakeServerProfileStore(
@@ -108,7 +114,13 @@ struct LiveInnsmouthUnresolvedLabelBotTests {
         )
     }
 
-    private static let productionLabelChunkEntries = #"""
+    private static let productionCatalogChunkPath = "frontend/public/locale-catalog/c/"
+        + "5a9eda19b1ab3c96e74d4fda925d9b413cd900e4837076c4098170682a1c9ec3.json"
+    private static let productionCatalogChunkSHA256 =
+        "5a9eda19b1ab3c96e74d4fda925d9b413cd900e4837076c4098170682a1c9ec3"
+
+    // Synthetic two-entry catalog chunk extracted from the English production chunk above.
+    private static let syntheticInnsmouthLabelChunkEntries = #"""
     {
       "theInnsmouthConspiracy.thePitOfDespair.label.placeKeyOnTheAmalgam": {
         "form": "unsupported",
