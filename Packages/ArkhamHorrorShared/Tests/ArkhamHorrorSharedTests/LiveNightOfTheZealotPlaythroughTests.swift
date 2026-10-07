@@ -1094,6 +1094,38 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(selected.chosenChoiceKind == QuestionPresentation.ChoiceKind.gainResource.rawValue)
     }
 
+    @Test("Live bot sends source index when completion choices display last")
+    @MainActor
+    func selectAnswerSendsSourceIndexWhenDisplayOrderDiffers() throws {
+        let prompt = try Self.semanticChoicePrompt(
+            questionVersion: 83,
+            questionKind: .chooseOneAtATime,
+            choices: [
+                QuestionPresentation.Choice(
+                    sourceIndex: 0,
+                    kind: .endTurn,
+                    completesSelection: true
+                ),
+                QuestionPresentation.Choice(sourceIndex: 1, kind: .gainResource),
+                QuestionPresentation.Choice(sourceIndex: 2, kind: .drawCard),
+            ]
+        )
+        let projection = Self.strategyProjection()
+
+        #expect(prompt.choices.map(\.index) == [0, 1, 2])
+        #expect(prompt.displayOrderedChoices().map(\.index) == [1, 2, 0])
+        #expect(liveHarnessSelectableChoiceIndexes(prompt: prompt, projection: projection) == [1, 2, 0])
+        let selected = try Self.liveBot(diagnosticBypassUnsupported: false).selectAnswerForTesting(
+            prompt: prompt,
+            projection: projection,
+            repeatCount: 0,
+            skillTestPreparationCount: 0,
+            failedFightEnemyIDs: []
+        )
+        #expect(Self.selectedChoiceIndex(in: selected) == 1)
+        #expect(selected.chosenChoiceKind == QuestionPresentation.ChoiceKind.gainResource.rawValue)
+    }
+
     @Test("Diagnostic bypass falls back to semantic selectable choices only when enabled")
     @MainActor
     func diagnosticBypassUsesSemanticSelectableFallbackOnlyWhenEnabled() throws {
