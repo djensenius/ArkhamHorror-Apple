@@ -1,3 +1,5 @@
+import Foundation
+
 /// A saved-deck answer for the live ChooseDeck question.
 struct DeckAnswer: Sendable, Equatable, Codable {
     let deckId: DeckID
@@ -78,6 +80,23 @@ enum LiveChooseDeckQuestion {
     static func matches(_ value: JSONValue) -> Bool {
         value == .object(["tag": .string("ChooseDeck")])
             || value.wrapsExactQuestion(tag: "QuestionLabel", innerTag: "ChooseDeck")
+    }
+}
+
+extension BasicChoicePromptPresentation {
+    static func liveChooseDeckGenericHeading(localeIdentifier: String? = nil) -> String {
+        let locale = localeIdentifier.map(Locale.init(identifier:)) ?? .current
+        return String(
+            localized: "liveChooseDeck.heading.generic",
+            defaultValue: "Choose a Deck",
+            bundle: .module,
+            locale: locale
+        )
+    }
+
+    var liveChooseDeckPickerHeading: String {
+        promptLabelResolutions["questionLabel"]?.title
+            ?? Self.liveChooseDeckGenericHeading(localeIdentifier: semanticLocaleIdentifier)
     }
 }
 

@@ -23,7 +23,9 @@ extension AppModelLiveChooseDeckTests {
         let source = try liveChooseDeckViewSource()
 
         #expect(source.contains("let pickerEnabled = model.liveChooseDeckPickerEnabled("))
+        #expect(source.contains("Text(heading)"))
         #expect(source.contains(".disabled(!pickerEnabled)"))
+        #expect(!source.contains("Text(\"Choose a Deck\")"))
         #expect(!source.contains(".disabled(isSubmitting"))
     }
 

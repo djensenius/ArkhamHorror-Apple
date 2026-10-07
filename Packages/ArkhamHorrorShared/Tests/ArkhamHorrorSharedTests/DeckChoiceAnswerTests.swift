@@ -83,6 +83,35 @@ struct DeckChoiceAnswerTests {
             "tag": .string("QuestionLabel"),
         ])))
         #expect(!LiveChooseDeckQuestion.matches(.object(["tag": .string("ChooseJoinDeck")])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "card": .null,
+            "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+            "question": .object(["tag": .string("ChooseJoinDeck")]),
+            "tag": .string("QuestionLabel"),
+        ])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "card": .null,
+            "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+            "question": .object(["tag": .string("ChooseUpgradeDeck")]),
+            "tag": .string("QuestionLabel"),
+        ])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "card": .null,
+            "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+            "question": .object([
+                "card": .null,
+                "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+                "question": .object(["tag": .string("ChooseDeck")]),
+                "tag": .string("QuestionLabel"),
+            ]),
+            "tag": .string("QuestionLabel"),
+        ])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "card": .null,
+            "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+            "question": .object(["tag": .string("ChooseDeck")]),
+            "tag": .string("OtherLabel"),
+        ])))
     }
 
     @Test("Captured Dream-Eaters labeled ChooseDeck bytes bind to the deck presentation")

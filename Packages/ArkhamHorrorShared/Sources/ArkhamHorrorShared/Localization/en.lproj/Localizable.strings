@@ -205,6 +205,7 @@
 "campaign.error.signInContinue" = "Sign in again to continue this campaign.";
 "campaign.error.signInUpgrade" = "Sign in again to upgrade this deck.";
 "campaign.error.updateDeckFailed" = "The server could not update that deck. Try again.";
+"liveChooseDeck.heading.generic" = "Choose a Deck";
 "campaign.upgrade.investigator" = "Investigator";
 "campaign.upgrade.availableXp" = "Available XP";
 "campaign.upgrade.totalXp" = "Total / spent XP";
