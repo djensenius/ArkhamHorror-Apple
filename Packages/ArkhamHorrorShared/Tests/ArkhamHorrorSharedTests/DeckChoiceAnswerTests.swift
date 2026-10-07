@@ -89,7 +89,10 @@ struct DeckChoiceAnswerTests {
             "question-presentation-dream-eaters-part-a-choose-deck"
         )
         let raw = try ContractJSON.decode(JSONValue.self, from: rawBytes)
-        let presentation = try ContractJSON.decode(QuestionPresentation.self, from: presentationBytes)
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: presentationBytes
+        )
         let binding = try presentation.bind(to: raw, expectedQuestionVersion: 10)
 
         #expect(LiveChooseDeckQuestion.matches(raw))
