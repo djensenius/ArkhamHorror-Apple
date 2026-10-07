@@ -72,10 +72,11 @@ extension LocaleCatalogNode {
               LocaleCatalogGrammar.isVariableName(name),
               case let .string(rawSource)? = object["source"],
               let source = LocaleCatalogVariable.Source(rawValue: rawSource),
-              case let .string(role)? = object["role"],
-              role == "text" || role == "icon"
+              case let .string(rawRole)? = object["role"],
+              let role = LocaleCatalogVariable.Role(rawValue: rawRole),
+              role != .presentation
         else { return nil }
-        return .variable(name: name, source: source, isIcon: role == "icon")
+        return .variable(name: name, source: source, role: role)
     }
 
     private static func decodeLinked(_ object: [String: JSONValue]) -> LocaleCatalogNode? {
@@ -414,21 +415,30 @@ extension LocaleCatalogNode {
     /// the same source and compatible role. Presentation-only variables are intentionally
     /// excluded: they are validated syntactically and then discarded, never interpolated.
     static func referencesOnlyDeclaredVariables(
-        _ nodes: [LocaleCatalogNode], declarations: [LocaleCatalogVariable]
+        _ nodes: [LocaleCatalogNode],
+        declarations: [LocaleCatalogVariable],
+        unknownRoleDeclarations: [LocaleCatalogEntry.UnknownVariableRoleDeclaration] = []
     ) -> Bool {
-        nodes.allSatisfy { referencesOnlyDeclaredVariables($0, declarations: declarations) }
+        nodes.allSatisfy {
+            referencesOnlyDeclaredVariables(
+                $0,
+                declarations: declarations,
+                unknownRoleDeclarations: unknownRoleDeclarations
+            )
+        }
     }
 
     private static func referencesOnlyDeclaredVariables(
-        _ node: LocaleCatalogNode, declarations: [LocaleCatalogVariable]
+        _ node: LocaleCatalogNode,
+        declarations: [LocaleCatalogVariable],
+        unknownRoleDeclarations: [LocaleCatalogEntry.UnknownVariableRoleDeclaration]
     ) -> Bool {
         switch node {
         case .text, .lineBreak, .rule, .image:
             true
-        case let .variable(name, source, isIcon):
+        case let .variable(name, source, role):
             declarations.contains {
-                $0.name == name && $0.source == source
-                    && $0.role == (isIcon ? .icon : .text)
+                $0.name == name && $0.source == source && $0.role == role
             }
         case let .linked(target, _):
             switch target {
@@ -437,19 +447,33 @@ extension LocaleCatalogNode {
             case let .variable(name, source):
                 declarations.contains {
                     $0.name == name && $0.source == source && $0.role != .presentation
+                } || unknownRoleDeclarations.contains {
+                    $0.name == name && $0.source == source
                 }
             }
         case let .block(_, children), let .heading(_, children),
              let .emphasis(_, children), let .cardReference(_, children):
-            referencesOnlyDeclaredVariables(children, declarations: declarations)
+            referencesOnlyDeclaredVariables(
+                children,
+                declarations: declarations,
+                unknownRoleDeclarations: unknownRoleDeclarations
+            )
         case let .list(_, items):
             items.allSatisfy {
-                referencesOnlyDeclaredVariables($0, declarations: declarations)
+                referencesOnlyDeclaredVariables(
+                    $0,
+                    declarations: declarations,
+                    unknownRoleDeclarations: unknownRoleDeclarations
+                )
             }
         case let .table(head, body):
             (head + body).allSatisfy { row in
                 row.cells.allSatisfy {
-                    referencesOnlyDeclaredVariables($0.children, declarations: declarations)
+                    referencesOnlyDeclaredVariables(
+                        $0.children,
+                        declarations: declarations,
+                        unknownRoleDeclarations: unknownRoleDeclarations
+                    )
                 }
             }
         }

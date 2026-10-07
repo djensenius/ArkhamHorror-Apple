@@ -222,6 +222,11 @@ enum LocaleCatalogGrammar {
             && bytes.allSatisfy { isAlphanumeric($0) || $0 == 0x5F }
     }
 
+    /// `^[A-Za-z0-9_]{1,64}` — a declared variable role or manifest role diagnostic.
+    static func isVariableRole(_ text: String) -> Bool {
+        isVariableName(text)
+    }
+
     /// `^[A-Za-z][A-Za-z0-9-]{0,63}` — a presentation style hint token.
     static func isStyleToken(_ text: String) -> Bool {
         let bytes = Array(text.utf8)

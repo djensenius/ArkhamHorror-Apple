@@ -287,7 +287,7 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "f454ccb9fb789739c666a9cbd74d3fdc14a81fb9"
+            ContractPin.current.backendCommit == "fb98627745958231f2839d1747f024d21b5839d7"
         )
     }
 

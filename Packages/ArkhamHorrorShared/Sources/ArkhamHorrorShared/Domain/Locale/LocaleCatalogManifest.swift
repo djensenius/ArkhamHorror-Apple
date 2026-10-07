@@ -469,7 +469,8 @@ extension LocaleCatalogManifest {
               Set(object.keys) == ["key", "variable", "role", "type"],
               isMessageKeyValue(object["key"] ?? .null),
               isVariableNameValue(object["variable"] ?? .null),
-              object["role"] == .string("text"),
+              case let .string(role)? = object["role"],
+              LocaleCatalogGrammar.isVariableRole(role),
               case let .string(type)? = object["type"],
               type.count <= 32
         else {

@@ -6,9 +6,9 @@ import Testing
 struct LocaleCatalogFixtureProvenanceTests {
     private let expectedDigests = [
         "Contract/capabilities-locale-catalog.json":
-            "1d573d2b4baebf6e9e155e0436d4401f27f6303a31b092532663e2b89b4e3178",
+            "ebb0edf7e215633fdaff4bbedffb3a6e162f6ef53930d01c6563b511917a9c32",
         "Contract/locale-catalog-backend-registry.json":
-            "3f39e0f443341bc194a2ba645584007a161875d2e1981bb9c16c8f466880c6c4",
+            "dd5499efa098c6b99492115fc06f55bc21b8d46d4434f9b5fa94bb1aa104180e",
         // swiftlint:disable:next line_length
         "Contract/locale-catalog-chunk-2efb9d458b5dd9b7ae9a284c277ca68e47a40212c95ce85da5b50f598d9fc448.json":
             "2efb9d458b5dd9b7ae9a284c277ca68e47a40212c95ce85da5b50f598d9fc448",
@@ -16,29 +16,29 @@ struct LocaleCatalogFixtureProvenanceTests {
         "Contract/locale-catalog-chunk-309d63c6b0ab62a2fc4bc993860a820b05c156f2e7d67439a24b487839df1488.json":
             "309d63c6b0ab62a2fc4bc993860a820b05c156f2e7d67439a24b487839df1488",
         // swiftlint:disable:next line_length
-        "Contract/locale-catalog-chunk-932fbfdd3570550d2bd7255599e7b54cb8ceac12d4597686613d97254b67c12d.json":
-            "932fbfdd3570550d2bd7255599e7b54cb8ceac12d4597686613d97254b67c12d",
+        "Contract/locale-catalog-chunk-9a30c62c45fb06a929d13506b454d5b9637c5bf3eeb986243ddb007a856cb1a5.json":
+            "9a30c62c45fb06a929d13506b454d5b9637c5bf3eeb986243ddb007a856cb1a5",
         // swiftlint:disable:next line_length
         "Contract/locale-catalog-chunk-d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693.json":
             "d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693",
         "Contract/locale-catalog-manifest.json":
-            "cad6e917a5d03a832eba09d74e08fbb07b93fed5b2264e974d31b1feec2ae788",
+            "485599144462dbf7c7b86fde10e4eed6b449ef2cf697207c11036db0e4666c9c",
         "Contract/locale-catalog-owned-files.json":
-            "139e69af182999d7a9164c87bb7395c702717b0afaf0dd7d1de1082b613f979e",
+            "13924d3a1d159fabdd0aaf65a3701da379d8641fb9164089463e6281ddef6e6c",
         "Contract/locale-catalog-source-de.json":
             "1d60ade53a4b4d7241c88ce8f0cab1b4027e81cd25f10f1ad815948e198fd0bb",
         "Contract/locale-catalog-source-en.json":
-            "deeb7057a50a687039efdb42bb1484b0d67afb9c73ee670a39c67485f94e2a19",
+            "879de3d794fa5da6202243d3c2b5a37f7e59f7e2582affc4c94d5e9ebb4ff2dd",
         "Contract/locale-catalog-source-pt-BR.json":
             "cd7593ead3708918f8d8df4dea9775659a78351d90c485f3c82ad8fe69f4f241",
         "Contract/manifest.json":
-            "ce186e7c7a448bb411d6cb21fee6d5f8a6e46c7c05b34e6b556489981bebb34e",
+            "4782dceff200a797e1d8dbcdfe6a76be32cde1f42331dd83e18088362b54e633",
         "Schemas/capabilities.schema.json":
             "c0638d27e54ede08d37afaf77d2c6d063e1f46a5c44066bf361b22b5fe980103",
         "Schemas/chunk.schema.json":
-            "545e12548f904617e6cc9143ac6da4d6181f11bf727bdac8856007316b19ed9b",
+            "b96fbca81f638e57e7f1a7f9eb47b9968c4a608da42187998b0ca6eb32647584",
         "Schemas/manifest.schema.json":
-            "733d8ff1cde160c9a386477a426fa46c38d90b20c693842899ada297419b43a9",
+            "1030f4fec1f96b7401a8ebb2cea50a92dc97f0334d9b24f992f00fa47080762d",
     ]
 
     private func fixture(_ path: String) throws -> Data {
@@ -53,11 +53,73 @@ struct LocaleCatalogFixtureProvenanceTests {
         return try Data(contentsOf: url)
     }
 
+    private func vendoredSnapshot(
+        preferredLanguages: [String]
+    ) async throws -> LocaleCatalogSnapshot {
+        let capabilities = try ContractJSON.decode(
+            ServerCapabilities.self,
+            from: fixture("Contract/capabilities-locale-catalog.json")
+        )
+        let advertisement = try #require(capabilities.localeCatalog)
+        let profile = try ServerProfile.custom(
+            displayName: "Vendored locale catalog",
+            rawURL: "https://catalog.example.test/profile-prefix"
+        )
+        let manifestURL = try #require(advertisement.resolvedManifestURL(for: profile))
+        let manifestBytes = try fixture("Contract/locale-catalog-manifest.json")
+        let manifest = try LocaleCatalogManifest.validate(
+            LosslessJSONParser.parse(manifestBytes),
+            against: advertisement
+        ).get()
+        var responses = [
+            manifestURL: localeCatalogResponse(data: manifestBytes, url: manifestURL),
+        ]
+        for locale in manifest.locales {
+            for descriptor in locale.chunks {
+                let chunkURL = try #require(
+                    advertisement.resolvedChunkURL(path: descriptor.path, for: profile)
+                )
+                let chunkBytes = try fixture(
+                    "Contract/locale-catalog-chunk-\(descriptor.sha256).json"
+                )
+                responses[chunkURL] = localeCatalogResponse(data: chunkBytes, url: chunkURL)
+            }
+        }
+        return try await LocaleCatalogLoader(
+            transport: FixtureLocaleCatalogTransport(responses: responses)
+        ).load(
+            advertisement: advertisement,
+            profile: profile,
+            preferredLanguages: preferredLanguages
+        ).get()
+    }
+
+    private func localeCatalogResponse(data: Data, url: URL) -> LocaleCatalogResponse {
+        LocaleCatalogResponse(
+            statusCode: 200,
+            contentType: "application/json; charset=utf-8",
+            contentTypeOptions: "nosniff",
+            url: url,
+            data: data
+        )
+    }
+
     @Test("Every checked-in artifact has its governed SHA-256")
     func artifactsHaveExpectedDigests() throws {
         for (path, digest) in expectedDigests {
             #expect(try LocaleCatalogLoader.sha256Hex(fixture(path)) == digest)
         }
+    }
+
+    @Test("Vendored addToken icon variable renders as the elder thing glyph")
+    func vendoredAddTokenIconVariableRenders() async throws {
+        let snapshot = try await vendoredSnapshot(preferredLanguages: ["en"])
+        let resolver = LocaleCatalogResolver(snapshot: snapshot)
+        let nodes = try resolver.render(
+            key: "addToken", variables: .object(["token": .string("elderThing")])
+        ).get()
+        #expect(nodes == [.text("core.addToken.en."), .semanticIcon(.chaosToken(.elderThing))])
+        #expect(nodes.map(\.plainText).joined() == "core.addToken.en.elder thing")
     }
 
     @Test("The capability, manifest, and chunks satisfy the v1 closure")

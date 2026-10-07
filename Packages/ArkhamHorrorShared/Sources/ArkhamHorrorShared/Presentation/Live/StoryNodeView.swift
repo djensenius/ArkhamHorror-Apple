@@ -43,7 +43,7 @@ enum StoryNodePresentation {
 
     static func isInline(_ node: StoryNode) -> Bool {
         switch node {
-        case .text, .lineBreak, .icon:
+        case .text, .lineBreak, .icon, .semanticIcon:
             true
         case let .group(children), let .emphasis(_, children),
              let .cardReference(_, children):
@@ -392,6 +392,8 @@ private enum StoryInlineTextRenderer {
             Text(
                 "\(Image(systemName: "seal.fill")) \(StoryNode.spokenIconLabel(name))"
             )
+        case let .semanticIcon(icon):
+            Text(Image(systemName: icon.systemImage))
         case let .cardReference(_, children):
             text(for: children).map {
                 Text(
@@ -420,7 +422,7 @@ private struct StoryNodeView: View {
 
     var body: some View {
         switch node {
-        case .text, .lineBreak, .icon:
+        case .text, .lineBreak, .icon, .semanticIcon:
             StoryInlineTextView(nodes: [node])
         case let .paragraph(children):
             StoryNodeChildrenView(children: children)
