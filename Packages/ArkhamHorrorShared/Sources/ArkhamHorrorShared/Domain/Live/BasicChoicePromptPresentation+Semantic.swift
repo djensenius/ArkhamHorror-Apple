@@ -133,15 +133,23 @@ extension BasicChoicePromptPresentation {
         return question.supportedQuestion?.kind == .read
     }
 
+    var promptQuestionLabelTitle: String? {
+        if let title = promptLabelResolutions["questionLabel"]?.title {
+            return title
+        }
+        guard let text = semanticPresentation?.presentation.questionLabel?.text,
+              !text.hasPrefix("$")
+        else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     func headerTitle(in _: BoardProjection) -> String {
         guard let presentation = semanticPresentation?.presentation else {
             return isStoryPrompt ? "Story" : "Choose an action"
         }
-        if let title = promptLabelResolutions["questionLabel"]?.title {
+        if let title = promptQuestionLabelTitle {
             return title
-        }
-        if let text = presentation.questionLabel?.text, !text.hasPrefix("$") {
-            return text
         }
         switch presentation.questionKind {
         case .read:

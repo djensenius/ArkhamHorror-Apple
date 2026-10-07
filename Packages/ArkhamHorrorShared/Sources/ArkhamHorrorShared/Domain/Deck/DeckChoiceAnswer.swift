@@ -93,8 +93,7 @@ extension BasicChoicePromptPresentation {
     }
 
     var liveChooseDeckPickerHeading: String {
-        promptLabelResolutions["questionLabel"]?.title
-            ?? liveChooseDeckGenericHeading()
+        promptQuestionLabelTitle ?? liveChooseDeckGenericHeading()
     }
 
     private func liveChooseDeckGenericHeading() -> String {
