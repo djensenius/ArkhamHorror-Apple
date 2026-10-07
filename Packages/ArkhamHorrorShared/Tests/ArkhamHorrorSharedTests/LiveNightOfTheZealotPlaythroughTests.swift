@@ -3,6 +3,15 @@
 import Foundation
 import Testing
 
+func liveHarnessSelectableChoiceIndexes(
+    prompt: BasicChoicePromptPresentation,
+    projection: BoardProjection
+) -> [Int] {
+    prompt.displayOrderedChoices().compactMap { choice in
+        prompt.isChoiceActionable(choice, in: projection) ? choice.index : nil
+    }
+}
+
 // Env-gated live-server smoke coverage. It is intentionally absent from normal CI
 // unless `ARKHAM_LIVE_SERVER_URL` is set; when enabled it drives the production
 // `AppModel` authentication, lifecycle, REST snapshot and WebSocket answer paths
@@ -2529,9 +2538,10 @@ private struct LivePlaythroughBot {
                 chosenChoiceKind: nil
             )
         }
-        let selectableIndexes = prompt.identity.questionPresentation?.choices.compactMap {
-            $0.selectable ? $0.sourceIndex : nil
-        } ?? []
+        let selectableIndexes = liveHarnessSelectableChoiceIndexes(
+            prompt: prompt,
+            projection: projection
+        )
         guard !selectableIndexes.isEmpty else {
             throw PlaythroughError.noSelectableChoice(
                 version: prompt.questionVersion,
