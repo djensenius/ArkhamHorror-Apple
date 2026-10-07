@@ -107,18 +107,19 @@ hashes remain unchanged at Q33, and exercises that same strict prompt path.
 ### Backend replay authority
 
 As of Tuesday, October 6, 2026, this repository is pinned to backend
-contract commit `fb98627745958231f2839d1747f024d21b5839d7` from
-`djensenius/ArkhamHorror#135`, at contract revision `0.1.50`. That revision
-carries locale-catalog icon variables on top of the participant-socket
-`AnswerRejected` envelope and presentation-v2 tooling update, keeps the locale
-catalog at revision `1.2c428a9e29445fe877b9f1967d708d97`, and publishes the
-exact negative-regression set vendored with the pinned contract. The client is
-compiled against the 0.1.50 contract but only requires server revision 0.1.48:
+contract commit `8453314123831e9fb1e7817e34190671b73b8ae0` from
+`djensenius/ArkhamHorror#140`, at contract revision `0.1.51`. That revision
+types additional locale-catalog icon-variable values on top of the
+participant-socket `AnswerRejected` envelope and presentation-v2 tooling
+update, keeps the locale catalog at revision
+`1.e4136e6e101e41f49b8304df2e8c2cd7`, and publishes the exact
+negative-regression set vendored with the pinned contract. The client is
+compiled against the 0.1.51 contract but only requires server revision 0.1.48:
 older production servers do not send icon-variable catalog entries, and 0.1.48
 is the revision that introduced the answer rejection feedback needed to release
 rejected amount/payment/exchange submissions. Deploying the backend at this
-revision enables the new icon-variable catalog entries and its 0.1.50 native
-client floor. The authenticated Attic replay submits
+revision enables the new icon-variable catalog entries while retaining its
+0.1.50 native client floor. The authenticated Attic replay submits
 Q34-Q70 by semantic role and validates the terminal `Over` state.
 
 Fight, Evade, Engage, the round transition, Roland's clue discovery, Cover
@@ -155,7 +156,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.50",
+       "contractSchemaRevision": "0.1.51",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -216,7 +217,7 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 Using the immutable backend revision above:
 
 1. Confirm `ContractPin.current` is
-   `fb98627745958231f2839d1747f024d21b5839d7` / `0.1.50`, then build the
+   `8453314123831e9fb1e7817e34190671b73b8ae0` / `0.1.51`, then build the
    backend replay executable and production server from that exact clean
    revision.
 2. Obtain a normal authenticated backend game export whose retained state can
