@@ -57,8 +57,10 @@ struct BasicChoicePromptView: View {
                 case let .resolved(prompt):
                     PickDestinyPromptView(
                         prompt: prompt,
+                        drawings: controller.pickDestinyDrawings(for: presentation),
                         canSubmit: presentation.canSubmit,
-                        onSubmit: { controller.activatePickDestinySubmit($0) }
+                        controller: controller,
+                        focusBinding: focusBinding
                     )
                     .id(presentation.identity)
                 case let .unavailable(reason):

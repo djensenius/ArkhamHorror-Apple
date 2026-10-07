@@ -179,6 +179,51 @@ struct PickDestinyPromptTests {
         #expect(submitted == [valid])
     }
 
+    @Test("Board focus graph exposes Pick Destiny rows and submit through controller actions")
+    func boardFocusGraphAndControllerActivatePickDestinyControls() throws {
+        let ownerID = BoardTestFixtures.playerID()
+        let published = [
+            Self.drawing(scenario: "theWitchingHour", arcana: "TemperanceXIV"),
+            Self.drawing(scenario: "atDeath'sDoorstep", arcana: "JusticeXI"),
+        ]
+        let prompt = try Self.promptPresentation(
+            ownerID: ownerID,
+            drawings: published,
+            includeResolvedPrompt: true
+        )
+        let projection = Self.projection(ownerID: ownerID, prompt: prompt)
+        var submitted: [[QuestionPresentation.DestinyDrawing]] = []
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            onPickDestiny: { submitted.append($0) }
+        )
+        let firstRow = BoardFocusID.promptPickDestinyRow(0)
+        let secondRow = BoardFocusID.promptPickDestinyRow(1)
+
+        #expect(controller.coordinator.graph.contains(firstRow))
+        #expect(controller.coordinator.graph.contains(secondRow))
+        #expect(controller.coordinator.graph.contains(BoardFocusID.promptPickDestinySubmit))
+        #expect(controller.coordinator.graph.zoneEntryPoints[BoardFocusZone.prompt] == firstRow)
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == firstRow)
+        #expect(controller.handle(.command(.focusMove(.down))))
+        #expect(controller.coordinator.currentFocus == secondRow)
+        #expect(controller.handle(.command(.focusMove(.down))))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptPickDestinySubmit)
+        #expect(controller.handle(focusID: firstRow, .command(.primaryAction)))
+        let selected = [
+            Self.drawing(scenario: "theWitchingHour", arcana: "TemperanceXIV", facing: .reversed),
+            Self.drawing(scenario: "atDeath'sDoorstep", arcana: "JusticeXI"),
+        ]
+        #expect(controller.pickDestinyDrawings == selected)
+        #expect(controller.handle(
+            focusID: BoardFocusID.promptPickDestinySubmit,
+            .command(.primaryAction)
+        ))
+        #expect(submitted == [selected])
+    }
+
     @Test("AppModel send fence rejects illegal Pick Destiny answers before transport")
     func appModelRejectsIllegalPickDestinyBeforeSend() async throws {
         let model = await GameLifecycleTestModel.makeSignedIn(
@@ -350,7 +395,8 @@ struct PickDestinyPromptTests {
 
     private static func promptPresentation(
         ownerID: PlayerID,
-        drawings: [QuestionPresentation.DestinyDrawing]
+        drawings: [QuestionPresentation.DestinyDrawing],
+        includeResolvedPrompt: Bool = false
     ) throws -> BasicChoicePromptPresentation {
         let payload = try Self.payload(drawings: drawings)
         let semanticPresentation = try #require(payload.presentation)
@@ -366,11 +412,36 @@ struct PickDestinyPromptTests {
             ),
             question: payload.state,
             semanticPresentation: semanticPresentation,
+            pickDestinyPrompt: includeResolvedPrompt
+                ? .resolved(Self.resolvedPickDestinyPrompt(drawings: drawings))
+                : nil,
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
             serverFeedback: nil
         )
+    }
+
+    private static func resolvedPickDestinyPrompt(
+        drawings: [QuestionPresentation.DestinyDrawing]
+    ) -> PickDestinyPromptPresentation {
+        PickDestinyPromptPresentation(
+            title: "Pick Destiny",
+            instructions: "Reverse half the tarot cards.",
+            doneLabel: "Done",
+            drawings: drawings,
+            rows: drawings.map {
+                PickDestinyPromptPresentation.Row(
+                    scenarioTitle: Self.scenarioTitle($0.scenario),
+                    tarotTitle: $0.tarot.arcana
+                )
+            }
+        )
+    }
+
+    private static func scenarioTitle(_ scenario: JSONValue) -> String {
+        guard case let .string(value) = scenario else { return "Scenario" }
+        return value
     }
 
     private static func projection(

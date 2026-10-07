@@ -28,6 +28,16 @@ enum PickDestinyPromptResolution: Sendable, Equatable {
     }
 }
 
+extension BasicChoicePromptPresentation {
+    var pickDestinyDrawings: [QuestionPresentation.DestinyDrawing]? {
+        guard semanticPresentation?.presentation.questionKind == .pickDestiny,
+              let drawings = semanticPresentation?.presentation.drawings,
+              !drawings.isEmpty
+        else { return nil }
+        return drawings
+    }
+}
+
 enum PickDestinySelectionRules {
     static func publishedDrawings(
         in rawQuestion: JSONValue

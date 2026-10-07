@@ -1,31 +1,24 @@
 import SwiftUI
 
-extension BasicChoicePromptPresentation {
-    var pickDestinyDrawings: [QuestionPresentation.DestinyDrawing]? {
-        guard semanticPresentation?.presentation.questionKind == .pickDestiny,
-              let drawings = semanticPresentation?.presentation.drawings,
-              !drawings.isEmpty
-        else { return nil }
-        return drawings
-    }
-}
-
 struct PickDestinyPromptView: View {
-    @State private var drawings: [QuestionPresentation.DestinyDrawing]
-
     private let prompt: PickDestinyPromptPresentation
+    private let drawings: [QuestionPresentation.DestinyDrawing]
     private let canSubmit: Bool
-    private let onSubmit: ([QuestionPresentation.DestinyDrawing]) -> Bool
+    private let controller: BoardCommandController
+    private let focusBinding: FocusState<SemanticFocusID?>.Binding
 
     init(
         prompt: PickDestinyPromptPresentation,
+        drawings: [QuestionPresentation.DestinyDrawing],
         canSubmit: Bool,
-        onSubmit: @escaping ([QuestionPresentation.DestinyDrawing]) -> Bool
+        controller: BoardCommandController,
+        focusBinding: FocusState<SemanticFocusID?>.Binding
     ) {
-        _drawings = State(initialValue: prompt.drawings)
         self.prompt = prompt
+        self.drawings = drawings
         self.canSubmit = canSubmit
-        self.onSubmit = onSubmit
+        self.controller = controller
+        self.focusBinding = focusBinding
     }
 
     private var requiredReversedCount: Int {
@@ -95,14 +88,17 @@ struct PickDestinyPromptView: View {
                         .accessibilityIdentifier("liveGame.prompt.pickDestiny.disabledReason")
                 }
             }
-            Button {
-                _ = onSubmit(drawings)
-            } label: {
-                Label(prompt.doneLabel, systemImage: "checkmark.circle.fill")
-            }
+            SemanticActionControl(
+                accessibilityLabel: Text(prompt.doneLabel),
+                semanticFocusID: BoardFocusID.promptPickDestinySubmit,
+                onOutcome: { controller.handle(focusID: $0, $1) },
+                label: {
+                    Label(prompt.doneLabel, systemImage: "checkmark.circle.fill")
+                }
+            )
             .buttonStyle(.borderedProminent)
+            .focused(focusBinding, equals: BoardFocusID.promptPickDestinySubmit)
             .disabled(!isSubmitEnabled)
-            .accessibilityLabel(prompt.doneLabel)
             .accessibilityValue(progressText)
             .accessibilityHint(disabledHint ?? pickDestinyLocalized(
                 "pickDestiny.submit.hint",
@@ -117,47 +113,38 @@ struct PickDestinyPromptView: View {
     private func drawingRow(index: Int) -> some View {
         let drawing = drawings[index]
         let row = prompt.rows[index]
-        return Button {
-            toggleFacing(at: index)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: drawing.tarot.facing == .reversed
-                    ? "arrow.uturn.down"
-                    : "arrow.up")
-                    .frame(width: 22)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(row.scenarioTitle)
-                        .font(.callout.weight(.semibold))
-                    Text("\(row.tarotTitle) • \(localizedFacing(drawing.tarot.facing))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        let focusID = BoardFocusID.promptPickDestinyRow(index)
+        return SemanticActionControl(
+            accessibilityLabel: Text("\(row.scenarioTitle), \(row.tarotTitle)"),
+            semanticFocusID: focusID,
+            onOutcome: { controller.handle(focusID: $0, $1) },
+            label: {
+                HStack(spacing: 10) {
+                    Image(systemName: drawing.tarot.facing == .reversed
+                        ? "arrow.uturn.down"
+                        : "arrow.up")
+                        .frame(width: 22)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.scenarioTitle)
+                            .font(.callout.weight(.semibold))
+                        Text("\(row.tarotTitle) • \(localizedFacing(drawing.tarot.facing))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
                 }
-                Spacer()
             }
-        }
+        )
         .buttonStyle(.bordered)
-        .accessibilityLabel("\(row.scenarioTitle), \(row.tarotTitle)")
+        .focused(focusBinding, equals: focusID)
+        .disabled(!canSubmit)
         .accessibilityValue(localizedFacing(drawing.tarot.facing))
         .accessibilityHint(pickDestinyLocalized(
             "pickDestiny.row.flip.hint",
             "Activating flips this tarot card."
         ))
         .accessibilityIdentifier("liveGame.prompt.pickDestiny.row.\(index)")
-    }
-
-    private func toggleFacing(at index: Int) {
-        let drawing = drawings[index]
-        let nextFacing: QuestionPresentation.TarotCard.Facing = drawing.tarot.facing == .upright
-            ? .reversed
-            : .upright
-        drawings[index] = QuestionPresentation.DestinyDrawing(
-            scenario: drawing.scenario,
-            tarot: QuestionPresentation.TarotCard(
-                facing: nextFacing,
-                arcana: drawing.tarot.arcana
-            )
-        )
     }
 
     private func localizedFacing(_ facing: QuestionPresentation.TarotCard.Facing) -> String {
