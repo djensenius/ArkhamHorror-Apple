@@ -214,6 +214,55 @@ struct PickDestinyPromptTests {
         #expect(await connection.sentData.isEmpty)
     }
 
+    @Test("AppModel send fence rejects Pick Destiny when the semantic envelope changes the raw sequence")
+    func appModelRejectsMismatchedSemanticPickDestinyBeforeSend() async throws {
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: ScriptedGameLifecycleService()
+        )
+        model.sessionState = .signedIn(
+            profile: .hosted,
+            compatibility: .modern(capabilities: []),
+            user: .sample
+        )
+        let ownerID = BoardTestFixtures.playerID()
+        let gameID = BoardTestFixtures.gameID()
+        let raw = [
+            Self.drawing(scenario: "theWitchingHour", arcana: "TemperanceXIV"),
+            Self.drawing(scenario: "atDeath'sDoorstep", arcana: "JusticeXI"),
+        ]
+        let mismatchedEnvelope = [
+            Self.drawing(scenario: "theWitchingHour", arcana: "TemperanceXIV"),
+            Self.drawing(scenario: "theSecretName", arcana: "JusticeXI"),
+        ]
+        let payload = try Self.payload(
+            rawDrawings: raw,
+            presentationDrawings: mismatchedEnvelope
+        )
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            questions: [ownerID: payload]
+        ))
+        let connection = FakeGameSocketConnection()
+        Self.installLivePrompt(
+            model: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            projection: projection,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let followsEnvelope = [
+            Self.drawing(scenario: "theWitchingHour", arcana: "TemperanceXIV", facing: .reversed),
+            Self.drawing(scenario: "theSecretName", arcana: "JusticeXI"),
+        ]
+
+        #expect(prompt.semanticPresentation?.presentation.drawings == mismatchedEnvelope)
+        #expect(await model.submitPickDestinyAnswer(
+            prompt.identity,
+            drawings: followsEnvelope
+        ) == .unsupportedChoice)
+        #expect(await connection.sentData.isEmpty)
+    }
+
     private func localizableStrings(locale: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -312,8 +361,15 @@ struct PickDestinyPromptTests {
     private static func payload(
         drawings: [QuestionPresentation.DestinyDrawing]
     ) throws -> BasicChoiceQuestionPayload {
-        let rawQuestion = rawQuestion(drawings: drawings)
-        let presentation = Self.questionPresentation(drawings: drawings)
+        try payload(rawDrawings: drawings, presentationDrawings: drawings)
+    }
+
+    private static func payload(
+        rawDrawings: [QuestionPresentation.DestinyDrawing],
+        presentationDrawings: [QuestionPresentation.DestinyDrawing]
+    ) throws -> BasicChoiceQuestionPayload {
+        let rawQuestion = rawQuestion(drawings: rawDrawings)
+        let presentation = Self.questionPresentation(drawings: presentationDrawings)
         return try BasicChoiceQuestionPayload(
             rawValue: rawQuestion,
             state: .updateRequired(tag: "PickDestiny"),
