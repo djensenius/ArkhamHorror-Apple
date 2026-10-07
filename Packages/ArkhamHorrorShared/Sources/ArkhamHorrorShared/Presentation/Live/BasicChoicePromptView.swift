@@ -62,9 +62,12 @@ struct BasicChoicePromptView: View {
                     )
                     .id(presentation.identity)
                 case let .unavailable(reason):
-                    Label(reason.announcement, systemImage: "text.badge.xmark")
-                        .foregroundStyle(.orange)
-                        .accessibilityIdentifier("liveGame.prompt.pickDestiny.catalogUnavailable")
+                    Label(
+                        pickDestinyUnavailableAnnouncement(for: reason),
+                        systemImage: "text.badge.xmark"
+                    )
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("liveGame.prompt.pickDestiny.catalogUnavailable")
                 }
             } else if let amountPrompt = presentation.amountPrompt(in: controller.projection) {
                 amountAllocationPrompt(amountPrompt)
@@ -130,6 +133,20 @@ struct BasicChoicePromptView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(isStoryPrompt ? "Active story prompt" : "Active choice prompt")
         .accessibilityIdentifier("liveGame.prompt")
+    }
+
+    private func pickDestinyUnavailableAnnouncement(for reason: StoryUnavailableReason) -> String {
+        switch reason {
+        case .loading:
+            pickDestinyLocalized("pickDestiny.names.loading", "Loading tarot names…")
+        case .catalog, .imagePipelineUnavailable, .imageSourceLoading, .missingKey,
+             .unsupportedEntry, .linkCycle, .missingVariable, .unsupportedVariableValue,
+             .tooComplex:
+            pickDestinyLocalized(
+                "pickDestiny.names.unavailable",
+                "The tarot names for this reading are not currently available."
+            )
+        }
     }
 
     @ViewBuilder

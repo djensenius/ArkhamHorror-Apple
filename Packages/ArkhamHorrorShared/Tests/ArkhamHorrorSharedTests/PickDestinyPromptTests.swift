@@ -74,8 +74,14 @@ struct PickDestinyPromptTests {
             "pickDestiny.submit.hint",
             "pickDestiny.submit.disabled.count",
             "pickDestiny.submit.disabled.readOnly",
+            "pickDestiny.names.loading",
+            "pickDestiny.names.unavailable",
         ]
-        #expect(pickDestinyLocalized("pickDestiny.facing.upright", "__missing__") == "Upright")
+        #expect(try localizedModuleString(
+            "pickDestiny.facing.upright",
+            fallback: "__missing__",
+            locale: "en"
+        ) == "Upright")
         for locale in ["en", "de"] {
             let strings = try localizableStrings(locale: locale)
             for key in keys {
@@ -261,6 +267,25 @@ struct PickDestinyPromptTests {
             drawings: followsEnvelope
         ) == .unsupportedChoice)
         #expect(await connection.sentData.isEmpty)
+    }
+
+    private func localizedModuleString(
+        _ key: String,
+        fallback: String,
+        locale: String
+    ) throws -> String {
+        let bundle = try moduleBundle(locale: locale)
+        return NSLocalizedString(key, bundle: bundle, value: fallback, comment: "")
+    }
+
+    private func moduleBundle(locale: String) throws -> Bundle {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Sources/ArkhamHorrorShared/Localization")
+            .appending(path: "\(locale).lproj")
+        return try #require(Bundle(url: url))
     }
 
     private func localizableStrings(locale: String) throws -> String {

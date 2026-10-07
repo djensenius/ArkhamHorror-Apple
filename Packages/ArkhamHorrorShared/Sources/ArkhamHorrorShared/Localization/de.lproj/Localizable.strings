@@ -61,6 +61,8 @@
 "pickDestiny.submit.hint" = "Sendet diese Tarot-Legung.";
 "pickDestiny.submit.disabled.count" = "Drehe genau %1$lld von %2$lld Karten um, bevor du sendest. %3$lld von %4$lld umgekehrt.";
 "pickDestiny.submit.disabled.readOnly" = "Diese Legung kann derzeit nicht gesendet werden.";
+"pickDestiny.names.loading" = "Tarotnamen werden geladen …";
+"pickDestiny.names.unavailable" = "Die Tarotnamen für diese Legung sind derzeit nicht verfügbar.";
 
 "board.linkedChoiceMenu.title" = "Aufforderungsaktion wählen";
 "board.linkedChoiceMenu.cancelHint" = "Drücke Zurück oder Sekundäraktion zum Abbrechen.";
