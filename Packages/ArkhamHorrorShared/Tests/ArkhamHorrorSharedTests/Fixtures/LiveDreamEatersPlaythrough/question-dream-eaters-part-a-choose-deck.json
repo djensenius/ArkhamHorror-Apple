@@ -1,0 +1,8 @@
+{
+  "card": null,
+  "label": "$theDreamEaters.question.chooseDeckForPartA",
+  "question": {
+    "tag": "ChooseDeck"
+  },
+  "tag": "QuestionLabel"
+}

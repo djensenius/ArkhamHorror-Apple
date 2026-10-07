@@ -1,0 +1,17 @@
+{
+  "answer": {
+    "kind": "deck",
+    "tags": [
+      "DeckAnswer"
+    ]
+  },
+  "choiceCount": 0,
+  "choices": [],
+  "protocolVersion": 2,
+  "questionKind": "chooseDeck",
+  "questionLabel": {
+    "kind": "embeddedI18n",
+    "text": "$theDreamEaters.question.chooseDeckForPartA"
+  },
+  "questionVersion": 10
+}

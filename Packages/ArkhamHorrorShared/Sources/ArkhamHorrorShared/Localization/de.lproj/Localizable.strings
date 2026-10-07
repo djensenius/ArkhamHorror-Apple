@@ -205,6 +205,7 @@
 "campaign.error.signInContinue" = "Melde dich erneut an, um diese Kampagne fortzusetzen.";
 "campaign.error.signInUpgrade" = "Melde dich erneut an, um dieses Deck zu verbessern.";
 "campaign.error.updateDeckFailed" = "Der Server konnte dieses Deck nicht aktualisieren. Versuche es erneut.";
+"liveChooseDeck.heading.generic" = "Deck wählen";
 "campaign.upgrade.investigator" = "Ermittler";
 "campaign.upgrade.availableXp" = "Verfügbare EP";
 "campaign.upgrade.totalXp" = "EP gesamt / ausgegeben";

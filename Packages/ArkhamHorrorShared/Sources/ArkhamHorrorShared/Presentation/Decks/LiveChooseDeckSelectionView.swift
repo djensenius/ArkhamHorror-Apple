@@ -47,15 +47,23 @@ struct LiveChooseDeckSelectionView: View {
     let profile: ServerProfile
     let gameID: GameID
     let promptKey: BasicChoicePromptKey
+    let heading: String
 
     @State private var viewModel: LobbyDeckSelectionViewModel
     @State private var submissionState = LiveChooseDeckSubmissionState()
 
-    init(model: AppModel, profile: ServerProfile, gameID: GameID, promptKey: BasicChoicePromptKey) {
+    init(
+        model: AppModel,
+        profile: ServerProfile,
+        gameID: GameID,
+        promptKey: BasicChoicePromptKey,
+        heading: String = BasicChoicePromptPresentation.liveChooseDeckGenericHeading()
+    ) {
         self.model = model
         self.profile = profile
         self.gameID = gameID
         self.promptKey = promptKey
+        self.heading = heading
         _viewModel = State(
             initialValue: LobbyDeckSelectionViewModel(
                 profile: profile,
@@ -71,7 +79,7 @@ struct LiveChooseDeckSelectionView: View {
     var body: some View {
         ArkhamCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Choose a Deck")
+                Text(heading)
                     .font(.headline)
                     .foregroundStyle(ArkhamTheme.bone)
                 content

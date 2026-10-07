@@ -2873,7 +2873,7 @@ private struct LivePlaythroughBot {
     }
 
     private func isInitialChooseDeckPrompt(_ prompt: BasicChoicePromptPresentation) -> Bool {
-        prompt.identity.rawQuestion == .object(["tag": .string("ChooseDeck")])
+        LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion)
     }
 
     private func isContinueCampaignPrompt(_ prompt: BasicChoicePromptPresentation) -> Bool {

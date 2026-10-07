@@ -1,3 +1,5 @@
+import Foundation
+
 /// A saved-deck answer for the live ChooseDeck question.
 struct DeckAnswer: Sendable, Equatable, Codable {
     let deckId: DeckID
@@ -77,5 +79,35 @@ struct DeckListAnswer: Sendable, Equatable, Codable {
 enum LiveChooseDeckQuestion {
     static func matches(_ value: JSONValue) -> Bool {
         value == .object(["tag": .string("ChooseDeck")])
+            || value.wrapsExactQuestion(tag: "QuestionLabel", innerTag: "ChooseDeck")
+    }
+}
+
+extension BasicChoicePromptPresentation {
+    static func liveChooseDeckGenericHeading(localeIdentifier: String? = nil) -> String {
+        semanticLocalized(
+            "liveChooseDeck.heading.generic",
+            value: "Choose a Deck",
+            localeIdentifier: localeIdentifier
+        )
+    }
+
+    var liveChooseDeckPickerHeading: String {
+        promptQuestionLabelTitle ?? liveChooseDeckGenericHeading()
+    }
+
+    private func liveChooseDeckGenericHeading() -> String {
+        semanticLocalized("liveChooseDeck.heading.generic", value: "Choose a Deck")
+    }
+}
+
+private extension JSONValue {
+    func wrapsExactQuestion(tag expectedTag: String, innerTag expectedInnerTag: String) -> Bool {
+        guard case let .object(object) = self,
+              object["tag"] == .string(expectedTag),
+              JSONValue.hasValidQuestionLabelWrapperFields(object),
+              object["question"] == .object(["tag": .string(expectedInnerTag)])
+        else { return false }
+        return true
     }
 }

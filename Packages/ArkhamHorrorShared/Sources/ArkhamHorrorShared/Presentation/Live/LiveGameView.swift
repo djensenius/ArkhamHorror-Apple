@@ -223,7 +223,12 @@ struct LiveGameView: View {
                 switch answerability {
                 case let .canAnswer(promptKey):
                     LiveChooseDeckSelectionView(
-                        model: model, profile: profile, gameID: gameID, promptKey: promptKey
+                        model: model,
+                        profile: profile,
+                        gameID: gameID,
+                        promptKey: promptKey,
+                        heading: renderedPrompt?.liveChooseDeckPickerHeading
+                            ?? BasicChoicePromptPresentation.liveChooseDeckGenericHeading()
                     )
                     .id(promptKey)
                 case let .readOnly(message):

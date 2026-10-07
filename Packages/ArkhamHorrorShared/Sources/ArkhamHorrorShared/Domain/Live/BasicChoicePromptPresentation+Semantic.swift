@@ -133,15 +133,23 @@ extension BasicChoicePromptPresentation {
         return question.supportedQuestion?.kind == .read
     }
 
+    var promptQuestionLabelTitle: String? {
+        if let title = promptLabelResolutions["questionLabel"]?.title {
+            return title
+        }
+        guard let text = semanticPresentation?.presentation.questionLabel?.text,
+              !text.hasPrefix("$")
+        else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     func headerTitle(in _: BoardProjection) -> String {
         guard let presentation = semanticPresentation?.presentation else {
             return isStoryPrompt ? "Story" : "Choose an action"
         }
-        if let title = promptLabelResolutions["questionLabel"]?.title {
+        if let title = promptQuestionLabelTitle {
             return title
-        }
-        if let text = presentation.questionLabel?.text, !text.hasPrefix("$") {
-            return text
         }
         switch presentation.questionKind {
         case .read:
@@ -1303,8 +1311,22 @@ extension BasicChoicePromptPresentation {
         value: String.LocalizationValue,
         arguments: [CVarArg] = []
     ) -> String {
-        let locale = semanticLocaleIdentifier.map(Locale.init(identifier:)) ?? .current
-        guard let bundle = semanticLocalizationBundle else {
+        Self.semanticLocalized(
+            key,
+            value: value,
+            localeIdentifier: semanticLocaleIdentifier,
+            arguments: arguments
+        )
+    }
+
+    static func semanticLocalized(
+        _ key: StaticString,
+        value: String.LocalizationValue,
+        localeIdentifier: String?,
+        arguments: [CVarArg] = []
+    ) -> String {
+        let locale = localeIdentifier.map(Locale.init(identifier:)) ?? .current
+        guard let bundle = semanticLocalizationBundle(localeIdentifier: localeIdentifier) else {
             return String(
                 localized: key,
                 defaultValue: value,
@@ -1340,10 +1362,10 @@ extension BasicChoicePromptPresentation {
         return String(format: format, locale: locale, arguments: arguments)
     }
 
-    private var semanticLocalizationBundle: Bundle? {
-        guard let semanticLocaleIdentifier else { return nil }
-        var candidates = [semanticLocaleIdentifier]
-        if let language = semanticLocaleIdentifier.split(separator: "-").first {
+    private static func semanticLocalizationBundle(localeIdentifier: String?) -> Bundle? {
+        guard let localeIdentifier else { return nil }
+        var candidates = [localeIdentifier]
+        if let language = localeIdentifier.split(separator: "-").first {
             candidates.append(String(language))
         }
         candidates.append("en")

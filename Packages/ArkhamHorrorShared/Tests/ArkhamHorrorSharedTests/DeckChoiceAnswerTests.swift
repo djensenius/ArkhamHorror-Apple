@@ -5,12 +5,15 @@ import Testing
 @Suite("Deck choice answers")
 struct DeckChoiceAnswerTests {
     private func loadFixture(_ name: String) throws -> Data {
-        let bundled = Bundle.module.url(
+        if let bundled = Bundle.module.url(
             forResource: name,
             withExtension: "json",
             subdirectory: "Fixtures/Contract"
-        )
-        if let bundled {
+        ) ?? Bundle.module.url(
+            forResource: name,
+            withExtension: "json",
+            subdirectory: "Fixtures/LiveDreamEatersPlaythrough"
+        ) {
             return try Data(contentsOf: bundled)
         }
         switch name {
@@ -59,13 +62,99 @@ struct DeckChoiceAnswerTests {
         #expect(answer.deckList.name == "Contract deck")
     }
 
-    @Test("Live ChooseDeck recognition accepts only the exact nullary question shape")
-    func liveChooseDeckRecognitionIsExact() {
+    @Test("Live ChooseDeck recognition accepts exact nullary and labeled deck prompts")
+    func liveChooseDeckRecognitionAcceptsLabeledDeckPrompts() throws {
+        let dreamEatersRaw = try ContractJSON.decode(
+            JSONValue.self,
+            from: loadFixture("question-dream-eaters-part-a-choose-deck")
+        )
+
         #expect(LiveChooseDeckQuestion.matches(.object(["tag": .string("ChooseDeck")])))
+        #expect(LiveChooseDeckQuestion.matches(dreamEatersRaw))
         #expect(!LiveChooseDeckQuestion.matches(.object([
             "tag": .string("ChooseDeck"),
             "extra": .null,
         ])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "question": .object([
+                "tag": .string("ChooseDeck"),
+                "extra": .null,
+            ]),
+            "tag": .string("QuestionLabel"),
+        ])))
         #expect(!LiveChooseDeckQuestion.matches(.object(["tag": .string("ChooseJoinDeck")])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "card": .null,
+            "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+            "question": .object(["tag": .string("ChooseJoinDeck")]),
+            "tag": .string("QuestionLabel"),
+        ])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "card": .null,
+            "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+            "question": .object(["tag": .string("ChooseUpgradeDeck")]),
+            "tag": .string("QuestionLabel"),
+        ])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "card": .null,
+            "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+            "question": .object([
+                "card": .null,
+                "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+                "question": .object(["tag": .string("ChooseDeck")]),
+                "tag": .string("QuestionLabel"),
+            ]),
+            "tag": .string("QuestionLabel"),
+        ])))
+        #expect(!LiveChooseDeckQuestion.matches(.object([
+            "card": .null,
+            "label": .string("$theDreamEaters.question.chooseDeckForPartA"),
+            "question": .object(["tag": .string("ChooseDeck")]),
+            "tag": .string("OtherLabel"),
+        ])))
+    }
+
+    @Test("Live ChooseDeck recognition rejects malformed QuestionLabel wrappers")
+    func liveChooseDeckRecognitionRejectsMalformedQuestionLabelWrappers() {
+        func wrapper(
+            label: JSONValue? = .string("$theDreamEaters.question.chooseDeckForPartA"),
+            card: JSONValue? = .null
+        ) -> JSONValue {
+            var object: [String: JSONValue] = [
+                "question": .object(["tag": .string("ChooseDeck")]),
+                "tag": .string("QuestionLabel"),
+            ]
+            if let label {
+                object["label"] = label
+            }
+            if let card {
+                object["card"] = card
+            }
+            return .object(object)
+        }
+
+        #expect(LiveChooseDeckQuestion.matches(wrapper()))
+        #expect(!LiveChooseDeckQuestion.matches(wrapper(label: nil)))
+        #expect(!LiveChooseDeckQuestion.matches(wrapper(label: .array([]))))
+        #expect(!LiveChooseDeckQuestion.matches(wrapper(card: .array([]))))
+    }
+
+    @Test("Captured Dream-Eaters labeled ChooseDeck bytes bind to the deck presentation")
+    func dreamEatersQuestionLabelChooseDeckFixtureBinds() throws {
+        let rawBytes = try loadFixture("question-dream-eaters-part-a-choose-deck")
+        let presentationBytes = try loadFixture(
+            "question-presentation-dream-eaters-part-a-choose-deck"
+        )
+        let raw = try ContractJSON.decode(JSONValue.self, from: rawBytes)
+        let presentation = try ContractJSON.decode(
+            QuestionPresentation.self,
+            from: presentationBytes
+        )
+        let binding = try presentation.bind(to: raw, expectedQuestionVersion: 10)
+
+        #expect(LiveChooseDeckQuestion.matches(raw))
+        #expect(binding.presentation.questionKind == .chooseDeck)
+        #expect(binding.presentation.answer == .deck(tags: ["DeckAnswer"]))
+        #expect(binding.rawChoices.isEmpty)
     }
 }
