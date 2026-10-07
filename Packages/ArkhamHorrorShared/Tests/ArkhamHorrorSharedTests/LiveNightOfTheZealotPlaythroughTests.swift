@@ -987,6 +987,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
         let report = accumulator.report(scenarioOutcomes: [
             "c01104": "resolution {\"contents\":1,\"tag\":\"Resolution\"}",
             "c01120": "resolution {\"tag\":\"NoResolution\"}",
+            "c01142": "completed without recorded resolution",
+            "scenario-only": "gameState IsOver",
         ])
 
         #expect(report.nonNoResolutionScenarioIDs == ["c01104"])
@@ -1595,7 +1597,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
             "Raw question kinds seen",
             "Semantic presentation kinds seen",
             "Semantic choice kinds seen",
-            "Selection counts",
+            "Selection counts (selected)",
         ].joined(separator: " | ").withMarkdownTablePipes())
         lines.append(Array(repeating: "---", count: 9).joined(separator: " | ")
             .withMarkdownTablePipes())
@@ -2582,8 +2584,7 @@ private struct PlaythroughCoverageReport: Sendable, Equatable {
 
     var nonNoResolutionScenarioIDs: [String] {
         scenarioOutcomes.keys.sorted().filter { scenarioID in
-            let outcome = scenarioOutcomes[scenarioID] ?? ""
-            return !outcome.contains("NoResolution")
+            isResolutionOutcome(scenarioOutcomes[scenarioID] ?? "")
         }
     }
 
@@ -2666,6 +2667,10 @@ private struct PlaythroughCoverageAccumulator {
             selectionCounts: selectionCounts
         )
     }
+}
+
+private func isResolutionOutcome(_ outcome: String) -> Bool {
+    outcome.hasPrefix("resolution ") && outcome.contains("\"tag\":\"Resolution\"")
 }
 
 private func compactResolutionText(_ outcome: String) -> String {
