@@ -106,12 +106,12 @@ hashes remain unchanged at Q33, and exercises that same strict prompt path.
 
 ### Backend replay authority
 
-As of Tuesday, October 6, 2026, this repository is pinned to backend
+As of Wednesday, October 7, 2026, this repository is pinned to backend
 contract commit `8453314123831e9fb1e7817e34190671b73b8ae0` from
 `djensenius/ArkhamHorror#140`, at contract revision `0.1.51`. That revision
 types additional locale-catalog icon-variable values on top of the
 participant-socket `AnswerRejected` envelope and presentation-v2 tooling
-update, keeps the locale catalog at revision
+update, advances the locale catalog to revision
 `1.e4136e6e101e41f49b8304df2e8c2cd7`, and publishes the exact
 negative-regression set vendored with the pinned contract. The client is
 compiled against the 0.1.51 contract but only requires server revision 0.1.48:
