@@ -19,13 +19,18 @@ struct BoardProjectionCampaignContinuationTests {
     }
 
     private func campaign(
+        id: String? = nil,
         step: JSONValue,
         completedSteps: [JSONValue] = []
     ) -> JSONValue {
-        .object([
+        var object: [String: JSONValue] = [
             "completedSteps": .array(completedSteps),
             "step": step,
-        ])
+        ]
+        if let id {
+            object["id"] = .string(id)
+        }
+        return .object(object)
     }
 
     private func continuationProjection(
@@ -39,6 +44,33 @@ struct BoardProjectionCampaignContinuationTests {
                 scenario: BoardTestFixtures.scenario(campaignStep: scenarioStep)
             )
         ))
+    }
+
+    private func campaignI18nProjection(campaignID: String) -> BoardProjection {
+        BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            mode: .campaignOnly(campaign(id: campaignID, step: .null))
+        ))
+    }
+
+    @Test("Zero-padded built-in campaign IDs map to their campaign i18n scope")
+    func zeroPaddedBuiltInCampaignIDMapsToI18nScope() {
+        let projection = campaignI18nProjection(campaignID: "05")
+
+        #expect(projection.campaignI18nScope == "theCircleUndone")
+    }
+
+    @Test("Homebrew campaign IDs map from kebab ID to camel-case i18n scope")
+    func homebrewCampaignIDMapsToCamelCaseI18nScope() {
+        let projection = campaignI18nProjection(campaignID: ":kebab-id")
+
+        #expect(projection.campaignI18nScope == "kebabId")
+    }
+
+    @Test("Return To campaign IDs do not map to a campaign i18n scope")
+    func returnToCampaignIDDoesNotMapToI18nScope() {
+        let projection = campaignI18nProjection(campaignID: "54")
+
+        #expect(projection.campaignI18nScope == nil)
     }
 
     @Test("Campaign continuation keeps the campaign next step for non-continuation scenario steps")
