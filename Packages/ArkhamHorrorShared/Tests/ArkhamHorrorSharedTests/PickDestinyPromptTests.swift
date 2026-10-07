@@ -263,10 +263,13 @@ struct PickDestinyPromptTests {
         ]
 
         #expect(prompt.semanticPresentation?.presentation.drawings == mismatchedEnvelope)
-        #expect(await model.submitPickDestinyAnswer(
+        #expect(!prompt.isRenderableQuestion)
+        #expect(!prompt.canSubmit)
+        let result = await model.submitPickDestinyAnswer(
             prompt.identity,
             drawings: followsEnvelope
-        ) == .unsupportedChoice)
+        )
+        #expect(result == .readOnly)
         #expect(await connection.sentData.isEmpty)
     }
 

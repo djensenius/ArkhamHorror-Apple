@@ -205,20 +205,27 @@ extension BasicChoicePromptPresentation {
     ) -> Bool {
         switch presentation.answer {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmounts:
-            true
+            return true
         case .continueCampaign:
-            presentation.questionKind == .continueCampaign
+            return presentation.questionKind == .continueCampaign
                 && (rawQuestion.hasTag("ContinueCampaign")
                     || rawQuestion.wrapsQuestion(
                         tag: "QuestionLabel", innerTag: "ContinueCampaign"
                     ))
         case .pickDestiny:
-            presentation.questionKind == .pickDestiny
-                && rawQuestion.hasTag("PickDestiny")
-                && presentation.drawings?.isEmpty == false
+            guard presentation.questionKind == .pickDestiny,
+                  let publishedDrawings = presentation.drawings,
+                  !publishedDrawings.isEmpty,
+                  let rawDrawings = PickDestinySelectionRules.publishedDrawings(in: rawQuestion),
+                  !rawDrawings.isEmpty
+            else { return false }
+            return PickDestinySelectionRules.matchesPublishedSequence(
+                publishedDrawings,
+                published: rawDrawings
+            )
         case .deck, .standaloneSettings, .campaignSettings,
              .campaignSpecific, .scenarioSpecific:
-            false
+            return false
         }
     }
 

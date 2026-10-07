@@ -666,7 +666,7 @@ extension BasicChoicePromptPresentation {
               ),
               let publishedDrawings = presentation.drawings,
               !publishedDrawings.isEmpty,
-              let rawDrawings = Self.rawPickDestinyDrawings(in: identity.rawQuestion),
+              let rawDrawings = PickDestinySelectionRules.publishedDrawings(in: identity.rawQuestion),
               !rawDrawings.isEmpty,
               PickDestinySelectionRules.matchesPublishedSequence(
                   publishedDrawings,
@@ -674,19 +674,6 @@ extension BasicChoicePromptPresentation {
               )
         else { return false }
         return PickDestinySelectionRules.canSubmit(drawings, published: rawDrawings)
-    }
-
-    private static func rawPickDestinyDrawings(
-        in rawQuestion: JSONValue
-    ) -> [QuestionPresentation.DestinyDrawing]? {
-        guard case let .object(object) = rawQuestion,
-              object["tag"] == .string("PickDestiny"),
-              let drawings = object["drawings"]
-        else { return nil }
-        return try? ContractJSON.decode(
-            [QuestionPresentation.DestinyDrawing].self,
-            from: ContractJSON.encode(drawings)
-        )
     }
 
     func supportsContinueCampaignSubmission(

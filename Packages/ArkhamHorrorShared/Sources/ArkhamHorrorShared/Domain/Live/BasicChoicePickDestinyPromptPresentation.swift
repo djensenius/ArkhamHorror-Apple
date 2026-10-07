@@ -29,6 +29,19 @@ enum PickDestinyPromptResolution: Sendable, Equatable {
 }
 
 enum PickDestinySelectionRules {
+    static func publishedDrawings(
+        in rawQuestion: JSONValue
+    ) -> [QuestionPresentation.DestinyDrawing]? {
+        guard case let .object(object) = rawQuestion,
+              object["tag"] == .string("PickDestiny"),
+              let drawings = object["drawings"]
+        else { return nil }
+        return try? ContractJSON.decode(
+            [QuestionPresentation.DestinyDrawing].self,
+            from: ContractJSON.encode(drawings)
+        )
+    }
+
     static func requiredReversedCount(for drawingCount: Int) -> Int {
         (drawingCount + 1) / 2
     }
