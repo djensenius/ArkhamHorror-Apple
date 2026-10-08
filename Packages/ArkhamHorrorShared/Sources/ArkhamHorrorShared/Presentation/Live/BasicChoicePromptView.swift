@@ -223,7 +223,7 @@ struct BasicChoicePromptView: View {
                     set: { controller.setSpiritDeckSearchText($0) }
                 )
             )
-            .textFieldStyle(.roundedBorder)
+            .basicChoicePromptSearchTextFieldStyle()
             .accessibilityLabel(presentation.semanticLocalized(
                 "scenarioSpecific.spiritDeck.search",
                 value: "Search cards"
@@ -607,6 +607,17 @@ struct BasicChoicePromptView: View {
         default:
             return nil
         }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func basicChoicePromptSearchTextFieldStyle() -> some View {
+        #if os(tvOS)
+            self
+        #else
+            textFieldStyle(.roundedBorder)
+        #endif
     }
 }
 
