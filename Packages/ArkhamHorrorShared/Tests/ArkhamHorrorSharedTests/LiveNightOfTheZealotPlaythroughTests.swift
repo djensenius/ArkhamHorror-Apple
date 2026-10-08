@@ -1263,11 +1263,6 @@ struct LiveNightOfTheZealotPlaythroughTests {
 
     @Test("Live bot strategy favors payable act objectives")
     func botStrategyFavorsPayableActObjectives() {
-        let projection = Self.strategyProjection(
-            currentLocationClues: 2,
-            investigatorTokens: [TokenCount(token: "Clue", count: 2)],
-            actAdvanceCost: RuntimeCost(tag: "GroupClueCost", contents: nil)
-        )
         let prompt = Self.strategyPrompt(choices: [
             QuestionPresentation.Choice(
                 sourceIndex: 0,
@@ -1278,14 +1273,32 @@ struct LiveNightOfTheZealotPlaythroughTests {
                     type: .objective,
                     actions: [.activate],
                     canBeCancelled: true
-                )
+                ),
+                cost: .groupClue(amount: .perPlayer(2), scope: .anywhere)
             ),
             QuestionPresentation.Choice(sourceIndex: 1, kind: .advanceAgenda),
         ])
+        let humanizedOnlyProjection = Self.strategyProjection(
+            currentLocationClues: 1,
+            investigatorTokens: [TokenCount(token: "Clue", count: 1)],
+            actAdvanceCost: RuntimeCost(tag: "GroupClueCost", contents: nil)
+        )
+        let payableProjection = Self.strategyProjection(
+            currentLocationClues: 2,
+            investigatorTokens: [TokenCount(token: "Clue", count: 2)],
+            actAdvanceCost: RuntimeCost(tag: "GroupClueCost", contents: nil)
+        )
 
         #expect(preferredSelectableIndex(
             in: prompt,
-            projection: projection,
+            projection: humanizedOnlyProjection,
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 1)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: payableProjection,
             selectableIndexes: [0, 1],
             repeatCount: 0,
             skillTestPreparationCount: 0
@@ -4536,7 +4549,7 @@ private struct BotStrategyContext {
         var score = 0
         switch choice.kind {
         case .advanceAct:
-            score = canPayActAdvanceCost ? 11000 : 10000
+            score = canPayActAdvanceCost(choice) ? 11000 : 10000
         case .advanceAgenda:
             score = 9800
         case .investigate:
@@ -4597,13 +4610,77 @@ private struct BotStrategyContext {
         tokenCount("Resource", in: actingInvestigator?.tokenCounts ?? [])
     }
 
-    private var canPayActAdvanceCost: Bool {
-        projection.acts.contains { act in
-            guard !act.flipped,
-                  let cost = act.advanceCostSummary?.lowercased(),
-                  cost.contains("clue")
-            else { return false }
-            return investigatorClues > 0
+    private func canPayActAdvanceCost(_ choice: QuestionPresentation.Choice) -> Bool {
+        guard let cost = choice.cost else { return false }
+        return canPay(cost)
+    }
+
+    private func canPay(_ cost: QuestionPresentation.Cost) -> Bool {
+        switch cost {
+        case .free:
+            true
+        case let .action(count):
+            (actingInvestigator?.remainingActions ?? 0) >= count
+        case let .resource(count):
+            investigatorResources >= count
+        case let .clue(amount):
+            investigatorClues >= amountValue(amount)
+        case let .groupClue(amount, scope):
+            groupClues(in: scope) >= amountValue(amount)
+        case let .groupResource(amount, _):
+            groupResources >= amountValue(amount)
+        case let .all(costs):
+            costs.allSatisfy(canPay)
+        case let .choice(costs):
+            costs.contains(where: canPay)
+        case .other:
+            false
+        }
+    }
+
+    private func amountValue(_ amount: QuestionPresentation.Amount) -> Int {
+        let playerCount = max(1, projection.investigators.count)
+        switch amount {
+        case let .fixed(value):
+            return value
+        case let .perPlayer(value):
+            return value * playerCount
+        case let .fixedPlusPerPlayer(fixed, perPlayer):
+            return fixed + perPlayer * playerCount
+        case let .byPlayerCount(values):
+            return values.indices.contains(playerCount - 1)
+                ? values[playerCount - 1]
+                : Int.max
+        case .variable, .star, .unknown:
+            return Int.max
+        }
+    }
+
+    private func groupClues(in scope: QuestionPresentation.Scope) -> Int {
+        projection.investigators.filter { investigator in
+            isInvestigator(investigator, within: scope)
+        }.reduce(0) { total, investigator in
+            total + tokenCount("Clue", in: investigator.tokenCounts)
+        }
+    }
+
+    private var groupResources: Int {
+        projection.investigators.reduce(0) { total, investigator in
+            total + tokenCount("Resource", in: investigator.tokenCounts)
+        }
+    }
+
+    private func isInvestigator(
+        _ investigator: BoardInvestigatorNode,
+        within scope: QuestionPresentation.Scope
+    ) -> Bool {
+        switch scope {
+        case .anywhere, .other:
+            true
+        case .sameLocation:
+            investigator.currentLocationID == actingInvestigator?.currentLocationID
+        case let .location(locationID):
+            investigator.currentLocationID?.codingKey.stringValue == locationID.lowercased()
         }
     }
 
@@ -4632,7 +4709,7 @@ private struct BotStrategyContext {
     private func abilityScore(_ choice: QuestionPresentation.Choice) -> Int {
         guard let ability = choice.ability else { return 4500 }
         if ability.type == .objective {
-            return canPayActAdvanceCost ? 10600 : 9600
+            return canPayActAdvanceCost(choice) ? 10600 : 9600
         }
         if ability.actions.contains(.investigate) {
             return currentLocation?.clueCount ?? 0 > 0 ? 9200 : 6000
