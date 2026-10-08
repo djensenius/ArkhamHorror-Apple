@@ -6,6 +6,9 @@ import Testing
 @Suite("Standalone settings prompt")
 // swiftlint:disable:next type_body_length
 struct StandaloneSettingsPromptTests {
+    private static let spiritDeckSearchFocusID: SemanticFocusID =
+        "board.prompt.scenarioSpecific.search"
+
     @Test("Captured PickScenarioSettings prompt is renderable only for proven-empty 86001")
     func capturedPickScenarioSettingsPromptIsRenderable() throws {
         let prompt = try Self.prompt(
@@ -291,20 +294,31 @@ struct StandaloneSettingsPromptTests {
         )
 
         let focusIDs = controller.coordinator.graph.order
+        #expect(focusIDs.contains(Self.spiritDeckSearchFocusID))
         #expect(focusIDs.contains(BoardFocusID.promptScenarioSpecificSubmit))
         #expect(focusIDs.contains(BoardFocusID.promptScenarioSpecificCard(0)))
         #expect(focusIDs.contains(
             BoardFocusID.promptScenarioSpecificCard(spiritDeck.count - 1)
         ))
+        #expect(
+            controller.coordinator.graph.zoneEntryPoints[BoardFocusZone.prompt]
+                == Self.spiritDeckSearchFocusID
+        )
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == Self.spiritDeckSearchFocusID)
         #expect(!controller.activateScenarioSpecificSubmit())
 
         let firstCode = try #require(spiritDeck.rawStringEntryCodes.first)
         controller.setSpiritDeckSearchText(firstCode)
         let filteredFocusIDs = controller.coordinator.graph.order
+        #expect(controller.coordinator.currentFocus == Self.spiritDeckSearchFocusID)
         #expect(controller.filteredSpiritDeckEntries(for: spiritDeck).map(\.id) == [0])
+        #expect(filteredFocusIDs.contains(Self.spiritDeckSearchFocusID))
         #expect(filteredFocusIDs.contains(BoardFocusID.promptScenarioSpecificCard(0)))
         #expect(!filteredFocusIDs.contains(BoardFocusID.promptScenarioSpecificCard(1)))
         #expect(filteredFocusIDs.contains(BoardFocusID.promptScenarioSpecificSubmit))
+        #expect(controller.handle(.command(.focusMove(.down))))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptScenarioSpecificCard(0))
         controller.setSpiritDeckSearchText("")
 
         for index in 0 ..< spiritDeck.count {
@@ -336,6 +350,7 @@ struct StandaloneSettingsPromptTests {
                 return controller.coordinator.graph.contains(focusID) ? entry.id : nil
             }
             #expect(focusedSpiritDeckIDs == expectedVisibleIDs)
+            #expect(controller.coordinator.graph.contains(Self.spiritDeckSearchFocusID))
             #expect(controller.coordinator.graph.contains(
                 BoardFocusID.promptScenarioSpecificSubmit
             ))

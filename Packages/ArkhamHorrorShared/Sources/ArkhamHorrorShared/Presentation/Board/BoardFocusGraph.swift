@@ -71,6 +71,8 @@ enum BoardFocusID {
     static let promptPickDestinySubmit: SemanticFocusID = "board.prompt.pickDestiny.submit"
     static let promptStandaloneSettingsSubmit: SemanticFocusID =
         "board.prompt.standaloneSettings.submit"
+    static let promptScenarioSpecificSearch: SemanticFocusID =
+        "board.prompt.scenarioSpecific.search"
     static let promptScenarioSpecificSubmit: SemanticFocusID =
         "board.prompt.scenarioSpecific.submit"
 
@@ -282,7 +284,8 @@ enum BoardFocusGraphBuilder {
             return [BoardFocusID.promptStandaloneSettingsSubmit]
         }
         if let spiritDeckPrompt = prompt.laidToRestSpiritDeckPrompt {
-            return spiritDeckPrompt.displayEntries(matching: spiritDeckSearchText)
+            return [BoardFocusID.promptScenarioSpecificSearch]
+                + spiritDeckPrompt.displayEntries(matching: spiritDeckSearchText)
                 .filter(\.isSelectable)
                 .map { BoardFocusID.promptScenarioSpecificCard($0.id) }
                 + [BoardFocusID.promptScenarioSpecificSubmit]

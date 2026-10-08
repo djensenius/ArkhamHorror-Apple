@@ -224,6 +224,7 @@ struct BasicChoicePromptView: View {
                 )
             )
             .basicChoicePromptSearchTextFieldStyle()
+            .focused(focusBinding, equals: BoardFocusID.promptScenarioSpecificSearch)
             .accessibilityLabel(presentation.semanticLocalized(
                 "scenarioSpecific.spiritDeck.search",
                 value: "Search cards"
