@@ -282,9 +282,10 @@ enum BoardFocusGraphBuilder {
             return [BoardFocusID.promptStandaloneSettingsSubmit]
         }
         if let spiritDeckPrompt = prompt.laidToRestSpiritDeckPrompt {
-            return spiritDeckPrompt.displayEntries(matching: spiritDeckSearchText).map {
-                BoardFocusID.promptScenarioSpecificCard($0.id)
-            } + [BoardFocusID.promptScenarioSpecificSubmit]
+            return spiritDeckPrompt.displayEntries(matching: spiritDeckSearchText)
+                .filter(\.isSelectable)
+                .map { BoardFocusID.promptScenarioSpecificCard($0.id) }
+                + [BoardFocusID.promptScenarioSpecificSubmit]
         }
         if let travelPrompt = prompt.scarletKeysTravelPrompt {
             return travelPrompt.actions

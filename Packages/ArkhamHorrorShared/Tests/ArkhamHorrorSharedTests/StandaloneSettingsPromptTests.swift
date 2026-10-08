@@ -220,6 +220,47 @@ struct StandaloneSettingsPromptTests {
         }
     }
 
+    @Test("Laid to Rest focus graph skips display-only spirit deck rows")
+    @MainActor
+    func laidToRestFocusGraphSkipsDisplayOnlyRows() throws {
+        let malformedCode = "not-a-card-code"
+        let projection = Self.projection(scenarioID: "c90054")
+        let prompt = try Self.laidToRestPromptWithCatalog { raw, presentation in
+            let changed = try Self.replacingLaidToRestPayload(raw) { payload in
+                var changedPayload = payload
+                guard case var .array(codes)? = changedPayload["cardCodes"] else {
+                    return changedPayload
+                }
+                codes[0] = .string(malformedCode)
+                changedPayload["cardCodes"] = .array(codes)
+                return changedPayload
+            }
+            return (changed, presentation)
+        }
+        let spiritDeck = try #require(prompt.laidToRestSpiritDeckPrompt)
+        let malformedEntry = spiritDeck.entries[0]
+        let selectableEntry = spiritDeck.entries[1]
+        let fixedEntry = try #require(spiritDeck.fixedEntries.first)
+        let controller = BoardCommandController(projection: projection, prompt: prompt)
+
+        #expect(!malformedEntry.isSelectable)
+        #expect(selectableEntry.isSelectable)
+        #expect(!fixedEntry.isSelectable)
+        let visibleIDs = controller.filteredSpiritDeckEntries(for: spiritDeck).map(\.id)
+        #expect(visibleIDs.contains(malformedEntry.id))
+        #expect(visibleIDs.contains(fixedEntry.id))
+        #expect(!controller.coordinator.graph.contains(
+            BoardFocusID.promptScenarioSpecificCard(malformedEntry.id)
+        ))
+        #expect(!controller.coordinator.graph.contains(
+            BoardFocusID.promptScenarioSpecificCard(fixedEntry.id)
+        ))
+        #expect(controller.coordinator.graph.contains(
+            BoardFocusID.promptScenarioSpecificCard(selectableEntry.id)
+        ))
+        #expect(controller.coordinator.graph.contains(BoardFocusID.promptScenarioSpecificSubmit))
+    }
+
     @Test("Laid to Rest controller toggles cards and focus graph exposes toggles plus confirm")
     @MainActor
     func laidToRestControllerAndFocusGraph() throws {
