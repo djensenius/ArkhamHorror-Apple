@@ -324,6 +324,34 @@ private func slugComponent(_ value: String) -> String {
     }.joined().lowercased()
 }
 
+private func preferredScarletKeysTravelAction(
+    _ prompt: ScarletKeysTravelPromptPresentation
+) -> ScarletKeysTravelPromptPresentation.Action? {
+    prompt.actions
+        .filter(\.isActionable)
+        .min { lhs, rhs in
+            let lhsPriority = scarletKeysTravelActionPriority(lhs.kind)
+            let rhsPriority = scarletKeysTravelActionPriority(rhs.kind)
+            if lhsPriority != rhsPriority {
+                return lhsPriority < rhsPriority
+            }
+            return lhs.id < rhs.id
+        }
+}
+
+private func scarletKeysTravelActionPriority(
+    _ kind: ScarletKeysTravelPromptPresentation.Action.Kind
+) -> Int {
+    switch kind {
+    case .travel:
+        0
+    case .travelWithTicket:
+        1
+    case .travelVia:
+        2
+    }
+}
+
 private func pickDestinyBotSelection(
     _ drawings: [QuestionPresentation.DestinyDrawing]
 ) -> [QuestionPresentation.DestinyDrawing] {
@@ -866,6 +894,40 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: 0
         ) == 2)
+    }
+
+    @Test("Live bot strategy breaks repeated player-window ability loops by ending the turn")
+    func botStrategyBreaksRepeatedAbilityLoopsWithEndTurn() {
+        let projection = Self.strategyProjection()
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(sourceIndex: 0, kind: .endTurn),
+            QuestionPresentation.Choice(
+                sourceIndex: 1,
+                kind: .useAbility,
+                ability: QuestionPresentation.Ability(
+                    cardCode: "c09659",
+                    index: 1,
+                    type: .fast,
+                    actions: [.activate],
+                    canBeCancelled: false
+                )
+            ),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: projection,
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 1)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: projection,
+            selectableIndexes: [0, 1],
+            repeatCount: 5,
+            skillTestPreparationCount: 0
+        ) == 0)
     }
 
     @Test("Live bot strategy moves toward clue locations")
@@ -2742,6 +2804,14 @@ private struct LivePlaythroughBot {
                 chosenChoiceKind: nil
             )
         }
+        let travelAction = prompt.scarletKeysTravelPrompt.flatMap(preferredScarletKeysTravelAction)
+        if let action = travelAction {
+            return SelectedBotAnswer(
+                answer: .campaignSpecific(action.payload),
+                note: "Scarlet Keys world-map \(action.kind.rawValue) to \(action.locationID)",
+                chosenChoiceKind: "scarletKeysTravel"
+            )
+        }
         let actionableIndexes = liveHarnessSelectableChoiceIndexes(
             prompt: prompt,
             projection: projection
@@ -2804,6 +2874,8 @@ private struct LivePlaythroughBot {
             result = await model.submitContinueCampaignAnswer(prompt.identity, step: step)
         case let .pickDestiny(drawings):
             result = await model.submitPickDestinyAnswer(prompt.identity, drawings: drawings)
+        case let .campaignSpecific(contents):
+            result = await model.submitCampaignSpecificAnswer(prompt.identity, contents: contents)
         case let .savedDeck(deck):
             guard await model.chooseDeckForLivePrompt(deck, in: gameID) else {
                 throw PlaythroughError.submissionFailed("live deck choice was not accepted")
@@ -3117,6 +3189,7 @@ private enum BotAnswer: Sendable {
     case exchangeAmount(Int)
     case continueCampaign(JSONValue)
     case pickDestiny([QuestionPresentation.DestinyDrawing])
+    case campaignSpecific(JSONValue)
     case savedDeck(Deck)
     case replacementDeck(originalInvestigatorID: String, deck: Deck)
     case skipDeckUpgrade(investigatorID: String)
@@ -3163,13 +3236,14 @@ private extension BotAnswer {
         case .exchangeAmount: "ExchangeAmountsAnswer"
         case .continueCampaign: "CampaignStepAnswer"
         case .pickDestiny: "PickDestinyAnswer"
+        case .campaignSpecific: "CampaignSpecificAnswer"
         case .savedDeck: "DeckAnswer"
         case .replacementDeck: "ReplacementDeck"
         case .skipDeckUpgrade: "SkipDeckUpgrade"
         }
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     func traceSubmission(prompt: BasicChoicePromptPresentation) throws -> TraceSubmission {
         switch self {
         case let .choice(index):
@@ -3225,6 +3299,11 @@ private extension BotAnswer {
             return try TraceSubmission(
                 kind: "PickDestinyAnswer",
                 payload: PickDestinyAnswer(contents: drawings)
+            )
+        case let .campaignSpecific(contents):
+            return try TraceSubmission(
+                kind: "CampaignSpecificAnswer",
+                payload: CampaignSpecificAnswer(contents: contents)
             )
         case let .savedDeck(deck):
             return try TraceSubmission(
@@ -3746,6 +3825,9 @@ private extension TraceSelectedAnswer {
         case .pickDestiny:
             answerKind = "PickDestinyAnswer"
             choiceIndex = nil
+        case .campaignSpecific:
+            answerKind = "CampaignSpecificAnswer"
+            choiceIndex = nil
         case .savedDeck:
             answerKind = "DeckAnswer"
             choiceIndex = nil
@@ -4177,6 +4259,7 @@ private func coverageRepeatKey(
     ].joined(separator: ":")
 }
 
+// swiftlint:disable:next function_body_length
 private func preferredSelectableIndex(
     in prompt: BasicChoicePromptPresentation,
     projection: BoardProjection,
@@ -4219,6 +4302,10 @@ private func preferredSelectableIndex(
             seed: seed,
             count: selectableIndexes.count
         )]
+    }
+    let repeatedEndTurn = selectableChoices.first(where: { $0.kind == .endTurn })
+    if repeatCount >= 5, let endTurn = repeatedEndTurn {
+        return endTurn.sourceIndex
     }
     let context = BotStrategyContext(
         prompt: prompt,

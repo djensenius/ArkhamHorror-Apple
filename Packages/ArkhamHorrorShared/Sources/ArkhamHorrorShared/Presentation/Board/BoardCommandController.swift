@@ -50,6 +50,7 @@ final class BoardCommandController {
     private var onPaymentAmounts: ([String: Int]) -> Void
     private var onExchangeAmount: (Int) -> Void
     private var onPickDestiny: ([QuestionPresentation.DestinyDrawing]) -> Void
+    private var onCampaignSpecific: (JSONValue) -> Void
     private var onRetry: () -> Void
     private var onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
     private(set) var amountDraft: [String: Int] = [:]
@@ -72,6 +73,7 @@ final class BoardCommandController {
         onPaymentAmounts: @escaping ([String: Int]) -> Void = { _ in },
         onExchangeAmount: @escaping (Int) -> Void = { _ in },
         onPickDestiny: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void = { _ in },
+        onCampaignSpecific: @escaping (JSONValue) -> Void = { _ in },
         onRetry: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
@@ -86,6 +88,7 @@ final class BoardCommandController {
         self.onPaymentAmounts = onPaymentAmounts
         self.onExchangeAmount = onExchangeAmount
         self.onPickDestiny = onPickDestiny
+        self.onCampaignSpecific = onCampaignSpecific
         self.onRetry = onRetry
         self.onCatalogRetry = onCatalogRetry
         let layout = BoardLayoutBuilder.makeLayout(
@@ -305,6 +308,9 @@ final class BoardCommandController {
             return true
         }
         if activateFocusedPickDestinyControl() {
+            return true
+        }
+        if activateFocusedScarletKeysTravelAction() {
             return true
         }
         if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
@@ -638,6 +644,26 @@ final class BoardCommandController {
         return togglePickDestinyDrawing(at: rowIndex)
     }
 
+    private func activateFocusedScarletKeysTravelAction() -> Bool {
+        guard let focus = coordinator.currentFocus,
+              let action = prompt?.scarletKeysTravelPrompt?.actions.first(where: {
+                  BoardFocusID.promptScarletKeysTravelAction($0) == focus
+              })
+        else { return false }
+        return activateScarletKeysTravelAction(action)
+    }
+
+    @discardableResult
+    func activateScarletKeysTravelAction(
+        _ action: ScarletKeysTravelPromptPresentation.Action
+    ) -> Bool {
+        guard prompt?.canSubmit == true,
+              prompt?.supportsCampaignSpecificSubmission(action.payload) == true
+        else { return false }
+        onCampaignSpecific(action.payload)
+        return true
+    }
+
     private func adjustFocusedAmountControl(direction: FocusDirection) -> Bool {
         switch direction {
         case .left:
@@ -905,6 +931,10 @@ extension BoardCommandController {
         _ handler: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void
     ) {
         onPickDestiny = handler
+    }
+
+    func updateCampaignSpecificHandler(_ handler: @escaping (JSONValue) -> Void) {
+        onCampaignSpecific = handler
     }
 
     func updateRetryHandler(_ handler: @escaping () -> Void) {

@@ -64,6 +64,12 @@
 "pickDestiny.names.loading" = "Loading tarot names…";
 "pickDestiny.names.unavailable" = "The tarot names for this reading are not currently available.";
 
+"scarletKeysTravel.instructions" = "Choose a destination on the world map.";
+"scarletKeysTravel.currentLocation" = "You are currently here.";
+"scarletKeysTravel.locationTextUnavailable" = "Location text unavailable";
+"scarletKeysTravel.actionTextUnavailable" = "Action text unavailable";
+"scarletKeysTravel.action.hint" = "Submits this travel choice.";
+
 "board.linkedChoiceMenu.title" = "Choose prompt action";
 "board.linkedChoiceMenu.cancelHint" = "Press Back or Secondary Action to cancel.";
 "board.linkedChoice.activateHint" = "Activates %@";

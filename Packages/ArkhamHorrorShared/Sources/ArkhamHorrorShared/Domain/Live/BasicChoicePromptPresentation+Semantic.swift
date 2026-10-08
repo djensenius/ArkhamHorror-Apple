@@ -23,12 +23,14 @@ extension QuestionPresentation {
         case deck
         case campaignSettings
         case pickDestiny
+        case campaignSpecific
         case continuation
         case deferred
 
         var isRenderableInCurrentClient: Bool {
             switch self {
-            case .singleChoice, .amounts, .payment, .exchange, .pickDestiny, .continuation:
+            case .singleChoice, .amounts, .payment, .exchange, .pickDestiny,
+                 .campaignSpecific, .continuation:
                 true
             case .multiSelect, .deck, .campaignSettings, .deferred:
                 false
@@ -55,7 +57,9 @@ extension QuestionPresentation {
             tags.contains("CampaignStepAnswer") ? .continuation : .deferred
         case .pickDestiny:
             .pickDestiny
-        case .standaloneSettings, .campaignSettings, .campaignSpecific, .scenarioSpecific:
+        case .campaignSpecific:
+            .campaignSpecific
+        case .standaloneSettings, .campaignSettings, .scenarioSpecific:
             .campaignSettings
         }
     }
@@ -77,6 +81,9 @@ extension BoundQuestionPresentation {
             false
         case .pickDestiny:
             presentation.questionKind == .pickDestiny && presentation.drawings?.isEmpty == false
+        case .campaignSpecific:
+            presentation.questionKind == .pickCampaignSpecific
+                && rawChoices.isEmpty
         }
     }
 }
@@ -231,8 +238,12 @@ extension BasicChoicePromptPresentation {
                 publishedDrawings,
                 published: rawDrawings
             )
-        case .deck, .standaloneSettings, .campaignSettings,
-             .campaignSpecific, .scenarioSpecific:
+        case .campaignSpecific:
+            return ScarletKeysTravelPromptPresentation.supports(
+                rawQuestion: rawQuestion,
+                presentation: presentation
+            )
+        case .deck, .standaloneSettings, .campaignSettings, .scenarioSpecific:
             return false
         }
     }
