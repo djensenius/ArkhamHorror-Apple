@@ -171,6 +171,7 @@ final class BoardCommandController {
             prompt: newPrompt,
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: newProjection, prompt: newPrompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
@@ -193,6 +194,7 @@ final class BoardCommandController {
             prompt: newPrompt,
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: newPrompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),

@@ -216,6 +216,43 @@ struct StandaloneSettingsPromptTests {
         #expect(submitted == spiritDeck.answer(selectedCodes: controller.spiritDeckSelection))
     }
 
+    @Test("Laid to Rest search survives snapshot and same-key prompt focus graph rebuilds")
+    @MainActor
+    func laidToRestSearchSurvivesControllerRebuilds() throws {
+        let projection = Self.projection(scenarioID: "c90054")
+        let prompt = try Self.laidToRestPromptWithCatalog()
+        let spiritDeck = try #require(prompt.laidToRestSpiritDeckPrompt)
+        let firstCode = try #require(spiritDeck.rawStringEntryCodes.first)
+        let expectedVisibleIDs = spiritDeck.displayEntries(matching: firstCode).map(\.id)
+        #expect(expectedVisibleIDs == [0])
+        let controller = BoardCommandController(projection: projection, prompt: prompt)
+        controller.setSpiritDeckSearchText(firstCode)
+
+        func expectOnlyFilteredSpiritDeckFocus() {
+            let focusedSpiritDeckIDs = spiritDeck.displayEntries.compactMap { entry in
+                controller.coordinator.graph.contains(BoardFocusID.promptScenarioSpecificCard(entry.id))
+                    ? entry.id : nil
+            }
+            #expect(focusedSpiritDeckIDs == expectedVisibleIDs)
+            #expect(controller.coordinator.graph.contains(BoardFocusID.promptScenarioSpecificSubmit))
+        }
+
+        expectOnlyFilteredSpiritDeckFocus()
+        controller.applySnapshot(projection, prompt: prompt)
+        #expect(controller.spiritDeckSearchText == firstCode)
+        expectOnlyFilteredSpiritDeckFocus()
+
+        let sameKeyPrompt = Self.promptWithServerFeedback(
+            "Transport refreshed while filtering.",
+            prompt: prompt
+        )
+        #expect(sameKeyPrompt.identity.promptKey == prompt.identity.promptKey)
+        #expect(sameKeyPrompt != prompt)
+        controller.applyPrompt(sameKeyPrompt)
+        #expect(controller.spiritDeckSearchText == firstCode)
+        expectOnlyFilteredSpiritDeckFocus()
+    }
+
     @Test("Standalone and spirit deck localization keys resolve in English and German")
     // swiftlint:disable:next function_body_length
     func localizedKeysResolve() {
@@ -326,6 +363,29 @@ struct StandaloneSettingsPromptTests {
             actionPhase: nil,
             actionChoiceIndex: nil,
             serverFeedback: nil
+        )
+    }
+
+    private static func promptWithServerFeedback(
+        _ serverFeedback: String,
+        prompt: BasicChoicePromptPresentation
+    ) -> BasicChoicePromptPresentation {
+        BasicChoicePromptPresentation(
+            identity: prompt.identity,
+            question: prompt.question,
+            semanticPresentation: prompt.semanticPresentation,
+            semanticLocaleIdentifier: prompt.semanticLocaleIdentifier,
+            cardCatalog: prompt.cardCatalog,
+            storyResolution: prompt.storyResolution,
+            choiceLabelResolutions: prompt.choiceLabelResolutions,
+            choiceFlavorResolutions: prompt.choiceFlavorResolutions,
+            promptLabelResolutions: prompt.promptLabelResolutions,
+            pickDestinyPrompt: prompt.pickDestinyPrompt,
+            readOnlyReason: prompt.readOnlyReason,
+            actionPhase: prompt.actionPhase,
+            actionChoiceIndex: prompt.actionChoiceIndex,
+            serverFeedback: serverFeedback,
+            catalogRetry: prompt.catalogRetry
         )
     }
 
