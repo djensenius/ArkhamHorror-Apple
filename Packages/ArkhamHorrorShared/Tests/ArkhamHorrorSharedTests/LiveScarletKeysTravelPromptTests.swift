@@ -73,8 +73,11 @@ struct LiveScarletKeysTravelPromptTests {
         let alexandria = try #require(travelPrompt.locations.first { $0.id == "Alexandria" })
         let venice = try #require(travelPrompt.locations.first { $0.id == "Venice" })
 
+        let arkhamTicketAction = try #require(arkham.actions.first { $0.kind == .travelWithTicket })
+
         #expect(arkham.travelTime == 2)
-        #expect(arkham.actions.contains { $0.kind == .travelWithTicket && $0.isActionable })
+        #expect(arkhamTicketAction.isActionable)
+        #expect(prompt.supportsCampaignSpecificSubmission(arkhamTicketAction.payload))
         #expect(alexandria.travelTime == 2)
         #expect(alexandria.actions.contains { $0.kind == .travelWithTicket && $0.isActionable })
         #expect(venice.travelTime == 1)
@@ -248,6 +251,52 @@ struct LiveScarletKeysTravelPromptTests {
         }
     }
 
+    @Test("Mismatched available list leaves Scarlet Keys prompt unsupported and sends nothing")
+    func mismatchedAvailableListUnsupportedAndSendsNothing() async throws {
+        let fixture = try Self.fixtureMutatingRawMap(
+            named: "roland-c09501-q145-embark-world-map"
+        ) { map in
+            map.removingAvailable("Alexandria")
+        }
+
+        try await Self.expectUnsupportedMismatchedPrompt(
+            fixture,
+            rejectedPayload: .array([.string("travel"), .string("Alexandria")])
+        )
+    }
+
+    @Test("Mismatched location set leaves Scarlet Keys prompt unsupported and sends nothing")
+    func mismatchedLocationSetUnsupportedAndSendsNothing() async throws {
+        let fixture = try Self.fixtureMutatingPresentationMap(
+            named: "roland-c09501-q145-embark-world-map"
+        ) { map in
+            try map.replacingLocationEntry(locationID: "Alexandria") { originalPair in
+                var pair = originalPair
+                pair[0] = .string("Atlantis")
+                return .array(pair)
+            }
+        }
+
+        try await Self.expectUnsupportedMismatchedPrompt(
+            fixture,
+            rejectedPayload: .array([.string("travelVia"), .string("Atlantis")])
+        )
+    }
+
+    @Test("Mismatched hasTicket leaves Scarlet Keys prompt unsupported and sends nothing")
+    func mismatchedHasTicketUnsupportedAndSendsNothing() async throws {
+        let fixture = try Self.fixtureMutatingPresentationMap(
+            named: "roland-c09501-q145-embark-world-map"
+        ) { map in
+            map.replacingHasTicket(true)
+        }
+
+        try await Self.expectUnsupportedMismatchedPrompt(
+            fixture,
+            rejectedPayload: .array([.string("travelWithTicket"), .string("Alexandria")])
+        )
+    }
+
     @Test("Travel action accessibility label includes unavailable location context")
     func travelActionAccessibilityLabelUsesUnavailableLocationContext() {
         #expect(ScarletKeysTravelPromptView.actionAccessibilityLabel(
@@ -285,6 +334,41 @@ struct LiveScarletKeysTravelPromptTests {
             }
             #expect(!strings.contains("\"scarletKeysTravel.currentLocation\" ="))
         }
+    }
+
+    private static func expectUnsupportedMismatchedPrompt(
+        _ fixture: ScarletKeysEmbarkFixture,
+        rejectedPayload: JSONValue
+    ) async throws {
+        let labelModel = try await syntheticLocationLabelModel(for: fixture)
+        let prompt = try prompt(for: fixture, labelModel: labelModel)
+
+        #expect(!prompt.isRenderableQuestion)
+        #expect(!prompt.canSubmit)
+        #expect(prompt.readOnlyReason == nil)
+        #expect(prompt.scarletKeysTravelPrompt == nil)
+        #expect(!prompt.supportsCampaignSpecificSubmission(rejectedPayload))
+
+        let gameID = GameID(UUID())
+        let ownerID = BoardTestFixtures.playerID("000000000001")
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        try installFixturePrompt(
+            fixture,
+            on: labelModel,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let installedPrompt = try #require(labelModel.basicChoicePresentation(for: gameID))
+        #expect(installedPrompt.readOnlyReason == .updateRequired)
+        let result = await labelModel.submitCampaignSpecificAnswer(
+            installedPrompt.identity,
+            contents: rejectedPayload
+        )
+        #expect(result == .readOnly)
+        let sentData = await connection.sentData
+        #expect(sentData.isEmpty)
     }
 
     private static func prompt(
@@ -445,7 +529,34 @@ struct LiveScarletKeysTravelPromptTests {
         }
     }
 
+    private static func fixtureMutatingRawMap(
+        named name: String,
+        transform: (JSONValue) throws -> JSONValue
+    ) throws -> ScarletKeysEmbarkFixture {
+        try fixtureMutatingRoot(named: name) { root in
+            try root.replacingScarletKeysEmbarkRawMap(transform)
+        }
+    }
+
+    private static func fixtureMutatingPresentationMap(
+        named name: String,
+        transform: (JSONValue) throws -> JSONValue
+    ) throws -> ScarletKeysEmbarkFixture {
+        try fixtureMutatingRoot(named: name) { root in
+            try root.replacingScarletKeysEmbarkPresentationMap(transform)
+        }
+    }
+
     private static func fixtureMutatingMap(
+        named name: String,
+        transform: (JSONValue) throws -> JSONValue
+    ) throws -> ScarletKeysEmbarkFixture {
+        try fixtureMutatingRoot(named: name) { root in
+            try root.replacingScarletKeysEmbarkMap(transform)
+        }
+    }
+
+    private static func fixtureMutatingRoot(
         named name: String,
         transform: (JSONValue) throws -> JSONValue
     ) throws -> ScarletKeysEmbarkFixture {
@@ -456,7 +567,7 @@ struct LiveScarletKeysTravelPromptTests {
         ))
         let data = try Data(contentsOf: url)
         let root = try ContractJSON.decode(JSONValue.self, from: data)
-        let mutated = try root.replacingScarletKeysEmbarkMap(transform)
+        let mutated = try transform(root)
         return try ContractJSON.decode(
             ScarletKeysEmbarkFixture.self,
             from: ContractJSON.encode(mutated)
@@ -560,16 +671,31 @@ private extension JSONValue {
     func replacingScarletKeysEmbarkMap(
         _ transform: (JSONValue) throws -> JSONValue
     ) throws -> JSONValue {
+        try replacingScarletKeysEmbarkRawMap(transform)
+            .replacingScarletKeysEmbarkPresentationMap(transform)
+    }
+
+    func replacingScarletKeysEmbarkRawMap(
+        _ transform: (JSONValue) throws -> JSONValue
+    ) throws -> JSONValue {
         guard case var .object(root) = self,
               case var .object(rawQuestion) = root["rawQuestion"],
               case var .array(rawContents) = rawQuestion["contents"],
-              rawContents.count == 2,
-              case var .object(questionPresentation) = root["questionPresentation"],
-              let presentationValue = questionPresentation["value"]
+              rawContents.count == 2
         else { throw TestFailure() }
         rawContents[1] = try transform(rawContents[1])
         rawQuestion["contents"] = .array(rawContents)
         root["rawQuestion"] = .object(rawQuestion)
+        return .object(root)
+    }
+
+    func replacingScarletKeysEmbarkPresentationMap(
+        _ transform: (JSONValue) throws -> JSONValue
+    ) throws -> JSONValue {
+        guard case var .object(root) = self,
+              case var .object(questionPresentation) = root["questionPresentation"],
+              let presentationValue = questionPresentation["value"]
+        else { throw TestFailure() }
         questionPresentation["value"] = try transform(presentationValue)
         root["questionPresentation"] = .object(questionPresentation)
         return .object(root)
@@ -588,6 +714,20 @@ private extension JSONValue {
     func replacingAvailable(_ locationIDs: [String]) -> JSONValue {
         guard case var .object(map) = self else { return self }
         map["available"] = .array(locationIDs.map(JSONValue.string))
+        return .object(map)
+    }
+
+    func removingAvailable(_ locationID: String) -> JSONValue {
+        guard case var .object(map) = self,
+              let available = map["available"]?.arrayValue
+        else { return self }
+        map["available"] = .array(available.filter { $0 != .string(locationID) })
+        return .object(map)
+    }
+
+    func replacingHasTicket(_ hasTicket: Bool) -> JSONValue {
+        guard case var .object(map) = self else { return self }
+        map["hasTicket"] = .bool(hasTicket)
         return .object(map)
     }
 

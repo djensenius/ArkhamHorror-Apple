@@ -64,10 +64,13 @@ extension ScarletKeysTravelPromptPresentation {
     ) -> Bool {
         guard case .campaignSpecific = presentation.answer,
               presentation.questionKind == .pickCampaignSpecific,
-              presentation.key == questionKey,
-              let value = presentation.value,
-              parseMap(value) != nil,
-              rawQuestionIsEmbark(rawQuestion)
+              let presentationKey = presentation.key,
+              let presentationValue = presentation.value,
+              let rawPayload = rawEmbarkPayload(rawQuestion),
+              rawPayload.key == questionKey,
+              presentationKey == rawPayload.key,
+              presentationValue == rawPayload.value,
+              parseMap(rawPayload.value) != nil
         else { return false }
         return true
     }
@@ -78,8 +81,8 @@ extension ScarletKeysTravelPromptPresentation {
     ) -> [(key: String, wireLabel: String)] {
         guard let presentation,
               supports(rawQuestion: rawQuestion, presentation: presentation),
-              let value = presentation.value,
-              let map = parseMap(value)
+              let rawPayload = rawEmbarkPayload(rawQuestion),
+              let map = parseMap(rawPayload.value)
         else { return [] }
         var requests: [(key: String, wireLabel: String)] = [
             ("scarletKeysTravel.travelTime", "$scarletKeys.travelTime"),
@@ -114,8 +117,8 @@ extension ScarletKeysTravelPromptPresentation {
         labelResolutions: [String: BasicChoiceLabelResolution]
     ) -> ScarletKeysTravelPromptPresentation? {
         guard supports(rawQuestion: rawQuestion, presentation: presentation),
-              let value = presentation.value,
-              let map = parseMap(value)
+              let rawPayload = rawEmbarkPayload(rawQuestion),
+              let map = parseMap(rawPayload.value)
         else { return nil }
 
         let isFinale = map.available.count == 1
@@ -252,14 +255,16 @@ extension ScarletKeysTravelPromptPresentation {
         return raw
     }
 
-    private static func rawQuestionIsEmbark(_ rawQuestion: JSONValue) -> Bool {
+    private static func rawEmbarkPayload(
+        _ rawQuestion: JSONValue
+    ) -> (key: String, value: JSONValue)? {
         guard let object = rawQuestion.objectValue,
               object["tag"]?.stringValue == "PickCampaignSpecific",
               let contents = object["contents"]?.arrayValue,
               contents.count == 2,
-              contents[0].stringValue == questionKey
-        else { return false }
-        return parseMap(contents[1]) != nil
+              let key = contents[0].stringValue
+        else { return nil }
+        return (key: key, value: contents[1])
     }
 
     private static func parseMap(_ value: JSONValue) -> MapData? {
