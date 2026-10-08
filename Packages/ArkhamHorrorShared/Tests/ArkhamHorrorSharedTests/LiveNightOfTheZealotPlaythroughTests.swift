@@ -3,6 +3,23 @@
 import Foundation
 import Testing
 
+func liveHarnessSelectableChoiceIndexes(
+    prompt: BasicChoicePromptPresentation,
+    projection: BoardProjection
+) -> [Int] {
+    prompt.displayOrderedChoices().compactMap { choice in
+        prompt.isChoiceActionable(choice, in: projection) ? choice.index : nil
+    }
+}
+
+private func liveHarnessDiagnosticBypassSelectableChoiceIndexes(
+    prompt: BasicChoicePromptPresentation
+) -> [Int] {
+    prompt.identity.questionPresentation?.choices.compactMap { choice in
+        choice.selectable ? choice.sourceIndex : nil
+    } ?? []
+}
+
 // Env-gated live-server smoke coverage. It is intentionally absent from normal CI
 // unless `ARKHAM_LIVE_SERVER_URL` is set; when enabled it drives the production
 // `AppModel` authentication, lifecycle, REST snapshot and WebSocket answer paths
@@ -1049,6 +1066,106 @@ struct LiveNightOfTheZealotPlaythroughTests {
         ) == 1)
     }
 
+    @Test("Live bot answer selection call site uses actionable choices")
+    @MainActor
+    func selectAnswerCallSiteFiltersUnresolvedLabelsBeforeStrategy() throws {
+        let prompt = try Self.semanticChoicePrompt(
+            questionVersion: 82,
+            choices: [
+                QuestionPresentation.Choice(
+                    sourceIndex: 0,
+                    kind: .advanceAct,
+                    label: QuestionPresentation.Label(kind: .embeddedI18n, text: "$blocked")
+                ),
+                QuestionPresentation.Choice(sourceIndex: 1, kind: .gainResource),
+            ]
+        )
+        let projection = Self.strategyProjection()
+
+        #expect(liveHarnessSelectableChoiceIndexes(prompt: prompt, projection: projection) == [1])
+        let selected = try Self.liveBot(diagnosticBypassUnsupported: false).selectAnswerForTesting(
+            prompt: prompt,
+            projection: projection,
+            repeatCount: 0,
+            skillTestPreparationCount: 0,
+            failedFightEnemyIDs: []
+        )
+        #expect(Self.selectedChoiceIndex(in: selected) == 1)
+        #expect(selected.chosenChoiceKind == QuestionPresentation.ChoiceKind.gainResource.rawValue)
+    }
+
+    @Test("Live bot sends source index when completion choices display last")
+    @MainActor
+    func selectAnswerSendsSourceIndexWhenDisplayOrderDiffers() throws {
+        let prompt = try Self.semanticChoicePrompt(
+            questionVersion: 83,
+            questionKind: .chooseOneAtATime,
+            choices: [
+                QuestionPresentation.Choice(
+                    sourceIndex: 0,
+                    kind: .endTurn,
+                    completesSelection: true
+                ),
+                QuestionPresentation.Choice(sourceIndex: 1, kind: .gainResource),
+                QuestionPresentation.Choice(sourceIndex: 2, kind: .drawCard),
+            ]
+        )
+        let projection = Self.strategyProjection()
+
+        #expect(prompt.choices.map(\.index) == [0, 1, 2])
+        #expect(prompt.displayOrderedChoices().map(\.index) == [1, 2, 0])
+        #expect(
+            liveHarnessSelectableChoiceIndexes(prompt: prompt, projection: projection) == [1, 2, 0]
+        )
+        let selected = try Self.liveBot(diagnosticBypassUnsupported: false).selectAnswerForTesting(
+            prompt: prompt,
+            projection: projection,
+            repeatCount: 0,
+            skillTestPreparationCount: 0,
+            failedFightEnemyIDs: []
+        )
+        #expect(Self.selectedChoiceIndex(in: selected) == 1)
+        #expect(selected.chosenChoiceKind == QuestionPresentation.ChoiceKind.gainResource.rawValue)
+    }
+
+    @Test("Diagnostic bypass falls back to semantic selectable choices only when enabled")
+    @MainActor
+    func diagnosticBypassUsesSemanticSelectableFallbackOnlyWhenEnabled() throws {
+        let prompt = try Self.semanticChoicePrompt(
+            questionVersion: 81,
+            choices: [QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .advanceAct,
+                label: QuestionPresentation.Label(kind: .embeddedI18n, text: "$blocked")
+            )]
+        )
+        let projection = Self.strategyProjection()
+
+        #expect(liveHarnessSelectableChoiceIndexes(prompt: prompt, projection: projection) == [])
+        do {
+            _ = try Self.liveBot(diagnosticBypassUnsupported: false).selectAnswerForTesting(
+                prompt: prompt,
+                projection: projection,
+                repeatCount: 0,
+                skillTestPreparationCount: 0,
+                failedFightEnemyIDs: []
+            )
+            Issue.record("Expected unresolved label selection to fail without diagnostic bypass")
+        } catch let error as PlaythroughError {
+            #expect(error.description == "no selectable choice at q81 / ChooseOne")
+        }
+
+        let selected = try Self.liveBot(diagnosticBypassUnsupported: true).selectAnswerForTesting(
+            prompt: prompt,
+            projection: projection,
+            repeatCount: 0,
+            skillTestPreparationCount: 0,
+            failedFightEnemyIDs: []
+        )
+        #expect(Self.selectedChoiceIndex(in: selected) == 0)
+        #expect(selected.note == "diagnostic bypass selectable choice 0")
+    }
+
     @Test("Live bot strategy favors payable act objectives")
     func botStrategyFavorsPayableActObjectives() {
         let projection = Self.strategyProjection(
@@ -1578,6 +1695,86 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: 0
         )
+    }
+
+    private static func selectedChoiceIndex(in answer: SelectedBotAnswer) -> Int? {
+        guard case let .choice(index) = answer.answer else { return nil }
+        return index
+    }
+
+    @MainActor
+    private static func liveBot(
+        diagnosticBypassUnsupported: Bool
+    ) throws -> LivePlaythroughBot {
+        let investigator = InvestigatorFixture.core[0]
+        return try LivePlaythroughBot(
+            model: AppModel(
+                profileStore: FakeServerProfileStore(),
+                tokenStore: FakeTokenStore(),
+                cleanupPendingStore: FakeTokenCleanupPendingStore()
+            ),
+            lifecycle: GameLifecycleService(),
+            profile: .hosted,
+            token: "test-token",
+            gameID: BoardTestFixtures.gameID(),
+            investigator: investigator,
+            deck: deckFixture(for: investigator),
+            replacementDecksByCode: [:],
+            trace: PlaythroughTraceRecorder(path: "/tmp/arkham-test-live-bot-trace.jsonl"),
+            diagnosticBypassUnsupported: diagnosticBypassUnsupported,
+            strategySeed: 0
+        )
+    }
+
+    private static func semanticChoicePrompt(
+        questionVersion: Int,
+        questionKind: QuestionPresentation.Kind = .chooseOne,
+        choices: [QuestionPresentation.Choice],
+        selection: QuestionPresentation.Selection? = nil
+    ) throws -> BasicChoicePromptPresentation {
+        let rawTag = rawQuestionTag(for: questionKind)
+        let rawQuestion: JSONValue = .object([
+            "tag": .string(rawTag),
+            "choices": .array(choices.map { _ in
+                .object(["tag": .string("Label"), "label": .string("$choice")])
+            }),
+        ])
+        let presentation = QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: questionVersion,
+            questionKind: questionKind,
+            choiceCount: choices.count,
+            choices: choices,
+            selection: selection
+        )
+        let bound = try presentation.bind(
+            to: rawQuestion,
+            expectedQuestionVersion: questionVersion
+        )
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: questionVersion,
+                rawQuestion: rawQuestion,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: .updateRequired(tag: rawTag),
+            semanticPresentation: bound,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private static func rawQuestionTag(for questionKind: QuestionPresentation.Kind) -> String {
+        switch questionKind {
+        case .chooseOneAtATime: "ChooseOneAtATime"
+        default: "ChooseOne"
+        }
     }
 
     private static func semanticPresentation(
@@ -2474,6 +2671,22 @@ private struct LivePlaythroughBot {
         return TraceServerFeedback(source: source, message: message)
     }
 
+    fileprivate func selectAnswerForTesting(
+        prompt: BasicChoicePromptPresentation,
+        projection: BoardProjection,
+        repeatCount: Int,
+        skillTestPreparationCount: Int,
+        failedFightEnemyIDs: Set<String>
+    ) throws -> SelectedBotAnswer {
+        try selectAnswer(
+            prompt: prompt,
+            projection: projection,
+            repeatCount: repeatCount,
+            skillTestPreparationCount: skillTestPreparationCount,
+            failedFightEnemyIDs: failedFightEnemyIDs
+        )
+    }
+
     // swiftlint:disable:next function_body_length
     private func selectAnswer(
         prompt: BasicChoicePromptPresentation,
@@ -2529,9 +2742,15 @@ private struct LivePlaythroughBot {
                 chosenChoiceKind: nil
             )
         }
-        let selectableIndexes = prompt.identity.questionPresentation?.choices.compactMap {
-            $0.selectable ? $0.sourceIndex : nil
-        } ?? []
+        let actionableIndexes = liveHarnessSelectableChoiceIndexes(
+            prompt: prompt,
+            projection: projection
+        )
+        let isDiagnosticBypassSelection = actionableIndexes.isEmpty
+            && canDiagnosticBypassUnsupported(prompt)
+        let selectableIndexes = isDiagnosticBypassSelection
+            ? liveHarnessDiagnosticBypassSelectableChoiceIndexes(prompt: prompt)
+            : actionableIndexes
         guard !selectableIndexes.isEmpty else {
             throw PlaythroughError.noSelectableChoice(
                 version: prompt.questionVersion,
@@ -2552,7 +2771,9 @@ private struct LivePlaythroughBot {
         }
         return SelectedBotAnswer(
             answer: .choice(selectedIndex),
-            note: "selectable choice \(selectedIndex)",
+            note: isDiagnosticBypassSelection
+                ? "diagnostic bypass selectable choice \(selectedIndex)"
+                : "selectable choice \(selectedIndex)",
             chosenChoiceKind: chosenChoice?.kind.rawValue,
             chosenEntityKind: chosenChoice?.entity?.kind.rawValue,
             chosenEntityID: chosenChoice?.entity?.id

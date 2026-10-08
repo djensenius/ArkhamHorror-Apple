@@ -1,0 +1,127 @@
+{
+  "expectedActionable": [
+    false,
+    true
+  ],
+  "expectedBotSelectableIndexes": [
+    1
+  ],
+  "expectedTitles": [
+    "Choice 1",
+    "The Amalgam attacks you"
+  ],
+  "questionPresentation": {
+    "answer": {
+      "kind": "singleChoice",
+      "tag": "Answer"
+    },
+    "choiceCount": 2,
+    "choices": [
+      {
+        "kind": "localizedLabel",
+        "label": {
+          "kind": "embeddedI18n",
+          "text": "$theInnsmouthConspiracy.thePitOfDespair.label.placeKeyOnTheAmalgam key=s:\"Red\""
+        },
+        "selectable": true,
+        "sourceIndex": 0
+      },
+      {
+        "kind": "localizedLabel",
+        "label": {
+          "kind": "embeddedI18n",
+          "text": "$theInnsmouthConspiracy.thePitOfDespair.label.theAmalgamAttacksYou"
+        },
+        "selectable": true,
+        "sourceIndex": 1
+      }
+    ],
+    "protocolVersion": 2,
+    "questionKind": "chooseOne",
+    "questionVersion": 76
+  },
+  "rawQuestion": {
+    "choices": [
+      {
+        "label": "$theInnsmouthConspiracy.thePitOfDespair.label.placeKeyOnTheAmalgam key=s:\"Red\"",
+        "messages": [
+          {
+            "contents": [
+              {
+                "contents": "e7a43e1b-21f8-4797-813e-e7c3b54cd60a",
+                "tag": "EnemyTarget"
+              },
+              {
+                "tag": "RedKey"
+              }
+            ],
+            "tag": "PlaceKey"
+          }
+        ],
+        "tag": "Label"
+      },
+      {
+        "label": "$theInnsmouthConspiracy.thePitOfDespair.label.theAmalgamAttacksYou",
+        "messages": [
+          {
+            "contents": {
+              "contents": {
+                "attackAfter": [],
+                "attackCanBeCanceled": true,
+                "attackCancelled": false,
+                "attackDamageReplacement": [],
+                "attackDamageStrategy": {
+                  "tag": "DamageAny"
+                },
+                "attackDamaged": [],
+                "attackDealDamage": true,
+                "attackDespiteExhausted": false,
+                "attackEnemy": "e7a43e1b-21f8-4797-813e-e7c3b54cd60a",
+                "attackExhaustsEnemy": false,
+                "attackOriginalTarget": {
+                  "contents": {
+                    "contents": "c01001",
+                    "tag": "InvestigatorTarget"
+                  },
+                  "tag": "SingleAttackTarget"
+                },
+                "attackSource": {
+                  "contents": [
+                    {
+                      "contents": "e7a43e1b-21f8-4797-813e-e7c3b54cd60a",
+                      "tag": "EnemySource"
+                    },
+                    2
+                  ],
+                  "tag": "AbilitySource"
+                },
+                "attackTarget": {
+                  "contents": {
+                    "contents": "c01001",
+                    "tag": "InvestigatorTarget"
+                  },
+                  "tag": "SingleAttackTarget"
+                },
+                "attackType": "RegularAttack"
+              },
+              "tag": "InitiateEnemyAttack_"
+            },
+            "tag": "EnemyAttackMessage"
+          }
+        ],
+        "tag": "Label"
+      }
+    ],
+    "tag": "ChooseOne"
+  },
+  "source": {
+    "campaignId": "07",
+    "investigatorCode": "01001",
+    "localeCatalogCommit": "f454ccb9fb789739c666a9cbd74d3fdc14a81fb9",
+    "questionVersion": 76,
+    "rawQuestionTag": "ChooseOne",
+    "scenario": "c07041",
+    "serverCommit": "c601a7a967e24628502976ae61a283f9ac0fe7ae",
+    "task": "task-1.20.8"
+  }
+}

@@ -3,9 +3,10 @@
 ## Contract fixtures
 
 Vendored byte-for-byte from:
-`djensenius/ArkhamHorror@8453314123831e9fb1e7817e34190671b73b8ae0`,
-schema revision `0.1.51`. Local validation can use the exact backend worktree as
-`PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
+`https://github.com/djensenius/ArkhamHorror@8453314123831e9fb1e7817e34190671b73b8ae0`,
+schema revision `0.1.51`. References below to `backend/` and `frontend/` paths are
+paths in that same ArkhamHorror commit. Local validation can use the exact backend
+worktree as `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
 These 106 fixture files, and only these 106, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
