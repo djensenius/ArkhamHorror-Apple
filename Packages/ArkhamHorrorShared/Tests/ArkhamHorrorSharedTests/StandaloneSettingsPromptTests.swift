@@ -187,12 +187,13 @@ struct StandaloneSettingsPromptTests {
 
     @Test("Standalone and spirit deck localization keys resolve in English and German")
     func localizedKeysResolve() throws {
-        let keys = [
+        let keys: [StaticString] = [
             "standaloneSettings.message",
             "standaloneSettings.submit",
             "standaloneSettings.submit.hint",
             "scenarioSpecific.spiritDeck.message",
             "scenarioSpecific.spiritDeck.counter",
+            "scenarioSpecific.spiritDeck.counter.format",
             "scenarioSpecific.spiritDeck.search",
             "scenarioSpecific.spiritDeck.submit",
             "scenarioSpecific.spiritDeck.submit.hint",
@@ -202,10 +203,14 @@ struct StandaloneSettingsPromptTests {
             "scenarioSpecific.spiritDeck.unselectable.hint",
             "scenarioSpecific.spiritDeck.selected.hint",
             "scenarioSpecific.spiritDeck.unselected.hint",
+            "scenarioSpecific.spiritDeck.accessibility.fixed",
+            "scenarioSpecific.spiritDeck.accessibility.selected",
+            "scenarioSpecific.spiritDeck.accessibility.notSelected",
+            "scenarioSpecific.spiritDeck.accessibility.toggle",
         ]
         for locale in ["en", "de"] {
             for key in keys {
-                let value = try Self.localizedModuleString(
+                let value = Self.localizedModuleString(
                     key,
                     fallback: "__missing__",
                     locale: locale
@@ -214,6 +219,29 @@ struct StandaloneSettingsPromptTests {
                 #expect(!value.isEmpty)
             }
         }
+        #expect(Self.localizedModuleString(
+            "scenarioSpecific.spiritDeck.counter.format",
+            fallback: "__missing__",
+            locale: "en",
+            arguments: [2, 9]
+        ) == "Selected cards: 2 of 9")
+        #expect(Self.localizedModuleString(
+            "scenarioSpecific.spiritDeck.counter.format",
+            fallback: "__missing__",
+            locale: "de",
+            arguments: [2, 9]
+        ) == "Ausgewählte Karten: 2 von 9")
+        #expect(Self.localizedModuleString(
+            "scenarioSpecific.spiritDeck.accessibility.fixed",
+            fallback: "__missing__",
+            locale: "de",
+            arguments: ["Card c01001", "c01001"]
+        ) == "Card c01001, c01001, fest vorgegeben")
+        #expect(Self.localizedModuleString(
+            "scenarioSpecific.spiritDeck.accessibility.notSelected",
+            fallback: "__missing__",
+            locale: "de"
+        ) == "nicht ausgewählt")
     }
 
     @Test("StandaloneSettingsAnswer empty settings encode exact server bytes")
@@ -363,24 +391,17 @@ struct StandaloneSettingsPromptTests {
     }
 
     private static func localizedModuleString(
-        _ key: String,
+        _ key: StaticString,
         fallback: String,
         locale: String,
-        fileID: StaticString = #filePath
-    ) throws -> String {
-        let url = URL(fileURLWithPath: "\(fileID)")
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appending(path: "Sources/ArkhamHorrorShared/Localization")
-            .appending(path: "\(locale).lproj/Localizable.strings")
-        let contents = try String(contentsOf: url, encoding: .utf8)
-        let prefix = "\"\(key)\" = \""
-        for line in contents.split(separator: "\n") {
-            guard line.hasPrefix(prefix), line.hasSuffix("\";") else { continue }
-            return String(line.dropFirst(prefix.count).dropLast(2))
-        }
-        return fallback
+        arguments: [CVarArg] = []
+    ) -> String {
+        BasicChoicePromptPresentation.semanticLocalized(
+            key,
+            value: String.LocalizationValue(fallback),
+            localeIdentifier: locale,
+            arguments: arguments
+        )
     }
 }
 

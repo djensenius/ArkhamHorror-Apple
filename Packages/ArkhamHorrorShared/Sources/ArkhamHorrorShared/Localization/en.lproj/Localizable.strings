@@ -301,6 +301,7 @@
 "standaloneSettings.submit.hint" = "Sends an empty standalone setup answer with version checking.";
 "scenarioSpecific.spiritDeck.message" = "Choose the cards for the spirit deck. Search is available; class filters from the web view are not shown here.";
 "scenarioSpecific.spiritDeck.counter" = "Selected cards";
+"scenarioSpecific.spiritDeck.counter.format" = "Selected cards: %d of %d";
 "scenarioSpecific.spiritDeck.search" = "Search cards";
 "scenarioSpecific.spiritDeck.submit" = "Confirm spirit deck";
 "scenarioSpecific.spiritDeck.submit.hint" = "Sends your selected spirit deck with version checking.";
@@ -310,3 +311,7 @@
 "scenarioSpecific.spiritDeck.unselectable.hint" = "This card cannot be selected because its prompt entry could not be resolved.";
 "scenarioSpecific.spiritDeck.selected.hint" = "Removes this card from your spirit deck selection.";
 "scenarioSpecific.spiritDeck.unselected.hint" = "Adds this card to your spirit deck selection.";
+"scenarioSpecific.spiritDeck.accessibility.fixed" = "%@, %@, fixed";
+"scenarioSpecific.spiritDeck.accessibility.selected" = "selected";
+"scenarioSpecific.spiritDeck.accessibility.notSelected" = "not selected";
+"scenarioSpecific.spiritDeck.accessibility.toggle" = "%@, %@, %@";

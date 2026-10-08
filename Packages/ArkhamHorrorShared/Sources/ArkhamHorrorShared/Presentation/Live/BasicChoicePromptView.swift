@@ -192,12 +192,11 @@ struct BasicChoicePromptView: View {
     private func scenarioSpecificPrompt(
         _ prompt: LaidToRestSpiritDeckPromptPresentation
     ) -> some View {
-        let counterTitle = presentation.semanticLocalized(
-            "scenarioSpecific.spiritDeck.counter",
-            value: "Selected cards"
+        let counterText = presentation.semanticLocalized(
+            "scenarioSpecific.spiritDeck.counter.format",
+            value: "Selected cards: %d of %d",
+            arguments: [prompt.selectedCount(controller.spiritDeckSelection), prompt.count]
         )
-        let counterText = "\(counterTitle): "
-            + "\(prompt.selectedCount(controller.spiritDeckSelection)) of \(prompt.count)"
         return VStack(alignment: .leading, spacing: 10) {
             Text(presentation.semanticLocalized(
                 "scenarioSpecific.spiritDeck.message",
@@ -322,13 +321,25 @@ struct BasicChoicePromptView: View {
         isFixed: Bool
     ) -> String {
         if isFixed {
-            return String(format: "%@, %@, fixed", title, subtitle)
+            return presentation.semanticLocalized(
+                "scenarioSpecific.spiritDeck.accessibility.fixed",
+                value: "%@, %@, fixed",
+                arguments: [title, subtitle]
+            )
         }
-        return String(
-            format: "%@, %@, %@",
-            title,
-            subtitle,
-            selected ? "selected" : "not selected"
+        let state = selected
+            ? presentation.semanticLocalized(
+                "scenarioSpecific.spiritDeck.accessibility.selected",
+                value: "selected"
+            )
+            : presentation.semanticLocalized(
+                "scenarioSpecific.spiritDeck.accessibility.notSelected",
+                value: "not selected"
+            )
+        return presentation.semanticLocalized(
+            "scenarioSpecific.spiritDeck.accessibility.toggle",
+            value: "%@, %@, %@",
+            arguments: [title, subtitle, state]
         )
     }
 
