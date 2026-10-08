@@ -214,7 +214,7 @@ struct StandaloneSettingsPromptTests {
     }
 
     @Test("Standalone and spirit deck localization keys resolve in English and German")
-    func localizedKeysResolve() throws {
+    func localizedKeysResolve() {
         let keys: [StaticString] = [
             "standaloneSettings.message",
             "standaloneSettings.submit",

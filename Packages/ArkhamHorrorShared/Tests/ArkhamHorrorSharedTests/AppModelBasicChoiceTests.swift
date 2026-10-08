@@ -69,7 +69,8 @@ extension AppModelLiveGameTests {
         game["questionPresentation"] = .object(presentations)
         game["scenarioSteps"] = .number(.integer(Int64(fixture.questionVersion)))
         if case var .object(mode)? = game["mode"],
-           case var .object(scenario)? = mode["That"] {
+           case var .object(scenario)? = mode["That"]
+        {
             scenario["id"] = .string(scenarioID)
             scenario["reference"] = .string(scenarioID)
             mode["That"] = .object(scenario)
