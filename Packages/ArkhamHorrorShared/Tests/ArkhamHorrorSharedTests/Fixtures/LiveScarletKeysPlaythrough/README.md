@@ -21,10 +21,16 @@ Source references:
   `frontend/src/arkham/components/StoryQuestion.vue:262-263` renders
   `TheScarletKeys/WorldMap.vue`; `frontend/src/arkham/components/TheScarletKeys/WorldMap.vue:168-194`
   sends `CampaignSpecificAnswer` payloads, while
-  `frontend/src/arkham/components/TheScarletKeys/WorldMapDrawerContent.vue:55-78`
+  `frontend/src/arkham/components/TheScarletKeys/WorldMapDrawerContent.vue:62-83`
   exposes travel, expedited-ticket travel, and travel-without-stopping actions.
 - Capture: no-bypass Apple live harness trace, game
   `db8a83c4-b73b-4c19-83b3-5747cf87299d`, scenario `c09501`, question version
   `145`, raw question tag `PickCampaignSpecific`.
 - `roland-c09501-q145-embark-world-map.json` SHA-256 after sorted-key
   reserialization: `afa1f258aea8e3a166c26a5e1c79a4f5156e3bc4835ceb1df1702c2cb83ad0e0`.
+- `roland-c09501-q145-embark-world-map-has-ticket.json` is derived from the
+  capture above by changing only `questionPresentation.value.hasTicket` to `true`,
+  so it covers expedited-ticket rendering for both green destinations (where web
+  adds 1 to raw travel time before comparing) and ordinary non-green destinations.
+  Its SHA-256 after sorted-key reserialization is
+  `3c5e87461efebef4619d886e45a417e0ffe23a0a94f3a923abdea469a206f98b`.

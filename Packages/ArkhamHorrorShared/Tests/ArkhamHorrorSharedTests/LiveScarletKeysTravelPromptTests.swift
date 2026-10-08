@@ -52,6 +52,36 @@ struct LiveScarletKeysTravelPromptTests {
         #expect(submitted == [firstAction.payload])
     }
 
+    @Test("Expedited tickets use displayed travel time for green and non-green locations")
+    func expeditedTicketsUseDisplayedTravelTime() async throws {
+        let fixture = try Self.fixture(named: "roland-c09501-q145-embark-world-map-has-ticket")
+        let model = try await Self.productionLabelModel(for: fixture)
+        let prompt = try Self.prompt(for: fixture, labelModel: model)
+        let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
+        let arkham = try #require(travelPrompt.locations.first { $0.id == "Arkham" })
+        let alexandria = try #require(travelPrompt.locations.first { $0.id == "Alexandria" })
+        let venice = try #require(travelPrompt.locations.first { $0.id == "Venice" })
+
+        #expect(arkham.travelTime == 2)
+        #expect(arkham.actions.contains { $0.kind == .travelWithTicket && $0.isActionable })
+        #expect(alexandria.travelTime == 2)
+        #expect(alexandria.actions.contains { $0.kind == .travelWithTicket && $0.isActionable })
+        #expect(venice.travelTime == 1)
+        #expect(!venice.actions.contains { $0.kind == .travelWithTicket })
+    }
+
+    @Test("Green locations with null travel display one time and no ticket")
+    func greenLocationWithNullTravelDisplaysOne() async throws {
+        let fixture = try Self.fixtureSettingTravel(locationID: "Venice", travel: .null)
+        let model = try await Self.productionLabelModel(for: fixture)
+        let prompt = try Self.prompt(for: fixture, labelModel: model)
+        let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
+        let venice = try #require(travelPrompt.locations.first { $0.id == "Venice" })
+
+        #expect(venice.travelTime == 1)
+        #expect(!venice.actions.contains { $0.kind == .travelWithTicket })
+    }
+
     @Test("Missing world-map labels keep travel actions unpressable")
     func missingLocationLabelDoesNotExposeRawLocationFallback() async throws {
         let fixture = try Self.fixture()
@@ -213,14 +243,38 @@ struct LiveScarletKeysTravelPromptTests {
     }
 
     private static func fixture() throws -> ScarletKeysEmbarkFixture {
+        try fixture(named: "roland-c09501-q145-embark-world-map")
+    }
+
+    private static func fixture(named name: String) throws -> ScarletKeysEmbarkFixture {
         let url = try #require(Bundle.module.url(
-            forResource: "roland-c09501-q145-embark-world-map",
+            forResource: name,
             withExtension: "json",
             subdirectory: "Fixtures/LiveScarletKeysPlaythrough"
         ))
         return try ContractJSON.decode(
             ScarletKeysEmbarkFixture.self,
             from: Data(contentsOf: url)
+        )
+    }
+
+    private static func fixtureSettingTravel(
+        locationID: String,
+        travel: JSONValue
+    ) throws -> ScarletKeysEmbarkFixture {
+        let url = try #require(Bundle.module.url(
+            forResource: "roland-c09501-q145-embark-world-map-has-ticket",
+            withExtension: "json",
+            subdirectory: "Fixtures/LiveScarletKeysPlaythrough"
+        ))
+        let data = try Data(contentsOf: url)
+        let root = try ContractJSON.decode(JSONValue.self, from: data)
+        let mutated = try root.replacingScarletKeysEmbarkMap { map in
+            try map.replacingTravel(locationID: locationID, travel: travel)
+        }
+        return try ContractJSON.decode(
+            ScarletKeysEmbarkFixture.self,
+            from: ContractJSON.encode(mutated)
         )
     }
 
@@ -251,6 +305,47 @@ struct LiveScarletKeysTravelPromptTests {
             .appending(path: "Sources/ArkhamHorrorShared/Localization")
             .appending(path: "\(locale).lproj/Localizable.strings")
         return try String(contentsOf: url, encoding: .utf8)
+    }
+}
+
+private extension JSONValue {
+    func replacingScarletKeysEmbarkMap(
+        _ transform: (JSONValue) throws -> JSONValue
+    ) throws -> JSONValue {
+        guard case var .object(root) = self,
+              case var .object(rawQuestion) = root["rawQuestion"],
+              case var .array(rawContents) = rawQuestion["contents"],
+              rawContents.count == 2,
+              case var .object(questionPresentation) = root["questionPresentation"],
+              let presentationValue = questionPresentation["value"]
+        else { throw TestFailure() }
+        rawContents[1] = try transform(rawContents[1])
+        rawQuestion["contents"] = .array(rawContents)
+        root["rawQuestion"] = .object(rawQuestion)
+        questionPresentation["value"] = try transform(presentationValue)
+        root["questionPresentation"] = .object(questionPresentation)
+        return .object(root)
+    }
+
+    func replacingTravel(locationID: String, travel: JSONValue) throws -> JSONValue {
+        guard case var .object(map) = self,
+              case var .array(locations) = map["locations"]
+        else { throw TestFailure() }
+        var didReplace = false
+        locations = locations.map { entry in
+            guard case var .array(pair) = entry,
+                  pair.count == 2,
+                  pair.first == .string(locationID),
+                  case var .object(detail) = pair[1]
+            else { return entry }
+            detail["travel"] = travel
+            pair[1] = .object(detail)
+            didReplace = true
+            return .array(pair)
+        }
+        guard didReplace else { throw TestFailure() }
+        map["locations"] = .array(locations)
+        return .object(map)
     }
 }
 

@@ -130,7 +130,7 @@ extension ScarletKeysTravelPromptPresentation {
                 isFinale: isFinale,
                 isAvailable: isAvailable,
                 hasTicket: map.hasTicket,
-                travelTime: rawTravelTime,
+                travelTime: travelTime,
                 labelResolutions: labelResolutions
             )
             return Location(
@@ -233,8 +233,10 @@ extension ScarletKeysTravelPromptPresentation {
     }
 
     private static func displayedTravelTime(_ raw: Int?, locationID: String) -> Int? {
-        guard let raw else { return nil }
-        return greenLocations.contains(locationID) ? raw + 1 : raw
+        if greenLocations.contains(locationID) {
+            return (raw ?? 0) + 1
+        }
+        return raw
     }
 
     private static func rawQuestionIsEmbark(_ rawQuestion: JSONValue) -> Bool {
