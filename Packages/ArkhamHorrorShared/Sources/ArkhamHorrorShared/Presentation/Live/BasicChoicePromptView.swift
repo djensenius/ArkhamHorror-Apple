@@ -1,5 +1,6 @@
 import SwiftUI
 
+// swiftlint:disable file_length
 // swiftlint:disable:next type_body_length
 struct BasicChoicePromptView: View {
     let presentation: BasicChoicePromptPresentation
@@ -83,6 +84,10 @@ struct BasicChoicePromptView: View {
                 amountAllocationPrompt(amountPrompt)
             } else if let exchangePrompt = presentation.exchangePrompt(in: controller.projection) {
                 exchangeAmountPrompt(exchangePrompt)
+            } else if presentation.isStandaloneSettingsPrompt {
+                standaloneSettingsPrompt
+            } else if presentation.scenarioSpecificDefaultAnswer != nil {
+                scenarioSpecificPrompt
             } else {
                 if isStoryPrompt {
                     story
@@ -143,6 +148,80 @@ struct BasicChoicePromptView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(isStoryPrompt ? "Active story prompt" : "Active choice prompt")
         .accessibilityIdentifier("liveGame.prompt")
+    }
+
+    private var standaloneSettingsPrompt: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(presentation.semanticLocalized(
+                "standaloneSettings.message",
+                value: "No scenario setup options are required. Continue to the deck prompt."
+            ))
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+
+            SemanticActionControl(
+                accessibilityLabel: Text(presentation.semanticLocalized(
+                    "standaloneSettings.submit",
+                    value: "Continue"
+                )),
+                semanticFocusID: BoardFocusID.promptStandaloneSettingsSubmit,
+                onOutcome: { controller.handle(focusID: $0, $1) },
+                label: {
+                    Label(
+                        presentation.semanticLocalized(
+                            "standaloneSettings.submit",
+                            value: "Continue"
+                        ),
+                        systemImage: "checkmark.circle.fill"
+                    )
+                }
+            )
+            .buttonStyle(.borderedProminent)
+            .focused(focusBinding, equals: BoardFocusID.promptStandaloneSettingsSubmit)
+            .disabled(!presentation.canSubmit)
+            .accessibilityHint(presentation.semanticLocalized(
+                "standaloneSettings.submit.hint",
+                value: "Sends an empty standalone setup answer with version checking."
+            ))
+            .accessibilityIdentifier("liveGame.prompt.standaloneSettings.submit")
+        }
+    }
+
+    private var scenarioSpecificPrompt: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(presentation.semanticLocalized(
+                "scenarioSpecific.message",
+                value: "This scenario setup can use a legal default selection."
+            ))
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+
+            SemanticActionControl(
+                accessibilityLabel: Text(presentation.semanticLocalized(
+                    "scenarioSpecific.submit",
+                    value: "Use default setup"
+                )),
+                semanticFocusID: BoardFocusID.promptScenarioSpecificSubmit,
+                onOutcome: { controller.handle(focusID: $0, $1) },
+                label: {
+                    Label(
+                        presentation.semanticLocalized(
+                            "scenarioSpecific.submit",
+                            value: "Use default setup"
+                        ),
+                        systemImage: "checkmark.circle.fill"
+                    )
+                }
+            )
+            .buttonStyle(.borderedProminent)
+            .focused(focusBinding, equals: BoardFocusID.promptScenarioSpecificSubmit)
+            .disabled(!presentation.canSubmit)
+            .accessibilityHint(presentation.semanticLocalized(
+                "scenarioSpecific.submit.hint",
+                value: "Sends the default scenario setup answer with version checking."
+            ))
+            .accessibilityIdentifier("liveGame.prompt.scenarioSpecific.submit")
+        }
     }
 
     private func pickDestinyUnavailableAnnouncement(for reason: StoryUnavailableReason) -> String {

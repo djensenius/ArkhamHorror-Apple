@@ -445,6 +445,8 @@ enum BasicChoiceSubmission: Sendable, Equatable {
     case continueCampaign(JSONValue)
     case pickDestiny([QuestionPresentation.DestinyDrawing])
     case campaignSpecific(JSONValue)
+    case standaloneSettings([JSONValue])
+    case scenarioSpecific(JSONValue)
     case deck(DeckID)
 
     var choiceIndex: Int? {

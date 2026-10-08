@@ -262,7 +262,7 @@ private func parseInvestigators(
     }
     let requestedCodes = commaSeparatedValues(value)
     guard !requestedCodes.isEmpty else { throw LiveHarnessConfigurationError.noInvestigatorCodes }
-    let fixturesByCode = Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
+    let fixturesByCode = Dictionary(uniqueKeysWithValues: InvestigatorFixture.replacementPool.map {
         ($0.code, $0)
     })
     return try requestedCodes.map { code in
@@ -577,6 +577,17 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 "ARKHAM_LIVE_SCENARIO_ID": "01104",
             ])
         }
+    }
+
+    @Test("Live harness accepts non-core required-investigator fixtures")
+    func requiredInvestigatorFixtureConfiguration() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([
+            "ARKHAM_LIVE_SCENARIO_ID": "90054",
+            "ARKHAM_LIVE_INVESTIGATOR_CODES": "02004",
+        ])
+
+        #expect(configuration.investigators.map(\.code) == ["02004"])
+        #expect(configuration.investigators.map(\.name) == ["Jim Culver"])
     }
 
     @Test("Live harness rejects invalid boolean settings")
@@ -2749,7 +2760,7 @@ private struct LivePlaythroughBot {
         )
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func selectAnswer(
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
@@ -2801,6 +2812,20 @@ private struct LivePlaythroughBot {
             return SelectedBotAnswer(
                 answer: .pickDestiny(pickDestinyBotSelection(drawings)),
                 note: "reverse half of the published tarot drawing",
+                chosenChoiceKind: nil
+            )
+        }
+        if prompt.isStandaloneSettingsPrompt {
+            return SelectedBotAnswer(
+                answer: .standaloneSettings([]),
+                note: "continue with empty standalone scenario settings",
+                chosenChoiceKind: nil
+            )
+        }
+        if let scenarioSpecificAnswer = prompt.scenarioSpecificDefaultAnswer {
+            return SelectedBotAnswer(
+                answer: .scenarioSpecific(scenarioSpecificAnswer),
+                note: "scenario-specific default setup",
                 chosenChoiceKind: nil
             )
         }
@@ -2876,6 +2901,10 @@ private struct LivePlaythroughBot {
             result = await model.submitPickDestinyAnswer(prompt.identity, drawings: drawings)
         case let .campaignSpecific(contents):
             result = await model.submitCampaignSpecificAnswer(prompt.identity, contents: contents)
+        case let .standaloneSettings(contents):
+            result = await model.submitStandaloneSettingsAnswer(prompt.identity, contents: contents)
+        case let .scenarioSpecific(contents):
+            result = await model.submitScenarioSpecificAnswer(prompt.identity, contents: contents)
         case let .savedDeck(deck):
             guard await model.chooseDeckForLivePrompt(deck, in: gameID) else {
                 throw PlaythroughError.submissionFailed("live deck choice was not accepted")
@@ -3190,6 +3219,8 @@ private enum BotAnswer: Sendable {
     case continueCampaign(JSONValue)
     case pickDestiny([QuestionPresentation.DestinyDrawing])
     case campaignSpecific(JSONValue)
+    case standaloneSettings([JSONValue])
+    case scenarioSpecific(JSONValue)
     case savedDeck(Deck)
     case replacementDeck(originalInvestigatorID: String, deck: Deck)
     case skipDeckUpgrade(investigatorID: String)
@@ -3237,6 +3268,8 @@ private extension BotAnswer {
         case .continueCampaign: "CampaignStepAnswer"
         case .pickDestiny: "PickDestinyAnswer"
         case .campaignSpecific: "CampaignSpecificAnswer"
+        case .standaloneSettings: "StandaloneSettingsAnswer"
+        case .scenarioSpecific: "ScenarioSpecificAnswer"
         case .savedDeck: "DeckAnswer"
         case .replacementDeck: "ReplacementDeck"
         case .skipDeckUpgrade: "SkipDeckUpgrade"
@@ -3304,6 +3337,16 @@ private extension BotAnswer {
             return try TraceSubmission(
                 kind: "CampaignSpecificAnswer",
                 payload: CampaignSpecificAnswer(contents: contents)
+            )
+        case let .standaloneSettings(contents):
+            return try TraceSubmission(
+                kind: "StandaloneSettingsAnswer",
+                payload: StandaloneSettingsAnswer(contents: contents)
+            )
+        case let .scenarioSpecific(contents):
+            return try TraceSubmission(
+                kind: "ScenarioSpecificAnswer",
+                payload: ScenarioSpecificAnswer(contents: contents)
             )
         case let .savedDeck(deck):
             return try TraceSubmission(
@@ -3803,6 +3846,7 @@ private func traceTokenCount(_ token: String, in tokens: [BoardTokenSummary]) ->
 }
 
 private extension TraceSelectedAnswer {
+    // swiftlint:disable:next cyclomatic_complexity
     init(_ answer: SelectedBotAnswer) {
         note = answer.note
         chosenChoiceKind = answer.chosenChoiceKind
@@ -3827,6 +3871,12 @@ private extension TraceSelectedAnswer {
             choiceIndex = nil
         case .campaignSpecific:
             answerKind = "CampaignSpecificAnswer"
+            choiceIndex = nil
+        case .standaloneSettings:
+            answerKind = "StandaloneSettingsAnswer"
+            choiceIndex = nil
+        case .scenarioSpecific:
+            answerKind = "ScenarioSpecificAnswer"
             choiceIndex = nil
         case .savedDeck:
             answerKind = "DeckAnswer"

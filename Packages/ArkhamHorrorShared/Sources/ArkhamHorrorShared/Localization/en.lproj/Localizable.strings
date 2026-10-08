@@ -296,3 +296,9 @@
 "games.multiplayer.solo" = "Solo";
 "games.multiplayer.withFriends" = "With Friends";
 "games.lobby.continue" = "Continue";
+"standaloneSettings.message" = "No scenario setup options are required. Continue to the deck prompt.";
+"standaloneSettings.submit" = "Continue";
+"standaloneSettings.submit.hint" = "Sends an empty standalone setup answer with version checking.";
+"scenarioSpecific.message" = "This scenario setup can use a legal default selection.";
+"scenarioSpecific.submit" = "Use default setup";
+"scenarioSpecific.submit.hint" = "Sends the default scenario setup answer with version checking.";

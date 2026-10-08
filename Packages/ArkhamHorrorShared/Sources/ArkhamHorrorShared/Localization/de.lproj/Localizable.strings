@@ -296,3 +296,9 @@
 "games.multiplayer.solo" = "Solo";
 "games.multiplayer.withFriends" = "Mit Freunden";
 "games.lobby.continue" = "Fortsetzen";
+"standaloneSettings.message" = "Es sind keine Szenario-Setup-Optionen erforderlich. Fahre mit der Deckabfrage fort.";
+"standaloneSettings.submit" = "Fortsetzen";
+"standaloneSettings.submit.hint" = "Sendet eine leere Standalone-Setup-Antwort mit Versionsprüfung.";
+"scenarioSpecific.message" = "Dieses Szenario-Setup kann eine legale Standardauswahl verwenden.";
+"scenarioSpecific.submit" = "Standard-Setup verwenden";
+"scenarioSpecific.submit.hint" = "Sendet die Standardantwort für das Szenario-Setup mit Versionsprüfung.";

@@ -21,16 +21,18 @@ extension QuestionPresentation {
         case payment
         case exchange
         case deck
+        case standaloneSettings
         case campaignSettings
         case pickDestiny
         case campaignSpecific
+        case scenarioSpecific
         case continuation
         case deferred
 
         var isRenderableInCurrentClient: Bool {
             switch self {
-            case .singleChoice, .amounts, .payment, .exchange, .pickDestiny,
-                 .campaignSpecific, .continuation:
+            case .singleChoice, .amounts, .payment, .exchange, .standaloneSettings,
+                 .pickDestiny, .campaignSpecific, .scenarioSpecific, .continuation:
                 true
             case .multiSelect, .deck, .campaignSettings, .deferred:
                 false
@@ -59,7 +61,11 @@ extension QuestionPresentation {
             .pickDestiny
         case .campaignSpecific:
             .campaignSpecific
-        case .standaloneSettings, .campaignSettings, .scenarioSpecific:
+        case .scenarioSpecific:
+            .scenarioSpecific
+        case .standaloneSettings:
+            .standaloneSettings
+        case .campaignSettings:
             .campaignSettings
         }
     }
@@ -77,12 +83,17 @@ extension BoundQuestionPresentation {
                 && !rawChoices.isEmpty
         case .amounts, .payment, .exchange, .continuation:
             rawChoices.isEmpty
+        case .standaloneSettings:
+            presentation.questionKind == .pickScenarioSettings && rawChoices.isEmpty
         case .multiSelect, .deck, .campaignSettings, .deferred:
             false
         case .pickDestiny:
             presentation.questionKind == .pickDestiny && presentation.drawings?.isEmpty == false
         case .campaignSpecific:
             presentation.questionKind == .pickCampaignSpecific
+                && rawChoices.isEmpty
+        case .scenarioSpecific:
+            presentation.questionKind == .pickScenarioSpecific
                 && rawChoices.isEmpty
         }
     }
@@ -243,9 +254,63 @@ extension BasicChoicePromptPresentation {
                 rawQuestion: rawQuestion,
                 presentation: presentation
             )
-        case .deck, .standaloneSettings, .campaignSettings, .scenarioSpecific:
+        case .standaloneSettings:
+            return presentation.questionKind == .pickScenarioSettings
+                && rawQuestion.hasTag("PickScenarioSettings")
+                && presentation.choiceCount == 0
+                && presentation.choices.isEmpty
+        case .scenarioSpecific:
+            return scenarioSpecificDefaultAnswer(
+                rawQuestion: rawQuestion,
+                presentation: presentation
+            ) != nil
+        case .deck, .campaignSettings:
             return false
         }
+    }
+
+    static func scenarioSpecificDefaultAnswer(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation
+    ) -> JSONValue? {
+        guard presentation.questionKind == .pickScenarioSpecific,
+              rawQuestion.hasTag("PickScenarioSpecific"),
+              presentation.key == "laidToRest.buildSpiritDeck",
+              case let .object(valueObject)? = presentation.value,
+              case let .array(cardCodeValues)? = valueObject["cardCodes"],
+              case let .number(countNumber)? = valueObject["count"],
+              countNumber.sign == .plus,
+              countNumber.exponent.description == "0",
+              let count = Int(countNumber.coefficient),
+              count > 0
+        else { return nil }
+        let selected = cardCodeValues.compactMap { value -> String? in
+            guard case let .string(cardCode) = value else { return nil }
+            return cardCode
+        }.prefix(count)
+        guard selected.count == count else { return nil }
+        return .array([
+            .string("laidToRest.buildSpiritDeck"),
+            .object(["cardCodes": .array(selected.map(JSONValue.string))]),
+        ])
+    }
+
+    var isStandaloneSettingsPrompt: Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              case .standaloneSettings = presentation.answer
+        else { return false }
+        return Self.supportsSemanticPrompt(
+            rawQuestion: identity.rawQuestion,
+            presentation: presentation
+        )
+    }
+
+    var scenarioSpecificDefaultAnswer: JSONValue? {
+        guard let presentation = semanticPresentation?.presentation else { return nil }
+        return Self.scenarioSpecificDefaultAnswer(
+            rawQuestion: identity.rawQuestion,
+            presentation: presentation
+        )
     }
 
     private func selectionHint(for presentation: QuestionPresentation) -> String? {

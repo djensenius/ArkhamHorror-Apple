@@ -26,6 +26,8 @@ struct BoardView: View {
     let onExchangeAmount: (Int) -> Void
     let onPickDestiny: ([QuestionPresentation.DestinyDrawing]) -> Void
     let onCampaignSpecific: (JSONValue) -> Void
+    let onStandaloneSettings: ([JSONValue]) -> Void
+    let onScenarioSpecific: (JSONValue) -> Void
     let onRetryChoice: () -> Void
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
@@ -56,6 +58,8 @@ struct BoardView: View {
         onExchangeAmount: @escaping (Int) -> Void = { _ in },
         onPickDestiny: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void = { _ in },
         onCampaignSpecific: @escaping (JSONValue) -> Void = { _ in },
+        onStandaloneSettings: @escaping ([JSONValue]) -> Void = { _ in },
+        onScenarioSpecific: @escaping (JSONValue) -> Void = { _ in },
         onRetryChoice: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
@@ -71,6 +75,8 @@ struct BoardView: View {
         self.onExchangeAmount = onExchangeAmount
         self.onPickDestiny = onPickDestiny
         self.onCampaignSpecific = onCampaignSpecific
+        self.onStandaloneSettings = onStandaloneSettings
+        self.onScenarioSpecific = onScenarioSpecific
         self.onRetryChoice = onRetryChoice
         self.onCatalogRetry = onCatalogRetry
     }
@@ -107,6 +113,8 @@ struct BoardView: View {
                     onExchangeAmount: onExchangeAmount,
                     onPickDestiny: onPickDestiny,
                     onCampaignSpecific: onCampaignSpecific,
+                    onStandaloneSettings: onStandaloneSettings,
+                    onScenarioSpecific: onScenarioSpecific,
                     onRetry: onRetryChoice,
                     onCatalogRetry: onCatalogRetry
                 )

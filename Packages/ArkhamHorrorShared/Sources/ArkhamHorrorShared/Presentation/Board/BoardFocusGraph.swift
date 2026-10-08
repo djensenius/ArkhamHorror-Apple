@@ -69,6 +69,10 @@ enum BoardFocusID {
     }
 
     static let promptPickDestinySubmit: SemanticFocusID = "board.prompt.pickDestiny.submit"
+    static let promptStandaloneSettingsSubmit: SemanticFocusID =
+        "board.prompt.standaloneSettings.submit"
+    static let promptScenarioSpecificSubmit: SemanticFocusID =
+        "board.prompt.scenarioSpecific.submit"
 
     static func promptScarletKeysTravelAction(
         _ action: ScarletKeysTravelPromptPresentation.Action
@@ -113,6 +117,7 @@ enum BoardFocusID {
     }
 }
 
+// swiftlint:disable type_body_length
 /// Builds a deterministic ``FocusGraph`` from a ``BoardProjection`` and its matching
 /// ``BoardLayout``. Every edge is either declared from real topology (ordinary locations,
 /// via ``BoardLayout/neighbors``) or a simple top-to-bottom/left-to-right chain within a
@@ -264,6 +269,12 @@ enum BoardFocusGraphBuilder {
             return pickDestinyPrompt.rows.indices.map(BoardFocusID.promptPickDestinyRow)
                 + [BoardFocusID.promptPickDestinySubmit]
         }
+        if prompt.isStandaloneSettingsPrompt {
+            return [BoardFocusID.promptStandaloneSettingsSubmit]
+        }
+        if prompt.scenarioSpecificDefaultAnswer != nil {
+            return [BoardFocusID.promptScenarioSpecificSubmit]
+        }
         if let travelPrompt = prompt.scarletKeysTravelPrompt {
             return travelPrompt.actions
                 .filter(\.isActionable)
@@ -414,3 +425,5 @@ enum BoardFocusGraphBuilder {
         zoneEntryPoints[zone] = ids[0]
     }
 }
+
+// swiftlint:enable type_body_length

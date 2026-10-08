@@ -199,6 +199,20 @@ extension AppModel {
         await sendBasicChoice(identity, submission: .campaignSpecific(contents), isRetry: false)
     }
 
+    func submitStandaloneSettingsAnswer(
+        _ identity: BasicChoicePromptIdentity,
+        contents: [JSONValue]
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .standaloneSettings(contents), isRetry: false)
+    }
+
+    func submitScenarioSpecificAnswer(
+        _ identity: BasicChoicePromptIdentity,
+        contents: JSONValue
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .scenarioSpecific(contents), isRetry: false)
+    }
+
     func retryBasicChoice(_ identity: BasicChoicePromptIdentity) async -> BasicChoiceSubmitResult {
         guard let record = basicChoiceActions[identity.gameID],
               record.identity == identity,
@@ -364,6 +378,7 @@ extension AppModel {
         return true
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private func encodeSubmission(
         _ submission: BasicChoiceSubmission,
         identity: BasicChoicePromptIdentity
@@ -406,6 +421,10 @@ extension AppModel {
             return try ContractJSON.encode(PickDestinyAnswer(contents: drawings))
         case let .campaignSpecific(contents):
             return try ContractJSON.encode(CampaignSpecificAnswer(contents: contents))
+        case let .standaloneSettings(contents):
+            return try ContractJSON.encode(StandaloneSettingsAnswer(contents: contents))
+        case let .scenarioSpecific(contents):
+            return try ContractJSON.encode(ScenarioSpecificAnswer(contents: contents))
         case let .deck(deckID):
             return try ContractJSON.encode(DeckAnswer(
                 deckId: deckID,
@@ -614,7 +633,7 @@ private extension BasicChoiceSubmission {
     var needsClientActionabilityCheck: Bool {
         switch self {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign,
-             .pickDestiny, .campaignSpecific:
+             .pickDestiny, .campaignSpecific, .standaloneSettings, .scenarioSpecific:
             true
         case .deck:
             false
@@ -623,7 +642,8 @@ private extension BasicChoiceSubmission {
 
     var acceptsUnversionedRejection: Bool {
         switch self {
-        case .exchangeAmount, .continueCampaign, .pickDestiny, .campaignSpecific, .deck:
+        case .exchangeAmount, .continueCampaign, .pickDestiny, .campaignSpecific,
+             .standaloneSettings, .scenarioSpecific, .deck:
             true
         case .singleChoice, .amounts, .paymentAmounts:
             false
@@ -661,6 +681,10 @@ extension BasicChoicePromptPresentation {
             return supportsPickDestinySubmission(drawings)
         case let .campaignSpecific(contents):
             return supportsCampaignSpecificSubmission(contents)
+        case let .standaloneSettings(contents):
+            return supportsStandaloneSettingsSubmission(contents)
+        case let .scenarioSpecific(contents):
+            return supportsScenarioSpecificSubmission(contents)
         case .deck:
             return true
         }
@@ -703,6 +727,23 @@ extension BasicChoicePromptPresentation {
             rawQuestion: identity.rawQuestion,
             presentation: presentation,
             labelResolutions: promptLabelResolutions
+        )
+    }
+
+    func supportsScenarioSpecificSubmission(_ contents: JSONValue) -> Bool {
+        guard let expected = scenarioSpecificDefaultAnswer else { return false }
+        return contents == expected
+    }
+
+    func supportsStandaloneSettingsSubmission(_ contents: [JSONValue]) -> Bool {
+        guard contents.isEmpty,
+              let presentation = semanticPresentation?.presentation,
+              presentation.questionKind == .pickScenarioSettings,
+              case .standaloneSettings = presentation.answer
+        else { return false }
+        return Self.supportsSemanticPrompt(
+            rawQuestion: identity.rawQuestion,
+            presentation: presentation
         )
     }
 

@@ -51,6 +51,8 @@ final class BoardCommandController {
     private var onExchangeAmount: (Int) -> Void
     private var onPickDestiny: ([QuestionPresentation.DestinyDrawing]) -> Void
     private var onCampaignSpecific: (JSONValue) -> Void
+    private var onStandaloneSettings: ([JSONValue]) -> Void
+    private var onScenarioSpecific: (JSONValue) -> Void
     private var onRetry: () -> Void
     private var onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
     private(set) var amountDraft: [String: Int] = [:]
@@ -74,6 +76,8 @@ final class BoardCommandController {
         onExchangeAmount: @escaping (Int) -> Void = { _ in },
         onPickDestiny: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void = { _ in },
         onCampaignSpecific: @escaping (JSONValue) -> Void = { _ in },
+        onStandaloneSettings: @escaping ([JSONValue]) -> Void = { _ in },
+        onScenarioSpecific: @escaping (JSONValue) -> Void = { _ in },
         onRetry: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
@@ -89,6 +93,8 @@ final class BoardCommandController {
         self.onExchangeAmount = onExchangeAmount
         self.onPickDestiny = onPickDestiny
         self.onCampaignSpecific = onCampaignSpecific
+        self.onStandaloneSettings = onStandaloneSettings
+        self.onScenarioSpecific = onScenarioSpecific
         self.onRetry = onRetry
         self.onCatalogRetry = onCatalogRetry
         let layout = BoardLayoutBuilder.makeLayout(
@@ -312,6 +318,12 @@ final class BoardCommandController {
         }
         if activateFocusedScarletKeysTravelAction() {
             return true
+        }
+        if coordinator.currentFocus == BoardFocusID.promptStandaloneSettingsSubmit {
+            return activateStandaloneSettingsSubmit()
+        }
+        if coordinator.currentFocus == BoardFocusID.promptScenarioSpecificSubmit {
+            return activateScenarioSpecificSubmit()
         }
         if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
             return activatePromptCatalogRetry()
@@ -559,6 +571,27 @@ final class BoardCommandController {
               prompt.supportsPickDestinySubmission(drawings)
         else { return false }
         onPickDestiny(drawings)
+        return true
+    }
+
+    @discardableResult
+    func activateStandaloneSettingsSubmit(_ contents: [JSONValue] = []) -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              prompt.supportsStandaloneSettingsSubmission(contents)
+        else { return false }
+        onStandaloneSettings(contents)
+        return true
+    }
+
+    @discardableResult
+    func activateScenarioSpecificSubmit() -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              let contents = prompt.scenarioSpecificDefaultAnswer,
+              prompt.supportsScenarioSpecificSubmission(contents)
+        else { return false }
+        onScenarioSpecific(contents)
         return true
     }
 
@@ -935,6 +968,14 @@ extension BoardCommandController {
 
     func updateCampaignSpecificHandler(_ handler: @escaping (JSONValue) -> Void) {
         onCampaignSpecific = handler
+    }
+
+    func updateStandaloneSettingsHandler(_ handler: @escaping ([JSONValue]) -> Void) {
+        onStandaloneSettings = handler
+    }
+
+    func updateScenarioSpecificHandler(_ handler: @escaping (JSONValue) -> Void) {
+        onScenarioSpecific = handler
     }
 
     func updateRetryHandler(_ handler: @escaping () -> Void) {

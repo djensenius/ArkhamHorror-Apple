@@ -209,6 +209,14 @@ struct LiveGameView: View {
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.submitCampaignSpecificAnswer(identity, contents: contents) }
             },
+            onStandaloneSettings: { contents in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitStandaloneSettingsAnswer(identity, contents: contents) }
+            },
+            onScenarioSpecific: { contents in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitScenarioSpecificAnswer(identity, contents: contents) }
+            },
             onRetryChoice: {
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.retryBasicChoice(identity) }
