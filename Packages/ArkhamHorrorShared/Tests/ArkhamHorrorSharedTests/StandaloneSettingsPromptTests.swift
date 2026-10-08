@@ -230,11 +230,13 @@ struct StandaloneSettingsPromptTests {
 
         func expectOnlyFilteredSpiritDeckFocus() {
             let focusedSpiritDeckIDs = spiritDeck.displayEntries.compactMap { entry in
-                controller.coordinator.graph.contains(BoardFocusID.promptScenarioSpecificCard(entry.id))
-                    ? entry.id : nil
+                let focusID = BoardFocusID.promptScenarioSpecificCard(entry.id)
+                return controller.coordinator.graph.contains(focusID) ? entry.id : nil
             }
             #expect(focusedSpiritDeckIDs == expectedVisibleIDs)
-            #expect(controller.coordinator.graph.contains(BoardFocusID.promptScenarioSpecificSubmit))
+            #expect(controller.coordinator.graph.contains(
+                BoardFocusID.promptScenarioSpecificSubmit
+            ))
         }
 
         expectOnlyFilteredSpiritDeckFocus()
