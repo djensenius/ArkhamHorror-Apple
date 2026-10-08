@@ -99,7 +99,7 @@ struct ScarletKeysTravelPromptView: View {
             "Action text unavailable"
         )
         let control = SemanticActionControl(
-            accessibilityLabel: Text(accessibilityLabel(
+            accessibilityLabel: Text(Self.actionAccessibilityLabel(
                 title: title,
                 locationTitle: action.locationTitle
             )),
@@ -124,9 +124,12 @@ struct ScarletKeysTravelPromptView: View {
         }
     }
 
-    private func accessibilityLabel(title: String, locationTitle: String?) -> String {
-        guard let locationTitle else { return title }
-        return "\(title): \(locationTitle)"
+    static func actionAccessibilityLabel(title: String, locationTitle: String?) -> String {
+        let context = locationTitle ?? scarletKeysTravelLocalized(
+            "scarletKeysTravel.locationTextUnavailable",
+            "Location text unavailable"
+        )
+        return "\(title): \(context)"
     }
 
     private func systemImage(for kind: ScarletKeysTravelPromptPresentation.Action.Kind) -> String {

@@ -248,6 +248,18 @@ struct LiveScarletKeysTravelPromptTests {
         }
     }
 
+    @Test("Travel action accessibility label includes unavailable location context")
+    func travelActionAccessibilityLabelUsesUnavailableLocationContext() {
+        #expect(ScarletKeysTravelPromptView.actionAccessibilityLabel(
+            title: "Travel here",
+            locationTitle: nil
+        ) == "Travel here: Location text unavailable")
+        #expect(ScarletKeysTravelPromptView.actionAccessibilityLabel(
+            title: "Travel here",
+            locationTitle: "Alexandria"
+        ) == "Travel here: Alexandria")
+    }
+
     @Test("Apple-only Scarlet Keys travel strings exist in English and German bundles")
     func appleOnlyStringsResolveFromModuleBundle() throws {
         let keys = [
