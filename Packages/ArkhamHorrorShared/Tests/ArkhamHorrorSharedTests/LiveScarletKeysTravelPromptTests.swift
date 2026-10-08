@@ -1,4 +1,4 @@
-// swiftlint:disable file_length type_body_length function_body_length
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -9,6 +9,7 @@ private struct ScarletKeysPreferredLanguages: PreferredLanguagesProviding {
 
 @MainActor
 @Suite("Live Scarlet Keys travel prompt")
+// swiftlint:disable:next type_body_length
 struct LiveScarletKeysTravelPromptTests {
     @Test("Captured embark world-map prompt renders and encodes CampaignSpecificAnswer bytes")
     func capturedEmbarkPromptRendersAndEncodesTravelAnswer() async throws {
@@ -158,6 +159,7 @@ struct LiveScarletKeysTravelPromptTests {
     }
 
     @Test("AppModel sends exact Scarlet Keys travel bytes and rejects stale or forged payloads")
+    // swiftlint:disable:next function_body_length
     func appModelSendPathSendsExactBytesAndRejectsInvalidPayloads() async throws {
         let fixture = try Self.fixture()
         let model = try await Self.syntheticLocationLabelModel(for: fixture)
