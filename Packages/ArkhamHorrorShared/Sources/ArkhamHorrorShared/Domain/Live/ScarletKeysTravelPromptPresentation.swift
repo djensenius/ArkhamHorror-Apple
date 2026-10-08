@@ -121,12 +121,12 @@ extension ScarletKeysTravelPromptPresentation {
               let map = parseMap(rawPayload.value)
         else { return nil }
 
-        let isFinale = map.available.count == 1
+        let isFinale = map.availableLocationIDs.count == 1
         let currentLocationTitle = labelResolutions["scarletKeys.youAreCurrentlyHere"]?.title
         let lockedTitle = labelResolutions["scarletKeys.locationLocked"]?.title
         let travelTimeLabel = labelResolutions["scarletKeysTravel.travelTime"]?.title
         let locations = map.locationIDs.map { locationID in
-            let isAvailable = map.available.contains(locationID)
+            let isAvailable = map.availableLocationIDSet.contains(locationID)
             let isCurrent = locationID == map.current
             let rawTravelTime = map.travelTimes[locationID]
             let travelTime = isCurrent
@@ -271,7 +271,8 @@ extension ScarletKeysTravelPromptPresentation {
         guard let object = value.objectValue,
               let current = object["current"]?.stringValue,
               let hasTicket = object["hasTicket"]?.booleanValue,
-              let available = object["available"]?.arrayValue?.compactMap(\.stringValue),
+              let rawAvailable = object["available"]?.arrayValue,
+              let available = stringArray(rawAvailable),
               let locations = object["locations"]?.arrayValue
         else { return nil }
         var locationIDs: [String] = []
@@ -298,10 +299,20 @@ extension ScarletKeysTravelPromptPresentation {
         return MapData(
             current: current,
             hasTicket: hasTicket,
-            available: Set(available),
+            availableLocationIDs: available,
+            availableLocationIDSet: Set(available),
             locationIDs: locationIDs,
             travelTimes: travelTimes
         )
+    }
+
+    private static func stringArray(_ values: [JSONValue]) -> [String]? {
+        var strings: [String] = []
+        for value in values {
+            guard let string = value.stringValue else { return nil }
+            strings.append(string)
+        }
+        return strings
     }
 
     private static func locationIDHasSubtitle(_ locationID: String) -> Bool {
@@ -320,7 +331,8 @@ extension ScarletKeysTravelPromptPresentation {
     private struct MapData: Sendable, Equatable {
         let current: String
         let hasTicket: Bool
-        let available: Set<String>
+        let availableLocationIDs: [String]
+        let availableLocationIDSet: Set<String>
         let locationIDs: [String]
         let travelTimes: [String: Int]
     }
