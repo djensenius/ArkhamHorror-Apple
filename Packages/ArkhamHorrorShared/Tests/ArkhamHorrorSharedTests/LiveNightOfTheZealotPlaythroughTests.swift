@@ -1530,6 +1530,34 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(report.selectionCounts == ["advanceAct": 1])
     }
 
+    @Test("Live coverage table escapes pipe characters once")
+    func playthroughCoverageTableEscapesPipesOnce() {
+        let report = PlaythroughCoverageReport(
+            scenarioOutcomes: ["c01104": "resolution {\"text\":\"A|B\",\"tag\":\"Resolution\"}"],
+            actAdvanceSelectionsByScenario: [:],
+            agendaAdvanceSelectionsByScenario: [:],
+            rawQuestionKindsSeen: [],
+            presentationKindsSeen: [],
+            choiceKindsSeen: [],
+            selectionCounts: [:]
+        )
+        let result = PlaythroughResult(
+            investigator: InvestigatorFixture.core[0],
+            status: .passed,
+            scenarioOutcomes: report.scenarioOutcomes,
+            promptFailure: nil,
+            finalGameID: nil,
+            coverage: report
+        )
+        var lines: [String] = []
+
+        appendCoverageReport(to: &lines, results: [result])
+
+        let row = lines.last ?? ""
+        #expect(row.contains("A\\|B"))
+        #expect(!row.contains("A\\\\|B"))
+    }
+
     @Test("Live harness rejects unknown investigators and ultimatum values")
     func unknownInvestigatorAndUltimatumAreConfigurationErrors() {
         #expect(throws: LiveHarnessConfigurationError.unknownInvestigator("99999")) {
@@ -3627,7 +3655,6 @@ private func compactResolutionText(_ outcome: String) -> String {
     }
     return outcome
         .replacingOccurrences(of: "resolution ", with: "")
-        .replacingOccurrences(of: "|", with: "\\|")
 }
 
 private func listSummary(_ values: [String]) -> String {
