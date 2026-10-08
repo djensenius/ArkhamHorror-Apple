@@ -68,13 +68,13 @@ extension AppModelLiveGameTests {
         game["question"] = .object(questions)
         game["questionPresentation"] = .object(presentations)
         game["scenarioSteps"] = .number(.integer(Int64(fixture.questionVersion)))
-        if case var .object(mode)? = game["mode"],
-           case var .object(scenario)? = mode["That"]
-        {
-            scenario["id"] = .string(scenarioID)
-            scenario["reference"] = .string(scenarioID)
-            mode["That"] = .object(scenario)
-            game["mode"] = .object(mode)
+        if case var .object(mode)? = game["mode"] {
+            if case var .object(scenario)? = mode["That"] {
+                scenario["id"] = .string(scenarioID)
+                scenario["reference"] = .string(scenarioID)
+                mode["That"] = .object(scenario)
+                game["mode"] = .object(mode)
+            }
         }
         root["game"] = .object(game)
         return try ContractJSON.decode(

@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -69,7 +70,8 @@ struct StandaloneSettingsPromptTests {
     @Test("Laid to Rest rejects non-subset, wrong count, duplicates, bad key and bad question kind")
     func laidToRestSubmissionNegatives() throws {
         let prompt = try Self.laidToRestPromptWithCatalog()
-        let valid = try Array(#require(prompt.laidToRestSpiritDeckPrompt).rawStringEntryCodes.prefix(9))
+        let spiritDeck = try #require(prompt.laidToRestSpiritDeckPrompt)
+        let valid = Array(spiritDeck.rawStringEntryCodes.prefix(9))
         let validAnswer: JSONValue = .array([
             .string(LaidToRestSpiritDeckPromptPresentation.key),
             .object(["cardCodes": .array(valid.map(JSONValue.string))]),
@@ -122,7 +124,8 @@ struct StandaloneSettingsPromptTests {
 
     @Test("Laid to Rest cards missing from the catalog stay selectable by code")
     func laidToRestMissingCatalogCardStaysSelectableByCode() throws {
-        let allCodes = try Self.cardCodes(in: Self.fixture(named: "pick-scenario-specific-laid-to-rest").rawQuestion)
+        let fixture = try Self.fixture(named: "pick-scenario-specific-laid-to-rest")
+        let allCodes = try Self.cardCodes(in: fixture.rawQuestion)
         let missingCode = try #require(allCodes.first)
         let prompt = try Self.laidToRestPromptWithCatalog(
             cardCatalog: Self.cardCatalog(codes: Array(allCodes.dropFirst()))
@@ -214,6 +217,7 @@ struct StandaloneSettingsPromptTests {
     }
 
     @Test("Standalone and spirit deck localization keys resolve in English and German")
+    // swiftlint:disable:next function_body_length
     func localizedKeysResolve() {
         let keys: [StaticString] = [
             "standaloneSettings.message",
