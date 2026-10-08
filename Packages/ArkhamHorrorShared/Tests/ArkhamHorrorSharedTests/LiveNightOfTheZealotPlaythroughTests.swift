@@ -1140,6 +1140,34 @@ struct LiveNightOfTheZealotPlaythroughTests {
         ) == 1)
     }
 
+    @Test("Live bot strategy does not double-count trauma with damage tokens")
+    func botStrategyDoesNotDoubleCountPhysicalTraumaWithDamageTokens() {
+        let investigatorEntity = QuestionPresentation.Entity(kind: .investigator, id: "c01001")
+        let assetEntity = QuestionPresentation.Entity(
+            kind: .asset,
+            id: BoardTestFixtures.assetID("000000000905").codingKey.stringValue
+        )
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .assignDamage,
+                entity: investigatorEntity
+            ),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .assignDamage, entity: assetEntity),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(
+                investigatorTokens: [TokenCount(token: "Damage", count: 7)],
+                physicalTrauma: 1
+            ),
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 0)
+    }
+
     @Test("Live bot strategy ignores non-selectable objective choices")
     func botStrategyNeverReturnsNonSelectableIndex() {
         let projection = Self.strategyProjection()
@@ -1918,7 +1946,9 @@ struct LiveNightOfTheZealotPlaythroughTests {
         currentLocationRevealed: Bool = true,
         investigatorTokens: [TokenCount] = [],
         engagedEnemyID: EnemyID? = nil,
-        actAdvanceCost: RuntimeCost? = nil
+        actAdvanceCost: RuntimeCost? = nil,
+        physicalTrauma: Int = 0,
+        mentalTrauma: Int = 0
     ) -> BoardProjection {
         let investigatorID = BoardTestFixtures.investigatorID("c01001")
         let currentLocationID = BoardTestFixtures.locationID("000000000901")
@@ -1927,6 +1957,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
         let actID = BoardTestFixtures.actID("c01108")
         let investigator = BoardTestFixtures.investigator(
             id: investigatorID,
+            physicalTrauma: physicalTrauma,
+            mentalTrauma: mentalTrauma,
             engagedEnemies: engagedEnemyID.map { [$0] } ?? [],
             tokens: investigatorTokens,
             playerID: BoardTestFixtures.playerID()
@@ -4788,14 +4820,12 @@ private struct BotStrategyContext {
 
     private func remainingHealth(for investigator: BoardInvestigatorNode) -> Int {
         investigator.health
-            - investigator.physicalTrauma
             - investigator.assignedHealthDamage
             - tokenCount("Damage", in: investigator.tokenCounts)
     }
 
     private func remainingSanity(for investigator: BoardInvestigatorNode) -> Int {
         investigator.sanity
-            - investigator.mentalTrauma
             - investigator.assignedSanityDamage
             - tokenCount("Horror", in: investigator.tokenCounts)
     }
