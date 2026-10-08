@@ -64,6 +64,11 @@
 "pickDestiny.names.loading" = "Tarotnamen werden geladen …";
 "pickDestiny.names.unavailable" = "Die Tarotnamen für diese Legung sind derzeit nicht verfügbar.";
 
+"scarletKeysTravel.instructions" = "Wähle ein Ziel auf der Weltkarte.";
+"scarletKeysTravel.locationTextUnavailable" = "Ortstext nicht verfügbar";
+"scarletKeysTravel.actionTextUnavailable" = "Aktionstext nicht verfügbar";
+"scarletKeysTravel.action.hint" = "Sendet diese Reiseauswahl.";
+
 "board.linkedChoiceMenu.title" = "Aufforderungsaktion wählen";
 "board.linkedChoiceMenu.cancelHint" = "Drücke Zurück oder Sekundäraktion zum Abbrechen.";
 "board.linkedChoice.activateHint" = "Aktiviert %@";

@@ -167,7 +167,7 @@ struct LiveGameView: View {
         model.liveGameParticipantIdentities[gameID] == .spectator
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func board(_ projection: BoardProjection) -> some View {
         let renderedPrompt = prompt
         if let renderedPrompt, isBetweenScenarioPrompt(renderedPrompt, in: projection) {
@@ -204,6 +204,10 @@ struct LiveGameView: View {
             onPickDestiny: { drawings in
                 guard let identity = renderedPrompt?.identity else { return }
                 Task { await model.submitPickDestinyAnswer(identity, drawings: drawings) }
+            },
+            onCampaignSpecific: { contents in
+                guard let identity = renderedPrompt?.identity else { return }
+                Task { await model.submitCampaignSpecificAnswer(identity, contents: contents) }
             },
             onRetryChoice: {
                 guard let identity = renderedPrompt?.identity else { return }

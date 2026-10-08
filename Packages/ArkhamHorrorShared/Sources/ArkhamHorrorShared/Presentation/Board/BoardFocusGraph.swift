@@ -70,6 +70,12 @@ enum BoardFocusID {
 
     static let promptPickDestinySubmit: SemanticFocusID = "board.prompt.pickDestiny.submit"
 
+    static func promptScarletKeysTravelAction(
+        _ action: ScarletKeysTravelPromptPresentation.Action
+    ) -> SemanticFocusID {
+        .init(rawValue: "board.prompt.scarletKeysTravel.\(action.id)")
+    }
+
     static func act(_ id: ActID) -> SemanticFocusID {
         SemanticFocusID(rawValue: "board.act.\(id.description)")
     }
@@ -257,6 +263,11 @@ enum BoardFocusGraphBuilder {
         if let pickDestinyPrompt = prompt.pickDestinyPrompt?.presentation {
             return pickDestinyPrompt.rows.indices.map(BoardFocusID.promptPickDestinyRow)
                 + [BoardFocusID.promptPickDestinySubmit]
+        }
+        if let travelPrompt = prompt.scarletKeysTravelPrompt {
+            return travelPrompt.actions
+                .filter(\.isActionable)
+                .map(BoardFocusID.promptScarletKeysTravelAction)
         }
         return prompt.displayOrderedChoices()
             .filter { prompt.isChoiceActionable($0, in: projection) }

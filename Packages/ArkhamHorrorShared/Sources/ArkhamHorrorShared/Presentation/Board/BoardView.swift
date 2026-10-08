@@ -25,6 +25,7 @@ struct BoardView: View {
     let onPaymentAmounts: ([String: Int]) -> Void
     let onExchangeAmount: (Int) -> Void
     let onPickDestiny: ([QuestionPresentation.DestinyDrawing]) -> Void
+    let onCampaignSpecific: (JSONValue) -> Void
     let onRetryChoice: () -> Void
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
@@ -54,6 +55,7 @@ struct BoardView: View {
         onPaymentAmounts: @escaping ([String: Int]) -> Void = { _ in },
         onExchangeAmount: @escaping (Int) -> Void = { _ in },
         onPickDestiny: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void = { _ in },
+        onCampaignSpecific: @escaping (JSONValue) -> Void = { _ in },
         onRetryChoice: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
@@ -68,6 +70,7 @@ struct BoardView: View {
         self.onPaymentAmounts = onPaymentAmounts
         self.onExchangeAmount = onExchangeAmount
         self.onPickDestiny = onPickDestiny
+        self.onCampaignSpecific = onCampaignSpecific
         self.onRetryChoice = onRetryChoice
         self.onCatalogRetry = onCatalogRetry
     }
@@ -103,6 +106,7 @@ struct BoardView: View {
                     onPaymentAmounts: onPaymentAmounts,
                     onExchangeAmount: onExchangeAmount,
                     onPickDestiny: onPickDestiny,
+                    onCampaignSpecific: onCampaignSpecific,
                     onRetry: onRetryChoice,
                     onCatalogRetry: onCatalogRetry
                 )

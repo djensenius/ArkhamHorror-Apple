@@ -52,6 +52,13 @@ struct BasicChoicePromptView: View {
             if !presentation.isRenderableQuestion {
                 Label("Update required", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
+            } else if let travelPrompt = presentation.scarletKeysTravelPrompt {
+                ScarletKeysTravelPromptView(
+                    prompt: travelPrompt,
+                    canSubmit: presentation.canSubmit,
+                    controller: controller,
+                    focusBinding: focusBinding
+                )
             } else if let pickDestinyPrompt = presentation.pickDestinyPrompt {
                 switch pickDestinyPrompt {
                 case let .resolved(prompt):

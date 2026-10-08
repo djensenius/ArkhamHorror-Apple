@@ -192,6 +192,13 @@ extension AppModel {
         await sendBasicChoice(identity, submission: .pickDestiny(drawings), isRetry: false)
     }
 
+    func submitCampaignSpecificAnswer(
+        _ identity: BasicChoicePromptIdentity,
+        contents: JSONValue
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .campaignSpecific(contents), isRetry: false)
+    }
+
     func retryBasicChoice(_ identity: BasicChoicePromptIdentity) async -> BasicChoiceSubmitResult {
         guard let record = basicChoiceActions[identity.gameID],
               record.identity == identity,
@@ -397,6 +404,8 @@ extension AppModel {
             return try ContractJSON.encode(CampaignStepAnswer(contents: step))
         case let .pickDestiny(drawings):
             return try ContractJSON.encode(PickDestinyAnswer(contents: drawings))
+        case let .campaignSpecific(contents):
+            return try ContractJSON.encode(CampaignSpecificAnswer(contents: contents))
         case let .deck(deckID):
             return try ContractJSON.encode(DeckAnswer(
                 deckId: deckID,
@@ -605,7 +614,7 @@ private extension BasicChoiceSubmission {
     var needsClientActionabilityCheck: Bool {
         switch self {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign,
-             .pickDestiny:
+             .pickDestiny, .campaignSpecific:
             true
         case .deck:
             false
@@ -614,7 +623,7 @@ private extension BasicChoiceSubmission {
 
     var acceptsUnversionedRejection: Bool {
         switch self {
-        case .exchangeAmount, .continueCampaign, .pickDestiny, .deck:
+        case .exchangeAmount, .continueCampaign, .pickDestiny, .campaignSpecific, .deck:
             true
         case .singleChoice, .amounts, .paymentAmounts:
             false
@@ -623,6 +632,7 @@ private extension BasicChoiceSubmission {
 }
 
 extension BasicChoicePromptPresentation {
+    // swiftlint:disable:next cyclomatic_complexity
     func isSubmissionSupported(
         _ submission: BasicChoiceSubmission,
         in projection: BoardProjection
@@ -649,6 +659,8 @@ extension BasicChoicePromptPresentation {
             return supportsContinueCampaignSubmission(step, in: projection)
         case let .pickDestiny(drawings):
             return supportsPickDestinySubmission(drawings)
+        case let .campaignSpecific(contents):
+            return supportsCampaignSpecificSubmission(contents)
         case .deck:
             return true
         }
@@ -676,6 +688,22 @@ extension BasicChoicePromptPresentation {
               )
         else { return false }
         return PickDestinySelectionRules.canSubmit(drawings, published: rawDrawings)
+    }
+
+    func supportsCampaignSpecificSubmission(_ contents: JSONValue) -> Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              case .campaignSpecific = presentation.answer,
+              Self.supportsSemanticPrompt(
+                  rawQuestion: identity.rawQuestion,
+                  presentation: presentation
+              )
+        else { return false }
+        return ScarletKeysTravelPromptPresentation.supportsSubmission(
+            contents,
+            rawQuestion: identity.rawQuestion,
+            presentation: presentation,
+            labelResolutions: promptLabelResolutions
+        )
     }
 
     func supportsContinueCampaignSubmission(

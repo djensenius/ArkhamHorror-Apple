@@ -512,13 +512,34 @@ extension AppModel {
                     label: choice.title
                 )
             }
+        let campaignSpecificLabels = ScarletKeysTravelPromptPresentation.labelRequests(
+            rawQuestion: presentationRawQuestionCandidate(presentation),
+            presentation: presentation
+        )
         return labelResolutions(
             promptLabels.compactMap { key, label in
                 label.map { (key: key, wireLabel: $0.text) }
             } + amountLabels + paymentLabels.map { key, label in
                 (key: key, wireLabel: label.text)
-            }
+            } + campaignSpecificLabels
         )
+    }
+
+    private func presentationRawQuestionCandidate(
+        _ presentation: QuestionPresentation
+    ) -> JSONValue {
+        switch presentation.questionKind {
+        case .pickCampaignSpecific:
+            if let key = presentation.key, let value = presentation.value {
+                return .object([
+                    "tag": .string("PickCampaignSpecific"),
+                    "contents": .array([.string(key), value]),
+                ])
+            }
+        default:
+            break
+        }
+        return .object([:])
     }
 
     /// Resolves every deployment-owned choice label against one current catalog snapshot,

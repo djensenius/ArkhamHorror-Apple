@@ -206,6 +206,7 @@ extension BoardView {
         controller.updatePaymentAmountsHandler(onPaymentAmounts)
         controller.updateExchangeAmountHandler(onExchangeAmount)
         controller.updatePickDestinyHandler(onPickDestiny)
+        controller.updateCampaignSpecificHandler(onCampaignSpecific)
         controller.updateRetryHandler(onRetryChoice)
         controller.updateCatalogRetryHandler(onCatalogRetry)
         controller.updateLocalPlayerID(localPlayerID)
