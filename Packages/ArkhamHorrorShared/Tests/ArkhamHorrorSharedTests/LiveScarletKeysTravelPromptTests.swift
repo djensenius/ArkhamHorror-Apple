@@ -1,3 +1,4 @@
+// swiftlint:disable file_length type_body_length function_body_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -105,7 +106,8 @@ struct LiveScarletKeysTravelPromptTests {
         #expect(travelPrompt.locations.count == 35)
         #expect(!travelPrompt.locations.contains { $0.id == "BermudaTriangle" })
         #expect(alexandria.isActionable)
-        #expect(try prompt.supportsCampaignSpecificSubmission(#require(alexandria.actions.first).payload))
+        let firstAction = try #require(alexandria.actions.first)
+        #expect(prompt.supportsCampaignSpecificSubmission(firstAction.payload))
     }
 
     @Test("Missing world-map labels keep travel actions unpressable")

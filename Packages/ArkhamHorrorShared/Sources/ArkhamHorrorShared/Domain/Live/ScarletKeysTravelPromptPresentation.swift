@@ -126,7 +126,9 @@ extension ScarletKeysTravelPromptPresentation {
             let isAvailable = map.available.contains(locationID)
             let isCurrent = locationID == map.current
             let rawTravelTime = map.travelTimes[locationID]
-            let travelTime = isCurrent ? nil : displayedTravelTime(rawTravelTime, locationID: locationID)
+            let travelTime = isCurrent
+                ? nil
+                : displayedTravelTime(rawTravelTime, locationID: locationID)
             let isLocked = !isCurrent && !isAvailable
             let title = labelResolutions[
                 "scarletKeysTravel.location.\(locationID).name"

@@ -30,6 +30,7 @@ struct ScarletKeysTravelPromptView: View {
         .accessibilityIdentifier("liveGame.prompt.scarletKeysTravel")
     }
 
+    // swiftlint:disable:next function_body_length
     private func locationRow(
         _ location: ScarletKeysTravelPromptPresentation.Location
     ) -> some View {
