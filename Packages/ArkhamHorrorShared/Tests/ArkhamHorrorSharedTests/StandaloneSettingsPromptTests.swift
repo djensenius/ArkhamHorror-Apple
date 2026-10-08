@@ -142,6 +142,51 @@ struct StandaloneSettingsPromptTests {
         #expect(spiritDeck.supportsSubmission(Self.spiritDeckAnswer(selected)))
     }
 
+    @Test("Laid to Rest malformed string card entries stay display-only")
+    func laidToRestMalformedStringCardEntryIsDisplayOnly() throws {
+        let malformedCode = "not-a-card-code"
+        let fixture = try Self.fixture(named: "pick-scenario-specific-laid-to-rest")
+        let originalCodes = try Self.cardCodes(in: fixture.rawQuestion)
+        let validMissingCode = try #require(originalCodes.dropFirst().first)
+        let catalogCodes = originalCodes.filter { $0 != validMissingCode }
+        let prompt = try Self.laidToRestPromptWithCatalog(
+            transform: { raw, presentation in
+                let changed = try Self.replacingLaidToRestPayload(raw) { payload in
+                    var changedPayload = payload
+                    guard case var .array(codes)? = changedPayload["cardCodes"] else {
+                        return changedPayload
+                    }
+                    codes[0] = .string(malformedCode)
+                    changedPayload["cardCodes"] = .array(codes)
+                    return changedPayload
+                }
+                return (changed, presentation)
+            },
+            cardCatalog: Self.cardCatalog(codes: catalogCodes)
+        )
+        let spiritDeck = try #require(prompt.laidToRestSpiritDeckPrompt)
+        let malformedEntry = spiritDeck.entries[0]
+        let missingCatalogEntry = spiritDeck.entries[1]
+
+        #expect(malformedEntry.code == malformedCode)
+        #expect(malformedEntry.displayName == nil)
+        #expect(!malformedEntry.isSelectable)
+        #expect(spiritDeck.toggledSelection([], entryAt: malformedEntry.id) == nil)
+        #expect(missingCatalogEntry.code == validMissingCode)
+        #expect(missingCatalogEntry.displayName == nil)
+        #expect(missingCatalogEntry.isSelectable)
+        #expect(spiritDeck.toggledSelection([], entryAt: missingCatalogEntry.id)
+            == [validMissingCode])
+
+        let selected = Array(spiritDeck.selectableCodes.prefix(spiritDeck.count))
+        #expect(selected.count == spiritDeck.count)
+        #expect(selected.contains(validMissingCode))
+        #expect(!selected.contains(malformedCode))
+        #expect(spiritDeck.supportsSubmission(Self.spiritDeckAnswer(selected)))
+        let selectedWithMalformed = Array(selected.dropLast()) + [malformedCode]
+        #expect(!spiritDeck.supportsSubmission(Self.spiritDeckAnswer(selectedWithMalformed)))
+    }
+
     @Test("Laid to Rest malformed prompt entries fail per entry and bad counts fail closed")
     func laidToRestMalformedPromptNegatives() throws {
         let nonStringPrompt = try Self.laidToRestPromptWithCatalog { raw, presentation in

@@ -8,9 +8,10 @@ struct LaidToRestSpiritDeckPromptPresentation: Sendable, Equatable {
         let code: String?
         let displayName: String?
         let isFixed: Bool
+        let isValidCardCode: Bool
 
         var isSelectable: Bool {
-            code != nil && !isFixed
+            isValidCardCode && !isFixed
         }
     }
 
@@ -31,6 +32,10 @@ struct LaidToRestSpiritDeckPromptPresentation: Sendable, Equatable {
 
     var distinctRawStringEntryCodes: Set<String> {
         Set(rawStringEntryCodes)
+    }
+
+    var distinctSelectableCodes: Set<String> {
+        Set(selectableCodes)
     }
 
     var displayEntries: [Entry] {
@@ -56,7 +61,7 @@ struct LaidToRestSpiritDeckPromptPresentation: Sendable, Equatable {
 
     func toggledSelection(_ selectedCodes: [String], entryAt index: Int) -> [String]? {
         guard canToggle(entryAt: index), let code = entries[index].code else { return nil }
-        var selected = selectedCodes.filter { distinctRawStringEntryCodes.contains($0) }
+        var selected = selectedCodes.filter { distinctSelectableCodes.contains($0) }
         if selected.contains(code) {
             selected.removeAll { $0 == code }
         } else if Set(selected).count < count {
@@ -99,7 +104,7 @@ struct LaidToRestSpiritDeckPromptPresentation: Sendable, Equatable {
         guard selectedCodes.count == count,
               Set(selectedCodes).count == count
         else { return false }
-        return selectedCodes.allSatisfy { distinctRawStringEntryCodes.contains($0) }
+        return selectedCodes.allSatisfy { distinctSelectableCodes.contains($0) }
     }
 }
 
@@ -122,7 +127,10 @@ extension LaidToRestSpiritDeckPromptPresentation {
         let entries = cardCodeValues.enumerated().map { index, value in
             entry(index: index, value: value, isFixed: false, cardCatalog: cardCatalog)
         }
-        let validDistinctCodes = Set(entries.compactMap(\.code))
+        let validDistinctCodes: Set<String> = Set(entries.compactMap { entry -> String? in
+            guard entry.isSelectable, let code = entry.code else { return nil }
+            return code
+        })
         guard count <= validDistinctCodes.count else { return nil }
 
         let fixedEntries: [Entry] = if case let .array(fixedValues)? = rawPayload["fixed"] {
@@ -168,17 +176,21 @@ extension LaidToRestSpiritDeckPromptPresentation {
         isFixed: Bool,
         cardCatalog: CardCatalogSnapshot?
     ) -> Entry {
-        guard case let .string(rawCode) = value,
-              let code = try? CardCode(rawCode),
-              let displayName = cardCatalog?.displayName(for: code)
-        else {
-            return Entry(id: index, code: stringValue(value), displayName: nil, isFixed: isFixed)
+        guard case let .string(rawCode) = value else {
+            return Entry(
+                id: index, code: nil, displayName: nil, isFixed: isFixed,
+                isValidCardCode: false
+            )
         }
-        return Entry(id: index, code: rawCode, displayName: displayName, isFixed: isFixed)
-    }
-
-    private static func stringValue(_ value: JSONValue) -> String? {
-        guard case let .string(rawCode) = value else { return nil }
-        return rawCode
+        guard let code = try? CardCode(rawCode) else {
+            return Entry(
+                id: index, code: rawCode, displayName: nil, isFixed: isFixed,
+                isValidCardCode: false
+            )
+        }
+        return Entry(
+            id: index, code: rawCode, displayName: cardCatalog?.displayName(for: code),
+            isFixed: isFixed, isValidCardCode: true
+        )
     }
 }
