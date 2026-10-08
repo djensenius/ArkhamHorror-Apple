@@ -744,6 +744,13 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(deck.playableList.investigatorCode.rawValue == "c02001")
     }
 
+    @Test("Live harness replacement support decks have 30 ordinary cards")
+    func replacementSupportDecksHaveFullOrdinaryCardCounts() {
+        for fixture in InvestigatorFixture.replacementSupport {
+            #expect(fixture.ordinaryDeckCardCount == 30, "\(fixture.name) deck is short")
+        }
+    }
+
     @Test("Live bot chooses Forgotten Age supplies before Done")
     func botStrategyChoosesForgottenAgeSuppliesBeforeDone() throws {
         let initialPrompt = try Self.capturedForgottenAgeSupplyPrompt(
@@ -4164,27 +4171,27 @@ private struct InvestigatorFixture: Sendable, Equatable {
         InvestigatorFixture(
             code: "02001", name: "Zoey Samaras", weakness: "02007",
             requiredCards: ["02006"], ordinaryCards: guardian0 + neutralCore,
-            secondCopies: ["01017", "01020"]
+            secondCopies: guardian0 + Array(neutralCore.prefix(2))
         ),
         InvestigatorFixture(
             code: "02002", name: "Rex Murphy", weakness: "02009",
             requiredCards: ["02008"], ordinaryCards: seeker0 + neutralCore,
-            secondCopies: ["01031", "01033"]
+            secondCopies: seeker0 + Array(neutralCore.prefix(2))
         ),
         InvestigatorFixture(
             code: "02003", name: "Jenny Barnes", weakness: "02011",
             requiredCards: ["02010"], ordinaryCards: rogue0 + neutralCore,
-            secondCopies: ["01047", "01048"]
+            secondCopies: rogue0 + Array(neutralCore.prefix(2))
         ),
         InvestigatorFixture(
             code: "02004", name: "Jim Culver", weakness: "02013",
             requiredCards: ["02012"], ordinaryCards: mystic0 + neutralCore,
-            secondCopies: ["01059", "01060"]
+            secondCopies: mystic0 + Array(neutralCore.prefix(2))
         ),
         InvestigatorFixture(
             code: "02005", name: "\"Ashcan\" Pete", weakness: "02015",
             requiredCards: ["02014"], ordinaryCards: survivor0 + neutralCore,
-            secondCopies: ["01072", "01073"]
+            secondCopies: survivor0 + Array(neutralCore.prefix(2))
         ),
     ]
 
@@ -4200,6 +4207,10 @@ private struct InvestigatorFixture: Sendable, Equatable {
         }
         slots[weakness, default: 0] += 1
         return slots
+    }
+
+    var ordinaryDeckCardCount: Int {
+        ordinaryCards.count + secondCopies.count
     }
 
     var traceSlug: String {
