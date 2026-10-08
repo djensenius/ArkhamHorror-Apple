@@ -207,6 +207,8 @@ extension BoardView {
         controller.updateExchangeAmountHandler(onExchangeAmount)
         controller.updatePickDestinyHandler(onPickDestiny)
         controller.updateCampaignSpecificHandler(onCampaignSpecific)
+        controller.updateStandaloneSettingsHandler(onStandaloneSettings)
+        controller.updateScenarioSpecificHandler(onScenarioSpecific)
         controller.updateRetryHandler(onRetryChoice)
         controller.updateCatalogRetryHandler(onCatalogRetry)
         controller.updateLocalPlayerID(localPlayerID)

@@ -12,6 +12,28 @@ func liveHarnessSelectableChoiceIndexes(
     }
 }
 
+func liveHarnessRenderableQuestionPreflight(
+    prompt: BasicChoicePromptPresentation,
+    projection: BoardProjection,
+    diagnosticBypassUnsupported: Bool = false
+) -> Bool {
+    prompt.isRenderableQuestion(in: projection)
+        || LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion)
+        || prompt.isChooseUpgradeDeckPrompt
+        || liveHarnessCanDiagnosticBypassUnsupported(
+            prompt,
+            enabled: diagnosticBypassUnsupported
+        )
+}
+
+private func liveHarnessCanDiagnosticBypassUnsupported(
+    _ prompt: BasicChoicePromptPresentation,
+    enabled: Bool
+) -> Bool {
+    guard enabled, prompt.readOnlyReason == nil else { return false }
+    return prompt.identity.questionPresentation?.choices.contains { $0.selectable } == true
+}
+
 private func liveHarnessDiagnosticBypassSelectableChoiceIndexes(
     prompt: BasicChoicePromptPresentation
 ) -> [Int] {
@@ -262,7 +284,7 @@ private func parseInvestigators(
     }
     let requestedCodes = commaSeparatedValues(value)
     guard !requestedCodes.isEmpty else { throw LiveHarnessConfigurationError.noInvestigatorCodes }
-    let fixturesByCode = Dictionary(uniqueKeysWithValues: InvestigatorFixture.core.map {
+    let fixturesByCode = Dictionary(uniqueKeysWithValues: InvestigatorFixture.replacementPool.map {
         ($0.code, $0)
     })
     return try requestedCodes.map { code in
@@ -577,6 +599,17 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 "ARKHAM_LIVE_SCENARIO_ID": "01104",
             ])
         }
+    }
+
+    @Test("Live harness accepts non-core required-investigator fixtures")
+    func requiredInvestigatorFixtureConfiguration() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([
+            "ARKHAM_LIVE_SCENARIO_ID": "90054",
+            "ARKHAM_LIVE_INVESTIGATOR_CODES": "02004",
+        ])
+
+        #expect(configuration.investigators.map(\.code) == ["02004"])
+        #expect(configuration.investigators.map(\.name) == ["Jim Culver"])
     }
 
     @Test("Live harness rejects invalid boolean settings")
@@ -2473,10 +2506,11 @@ private struct LivePlaythroughBot {
             let skillTestPreparationCount = skillTestPreparationCounter.count(
                 for: skillTestPreparationKey
             )
-            let cannotRender = !prompt.isRenderableQuestion
-                && !isInitialChooseDeckPrompt(prompt)
-                && !prompt.isChooseUpgradeDeckPrompt
-                && !canDiagnosticBypassUnsupported(prompt)
+            let cannotRender = !liveHarnessRenderableQuestionPreflight(
+                prompt: prompt,
+                projection: projection,
+                diagnosticBypassUnsupported: diagnosticBypassUnsupported
+            )
             if cannotRender {
                 let failure = PromptFailure(
                     scenario: scenario,
@@ -2749,7 +2783,7 @@ private struct LivePlaythroughBot {
         )
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func selectAnswer(
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
@@ -2804,6 +2838,48 @@ private struct LivePlaythroughBot {
                 chosenChoiceKind: nil
             )
         }
+        if prompt.isStandaloneSettingsPrompt(in: projection) {
+            var submitted: [JSONValue]?
+            let controller = BoardCommandController(
+                projection: projection,
+                prompt: prompt,
+                onStandaloneSettings: { submitted = $0 }
+            )
+            guard controller.activateStandaloneSettingsSubmit(), let submitted else {
+                throw PlaythroughError.noSelectableChoice(
+                    version: prompt.questionVersion,
+                    tag: describeRawQuestionTag(prompt.identity.rawQuestion)
+                )
+            }
+            return SelectedBotAnswer(
+                answer: .standaloneSettings(submitted),
+                note: "continue with proven-empty standalone scenario settings through controller",
+                chosenChoiceKind: nil
+            )
+        }
+        if let spiritDeckPrompt = prompt.laidToRestSpiritDeckPrompt {
+            var submitted: JSONValue?
+            let controller = BoardCommandController(
+                projection: projection,
+                prompt: prompt,
+                onScenarioSpecific: { submitted = $0 }
+            )
+            for entry in spiritDeckPrompt.entries where entry.isSelectable {
+                guard controller.spiritDeckSelection.count < spiritDeckPrompt.count else { break }
+                _ = controller.toggleSpiritDeckCard(at: entry.id)
+            }
+            guard controller.activateScenarioSpecificSubmit(), let submitted else {
+                throw PlaythroughError.noSelectableChoice(
+                    version: prompt.questionVersion,
+                    tag: describeRawQuestionTag(prompt.identity.rawQuestion)
+                )
+            }
+            return SelectedBotAnswer(
+                answer: .scenarioSpecific(submitted),
+                note: "choose and confirm spirit deck through controller",
+                chosenChoiceKind: nil
+            )
+        }
         let travelAction = prompt.scarletKeysTravelPrompt.flatMap(preferredScarletKeysTravelAction)
         if let action = travelAction {
             return SelectedBotAnswer(
@@ -2851,9 +2927,10 @@ private struct LivePlaythroughBot {
     }
 
     private func canDiagnosticBypassUnsupported(_ prompt: BasicChoicePromptPresentation) -> Bool {
-        guard diagnosticBypassUnsupported, prompt.readOnlyReason == nil else { return false }
-        return prompt.identity.questionPresentation?.choices
-            .contains { $0.selectable } == true
+        liveHarnessCanDiagnosticBypassUnsupported(
+            prompt,
+            enabled: diagnosticBypassUnsupported
+        )
     }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
@@ -2876,6 +2953,10 @@ private struct LivePlaythroughBot {
             result = await model.submitPickDestinyAnswer(prompt.identity, drawings: drawings)
         case let .campaignSpecific(contents):
             result = await model.submitCampaignSpecificAnswer(prompt.identity, contents: contents)
+        case let .standaloneSettings(contents):
+            result = await model.submitStandaloneSettingsAnswer(prompt.identity, contents: contents)
+        case let .scenarioSpecific(contents):
+            result = await model.submitScenarioSpecificAnswer(prompt.identity, contents: contents)
         case let .savedDeck(deck):
             guard await model.chooseDeckForLivePrompt(deck, in: gameID) else {
                 throw PlaythroughError.submissionFailed("live deck choice was not accepted")
@@ -3190,6 +3271,8 @@ private enum BotAnswer: Sendable {
     case continueCampaign(JSONValue)
     case pickDestiny([QuestionPresentation.DestinyDrawing])
     case campaignSpecific(JSONValue)
+    case standaloneSettings([JSONValue])
+    case scenarioSpecific(JSONValue)
     case savedDeck(Deck)
     case replacementDeck(originalInvestigatorID: String, deck: Deck)
     case skipDeckUpgrade(investigatorID: String)
@@ -3237,6 +3320,8 @@ private extension BotAnswer {
         case .continueCampaign: "CampaignStepAnswer"
         case .pickDestiny: "PickDestinyAnswer"
         case .campaignSpecific: "CampaignSpecificAnswer"
+        case .standaloneSettings: "StandaloneSettingsAnswer"
+        case .scenarioSpecific: "ScenarioSpecificAnswer"
         case .savedDeck: "DeckAnswer"
         case .replacementDeck: "ReplacementDeck"
         case .skipDeckUpgrade: "SkipDeckUpgrade"
@@ -3304,6 +3389,16 @@ private extension BotAnswer {
             return try TraceSubmission(
                 kind: "CampaignSpecificAnswer",
                 payload: CampaignSpecificAnswer(contents: contents)
+            )
+        case let .standaloneSettings(contents):
+            return try TraceSubmission(
+                kind: "StandaloneSettingsAnswer",
+                payload: StandaloneSettingsAnswer(contents: contents)
+            )
+        case let .scenarioSpecific(contents):
+            return try TraceSubmission(
+                kind: "ScenarioSpecificAnswer",
+                payload: ScenarioSpecificAnswer(contents: contents)
             )
         case let .savedDeck(deck):
             return try TraceSubmission(
@@ -3803,6 +3898,7 @@ private func traceTokenCount(_ token: String, in tokens: [BoardTokenSummary]) ->
 }
 
 private extension TraceSelectedAnswer {
+    // swiftlint:disable:next cyclomatic_complexity
     init(_ answer: SelectedBotAnswer) {
         note = answer.note
         chosenChoiceKind = answer.chosenChoiceKind
@@ -3827,6 +3923,12 @@ private extension TraceSelectedAnswer {
             choiceIndex = nil
         case .campaignSpecific:
             answerKind = "CampaignSpecificAnswer"
+            choiceIndex = nil
+        case .standaloneSettings:
+            answerKind = "StandaloneSettingsAnswer"
+            choiceIndex = nil
+        case .scenarioSpecific:
+            answerKind = "ScenarioSpecificAnswer"
             choiceIndex = nil
         case .savedDeck:
             answerKind = "DeckAnswer"
@@ -3859,7 +3961,7 @@ private extension TracePromptState {
         }.map(TraceInvestigatorStatus.init)
         actProgress = projection.acts.map(TraceActProgress.init)
         agendaProgress = projection.agendas.map(TraceAgendaProgress.init)
-        isRenderableQuestion = prompt.isRenderableQuestion
+        isRenderableQuestion = prompt.isRenderableQuestion(in: projection)
         canSubmit = prompt.canSubmit
         statusMessage = prompt.statusMessage
         readOnlyReason = prompt.readOnlyReason.map(describeReadOnlyReason)
@@ -4747,7 +4849,7 @@ private func traceAppChoices(
             systemImage: resolved.systemImage,
             accessibilityLabel: resolved.accessibilityLabel,
             accessibilityHint: accessibilityHint,
-            rendersUpdateRequired: !prompt.isRenderableQuestion
+            rendersUpdateRequired: !prompt.isRenderableQuestion(in: projection)
                 || resolved.title == "Update required",
             rawValue: choice.rawValue
         )

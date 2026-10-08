@@ -40,7 +40,7 @@ extension AppModel {
             connectionID: connectionID
         )
         let readOnlyReason = readOnlyReason(
-            gameID: gameID, ownerID: ownerID, payload: payload
+            gameID: gameID, ownerID: ownerID, payload: payload, projection: projection
         )
         let isSamePrompt = record?.identity.promptKey == promptIdentity.promptKey
         let isCurrentTransport = record?.identity == promptIdentity
@@ -79,6 +79,7 @@ extension AppModel {
             semanticPresentation: payload.presentation,
             semanticLocaleIdentifier: localeCatalogResolver?.snapshot.identity.locale,
             cardCatalog: cardCatalog,
+            semanticSupportScenarioID: projection.scenario?.id,
             storyResolution: storyResolution,
             choiceLabelResolutions: labelResolutions,
             choiceFlavorResolutions: choiceFlavorResolutions,
@@ -127,13 +128,15 @@ extension AppModel {
     }
 
     private func readOnlyReason(
-        gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload
+        gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload,
+        projection: BoardProjection
     ) -> BasicChoiceReadOnlyReason? {
         let hasRenderableQuestion = if let semanticPresentation = payload.presentation {
             semanticPresentation.isRenderableInCurrentClient
                 && BasicChoicePromptPresentation.supportsSemanticPrompt(
                     rawQuestion: payload.rawValue,
-                    presentation: semanticPresentation.presentation
+                    presentation: semanticPresentation.presentation,
+                    projection: projection
                 )
         } else {
             payload.supportedQuestion?.choices.isEmpty == false
@@ -197,6 +200,20 @@ extension AppModel {
         contents: JSONValue
     ) async -> BasicChoiceSubmitResult {
         await sendBasicChoice(identity, submission: .campaignSpecific(contents), isRetry: false)
+    }
+
+    func submitStandaloneSettingsAnswer(
+        _ identity: BasicChoicePromptIdentity,
+        contents: [JSONValue]
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .standaloneSettings(contents), isRetry: false)
+    }
+
+    func submitScenarioSpecificAnswer(
+        _ identity: BasicChoicePromptIdentity,
+        contents: JSONValue
+    ) async -> BasicChoiceSubmitResult {
+        await sendBasicChoice(identity, submission: .scenarioSpecific(contents), isRetry: false)
     }
 
     func retryBasicChoice(_ identity: BasicChoicePromptIdentity) async -> BasicChoiceSubmitResult {
@@ -364,6 +381,7 @@ extension AppModel {
         return true
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private func encodeSubmission(
         _ submission: BasicChoiceSubmission,
         identity: BasicChoicePromptIdentity
@@ -406,6 +424,10 @@ extension AppModel {
             return try ContractJSON.encode(PickDestinyAnswer(contents: drawings))
         case let .campaignSpecific(contents):
             return try ContractJSON.encode(CampaignSpecificAnswer(contents: contents))
+        case let .standaloneSettings(contents):
+            return try ContractJSON.encode(StandaloneSettingsAnswer(contents: contents))
+        case let .scenarioSpecific(contents):
+            return try ContractJSON.encode(ScenarioSpecificAnswer(contents: contents))
         case let .deck(deckID):
             return try ContractJSON.encode(DeckAnswer(
                 deckId: deckID,
@@ -614,7 +636,7 @@ private extension BasicChoiceSubmission {
     var needsClientActionabilityCheck: Bool {
         switch self {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmount, .continueCampaign,
-             .pickDestiny, .campaignSpecific:
+             .pickDestiny, .campaignSpecific, .standaloneSettings, .scenarioSpecific:
             true
         case .deck:
             false
@@ -623,7 +645,8 @@ private extension BasicChoiceSubmission {
 
     var acceptsUnversionedRejection: Bool {
         switch self {
-        case .exchangeAmount, .continueCampaign, .pickDestiny, .campaignSpecific, .deck:
+        case .exchangeAmount, .continueCampaign, .pickDestiny, .campaignSpecific,
+             .standaloneSettings, .scenarioSpecific, .deck:
             true
         case .singleChoice, .amounts, .paymentAmounts:
             false
@@ -661,6 +684,10 @@ extension BasicChoicePromptPresentation {
             return supportsPickDestinySubmission(drawings)
         case let .campaignSpecific(contents):
             return supportsCampaignSpecificSubmission(contents)
+        case let .standaloneSettings(contents):
+            return supportsStandaloneSettingsSubmission(contents, in: projection)
+        case let .scenarioSpecific(contents):
+            return supportsScenarioSpecificSubmission(contents)
         case .deck:
             return true
         }
@@ -674,7 +701,8 @@ extension BasicChoicePromptPresentation {
               case .pickDestiny = presentation.answer,
               Self.supportsSemanticPrompt(
                   rawQuestion: identity.rawQuestion,
-                  presentation: presentation
+                  presentation: presentation,
+                  scenarioID: nil
               ),
               let publishedDrawings = presentation.drawings,
               !publishedDrawings.isEmpty,
@@ -695,7 +723,8 @@ extension BasicChoicePromptPresentation {
               case .campaignSpecific = presentation.answer,
               Self.supportsSemanticPrompt(
                   rawQuestion: identity.rawQuestion,
-                  presentation: presentation
+                  presentation: presentation,
+                  scenarioID: nil
               )
         else { return false }
         return ScarletKeysTravelPromptPresentation.supportsSubmission(
@@ -703,6 +732,27 @@ extension BasicChoicePromptPresentation {
             rawQuestion: identity.rawQuestion,
             presentation: presentation,
             labelResolutions: promptLabelResolutions
+        )
+    }
+
+    func supportsScenarioSpecificSubmission(_ contents: JSONValue) -> Bool {
+        guard let prompt = laidToRestSpiritDeckPrompt else { return false }
+        return prompt.supportsSubmission(contents)
+    }
+
+    func supportsStandaloneSettingsSubmission(
+        _ contents: [JSONValue],
+        in projection: BoardProjection?
+    ) -> Bool {
+        guard contents.isEmpty,
+              let presentation = semanticPresentation?.presentation,
+              presentation.questionKind == .pickScenarioSettings,
+              case .standaloneSettings = presentation.answer
+        else { return false }
+        return Self.supportsSemanticPrompt(
+            rawQuestion: identity.rawQuestion,
+            presentation: presentation,
+            projection: projection
         )
     }
 
@@ -714,7 +764,8 @@ extension BasicChoicePromptPresentation {
               case .continueCampaign = presentation.answer,
               Self.supportsSemanticPrompt(
                   rawQuestion: identity.rawQuestion,
-                  presentation: presentation
+                  presentation: presentation,
+                  scenarioID: nil
               ),
               let continuation = projection.campaignContinuation
         else { return false }

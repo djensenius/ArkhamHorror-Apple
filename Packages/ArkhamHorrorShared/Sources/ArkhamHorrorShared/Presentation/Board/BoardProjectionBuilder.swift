@@ -255,6 +255,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
 
     private static func makeScenarioSummary(_ scenario: Scenario) -> BoardScenarioSummary {
         BoardScenarioSummary(
+            id: scenario.id.rawValue,
             displayName: BoardDisplayFormatting.safeTitle(
                 scenario.name, fallback: scenario.id.description
             ),

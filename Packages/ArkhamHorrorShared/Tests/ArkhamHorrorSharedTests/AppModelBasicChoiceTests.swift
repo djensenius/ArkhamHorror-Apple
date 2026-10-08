@@ -48,6 +48,68 @@ extension AppModelLiveGameTests {
         )
     }
 
+    private func liveStandaloneEnvelope(
+        promptNamed name: String,
+        scenarioID: String
+    ) throws -> GetGameEnvelope {
+        let fixture = try liveStandaloneFixture(named: name)
+        guard case var .object(root) = try LosslessJSONParser.parse(fixtureData(named: "get-game")),
+              case let .string(playerKey)? = root["playerId"],
+              case var .object(game)? = root["game"],
+              case var .object(questions)? = game["question"],
+              case var .object(presentations)? = game["questionPresentation"]
+        else { throw TestFailure() }
+
+        questions[playerKey] = fixture.rawQuestion
+        presentations[playerKey] = try ContractJSON.decode(
+            JSONValue.self,
+            from: ContractJSON.encode(fixture.questionPresentation)
+        )
+        game["question"] = .object(questions)
+        game["questionPresentation"] = .object(presentations)
+        game["scenarioSteps"] = .number(.integer(Int64(fixture.questionVersion)))
+        if case var .object(mode)? = game["mode"] {
+            if case var .object(scenario)? = mode["That"] {
+                scenario["id"] = .string(scenarioID)
+                scenario["reference"] = .string(scenarioID)
+                mode["That"] = .object(scenario)
+                game["mode"] = .object(mode)
+            }
+        }
+        root["game"] = .object(game)
+        return try ContractJSON.decode(
+            GetGameEnvelope.self,
+            from: LosslessJSONSerializer.serialize(.object(root))
+        )
+    }
+
+    private func liveStandaloneFixture(named name: String) throws -> LiveStandalonePromptFixture {
+        let url = try #require(Bundle.module.url(
+            forResource: name,
+            withExtension: "json",
+            subdirectory: "Fixtures/LiveStandaloneSettingsPrompt"
+        ))
+        return try ContractJSON.decode(
+            LiveStandalonePromptFixture.self,
+            from: Data(contentsOf: url)
+        )
+    }
+
+    private static func identity(
+        from identity: BasicChoicePromptIdentity,
+        questionVersion: Int
+    ) -> BasicChoicePromptIdentity {
+        BasicChoicePromptIdentity(
+            gameID: identity.gameID,
+            ownerID: identity.ownerID,
+            questionVersion: questionVersion,
+            rawQuestion: identity.rawQuestion,
+            questionPresentation: identity.questionPresentation,
+            sessionAttemptID: identity.sessionAttemptID,
+            connectionID: identity.connectionID
+        )
+    }
+
     @Test("Participant identity comes only from REST and gates the exact question-map key")
     func participantIdentityGatesPrompt() async throws {
         let (model, fakes) = makeSignedInModel()
@@ -123,6 +185,100 @@ extension AppModelLiveGameTests {
         #expect(model.basicChoicePresentation(for: gameID) == nil)
         #expect(
             await model.submitBasicChoice(legacyPrompt.identity, choiceIndex: 0) == .staleQuestion
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Standalone settings answer rejects stale versions and wrong owners without sending")
+    func standaloneSettingsRejectsStaleAndWrongOwnerWithoutSending() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try liveStandaloneEnvelope(
+            promptNamed: "pick-scenario-settings",
+            scenarioID: "c86001"
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(prompt.readOnlyReason == nil)
+        #expect(prompt.canSubmit)
+        let staleIdentity = Self.identity(
+            from: prompt.identity,
+            questionVersion: prompt.identity.questionVersion + 1
+        )
+
+        #expect(
+            await model.submitStandaloneSettingsAnswer(staleIdentity, contents: [])
+                == .staleQuestion
+        )
+        model.liveGameParticipantIdentities[gameID] = .participant(
+            BoardTestFixtures.playerID("000000000002")
+        )
+        #expect(
+            await model.submitStandaloneSettingsAnswer(prompt.identity, contents: [])
+                == .staleQuestion
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Midnight Masks standalone settings are unsupported and send nothing")
+    func standaloneSettingsUnsupportedScenarioSendsNothing() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try liveStandaloneEnvelope(
+            promptNamed: "pick-scenario-settings",
+            scenarioID: "c01120"
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(prompt.readOnlyReason == .updateRequired)
+        #expect(!prompt.canSubmit)
+
+        #expect(
+            await model.submitStandaloneSettingsAnswer(prompt.identity, contents: [])
+                == .readOnly
+        )
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Scenario-specific answer rejects stale versions and wrong owners without sending")
+    func scenarioSpecificRejectsStaleAndWrongOwnerWithoutSending() async throws {
+        let (model, fakes) = makeSignedInModel()
+        await model.flowTask?.value
+        makeModern(model)
+        let envelope = try liveStandaloneEnvelope(
+            promptNamed: "pick-scenario-specific-laid-to-rest",
+            scenarioID: "c90054"
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = await startChoiceSession(
+            model: model, fakes: fakes, envelope: envelope, connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let spiritDeck = try #require(prompt.laidToRestSpiritDeckPrompt)
+        let contents = try #require(spiritDeck.answer(
+            selectedCodes: Array(spiritDeck.rawStringEntryCodes.prefix(spiritDeck.count))
+        ))
+        let staleIdentity = Self.identity(
+            from: prompt.identity,
+            questionVersion: prompt.identity.questionVersion + 1
+        )
+
+        #expect(
+            await model.submitScenarioSpecificAnswer(staleIdentity, contents: contents)
+                == .staleQuestion
+        )
+        model.liveGameParticipantIdentities[gameID] = .spectator
+        #expect(
+            await model.submitScenarioSpecificAnswer(prompt.identity, contents: contents)
+                == .staleQuestion
         )
         #expect(await connection.sentData.isEmpty)
     }
@@ -422,4 +578,10 @@ extension AppModelLiveGameTests {
         #expect(model.basicChoiceActions[gameID] == nil)
         #expect(model.liveGameParticipantIdentities[gameID] == nil)
     }
+}
+
+private struct LiveStandalonePromptFixture: Decodable {
+    let questionVersion: Int
+    let rawQuestion: JSONValue
+    let questionPresentation: QuestionPresentation
 }

@@ -157,6 +157,9 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
     let semanticPresentation: BoundQuestionPresentation?
     let semanticLocaleIdentifier: String?
     let cardCatalog: CardCatalogSnapshot?
+    /// Projection-derived scenario authority captured when the prompt is installed.
+    /// `PickScenarioSettings` support must fail closed when this is absent.
+    let semanticSupportScenarioID: String?
     /// The complete story outcome captured from one immutable catalog snapshot. This exact
     /// value drives rendering, focus, accessibility, controller dispatch, and send fencing.
     let storyResolution: StoryResolution?
@@ -178,6 +181,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         semanticPresentation: BoundQuestionPresentation? = nil,
         semanticLocaleIdentifier: String? = nil,
         cardCatalog: CardCatalogSnapshot? = nil,
+        semanticSupportScenarioID: String? = nil,
         storyResolution: StoryResolution? = nil,
         choiceLabelResolutions: [Int: BasicChoiceLabelResolution]? = nil,
         choiceFlavorResolutions: [Int: StoryResolution] = [:],
@@ -194,6 +198,7 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         self.semanticPresentation = semanticPresentation
         self.semanticLocaleIdentifier = semanticLocaleIdentifier
         self.cardCatalog = cardCatalog
+        self.semanticSupportScenarioID = semanticSupportScenarioID
         self.storyResolution = storyResolution ?? question.supportedQuestion?.story.map {
             StoryNarrativeLocalization.resolve(
                 $0.flavorText,
@@ -279,7 +284,8 @@ struct BasicChoicePromptPresentation: Sendable, Equatable {
         return semanticPresentation.isRenderableInCurrentClient
             && Self.supportsSemanticPrompt(
                 rawQuestion: identity.rawQuestion,
-                presentation: semanticPresentation.presentation
+                presentation: semanticPresentation.presentation,
+                scenarioID: semanticSupportScenarioID
             )
     }
 
@@ -445,6 +451,8 @@ enum BasicChoiceSubmission: Sendable, Equatable {
     case continueCampaign(JSONValue)
     case pickDestiny([QuestionPresentation.DestinyDrawing])
     case campaignSpecific(JSONValue)
+    case standaloneSettings([JSONValue])
+    case scenarioSpecific(JSONValue)
     case deck(DeckID)
 
     var choiceIndex: Int? {

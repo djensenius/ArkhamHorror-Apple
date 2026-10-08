@@ -1365,7 +1365,11 @@ struct QuestionPresentationV2GenericTests {
             .pickDestiny
         case .campaignSpecific:
             .campaignSpecific
-        case .standaloneSettings, .campaignSettings, .scenarioSpecific:
+        case .standaloneSettings:
+            .standaloneSettings
+        case .scenarioSpecific:
+            .scenarioSpecific
+        case .campaignSettings:
             .campaignSettings
         }
     }

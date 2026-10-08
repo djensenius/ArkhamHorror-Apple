@@ -51,11 +51,15 @@ final class BoardCommandController {
     private var onExchangeAmount: (Int) -> Void
     private var onPickDestiny: ([QuestionPresentation.DestinyDrawing]) -> Void
     private var onCampaignSpecific: (JSONValue) -> Void
+    private var onStandaloneSettings: ([JSONValue]) -> Void
+    private var onScenarioSpecific: (JSONValue) -> Void
     private var onRetry: () -> Void
     private var onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
     private(set) var amountDraft: [String: Int] = [:]
     private(set) var exchangeAmount: Int = 0
     private(set) var pickDestinyDrawings: [QuestionPresentation.DestinyDrawing] = []
+    private(set) var spiritDeckSelection: [String] = []
+    private(set) var spiritDeckSearchText: String = ""
     private var promptInputKey: BasicChoicePromptKey?
 
     static let zoomRange: ClosedRange<CGFloat> = 0.5 ... 3
@@ -74,6 +78,8 @@ final class BoardCommandController {
         onExchangeAmount: @escaping (Int) -> Void = { _ in },
         onPickDestiny: @escaping ([QuestionPresentation.DestinyDrawing]) -> Void = { _ in },
         onCampaignSpecific: @escaping (JSONValue) -> Void = { _ in },
+        onStandaloneSettings: @escaping ([JSONValue]) -> Void = { _ in },
+        onScenarioSpecific: @escaping (JSONValue) -> Void = { _ in },
         onRetry: @escaping () -> Void = {},
         onCatalogRetry: @escaping (BasicChoiceCatalogRetryPresentation) -> Void = { _ in }
     ) {
@@ -89,6 +95,8 @@ final class BoardCommandController {
         self.onExchangeAmount = onExchangeAmount
         self.onPickDestiny = onPickDestiny
         self.onCampaignSpecific = onCampaignSpecific
+        self.onStandaloneSettings = onStandaloneSettings
+        self.onScenarioSpecific = onScenarioSpecific
         self.onRetry = onRetry
         self.onCatalogRetry = onCatalogRetry
         let layout = BoardLayoutBuilder.makeLayout(
@@ -100,6 +108,8 @@ final class BoardCommandController {
         amountDraft = initialAmountDraft
         exchangeAmount = 0
         pickDestinyDrawings = prompt?.pickDestinyDrawings ?? []
+        spiritDeckSelection = []
+        spiritDeckSearchText = ""
         promptInputKey = prompt?.identity.promptKey
         let graph = BoardFocusGraphBuilder.makeGraph(
             projection: projection,
@@ -107,6 +117,7 @@ final class BoardCommandController {
             prompt: prompt,
             amountDraft: initialAmountDraft,
             exchangeAmount: 0,
+            spiritDeckSearchText: "",
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: prompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
@@ -160,6 +171,7 @@ final class BoardCommandController {
             prompt: newPrompt,
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: newProjection, prompt: newPrompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
@@ -182,6 +194,7 @@ final class BoardCommandController {
             prompt: newPrompt,
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: newPrompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
@@ -297,6 +310,7 @@ final class BoardCommandController {
         }
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     private func applyPrimaryAction() -> Bool {
         if let linkedChoiceIndex = focusedLinkedChoiceMenuChoiceIndex {
             return activateLinkedChoiceMenuChoice(linkedChoiceIndex)
@@ -310,8 +324,17 @@ final class BoardCommandController {
         if activateFocusedPickDestinyControl() {
             return true
         }
+        if activateFocusedSpiritDeckControl() {
+            return true
+        }
         if activateFocusedScarletKeysTravelAction() {
             return true
+        }
+        if coordinator.currentFocus == BoardFocusID.promptStandaloneSettingsSubmit {
+            return activateStandaloneSettingsSubmit()
+        }
+        if coordinator.currentFocus == BoardFocusID.promptScenarioSpecificSubmit {
+            return activateScenarioSpecificSubmit()
         }
         if coordinator.currentFocus == BoardFocusID.promptCatalogRetry {
             return activatePromptCatalogRetry()
@@ -398,7 +421,8 @@ final class BoardCommandController {
             projection: projection,
             prompt: prompt,
             amountDraft: amountDraft,
-            exchangeAmount: exchangeAmount
+            exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText
         )
         guard !zones.isEmpty else { return false }
         let current = focusedZone ?? zones[0]
@@ -428,6 +452,14 @@ final class BoardCommandController {
             return true
         }
         if prompt?.pickDestinyPrompt?.presentation != nil, let entry = promptEntry {
+            coordinator.syncExternalFocus(entry)
+            return true
+        }
+        if prompt?.isStandaloneSettingsPrompt(in: projection) == true, let entry = promptEntry {
+            coordinator.syncExternalFocus(entry)
+            return true
+        }
+        if prompt?.laidToRestSpiritDeckPrompt != nil, let entry = promptEntry {
             coordinator.syncExternalFocus(entry)
             return true
         }
@@ -562,6 +594,51 @@ final class BoardCommandController {
         return true
     }
 
+    func setSpiritDeckSearchText(_ text: String) {
+        spiritDeckSearchText = text
+        refreshFocusGraphForPromptControls()
+    }
+
+    func filteredSpiritDeckEntries(
+        for spiritDeckPrompt: LaidToRestSpiritDeckPromptPresentation
+    ) -> [LaidToRestSpiritDeckPromptPresentation.Entry] {
+        spiritDeckPrompt.displayEntries(matching: spiritDeckSearchText)
+    }
+
+    @discardableResult
+    func toggleSpiritDeckCard(at index: Int) -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              let spiritDeckPrompt = prompt.laidToRestSpiritDeckPrompt,
+              let toggled = spiritDeckPrompt.toggledSelection(spiritDeckSelection, entryAt: index)
+        else { return false }
+        spiritDeckSelection = toggled
+        return true
+    }
+
+    @discardableResult
+    func activateStandaloneSettingsSubmit(_ contents: [JSONValue] = []) -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              prompt.supportsStandaloneSettingsSubmission(contents, in: projection)
+        else { return false }
+        onStandaloneSettings(contents)
+        return true
+    }
+
+    @discardableResult
+    func activateScenarioSpecificSubmit() -> Bool {
+        guard let prompt,
+              prompt.canSubmit,
+              let contents = prompt.laidToRestSpiritDeckPrompt?.answer(
+                  selectedCodes: spiritDeckSelection
+              ),
+              prompt.supportsScenarioSpecificSubmission(contents)
+        else { return false }
+        onScenarioSpecific(contents)
+        return true
+    }
+
     @discardableResult
     func activatePromptRetry() -> Bool {
         guard prompt?.canRetry == true else { return false }
@@ -593,6 +670,8 @@ final class BoardCommandController {
         }
         exchangeAmount = 0
         pickDestinyDrawings = prompt.pickDestinyDrawings ?? []
+        spiritDeckSelection = []
+        spiritDeckSearchText = ""
     }
 
     private func refreshFocusGraphForPromptControls() {
@@ -602,6 +681,7 @@ final class BoardCommandController {
             prompt: prompt,
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: prompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
@@ -642,6 +722,15 @@ final class BoardCommandController {
         }
         guard let rowIndex = pickDestinyRowIndex(for: focus) else { return false }
         return togglePickDestinyDrawing(at: rowIndex)
+    }
+
+    private func activateFocusedSpiritDeckControl() -> Bool {
+        guard let focus = coordinator.currentFocus else { return false }
+        if focus == BoardFocusID.promptScenarioSpecificSubmit {
+            return activateScenarioSpecificSubmit()
+        }
+        guard let rowIndex = spiritDeckRowIndex(for: focus) else { return false }
+        return toggleSpiritDeckCard(at: rowIndex)
     }
 
     private func activateFocusedScarletKeysTravelAction() -> Bool {
@@ -723,6 +812,13 @@ final class BoardCommandController {
     private func pickDestinyRowIndex(for focusID: SemanticFocusID) -> Int? {
         let raw = focusID.rawValue
         let prefix = "board.prompt.pickDestiny.row."
+        guard raw.hasPrefix(prefix) else { return nil }
+        return Int(raw.dropFirst(prefix.count))
+    }
+
+    private func spiritDeckRowIndex(for focusID: SemanticFocusID) -> Int? {
+        let raw = focusID.rawValue
+        let prefix = "board.prompt.scenarioSpecific.card."
         guard raw.hasPrefix(prefix) else { return nil }
         return Int(raw.dropFirst(prefix.count))
     }
@@ -935,6 +1031,14 @@ extension BoardCommandController {
 
     func updateCampaignSpecificHandler(_ handler: @escaping (JSONValue) -> Void) {
         onCampaignSpecific = handler
+    }
+
+    func updateStandaloneSettingsHandler(_ handler: @escaping ([JSONValue]) -> Void) {
+        onStandaloneSettings = handler
+    }
+
+    func updateScenarioSpecificHandler(_ handler: @escaping (JSONValue) -> Void) {
+        onScenarioSpecific = handler
     }
 
     func updateRetryHandler(_ handler: @escaping () -> Void) {

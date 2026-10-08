@@ -1,0 +1,17 @@
+{
+  "questionVersion": 1,
+  "rawQuestion": {
+    "tag": "PickScenarioSettings"
+  },
+  "questionPresentation": {
+    "protocolVersion": 2,
+    "questionVersion": 1,
+    "questionKind": "pickScenarioSettings",
+    "choiceCount": 0,
+    "choices": [],
+    "answer": {
+      "kind": "standaloneSettings",
+      "tag": "StandaloneSettingsAnswer"
+    }
+  }
+}

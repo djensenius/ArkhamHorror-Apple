@@ -21,16 +21,18 @@ extension QuestionPresentation {
         case payment
         case exchange
         case deck
+        case standaloneSettings
         case campaignSettings
         case pickDestiny
         case campaignSpecific
+        case scenarioSpecific
         case continuation
         case deferred
 
         var isRenderableInCurrentClient: Bool {
             switch self {
-            case .singleChoice, .amounts, .payment, .exchange, .pickDestiny,
-                 .campaignSpecific, .continuation:
+            case .singleChoice, .amounts, .payment, .exchange, .standaloneSettings,
+                 .pickDestiny, .campaignSpecific, .scenarioSpecific, .continuation:
                 true
             case .multiSelect, .deck, .campaignSettings, .deferred:
                 false
@@ -59,7 +61,11 @@ extension QuestionPresentation {
             .pickDestiny
         case .campaignSpecific:
             .campaignSpecific
-        case .standaloneSettings, .campaignSettings, .scenarioSpecific:
+        case .scenarioSpecific:
+            .scenarioSpecific
+        case .standaloneSettings:
+            .standaloneSettings
+        case .campaignSettings:
             .campaignSettings
         }
     }
@@ -77,12 +83,17 @@ extension BoundQuestionPresentation {
                 && !rawChoices.isEmpty
         case .amounts, .payment, .exchange, .continuation:
             rawChoices.isEmpty
+        case .standaloneSettings:
+            presentation.questionKind == .pickScenarioSettings && rawChoices.isEmpty
         case .multiSelect, .deck, .campaignSettings, .deferred:
             false
         case .pickDestiny:
             presentation.questionKind == .pickDestiny && presentation.drawings?.isEmpty == false
         case .campaignSpecific:
             presentation.questionKind == .pickCampaignSpecific
+                && rawChoices.isEmpty
+        case .scenarioSpecific:
+            presentation.questionKind == .pickScenarioSpecific
                 && rawChoices.isEmpty
         }
     }
@@ -112,11 +123,16 @@ extension BoundQuestionPresentation {
 
 extension BasicChoicePromptPresentation {
     var isRenderableQuestion: Bool {
+        isRenderableQuestion(in: nil)
+    }
+
+    func isRenderableQuestion(in projection: BoardProjection?) -> Bool {
         if let semanticPresentation {
             return semanticPresentation.isRenderableInCurrentClient
                 && Self.supportsSemanticPrompt(
                     rawQuestion: identity.rawQuestion,
-                    presentation: semanticPresentation.presentation
+                    presentation: semanticPresentation.presentation,
+                    projection: projection
                 )
         }
         return question.supportedQuestion?.choices.isEmpty == false
@@ -216,7 +232,20 @@ extension BasicChoicePromptPresentation {
 
     static func supportsSemanticPrompt(
         rawQuestion: JSONValue,
-        presentation: QuestionPresentation
+        presentation: QuestionPresentation,
+        projection: BoardProjection?
+    ) -> Bool {
+        supportsSemanticPrompt(
+            rawQuestion: rawQuestion,
+            presentation: presentation,
+            scenarioID: projection?.scenario?.id
+        )
+    }
+
+    static func supportsSemanticPrompt(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation,
+        scenarioID: String?
     ) -> Bool {
         switch presentation.answer {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmounts:
@@ -243,9 +272,43 @@ extension BasicChoicePromptPresentation {
                 rawQuestion: rawQuestion,
                 presentation: presentation
             )
-        case .deck, .standaloneSettings, .campaignSettings, .scenarioSpecific:
+        case .standaloneSettings:
+            return presentation.questionKind == .pickScenarioSettings
+                && rawQuestion.hasTag("PickScenarioSettings")
+                && presentation.choiceCount == 0
+                && presentation.choices.isEmpty
+                && StandaloneScenarioSettingsCatalog.hasProvenEmptySettings(
+                    scenarioID: scenarioID
+                )
+        case .scenarioSpecific:
+            return LaidToRestSpiritDeckPromptPresentation.make(
+                rawQuestion: rawQuestion,
+                presentation: presentation,
+                cardCatalog: nil
+            ) != nil
+        case .deck, .campaignSettings:
             return false
         }
+    }
+
+    func isStandaloneSettingsPrompt(in projection: BoardProjection?) -> Bool {
+        guard let presentation = semanticPresentation?.presentation,
+              case .standaloneSettings = presentation.answer
+        else { return false }
+        return Self.supportsSemanticPrompt(
+            rawQuestion: identity.rawQuestion,
+            presentation: presentation,
+            projection: projection
+        )
+    }
+
+    var laidToRestSpiritDeckPrompt: LaidToRestSpiritDeckPromptPresentation? {
+        guard let presentation = semanticPresentation?.presentation else { return nil }
+        return LaidToRestSpiritDeckPromptPresentation.make(
+            rawQuestion: identity.rawQuestion,
+            presentation: presentation,
+            cardCatalog: cardCatalog
+        )
     }
 
     private func selectionHint(for presentation: QuestionPresentation) -> String? {
