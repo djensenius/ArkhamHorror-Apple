@@ -24,6 +24,7 @@ struct ScarletKeysTravelPromptPresentation: Sendable, Equatable {
         }
 
         let locationID: String
+        let locationTitle: String?
         let kind: Kind
         let title: String?
         let payload: JSONValue
@@ -33,7 +34,7 @@ struct ScarletKeysTravelPromptPresentation: Sendable, Equatable {
         }
 
         var isActionable: Bool {
-            title != nil
+            locationTitle != nil && title != nil
         }
     }
 
@@ -119,8 +120,12 @@ extension ScarletKeysTravelPromptPresentation {
             let isCurrent = locationID == map.current
             let rawTravelTime = map.travelTimes[locationID]
             let travelTime = displayedTravelTime(rawTravelTime, locationID: locationID)
+            let title = labelResolutions[
+                "scarletKeysTravel.location.\(locationID).name"
+            ]?.title
             let actions = actions(
                 for: locationID,
+                locationTitle: title,
                 isCurrent: isCurrent,
                 isFinale: isFinale,
                 isAvailable: isAvailable,
@@ -130,9 +135,7 @@ extension ScarletKeysTravelPromptPresentation {
             )
             return Location(
                 id: locationID,
-                title: labelResolutions[
-                    "scarletKeysTravel.location.\(locationID).name"
-                ]?.title,
+                title: title,
                 subtitle: labelResolutions[
                     "scarletKeysTravel.location.\(locationID).subtitle"
                 ]?.title,
@@ -170,6 +173,7 @@ extension ScarletKeysTravelPromptPresentation {
 
     private static func actions(
         for locationID: String,
+        locationTitle: String?,
         isCurrent: Bool,
         isFinale: Bool,
         isAvailable: Bool,
@@ -185,12 +189,14 @@ extension ScarletKeysTravelPromptPresentation {
             actions.append(action(
                 .travel,
                 locationID: locationID,
+                locationTitle: locationTitle,
                 labelResolutions: labelResolutions
             ))
             if hasTicket, (travelTime ?? 0) > 1 {
                 actions.append(action(
                     .travelWithTicket,
                     locationID: locationID,
+                    locationTitle: locationTitle,
                     labelResolutions: labelResolutions
                 ))
             }
@@ -199,6 +205,7 @@ extension ScarletKeysTravelPromptPresentation {
             actions.append(action(
                 .travelVia,
                 locationID: locationID,
+                locationTitle: locationTitle,
                 labelResolutions: labelResolutions
             ))
         }
@@ -208,6 +215,7 @@ extension ScarletKeysTravelPromptPresentation {
     private static func action(
         _ kind: Action.Kind,
         locationID: String,
+        locationTitle: String?,
         labelResolutions: [String: BasicChoiceLabelResolution]
     ) -> Action {
         let wireTag = switch kind {
@@ -217,6 +225,7 @@ extension ScarletKeysTravelPromptPresentation {
         }
         return Action(
             locationID: locationID,
+            locationTitle: locationTitle,
             kind: kind,
             title: labelResolutions["scarletKeysTravel.action.\(kind.rawValue)"]?.title,
             payload: .array([.string(wireTag), .string(locationID)])

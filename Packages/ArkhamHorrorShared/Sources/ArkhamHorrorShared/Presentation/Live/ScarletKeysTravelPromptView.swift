@@ -72,7 +72,7 @@ struct ScarletKeysTravelPromptView: View {
             if !location.actions.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(location.actions) { action in
-                        actionButton(action, locationTitle: location.title)
+                        actionButton(action)
                     }
                 }
             }
@@ -88,8 +88,7 @@ struct ScarletKeysTravelPromptView: View {
 
     @ViewBuilder
     private func actionButton(
-        _ action: ScarletKeysTravelPromptPresentation.Action,
-        locationTitle: String?
+        _ action: ScarletKeysTravelPromptPresentation.Action
     ) -> some View {
         let focusID = BoardFocusID.promptScarletKeysTravelAction(action)
         let title = action.title ?? scarletKeysTravelLocalized(
@@ -99,7 +98,7 @@ struct ScarletKeysTravelPromptView: View {
         let control = SemanticActionControl(
             accessibilityLabel: Text(accessibilityLabel(
                 title: title,
-                locationTitle: locationTitle
+                locationTitle: action.locationTitle
             )),
             semanticFocusID: focusID,
             onOutcome: { controller.handle(focusID: $0, $1) },

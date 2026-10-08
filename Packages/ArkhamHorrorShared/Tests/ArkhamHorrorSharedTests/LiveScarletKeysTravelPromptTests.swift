@@ -65,12 +65,24 @@ struct LiveScarletKeysTravelPromptTests {
         let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
         let firstLocation = try #require(travelPrompt.locations.first)
         let firstAction = try #require(firstLocation.actions.first)
+        let focusID = BoardFocusID.promptScarletKeysTravelAction(firstAction)
+        var submitted: [JSONValue] = []
+        let controller = BoardCommandController(
+            projection: BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot()),
+            prompt: prompt,
+            onCampaignSpecific: { submitted.append($0) }
+        )
 
         #expect(firstLocation.id == "Alexandria")
         #expect(firstLocation.title == nil)
         #expect(firstLocation.isActionable == false)
         #expect(firstAction.title == "Travel here")
+        #expect(!firstAction.isActionable)
+        #expect(!travelPrompt.actions.contains { $0.locationID == "Alexandria" && $0.isActionable })
         #expect(!prompt.supportsCampaignSpecificSubmission(firstAction.payload))
+        #expect(!controller.coordinator.graph.contains(focusID))
+        #expect(!controller.handle(focusID: focusID, .command(.primaryAction)))
+        #expect(submitted.isEmpty)
     }
 
     @Test("Apple-only Scarlet Keys travel strings exist in English and German bundles")
