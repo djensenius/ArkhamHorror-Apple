@@ -432,6 +432,37 @@ struct StandaloneSettingsPromptTests {
         ) == "nicht ausgewählt")
     }
 
+    @Test("Laid to Rest no-locale fallback strings interpolate arguments")
+    func laidToRestNoLocaleFallbackStringsInterpolateArguments() throws {
+        let prompt = try Self.laidToRestPromptWithCatalog()
+        #expect(prompt.semanticLocaleIdentifier == nil)
+
+        let counter = prompt.scenarioSpecificSpiritDeckCounterText(
+            selectedCount: 2,
+            requiredCount: 9
+        )
+        #expect(counter == "Selected cards: 2 of 9")
+        #expect(!counter.contains("%d"))
+
+        let fixedLabel = prompt.scenarioSpecificSpiritDeckAccessibilityLabel(
+            title: "Card c01001",
+            subtitle: "c01001",
+            selected: false,
+            isFixed: true
+        )
+        #expect(fixedLabel == "Card c01001, c01001, fixed")
+        #expect(!fixedLabel.contains("%@"))
+
+        let toggleLabel = prompt.scenarioSpecificSpiritDeckAccessibilityLabel(
+            title: "Card c01002",
+            subtitle: "c01002",
+            selected: true,
+            isFixed: false
+        )
+        #expect(toggleLabel == "Card c01002, c01002, selected")
+        #expect(!toggleLabel.contains("%@"))
+    }
+
     @Test("StandaloneSettingsAnswer empty settings encode exact server bytes")
     func emptyStandaloneSettingsAnswerBytes() throws {
         let encoded = try ContractJSON.encode(StandaloneSettingsAnswer(contents: []))

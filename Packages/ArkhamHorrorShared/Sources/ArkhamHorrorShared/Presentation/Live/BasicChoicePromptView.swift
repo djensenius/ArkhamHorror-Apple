@@ -192,10 +192,10 @@ struct BasicChoicePromptView: View {
     private func scenarioSpecificPrompt(
         _ prompt: LaidToRestSpiritDeckPromptPresentation
     ) -> some View {
-        let counterText = presentation.semanticLocalized(
-            "scenarioSpecific.spiritDeck.counter.format",
-            value: "Selected cards: %d of %d",
-            arguments: [prompt.selectedCount(controller.spiritDeckSelection), prompt.count]
+        let selectedCount = prompt.selectedCount(controller.spiritDeckSelection)
+        let counterText = presentation.scenarioSpecificSpiritDeckCounterText(
+            selectedCount: selectedCount,
+            requiredCount: prompt.count
         )
         return VStack(alignment: .leading, spacing: 10) {
             Text(presentation.semanticLocalized(
@@ -321,26 +321,11 @@ struct BasicChoicePromptView: View {
         selected: Bool,
         isFixed: Bool
     ) -> String {
-        if isFixed {
-            return presentation.semanticLocalized(
-                "scenarioSpecific.spiritDeck.accessibility.fixed",
-                value: "%@, %@, fixed",
-                arguments: [title, subtitle]
-            )
-        }
-        let state = selected
-            ? presentation.semanticLocalized(
-                "scenarioSpecific.spiritDeck.accessibility.selected",
-                value: "selected"
-            )
-            : presentation.semanticLocalized(
-                "scenarioSpecific.spiritDeck.accessibility.notSelected",
-                value: "not selected"
-            )
-        return presentation.semanticLocalized(
-            "scenarioSpecific.spiritDeck.accessibility.toggle",
-            value: "%@, %@, %@",
-            arguments: [title, subtitle, state]
+        presentation.scenarioSpecificSpiritDeckAccessibilityLabel(
+            title: title,
+            subtitle: subtitle,
+            selected: selected,
+            isFixed: isFixed
         )
     }
 
@@ -608,6 +593,48 @@ struct BasicChoicePromptView: View {
         default:
             return nil
         }
+    }
+}
+
+extension BasicChoicePromptPresentation {
+    func scenarioSpecificSpiritDeckCounterText(
+        selectedCount: Int,
+        requiredCount: Int
+    ) -> String {
+        semanticLocalized(
+            "scenarioSpecific.spiritDeck.counter.format",
+            value: "Selected cards: \(selectedCount) of \(requiredCount)",
+            arguments: [selectedCount, requiredCount]
+        )
+    }
+
+    func scenarioSpecificSpiritDeckAccessibilityLabel(
+        title: String,
+        subtitle: String,
+        selected: Bool,
+        isFixed: Bool
+    ) -> String {
+        if isFixed {
+            return semanticLocalized(
+                "scenarioSpecific.spiritDeck.accessibility.fixed",
+                value: "\(title), \(subtitle), fixed",
+                arguments: [title, subtitle]
+            )
+        }
+        let state = selected
+            ? semanticLocalized(
+                "scenarioSpecific.spiritDeck.accessibility.selected",
+                value: "selected"
+            )
+            : semanticLocalized(
+                "scenarioSpecific.spiritDeck.accessibility.notSelected",
+                value: "not selected"
+            )
+        return semanticLocalized(
+            "scenarioSpecific.spiritDeck.accessibility.toggle",
+            value: "\(title), \(subtitle), \(state)",
+            arguments: [title, subtitle, state]
+        )
     }
 }
 
