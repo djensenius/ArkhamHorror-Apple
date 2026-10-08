@@ -12,6 +12,28 @@ func liveHarnessSelectableChoiceIndexes(
     }
 }
 
+func liveHarnessRenderableQuestionPreflight(
+    prompt: BasicChoicePromptPresentation,
+    projection: BoardProjection,
+    diagnosticBypassUnsupported: Bool = false
+) -> Bool {
+    prompt.isRenderableQuestion(in: projection)
+        || LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion)
+        || prompt.isChooseUpgradeDeckPrompt
+        || liveHarnessCanDiagnosticBypassUnsupported(
+            prompt,
+            enabled: diagnosticBypassUnsupported
+        )
+}
+
+private func liveHarnessCanDiagnosticBypassUnsupported(
+    _ prompt: BasicChoicePromptPresentation,
+    enabled: Bool
+) -> Bool {
+    guard enabled, prompt.readOnlyReason == nil else { return false }
+    return prompt.identity.questionPresentation?.choices.contains { $0.selectable } == true
+}
+
 private func liveHarnessDiagnosticBypassSelectableChoiceIndexes(
     prompt: BasicChoicePromptPresentation
 ) -> [Int] {
@@ -2484,10 +2506,11 @@ private struct LivePlaythroughBot {
             let skillTestPreparationCount = skillTestPreparationCounter.count(
                 for: skillTestPreparationKey
             )
-            let cannotRender = !prompt.isRenderableQuestion
-                && !isInitialChooseDeckPrompt(prompt)
-                && !prompt.isChooseUpgradeDeckPrompt
-                && !canDiagnosticBypassUnsupported(prompt)
+            let cannotRender = !liveHarnessRenderableQuestionPreflight(
+                prompt: prompt,
+                projection: projection,
+                diagnosticBypassUnsupported: diagnosticBypassUnsupported
+            )
             if cannotRender {
                 let failure = PromptFailure(
                     scenario: scenario,
@@ -2904,9 +2927,10 @@ private struct LivePlaythroughBot {
     }
 
     private func canDiagnosticBypassUnsupported(_ prompt: BasicChoicePromptPresentation) -> Bool {
-        guard diagnosticBypassUnsupported, prompt.readOnlyReason == nil else { return false }
-        return prompt.identity.questionPresentation?.choices
-            .contains { $0.selectable } == true
+        liveHarnessCanDiagnosticBypassUnsupported(
+            prompt,
+            enabled: diagnosticBypassUnsupported
+        )
     }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
@@ -3937,7 +3961,7 @@ private extension TracePromptState {
         }.map(TraceInvestigatorStatus.init)
         actProgress = projection.acts.map(TraceActProgress.init)
         agendaProgress = projection.agendas.map(TraceAgendaProgress.init)
-        isRenderableQuestion = prompt.isRenderableQuestion
+        isRenderableQuestion = prompt.isRenderableQuestion(in: projection)
         canSubmit = prompt.canSubmit
         statusMessage = prompt.statusMessage
         readOnlyReason = prompt.readOnlyReason.map(describeReadOnlyReason)
@@ -4825,7 +4849,7 @@ private func traceAppChoices(
             systemImage: resolved.systemImage,
             accessibilityLabel: resolved.accessibilityLabel,
             accessibilityHint: accessibilityHint,
-            rendersUpdateRequired: !prompt.isRenderableQuestion
+            rendersUpdateRequired: !prompt.isRenderableQuestion(in: projection)
                 || resolved.title == "Update required",
             rawValue: choice.rawValue
         )

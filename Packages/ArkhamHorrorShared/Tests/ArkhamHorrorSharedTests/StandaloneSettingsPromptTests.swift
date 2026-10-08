@@ -38,6 +38,30 @@ struct StandaloneSettingsPromptTests {
         #expect(!StandaloneScenarioSettingsCatalog.hasProvenEmptySettings(scenarioID: "01120"))
     }
 
+    @Test("Live harness preflight accepts 86001 settings and rejects 01120")
+    func liveHarnessPreflightUsesScenarioProjection() throws {
+        let supportedProjection = Self.projection(scenarioID: "c86001")
+        let supportedPrompt = try Self.prompt(
+            named: "pick-scenario-settings",
+            projection: supportedProjection
+        )
+        let unsupportedProjection = Self.projection(scenarioID: "c01120")
+        let unsupportedPrompt = try Self.prompt(
+            named: "pick-scenario-settings",
+            projection: unsupportedProjection
+        )
+
+        #expect(!supportedPrompt.isRenderableQuestion)
+        #expect(liveHarnessRenderableQuestionPreflight(
+            prompt: supportedPrompt,
+            projection: supportedProjection
+        ))
+        #expect(!liveHarnessRenderableQuestionPreflight(
+            prompt: unsupportedPrompt,
+            projection: unsupportedProjection
+        ))
+    }
+
     @Test("PickScenarioSettings fails closed without a scenario projection")
     func pickScenarioSettingsWithoutScenarioProjectionFailsClosed() throws {
         let fixture = try Self.fixture(named: "pick-scenario-settings")
