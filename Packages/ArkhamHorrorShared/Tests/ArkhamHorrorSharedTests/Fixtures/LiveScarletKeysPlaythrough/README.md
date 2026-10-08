@@ -29,8 +29,9 @@ Source references:
 - `roland-c09501-q145-embark-world-map.json` SHA-256 after sorted-key
   reserialization: `afa1f258aea8e3a166c26a5e1c79a4f5156e3bc4835ceb1df1702c2cb83ad0e0`.
 - `roland-c09501-q145-embark-world-map-has-ticket.json` is derived from the
-  capture above by changing only `questionPresentation.value.hasTicket` to `true`,
-  so it covers expedited-ticket rendering for both green destinations (where web
-  adds 1 to raw travel time before comparing) and ordinary non-green destinations.
-  Its SHA-256 after sorted-key reserialization is
-  `3c5e87461efebef4619d886e45a417e0ffe23a0a94f3a923abdea469a206f98b`.
+  capture above by changing only `questionPresentation.value.hasTicket` and
+  `rawQuestion.contents[1].hasTicket` to `true`, so it covers expedited-ticket
+  rendering for both green destinations (where web adds 1 to raw travel time
+  before comparing) and ordinary non-green destinations. Its SHA-256 after
+  sorted-key reserialization is
+  `20b29fc5d8d04d51bd2d69fa866fc665af39c775f40dff7b9e6a58f287205fc1`.
