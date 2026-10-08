@@ -105,7 +105,7 @@ struct LiveScarletKeysTravelPromptTests {
         #expect(travelPrompt.locations.count == 35)
         #expect(!travelPrompt.locations.contains { $0.id == "BermudaTriangle" })
         #expect(alexandria.isActionable)
-        #expect(prompt.supportsCampaignSpecificSubmission(try #require(alexandria.actions.first).payload))
+        #expect(try prompt.supportsCampaignSpecificSubmission(#require(alexandria.actions.first).payload))
     }
 
     @Test("Missing world-map labels keep travel actions unpressable")
@@ -432,7 +432,7 @@ struct LiveScarletKeysTravelPromptTests {
         connection: FakeGameSocketConnection
     ) throws {
         let attemptID = UUID()
-        model.liveGameStates[gameID] = .live(try projection(for: fixture, ownerID: ownerID))
+        model.liveGameStates[gameID] = try .live(projection(for: fixture, ownerID: ownerID))
         model.liveGameParticipantIdentities[gameID] = .participant(ownerID)
         model.liveGameSessions[gameID] = LiveGameSessionHandle(
             attemptID: attemptID,
