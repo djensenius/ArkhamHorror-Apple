@@ -25,16 +25,25 @@ struct LaidToRestSpiritDeckPromptPresentation: Sendable, Equatable {
         }
     }
 
-    var rawValidCodes: [String] {
+    var rawStringEntryCodes: [String] {
         entries.compactMap(\.code)
     }
 
-    var distinctRawValidCodes: Set<String> {
-        Set(rawValidCodes)
+    var distinctRawStringEntryCodes: Set<String> {
+        Set(rawStringEntryCodes)
     }
 
     var displayEntries: [Entry] {
         entries + fixedEntries
+    }
+
+    func displayEntries(matching searchText: String) -> [Entry] {
+        let term = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !term.isEmpty else { return displayEntries }
+        return displayEntries.filter { entry in
+            entry.code?.lowercased().contains(term) == true
+                || entry.displayName?.lowercased().contains(term) == true
+        }
     }
 
     func selectedCount(_ selectedCodes: [String]) -> Int {
@@ -47,7 +56,7 @@ struct LaidToRestSpiritDeckPromptPresentation: Sendable, Equatable {
 
     func toggledSelection(_ selectedCodes: [String], entryAt index: Int) -> [String]? {
         guard canToggle(entryAt: index), let code = entries[index].code else { return nil }
-        var selected = selectedCodes.filter { distinctRawValidCodes.contains($0) }
+        var selected = selectedCodes.filter { distinctRawStringEntryCodes.contains($0) }
         if selected.contains(code) {
             selected.removeAll { $0 == code }
         } else if Set(selected).count < count {
@@ -90,7 +99,7 @@ struct LaidToRestSpiritDeckPromptPresentation: Sendable, Equatable {
         guard selectedCodes.count == count,
               Set(selectedCodes).count == count
         else { return false }
-        return selectedCodes.allSatisfy { distinctRawValidCodes.contains($0) }
+        return selectedCodes.allSatisfy { distinctRawStringEntryCodes.contains($0) }
     }
 }
 

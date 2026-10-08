@@ -69,7 +69,7 @@ struct StandaloneSettingsPromptTests {
     @Test("Laid to Rest rejects non-subset, wrong count, duplicates, bad key and bad question kind")
     func laidToRestSubmissionNegatives() throws {
         let prompt = try Self.laidToRestPromptWithCatalog()
-        let valid = try Array(#require(prompt.laidToRestSpiritDeckPrompt).rawValidCodes.prefix(9))
+        let valid = try Array(#require(prompt.laidToRestSpiritDeckPrompt).rawStringEntryCodes.prefix(9))
         let validAnswer: JSONValue = .array([
             .string(LaidToRestSpiritDeckPromptPresentation.key),
             .object(["cardCodes": .array(valid.map(JSONValue.string))]),
@@ -135,7 +135,7 @@ struct StandaloneSettingsPromptTests {
         #expect(missingEntry.isSelectable)
         #expect(spiritDeck.toggledSelection([], entryAt: missingEntry.id) == [missingCode])
         let selected = [missingCode]
-            + Array(spiritDeck.rawValidCodes.dropFirst().prefix(spiritDeck.count - 1))
+            + Array(spiritDeck.rawStringEntryCodes.dropFirst().prefix(spiritDeck.count - 1))
         #expect(spiritDeck.supportsSubmission(Self.spiritDeckAnswer(selected)))
     }
 
@@ -193,12 +193,21 @@ struct StandaloneSettingsPromptTests {
         ))
         #expect(!controller.activateScenarioSpecificSubmit())
 
+        let firstCode = try #require(spiritDeck.rawStringEntryCodes.first)
+        controller.setSpiritDeckSearchText(firstCode)
+        let filteredFocusIDs = controller.coordinator.graph.order
+        #expect(controller.filteredSpiritDeckEntries(for: spiritDeck).map(\.id) == [0])
+        #expect(filteredFocusIDs.contains(BoardFocusID.promptScenarioSpecificCard(0)))
+        #expect(!filteredFocusIDs.contains(BoardFocusID.promptScenarioSpecificCard(1)))
+        #expect(filteredFocusIDs.contains(BoardFocusID.promptScenarioSpecificSubmit))
+        controller.setSpiritDeckSearchText("")
+
         for index in 0 ..< spiritDeck.count {
             #expect(controller.toggleSpiritDeckCard(at: index))
         }
         #expect(
             controller.spiritDeckSelection
-                == Array(spiritDeck.rawValidCodes.prefix(spiritDeck.count))
+                == Array(spiritDeck.rawStringEntryCodes.prefix(spiritDeck.count))
         )
         #expect(controller.activateScenarioSpecificSubmit())
         #expect(submitted == spiritDeck.answer(selectedCodes: controller.spiritDeckSelection))

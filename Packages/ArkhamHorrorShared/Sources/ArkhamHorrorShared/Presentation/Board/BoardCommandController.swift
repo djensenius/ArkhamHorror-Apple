@@ -117,6 +117,7 @@ final class BoardCommandController {
             prompt: prompt,
             amountDraft: initialAmountDraft,
             exchangeAmount: 0,
+            spiritDeckSearchText: "",
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: prompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
@@ -418,7 +419,8 @@ final class BoardCommandController {
             projection: projection,
             prompt: prompt,
             amountDraft: amountDraft,
-            exchangeAmount: exchangeAmount
+            exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText
         )
         guard !zones.isEmpty else { return false }
         let current = focusedZone ?? zones[0]
@@ -592,18 +594,13 @@ final class BoardCommandController {
 
     func setSpiritDeckSearchText(_ text: String) {
         spiritDeckSearchText = text
+        refreshFocusGraphForPromptControls()
     }
 
     func filteredSpiritDeckEntries(
         for spiritDeckPrompt: LaidToRestSpiritDeckPromptPresentation
     ) -> [LaidToRestSpiritDeckPromptPresentation.Entry] {
-        let term = spiritDeckSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard !term.isEmpty else { return spiritDeckPrompt.displayEntries }
-        return spiritDeckPrompt.displayEntries.filter { entry in
-            entry.code?.lowercased().contains(term) == true
-                || entry.displayName?.lowercased().contains(term) == true
-        }
+        spiritDeckPrompt.displayEntries(matching: spiritDeckSearchText)
     }
 
     @discardableResult
@@ -682,6 +679,7 @@ final class BoardCommandController {
             prompt: prompt,
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: prompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
