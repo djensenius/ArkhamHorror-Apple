@@ -58,13 +58,12 @@ struct ScarletKeysTravelPromptView: View {
                 }
             }
 
-            if location.isCurrent, location.actions.isEmpty {
-                Label(
-                    prompt.currentLocationTitle ?? "You are currently here.",
-                    systemImage: "mappin.circle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if location.isCurrent, location.actions.isEmpty,
+               let currentLocationTitle = prompt.currentLocationTitle
+            {
+                Label(currentLocationTitle, systemImage: "mappin.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if let lockedTitle = location.lockedTitle {

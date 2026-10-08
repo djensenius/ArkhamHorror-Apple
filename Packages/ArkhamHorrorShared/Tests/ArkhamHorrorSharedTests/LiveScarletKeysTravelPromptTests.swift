@@ -144,6 +144,25 @@ struct LiveScarletKeysTravelPromptTests {
         #expect(submitted.isEmpty)
     }
 
+    @Test("Missing current and locked labels hide Scarlet Keys status text")
+    func missingCurrentAndLockedLabelsHideStatusText() async throws {
+        let fixture = try Self.fixture()
+        let model = try await Self.syntheticLocationLabelModel(
+            for: fixture,
+            removingCatalogKeys: [
+                "scarletKeys.youAreCurrentlyHere",
+                "scarletKeys.locationLocked",
+            ]
+        )
+        let prompt = try Self.prompt(for: fixture, labelModel: model)
+        let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
+        let lockedLocation = try #require(travelPrompt.locations.first { $0.id == "HongKong" })
+
+        #expect(travelPrompt.currentLocationTitle == nil)
+        #expect(lockedLocation.isLocked)
+        #expect(lockedLocation.lockedTitle == nil)
+    }
+
     @Test("Finale keeps a travel action on the current single available location")
     func finaleKeepsCurrentLocationTravelAction() async throws {
         let fixture = try Self.fixtureSettingAvailable(["London"])
@@ -290,7 +309,8 @@ struct LiveScarletKeysTravelPromptTests {
     }
 
     private static func syntheticLocationLabelModel(
-        for fixture: ScarletKeysEmbarkFixture
+        for fixture: ScarletKeysEmbarkFixture,
+        removingCatalogKeys removedKeys: Set<String> = []
     ) async throws -> AppModel {
         var entries = [
             "scarletKeys.travelTime": "Travel time",
@@ -306,6 +326,9 @@ struct LiveScarletKeysTravelPromptTests {
             entries["theScarletKeys.locations.\(locationID).name"] = splitCamelCase(locationID)
         }
         entries["theScarletKeys.locations.Alexandria.subtitle"] = "Egypt"
+        for key in removedKeys {
+            entries.removeValue(forKey: key)
+        }
         return try await labelModel(entries: entries)
     }
 
