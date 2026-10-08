@@ -735,10 +735,6 @@ extension BasicChoicePromptPresentation {
         return prompt.supportsSubmission(contents)
     }
 
-    func supportsStandaloneSettingsSubmission(_ contents: [JSONValue]) -> Bool {
-        supportsStandaloneSettingsSubmission(contents, in: nil)
-    }
-
     func supportsStandaloneSettingsSubmission(
         _ contents: [JSONValue],
         in projection: BoardProjection?

@@ -281,10 +281,6 @@ extension BasicChoicePromptPresentation {
         }
     }
 
-    var isStandaloneSettingsPrompt: Bool {
-        isStandaloneSettingsPrompt(in: nil)
-    }
-
     func isStandaloneSettingsPrompt(in projection: BoardProjection?) -> Bool {
         guard let presentation = semanticPresentation?.presentation,
               case .standaloneSettings = presentation.answer
