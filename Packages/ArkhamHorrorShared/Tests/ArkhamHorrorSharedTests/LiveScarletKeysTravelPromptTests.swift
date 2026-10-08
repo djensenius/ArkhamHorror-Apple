@@ -188,6 +188,23 @@ struct LiveScarletKeysTravelPromptTests {
         #expect(lockedLocation.lockedTitle == nil)
     }
 
+    @Test("Duplicate available entries do not make the current location finale")
+    func duplicateAvailableEntriesDoNotMakeCurrentLocationFinale() async throws {
+        let fixture = try Self.fixtureSettingAvailable(["London", "London"])
+        let model = try await Self.syntheticLocationLabelModel(for: fixture)
+        let prompt = try Self.prompt(for: fixture, labelModel: model)
+        let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
+        let london = try #require(travelPrompt.locations.first { $0.id == "London" })
+
+        #expect(london.isCurrent)
+        #expect(london.isAvailable)
+        #expect(london.actions.isEmpty)
+        #expect(!prompt.supportsCampaignSpecificSubmission(.array([
+            .string("travel"),
+            .string("London"),
+        ])))
+    }
+
     @Test("Finale keeps a travel action on the current single available location")
     func finaleKeepsCurrentLocationTravelAction() async throws {
         let fixture = try Self.fixtureSettingAvailable(["London"])
@@ -284,6 +301,19 @@ struct LiveScarletKeysTravelPromptTests {
         try await Self.expectUnsupportedMismatchedPrompt(
             fixture,
             rejectedPayload: .array([.string("travel"), .string("Alexandria")])
+        )
+    }
+
+    @Test("Non-string available entries leave Scarlet Keys prompt unsupported and send nothing")
+    func nonStringAvailableEntryUnsupportedAndSendsNothing() async throws {
+        let fixture = try Self.fixtureSettingAvailableEntries([
+            .string("London"),
+            .bool(true),
+        ])
+
+        try await Self.expectUnsupportedMismatchedPrompt(
+            fixture,
+            rejectedPayload: .array([.string("travel"), .string("London")])
         )
     }
 
@@ -546,8 +576,14 @@ struct LiveScarletKeysTravelPromptTests {
     private static func fixtureSettingAvailable(
         _ locationIDs: [String]
     ) throws -> ScarletKeysEmbarkFixture {
+        try fixtureSettingAvailableEntries(locationIDs.map(JSONValue.string))
+    }
+
+    private static func fixtureSettingAvailableEntries(
+        _ entries: [JSONValue]
+    ) throws -> ScarletKeysEmbarkFixture {
         try fixtureMutatingMap(named: "roland-c09501-q145-embark-world-map") { map in
-            map.replacingAvailable(locationIDs)
+            map.replacingAvailable(entries)
         }
     }
 
@@ -733,9 +769,9 @@ private extension JSONValue {
         }
     }
 
-    func replacingAvailable(_ locationIDs: [String]) -> JSONValue {
+    func replacingAvailable(_ entries: [JSONValue]) -> JSONValue {
         guard case var .object(map) = self else { return self }
-        map["available"] = .array(locationIDs.map(JSONValue.string))
+        map["available"] = .array(entries)
         return .object(map)
     }
 
