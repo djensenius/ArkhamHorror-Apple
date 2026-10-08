@@ -120,6 +120,25 @@ struct StandaloneSettingsPromptTests {
         #expect(!wrongKind.supportsScenarioSpecificSubmission(validAnswer))
     }
 
+    @Test("Laid to Rest cards missing from the catalog stay selectable by code")
+    func laidToRestMissingCatalogCardStaysSelectableByCode() throws {
+        let allCodes = try Self.cardCodes(in: Self.fixture(named: "pick-scenario-specific-laid-to-rest").rawQuestion)
+        let missingCode = try #require(allCodes.first)
+        let prompt = try Self.laidToRestPromptWithCatalog(
+            cardCatalog: Self.cardCatalog(codes: Array(allCodes.dropFirst()))
+        )
+        let spiritDeck = try #require(prompt.laidToRestSpiritDeckPrompt)
+        let missingEntry = try #require(spiritDeck.entries.first)
+
+        #expect(missingEntry.code == missingCode)
+        #expect(missingEntry.displayName == nil)
+        #expect(missingEntry.isSelectable)
+        #expect(spiritDeck.toggledSelection([], entryAt: missingEntry.id) == [missingCode])
+        let selected = [missingCode]
+            + Array(spiritDeck.rawValidCodes.dropFirst().prefix(spiritDeck.count - 1))
+        #expect(spiritDeck.supportsSubmission(Self.spiritDeckAnswer(selected)))
+    }
+
     @Test("Laid to Rest malformed prompt entries fail per entry and bad counts fail closed")
     func laidToRestMalformedPromptNegatives() throws {
         let nonStringPrompt = try Self.laidToRestPromptWithCatalog { raw, presentation in
@@ -264,7 +283,8 @@ struct StandaloneSettingsPromptTests {
     private static func laidToRestPromptWithCatalog(
         transform: (JSONValue, QuestionPresentation) throws -> (JSONValue, QuestionPresentation) = {
             ($0, $1)
-        }
+        },
+        cardCatalog: CardCatalogSnapshot? = nil
     ) throws -> BasicChoicePromptPresentation {
         let fixture = try Self.fixture(named: "pick-scenario-specific-laid-to-rest")
         let (rawQuestion, questionPresentation) = try transform(
@@ -288,7 +308,7 @@ struct StandaloneSettingsPromptTests {
             ),
             question: .updateRequired(tag: "PickScenarioSpecific"),
             semanticPresentation: binding,
-            cardCatalog: Self.cardCatalog(codes: cardCodes),
+            cardCatalog: cardCatalog ?? Self.cardCatalog(codes: cardCodes),
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,

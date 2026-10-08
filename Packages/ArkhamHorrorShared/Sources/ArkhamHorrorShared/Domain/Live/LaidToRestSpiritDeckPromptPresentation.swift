@@ -10,7 +10,7 @@ struct LaidToRestSpiritDeckPromptPresentation: Sendable, Equatable {
         let isFixed: Bool
 
         var isSelectable: Bool {
-            code != nil && displayName != nil && !isFixed
+            code != nil && !isFixed
         }
     }
 
