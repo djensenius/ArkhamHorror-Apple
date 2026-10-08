@@ -858,7 +858,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(basicChoicePromptAdvanced(from: original.identity, to: changedPrompt))
     }
 
-    @Test("Live harness resets skill-test preparation bounds between tests")
+    @Test("Live harness starts a skill test after one preparation commit")
     func skillTestPreparationCounterResetsBetweenSeparateSkillTests() throws {
         let prompt = try Self.skillTestPreparationPrompt(questionVersion: 11)
         let selectableIndexes = [0, 1]
@@ -874,10 +874,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: counter.count(for: loopKey)
         ) == 0)
-        for _ in 0 ..< 3 {
-            counter.recordAdvanced(for: loopKey)
-        }
-        #expect(counter.count(for: loopKey) == 3)
+        counter.recordAdvanced(for: loopKey)
+        #expect(counter.count(for: loopKey) == 1)
         #expect(preferredSelectableIndex(
             in: prompt,
             projection: projection,
@@ -888,10 +886,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
 
         #expect(counter.count(for: nil) == 0)
         #expect(counter.count(for: loopKey) == 0)
-        for _ in 0 ..< 3 {
-            counter.recordAdvanced(for: loopKey)
-        }
-        #expect(counter.count(for: loopKey) == 3)
+        counter.recordAdvanced(for: loopKey)
+        #expect(counter.count(for: loopKey) == 1)
         #expect(preferredSelectableIndex(
             in: prompt,
             projection: projection,
@@ -4447,7 +4443,7 @@ private func forcedStartSkillTestIndex(
     selectableIndexes: [Int],
     skillTestPreparationCount: Int
 ) -> Int? {
-    guard skillTestPreparationCount >= 3 else { return nil }
+    guard skillTestPreparationCount >= 1 else { return nil }
     return prompt.choices.first(where: {
         if case .startSkillTest = $0.content {
             selectableIndexes.contains($0.index)
