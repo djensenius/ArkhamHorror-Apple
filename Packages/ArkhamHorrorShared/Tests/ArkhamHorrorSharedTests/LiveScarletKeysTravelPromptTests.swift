@@ -12,7 +12,7 @@ struct LiveScarletKeysTravelPromptTests {
     @Test("Captured embark world-map prompt renders and encodes CampaignSpecificAnswer bytes")
     func capturedEmbarkPromptRendersAndEncodesTravelAnswer() async throws {
         let fixture = try Self.fixture()
-        let model = try await Self.productionLabelModel(for: fixture)
+        let model = try await Self.syntheticLocationLabelModel(for: fixture)
         let prompt = try Self.prompt(for: fixture, labelModel: model)
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
         let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
@@ -21,11 +21,20 @@ struct LiveScarletKeysTravelPromptTests {
         #expect(prompt.isRenderableQuestion)
         #expect(prompt.canSubmit)
         #expect(prompt.readOnlyReason == nil)
+        let currentLocation = try #require(travelPrompt.locations.first { $0.isCurrent })
+        let lockedLocation = try #require(travelPrompt.locations.first { $0.id == "HongKong" })
+
         #expect(travelPrompt.currentLocationID == fixture.expectedCurrentLocationID)
+        #expect(travelPrompt.currentLocationTitle == "You are currently here.")
         #expect(travelPrompt.travelTimeLabel == "Travel time")
         #expect(travelPrompt.locations.count == 36)
         #expect(travelPrompt.locations.first?.id == "Alexandria")
         #expect(travelPrompt.locations.first?.title == "Alexandria")
+        #expect(currentLocation.id == "London")
+        #expect(currentLocation.travelTime == nil)
+        #expect(currentLocation.actions.isEmpty)
+        #expect(lockedLocation.isLocked)
+        #expect(lockedLocation.lockedTitle == "Location locked")
         #expect(
             firstAction.payload
                 == .array(fixture.expectedFirstActionPayload.map(JSONValue.string))
@@ -55,7 +64,7 @@ struct LiveScarletKeysTravelPromptTests {
     @Test("Expedited tickets use displayed travel time for green and non-green locations")
     func expeditedTicketsUseDisplayedTravelTime() async throws {
         let fixture = try Self.fixture(named: "roland-c09501-q145-embark-world-map-has-ticket")
-        let model = try await Self.productionLabelModel(for: fixture)
+        let model = try await Self.syntheticLocationLabelModel(for: fixture)
         let prompt = try Self.prompt(for: fixture, labelModel: model)
         let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
         let arkham = try #require(travelPrompt.locations.first { $0.id == "Arkham" })
@@ -73,7 +82,7 @@ struct LiveScarletKeysTravelPromptTests {
     @Test("Green locations with null travel display one time and no ticket")
     func greenLocationWithNullTravelDisplaysOne() async throws {
         let fixture = try Self.fixtureSettingTravel(locationID: "Venice", travel: .null)
-        let model = try await Self.productionLabelModel(for: fixture)
+        let model = try await Self.syntheticLocationLabelModel(for: fixture)
         let prompt = try Self.prompt(for: fixture, labelModel: model)
         let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
         let venice = try #require(travelPrompt.locations.first { $0.id == "Venice" })
@@ -88,7 +97,7 @@ struct LiveScarletKeysTravelPromptTests {
             locationID: "BermudaTriangle",
             entry: .array([.string("BermudaTriangle")])
         )
-        let model = try await Self.productionLabelModel(for: fixture)
+        let model = try await Self.syntheticLocationLabelModel(for: fixture)
         let prompt = try Self.prompt(for: fixture, labelModel: model)
         let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
         let alexandria = try #require(travelPrompt.locations.first { $0.id == "Alexandria" })
@@ -132,11 +141,94 @@ struct LiveScarletKeysTravelPromptTests {
         #expect(submitted.isEmpty)
     }
 
+    @Test("Finale keeps a travel action on the current single available location")
+    func finaleKeepsCurrentLocationTravelAction() async throws {
+        let fixture = try Self.fixtureSettingAvailable(["London"])
+        let model = try await Self.syntheticLocationLabelModel(for: fixture)
+        let prompt = try Self.prompt(for: fixture, labelModel: model)
+        let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
+        let london = try #require(travelPrompt.locations.first { $0.id == "London" })
+        let action = try #require(london.actions.first)
+
+        #expect(london.isCurrent)
+        #expect(london.actions.map(\.kind) == [.travel])
+        #expect(prompt.supportsCampaignSpecificSubmission(action.payload))
+    }
+
+    @Test("AppModel sends exact Scarlet Keys travel bytes and rejects stale or forged payloads")
+    func appModelSendPathSendsExactBytesAndRejectsInvalidPayloads() async throws {
+        let fixture = try Self.fixture()
+        let model = try await Self.syntheticLocationLabelModel(for: fixture)
+        let gameID = GameID(UUID())
+        let ownerID = BoardTestFixtures.playerID("000000000001")
+        let connection = FakeGameSocketConnection()
+        await connection.enqueueSendResult(.success(()))
+        try Self.installFixturePrompt(
+            fixture,
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection
+        )
+        let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        let payload = JSONValue.array([.string("travel"), .string("Alexandria")])
+
+        #expect(await model.submitCampaignSpecificAnswer(
+            prompt.identity,
+            contents: payload
+        ) == .sentAwaitingSnapshot)
+        let sent = try #require(await connection.sentData.first)
+        let wire = try #require(String(data: sent, encoding: .utf8))
+        #expect(wire == #"{"contents":["travel","Alexandria"],"tag":"CampaignSpecificAnswer"}"#)
+
+        let staleModel = try await Self.syntheticLocationLabelModel(for: fixture)
+        let staleConnection = FakeGameSocketConnection()
+        try Self.installFixturePrompt(
+            fixture,
+            on: staleModel,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: staleConnection
+        )
+        let stalePrompt = try #require(staleModel.basicChoicePresentation(for: gameID))
+        staleModel.liveGameStates[gameID] = .live(
+            BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        )
+        #expect(await staleModel.submitCampaignSpecificAnswer(
+            stalePrompt.identity,
+            contents: payload
+        ) == .staleQuestion)
+        #expect(await staleConnection.sentData.isEmpty)
+
+        for forgedPayload in [
+            JSONValue.array([.string("travel"), .string("Atlantis")]),
+            JSONValue.array([.string("travel"), .string("HongKong")]),
+        ] {
+            let forgedModel = try await Self.syntheticLocationLabelModel(for: fixture)
+            let forgedConnection = FakeGameSocketConnection()
+            let forgedGameID = GameID(UUID())
+            try Self.installFixturePrompt(
+                fixture,
+                on: forgedModel,
+                gameID: forgedGameID,
+                ownerID: ownerID,
+                connection: forgedConnection
+            )
+            let forgedPrompt = try #require(forgedModel.basicChoicePresentation(
+                for: forgedGameID
+            ))
+            #expect(await forgedModel.submitCampaignSpecificAnswer(
+                forgedPrompt.identity,
+                contents: forgedPayload
+            ) == .unsupportedChoice)
+            #expect(await forgedConnection.sentData.isEmpty)
+        }
+    }
+
     @Test("Apple-only Scarlet Keys travel strings exist in English and German bundles")
     func appleOnlyStringsResolveFromModuleBundle() throws {
         let keys = [
             "scarletKeysTravel.instructions",
-            "scarletKeysTravel.currentLocation",
             "scarletKeysTravel.locationTextUnavailable",
             "scarletKeysTravel.actionTextUnavailable",
             "scarletKeysTravel.action.hint",
@@ -146,11 +238,17 @@ struct LiveScarletKeysTravelPromptTests {
             fallback: "__missing__",
             locale: "en"
         ) == "Choose a destination on the world map.")
+        #expect(try localizedModuleString(
+            "scarletKeysTravel.instructions",
+            fallback: "__missing__",
+            locale: "de"
+        ) == "Wähle ein Ziel auf der Weltkarte.")
         for locale in ["en", "de"] {
             let strings = try localizableStrings(locale: locale)
             for key in keys {
                 #expect(strings.contains("\"\(key)\" ="))
             }
+            #expect(!strings.contains("\"scarletKeysTravel.currentLocation\" ="))
         }
     }
 
@@ -187,11 +285,13 @@ struct LiveScarletKeysTravelPromptTests {
         )
     }
 
-    private static func productionLabelModel(
+    private static func syntheticLocationLabelModel(
         for fixture: ScarletKeysEmbarkFixture
     ) async throws -> AppModel {
         var entries = [
             "scarletKeys.travelTime": "Travel time",
+            "scarletKeys.youAreCurrentlyHere": "You are currently here.",
+            "scarletKeys.locationLocked": "Location locked",
             "scarletKeys.travelHere": "Travel here",
             "scarletKeys.travelWithoutStopping": "Travel here without stopping",
             "scarletKeys.travelWithExpeditedTicket": "Travel with Expedited Ticket (1 time)",
@@ -221,6 +321,11 @@ struct LiveScarletKeysTravelPromptTests {
             cleanupPendingStore: FakeTokenCleanupPendingStore()
         )
         await model.flowTask?.value
+        model.sessionState = .signedIn(
+            profile: documents.profile,
+            compatibility: .modern(capabilities: []),
+            user: .sample
+        )
         model.localeCatalog = try await documents.loadSnapshot()
         model.localeCatalogRequest = LocaleCatalogRequest(
             profileID: model.selectedProfile.id,
@@ -293,6 +398,14 @@ struct LiveScarletKeysTravelPromptTests {
         }
     }
 
+    private static func fixtureSettingAvailable(
+        _ locationIDs: [String]
+    ) throws -> ScarletKeysEmbarkFixture {
+        try fixtureMutatingMap(named: "roland-c09501-q145-embark-world-map") { map in
+            map.replacingAvailable(locationIDs)
+        }
+    }
+
     private static func fixtureMutatingMap(
         named name: String,
         transform: (JSONValue) throws -> JSONValue
@@ -308,6 +421,69 @@ struct LiveScarletKeysTravelPromptTests {
         return try ContractJSON.decode(
             ScarletKeysEmbarkFixture.self,
             from: ContractJSON.encode(mutated)
+        )
+    }
+
+    private static func installFixturePrompt(
+        _ fixture: ScarletKeysEmbarkFixture,
+        on model: AppModel,
+        gameID: GameID,
+        ownerID: PlayerID,
+        connection: FakeGameSocketConnection
+    ) throws {
+        let attemptID = UUID()
+        model.liveGameStates[gameID] = .live(try projection(for: fixture, ownerID: ownerID))
+        model.liveGameParticipantIdentities[gameID] = .participant(ownerID)
+        model.liveGameSessions[gameID] = LiveGameSessionHandle(
+            attemptID: attemptID,
+            task: Task {}
+        )
+        model.liveGameConnections[gameID] = LiveGameConnectionHandle(
+            attemptID: attemptID,
+            connectionID: UUID(),
+            connection: connection
+        )
+    }
+
+    private static func projection(
+        for fixture: ScarletKeysEmbarkFixture,
+        ownerID: PlayerID
+    ) throws -> BoardProjection {
+        let bound = try fixture.questionPresentation.bind(
+            to: fixture.rawQuestion,
+            expectedQuestionVersion: fixture.source.questionVersion
+        )
+        var questions = UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>()
+        questions[ownerID] = BasicChoiceQuestionPayload(
+            rawValue: fixture.rawQuestion,
+            state: BasicChoiceParser.parseQuestion(fixture.rawQuestion),
+            presentation: bound
+        )
+        let base = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        return campaignPromptProjection(
+            base: base,
+            questions: questions,
+            counters: counters(base.counters, scenarioSteps: fixture.source.questionVersion)
+        )
+    }
+
+    private static func counters(
+        _ base: BoardCounters,
+        scenarioSteps: Int
+    ) -> BoardCounters {
+        BoardCounters(
+            totalDoom: base.totalDoom,
+            totalClues: base.totalClues,
+            encounterDeckSize: base.encounterDeckSize,
+            scenarioSteps: scenarioSteps,
+            playerCount: base.playerCount,
+            phase: base.phase,
+            phaseStepSummary: base.phaseStepSummary,
+            gameStateSummary: base.gameStateSummary,
+            inSetup: base.inSetup,
+            inAction: base.inAction,
+            pendingPromptCount: base.pendingPromptCount,
+            entityCounters: base.entityCounters
         )
     }
 
@@ -368,6 +544,12 @@ private extension JSONValue {
             pair[1] = .object(detail)
             return .array(pair)
         }
+    }
+
+    func replacingAvailable(_ locationIDs: [String]) -> JSONValue {
+        guard case var .object(map) = self else { return self }
+        map["available"] = .array(locationIDs.map(JSONValue.string))
+        return .object(map)
     }
 
     func replacingLocationEntry(locationID: String, entry: JSONValue) throws -> JSONValue {

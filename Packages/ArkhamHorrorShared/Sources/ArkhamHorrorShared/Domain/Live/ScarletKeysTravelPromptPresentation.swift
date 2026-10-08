@@ -9,6 +9,8 @@ struct ScarletKeysTravelPromptPresentation: Sendable, Equatable {
         let travelTime: Int?
         let isAvailable: Bool
         let isCurrent: Bool
+        let isLocked: Bool
+        let lockedTitle: String?
         let actions: [Action]
 
         var isActionable: Bool {
@@ -39,6 +41,7 @@ struct ScarletKeysTravelPromptPresentation: Sendable, Equatable {
     }
 
     let currentLocationID: String
+    let currentLocationTitle: String?
     let hasTicket: Bool
     let travelTimeLabel: String?
     let locations: [Location]
@@ -80,6 +83,8 @@ extension ScarletKeysTravelPromptPresentation {
         else { return [] }
         var requests: [(key: String, wireLabel: String)] = [
             ("scarletKeysTravel.travelTime", "$scarletKeys.travelTime"),
+            ("scarletKeys.youAreCurrentlyHere", "$scarletKeys.youAreCurrentlyHere"),
+            ("scarletKeys.locationLocked", "$scarletKeys.locationLocked"),
             ("scarletKeysTravel.action.travel", "$scarletKeys.travelHere"),
             ("scarletKeysTravel.action.travelVia", "$scarletKeys.travelWithoutStopping"),
             (
@@ -114,12 +119,15 @@ extension ScarletKeysTravelPromptPresentation {
         else { return nil }
 
         let isFinale = map.available.count == 1
+        let currentLocationTitle = labelResolutions["scarletKeys.youAreCurrentlyHere"]?.title
+        let lockedTitle = labelResolutions["scarletKeys.locationLocked"]?.title
         let travelTimeLabel = labelResolutions["scarletKeysTravel.travelTime"]?.title
         let locations = map.locationIDs.map { locationID in
             let isAvailable = map.available.contains(locationID)
             let isCurrent = locationID == map.current
             let rawTravelTime = map.travelTimes[locationID]
-            let travelTime = displayedTravelTime(rawTravelTime, locationID: locationID)
+            let travelTime = isCurrent ? nil : displayedTravelTime(rawTravelTime, locationID: locationID)
+            let isLocked = !isCurrent && !isAvailable
             let title = labelResolutions[
                 "scarletKeysTravel.location.\(locationID).name"
             ]?.title
@@ -142,11 +150,14 @@ extension ScarletKeysTravelPromptPresentation {
                 travelTime: travelTime,
                 isAvailable: isAvailable,
                 isCurrent: isCurrent,
+                isLocked: isLocked,
+                lockedTitle: isLocked ? lockedTitle : nil,
                 actions: actions
             )
         }
         return ScarletKeysTravelPromptPresentation(
             currentLocationID: map.current,
+            currentLocationTitle: currentLocationTitle,
             hasTicket: map.hasTicket,
             travelTimeLabel: travelTimeLabel,
             locations: locations

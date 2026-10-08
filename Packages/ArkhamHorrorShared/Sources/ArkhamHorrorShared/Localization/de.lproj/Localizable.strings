@@ -65,7 +65,6 @@
 "pickDestiny.names.unavailable" = "Die Tarotnamen für diese Legung sind derzeit nicht verfügbar.";
 
 "scarletKeysTravel.instructions" = "Wähle ein Ziel auf der Weltkarte.";
-"scarletKeysTravel.currentLocation" = "Du bist gerade hier.";
 "scarletKeysTravel.locationTextUnavailable" = "Ortstext nicht verfügbar";
 "scarletKeysTravel.actionTextUnavailable" = "Aktionstext nicht verfügbar";
 "scarletKeysTravel.action.hint" = "Sendet diese Reiseauswahl.";
