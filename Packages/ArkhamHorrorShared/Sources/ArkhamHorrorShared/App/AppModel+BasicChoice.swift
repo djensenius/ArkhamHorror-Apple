@@ -682,7 +682,7 @@ extension BasicChoicePromptPresentation {
         case let .campaignSpecific(contents):
             return supportsCampaignSpecificSubmission(contents)
         case let .standaloneSettings(contents):
-            return supportsStandaloneSettingsSubmission(contents)
+            return supportsStandaloneSettingsSubmission(contents, in: projection)
         case let .scenarioSpecific(contents):
             return supportsScenarioSpecificSubmission(contents)
         case .deck:
@@ -731,11 +731,18 @@ extension BasicChoicePromptPresentation {
     }
 
     func supportsScenarioSpecificSubmission(_ contents: JSONValue) -> Bool {
-        guard let expected = scenarioSpecificDefaultAnswer else { return false }
-        return contents == expected
+        guard let prompt = laidToRestSpiritDeckPrompt else { return false }
+        return prompt.supportsSubmission(contents)
     }
 
     func supportsStandaloneSettingsSubmission(_ contents: [JSONValue]) -> Bool {
+        supportsStandaloneSettingsSubmission(contents, in: nil)
+    }
+
+    func supportsStandaloneSettingsSubmission(
+        _ contents: [JSONValue],
+        in projection: BoardProjection?
+    ) -> Bool {
         guard contents.isEmpty,
               let presentation = semanticPresentation?.presentation,
               presentation.questionKind == .pickScenarioSettings,
@@ -743,7 +750,8 @@ extension BasicChoicePromptPresentation {
         else { return false }
         return Self.supportsSemanticPrompt(
             rawQuestion: identity.rawQuestion,
-            presentation: presentation
+            presentation: presentation,
+            projection: projection
         )
     }
 

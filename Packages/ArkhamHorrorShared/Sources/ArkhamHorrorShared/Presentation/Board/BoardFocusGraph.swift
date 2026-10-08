@@ -74,6 +74,10 @@ enum BoardFocusID {
     static let promptScenarioSpecificSubmit: SemanticFocusID =
         "board.prompt.scenarioSpecific.submit"
 
+    static func promptScenarioSpecificCard(_ index: Int) -> SemanticFocusID {
+        .init(rawValue: "board.prompt.scenarioSpecific.card.\(index)")
+    }
+
     static func promptScarletKeysTravelAction(
         _ action: ScarletKeysTravelPromptPresentation.Action
     ) -> SemanticFocusID {
@@ -269,11 +273,13 @@ enum BoardFocusGraphBuilder {
             return pickDestinyPrompt.rows.indices.map(BoardFocusID.promptPickDestinyRow)
                 + [BoardFocusID.promptPickDestinySubmit]
         }
-        if prompt.isStandaloneSettingsPrompt {
+        if prompt.isStandaloneSettingsPrompt(in: projection) {
             return [BoardFocusID.promptStandaloneSettingsSubmit]
         }
-        if prompt.scenarioSpecificDefaultAnswer != nil {
-            return [BoardFocusID.promptScenarioSpecificSubmit]
+        if let spiritDeckPrompt = prompt.laidToRestSpiritDeckPrompt {
+            return spiritDeckPrompt.displayEntries.map {
+                BoardFocusID.promptScenarioSpecificCard($0.id)
+            } + [BoardFocusID.promptScenarioSpecificSubmit]
         }
         if let travelPrompt = prompt.scarletKeysTravelPrompt {
             return travelPrompt.actions

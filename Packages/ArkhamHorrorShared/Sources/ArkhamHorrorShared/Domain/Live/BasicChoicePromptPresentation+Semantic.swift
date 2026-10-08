@@ -123,11 +123,16 @@ extension BoundQuestionPresentation {
 
 extension BasicChoicePromptPresentation {
     var isRenderableQuestion: Bool {
+        isRenderableQuestion(in: nil)
+    }
+
+    func isRenderableQuestion(in projection: BoardProjection?) -> Bool {
         if let semanticPresentation {
             return semanticPresentation.isRenderableInCurrentClient
                 && Self.supportsSemanticPrompt(
                     rawQuestion: identity.rawQuestion,
-                    presentation: semanticPresentation.presentation
+                    presentation: semanticPresentation.presentation,
+                    projection: projection
                 )
         }
         return question.supportedQuestion?.choices.isEmpty == false
@@ -227,7 +232,8 @@ extension BasicChoicePromptPresentation {
 
     static func supportsSemanticPrompt(
         rawQuestion: JSONValue,
-        presentation: QuestionPresentation
+        presentation: QuestionPresentation,
+        projection: BoardProjection? = nil
     ) -> Bool {
         switch presentation.answer {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmounts:
@@ -259,57 +265,43 @@ extension BasicChoicePromptPresentation {
                 && rawQuestion.hasTag("PickScenarioSettings")
                 && presentation.choiceCount == 0
                 && presentation.choices.isEmpty
+                && projection.map {
+                    StandaloneScenarioSettingsCatalog.hasProvenEmptySettings(
+                        scenarioID: $0.scenario?.id
+                    )
+                } ?? true
         case .scenarioSpecific:
-            return scenarioSpecificDefaultAnswer(
+            return LaidToRestSpiritDeckPromptPresentation.make(
                 rawQuestion: rawQuestion,
-                presentation: presentation
+                presentation: presentation,
+                cardCatalog: nil
             ) != nil
         case .deck, .campaignSettings:
             return false
         }
     }
 
-    static func scenarioSpecificDefaultAnswer(
-        rawQuestion: JSONValue,
-        presentation: QuestionPresentation
-    ) -> JSONValue? {
-        guard presentation.questionKind == .pickScenarioSpecific,
-              rawQuestion.hasTag("PickScenarioSpecific"),
-              presentation.key == "laidToRest.buildSpiritDeck",
-              case let .object(valueObject)? = presentation.value,
-              case let .array(cardCodeValues)? = valueObject["cardCodes"],
-              case let .number(countNumber)? = valueObject["count"],
-              countNumber.sign == .plus,
-              countNumber.exponent.description == "0",
-              let count = Int(countNumber.coefficient),
-              count > 0
-        else { return nil }
-        let selected = cardCodeValues.compactMap { value -> String? in
-            guard case let .string(cardCode) = value else { return nil }
-            return cardCode
-        }.prefix(count)
-        guard selected.count == count else { return nil }
-        return .array([
-            .string("laidToRest.buildSpiritDeck"),
-            .object(["cardCodes": .array(selected.map(JSONValue.string))]),
-        ])
+    var isStandaloneSettingsPrompt: Bool {
+        isStandaloneSettingsPrompt(in: nil)
     }
 
-    var isStandaloneSettingsPrompt: Bool {
+    func isStandaloneSettingsPrompt(in projection: BoardProjection?) -> Bool {
         guard let presentation = semanticPresentation?.presentation,
               case .standaloneSettings = presentation.answer
         else { return false }
         return Self.supportsSemanticPrompt(
             rawQuestion: identity.rawQuestion,
-            presentation: presentation
+            presentation: presentation,
+            projection: projection
         )
     }
 
-    var scenarioSpecificDefaultAnswer: JSONValue? {
+    var laidToRestSpiritDeckPrompt: LaidToRestSpiritDeckPromptPresentation? {
         guard let presentation = semanticPresentation?.presentation else { return nil }
-        return Self.scenarioSpecificDefaultAnswer(
+        return LaidToRestSpiritDeckPromptPresentation.make(
             rawQuestion: identity.rawQuestion,
-            presentation: presentation
+            presentation: presentation,
+            cardCatalog: cardCatalog
         )
     }
 

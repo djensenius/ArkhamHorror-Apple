@@ -18,6 +18,7 @@ struct BoardChaosFaceCount: Sendable, Equatable {
 /// scenario exists. `nil` at the ``BoardProjection`` level explicitly represents "no active
 /// scenario" (a `This`-only campaign screen) rather than an empty/blank board.
 struct BoardScenarioSummary: Sendable, Equatable {
+    let id: String
     let displayName: String
     let subtitle: String?
     let difficulty: Difficulty

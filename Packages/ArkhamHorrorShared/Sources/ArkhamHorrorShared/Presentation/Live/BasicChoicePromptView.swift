@@ -50,7 +50,7 @@ struct BasicChoicePromptView: View {
                 SkillTestSummaryView(projection: skillTest)
             }
 
-            if !presentation.isRenderableQuestion {
+            if !presentation.isRenderableQuestion(in: controller.projection) {
                 Label("Update required", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             } else if let travelPrompt = presentation.scarletKeysTravelPrompt {
@@ -84,10 +84,10 @@ struct BasicChoicePromptView: View {
                 amountAllocationPrompt(amountPrompt)
             } else if let exchangePrompt = presentation.exchangePrompt(in: controller.projection) {
                 exchangeAmountPrompt(exchangePrompt)
-            } else if presentation.isStandaloneSettingsPrompt {
+            } else if presentation.isStandaloneSettingsPrompt(in: controller.projection) {
                 standaloneSettingsPrompt
-            } else if presentation.scenarioSpecificDefaultAnswer != nil {
-                scenarioSpecificPrompt
+            } else if let spiritDeckPrompt = presentation.laidToRestSpiritDeckPrompt {
+                scenarioSpecificPrompt(spiritDeckPrompt)
             } else {
                 if isStoryPrompt {
                     story
@@ -154,7 +154,8 @@ struct BasicChoicePromptView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(presentation.semanticLocalized(
                 "standaloneSettings.message",
-                value: "No scenario setup options are required. Continue to the deck prompt."
+                // swiftlint:disable:next line_length
+                value: "No scenario setup options are required for this standalone scenario. Continue when ready."
             ))
             .font(.footnote)
             .foregroundStyle(.secondary)
@@ -187,27 +188,70 @@ struct BasicChoicePromptView: View {
         }
     }
 
-    private var scenarioSpecificPrompt: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    // swiftlint:disable function_body_length
+    private func scenarioSpecificPrompt(
+        _ prompt: LaidToRestSpiritDeckPromptPresentation
+    ) -> some View {
+        let counterTitle = presentation.semanticLocalized(
+            "scenarioSpecific.spiritDeck.counter",
+            value: "Selected cards"
+        )
+        let counterText = "\(counterTitle): "
+            + "\(prompt.selectedCount(controller.spiritDeckSelection)) of \(prompt.count)"
+        return VStack(alignment: .leading, spacing: 10) {
             Text(presentation.semanticLocalized(
-                "scenarioSpecific.message",
-                value: "This scenario setup can use a legal default selection."
+                "scenarioSpecific.spiritDeck.message",
+                // swiftlint:disable:next line_length
+                value: "Choose the cards for the spirit deck. Search is available; class filters from the web view are not shown here."
             ))
             .font(.footnote)
             .foregroundStyle(.secondary)
 
+            Text(counterText)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(
+                    prompt.canConfirm(controller.spiritDeckSelection) ? .green : .secondary
+                )
+                .accessibilityIdentifier("liveGame.prompt.scenarioSpecific.counter")
+
+            TextField(
+                presentation.semanticLocalized(
+                    "scenarioSpecific.spiritDeck.search",
+                    value: "Search cards"
+                ),
+                text: Binding(
+                    get: { controller.spiritDeckSearchText },
+                    set: { controller.setSpiritDeckSearchText($0) }
+                )
+            )
+            .textFieldStyle(.roundedBorder)
+            .accessibilityLabel(presentation.semanticLocalized(
+                "scenarioSpecific.spiritDeck.search",
+                value: "Search cards"
+            ))
+            .accessibilityIdentifier("liveGame.prompt.scenarioSpecific.search")
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(controller.filteredSpiritDeckEntries(for: prompt)) { entry in
+                        spiritDeckEntry(entry, prompt: prompt)
+                    }
+                }
+            }
+            .frame(maxHeight: 260)
+
             SemanticActionControl(
                 accessibilityLabel: Text(presentation.semanticLocalized(
-                    "scenarioSpecific.submit",
-                    value: "Use default setup"
+                    "scenarioSpecific.spiritDeck.submit",
+                    value: "Confirm spirit deck"
                 )),
                 semanticFocusID: BoardFocusID.promptScenarioSpecificSubmit,
                 onOutcome: { controller.handle(focusID: $0, $1) },
                 label: {
                     Label(
                         presentation.semanticLocalized(
-                            "scenarioSpecific.submit",
-                            value: "Use default setup"
+                            "scenarioSpecific.spiritDeck.submit",
+                            value: "Confirm spirit deck"
                         ),
                         systemImage: "checkmark.circle.fill"
                     )
@@ -215,13 +259,105 @@ struct BasicChoicePromptView: View {
             )
             .buttonStyle(.borderedProminent)
             .focused(focusBinding, equals: BoardFocusID.promptScenarioSpecificSubmit)
-            .disabled(!presentation.canSubmit)
+            .disabled(!presentation.canSubmit || !prompt.canConfirm(controller.spiritDeckSelection))
             .accessibilityHint(presentation.semanticLocalized(
-                "scenarioSpecific.submit.hint",
-                value: "Sends the default scenario setup answer with version checking."
+                "scenarioSpecific.spiritDeck.submit.hint",
+                value: "Sends your selected spirit deck with version checking."
             ))
             .accessibilityIdentifier("liveGame.prompt.scenarioSpecific.submit")
         }
+    }
+
+    // swiftlint:enable function_body_length
+
+    private func spiritDeckEntry(
+        _ entry: LaidToRestSpiritDeckPromptPresentation.Entry,
+        prompt _: LaidToRestSpiritDeckPromptPresentation
+    ) -> some View {
+        let selected = entry.code.map { controller.spiritDeckSelection.contains($0) } ?? false
+        let title = entry.displayName ?? presentation.semanticLocalized(
+            "scenarioSpecific.spiritDeck.unresolvedCard",
+            value: "Card unavailable"
+        )
+        let subtitle = entry.code ?? presentation.semanticLocalized(
+            "scenarioSpecific.spiritDeck.malformedCard",
+            value: "Malformed card entry"
+        )
+        return SemanticActionControl(
+            accessibilityLabel: Text(spiritDeckAccessibilityLabel(
+                title: title, subtitle: subtitle, selected: selected, isFixed: entry.isFixed
+            )),
+            semanticFocusID: BoardFocusID.promptScenarioSpecificCard(entry.id),
+            onOutcome: { controller.handle(focusID: $0, $1) },
+            label: {
+                HStack(spacing: 8) {
+                    Image(systemName: entry.isFixed
+                        ? "lock.fill"
+                        : selected ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(selected ? .green : .secondary)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.caption.weight(.semibold))
+                        Text(subtitle)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        )
+        .buttonStyle(.bordered)
+        .focused(focusBinding, equals: BoardFocusID.promptScenarioSpecificCard(entry.id))
+        .disabled(!presentation.canSubmit || !entry.isSelectable)
+        .accessibilityHint(spiritDeckAccessibilityHint(entry: entry, selected: selected))
+        .accessibilityIdentifier("liveGame.prompt.scenarioSpecific.card.\(entry.id)")
+    }
+
+    private func spiritDeckAccessibilityLabel(
+        title: String,
+        subtitle: String,
+        selected: Bool,
+        isFixed: Bool
+    ) -> String {
+        if isFixed {
+            return String(format: "%@, %@, fixed", title, subtitle)
+        }
+        return String(
+            format: "%@, %@, %@",
+            title,
+            subtitle,
+            selected ? "selected" : "not selected"
+        )
+    }
+
+    private func spiritDeckAccessibilityHint(
+        entry: LaidToRestSpiritDeckPromptPresentation.Entry,
+        selected: Bool
+    ) -> String {
+        if entry.isFixed {
+            return presentation.semanticLocalized(
+                "scenarioSpecific.spiritDeck.fixed.hint",
+                value: "This card is fixed in the spirit deck and cannot be toggled."
+            )
+        }
+        guard entry.isSelectable else {
+            return presentation.semanticLocalized(
+                "scenarioSpecific.spiritDeck.unselectable.hint",
+                // swiftlint:disable:next line_length
+                value: "This card cannot be selected because its prompt entry could not be resolved."
+            )
+        }
+        return selected
+            ? presentation.semanticLocalized(
+                "scenarioSpecific.spiritDeck.selected.hint",
+                value: "Removes this card from your spirit deck selection."
+            )
+            : presentation.semanticLocalized(
+                "scenarioSpecific.spiritDeck.unselected.hint",
+                value: "Adds this card to your spirit deck selection."
+            )
     }
 
     private func pickDestinyUnavailableAnnouncement(for reason: StoryUnavailableReason) -> String {

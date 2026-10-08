@@ -2815,17 +2815,45 @@ private struct LivePlaythroughBot {
                 chosenChoiceKind: nil
             )
         }
-        if prompt.isStandaloneSettingsPrompt {
+        if prompt.isStandaloneSettingsPrompt(in: projection) {
+            var submitted: [JSONValue]?
+            let controller = BoardCommandController(
+                projection: projection,
+                prompt: prompt,
+                onStandaloneSettings: { submitted = $0 }
+            )
+            guard controller.activateStandaloneSettingsSubmit(), let submitted else {
+                throw PlaythroughError.noSelectableChoice(
+                    version: prompt.questionVersion,
+                    tag: describeRawQuestionTag(prompt.identity.rawQuestion)
+                )
+            }
             return SelectedBotAnswer(
-                answer: .standaloneSettings([]),
-                note: "continue with empty standalone scenario settings",
+                answer: .standaloneSettings(submitted),
+                note: "continue with proven-empty standalone scenario settings through controller",
                 chosenChoiceKind: nil
             )
         }
-        if let scenarioSpecificAnswer = prompt.scenarioSpecificDefaultAnswer {
+        if let spiritDeckPrompt = prompt.laidToRestSpiritDeckPrompt {
+            var submitted: JSONValue?
+            let controller = BoardCommandController(
+                projection: projection,
+                prompt: prompt,
+                onScenarioSpecific: { submitted = $0 }
+            )
+            for entry in spiritDeckPrompt.entries where entry.isSelectable {
+                guard controller.spiritDeckSelection.count < spiritDeckPrompt.count else { break }
+                _ = controller.toggleSpiritDeckCard(at: entry.id)
+            }
+            guard controller.activateScenarioSpecificSubmit(), let submitted else {
+                throw PlaythroughError.noSelectableChoice(
+                    version: prompt.questionVersion,
+                    tag: describeRawQuestionTag(prompt.identity.rawQuestion)
+                )
+            }
             return SelectedBotAnswer(
-                answer: .scenarioSpecific(scenarioSpecificAnswer),
-                note: "scenario-specific default setup",
+                answer: .scenarioSpecific(submitted),
+                note: "choose and confirm spirit deck through controller",
                 chosenChoiceKind: nil
             )
         }
