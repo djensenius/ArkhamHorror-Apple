@@ -35,6 +35,22 @@ struct StandaloneSettingsPromptTests {
         #expect(!StandaloneScenarioSettingsCatalog.hasProvenEmptySettings(scenarioID: "01120"))
     }
 
+    @Test("PickScenarioSettings fails closed without a scenario projection")
+    func pickScenarioSettingsWithoutScenarioProjectionFailsClosed() throws {
+        let fixture = try Self.fixture(named: "pick-scenario-settings")
+
+        #expect(!BasicChoicePromptPresentation.supportsSemanticPrompt(
+            rawQuestion: fixture.rawQuestion,
+            presentation: fixture.questionPresentation,
+            projection: nil
+        ))
+        #expect(!BasicChoicePromptPresentation.supportsSemanticPrompt(
+            rawQuestion: fixture.rawQuestion,
+            presentation: fixture.questionPresentation,
+            projection: Self.projectionWithoutScenario()
+        ))
+    }
+
     @Test("Empty-settings catalog documents web provenance and includes War of the Outer Gods")
     func emptySettingsCatalogProvenance() {
         #expect(
@@ -464,6 +480,7 @@ struct StandaloneSettingsPromptTests {
             semanticPresentation: prompt.semanticPresentation,
             semanticLocaleIdentifier: prompt.semanticLocaleIdentifier,
             cardCatalog: prompt.cardCatalog,
+            semanticSupportScenarioID: prompt.semanticSupportScenarioID,
             storyResolution: prompt.storyResolution,
             choiceLabelResolutions: prompt.choiceLabelResolutions,
             choiceFlavorResolutions: prompt.choiceFlavorResolutions,
@@ -479,7 +496,7 @@ struct StandaloneSettingsPromptTests {
 
     private static func prompt(
         named name: String,
-        projection _: BoardProjection
+        projection: BoardProjection
     ) throws -> BasicChoicePromptPresentation {
         let fixture = try Self.fixture(named: name)
         let payload = try ContractJSON.decode(
@@ -502,6 +519,7 @@ struct StandaloneSettingsPromptTests {
             ),
             question: payload.state,
             semanticPresentation: binding,
+            semanticSupportScenarioID: projection.scenario?.id,
             readOnlyReason: nil,
             actionPhase: nil,
             actionChoiceIndex: nil,
@@ -514,6 +532,12 @@ struct StandaloneSettingsPromptTests {
             mode: .scenarioOnly(BoardTestFixtures.scenario(
                 id: BoardTestFixtures.cardCode(scenarioID)
             ))
+        ))
+    }
+
+    private static func projectionWithoutScenario() -> BoardProjection {
+        BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            mode: .campaignOnly(.object([:]))
         ))
     }
 

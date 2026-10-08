@@ -203,6 +203,8 @@ extension AppModelLiveGameTests {
             model: model, fakes: fakes, envelope: envelope, connection: connection
         )
         let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(prompt.readOnlyReason == nil)
+        #expect(prompt.canSubmit)
         let staleIdentity = Self.identity(
             from: prompt.identity,
             questionVersion: prompt.identity.questionVersion + 1
@@ -236,10 +238,12 @@ extension AppModelLiveGameTests {
             model: model, fakes: fakes, envelope: envelope, connection: connection
         )
         let prompt = try #require(model.basicChoicePresentation(for: gameID))
+        #expect(prompt.readOnlyReason == .updateRequired)
+        #expect(!prompt.canSubmit)
 
         #expect(
             await model.submitStandaloneSettingsAnswer(prompt.identity, contents: [])
-                == .unsupportedChoice
+                == .readOnly
         )
         #expect(await connection.sentData.isEmpty)
     }

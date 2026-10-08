@@ -233,7 +233,19 @@ extension BasicChoicePromptPresentation {
     static func supportsSemanticPrompt(
         rawQuestion: JSONValue,
         presentation: QuestionPresentation,
-        projection: BoardProjection? = nil
+        projection: BoardProjection?
+    ) -> Bool {
+        supportsSemanticPrompt(
+            rawQuestion: rawQuestion,
+            presentation: presentation,
+            scenarioID: projection?.scenario?.id
+        )
+    }
+
+    static func supportsSemanticPrompt(
+        rawQuestion: JSONValue,
+        presentation: QuestionPresentation,
+        scenarioID: String?
     ) -> Bool {
         switch presentation.answer {
         case .singleChoice, .amounts, .paymentAmounts, .exchangeAmounts:
@@ -265,11 +277,9 @@ extension BasicChoicePromptPresentation {
                 && rawQuestion.hasTag("PickScenarioSettings")
                 && presentation.choiceCount == 0
                 && presentation.choices.isEmpty
-                && projection.map {
-                    StandaloneScenarioSettingsCatalog.hasProvenEmptySettings(
-                        scenarioID: $0.scenario?.id
-                    )
-                } ?? true
+                && StandaloneScenarioSettingsCatalog.hasProvenEmptySettings(
+                    scenarioID: scenarioID
+                )
         case .scenarioSpecific:
             return LaidToRestSpiritDeckPromptPresentation.make(
                 rawQuestion: rawQuestion,

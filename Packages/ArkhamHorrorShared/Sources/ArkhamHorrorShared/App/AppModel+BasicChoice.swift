@@ -40,7 +40,7 @@ extension AppModel {
             connectionID: connectionID
         )
         let readOnlyReason = readOnlyReason(
-            gameID: gameID, ownerID: ownerID, payload: payload
+            gameID: gameID, ownerID: ownerID, payload: payload, projection: projection
         )
         let isSamePrompt = record?.identity.promptKey == promptIdentity.promptKey
         let isCurrentTransport = record?.identity == promptIdentity
@@ -79,6 +79,7 @@ extension AppModel {
             semanticPresentation: payload.presentation,
             semanticLocaleIdentifier: localeCatalogResolver?.snapshot.identity.locale,
             cardCatalog: cardCatalog,
+            semanticSupportScenarioID: projection.scenario?.id,
             storyResolution: storyResolution,
             choiceLabelResolutions: labelResolutions,
             choiceFlavorResolutions: choiceFlavorResolutions,
@@ -127,13 +128,15 @@ extension AppModel {
     }
 
     private func readOnlyReason(
-        gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload
+        gameID: GameID, ownerID: PlayerID, payload: BasicChoiceQuestionPayload,
+        projection: BoardProjection
     ) -> BasicChoiceReadOnlyReason? {
         let hasRenderableQuestion = if let semanticPresentation = payload.presentation {
             semanticPresentation.isRenderableInCurrentClient
                 && BasicChoicePromptPresentation.supportsSemanticPrompt(
                     rawQuestion: payload.rawValue,
-                    presentation: semanticPresentation.presentation
+                    presentation: semanticPresentation.presentation,
+                    projection: projection
                 )
         } else {
             payload.supportedQuestion?.choices.isEmpty == false
@@ -698,7 +701,8 @@ extension BasicChoicePromptPresentation {
               case .pickDestiny = presentation.answer,
               Self.supportsSemanticPrompt(
                   rawQuestion: identity.rawQuestion,
-                  presentation: presentation
+                  presentation: presentation,
+                  scenarioID: nil
               ),
               let publishedDrawings = presentation.drawings,
               !publishedDrawings.isEmpty,
@@ -719,7 +723,8 @@ extension BasicChoicePromptPresentation {
               case .campaignSpecific = presentation.answer,
               Self.supportsSemanticPrompt(
                   rawQuestion: identity.rawQuestion,
-                  presentation: presentation
+                  presentation: presentation,
+                  scenarioID: nil
               )
         else { return false }
         return ScarletKeysTravelPromptPresentation.supportsSubmission(
@@ -759,7 +764,8 @@ extension BasicChoicePromptPresentation {
               case .continueCampaign = presentation.answer,
               Self.supportsSemanticPrompt(
                   rawQuestion: identity.rawQuestion,
-                  presentation: presentation
+                  presentation: presentation,
+                  scenarioID: nil
               ),
               let continuation = projection.campaignContinuation
         else { return false }
