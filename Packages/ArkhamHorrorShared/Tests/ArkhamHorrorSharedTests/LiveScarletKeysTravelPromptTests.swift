@@ -82,6 +82,23 @@ struct LiveScarletKeysTravelPromptTests {
         #expect(!venice.actions.contains { $0.kind == .travelWithTicket })
     }
 
+    @Test("Malformed location entries skip only that location")
+    func malformedLocationEntrySkipsOnlyThatEntry() async throws {
+        let fixture = try Self.fixtureReplacingLocationEntry(
+            locationID: "BermudaTriangle",
+            entry: .array([.string("BermudaTriangle")])
+        )
+        let model = try await Self.productionLabelModel(for: fixture)
+        let prompt = try Self.prompt(for: fixture, labelModel: model)
+        let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
+        let alexandria = try #require(travelPrompt.locations.first { $0.id == "Alexandria" })
+
+        #expect(travelPrompt.locations.count == 35)
+        #expect(!travelPrompt.locations.contains { $0.id == "BermudaTriangle" })
+        #expect(alexandria.isActionable)
+        #expect(prompt.supportsCampaignSpecificSubmission(try #require(alexandria.actions.first).payload))
+    }
+
     @Test("Missing world-map labels keep travel actions unpressable")
     func missingLocationLabelDoesNotExposeRawLocationFallback() async throws {
         let fixture = try Self.fixture()
@@ -262,16 +279,32 @@ struct LiveScarletKeysTravelPromptTests {
         locationID: String,
         travel: JSONValue
     ) throws -> ScarletKeysEmbarkFixture {
+        try fixtureMutatingMap(named: "roland-c09501-q145-embark-world-map-has-ticket") { map in
+            try map.replacingTravel(locationID: locationID, travel: travel)
+        }
+    }
+
+    private static func fixtureReplacingLocationEntry(
+        locationID: String,
+        entry: JSONValue
+    ) throws -> ScarletKeysEmbarkFixture {
+        try fixtureMutatingMap(named: "roland-c09501-q145-embark-world-map") { map in
+            try map.replacingLocationEntry(locationID: locationID, entry: entry)
+        }
+    }
+
+    private static func fixtureMutatingMap(
+        named name: String,
+        transform: (JSONValue) throws -> JSONValue
+    ) throws -> ScarletKeysEmbarkFixture {
         let url = try #require(Bundle.module.url(
-            forResource: "roland-c09501-q145-embark-world-map-has-ticket",
+            forResource: name,
             withExtension: "json",
             subdirectory: "Fixtures/LiveScarletKeysPlaythrough"
         ))
         let data = try Data(contentsOf: url)
         let root = try ContractJSON.decode(JSONValue.self, from: data)
-        let mutated = try root.replacingScarletKeysEmbarkMap { map in
-            try map.replacingTravel(locationID: locationID, travel: travel)
-        }
+        let mutated = try root.replacingScarletKeysEmbarkMap(transform)
         return try ContractJSON.decode(
             ScarletKeysEmbarkFixture.self,
             from: ContractJSON.encode(mutated)
@@ -328,20 +361,34 @@ private extension JSONValue {
     }
 
     func replacingTravel(locationID: String, travel: JSONValue) throws -> JSONValue {
+        try replacingLocationEntry(locationID: locationID) { originalPair in
+            var pair = originalPair
+            guard case var .object(detail) = pair[1] else { throw TestFailure() }
+            detail["travel"] = travel
+            pair[1] = .object(detail)
+            return .array(pair)
+        }
+    }
+
+    func replacingLocationEntry(locationID: String, entry: JSONValue) throws -> JSONValue {
+        try replacingLocationEntry(locationID: locationID) { _ in entry }
+    }
+
+    func replacingLocationEntry(
+        locationID: String,
+        with transform: ([JSONValue]) throws -> JSONValue
+    ) throws -> JSONValue {
         guard case var .object(map) = self,
               case var .array(locations) = map["locations"]
         else { throw TestFailure() }
         var didReplace = false
-        locations = locations.map { entry in
-            guard case var .array(pair) = entry,
+        locations = try locations.map { entry in
+            guard case let .array(pair) = entry,
                   pair.count == 2,
-                  pair.first == .string(locationID),
-                  case var .object(detail) = pair[1]
+                  pair.first == .string(locationID)
             else { return entry }
-            detail["travel"] = travel
-            pair[1] = .object(detail)
             didReplace = true
-            return .array(pair)
+            return try transform(pair)
         }
         guard didReplace else { throw TestFailure() }
         map["locations"] = .array(locations)

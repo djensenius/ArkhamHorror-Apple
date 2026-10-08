@@ -263,7 +263,7 @@ extension ScarletKeysTravelPromptPresentation {
                   pair.count == 2,
                   let locationID = pair[0].stringValue,
                   let detail = pair[1].objectValue
-            else { return nil }
+            else { continue }
             locationIDs.append(locationID)
             travelTimes[locationID] = detail["travel"]?.integerValue
         }
