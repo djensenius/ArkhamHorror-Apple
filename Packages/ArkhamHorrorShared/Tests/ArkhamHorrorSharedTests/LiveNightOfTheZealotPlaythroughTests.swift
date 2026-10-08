@@ -760,8 +760,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
             named: "forgotten-age-pick-supplies-resupply-q122"
         )
 
-        #expect(Self.selectedBotIndex(in: initialPrompt) == 1)
-        #expect(Self.selectedBotIndex(in: resupplyPrompt) == 1)
+        #expect(Self.selectedBotIndex(in: initialPrompt) == 2)
+        #expect(Self.selectedBotIndex(in: resupplyPrompt) == 2)
     }
 
     @Test("Return Circle Undone destiny prompt is answerable")
@@ -1117,6 +1117,16 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: 0,
             failedFightEnemyIDs: [enemyID.codingKey.stringValue]
+        ) == 6)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(
+                investigatorTokens: [TokenCount(token: "Damage", count: 7)],
+                engagedEnemyID: enemyID
+            ),
+            selectableIndexes: [5, 6, 7],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
         ) == 6)
     }
 
@@ -4530,8 +4540,46 @@ private func preferredPickSupplyIndex(
     guard prompt.identity.rawQuestion.objectValue?["tag"]?.stringValue == "PickSupplies",
           let rawChoices = prompt.identity.rawQuestion.objectValue?["choices"]?.arrayValue
     else { return nil }
-    return selectableIndexes.sorted().first { index in
-        rawChoices.indices.contains(index) && containsPickSupplyMessage(rawChoices[index])
+    let candidates = selectableIndexes.sorted().compactMap { index -> (Int, Int)? in
+        guard rawChoices.indices.contains(index),
+              let supplyName = pickSupplyName(in: rawChoices[index])
+        else { return nil }
+        return (index, supplyPriority(supplyName))
+    }
+    return candidates.min { lhs, rhs in
+        if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+        return lhs.0 < rhs.0
+    }?.0
+}
+
+private func pickSupplyName(in value: JSONValue) -> String? {
+    if let array = value.arrayValue {
+        for child in array {
+            if let supplyName = pickSupplyName(in: child) { return supplyName }
+        }
+        return nil
+    }
+    guard let object = value.objectValue else { return nil }
+    if object["tag"]?.stringValue == "PickSupply",
+       let contents = object["contents"]?.arrayValue,
+       contents.indices.contains(1),
+       let supplyName = contents[1].stringValue {
+        return supplyName
+    }
+    for child in object.values {
+        if let supplyName = pickSupplyName(in: child) { return supplyName }
+    }
+    return nil
+}
+
+private func supplyPriority(_ supplyName: String) -> Int {
+    switch supplyName.lowercased() {
+    case "medicine": 0
+    case "blanket", "canteen": 1
+    case "map", "compass": 2
+    case "provisions": 3
+    case "rope", "torches", "gasoline": 4
+    default: 5
     }
 }
 
@@ -4769,7 +4817,15 @@ private struct BotStrategyContext {
         if let enemyID = choice.entity?.id, failedFightEnemyIDs.contains(enemyID) {
             return 9300
         }
+        if isActingInvestigatorInDanger {
+            return 9400
+        }
         return 8800
+    }
+
+    private var isActingInvestigatorInDanger: Bool {
+        guard let investigator = actingInvestigator else { return false }
+        return remainingHealth(for: investigator) <= 2 || remainingSanity(for: investigator) <= 2
     }
 
     private func abilityScore(_ choice: QuestionPresentation.Choice) -> Int {
