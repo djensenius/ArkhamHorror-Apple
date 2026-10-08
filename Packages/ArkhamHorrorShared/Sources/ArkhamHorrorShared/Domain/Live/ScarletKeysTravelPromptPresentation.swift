@@ -282,8 +282,18 @@ extension ScarletKeysTravelPromptPresentation {
                   let locationID = pair[0].stringValue,
                   let detail = pair[1].objectValue
             else { continue }
+            if let rawTravelTime = detail["travel"] {
+                switch rawTravelTime {
+                case .null:
+                    break
+                case .number:
+                    guard let travelTime = rawTravelTime.integerValue else { continue }
+                    travelTimes[locationID] = travelTime
+                default:
+                    continue
+                }
+            }
             locationIDs.append(locationID)
-            travelTimes[locationID] = detail["travel"]?.integerValue
         }
         return MapData(
             current: current,

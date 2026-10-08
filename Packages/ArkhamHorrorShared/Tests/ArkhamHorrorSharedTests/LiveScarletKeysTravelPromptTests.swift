@@ -96,6 +96,28 @@ struct LiveScarletKeysTravelPromptTests {
         #expect(!venice.actions.contains { $0.kind == .travelWithTicket })
     }
 
+    @Test("Invalid travel values skip only that location")
+    func invalidTravelValuesSkipOnlyThatLocation() async throws {
+        let invalidTravelValues: [JSONValue] = [
+            .string("one"),
+            .object(["time": .string("one")]),
+        ]
+        for invalidTravel in invalidTravelValues {
+            let fixture = try Self.fixtureSettingTravel(locationID: "Venice", travel: invalidTravel)
+            let model = try await Self.syntheticLocationLabelModel(for: fixture)
+            let prompt = try Self.prompt(for: fixture, labelModel: model)
+            let travelPrompt = try #require(prompt.scarletKeysTravelPrompt)
+            let alexandria = try #require(travelPrompt.locations.first { $0.id == "Alexandria" })
+
+            #expect(prompt.isRenderableQuestion)
+            #expect(travelPrompt.locations.count == 35)
+            #expect(!travelPrompt.locations.contains { $0.id == "Venice" })
+            #expect(alexandria.isActionable)
+            let firstAction = try #require(alexandria.actions.first)
+            #expect(prompt.supportsCampaignSpecificSubmission(firstAction.payload))
+        }
+    }
+
     @Test("Malformed location entries skip only that location")
     func malformedLocationEntrySkipsOnlyThatEntry() async throws {
         let fixture = try Self.fixtureReplacingLocationEntry(
