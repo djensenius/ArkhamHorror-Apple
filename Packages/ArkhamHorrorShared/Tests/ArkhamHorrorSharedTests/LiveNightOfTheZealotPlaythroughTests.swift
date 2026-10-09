@@ -1356,6 +1356,70 @@ struct LiveNightOfTheZealotPlaythroughTests {
         ) == 0)
     }
 
+    @Test("Live bot strategy scopes group-resource objective costs")
+    // swiftlint:disable:next function_body_length
+    func botStrategyScopesGroupResourceCostsToEligibleInvestigators() {
+        let locationID = BoardTestFixtures.locationID("000000000901")
+        let farLocationID = BoardTestFixtures.locationID("000000000902")
+        let actingInvestigatorID = BoardTestFixtures.investigatorID("c01001")
+        let sameLocationInvestigatorID = BoardTestFixtures.investigatorID("c01002")
+        let farInvestigatorID = BoardTestFixtures.investigatorID("c01003")
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .useAbility,
+                ability: QuestionPresentation.Ability(
+                    cardCode: "c01108",
+                    index: 1,
+                    type: .objective,
+                    actions: [.activate],
+                    canBeCancelled: true
+                ),
+                cost: .groupResource(amount: .fixed(4), scope: .sameLocation)
+            ),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .advanceAgenda),
+        ])
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            locations: [
+                (locationID, .ordinary(BoardTestFixtures.ordinaryLocation(
+                    id: locationID,
+                    investigators: [actingInvestigatorID, sameLocationInvestigatorID]
+                ))),
+                (farLocationID, .ordinary(BoardTestFixtures.ordinaryLocation(
+                    id: farLocationID,
+                    investigators: [farInvestigatorID]
+                ))),
+            ],
+            investigators: [
+                actingInvestigatorID: BoardTestFixtures.investigator(
+                    id: actingInvestigatorID,
+                    tokens: [TokenCount(token: "Resource", count: 1)]
+                ),
+                sameLocationInvestigatorID: BoardTestFixtures.investigator(
+                    id: sameLocationInvestigatorID,
+                    tokens: [TokenCount(token: "Resource", count: 2)],
+                    playerID: BoardTestFixtures.playerID("000000000801")
+                ),
+                farInvestigatorID: BoardTestFixtures.investigator(
+                    id: farInvestigatorID,
+                    tokens: [TokenCount(token: "Resource", count: 5)],
+                    playerID: BoardTestFixtures.playerID("000000000802")
+                ),
+            ],
+            playerOrder: [actingInvestigatorID, sameLocationInvestigatorID, farInvestigatorID],
+            activeInvestigatorID: actingInvestigatorID,
+            leadInvestigatorID: actingInvestigatorID
+        ))
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: projection,
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 1)
+    }
+
     @Test("Live bot tracking clears successful fights before later failed tests")
     func botFightTrackingDoesNotCarrySuccessIntoLaterFailure() {
         let enemyID = BoardTestFixtures.enemyID("000000000904").codingKey.stringValue
@@ -4769,8 +4833,8 @@ private struct BotStrategyContext {
             investigatorClues >= amountValue(amount)
         case let .groupClue(amount, scope):
             groupClues(in: scope) >= amountValue(amount)
-        case let .groupResource(amount, _):
-            groupResources >= amountValue(amount)
+        case let .groupResource(amount, scope):
+            groupResources(in: scope) >= amountValue(amount)
         case let .all(costs):
             costs.allSatisfy(canPay)
         case let .choice(costs):
@@ -4806,8 +4870,10 @@ private struct BotStrategyContext {
         }
     }
 
-    private var groupResources: Int {
-        projection.investigators.reduce(0) { total, investigator in
+    private func groupResources(in scope: QuestionPresentation.Scope) -> Int {
+        projection.investigators.filter { investigator in
+            isInvestigator(investigator, within: scope)
+        }.reduce(0) { total, investigator in
             total + tokenCount("Resource", in: investigator.tokenCounts)
         }
     }
