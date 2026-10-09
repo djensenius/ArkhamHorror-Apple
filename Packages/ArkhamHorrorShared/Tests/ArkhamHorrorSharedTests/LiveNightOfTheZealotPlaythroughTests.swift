@@ -866,6 +866,10 @@ struct LiveNightOfTheZealotPlaythroughTests {
         let loopKey = "c01104:00000000-0000-0000-0000-000000000800:startSkillTestPreparation"
         var counter = SkillTestPreparationLoopCounter()
 
+        let commitAnswer = SelectedBotAnswer(
+            answer: .choice(0), note: "commit card", chosenChoiceKind: nil
+        )
+
         #expect(counter.count(for: loopKey) == 0)
         #expect(preferredSelectableIndex(
             in: prompt,
@@ -874,7 +878,13 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: counter.count(for: loopKey)
         ) == 0)
-        counter.recordAdvanced(for: loopKey)
+        #expect(shouldRecordSkillTestPreparationProgress(
+            selectedAnswer: commitAnswer,
+            prompt: prompt
+        ))
+        if shouldRecordSkillTestPreparationProgress(selectedAnswer: commitAnswer, prompt: prompt) {
+            counter.recordAdvanced(for: loopKey)
+        }
         #expect(counter.count(for: loopKey) == 1)
         #expect(preferredSelectableIndex(
             in: prompt,
@@ -895,6 +905,23 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: counter.count(for: loopKey)
         ) == 1)
+
+        let unrelatedPrompt = try Self.skillTestPreparationResourcePrompt(questionVersion: 12)
+        let resourceAnswer = SelectedBotAnswer(
+            answer: .choice(0), note: "gain resource", chosenChoiceKind: nil
+        )
+        var unrelatedCounter = SkillTestPreparationLoopCounter()
+        #expect(!shouldRecordSkillTestPreparationProgress(
+            selectedAnswer: resourceAnswer,
+            prompt: unrelatedPrompt
+        ))
+        if shouldRecordSkillTestPreparationProgress(
+            selectedAnswer: resourceAnswer,
+            prompt: unrelatedPrompt
+        ) {
+            unrelatedCounter.recordAdvanced(for: loopKey)
+        }
+        #expect(unrelatedCounter.count(for: loopKey) == 0)
     }
 
     @Test("Live bot strategy prefers objective progress and avoids resign")
@@ -2025,10 +2052,29 @@ struct LiveNightOfTheZealotPlaythroughTests {
     private static func skillTestPreparationPrompt(
         questionVersion: Int
     ) throws -> BasicChoicePromptPresentation {
+        try skillTestPreparationPrompt(
+            questionVersion: questionVersion,
+            firstChoice: skillTestCommitCardChoice()
+        )
+    }
+
+    private static func skillTestPreparationResourcePrompt(
+        questionVersion: Int
+    ) throws -> BasicChoicePromptPresentation {
+        try skillTestPreparationPrompt(
+            questionVersion: questionVersion,
+            firstChoice: skillTestResourceChoice()
+        )
+    }
+
+    private static func skillTestPreparationPrompt(
+        questionVersion: Int,
+        firstChoice: JSONValue
+    ) throws -> BasicChoicePromptPresentation {
         let rawQuestion: JSONValue = .object([
             "tag": .string("ChooseOne"),
             "choices": .array([
-                .object(["tag": .string("UnknownPreparationChoice")]),
+                firstChoice,
                 .object([
                     "tag": .string("StartSkillTestButton"),
                     "investigatorId": .string("c01001"),
@@ -2040,6 +2086,29 @@ struct LiveNightOfTheZealotPlaythroughTests {
             rawQuestion: rawQuestion,
             questionState: BasicChoiceParser.parseQuestion(rawQuestion)
         )
+    }
+
+    private static func skillTestCommitCardChoice() -> JSONValue {
+        .object([
+            "tag": .string("TargetLabel"),
+            "target": .object([
+                "tag": .string("CardIdTarget"),
+                "contents": .string(BoardTestFixtures.cardID("000000000906").codingKey.stringValue),
+            ]),
+            "messages": .array([.object(["tag": .string("CommitCard")])]),
+        ])
+    }
+
+    private static func skillTestResourceChoice() -> JSONValue {
+        .object([
+            "tag": .string("ComponentLabel"),
+            "component": .object([
+                "tag": .string("InvestigatorComponent"),
+                "investigatorId": .string("c01001"),
+                "tokenType": .string("ResourceToken"),
+            ]),
+            "messages": .array([.object(["tag": .string("TakeResources")])]),
+        ])
     }
 
     private static func skillTestProjection(succeeded: Bool) -> BoardSkillTestProjection {
@@ -2716,7 +2785,12 @@ private struct LivePlaythroughBot {
                         diagnosticBypass: submitOutcome.diagnosticBypass
                     ))
                     repeatedQuestionShapes[repeatKey] = repeatCount + 1
-                    skillTestPreparationCounter.recordAdvanced(for: skillTestPreparationKey)
+                    if shouldRecordSkillTestPreparationProgress(
+                        selectedAnswer: selectedAnswer,
+                        prompt: prompt
+                    ) {
+                        skillTestPreparationCounter.recordAdvanced(for: skillTestPreparationKey)
+                    }
                 } else {
                     let reason = [
                         "same prompt remained after the bot answered it",
@@ -4414,6 +4488,19 @@ private func basicChoicePromptAdvanced(
     to current: BasicChoicePromptPresentation
 ) -> Bool {
     current.identity.promptKey != identity.promptKey
+}
+
+private func shouldRecordSkillTestPreparationProgress(
+    selectedAnswer: SelectedBotAnswer,
+    prompt: BasicChoicePromptPresentation
+) -> Bool {
+    guard case let .choice(index) = selectedAnswer.answer,
+          let choice = prompt.choices.first(where: { $0.index == index })
+    else { return false }
+    if case .chooseHandCard(_, .commit, _) = choice.content {
+        return true
+    }
+    return false
 }
 
 private func coverageRepeatKey(
