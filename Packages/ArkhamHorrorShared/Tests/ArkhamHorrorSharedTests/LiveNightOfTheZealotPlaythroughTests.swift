@@ -1024,6 +1024,22 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: 0
         ) == 1)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: projection,
+            selectableIndexes: [0, 1],
+            repeatCount: 3,
+            skillTestPreparationCount: 0
+        ) == 0)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(investigatorTokens: [
+                TokenCount(token: "Damage", count: 7),
+            ]),
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 0)
     }
 
     @Test("Live bot strategy is seedable for equal-ranked choices")
@@ -4501,6 +4517,7 @@ private func preferredSelectableIndex(
     let context = BotStrategyContext(
         prompt: prompt,
         projection: projection,
+        repeatCount: repeatCount,
         skillTestPreparationCount: skillTestPreparationCount,
         failedFightEnemyIDs: failedFightEnemyIDs
     )
@@ -4632,6 +4649,7 @@ private func updatePendingFightOutcome(
 private struct BotStrategyContext {
     let prompt: BasicChoicePromptPresentation
     let projection: BoardProjection
+    let repeatCount: Int
     let skillTestPreparationCount: Int
     let failedFightEnemyIDs: Set<String>
 
@@ -4701,7 +4719,7 @@ private struct BotStrategyContext {
         default:
             score = 1000
         }
-        if isResign(choice) {
+        if isResign(choice), !shouldResign {
             score -= 9000
         }
         if choice.completesSelection == true {
@@ -4846,7 +4864,7 @@ private struct BotStrategyContext {
             return moveScore(choice)
         }
         if ability.actions.contains(.resign) {
-            return 1500
+            return shouldResign ? 9700 : 1500
         }
         return 4500
     }
@@ -4926,6 +4944,10 @@ private struct BotStrategyContext {
 
     private func tokenCount(_ token: String, in tokens: [BoardTokenSummary]) -> Int {
         tokens.first { $0.token == token }?.count ?? 0
+    }
+
+    private var shouldResign: Bool {
+        isActingInvestigatorInDanger || repeatCount >= 3
     }
 
     private func isResign(_ choice: QuestionPresentation.Choice) -> Bool {
