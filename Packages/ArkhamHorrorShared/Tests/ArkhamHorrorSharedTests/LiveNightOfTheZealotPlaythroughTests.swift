@@ -4540,7 +4540,9 @@ private func forcedStartSkillTestIndex(
     selectableIndexes: [Int],
     skillTestPreparationCount: Int
 ) -> Int? {
-    guard skillTestPreparationCount >= 1 else { return nil }
+    guard skillTestPreparationCount >= 1 else {
+        return nil
+    }
     return prompt.choices.first(where: {
         if case .startSkillTest = $0.content {
             selectableIndexes.contains($0.index)
@@ -4556,15 +4558,21 @@ private func preferredPickSupplyIndex(
 ) -> Int? {
     guard prompt.identity.rawQuestion.objectValue?["tag"]?.stringValue == "PickSupplies",
           let rawChoices = prompt.identity.rawQuestion.objectValue?["choices"]?.arrayValue
-    else { return nil }
+    else {
+        return nil
+    }
     let candidates = selectableIndexes.sorted().compactMap { index -> (Int, Int)? in
         guard rawChoices.indices.contains(index),
               let supplyName = pickSupplyName(in: rawChoices[index])
-        else { return nil }
+        else {
+            return nil
+        }
         return (index, supplyPriority(supplyName))
     }
     return candidates.min { lhs, rhs in
-        if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+        if lhs.1 != rhs.1 {
+            return lhs.1 < rhs.1
+        }
         return lhs.0 < rhs.0
     }?.0
 }
@@ -4572,19 +4580,25 @@ private func preferredPickSupplyIndex(
 private func pickSupplyName(in value: JSONValue) -> String? {
     if let array = value.arrayValue {
         for child in array {
-            if let supplyName = pickSupplyName(in: child) { return supplyName }
+            if let supplyName = pickSupplyName(in: child) {
+                return supplyName
+            }
         }
         return nil
     }
-    guard let object = value.objectValue else { return nil }
-    if object["tag"]?.stringValue == "PickSupply",
-       let contents = object["contents"]?.arrayValue,
-       contents.indices.contains(1),
-       let supplyName = contents[1].stringValue {
-        return supplyName
+    guard let object = value.objectValue else {
+        return nil
+    }
+    if object["tag"]?.stringValue == "PickSupply" {
+        let contents = object["contents"]?.arrayValue ?? []
+        if contents.indices.contains(1), let supplyName = contents[1].stringValue {
+            return supplyName
+        }
     }
     for child in object.values {
-        if let supplyName = pickSupplyName(in: child) { return supplyName }
+        if let supplyName = pickSupplyName(in: child) {
+            return supplyName
+        }
     }
     return nil
 }
