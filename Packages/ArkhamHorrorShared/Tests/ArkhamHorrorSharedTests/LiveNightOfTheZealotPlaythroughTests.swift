@@ -906,22 +906,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
             skillTestPreparationCount: counter.count(for: loopKey)
         ) == 1)
 
-        let unrelatedPrompt = try Self.skillTestPreparationResourcePrompt(questionVersion: 12)
-        let resourceAnswer = SelectedBotAnswer(
-            answer: .choice(0), note: "gain resource", chosenChoiceKind: nil
-        )
-        var unrelatedCounter = SkillTestPreparationLoopCounter()
-        #expect(!shouldRecordSkillTestPreparationProgress(
-            selectedAnswer: resourceAnswer,
-            prompt: unrelatedPrompt
-        ))
-        if shouldRecordSkillTestPreparationProgress(
-            selectedAnswer: resourceAnswer,
-            prompt: unrelatedPrompt
-        ) {
-            unrelatedCounter.recordAdvanced(for: loopKey)
-        }
-        #expect(unrelatedCounter.count(for: loopKey) == 0)
+        try Self.assertResourceChoiceDoesNotCountAsSkillTestPreparation(loopKey: loopKey)
     }
 
     @Test("Live bot strategy prefers objective progress and avoids resign")
@@ -2111,6 +2096,27 @@ struct LiveNightOfTheZealotPlaythroughTests {
             activeInvestigatorID: investigatorID,
             leadInvestigatorID: investigatorID
         ))
+    }
+
+    private static func assertResourceChoiceDoesNotCountAsSkillTestPreparation(
+        loopKey: String
+    ) throws {
+        let unrelatedPrompt = try skillTestPreparationResourcePrompt(questionVersion: 12)
+        let resourceAnswer = SelectedBotAnswer(
+            answer: .choice(0), note: "gain resource", chosenChoiceKind: nil
+        )
+        var unrelatedCounter = SkillTestPreparationLoopCounter()
+        #expect(!shouldRecordSkillTestPreparationProgress(
+            selectedAnswer: resourceAnswer,
+            prompt: unrelatedPrompt
+        ))
+        if shouldRecordSkillTestPreparationProgress(
+            selectedAnswer: resourceAnswer,
+            prompt: unrelatedPrompt
+        ) {
+            unrelatedCounter.recordAdvanced(for: loopKey)
+        }
+        #expect(unrelatedCounter.count(for: loopKey) == 0)
     }
 
     private static func skillTestPreparationPrompt(
