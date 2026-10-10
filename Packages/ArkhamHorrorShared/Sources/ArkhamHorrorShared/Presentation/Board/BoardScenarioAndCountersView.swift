@@ -85,6 +85,13 @@ struct BoardChaosBagView: View {
     let onLinkedChoice: (Int) -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            summaryTile
+            linkedChaosTokenTargets
+        }
+    }
+
+    private var summaryTile: some View {
         BoardEntityTile(
             id: BoardFocusID.chaosBagSummary,
             accessibilityLabel: BoardAccessibility.summary(chaosBag: chaosBag),
@@ -95,7 +102,6 @@ struct BoardChaosBagView: View {
             VStack(alignment: .leading, spacing: 6) {
                 BoardSectionHeading(title: "Chaos bag")
                 chaosBagContent
-                linkedChaosTokenTargets
             }
         }
     }
