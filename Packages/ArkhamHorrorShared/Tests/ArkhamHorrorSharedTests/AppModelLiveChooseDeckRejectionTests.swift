@@ -749,7 +749,8 @@ extension AppModelLiveChooseDeckTests {
             gameID: gameID,
             ownerID: ownerID,
             connection: connection,
-            scenarioID: "c90004"
+            scenarioID: "c90004",
+            chooseDeckPlayerIDs: [ownerID]
         )
 
         await model.refreshLiveChooseDeckRestriction(for: gameID)
@@ -944,7 +945,8 @@ extension AppModelLiveChooseDeckTests {
             gameID: gameID,
             ownerID: ownerID,
             connection: connection,
-            scenarioID: "c90020"
+            scenarioID: "c90020",
+            chooseDeckPlayerIDs: [ownerID]
         )
 
         await model.refreshLiveChooseDeckRestriction(for: gameID)
@@ -973,7 +975,8 @@ extension AppModelLiveChooseDeckTests {
             gameID: gameID,
             ownerID: ownerID,
             connection: connection,
-            scenarioID: "c90020"
+            scenarioID: "c90020",
+            chooseDeckPlayerIDs: [ownerID]
         )
 
         await model.refreshLiveChooseDeckRestriction(for: gameID)
